@@ -394,23 +394,31 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::TypeAssertionExpression: {
             auto typeAssertion = node.as<TypeAssertion>();
+            out << "<";
             forEachChildPrint(typeAssertion->type);
+            out << ">";
             forEachChildPrint(typeAssertion->expression);
             break;
         }
         case SyntaxKind::ParenthesizedExpression: {
+            out << "(";
             forEachChildPrint(node.as<ParenthesizedExpression>()->expression);
+            out << ")";
             break;
         }
         case SyntaxKind::DeleteExpression: {
+            out << "delete ";
             forEachChildPrint(node.as<DeleteExpression>()->expression);
             break;
         }
         case SyntaxKind::TypeOfExpression: {
+            out << "typeof(";
             forEachChildPrint(node.as<TypeOfExpression>()->expression);
+            out << ")";
             break;
         }
         case SyntaxKind::VoidExpression: {
+            out << "void ";
             forEachChildPrint(node.as<VoidExpression>()->expression);
             break;
         }
@@ -420,11 +428,13 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::YieldExpression: {
             auto yieldExpression = node.as<YieldExpression>();
+            out << "yield ";
             forEachChildPrint(yieldExpression->asteriskToken);
             forEachChildPrint(yieldExpression->expression);
             break;
         }
         case SyntaxKind::AwaitExpression: {
+            out << "await ";
             forEachChildPrint(node.as<AwaitExpression>()->expression);
             break;
         }
@@ -442,11 +452,13 @@ template <typename OUT> class Printer
         case SyntaxKind::AsExpression: {
             auto asExpression = node.as<AsExpression>();
             forEachChildPrint(asExpression->expression);
+            out << " as ";
             forEachChildPrint(asExpression->type);
             break;
         }
         case SyntaxKind::NonNullExpression: {
             forEachChildPrint(node.as<NonNullExpression>()->expression);
+            out << "!";
             break;
         }
         case SyntaxKind::MetaProperty: {
@@ -455,7 +467,9 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::ConditionalExpression: {
             auto conditionalExpression = node.as<ConditionalExpression>();
+            out << "(";
             forEachChildPrint(conditionalExpression->condition);
+            out << ") ";
             forEachChildPrint(conditionalExpression->questionToken);
             forEachChildPrint(conditionalExpression->whenTrue);
             forEachChildPrint(conditionalExpression->colonToken);
@@ -519,15 +533,22 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::IfStatement: {
             auto ifStatement = node.as<IfStatement>();
+            out << "if (";
             forEachChildPrint(ifStatement->expression);
+            out << ") ";
             forEachChildPrint(ifStatement->thenStatement);
+            if (ifStatement->elseStatement)
+                out << " else ";
             forEachChildPrint(ifStatement->elseStatement);
             break;
         }
         case SyntaxKind::DoStatement: {
             auto doStatement = node.as<DoStatement>();
+            out << "do ";
             forEachChildPrint(doStatement->statement);
+            out << " while (";
             forEachChildPrint(doStatement->expression);
+            out << ")";
             break;
         }
         case SyntaxKind::WhileStatement: {
@@ -538,33 +559,58 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::ForStatement: {
             auto forStatement = node.as<ForStatement>();
+            out << "for (";
             forEachChildPrint(forStatement->initializer);
+            out << "; ";
             forEachChildPrint(forStatement->condition);
+            out << "; ";
             forEachChildPrint(forStatement->incrementor);
+            out << ") ";
             forEachChildPrint(forStatement->statement);
             break;
         }
         case SyntaxKind::ForInStatement: {
             auto forInStatement = node.as<ForInStatement>();
+            out << "for (";
             forEachChildPrint(forInStatement->initializer);
+            out << " in ";
             forEachChildPrint(forInStatement->expression);
+            out << ") ";
             forEachChildPrint(forInStatement->statement);
             break;
         }
         case SyntaxKind::ForOfStatement: {
             auto forOfStatement = node.as<ForOfStatement>();
+            out << "for ";
             forEachChildPrint(forOfStatement->awaitModifier);
+            out << "(";
             forEachChildPrint(forOfStatement->initializer);
+            out << " of ";
             forEachChildPrint(forOfStatement->expression);
+            out << ") ";
             forEachChildPrint(forOfStatement->statement);
             break;
         }
         case SyntaxKind::ContinueStatement: {
-            forEachChildPrint(node.as<ContinueStatement>()->label);
+            auto continueStatement = node.as<ContinueStatement>();            
+            out << "continue";
+            if (continueStatement)
+            {
+                out << " ";
+                forEachChildPrint(continueStatement->label);
+            }
+
             break;
         }
         case SyntaxKind::BreakStatement: {
-            forEachChildPrint(node.as<BreakStatement>()->label);
+            auto breakStatement = node.as<BreakStatement>();
+            out << "break";
+            if (breakStatement->label)
+            {
+                out << " ";
+                forEachChildPrint(breakStatement->label);
+            }
+
             break;
         }
         case SyntaxKind::ReturnStatement: {
@@ -577,37 +623,57 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::WithStatement: {
             auto withStatement = node.as<WithStatement>();
+            out << "with (";
             forEachChildPrint(withStatement->expression);
+            out << ") ";
             forEachChildPrint(withStatement->statement);
             break;
         }
         case SyntaxKind::SwitchStatement: {
             auto switchStatement = node.as<SwitchStatement>();
+            out << "switch (";
             forEachChildPrint(switchStatement->expression);
+            out << ") ";
             forEachChildPrint(switchStatement->caseBlock);
             break;
         }
         case SyntaxKind::CaseBlock: {
+            newLine();
+            out << "{";
+            incIndent();
+            newLine();
+            
             forEachChildrenPrint(node.as<CaseBlock>()->clauses);
+            
+            decIndent();
+            newLine();
+            out << "}";
+            newLine();            
+
             break;
         }
         case SyntaxKind::CaseClause: {
             auto caseClause = node.as<CaseClause>();
+            out << "case ";
             forEachChildPrint(caseClause->expression);
+            out << ": ";
             forEachChildrenPrint(caseClause->statements);
             break;
         }
         case SyntaxKind::DefaultClause: {
+            out << "default: ";
             forEachChildrenPrint(node.as<DefaultClause>()->statements);
             break;
         }
         case SyntaxKind::LabeledStatement: {
             auto labeledStatement = node.as<LabeledStatement>();
             forEachChildPrint(labeledStatement->label);
+            out << ": ";
             forEachChildPrint(labeledStatement->statement);
             break;
         }
         case SyntaxKind::ThrowStatement: {
+            out << "throw ";
             forEachChildPrint(node.as<ThrowStatement>()->expression);
             break;
         }
@@ -796,7 +862,7 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::CommaListExpression: {
-            forEachChildrenPrint(node.as<CommaListExpression>()->elements);
+            forEachChildrenPrint(node.as<CommaListExpression>()->elements, nullptr, ", ");
             break;
         }
 
