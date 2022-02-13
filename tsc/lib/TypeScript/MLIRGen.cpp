@@ -882,14 +882,7 @@ class MLIRGenImpl
             auto existType = results.lookup(name);
             if (existType)
             {
-                auto defaultUnionType = getUnionType(existType, currentType);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType << " default type: " << defaultUnionType
-                                        << "\n";);
-
-                // TODO: uncomment this line and find out what is the bug (+one more line)
-                currentType = mth.wideStorageType(currentType);
-                currentType = mth.findBaseType(existType, currentType, defaultUnionType);
+                currentType = mth.mergeType(existType, currentType);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
                 results[name] = currentType;
@@ -1212,6 +1205,7 @@ class MLIRGenImpl
 
         // TODO: investigate, in [...].reduce, lambda function does not have funcOp, why?
         auto funcOp = functionGenericTypeInfo->funcOp;
+        assert(funcOp);
         if (funcOp)
         {
             // TODO: we have func params.
@@ -1305,11 +1299,6 @@ class MLIRGenImpl
                     processed++;
                 }
 
-                if (totalProcessed == funcOp->getArgs().size())
-                {
-                    break;
-                }
-
                 if (processed == 0)
                 {
                     emitError(location) << "not all types could be inferred";
@@ -1317,6 +1306,11 @@ class MLIRGenImpl
                 }
 
                 totalProcessed += processed;
+
+                if (totalProcessed == funcOp->getArgs().size())
+                {
+                    break;
+                }
             } while (true);
         }
 
@@ -1400,6 +1394,18 @@ class MLIRGenImpl
                             : genericTypeGenContext.typeAliasMap) llvm::dbgs()
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
                        llvm::dbgs() << "\n";);
+
+            // revalidate all types
+            if (anyNamedGenericType)
+            {
+                MLIRTypeHelper mth(builder.getContext());
+
+                anyNamedGenericType = false;
+                for (auto &typeParamWithArg : genericTypeGenContext.typeParamsWithArgs)
+                {
+                    anyNamedGenericType |= mth.isGenericType(std::get<1>(typeParamWithArg.second));
+                }
+            }
 
             if (!anyNamedGenericType)
             {
@@ -6425,7 +6431,7 @@ class MLIRGenImpl
         return mlirGenCallExpression(location, funcResult, callExpression->typeArguments, operands, genContext);
     }
 
-    mlir::LogicalResult mlirGenArrayForEach(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+    mlir::LogicalResult mlirGenArrayForEach(mlir::Location location, ArrayRef<mlir::Value> operands,
                                             const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -6463,7 +6469,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::Value mlirGenArrayEvery(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+    mlir::Value mlirGenArrayEvery(mlir::Location location, ArrayRef<mlir::Value> operands,
                                   const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -6516,7 +6522,7 @@ class MLIRGenImpl
         return resolveIdentifier(location, varName, genContext);
     }
 
-    mlir::Value mlirGenArraySome(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+    mlir::Value mlirGenArraySome(mlir::Location location, ArrayRef<mlir::Value> operands,
                                  const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -6567,7 +6573,7 @@ class MLIRGenImpl
         return resolveIdentifier(location, varName, genContext);
     }
 
-    mlir::Value mlirGenArrayMap(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+    mlir::Value mlirGenArrayMap(mlir::Location location, ArrayRef<mlir::Value> operands,
                                 const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -6618,7 +6624,7 @@ class MLIRGenImpl
         return mlirGen(callOfIter, genContext);
     }
 
-    mlir::Value mlirGenArrayFilter(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+    mlir::Value mlirGenArrayFilter(mlir::Location location, ArrayRef<mlir::Value> operands,
                                    const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -6670,58 +6676,33 @@ class MLIRGenImpl
         return mlirGen(callOfIter, genContext);
     }
 
-    mlir::Value mlirGenArrayReduce(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+    mlir::Value mlirGenArrayReduce(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
                                    const GenContext &genContext)
     {
-        SymbolTableScopeT varScope(symbolTable);
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___array_reduce";
 
-        auto arraySrc = operands[0];
-        auto funcSrc = operands[1];
-        auto initVal = operands[2];
+        if (!existGenericFunctionMap(funcName))
+        {
+            auto src = S("function __array_reduce<T, R>(arr: T[], f: (s: R, v: T) => R, init: R) \
+            {   \
+                let r = init;   \
+                for (const v of arr) r = f(r, v);   \
+                return r;   \
+            }");
 
-        auto varName = "_reduce_";
-        registerVariable(
-            location, varName, false, VariableClass::Let,
-            [&]() -> std::pair<mlir::Type, mlir::Value> {
-                return {initVal.getType(), initVal};
-            },
-            genContext);
+            if (mlir::failed(parsePartialStatements(src)))
+            {
+                assert(false);
+                return mlir::Value();
+            }
+        }
 
-        // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
-        declare(srcArrayVarDecl, arraySrc, genContext);
+        auto funcResult = resolveIdentifier(location, funcName, genContext);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
-        declare(funcVarDecl, funcSrc, genContext);
+        assert(funcResult);
 
-        NodeFactory nf(NodeFactoryFlags::None);
-
-        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
-        auto _func_ident = nf.createIdentifier(S("_func_"));
-
-        auto _v_ident = nf.createIdentifier(S("_v_"));
-        auto _result_ident = nf.createIdentifier(stows(varName));
-
-        NodeArray<VariableDeclaration> declarations;
-        declarations.push_back(nf.createVariableDeclaration(_v_ident));
-        auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
-
-        NodeArray<Expression> argumentsArray;
-        argumentsArray.push_back(_result_ident);
-        argumentsArray.push_back(_v_ident);
-
-        auto forOfStat = nf.createForOfStatement(undefined, declList, _src_array_ident,
-                                                 nf.createExpressionStatement(nf.createBinaryExpression(
-                                                     _result_ident, nf.createToken(SyntaxKind::EqualsToken),
-                                                     nf.createCallExpression(_func_ident, undefined, argumentsArray))));
-
-        LLVM_DEBUG(printDebug(forOfStat););
-
-        GenContext reduceGenContext{genContext};
-        reduceGenContext.typeAliasMap.insert({"T", initVal.getType()});
-        mlirGen(forOfStat, reduceGenContext);
-
-        return resolveIdentifier(location, varName, genContext);
+        return mlirGenCallExpression(location, funcResult, {}, operands, genContext);        
     }
 
     mlir::Value mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
@@ -11733,7 +11714,28 @@ genContext);
             return {mlir::failure(), false};
         }
 
-        pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
+        auto name = typeParam->getName();
+        auto existType = pairs.lookup(name);
+        if (existType.second)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! replacing existing type for: " << name << " exist type: " << existType.second << " new type: " << type
+                                << "\n";);
+
+            // TODO: find out how in code "[1, 2, 3].reduce" can be added Generic Type if we have filter here
+            if (!existType.second.isa<mlir_ts::NamedGenericType>())
+            {
+                type = mth.mergeType(existType.second, type);
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << type << "\n";);
+
+            // TODO: Do I need to join types?
+            pairs[name] = std::make_pair(typeParam, type);
+        }
+        else
+        {
+            pairs.insert({name, std::make_pair(typeParam, type)});
+        }
 
         return {mlir::success(), false};
     }
@@ -13587,6 +13589,26 @@ genContext);
     {
         assert(loc_->pos != loc_->_end);
         return loc(loc_);
+    }
+
+    mlir::LogicalResult parsePartialStatements(string src)
+    {
+        Parser parser;
+        auto module = parser.parseSourceFile(S("Temp"), src, ScriptTarget::Latest);
+
+        MLIRNamespaceGuard nsGuard(currentNamespace);
+        currentNamespace = rootNamespace;
+
+        GenContext emptyContext;
+        for (auto statement : module->statements)
+        {
+            if (mlir::failed(mlirGen(statement, emptyContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        return mlir::success();
     }
 
     void printDebug(ts::Node node)

@@ -1031,6 +1031,19 @@ class MLIRTypeHelper
         MLIRTypeIteratorLogic iter{};
         return iter.some(type, [](mlir::Type type) { return type.isa<mlir_ts::NamedGenericType>(); });
     }
+
+    mlir::Type mergeType(mlir::Type existType, mlir::Type currentType)
+    {
+        auto defaultUnionType = getUnionType(existType, currentType);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType << " default type: " << defaultUnionType
+                                << "\n";);
+
+        currentType = wideStorageType(currentType);
+        currentType = findBaseType(existType, currentType, defaultUnionType);
+
+        return currentType;
+    }
 };
 
 } // namespace typescript
