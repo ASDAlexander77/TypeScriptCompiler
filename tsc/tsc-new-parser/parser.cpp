@@ -894,8 +894,7 @@ struct Parser
         // Keep track of the state we'll need to rollback to if lookahead fails (or if the
         // caller asked us to always reset our state).
         auto saveToken = currentToken;
-        // TODO: do we need it?
-        // auto saveParseDiagnosticsLength = parseDiagnostics.size();
+        auto saveParseDiagnosticsLength = parseDiagnostics.size();
         auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
 
         // it Note is not actually necessary to save/restore the context flags here.  That's
@@ -919,8 +918,7 @@ struct Parser
             currentToken = saveToken;
             if (speculationKind != SpeculationKind::Reparse)
             {
-                // TODO: do we need it?
-                // parseDiagnostics.size() = saveParseDiagnosticsLength;
+                parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
             }
             parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
         }
@@ -7848,8 +7846,7 @@ struct Parser
     auto parseJSDocComment(Node parent, number start, number length) -> JSDoc
     {
         auto saveToken = currentToken;
-        // TODO: does it make any sense
-        // auto saveParseDiagnosticsLength = parseDiagnostics.size();
+        auto saveParseDiagnosticsLength = parseDiagnostics.size();
         auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
 
         auto comment =
@@ -7865,8 +7862,7 @@ struct Parser
             copy(jsDocDiagnostics, parseDiagnostics);
         }
         currentToken = saveToken;
-        // TODO: does it make any sense
-        // parseDiagnostics->length = saveParseDiagnosticsLength;
+        parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
         parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
         return comment;
     }

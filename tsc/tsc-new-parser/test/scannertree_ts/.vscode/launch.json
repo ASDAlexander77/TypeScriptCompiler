@@ -63,6 +63,20 @@
             "outFiles": [
             ],
             "protocol": "inspector"
-        }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch TS-Node - parse",
+            "runtimeExecutable": "ts-node",
+            "program": "${workspaceFolder}/parse.ts",
+            "cwd": "${workspaceFolder}",
+            "args": [
+            ],
+            "sourceMaps": true,
+            "outFiles": [
+            ],
+            "protocol": "inspector"
+        }        
     ]
 }
