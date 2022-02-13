@@ -108,11 +108,53 @@ class MLIRGenImpl
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
-    mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles)
+    mlir::LogicalResult report(SourceFile module, const std::vector<SourceFile> &includeFiles)
     {
+        // output diag info
+        auto hasAnyError = false;
+        for (auto diag : module->parseDiagnostics)
+        {
+            hasAnyError |= diag.category == DiagnosticCategory::Error;
+            if (diag.category == DiagnosticCategory::Error)
+            {
+                emitError(loc(module, "", diag.start, diag.length), convertWideToUTF8(diag.messageText));
+            }
+            else
+            {
+                emitWarning(loc(module, "", diag.start, diag.length), convertWideToUTF8(diag.messageText));
+            }
+        }
+
         this->includeFiles = includeFiles;
 
-        if (failed(mlirGenCodeGenInit(module)))
+        for (auto incFile : includeFiles)
+        {
+            for (auto diag : incFile->parseDiagnostics)
+            {
+                hasAnyError |= diag.category == DiagnosticCategory::Error;
+                if (diag.category == DiagnosticCategory::Error)
+                {
+                    emitError(loc(incFile, "", diag.start, diag.length), convertWideToUTF8(diag.messageText));
+                }
+                else
+                {
+                    emitWarning(loc(incFile, "", diag.start, diag.length), convertWideToUTF8(diag.messageText));
+                }
+            }
+        }        
+
+        return hasAnyError ? mlir::failure() : mlir::success();
+    }
+
+
+    mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles)
+    {
+        if (mlir::failed(report(module, includeFiles)))
+        {
+            return nullptr;
+        }
+
+        if (mlir::failed(mlirGenCodeGenInit(module)))
         {
             return nullptr;
         }
@@ -13575,6 +13617,20 @@ genContext);
         auto begin =
             mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
         auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, loc->_end);
+        auto end =
+            mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
+        return mlir::FusedLoc::get(builder.getContext(), {begin, end});
+    }
+
+    mlir::Location loc(SourceFileLike sourceFile, std::string fileNameParam, int start, int length)
+    {
+        // return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
+        auto fileId = builder.getIdentifier(fileNameParam.length() > 0 ? fileNameParam : fileName);
+        auto posLineChar =
+            parser.getLineAndCharacterOfPosition(sourceFile, start);
+        auto begin =
+            mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
+        auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length);
         auto end =
             mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
         return mlir::FusedLoc::get(builder.getContext(), {begin, end});
