@@ -918,7 +918,8 @@ struct Parser
             currentToken = saveToken;
             if (speculationKind != SpeculationKind::Reparse)
             {
-                parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
+                if (saveParseDiagnosticsLength < parseDiagnostics.size())
+                    parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
             }
             parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
         }
@@ -7862,7 +7863,8 @@ struct Parser
             copy(jsDocDiagnostics, parseDiagnostics);
         }
         currentToken = saveToken;
-        parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
+        if (saveParseDiagnosticsLength < parseDiagnostics.size())
+            parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
         parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
         return comment;
     }
