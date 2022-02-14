@@ -918,7 +918,7 @@ struct Parser
             currentToken = saveToken;
             if (speculationKind != SpeculationKind::Reparse)
             {
-                if (saveParseDiagnosticsLength < parseDiagnostics.size())
+                while (saveParseDiagnosticsLength < parseDiagnostics.size())
                     parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
             }
             parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
@@ -7863,7 +7863,7 @@ struct Parser
             copy(jsDocDiagnostics, parseDiagnostics);
         }
         currentToken = saveToken;
-        if (saveParseDiagnosticsLength < parseDiagnostics.size())
+        while (saveParseDiagnosticsLength < parseDiagnostics.size())
             parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
         parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
         return comment;

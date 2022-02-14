@@ -1,6 +1,11 @@
 import * as ts from 'typescript';
 
-const data = "function main() { for (let i = 0; i < 10; i++); }";
+const data = "\
+enum Foo {\
+    A = 1 << 0,\
+    B = 1 << 1,\
+}\
+";
 
 const dataStr = ("" + data).replace(/\r\n/g, "\n");
 const source = ts.createSourceFile("file", dataStr, ts.ScriptTarget.Latest);

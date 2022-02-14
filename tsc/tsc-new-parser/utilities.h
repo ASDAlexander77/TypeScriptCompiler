@@ -168,18 +168,29 @@ if (arguments.length > 4) {
     return d;
 }
 
+static auto formatStringFromArgs(string text, string arg0) -> string {
+    auto pos = text.find('{');
+    if (pos != std::string::npos)
+    {
+        auto end = text.find('}');
+        if (end != std::string::npos)
+        {
+            text.replace(pos, end, arg0);
+        }
+    }
+
+    return text;
+}
+
 static auto createDetachedDiagnostic(string fileName, number start, number length, DiagnosticMessage message, string arg0, ...)
     -> DiagnosticWithDetachedLocation
 {
     assertDiagnosticLocation(/*file*/ SourceFile(), start, length);
     auto text = getLocaleSpecificMessage(message);
 
-    // TODO:
-    /*
-if (arguments.length > 4) {
-    text = formatStringFromArgs(text, arguments, 4);
-}
-*/
+    if (text.find('{') >= 0) {
+        text = formatStringFromArgs(text, arg0);
+    }
 
     DiagnosticWithDetachedLocation d{data::DiagnosticWithDetachedLocation()};
     d->start = start;

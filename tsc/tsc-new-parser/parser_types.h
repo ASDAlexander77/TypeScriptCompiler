@@ -2293,17 +2293,11 @@ struct Diagnostic : DiagnosticRelatedInformation
 
 struct DiagnosticWithLocation : Diagnostic
 {
-    PTR(SourceFile) file;
-    number start;
-    number length;
 };
 
 struct DiagnosticWithDetachedLocation : Diagnostic
 {
-    undefined_t file;
     string fileName;
-    number start;
-    number length;
 };
 
 struct ResolvedModule
