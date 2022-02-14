@@ -3499,6 +3499,12 @@ class MLIRGenImpl
         return castedValue;
     }
 
+    mlir::Value mlirGen(ComputedPropertyName computedPropertyNameAST, const GenContext &genContext)
+    {
+        auto exprValue = mlirGen(computedPropertyNameAST->expression, genContext);
+        return exprValue;
+    }    
+
     mlir::LogicalResult mlirGen(ReturnStatement returnStatementAST, const GenContext &genContext)
     {
         auto location = loc(returnStatementAST);
@@ -12335,6 +12341,11 @@ genContext);
 
     mlir::Type getAttributeType(mlir::Attribute attr)
     {
+        if (!attr)
+        {
+            return getUnknownType();
+        }
+
         if (attr.isa<mlir::StringAttr>())
         {
             return getStringType();
@@ -12701,11 +12712,30 @@ genContext);
     {
         MLIRCodeLogic mcl(builder);
 
+        if (name == SyntaxKind::ComputedPropertyName)
+        {
+            auto value = mlirGen(name.as<ComputedPropertyName>(), genContext);
+            LLVM_DEBUG(llvm::dbgs() << "!! ComputedPropertyName: " << value << "\n";);
+            auto attr = mcl.ExtractAttr(value);
+            if (!attr)
+            {
+                emitError(loc(name), "not supported ComputedPropertyName expression");
+            }
+
+            return attr;
+        }
+
         auto namePtr = MLIRHelper::getName(name, stringAllocator);
         if (namePtr.empty())
         {
             auto value = mlirGen(name.as<Expression>(), genContext);
-            return mcl.ExtractAttr(value);
+            auto attr = mcl.ExtractAttr(value);
+            if (!attr)
+            {
+                emitError(loc(name), "not supported ComputedPropertyName expression");
+            }
+
+            return attr;
         }
 
         return mcl.TupleFieldName(namePtr);
