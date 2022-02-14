@@ -112,16 +112,17 @@ class MLIRGenImpl
     {
         // output diag info
         auto hasAnyError = false;
+        auto fileName = convertWideToUTF8(module->fileName);
         for (auto diag : module->parseDiagnostics)
         {
             hasAnyError |= diag.category == DiagnosticCategory::Error;
             if (diag.category == DiagnosticCategory::Error)
             {
-                emitError(loc(module, "", diag.start, diag.length), convertWideToUTF8(diag.messageText));
+                emitError(loc2(module, fileName, diag.start, diag.length), convertWideToUTF8(diag.messageText));
             }
             else
             {
-                emitWarning(loc(module, "", diag.start, diag.length), convertWideToUTF8(diag.messageText));
+                emitWarning(loc2(module, fileName, diag.start, diag.length), convertWideToUTF8(diag.messageText));
             }
         }
 
@@ -129,16 +130,17 @@ class MLIRGenImpl
 
         for (auto incFile : includeFiles)
         {
+            auto fileName = convertWideToUTF8(incFile->fileName);
             for (auto diag : incFile->parseDiagnostics)
             {
                 hasAnyError |= diag.category == DiagnosticCategory::Error;
                 if (diag.category == DiagnosticCategory::Error)
                 {
-                    emitError(loc(incFile, "", diag.start, diag.length), convertWideToUTF8(diag.messageText));
+                    emitError(loc2(incFile, fileName, diag.start, diag.length), convertWideToUTF8(diag.messageText));
                 }
                 else
                 {
-                    emitWarning(loc(incFile, "", diag.start, diag.length), convertWideToUTF8(diag.messageText));
+                    emitWarning(loc2(incFile, fileName, diag.start, diag.length), convertWideToUTF8(diag.messageText));
                 }
             }
         }        
@@ -13610,27 +13612,23 @@ genContext);
             return mlir::UnknownLoc::get(builder.getContext());
         }
 
-        // return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
-        auto fileId = builder.getIdentifier(fileName);
-        auto posLineChar =
-            parser.getLineAndCharacterOfPosition(sourceFile, loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos);
-        auto begin =
-            mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
-        auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, loc->_end);
-        auto end =
-            mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
-        return mlir::FusedLoc::get(builder.getContext(), {begin, end});
+        auto pos = loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos;        
+        return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
     }
 
-    mlir::Location loc(SourceFileLike sourceFile, std::string fileNameParam, int start, int length)
+    mlir::Location loc2(ts::SourceFile sourceFile, std::string fileName, int start, int length)
     {
-        // return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
-        auto fileId = builder.getIdentifier(fileNameParam.length() > 0 ? fileNameParam : fileName);
+        auto fileId = builder.getIdentifier(fileName);
         auto posLineChar =
             parser.getLineAndCharacterOfPosition(sourceFile, start);
         auto begin =
             mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
-        auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length);
+        if (length <= 1)
+        {
+            return begin;
+        }
+
+        auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
         auto end =
             mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
         return mlir::FusedLoc::get(builder.getContext(), {begin, end});
