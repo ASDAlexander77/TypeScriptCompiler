@@ -5,9 +5,9 @@ function main() {
 
     print(a.name, " << end (should be value Test1)");
 
-    let b: [name: string, age: number, 8: number] = ["user", 10.0, 20.0];
+    let b: [name: string, age: number, _8: number] = ["user", 10.0, 20.0];
 
-    print(b.name, b.age, b[8]);
+    print(b.name, b.age, b._8);
 
     let c: [user: [name: string, age: number], type: number] = [["user2", 11.0], 1.0];
 

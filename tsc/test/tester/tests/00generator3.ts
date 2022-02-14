@@ -40,15 +40,15 @@ function foo2()
 			{
 			  	//yield 1;
 				case 0: 
-					return { value: 1, done: false; };
+					return { value: 1, done: false };
 			  	//yield 2;
 				case 1: 
-					return { value: 2, done: false; };
+					return { value: 2, done: false };
 			  	//yield 3;
 				case 2:
-					return { value: 3, done: false; };
+					return { value: 3, done: false };
 				default:
-					return { value: 3, done: true; };					
+					return { value: 3, done: true };					
 			}
 		}
 	}
@@ -77,15 +77,15 @@ function foo3()
 			{
 			  	//yield 1;
 				case 0: 
-					return { value: 1, done: false; };
+					return { value: 1, done: false };
 			  	//yield 2;
 				case 1: 
-					return { value: 2, done: false; };
+					return { value: 2, done: false };
 			  	//yield 3;
 				case 2:
-					return { value: 3, done: false; };
+					return { value: 3, done: false };
 				default:
-					return { value: 3, done: true; };					
+					return { value: 3, done: true };					
 			}
 		}
 	}

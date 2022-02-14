@@ -84,7 +84,7 @@ function refparamWrite2(testrec: Testrec): void {
     testrec = new Testrec();
     // TODO:
     //assert(testrec.bool === undefined, "rw2f");
-    else assert(testrec.bool == false, "rw2");
+    assert(testrec.bool == false, "rw2");
 }
 
 function refparamWrite3(testrecX: Testrec): void {
