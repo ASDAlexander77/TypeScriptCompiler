@@ -3880,9 +3880,7 @@ class MLIRGenImpl
                 auto valueAttr = constantOp.valueAttr();
 
                 MLIRCodeLogic mcl(builder);
-                auto namePtr = MLIRHelper::getName(name, stringAllocator);
-                assert(!namePtr.empty());
-                auto fieldNameAttr = mcl.TupleFieldName(namePtr);
+                auto fieldNameAttr = TupleFieldName(name, genContext);
 
                 for (auto unionSubType : unionType.getTypes())
                 {
@@ -8086,24 +8084,15 @@ class MLIRGenImpl
         };
 
         auto getFieldIdForProperty = [&](PropertyAssignment &propertyAssignment) {
-            auto namePtr = MLIRHelper::getName(propertyAssignment->name, stringAllocator);
-            if (namePtr.empty())
-            {
-                auto value = mlirGen(propertyAssignment->name.as<Expression>(), genContext);
-                return mcl.ExtractAttr(value);
-            }
-
-            return mcl.TupleFieldName(namePtr);
+            return TupleFieldName(propertyAssignment->name, genContext);
         };
 
         auto getFieldIdForShorthandProperty = [&](ShorthandPropertyAssignment &shorthandPropertyAssignment) {
-            auto namePtr = MLIRHelper::getName(shorthandPropertyAssignment->name, stringAllocator);
-            return mcl.TupleFieldName(namePtr);
+            return TupleFieldName(shorthandPropertyAssignment->name, genContext);
         };
 
         auto getFieldIdForFunctionLike = [&](FunctionLikeDeclarationBase &funcLikeDecl) {
-            auto namePtr = MLIRHelper::getName(funcLikeDecl->name, stringAllocator);
-            return mcl.TupleFieldName(namePtr);
+            return TupleFieldName(funcLikeDecl->name, genContext);
         };
 
         auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) {
@@ -9719,7 +9708,6 @@ class MLIRGenImpl
         mlir::Value initValue;
         mlir::Attribute fieldId;
         mlir::Type type;
-        StringRef memberNamePtr;
 
         auto isConstructor = classMember == SyntaxKind::Constructor;
         if (isConstructor)
@@ -9753,15 +9741,7 @@ class MLIRGenImpl
         {
             // property declaration
             auto propertyDeclaration = classMember.as<PropertyDeclaration>();
-
-            auto memberNamePtr = MLIRHelper::getName(propertyDeclaration->name, stringAllocator);
-            if (memberNamePtr.empty())
-            {
-                llvm_unreachable("not implemented");
-                return mlir::failure();
-            }
-
-            fieldId = mcl.TupleFieldName(memberNamePtr);
+            fieldId = TupleFieldName(propertyDeclaration->name, genContext);
 
             if (!isStatic)
             {
@@ -9778,11 +9758,11 @@ class MLIRGenImpl
                 if (isNoneType(type))
                 {
 #ifndef ANY_AS_DEFAULT
-                    emitError(loc(propertyDeclaration)) << "type for field '" << memberNamePtr
+                    emitError(loc(propertyDeclaration)) << "type for field '" << fieldId
                                                         << "' is not provided, field must have type or initializer";
                     return mlir::failure();
 #else
-                    emitWarning(loc(propertyDeclaration)) << "type for field '" << memberNamePtr << "' is any";
+                    emitWarning(loc(propertyDeclaration)) << "type for field '" << fieldId << "' is any";
                     type = getAnyType();
 #endif
                 }
@@ -9792,7 +9772,7 @@ class MLIRGenImpl
             else
             {
                 // process static field - register global
-                auto fullClassStaticFieldName = concat(newClassPtr->fullName, memberNamePtr);
+                auto fullClassStaticFieldName = concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
                 auto staticFieldType = registerVariable(
                     location, fullClassStaticFieldName, true,
                     newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
@@ -9840,14 +9820,7 @@ class MLIRGenImpl
                     continue;
                 }
 
-                auto parameterNamePtr = MLIRHelper::getName(parameter->name, stringAllocator);
-                if (parameterNamePtr.empty())
-                {
-                    llvm_unreachable("not implemented");
-                    return mlir::failure();
-                }
-
-                fieldId = mcl.TupleFieldName(parameterNamePtr);
+                fieldId = TupleFieldName(parameter->name, genContext);
 
                 auto typeAndInit = getTypeAndInit(parameter, genContext);
                 type = typeAndInit.first;
@@ -11111,14 +11084,7 @@ genContext);
             auto propertySignature = interfaceMember.as<PropertySignature>();
             auto isConditional = !!propertySignature->questionToken;
 
-            auto memberNamePtr = MLIRHelper::getName(propertySignature->name, stringAllocator);
-            if (memberNamePtr.empty())
-            {
-                llvm_unreachable("not implemented");
-                return mlir::failure();
-            }
-
-            fieldId = mcl.TupleFieldName(memberNamePtr);
+            fieldId = TupleFieldName(propertySignature->name, genContext);
 
             auto typeAndInit = getTypeAndInit(propertySignature, genContext);
             type = typeAndInit.first;
@@ -12731,6 +12697,20 @@ genContext);
 #endif
     }
 
+    mlir::Attribute TupleFieldName(Node name, const GenContext &genContext) 
+    {
+        MLIRCodeLogic mcl(builder);
+
+        auto namePtr = MLIRHelper::getName(name, stringAllocator);
+        if (namePtr.empty())
+        {
+            auto value = mlirGen(name.as<Expression>(), genContext);
+            return mcl.ExtractAttr(value);
+        }
+
+        return mcl.TupleFieldName(namePtr);
+    }
+
     void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types,
                            const GenContext &genContext)
     {
@@ -12743,12 +12723,11 @@ genContext);
             if (typeItem == SyntaxKind::NamedTupleMember)
             {
                 auto namedTupleMember = typeItem.as<NamedTupleMember>();
-                auto namePtr = MLIRHelper::getName(namedTupleMember->name, stringAllocator);
 
                 auto type = getType(namedTupleMember->type, genContext);
 
                 assert(type);
-                types.push_back({mcl.TupleFieldName(namePtr), type});
+                types.push_back({TupleFieldName(namedTupleMember->name, genContext), type});
                 arrayMode = false;
             }
             else if (typeItem == SyntaxKind::LiteralType)
@@ -12793,23 +12772,21 @@ genContext);
             if (typeItem == SyntaxKind::PropertySignature)
             {
                 auto propertySignature = typeItem.as<PropertySignature>();
-                auto namePtr = MLIRHelper::getName(propertySignature->name, stringAllocator);
 
                 auto originalType = getType(propertySignature->type, genContext);
                 auto type = mcl.getEffectiveFunctionTypeForTupleField(originalType);
 
                 assert(type);
-                types.push_back({mcl.TupleFieldName(namePtr), type});
+                types.push_back({TupleFieldName(propertySignature->name, genContext), type});
             }
             else if (typeItem == SyntaxKind::MethodSignature)
             {
                 auto methodSignature = typeItem.as<MethodSignature>();
-                auto namePtr = MLIRHelper::getName(methodSignature->name, stringAllocator);
 
                 auto type = getType(typeItem, genContext);
 
                 assert(type);
-                types.push_back({mcl.TupleFieldName(namePtr), type});
+                types.push_back({TupleFieldName(methodSignature->name, genContext), type});
             }
             else
             {

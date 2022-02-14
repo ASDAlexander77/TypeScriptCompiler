@@ -41,7 +41,7 @@ class MLIRCodeLogic
         return mlir::StringAttr::get(context, StringRef(value.data(), value.length() + 1));
     }
 
-    mlir::Attribute ExtractAttr(mlir::Value value, bool removeOpIfSuccess = false)
+    mlir::Attribute ExtractAttr(mlir::Value value)
     {
         auto constOp = dyn_cast<mlir_ts::ConstantOp>(value.getDefiningOp());
         if (constOp)
