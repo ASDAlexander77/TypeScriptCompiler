@@ -1026,6 +1026,29 @@ class MLIRTypeHelper
         return mlir_ts::UnionType::get(context, types);
     }
 
+    mlir::Type getIntersectionType(mlir::Type type1, mlir::Type type2)
+    {
+        mlir::SmallVector<mlir::Type> types;
+        types.push_back(type1);
+        types.push_back(type2);
+        return getIntersectionType(types);
+    }
+
+    mlir::Type getIntersectionType(mlir::SmallVector<mlir::Type> &types)
+    {
+        if (types.size() == 0)
+        {
+            return mlir_ts::NeverType::get(context);
+        }
+
+        if (types.size() == 1)
+        {
+            return types.front();
+        }
+
+        return mlir_ts::IntersectionType::get(context, types);
+    }
+
     bool isGenericType(mlir::Type type)
     {
         MLIRTypeIteratorLogic iter{};

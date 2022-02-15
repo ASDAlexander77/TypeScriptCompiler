@@ -13110,7 +13110,7 @@ genContext);
 
         MLIRTypeHelper mth(builder.getContext());
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! join: " << type1 << " & " << type2;);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! join: " << type1 << " | " << type2;);
 
         auto resType = mth.getUnionType(type1, type2, false);
 
@@ -13131,6 +13131,7 @@ genContext);
         mlir_ts::TupleType baseTupleType;
         mlir::SmallVector<mlir::Type> types;
         mlir::Type firstNonFalseType;
+        auto allTupleTypesConst = true;
         for (auto typeItem : intersectionTypeNode->types)
         {
             auto type = getType(typeItem, genContext);
@@ -13141,11 +13142,20 @@ genContext);
 
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
             {
+                allTupleTypesConst = false;
                 if (!baseTupleType)
                 {
                     baseTupleType = tupleType;
                 }
             }
+
+            if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
+            {
+                if (!baseTupleType)
+                {
+                    baseTupleType = mlir_ts::TupleType::get(builder.getContext(), constTupleType.getFields());
+                }
+            }            
 
             if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
             {
@@ -13215,6 +13225,13 @@ genContext);
                         typesForNewTuple.push_back(field);
                     }
                 }
+                else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
+                {
+                    for (auto field : constTupleType.getFields())
+                    {
+                        typesForNewTuple.push_back(field);
+                    }
+                }
                 else
                 {
                     // no intersection
@@ -13222,7 +13239,7 @@ genContext);
                 }
             }
 
-            return getTupleType(typesForNewTuple);
+            return allTupleTypesConst ? (mlir::Type)getConstTupleType(typesForNewTuple) : (mlir::Type)getTupleType(typesForNewTuple);
         }
 
         // calculate of intersaction between types and literal types
@@ -13254,6 +13271,30 @@ genContext);
 
         return getNeverType();
     }
+
+    mlir::Type getIntersectionType(mlir::Type type1, mlir::Type type2)
+    {
+        if (!type1 || !type2)
+        {
+            return mlir::Type();
+        }
+
+        MLIRTypeHelper mth(builder.getContext());
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! intersection: " << type1 << " & " << type2;);
+
+        auto resType = mth.getIntersectionType(type1, type2);
+
+        LLVM_DEBUG(llvm::dbgs() << " = " << resType << "\n";);
+
+        return resType;
+    }    
+
+    mlir::Type getIntersectionType(mlir::SmallVector<mlir::Type> &types)
+    {
+        MLIRTypeHelper mth(builder.getContext());
+        return mth.getIntersectionType(types);
+    }    
 
     mlir::Type AndType(mlir::Type left, mlir::Type right)
     {
@@ -13346,7 +13387,7 @@ genContext);
         // TODO: should I add, interface, tuple types here?
         // PS: string & { __b: number } creating type "string & { __b: number }".
 
-        return mlir::Type();
+        return getIntersectionType(left, right);
     }
 
     mlir::Type AndUnionType(mlir_ts::UnionType leftUnion, mlir::Type right)

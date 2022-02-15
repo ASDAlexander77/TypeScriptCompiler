@@ -1245,6 +1245,78 @@ def TypeScript_Union : TypeScript_Type<"Union"> {
   }];
 }
 
+def TypeScript_Intersection : TypeScript_Type<"Intersection"> {
+  let mnemonic = "intersection";
+
+  let summary = "intersection of other types";
+  let description = [{
+    Syntax:
+
+    ```
+    union-type ::= `intersection` `<` (type ( `,` type)*)? `>`
+    ```
+
+    The value of `intersection` type represents an intersection of elements,
+    where each element may be of a different type.
+
+    Examples:
+
+    ```mlir
+    // Empty intersection.
+    intersection<>
+
+    // Single intersection
+    intersection<f32>
+
+    // Many elements.
+    intersection<i32, f32, tensor<i1>, i5>
+    ```
+  }];
+  let parameters = (ins ArrayRefParameter<"Type", "type">:$types);
+
+  let printer = [{
+    $_printer << "intersection" << "<";
+    size_t i = 0;
+    for (auto typeItem : getImpl()->types) 
+    {
+      $_printer << typeItem;
+      if (i++ < getImpl()->types.size() - 1)
+          $_printer << ",";              
+    }
+    $_printer << ">";
+  }];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    SmallVector<Type> types;
+    if ($_parser.parseLess()) return Type();
+    while (!mlir::succeeded($_parser.parseOptionalGreater())) 
+    {
+        if ($_parser.parseType(elementType)) return Type();
+        if ($_parser.parseOptionalComma()) break;
+    }
+    if ($_parser.parseGreater()) return Type();
+    return get(context, types);
+  }];  
+
+  let extraClassDeclaration = [{
+    /// Return the number of held types.
+    size_t size() const;
+
+    /// Iterate over the held elements.
+    using iterator = ArrayRef<Type>::iterator;
+    iterator begin() const { return getTypes().begin(); }
+    iterator end() const { return getTypes().end(); }
+
+    /// Return the element type at index 'index'.
+    Type getType(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getTypes()[index];
+    }
+  }];
+}
+
 def TypeScript_Generic : TypeScript_Type<"Generic"> {
     let mnemonic = "Generic";
 }
