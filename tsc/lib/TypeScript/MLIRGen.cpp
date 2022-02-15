@@ -1665,12 +1665,7 @@ class MLIRGenImpl
     {
         // in case it is generic arrow function 
         auto currValue = genResult;        
-        if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
-        {
-            currValue = createBoundFunctionOp.func();
-        }
 
-        // TODO: process generic function
         if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
         {
             // if (!symbolOp.getType().isa<mlir_ts::GenericType>())
@@ -1681,9 +1676,12 @@ class MLIRGenImpl
             }
 
             // create new function instance
+            GenContext initSpecGenContext(genContext);
+            initSpecGenContext.rediscover = true;
+
             auto funcName = symbolOp.identifierAttr().getValue();
             auto [result, funcType, funcSymbolName] =
-                instantiateSpecializedFunctionType(location, funcName, typeArguments, genContext);
+                instantiateSpecializedFunctionType(location, funcName, typeArguments, initSpecGenContext);
             if (mlir::failed(result))
             {
                 if (!genContext.allowPartialResolve)
@@ -2840,28 +2838,21 @@ class MLIRGenImpl
         // if funcOp is null, means lambda is generic]
         if (!funcOp)
         {
-            auto name = funcName;
             // return reference to generic method
-            if (getGenericFunctionMap().count(name))
+            if (getGenericFunctionMap().count(funcName))
             {
-                auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
-
-                GenContext funcExprGenericGenContext(genContext);
-                funcExprGenericGenContext.rediscover = true;
-                // we need to map generic parameters to generic types to be able to resolve function parameters which
-                // are not generic
-                for (auto typeParam : genericFunctionInfo->typeParams)
+                auto genericFunctionInfo = getGenericFunctionMap().lookup(funcName);
+                // info: it will not take any capture now
+                return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType, false, true, genContext);
+            }
+            else
+            {
+                if (!genContext.allowPartialResolve)
                 {
-                    funcExprGenericGenContext.typeAliasMap.insert({typeParam->getName(), getNamedGenericType(typeParam->getName())});
+                    emitError(location) << "can't find generic function: " << funcName;
                 }
 
-                auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(genericFunctionInfo->functionDeclaration, funcExprGenericGenContext);
-                if (mlir::failed(result))
-                {
-                    return mlir::Value();
-                }
-
-                return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, true, genContext);
+                return mlir::Value();
             }
         }
 
@@ -2898,28 +2889,21 @@ class MLIRGenImpl
         // if funcOp is null, means lambda is generic]
         if (!funcOp)
         {
-            auto name = funcName;
             // return reference to generic method
-            if (getGenericFunctionMap().count(name))
+            if (getGenericFunctionMap().count(funcName))
             {
-                auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
-
-                GenContext arrowGenericGenContext(genContext);
-                arrowGenericGenContext.rediscover = true;
-                // we need to map generic parameters to generic types to be able to resolve function parameters which
-                // are not generic
-                for (auto typeParam : genericFunctionInfo->typeParams)
+                auto genericFunctionInfo = getGenericFunctionMap().lookup(funcName);
+                // info: it will not take any capture now
+                return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType, false, true, genContext);
+            }
+            else
+            {
+                if (!genContext.allowPartialResolve)
                 {
-                    arrowGenericGenContext.typeAliasMap.insert({typeParam->getName(), getNamedGenericType(typeParam->getName())});
+                    emitError(location) << "can't find generic function: " << funcName;
                 }
 
-                auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(genericFunctionInfo->functionDeclaration, arrowGenericGenContext);
-                if (mlir::failed(result))
-                {
-                    return mlir::Value();
-                }
-
-                return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, true, genContext);
+                return mlir::Value();
             }
         }
 
