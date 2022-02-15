@@ -7775,7 +7775,6 @@ class MLIRGenImpl
 
         // call
         auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, callee, operands);
-
         return callIndirectOp.getResult(0);
     }
 

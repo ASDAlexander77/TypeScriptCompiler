@@ -213,7 +213,8 @@ function main() {
     `Hello ${name}, how are you ${time}?`;
 
     print("String interpolation - tag");
-    let myTag = (str: string[], name: string, age: number) => `${str[0]}${name}${str[1]}${age}${str[2]}`;
+    //let myTag = (str: string[], name: string, age: number) => `${str[0]}${name}${str[1]}${age}${str[2]}`;
+    let myTag = (str: TemplateStringsArray, name: string, age: number) => `${str[0]}${name}${str[1]}${age}${str[2]}`;
     let [name, age] = ['Mika', 28];
     myTag`Participant "${name}" is ${age} years old.`;
     // Participant "Mika" is 28 years old.    
