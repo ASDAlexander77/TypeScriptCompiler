@@ -2118,7 +2118,11 @@ class MLIRGenImpl
                 propertyName = MLIRHelper::getName(objectBindingElement->name);
             }
 
+            LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern: [" << init << "] prop: " << propertyName << "\n");
+
             auto subInit = mlirGenPropertyAccessExpression(location, init, propertyName, false, genContext);
+
+            assert(subInit);
 
             // nested obj, objectBindingElement->propertyName -> name
             if (objectBindingElement->name == SyntaxKind::ObjectBindingPattern)
@@ -2391,6 +2395,43 @@ class MLIRGenImpl
                 LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "\n\n");
 
                 isGenericTypes |= mth.isGenericType(type);
+            }
+            
+            // in case of binding
+            if (isNoneType(type) && isBindingPattern)
+            {
+                MLIRTypeHelper mth(builder.getContext());
+
+                SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
+                // we need to construct object type
+                auto objectBindingPattern = arg->name.as<ObjectBindingPattern>();
+                auto index = 0;
+                for (auto objectBindingElement : objectBindingPattern->elements)
+                {
+                    auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
+                    if (propertyName.empty())
+                    {
+                        propertyName = MLIRHelper::getName(objectBindingElement->name);
+                    }
+
+                    if (objectBindingElement->initializer)
+                    {
+                        auto evalType = evaluate(objectBindingElement->initializer, genContext);
+                        auto widenType = mth.wideStorageType(evalType);
+                        fieldInfos.push_back({mth.TupleFieldName(propertyName), widenType});
+                    }
+                    else
+                    {
+                        emitError(loc(objectBindingElement)) << "can't resolve type for binding pattern '" << propertyName << "', provide default initializer";
+                    }
+
+                    index++;
+                }                
+
+                type = getTupleType(fieldInfos);       
+
+                 LLVM_DEBUG(dbgs() << "\n!! binding param " << namePtr << " is type " << type << "\n\n");     
             }
 
             if (isNoneType(type))
