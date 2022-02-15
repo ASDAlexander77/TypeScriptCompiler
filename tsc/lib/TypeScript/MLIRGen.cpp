@@ -2454,11 +2454,7 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    if (!genContext.allowPartialResolve && !genContext.dummyRun)
-                    {
-                        emitError(loc(typeParameter)) << "can't resolve type for parameter '" << namePtr << "'";
-                    }
-
+                    emitError(loc(typeParameter)) << "can't resolve type for parameter '" << namePtr << "'";
                     return {mlir::failure(), isGenericTypes, params};
                 }
             }
@@ -7749,27 +7745,21 @@ class MLIRGenImpl
 
         auto callee = mlirGen(taggedTemplateExpressionAST->tag, genContext);
 
-        ArrayRef<mlir::Type> inputs;
+        VALIDATE(callee, location)
 
-        // cast all params if needed
-        if (auto hybridFuncType = callee.getType().cast<mlir_ts::HybridFunctionType>())
-        {
-            inputs = hybridFuncType.getInputs();
-        }
-        else if (auto funcType = callee.getType().cast<mlir_ts::FunctionType>())
-        {
-            inputs = funcType.getInputs();
-        }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
+        auto inputs = getParamsFromFuncRef(callee.getType());
 
         SmallVector<mlir::Value, 4> operands;
 
         auto i = 0;
         for (auto value : vals)
         {
+            if (inputs.size() <= i)
+            {
+                emitError(value.getLoc(), "not matching to tag parameters count");
+                return mlir::Value();
+            }
+
             if (value.getType() != inputs[i])
             {
                 auto castValue = cast(value.getLoc(), inputs[i], value, genContext);
@@ -12187,6 +12177,12 @@ genContext);
         {
             auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
             return elemnentType;
+        }
+
+        if (name == "TemplateStringsArray")
+        {
+            // equals ReadonlyArray<string>
+            return getArrayType(getStringType());
         }
 
         // string types
