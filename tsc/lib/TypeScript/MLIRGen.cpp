@@ -12012,21 +12012,50 @@ genContext);
             return specType;
         }
 
-        if (typeReferenceAST->typeArguments->size() > 0)
+        auto typeArgumentsSize = typeReferenceAST->typeArguments->size();
+        if (typeArgumentsSize == 0)
         {
             auto type = getEmbeddedType(name, typeReferenceAST, genContext);
             if (type)
             {
                 return type;
             }
+        }        
+
+        if (typeArgumentsSize == 1)
+        {
+            auto type = getEmbeddedTypeWithParam(name, typeReferenceAST, genContext);
+            if (type)
+            {
+                return type;
+            }
         }
+
+        if (typeArgumentsSize > 1)
+        {
+            auto type = getEmbeddedTypeWithManyParams(name, typeReferenceAST, genContext);
+            if (type)
+            {
+                return type;
+            }
+        }        
 
         return getTypeByTypeName(typeReferenceAST->typeName, genContext);
     }
 
     mlir::Type getEmbeddedType(mlir::StringRef name, TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
+        if (name == "TemplateStringsArray")
+        {
+            // equals ReadonlyArray<string>
+            return getArrayType(getStringType());
+        }
 
+        return mlir::Type();
+    }
+
+    mlir::Type getEmbeddedTypeWithParam(mlir::StringRef name, TypeReferenceNode typeReferenceAST, const GenContext &genContext)
+    {
         // can be utility type
         if (name == "TypeOf")
         {
@@ -12061,20 +12090,6 @@ genContext);
         {
             auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
             return NonNullableTypes(elemnentType);
-        }
-
-        if (name == "Exclude")
-        {
-            auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return ExcludeTypes(firstType, secondType);
-        }
-
-        if (name == "Extract")
-        {
-            auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return ExtractTypes(firstType, secondType);
         }
 
         if (name == "Array")
@@ -12179,12 +12194,6 @@ genContext);
             return elemnentType;
         }
 
-        if (name == "TemplateStringsArray")
-        {
-            // equals ReadonlyArray<string>
-            return getArrayType(getStringType());
-        }
-
         // string types
         if (name == "Uppercase")
         {
@@ -12208,6 +12217,25 @@ genContext);
         {
             auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
             return UncapitalizeType(elemnentType);
+        }
+
+        return mlir::Type();
+    }
+
+    mlir::Type getEmbeddedTypeWithManyParams(mlir::StringRef name, TypeReferenceNode typeReferenceAST, const GenContext &genContext)
+    {
+        if (name == "Exclude")
+        {
+            auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            return ExcludeTypes(firstType, secondType);
+        }
+
+        if (name == "Extract")
+        {
+            auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            return ExtractTypes(firstType, secondType);
         }
 
         return mlir::Type();
