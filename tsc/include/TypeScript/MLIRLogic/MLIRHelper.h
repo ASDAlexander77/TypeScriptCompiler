@@ -96,7 +96,7 @@ class MLIRHelper
 
     static std::string getAnonymousName(mlir::Location loc)
     {
-        return getAnonymousName(loc, "__uf");
+        return getAnonymousName(loc, ".unk");
     }
 
     static void getAnonymousNameStep(std::stringstream &ssName, mlir::Location loc)

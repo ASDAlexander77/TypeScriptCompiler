@@ -1100,6 +1100,9 @@ class MLIRGenImpl
             // it is not generic arrow function
             auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(functionName);
 
+            MLIRNamespaceGuard nsGuard(currentNamespace);
+            currentNamespace = functionGenericTypeInfo->elementNamespace;
+
             return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration,
                                                             recieverType, discoverReturnType, genContext);
         }
@@ -1155,6 +1158,9 @@ class MLIRGenImpl
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
             builder.restoreInsertionPoint(functionBeginPoint);
+
+            MLIRNamespaceGuard nsGuard(currentNamespace);
+            currentNamespace = arrowFunctionGenericTypeInfo->elementNamespace;
 
             auto [result, arrowFuncOp, arrowFuncName, isGeneric] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionGenericTypeInfo->functionDeclaration, arrowFuncGenContext);
@@ -2446,7 +2452,7 @@ class MLIRGenImpl
     std::tuple<std::string, std::string> getNameOfFunction(SignatureDeclarationBase signatureDeclarationBaseAST,
                                                            const GenContext &genContext)
     {
-        std::string fullName = getNameWithArguments(signatureDeclarationBaseAST, genContext);
+        auto name = getNameWithArguments(signatureDeclarationBaseAST, genContext);
         std::string objectOwnerName;
         if (signatureDeclarationBaseAST->parent == SyntaxKind::ClassDeclaration ||
             signatureDeclarationBaseAST->parent == SyntaxKind::ClassExpression)
@@ -2470,27 +2476,27 @@ class MLIRGenImpl
             if (!genContext.thisType.isa<mlir_ts::ObjectType>())
             {
                 // class method name
-                fullName = objectOwnerName + "." + fullName;
+                name = objectOwnerName + "." + name;
             }
             else
             {
-                fullName = "";
+                name = "";
             }
         }
         else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature)
         {
             // class method name
-            fullName = objectOwnerName + "." + fullName;
+            name = objectOwnerName + "." + name;
         }
         else if (signatureDeclarationBaseAST == SyntaxKind::GetAccessor)
         {
             // class method name
-            fullName = objectOwnerName + ".get_" + fullName;
+            name = objectOwnerName + ".get_" + name;
         }
         else if (signatureDeclarationBaseAST == SyntaxKind::SetAccessor)
         {
             // class method name
-            fullName = objectOwnerName + ".set_" + fullName;
+            name = objectOwnerName + ".set_" + name;
         }
         else if (signatureDeclarationBaseAST == SyntaxKind::Constructor)
         {
@@ -2498,32 +2504,15 @@ class MLIRGenImpl
             auto isStatic = hasModifier(signatureDeclarationBaseAST, SyntaxKind::StaticKeyword);
             if (isStatic)
             {
-                fullName = objectOwnerName + "." + STATIC_CONSTRUCTOR_NAME;
+                name = objectOwnerName + "." + STATIC_NAME + "_" + name;
             }
             else
             {
-                fullName = objectOwnerName + "." + CONSTRUCTOR_NAME;
+                name = objectOwnerName + "." + name;
             }
         }
 
-        auto name = fullName;
-        if (fullName.empty())
-        {
-            // auto calculate name
-            name = fullName = MLIRHelper::getAnonymousName(loc_check(signatureDeclarationBaseAST));
-            if (signatureDeclarationBaseAST->typeParameters.size() > 0)
-            {
-                std::string nameTypeArgs;
-                appendSpecializedTypeNames(nameTypeArgs, signatureDeclarationBaseAST->typeParameters, genContext);
-                name.append(nameTypeArgs);
-                fullName.append(nameTypeArgs);
-            }
-        }
-        else
-        {
-            fullName = getFullNamespaceName(fullName).str();
-        }
-
+        auto fullName = getFullNamespaceName(name).str();
         return std::make_tuple(fullName, name);
     }
 
@@ -8179,22 +8168,18 @@ class MLIRGenImpl
         };
 
         auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) {
-            auto funcName = MLIRHelper::getAnonymousName(loc_check(funcLikeDecl));
-
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.thisType = getObjectType(getConstTupleType(fieldInfos));
 
-            auto funcOpWithFuncProto = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
-            auto &funcOp = std::get<0>(funcOpWithFuncProto);
-            auto &funcProto = std::get<1>(funcOpWithFuncProto);
-            auto result = std::get<2>(funcOpWithFuncProto);
+            auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
             if (mlir::failed(result) || !funcOp)
             {
                 return;
             }
 
             // fix this parameter type (taking in account that first type can be captured type)
+            auto funcName = funcOp.getName().str();
             auto funcType = funcOp.getType();
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType: " << funcType << "\n";);
@@ -9434,9 +9419,6 @@ class MLIRGenImpl
         auto name = getNameWithArguments(classDeclarationAST, genContext);
         if (classDeclarationAST == SyntaxKind::ClassExpression)
         {
-            // this is Class Expression
-            name = MLIRHelper::getAnonymousName(loc(classDeclarationAST), ".anoncls");
-
             NodeFactory nf(NodeFactoryFlags::None);
             classDeclarationAST->name = nf.createIdentifier(stows(name));
         }
@@ -10952,6 +10934,30 @@ genContext);
     template <typename T> std::string getNameWithArguments(T declarationAST, const GenContext &genContext)
     {
         auto name = MLIRHelper::getName(declarationAST->name);
+        if (name.size() == 0)
+        {
+            if (declarationAST == SyntaxKind::ArrowFunction)
+            {
+                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".af");
+            }
+            else if (declarationAST == SyntaxKind::FunctionExpression)
+            {
+                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".fe");
+            }
+            else if (declarationAST == SyntaxKind::ClassExpression)
+            {
+                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".ce");
+            }
+            else if (declarationAST == SyntaxKind::Constructor)
+            {
+                name = CONSTRUCTOR_NAME;
+            }
+            else
+            {
+                name = MLIRHelper::getAnonymousName(loc_check(declarationAST));
+            }
+        }
+
         if (name.size() > 0 && genContext.typeParamsWithArgs.size() && declarationAST->typeParameters.size())
         {
             appendSpecializedTypeNames(name, declarationAST->typeParameters, genContext);

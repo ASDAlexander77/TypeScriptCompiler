@@ -14,6 +14,7 @@
 #define THIS_NAME "this"
 #define LTHIS_NAME L"this"
 #define SUPER_NAME "super"
+#define STATIC_NAME "static"
 #define STATIC_CONSTRUCTOR_NAME "static_constructor"
 #define CONSTRUCTOR_NAME "constructor"
 #define CONSTRUCTOR_TEMPVAR_NAME ".ctor"
