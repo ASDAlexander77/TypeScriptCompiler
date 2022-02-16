@@ -8169,18 +8169,6 @@ class MLIRGenImpl
             fieldInfos.push_back({fieldId, type});
         };
 
-        auto getFieldIdForProperty = [&](PropertyAssignment &propertyAssignment) {
-            return TupleFieldName(propertyAssignment->name, genContext);
-        };
-
-        auto getFieldIdForShorthandProperty = [&](ShorthandPropertyAssignment &shorthandPropertyAssignment) {
-            return TupleFieldName(shorthandPropertyAssignment->name, genContext);
-        };
-
-        auto getFieldIdForFunctionLike = [&](FunctionLikeDeclarationBase &funcLikeDecl) {
-            return TupleFieldName(funcLikeDecl->name, genContext);
-        };
-
         auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) {
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
@@ -8249,7 +8237,7 @@ class MLIRGenImpl
 
                 VALIDATE(itemValue, loc(propertyAssignment->initializer))
 
-                fieldId = getFieldIdForProperty(propertyAssignment);
+                fieldId = TupleFieldName(propertyAssignment->name, genContext);
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
@@ -8264,7 +8252,7 @@ class MLIRGenImpl
 
                 VALIDATE(itemValue, loc(shorthandPropertyAssignment->name))
 
-                fieldId = getFieldIdForShorthandProperty(shorthandPropertyAssignment);
+                fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
             }
             else if (item == SyntaxKind::MethodDeclaration)
             {
@@ -8325,7 +8313,7 @@ class MLIRGenImpl
                 }
 
                 auto funcLikeDecl = propertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
-                fieldId = getFieldIdForProperty(propertyAssignment);
+                fieldId = TupleFieldName(propertyAssignment->name, genContext);
                 processFunctionLikeProto(fieldId, funcLikeDecl);
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
@@ -8338,13 +8326,13 @@ class MLIRGenImpl
                 }
 
                 auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
-                fieldId = getFieldIdForShorthandProperty(shorthandPropertyAssignment);
+                fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
                 processFunctionLikeProto(fieldId, funcLikeDecl);
             }
             else if (item == SyntaxKind::MethodDeclaration)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
-                fieldId = getFieldIdForFunctionLike(funcLikeDecl);
+                fieldId = TupleFieldName(funcLikeDecl->name, genContext);
                 processFunctionLikeProto(fieldId, funcLikeDecl);
             }
         }
@@ -9203,29 +9191,33 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(ClassDeclaration classDeclarationAST, const GenContext &genContext)
     {
+        mlir::OpBuilder::InsertionGuard guard(builder);
+        builder.setInsertionPointToStart(&theModule.body().front());
+
         auto value = mlirGen(classDeclarationAST.as<ClassLikeDeclaration>(), genContext);
         return std::get<0>(value);
     }
 
     mlir::Value mlirGen(ClassExpression classExpressionAST, const GenContext &genContext)
     {
+        std::string fullName;
+
         // go to root
-        mlir::OpBuilder::InsertPoint savePoint;
-        savePoint = builder.saveInsertionPoint();
-        builder.setInsertionPointToStart(&theModule.body().front());
-
-        auto value = mlirGen(classExpressionAST.as<ClassLikeDeclaration>(), genContext);
-
-        builder.restoreInsertionPoint(savePoint);
-
-        if (mlir::failed(std::get<0>(value)))
         {
-            return mlir::Value();
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.setInsertionPointToStart(&theModule.body().front());
+
+            auto [result, fullNameRet] = mlirGen(classExpressionAST.as<ClassLikeDeclaration>(), genContext);
+            if (mlir::failed(result))
+            {
+                return mlir::Value();
+            }
+
+            fullName = fullNameRet;
         }
 
         auto location = loc(classExpressionAST);
 
-        auto fullName = std::get<1>(value);
         auto classInfo = getClassInfoByFullName(fullName);
         if (classInfo)
         {
