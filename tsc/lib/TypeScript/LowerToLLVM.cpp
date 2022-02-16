@@ -2541,7 +2541,9 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
         auto createAsGlobalConstructor = false;
         auto visitorAllOps = [&](Operation *op) {
-            if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op) || isa<mlir_ts::CallOp>(op))
+            if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op) ||
+                isa<mlir_ts::SymbolCallInternalOp>(op) || isa<mlir_ts::CallInternalOp>(op) ||
+                isa<mlir_ts::CallHybridInternalOp>(op))
             {
                 createAsGlobalConstructor = true;
             }
@@ -2639,8 +2641,8 @@ struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfC
 {
     using TsLlvmPattern<mlir_ts::AddressOfConstStringOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::AddressOfConstStringOp addressOfConstStringOp, ArrayRef<mlir::Value> operands,
-                                  ConversionPatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::AddressOfConstStringOp addressOfConstStringOp,
+                                  ArrayRef<mlir::Value> operands, ConversionPatternRewriter &rewriter) const final
     {
         Adaptor transformed(operands);
 
@@ -3043,9 +3045,9 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         auto saveCatchFuncName = "ts.internal.save_catch_var";
         auto saveCatchFunc = ch.getOrInsertFunction(
             saveCatchFuncName,
-            th.getFunctionType(th.getVoidType(),
-                               ArrayRef<mlir::Type>{getTypeConverter()->convertType(saveCatchVarOp.exceptionInfo().getType()),
-                                              ptr.getType()}));
+            th.getFunctionType(th.getVoidType(), ArrayRef<mlir::Type>{getTypeConverter()->convertType(
+                                                                          saveCatchVarOp.exceptionInfo().getType()),
+                                                                      ptr.getType()}));
 
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(saveCatchVarOp, saveCatchFunc,
                                                   ValueRange{saveCatchVarOp.exceptionInfo(), ptr});
@@ -3454,8 +3456,8 @@ struct VirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::VirtualSymbolR
 
         TypeHelper th(rewriter);
 
-        auto methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), transformed.vtable(),
-                                                                     virtualSymbolRefOp.index());
+        auto methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(
+            loc, th.getI8PtrType(), transformed.vtable(), virtualSymbolRefOp.index());
 
         if (auto funcType = virtualSymbolRefOp.getType().dyn_cast<mlir_ts::FunctionType>())
         {
@@ -3466,7 +3468,7 @@ struct VirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::VirtualSymbolR
         {
             auto fieldTyped = rewriter.create<mlir_ts::CastOp>(loc, fieldType, methodOrFieldPtr);
             rewriter.replaceOp(virtualSymbolRefOp, ValueRange{fieldTyped});
-        }        
+        }
         else
         {
             llvm_unreachable("not implemented");
@@ -3480,8 +3482,8 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
 {
     using TsLlvmPattern<mlir_ts::ThisVirtualSymbolRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ThisVirtualSymbolRefOp thisVirtualSymbolRefOp, ArrayRef<mlir::Value> operands,
-                                  ConversionPatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::ThisVirtualSymbolRefOp thisVirtualSymbolRefOp,
+                                  ArrayRef<mlir::Value> operands, ConversionPatternRewriter &rewriter) const final
     {
         Adaptor transformed(operands);
 
@@ -3635,8 +3637,8 @@ struct ExtractInterfaceThisOpLowering : public TsLlvmPattern<mlir_ts::ExtractInt
 {
     using TsLlvmPattern<mlir_ts::ExtractInterfaceThisOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ExtractInterfaceThisOp extractInterfaceThisOp, ArrayRef<mlir::Value> operands,
-                                  ConversionPatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::ExtractInterfaceThisOp extractInterfaceThisOp,
+                                  ArrayRef<mlir::Value> operands, ConversionPatternRewriter &rewriter) const final
     {
         Adaptor transformed(operands);
 
@@ -3662,8 +3664,8 @@ struct ExtractInterfaceVTableOpLowering : public TsLlvmPattern<mlir_ts::ExtractI
 {
     using TsLlvmPattern<mlir_ts::ExtractInterfaceVTableOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ExtractInterfaceVTableOp extractInterfaceVTableOp, ArrayRef<mlir::Value> operands,
-                                  ConversionPatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::ExtractInterfaceVTableOp extractInterfaceVTableOp,
+                                  ArrayRef<mlir::Value> operands, ConversionPatternRewriter &rewriter) const final
     {
         Adaptor transformed(operands);
 
@@ -4326,8 +4328,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion(
         [&](mlir_ts::NullType type) { return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)); });
 
-    converter.addConversion(
-        [&](mlir_ts::OpaqueType type) { return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)); });
+    converter.addConversion([&](mlir_ts::OpaqueType type) {
+        return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8));
+    });
 
     converter.addConversion([&](mlir_ts::VoidType type) { return LLVM::LLVMVoidType::get(m.getContext()); });
 
@@ -4356,8 +4359,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return mlir::IntegerType::get(m.getContext(), 64 /*, mlir::IntegerType::SignednessSemantics::Signed*/);
     });
 
-    converter.addConversion(
-        [&](mlir_ts::StringType type) { return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)); });
+    converter.addConversion([&](mlir_ts::StringType type) {
+        return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8));
+    });
 
     converter.addConversion([&](mlir_ts::EnumType type) { return converter.convertType(type.getElementType()); });
 
@@ -4498,8 +4502,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMPointerType::get(converter.convertType(type.getStorageType()));
     });
 
-    converter.addConversion(
-        [&](mlir_ts::UnknownType type) { return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)); });
+    converter.addConversion([&](mlir_ts::UnknownType type) {
+        return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8));
+    });
 
     converter.addConversion([&](mlir_ts::SymbolType type) { return mlir::IntegerType::get(m.getContext(), 32); });
 

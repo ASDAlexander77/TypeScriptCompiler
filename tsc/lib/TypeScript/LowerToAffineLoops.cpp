@@ -20,10 +20,12 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Async/IR/Async.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
+#include "mlir/IR/Dialect.h"
 #include "llvm/Support/Debug.h"
 
 #include "scanner_enums.h"
@@ -1497,7 +1499,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
-// TypeScriptToAffineLoweringPass
+// TypeScriptToAffineLoweringTSFuncPass
 //===----------------------------------------------------------------------===//
 
 /// This is a partial lowering to affine loops of the typescript operations that are
@@ -1506,7 +1508,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
 
 namespace
 {
-struct TypeScriptToAffineLoweringPass : public PassWrapper<TypeScriptToAffineLoweringPass, TypeScriptFunctionPass>
+struct TypeScriptToAffineLoweringTSFuncPass : public PassWrapper<TypeScriptToAffineLoweringTSFuncPass, TypeScriptFunctionPass>
 {
     void getDependentDialects(DialectRegistry &registry) const override
     {
@@ -1529,6 +1531,21 @@ struct TypeScriptToAffineLoweringFuncPass : public PassWrapper<TypeScriptToAffin
     }
 
     void runOnFunction() final;
+
+    TSContext tsContext;
+};
+} // end anonymous namespace.
+
+namespace
+{
+struct TypeScriptToAffineLoweringModulePass : public PassWrapper<TypeScriptToAffineLoweringModulePass, OperationPass<ModuleOp>>
+{
+    void getDependentDialects(DialectRegistry &registry) const override
+    {
+        registry.insert<StandardOpsDialect>();
+    }
+
+    void runOnOperation() final;
 
     TSContext tsContext;
 };
@@ -1626,8 +1643,7 @@ void cleanupEmptyBlocksWithoutPredecessors(mlir_ts::FuncOp f)
     } while (any);
 }
 
-void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, RewritePatternSet &patterns,
-                         TSContext &tsContext, TSFunctionContext &tsFuncContext)
+void AddTsAffineLegalOps(ConversionTarget &target)
 {
     // We define the specific operations, or dialects, that are legal targets for
     // this lowering. In our case, we are lowering to a combination of the
@@ -1659,7 +1675,11 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
         mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp, mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp,
         mlir_ts::BoxOp, mlir_ts::UnboxOp, mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp,
         mlir_ts::GetTypeInfoFromUnionOp, mlir_ts::CreateOptionalOp, mlir_ts::UndefOptionalOp>();
+}
 
+void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, RewritePatternSet &patterns,
+                         TSContext &tsContext, TSFunctionContext &tsFuncContext)
+{
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
 
@@ -1673,7 +1693,7 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
         &context, &tsContext, &tsFuncContext);
 }
 
-void TypeScriptToAffineLoweringPass::runOnFunction()
+void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
 {
     auto function = getFunction();
 
@@ -1696,6 +1716,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     RewritePatternSet patterns(&getContext());
 
     TSFunctionContext tsFuncContext{};
+    AddTsAffineLegalOps(target);
     AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
@@ -1725,6 +1746,7 @@ void TypeScriptToAffineLoweringFuncPass::runOnFunction()
     RewritePatternSet patterns(&getContext());
 
     TSFunctionContext tsFuncContext{};
+    AddTsAffineLegalOps(target);
     AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
 
     // TODO: Hack to fix issue with Async
@@ -1741,14 +1763,48 @@ void TypeScriptToAffineLoweringFuncPass::runOnFunction()
     LLVM_DEBUG(llvm::dbgs() << "\n!! (FUNC) AFTER FUNC DUMP: \n" << function << "\n";);
 }
 
+void TypeScriptToAffineLoweringModulePass::runOnOperation()
+{
+    auto module = getOperation();
+
+    // The first thing to define is the conversion target. This will define the
+    // final target for this lowering.
+    ConversionTarget target(getContext());
+    RewritePatternSet patterns(&getContext());
+
+    TSFunctionContext tsFuncContext{};
+    AddTsAffineLegalOps(target);
+    AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
+
+    // + Global ops
+    target.addLegalOp<ModuleOp>();    
+
+    // TODO: Hack to fix issue with Async
+    target.addLegalOp<mlir::FuncOp>();    
+    target.addLegalDialect<mlir::async::AsyncDialect>();
+
+    // With the target and rewrite patterns defined, we can now attempt the
+    // conversion. The conversion will signal failure if any of our `illegal`
+    // operations were not converted successfully.
+    if (failed(applyFullConversion(module, target, std::move(patterns))))
+    {
+        signalPassFailure();
+    }    
+}
+
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,
 /// for a subset of the TypeScript IR.
-std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffinePass()
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineTSFuncPass()
 {
-    return std::make_unique<TypeScriptToAffineLoweringPass>();
+    return std::make_unique<TypeScriptToAffineLoweringTSFuncPass>();
 }
 
 std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineFuncPass()
 {
     return std::make_unique<TypeScriptToAffineLoweringFuncPass>();
+}
+
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineModulePass()
+{
+    return std::make_unique<TypeScriptToAffineLoweringModulePass>();
 }
