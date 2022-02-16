@@ -55,6 +55,7 @@
 #endif
 
 #define ENABLE_OPT_PASSES 1
+#define AFFINE_MODULE_PASS 1
 
 using namespace typescript;
 namespace cl = llvm::cl;
@@ -218,6 +219,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         pm.addPass(mlir::createAsyncToAsyncRuntimePass());
 #endif
 
+#ifndef AFFINE_MODULE_PASS
         mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
 
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
@@ -233,6 +235,13 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
 
         pm.addPass(mlir::typescript::createLowerToAffineModulePass());
         pm.addPass(mlir::createCanonicalizerPass());
+#else        
+        pm.addPass(mlir::typescript::createLowerToAffineModulePass());
+        pm.addPass(mlir::createCanonicalizerPass());
+
+        mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
+        optPM.addPass(mlir::typescript::createRelocateConstantPass());
+#endif
 
 #ifdef ENABLE_OPT_PASSES
         if (enableOpt)
