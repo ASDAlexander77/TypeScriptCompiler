@@ -386,7 +386,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 //
                 llvm_unreachable("ConstArrayType must not be used in array, use normal ArrayType (the same way as StringType)");
             }
-            else if (auto constTupleType = originalElementType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            else if (auto tupleType = originalElementType.dyn_cast_or_null<mlir_ts::TupleType>())
             {
                 seekLast(parentModule.getBody());
 
@@ -398,16 +398,23 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
 
+                MLIRTypeHelper mth(rewriter.getContext());
+
                 auto position = 0;
                 for (auto item : arrayAttr.getValue())
                 {
-                    auto tupleVal = getTupleFromArrayAttr(loc, constTupleType, llvmElementType.cast<LLVM::LLVMStructType>(),
+                    auto tupleVal = getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(tupleType).cast<mlir_ts::ConstTupleType>(), llvmElementType.cast<LLVM::LLVMStructType>(),
                                                           item.dyn_cast_or_null<ArrayAttr>());
                     arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, rewriter.getI64ArrayAttr(position++));
                 }
 
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
             }
+            else if (originalElementType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                //
+                llvm_unreachable("ConstTupleType must not be used in array, use normal TupleType (the same way as StringType)");
+            }            
             else
             {
                 LLVM_DEBUG(llvm::dbgs() << "type: "; originalElementType.dump(); llvm::dbgs() << "\n";);
