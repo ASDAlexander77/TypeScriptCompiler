@@ -2,21 +2,19 @@ function foo(x = class { static prop: string }): string {
     return x.prop;
 }
 
-function foo2(x = class { static prop: string; static func(); }) 
-{
+function foo2(x = class { static prop: string; static func(); }) {
     x.func();
 }
 
 function main() {
-    assert(foo(class { static prop = "hello" }).length ==  5);
+    assert(foo(class { static prop = "hello" }).length == 5);
 
-    foo2(class { 
-		static prop = "asdasd";
-		static func() 
-		{ 
-			print("Hello World 2", this.prop); 
-		} 
-	});
+    foo2(class {
+        static prop = "asdasd";
+        static func() {
+            print("Hello World 2", this.prop);
+        }
+    });
 
     main2();
 

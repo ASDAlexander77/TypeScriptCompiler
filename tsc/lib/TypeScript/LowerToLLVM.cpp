@@ -2541,7 +2541,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
         auto createAsGlobalConstructor = false;
         auto visitorAllOps = [&](Operation *op) {
-            if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op))
+            if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op) || isa<mlir_ts::CallOp>(op))
             {
                 createAsGlobalConstructor = true;
             }

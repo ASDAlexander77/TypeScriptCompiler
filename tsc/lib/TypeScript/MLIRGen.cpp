@@ -7573,8 +7573,7 @@ class MLIRGenImpl
         // 3 cases, name, index access, method call
         mlir::Type type;
         auto typeExpression = newExpression->expression;
-        if (typeExpression == SyntaxKind::Identifier || typeExpression == SyntaxKind::QualifiedName ||
-            typeExpression == SyntaxKind::PropertyAccessExpression || typeExpression == SyntaxKind::ThisKeyword)
+        if (typeExpression != SyntaxKind::ElementAccessExpression)
         {
             auto value = mlirGen(typeExpression, newExpression->typeArguments, genContext);
 
@@ -7585,7 +7584,7 @@ class MLIRGenImpl
 
             return NewClassInstance(location, value, newExpression->arguments, suppressConstructorCall, genContext);
         }
-        else if (typeExpression == SyntaxKind::ElementAccessExpression)
+        else
         {
             auto elementAccessExpression = typeExpression.as<ElementAccessExpression>();
             typeExpression = elementAccessExpression->expression;
@@ -7603,10 +7602,6 @@ class MLIRGenImpl
 
             auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(type), count);
             return newArrOp;
-        }
-        else
-        {
-            llvm_unreachable("not implemented");
         }
     }
 
