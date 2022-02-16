@@ -13220,6 +13220,7 @@ genContext);
             {
                 if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
                 {
+                    allTupleTypesConst = false;
                     for (auto field : tupleType.getFields())
                     {
                         typesForNewTuple.push_back(field);

@@ -184,6 +184,7 @@ class MLIRTypeHelper
         {
             actualType = stripLiteralType(actualType);
             actualType = convertConstArrayTypeToArrayType(actualType);
+            actualType = convertConstTupleTypeToTupleType(actualType);
         }
 
         return actualType;

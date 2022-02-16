@@ -588,17 +588,21 @@ class CastLogicHelper
         }
 
         auto results = rewriter.create<mlir_ts::DeconstructTupleOp>(loc, types, in);
+        auto resultsCount = results.getNumResults();
         mlir::SmallVector<mlir::Value> mappedValues;
 
         auto addByIndex = [&](auto dstIndex, auto destField) {
-            mlir::Value srcValue = results.getResults()[dstIndex];
-            if (srcValue.getType() != destField.type)
+            if (resultsCount > (unsigned) dstIndex)
             {
-                srcValue = cast(srcValue, srcValue.getType(), tch.convertType(srcValue.getType()), destField.type,
-                                tch.convertType(destField.type));
-            }
+                mlir::Value srcValue = results.getResults()[dstIndex];
+                if (srcValue.getType() != destField.type)
+                {
+                    srcValue = cast(srcValue, srcValue.getType(), tch.convertType(srcValue.getType()), destField.type,
+                                    tch.convertType(destField.type));
+                }
 
-            mappedValues.push_back(srcValue);
+                mappedValues.push_back(srcValue);
+            }
         };
 
         // map values

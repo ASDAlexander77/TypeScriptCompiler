@@ -6,7 +6,7 @@ if not "%1"=="" (
 
 set p=%cd%
 
-IF EXIST ".\3rdParty\llvm\%BUILD%\bin" (
+IF EXIST ".\3rdParty\llvm\%BUILD%\bin_" (
   echo "No need to build LLVM (%BUILD%)"
 ) ELSE (
   cd %p%
@@ -21,7 +21,7 @@ IF EXIST ".\3rdParty\llvm\%BUILD%\bin" (
   @call scripts\build_llvm_%BUILD%.bat
 )
 
-IF EXIST ".\3rdParty\gc\%BUILD%\gc-lib.lib" (
+IF EXIST ".\3rdParty\gc\%BUILD%\gc-lib.lib_" (
   echo "No need to build GC (%BUILD%)"
 ) ELSE (
   cd %p%
