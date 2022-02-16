@@ -1,8 +1,13 @@
-function foo(x = class { static prop: string }): string {
-    return undefined;
+function getPointFactory(x: number, y: number) {
+    class P {
+        x = x;
+        y = y;
+    }
+
+    return P;
 }
 
-function main()
-{
-  foo(class { static prop = "hello" }).length;
+function main() {
+    const PointZero = getPointFactory(0, 0);
+    const PointOne = getPointFactory(1, 1);
 }
