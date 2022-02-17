@@ -5304,8 +5304,7 @@ class MLIRGenImpl
             nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(stows(methodName.str()))), typeArguments,
             arguments);
 
-        auto callInstanceOfValue = mlirGen(callLogic, genContext);
-        return callInstanceOfValue;
+        return mlirGen(callLogic, genContext);
     }
 
     mlir::Value mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
@@ -5315,8 +5314,30 @@ class MLIRGenImpl
         MLIRTypeHelper mth(builder.getContext());
 
         auto result = mlirGen(binaryExpressionAST->left, genContext);
-        auto resultType = mth.wideStorageType(result.getType());
-        auto type = mth.wideStorageType(getTypeByTypeName(binaryExpressionAST->right, genContext));
+
+        VALIDATE(result, location);
+
+        auto resultType = result.getType();
+        if (auto refType = resultType.dyn_cast<mlir_ts::RefType>())
+        {
+            resultType = refType.getElementType();
+        }
+
+        resultType = mth.wideStorageType(resultType);
+
+        // TODO: should it be mlirGen?
+        auto type = getTypeByTypeName(binaryExpressionAST->right, genContext);
+        if (isNoneType(type))
+        {
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(location, "type of instanceOf can't be resolved.");
+            }
+
+            return mlir::Value();
+        }
+
+        type = mth.wideStorageType(type);
 
 #ifdef ENABLE_RTTI
         if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
@@ -5382,6 +5403,8 @@ class MLIRGenImpl
             }
         }
 #endif
+
+        LLVM_DEBUG(llvm::dbgs() << "!! instanceOf precalc value: " << (resultType == type) << " '" << resultType << "' is '" << type << "'\n";);
 
         // default logic
         return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type));
