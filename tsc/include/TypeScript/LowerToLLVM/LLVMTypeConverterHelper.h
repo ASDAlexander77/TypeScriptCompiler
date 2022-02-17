@@ -41,6 +41,12 @@ class LLVMTypeConverterHelper
     {
         llvm::LLVMContext llvmContext;
         LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(llvmContext);
+
+        if (llvmType == LLVM::LLVMVoidType::get(llvmType.getContext()))
+        {
+            return 0;
+        }
+
         auto type = typeToLLVMIRTranslator.translateType(llvmType);
         return typeConverter.getDataLayout().getTypeAllocSize(type);
     }

@@ -1049,6 +1049,33 @@ class MLIRGenImpl
                 return;
             }
         }
+
+        // union -> union
+        if (auto tempUnionType = currentTemplateType.dyn_cast<mlir_ts::UnionType>())
+        {
+            if (auto typeUnionType = concreteType.dyn_cast<mlir_ts::UnionType>())
+            {
+                auto types = typeUnionType.getTypes();
+                if (types.size() != tempUnionType.getTypes().size())
+                {
+                    return;
+                }
+                
+                auto index = -1;
+                for (auto tempSubType: tempUnionType.getTypes())
+                {
+                    index++;
+                    auto typeSubType = types[index];
+
+                    currentTemplateType = tempSubType;
+                    currentType = typeSubType;
+                    inferType(currentTemplateType, currentType, results);
+                }
+
+                return;
+            }
+        }
+
     }
 
     void inferTypeFuncType(mlir::ArrayRef<mlir::Type> tempfuncType, mlir::ArrayRef<mlir::Type> funcType,
@@ -4077,8 +4104,6 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(IfStatement ifStatementAST, const GenContext &genContext)
     {
-        SymbolTableScopeT varScope(symbolTable);
-
         auto location = loc(ifStatementAST);
 
         auto hasElse = !!ifStatementAST->elseStatement;
@@ -4095,8 +4120,11 @@ class MLIRGenImpl
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, condValue, hasElse);
 
-        // check if we do safe-cast here
-        checkSafeCast(ifStatementAST->expression, genContext);
+        {
+            // check if we do safe-cast here
+            SymbolTableScopeT varScope(symbolTable);
+            checkSafeCast(ifStatementAST->expression, genContext);
+        }
 
         builder.setInsertionPointToStart(&ifOp.thenRegion().front());
         mlirGen(ifStatementAST->thenStatement, genContext);
@@ -5063,8 +5091,17 @@ class MLIRGenImpl
         // detect value type
         // TODO: sync types for 'when' and 'else'
         MLIRTypeHelper mth(builder.getContext());
-        auto resultWhenTrueType = evaluate(conditionalExpressionAST->whenTrue, genContext);
+
         auto resultWhenFalseType = evaluate(conditionalExpressionAST->whenFalse, genContext);
+
+        mlir::Type resultWhenTrueType;
+        {
+            // check if we do safe-cast here
+            SymbolTableScopeT varScope(symbolTable);
+            checkSafeCast(conditionalExpressionAST->condition, genContext);
+            resultWhenTrueType = evaluate(conditionalExpressionAST->whenTrue, genContext);
+        }
+
         auto defaultUnionType = getUnionType(resultWhenTrueType, resultWhenFalseType);
         auto resultType = mth.findBaseType(resultWhenTrueType, resultWhenFalseType, defaultUnionType);
 
@@ -5088,7 +5125,14 @@ class MLIRGenImpl
 
         builder.setInsertionPointToStart(&ifOp.thenRegion().front());
         auto whenTrueExpression = conditionalExpressionAST->whenTrue;
-        auto resultTrue = mlirGen(whenTrueExpression, genContext);
+
+        mlir::Value resultTrue;
+        {
+            // check if we do safe-cast here
+            SymbolTableScopeT varScope(symbolTable);
+            checkSafeCast(conditionalExpressionAST->condition, genContext);
+            resultTrue = mlirGen(whenTrueExpression, genContext);
+        }
 
         VALIDATE(resultTrue, location);
 
