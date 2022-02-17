@@ -540,12 +540,12 @@ class MLIRGenImpl
         llvm_unreachable("unknown body type");
     }
 
-    mlir::LogicalResult mlirGen(ModuleBlock moduleBlockAST, const GenContext &genContext)
+    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
         // clear up state
-        for (auto &statement : moduleBlockAST->statements)
+        for (auto &statement : statements)
         {
             statement->processed = false;
         }
@@ -553,9 +553,11 @@ class MLIRGenImpl
         auto notResolved = 0;
         do
         {
+            auto noErrorLocation = true;
+            mlir::Location errorLocation = mlir::UnknownLoc::get(builder.getContext());
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
-            for (auto &statement : moduleBlockAST->statements)
+            for (auto &statement : statements)
             {
                 if (statement->processed)
                 {
@@ -564,6 +566,12 @@ class MLIRGenImpl
 
                 if (failed(mlirGen(statement, genContext)))
                 {
+                    if (noErrorLocation)
+                    {
+                        errorLocation = loc(statement);
+                        noErrorLocation = false;
+                    }
+
                     notResolved++;
                 }
                 else
@@ -576,12 +584,17 @@ class MLIRGenImpl
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
                 // class can depends on other class declarations
-                theModule.emitError("can't resolve dependencies in namespace");
+                emitError(errorLocation, "can't resolve dependencies in namespace");
                 return mlir::failure();
             }
         } while (notResolved > 0);
 
-        return mlir::success();
+        return mlir::success();        
+    }
+
+    mlir::LogicalResult mlirGen(ModuleBlock moduleBlockAST, const GenContext &genContext)
+    {
+        return mlirGen(moduleBlockAST->statements, genContext);
     }
 
     mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
