@@ -244,6 +244,8 @@ template <typename OUT> class Printer
             forEachChildPrint(functionLikeDeclarationBase->exclamationToken);
             forEachChildrenPrint(functionLikeDeclarationBase->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(functionLikeDeclarationBase->parameters, "(", ", ", ")");
+            if (functionLikeDeclarationBase->type)
+                out << " : ";
             forEachChildPrint(functionLikeDeclarationBase->type);
             if (kind == SyntaxKind::ArrowFunction)
                 forEachChildPrint(node.as<ArrowFunction>()->equalsGreaterThanToken);
@@ -1103,6 +1105,8 @@ template <typename OUT> class Printer
         case SyntaxKind::TrueKeyword:
         case SyntaxKind::FalseKeyword:
         case SyntaxKind::NullKeyword:
+        case SyntaxKind::StringKeyword:
+        case SyntaxKind::NumberKeyword:
         case SyntaxKind::ThisKeyword: {
             out << Scanner::tokenStrings[node->_kind];
             break;

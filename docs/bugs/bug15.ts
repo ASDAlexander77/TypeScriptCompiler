@@ -1,27 +1,96 @@
-function main() {
-    let a: string | undefined
-    let b: string | undefined
-    let c: string | undefined
+abstract class AbstractClass {
+    constructor(str: string, other: AbstractClass) {
+        this.method(parseInt(str));
+        let val = this.prop.toLowerCase();
 
-    let d: number | undefined
-    let e: number | undefined
-    let f: number | undefined
+        if (!str) {
+            this.prop = "Hello World";
+        }
+        this.cb(str);
 
-    let g: 0 | 1 | 42
-    let h: 0 | 1 | 42
-    let i: 0 | 1 | 42
+        // OK, reference is inside function
+        const innerFunction = () => {
+            return this.prop;
+        }
 
+        // OK, references are to another instance
+        other.cb(other.prop);
+    }
 
-    a &&= "foo"
-    b ||= "foo"
-    c ??= "foo"
+    abstract prop: string;
+    abstract cb: (s: string) => void;
 
+    abstract method(num: number): void;
 
-    d &&= 42
-    e ||= 42
-    f ??= 42
+    other = this.prop;
+    fn = () => this.prop;
 
-    g &&= 42
-    h ||= 42
-    i ??= 42
+    method2() {
+        this.prop = this.prop + "!";
+    }
+}
+
+abstract class DerivedAbstractClass extends AbstractClass {
+    cb = (s: string) => {};
+
+    constructor(str: string, other: AbstractClass, yetAnother: DerivedAbstractClass) {
+        super(str, other);
+        // there is no implementation of 'prop' in any base class
+        this.cb(this.prop.toLowerCase());
+
+        this.method(1);
+
+        // OK, references are to another instance
+        other.cb(other.prop);
+        yetAnother.cb(yetAnother.prop);
+    }
+}
+
+class Implementation extends DerivedAbstractClass {
+    prop = "";
+    cb = (s: string) => {};
+
+    constructor(str: string, other: AbstractClass, yetAnother: DerivedAbstractClass) {
+        super(str, other, yetAnother);
+        this.cb(this.prop);
+    }
+
+    method(n: number) {
+        this.cb(this.prop + n);
+    }
+}
+
+class User {
+    constructor(a: AbstractClass) {
+        a.prop;
+        a.cb("hi");
+        a.method(12);
+        a.method2();
+    }
+}
+
+abstract class C1 {
+    abstract x: string;
+    abstract y: string;
+
+    constructor() {
+        let self = this;                // ok
+        let { x, y: y1 } = this;        // error
+        ({ x, y: y1, "y": y1 } = this); // error
+    }
+}
+
+class C2 {
+    x: string;
+    y: string;
+
+    constructor() {
+        let self = this;                // ok
+        let { x, y: y1 } = this;        // ok
+        ({ x, y: y1, "y": y1 } = this); // ok
+    }
+}
+
+function main()
+{
 }

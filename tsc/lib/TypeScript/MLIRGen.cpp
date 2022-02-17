@@ -3028,7 +3028,7 @@ class MLIRGenImpl
             functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
             functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
-        LLVM_DEBUG(printDebug(funcOp););
+        //LLVM_DEBUG(printDebug(funcOp););
 
         auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
         return genFuncOp;

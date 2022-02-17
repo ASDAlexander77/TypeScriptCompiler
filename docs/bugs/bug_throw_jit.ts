@@ -1,4 +1,4 @@
-type int = 1;
+type int = TypeOf<1>;
 function main1() {
     print("try/catch 1");
 
