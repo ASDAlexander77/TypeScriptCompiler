@@ -221,12 +221,9 @@ class MLIRGenImpl
 
         for (auto includeFile : this->includeFiles)
         {
-            for (auto &statement : includeFile->statements)
+            if (failed(mlirGen(includeFile->statements, genContextPartial)))
             {
-                if (failed(mlirGen(statement, genContextPartial)))
-                {
-                    return mlir::failure();
-                }
+                return mlir::failure();
             }
         }
 
@@ -330,21 +327,15 @@ class MLIRGenImpl
 
         for (auto includeFile : this->includeFiles)
         {
-            for (auto &statement : includeFile->statements)
-            {
-                if (failed(mlirGen(statement, genContext)))
-                {
-                    return mlir::failure();
-                }
-            }
-        }
-
-        for (auto &statement : module->statements)
-        {
-            if (failed(mlirGen(statement, genContext)))
+            if (failed(mlirGen(includeFile->statements, genContext)))
             {
                 return mlir::failure();
             }
+        }
+
+        if (failed(mlirGen(module->statements, genContext)))
+        {
+            return mlir::failure();
         }
 
         if (hasErrorMessages)
