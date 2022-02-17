@@ -11728,6 +11728,7 @@ genContext);
         }
         else if (kind == SyntaxKind::TypePredicate)
         {
+            // TODO:
             // in runtime it is boolean (it is needed to track types)
             return getBooleanType();
         }
