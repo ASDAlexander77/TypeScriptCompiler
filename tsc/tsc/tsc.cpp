@@ -55,7 +55,8 @@
 #endif
 
 #define ENABLE_OPT_PASSES 1
-#define AFFINE_MODULE_PASS 1
+// TODO: if you uncomment it you will have exception in test 00try_finally.ts error: empty block: expect at least a terminator
+//#define AFFINE_MODULE_PASS 1
 
 using namespace typescript;
 namespace cl = llvm::cl;
