@@ -152,7 +152,11 @@ template <typename OUT> class Printer
             forEachChildPrint(propertyDeclaration->name);
             forEachChildPrint(propertyDeclaration->questionToken);
             forEachChildPrint(propertyDeclaration->exclamationToken);
+            if (propertyDeclaration->type)
+                out << " : ";
             forEachChildPrint(propertyDeclaration->type);
+            if (propertyDeclaration->type)
+                out << " = ";
             forEachChildPrint(propertyDeclaration->initializer);
             break;
         }
@@ -172,6 +176,8 @@ template <typename OUT> class Printer
             auto propertyAssignment = node.as<PropertyAssignment>();
             forEachChildPrint(propertyAssignment->name);
             forEachChildPrint(propertyAssignment->questionToken);
+            if (propertyAssignment->initializer)
+                out << ": ";
             forEachChildPrint(propertyAssignment->initializer);
             break;
         }
@@ -336,19 +342,27 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::ObjectBindingPattern: {
-            forEachChildrenPrint(node.as<ObjectBindingPattern>()->elements);
+            out << "{";
+            forEachChildrenPrint(node.as<ObjectBindingPattern>()->elements, " ", ", ", " ", true);
+            out << "}";
             break;
         }
         case SyntaxKind::ArrayBindingPattern: {
-            forEachChildrenPrint(node.as<ArrayBindingPattern>()->elements);
+            out << "[";
+            forEachChildrenPrint(node.as<ArrayBindingPattern>()->elements, " ", ", ", " ", true);
+            out << "]";
             break;
         }
         case SyntaxKind::ArrayLiteralExpression: {
-            forEachChildrenPrint(node.as<ArrayLiteralExpression>()->elements);
+            out << "[";
+            forEachChildrenPrint(node.as<ArrayLiteralExpression>()->elements, " ", ", ", " ", true);
+            out << "]";
             break;
         }
         case SyntaxKind::ObjectLiteralExpression: {
-            forEachChildrenPrint(node.as<ObjectLiteralExpression>()->properties);
+            out << "{";
+            forEachChildrenPrint(node.as<ObjectLiteralExpression>()->properties, " ", ", ", " ", true);
+            out << "}";
             break;
         }
         case SyntaxKind::PropertyAccessExpression: {
@@ -424,7 +438,9 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::PrefixUnaryExpression: {
-            forEachChildPrint(node.as<PrefixUnaryExpression>()->operand);
+            auto prefixUnaryExpression = node.as<PrefixUnaryExpression>();
+            out << Scanner::tokenStrings[prefixUnaryExpression->_operator];
+            forEachChildPrint(prefixUnaryExpression->operand);
             break;
         }
         case SyntaxKind::YieldExpression: {
@@ -440,7 +456,9 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::PostfixUnaryExpression: {
-            forEachChildPrint(node.as<PostfixUnaryExpression>()->operand);
+            auto postfixUnaryExpression = node.as<PostfixUnaryExpression>();
+            forEachChildPrint(postfixUnaryExpression->operand);
+            out << Scanner::tokenStrings[postfixUnaryExpression->_operator];
             break;
         }
         case SyntaxKind::BinaryExpression: {
@@ -850,7 +868,9 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::ComputedPropertyName: {
+            out << "[";
             forEachChildPrint(node.as<ComputedPropertyName>()->expression);
+            out << "]";
             break;
         }
         case SyntaxKind::HeritageClause: {
@@ -1082,14 +1102,22 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::TrueKeyword:
         case SyntaxKind::FalseKeyword:
-        case SyntaxKind::NullKeyword: {
+        case SyntaxKind::NullKeyword:
+        case SyntaxKind::ThisKeyword: {
             out << Scanner::tokenStrings[node->_kind];
             break;
         }
         case SyntaxKind::EqualsToken:
         case SyntaxKind::EqualsEqualsToken:
         case SyntaxKind::EqualsGreaterThanToken:
-        case SyntaxKind::PlusToken: {
+        case SyntaxKind::LessThanToken:
+        case SyntaxKind::LessThanEqualsToken:
+        case SyntaxKind::GreaterThanToken:
+        case SyntaxKind::GreaterThanEqualsToken:
+        case SyntaxKind::PlusToken:
+        case SyntaxKind::PlusPlusToken:
+        case SyntaxKind::MinusToken:
+        case SyntaxKind::MinusMinusToken: {
             out << " " << Scanner::tokenStrings[node->_kind] << " ";
             break;
         }

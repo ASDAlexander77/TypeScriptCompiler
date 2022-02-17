@@ -3028,6 +3028,8 @@ class MLIRGenImpl
             functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
             functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
+        LLVM_DEBUG(printDebug(funcOp););
+
         auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
         return genFuncOp;
     }
@@ -6036,7 +6038,18 @@ class MLIRGenImpl
                 auto castedValue = builder.create<mlir_ts::CastOp>(location, elementType, objectValue);
                 value = mlirGenPropertyAccessExpression(location, castedValue, name, false, genContext);
             })
-            .Default([](auto type) {});
+            .Default([](auto type) {                
+            });
+
+        // extention logic: <obj>.<functionName>(this)
+        if (!value)
+        {
+            auto funcRef = extensionFunction(location, objectValue, name, genContext);
+            if (funcRef)
+            {
+                return funcRef;
+            }
+        }
 
         if (value || genContext.allowPartialResolve)
         {
@@ -6046,6 +6059,25 @@ class MLIRGenImpl
         emitError(location, "Can't resolve property name '") << name << "' of type " << objectValue.getType();
 
         llvm_unreachable("not implemented");
+    }
+
+    mlir::Value extensionFunction(mlir::Location location, mlir::Value thisValue, StringRef name, const GenContext &genContext)
+    {
+        auto funcRef = resolveIdentifier(location, name, genContext);
+        if (funcRef)
+        {
+            auto thisTypeFromFunc = getFirstParamFromFuncRef(funcRef.getType());
+            if (thisTypeFromFunc == thisValue.getType())
+            {
+                LLVM_DEBUG(llvm::dbgs() << "!! found extension for type: " << thisValue.getType() << " function: " << name << ", value: " << funcRef << "\n";);
+                //return funcRef;
+                auto thisRef = thisValue;
+                auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcRef.getType().cast<mlir_ts::FunctionType>()), thisRef, funcRef);
+                return boundFuncVal;
+            }
+        }
+
+        return mlir::Value();
     }
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, mlir::StringRef classFullName,
