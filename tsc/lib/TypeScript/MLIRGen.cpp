@@ -5229,7 +5229,16 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
         builder.setInsertionPointToStart(&ifOp.elseRegion().front());
-        auto resultFalse = andOp ? leftExpressionValue : mlirGen(rightExpression, genContext);
+        mlir::Value resultFalse;
+        if (andOp) 
+        {
+            resultFalse = leftExpressionValue;
+        }
+        else
+        { 
+            auto result = mlirGen(rightExpression, genContext);
+            resultFalse = V(result);
+        }
 
         if (!andOp)
         {
@@ -5252,7 +5261,7 @@ class MLIRGenImpl
             return mlirGenSaveLogicOneItem(location, leftExpressionValue, resultFirst, genContext);
         }
 
-        return result;
+        return resultFirst;
     }
 
     ValueOrLogicalResult mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
