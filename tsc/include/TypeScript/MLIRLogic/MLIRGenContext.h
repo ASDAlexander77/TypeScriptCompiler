@@ -836,6 +836,38 @@ struct NamespaceInfo
     NamespaceInfo::TypePtr parentNamespace;
 };
 
+struct ValueOrLogicalResult 
+{
+    ValueOrLogicalResult() = default;
+    ValueOrLogicalResult(mlir::LogicalResult result) : result(result) {};
+    ValueOrLogicalResult(mlir::Value value) : result(mlir::success()), value(value) {};
+
+    mlir::LogicalResult result;
+    mlir::Value value;
+
+    operator bool()
+    {
+        if (mlir::failed(result))
+        {
+            return false;
+        }
+
+        return mlir::succeeded(result) || !!value;
+    }
+
+    operator mlir::LogicalResult()
+    {
+        return result;
+    } 
+
+    operator mlir::Value()
+    {
+        return value;
+    }    
+};
+
+#define V(x) static_cast<mlir::Value>(x)
+
 } // namespace
 
 #endif // MLIR_TYPESCRIPT_MLIRGENCONTEXT_H_
