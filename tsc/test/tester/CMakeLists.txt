@@ -241,6 +241,7 @@ add_test(NAME test-compile-Raytrace COMMAND test-runner "${PROJECT_SOURCE_DIR}/t
 add_test(NAME test-compile-Path COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/path.ts")
 add_test(NAME test-compile-Print-Bug-01 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01print-bug.ts")
 add_test(NAME test-compile-Abstract-Property-In-Constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/abstractPropertyInConstructor.ts")
+add_test(NAME test-compile-Dependencies COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/dependencies.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -417,3 +418,4 @@ add_test(NAME test-jit-Raytrace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/
 add_test(NAME test-jit-Path COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/path.ts")
 add_test(NAME test-jit-Print-Bug-01 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01print-bug.ts")
 add_test(NAME test-jit-Abstract-Property-In-Constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/abstractPropertyInConstructor.ts")
+add_test(NAME test-jit-Dependencies COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/dependencies.ts")
