@@ -93,14 +93,14 @@ class MLIRGenImpl
 {
   public:
     MLIRGenImpl(const mlir::MLIRContext &context, CompileOptions compileOptions)
-        : hasErrorMessages(false), builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
     {
         fileName = "<unknown>";
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
     MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam, CompileOptions compileOptions)
-        : hasErrorMessages(false), builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
     {
         fileName = fileNameParam;
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
@@ -171,8 +171,7 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
 
-        if (mlir::succeeded(mlirDiscoverAllDependencies(module)) &&
-            mlir::succeeded(mlirCodeGenModuleWithDiagnostics(module)))
+        if (mlir::succeeded(mlirDiscoverAllDependencies(module)) && mlir::succeeded(mlirCodeGenModule(module)))
         {
             return theModule;
         }
@@ -193,63 +192,33 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirDiscoverAllDependencies(SourceFile module)
+    int processStatements(NodeArray<Statement> statements,
+                          mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
+                          const GenContext &genContext)
     {
-        mlir::SmallVector<mlir::Diagnostic *> postponedMessages;
-        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
-            // suppress all
-            if (diag.getSeverity() == mlir::DiagnosticSeverity::Error)
-            {
-                hasErrorMessages = true;
-            }
-
-            postponedMessages.push_back(new mlir::Diagnostic(std::move(diag)));
-        });
-
-        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(
-            fullNameGlobalsMap);
-
-        // Process of discovery here
-        GenContext genContextPartial{};
-        genContextPartial.allowPartialResolve = true;
-        genContextPartial.dummyRun = true;
-        genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
-        genContextPartial.unresolved = new mlir::SmallVector<std::pair<mlir::Location, std::string>>();
-
-        for (auto includeFile : this->includeFiles)
-        {
-            if (failed(mlirGen(includeFile->statements, false, genContextPartial)))
-            {
-                return mlir::failure();
-            }
-        }
-
         auto notResolved = 0;
         do
         {
             // clear previous errors
-            hasErrorMessages = false;
-            for (auto diag : postponedMessages)
-            {
-                delete diag;
-            }
-
             postponedMessages.clear();
-            genContextPartial.unresolved->clear();
+            if (genContext.unresolved)
+            {
+                genContext.unresolved->clear();
+            }
 
             // main cycles
             auto noErrorLocation = true;
             mlir::Location errorLocation = mlir::UnknownLoc::get(builder.getContext());
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
-            for (auto &statement : module->statements)
+            for (auto &statement : statements)
             {
                 if (statement->processed)
                 {
                     continue;
                 }
 
-                if (failed(mlirGen(statement, genContextPartial)))
+                if (failed(mlirGen(statement, genContext)))
                 {
                     notResolved++;
                     if (noErrorLocation)
@@ -266,12 +235,12 @@ class MLIRGenImpl
 
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                if (genContextPartial.unresolved->size() == 0)
+                if (genContext.unresolved->size() == 0)
                 {
                     emitError(errorLocation, "can't resolve dependencies");
                 }
 
-                for (auto unresolvedRef : *genContextPartial.unresolved)
+                for (auto unresolvedRef : *genContext.unresolved)
                 {
                     emitError(std::get<0>(unresolvedRef), "can't resolve reference: ") << std::get<1>(unresolvedRef);
                 }
@@ -280,6 +249,60 @@ class MLIRGenImpl
             }
 
         } while (notResolved > 0);
+
+        return notResolved;
+    }
+
+    mlir::LogicalResult outputDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
+                                          int notResolved)
+    {
+        // print errors
+        if (notResolved)
+        {
+            for (auto &diag : postponedMessages)
+            {
+                // we show messages when they metter
+                publishDiagnostic(*diag.get());
+            }
+        }
+
+        postponedMessages.clear();
+
+        // we return error when we can't generate code
+        if (notResolved)
+        {
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirDiscoverAllDependencies(SourceFile module)
+    {
+        mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+            postponedMessages.emplace_back(new mlir::Diagnostic(std::move(diag)));
+        });
+
+        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(
+            fullNameGlobalsMap);
+
+        // Process of discovery here
+        GenContext genContextPartial{};
+        genContextPartial.allowPartialResolve = true;
+        genContextPartial.dummyRun = true;
+        genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
+        genContextPartial.unresolved = new mlir::SmallVector<std::pair<mlir::Location, std::string>>();
+
+        for (auto includeFile : this->includeFiles)
+        {
+            if (failed(mlirGen(includeFile->statements, genContextPartial)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        auto notResolved = processStatements(module->statements, postponedMessages, genContextPartial);
 
         genContextPartial.clean();
         genContextPartial.cleanUnresolved();
@@ -293,27 +316,9 @@ class MLIRGenImpl
             statement->processed = false;
         }
 
-        if (hasErrorMessages)
+        if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
-            // print errors
-            for (auto diag : postponedMessages)
-            {
-                // we show messages when they metter
-                if (notResolved)
-                {
-                    publishDiagnostic(*diag);
-                }
-
-                delete diag;
-            }
-
-            postponedMessages.clear();
-
-            // we return error when we can't generate code
-            if (notResolved)
-            {
-                return mlir::failure();
-            }
+            return mlir::failure();
         }
 
         return mlir::success();
@@ -321,6 +326,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirCodeGenModule(SourceFile module)
     {
+        mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+            postponedMessages.emplace_back(new mlir::Diagnostic(std::move(diag)));
+        });
+
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(
             fullNameGlobalsMap);
 
@@ -329,13 +339,14 @@ class MLIRGenImpl
 
         for (auto includeFile : this->includeFiles)
         {
-            if (failed(mlirGen(includeFile->statements, true, genContext)))
+            if (failed(mlirGen(includeFile->statements, genContext)))
             {
                 return mlir::failure();
             }
         }
 
-        if (failed(mlirGen(module->statements, true, genContext)))
+        auto notResolved = processStatements(module->statements, postponedMessages, genContext);
+        if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
             return mlir::failure();
         }
@@ -348,15 +359,17 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! broken module: \n" << theModule << "\n";);
 
             theModule.emitError("module verification error");
+
+            outputDiagnostics(postponedMessages, notResolved);
             return mlir::failure();
         }
 
         return mlir::success();
     }
 
-    void publishDiagnostic(mlir::Diagnostic &diag)
+    void publishDiagnostic(const mlir::Diagnostic &diag)
     {
-        auto printMsg = [](llvm::raw_fd_ostream &os, mlir::Diagnostic &diag, const char *msg) {
+        auto printMsg = [](llvm::raw_fd_ostream &os, const mlir::Diagnostic &diag, const char *msg) {
             if (!diag.getLocation().isa<mlir::UnknownLoc>())
                 os << diag.getLocation() << ": ";
             os << msg;
@@ -380,26 +393,12 @@ class MLIRGenImpl
             printMsg(llvm::outs(), diag, "warning: ");
             break;
         case mlir::DiagnosticSeverity::Error:
-            hasErrorMessages = true;
             printMsg(llvm::errs(), diag, "error: ");
             break;
         case mlir::DiagnosticSeverity::Remark:
             printMsg(llvm::outs(), diag, "information: ");
             break;
         }
-    }
-
-    mlir::LogicalResult mlirCodeGenModuleWithDiagnostics(SourceFile module)
-    {
-        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(),
-                                                  [&](mlir::Diagnostic &diag) { publishDiagnostic(diag); });
-
-        if (failed(mlirCodeGenModule(module)) || hasErrorMessages)
-        {
-            return mlir::failure();
-        }
-
-        return mlir::success();
     }
 
     bool registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false)
@@ -528,7 +527,7 @@ class MLIRGenImpl
         llvm_unreachable("unknown body type");
     }
 
-    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, bool clearError, const GenContext &genContext)
+    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -541,12 +540,6 @@ class MLIRGenImpl
         auto notResolved = 0;
         do
         {
-            if (clearError)
-            {
-                // clear previous errors
-                hasErrorMessages = false;
-            }
-
             auto noErrorLocation = true;
             mlir::Location errorLocation = mlir::UnknownLoc::get(builder.getContext());
             auto lastTimeNotResolved = notResolved;
@@ -588,7 +581,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(ModuleBlock moduleBlockAST, const GenContext &genContext)
     {
-        return mlirGen(moduleBlockAST->statements, false, genContext);
+        return mlirGen(moduleBlockAST->statements, genContext);
     }
 
     mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
@@ -10193,7 +10186,7 @@ genContext);
             }
 
             newClassPtr->hasRTTI = true;
-  
+
             NodeFactory nf(NodeFactoryFlags::None);
 
             Block body = undefined;
@@ -10864,7 +10857,8 @@ genContext);
                 generateConstructorStatements(classDeclarationAST, isStatic, funcGenContext);
             }
 
-            auto [result, funcOp, funcName, isGeneric] = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
+            auto [result, funcOp, funcName, isGeneric] =
+                mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
             if (mlir::failed(result))
             {
                 return mlir::failure();
@@ -13964,8 +13958,6 @@ genContext);
         printer.printNode(node);
         std::wcerr << std::endl << "end of dump ========================================" << std::endl;
     }
-
-    bool hasErrorMessages;
 
     /// The builder is a helper class to create IR inside a function. The builder
     /// is stateful, in particular it keeps an "insertion point": this is where
