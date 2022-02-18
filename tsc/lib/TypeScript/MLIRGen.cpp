@@ -3892,7 +3892,7 @@ class MLIRGenImpl
         {
             emitError(location) << "'return' must have value";
             builder.create<mlir_ts::ReturnOp>(location);
-            return mlir::success();
+            return genContext.passResult ? mlir::success() : mlir::failure();
         }
 
         auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
