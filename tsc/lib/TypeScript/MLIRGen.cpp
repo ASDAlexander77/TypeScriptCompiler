@@ -10188,6 +10188,16 @@ genContext);
 
             newClassPtr->hasRTTI = true;
 
+            // register global
+            auto fullClassStaticFieldName = concat(newClassPtr->fullName, INSTANCEOF_NAME);
+
+            // prevent double generating
+            if (fullNameGlobalsMap.count(fullClassStaticFieldName))
+            {
+                // already declared
+                return mlir::success();
+            }            
+
             NodeFactory nf(NodeFactoryFlags::None);
 
             Block body = undefined;
@@ -10215,12 +10225,12 @@ genContext);
                 if (!newClassPtr->baseClasses.empty())
                 {
                     NodeArray<Expression> argumentsArray;
-                    argumentsArray.push_back(nf.createIdentifier(LINSTANCEOF_PARAM_NAME));
+                    argumentsArray.push_back(nf.createIdentifier(S(INSTANCEOF_PARAM_NAME)));
                     cmpLogic =
                         nf.createBinaryExpression(cmpRttiToParam, nf.createToken(SyntaxKind::BarBarToken),
                                                   nf.createCallExpression(nf.createPropertyAccessExpression(
                                                                               nf.createToken(SyntaxKind::SuperKeyword),
-                                                                              nf.createIdentifier(LINSTANCEOF_NAME)),
+                                                                              nf.createIdentifier(S(INSTANCEOF_NAME))),
                                                                           undefined, argumentsArray));
                 }
 
@@ -10232,11 +10242,11 @@ genContext);
 
             NodeArray<ParameterDeclaration> parameters;
             parameters.push_back(nf.createParameterDeclaration(undefined, undefined, undefined,
-                                                               nf.createIdentifier(LINSTANCEOF_PARAM_NAME), undefined,
+                                                               nf.createIdentifier(S(INSTANCEOF_PARAM_NAME)), undefined,
                                                                nf.createToken(SyntaxKind::StringKeyword), undefined));
 
             auto instanceOfMethod = nf.createMethodDeclaration(
-                undefined, undefined, undefined, nf.createIdentifier(LINSTANCEOF_NAME), undefined, undefined,
+                undefined, undefined, undefined, nf.createIdentifier(S(INSTANCEOF_NAME)), undefined, undefined,
                 parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
 
             instanceOfMethod->internalFlags |= InternalFlags::ForceVirtual;
