@@ -218,7 +218,7 @@ class MLIRGenImpl
 
         for (auto includeFile : this->includeFiles)
         {
-            if (failed(mlirGen(includeFile->statements, genContextPartial)))
+            if (failed(mlirGen(includeFile->statements, false, genContextPartial)))
             {
                 return mlir::failure();
             }
@@ -321,8 +321,6 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirCodeGenModule(SourceFile module)
     {
-        hasErrorMessages = false;
-
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(
             fullNameGlobalsMap);
 
@@ -331,13 +329,13 @@ class MLIRGenImpl
 
         for (auto includeFile : this->includeFiles)
         {
-            if (failed(mlirGen(includeFile->statements, genContext)))
+            if (failed(mlirGen(includeFile->statements, true, genContext)))
             {
                 return mlir::failure();
             }
         }
 
-        if (failed(mlirGen(module->statements, genContext)))
+        if (failed(mlirGen(module->statements, true, genContext)))
         {
             return mlir::failure();
         }
@@ -530,7 +528,7 @@ class MLIRGenImpl
         llvm_unreachable("unknown body type");
     }
 
-    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, const GenContext &genContext)
+    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, bool clearError, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -543,6 +541,12 @@ class MLIRGenImpl
         auto notResolved = 0;
         do
         {
+            if (clearError)
+            {
+                // clear previous errors
+                hasErrorMessages = false;
+            }
+
             auto noErrorLocation = true;
             mlir::Location errorLocation = mlir::UnknownLoc::get(builder.getContext());
             auto lastTimeNotResolved = notResolved;
@@ -584,7 +588,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(ModuleBlock moduleBlockAST, const GenContext &genContext)
     {
-        return mlirGen(moduleBlockAST->statements, genContext);
+        return mlirGen(moduleBlockAST->statements, false, genContext);
     }
 
     mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
