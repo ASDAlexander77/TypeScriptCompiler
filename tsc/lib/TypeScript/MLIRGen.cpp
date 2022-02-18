@@ -9703,15 +9703,6 @@ class MLIRGenImpl
     {
         // clear all flags
         // extra fields - first, we need .instanceOf first for typr Any
-        for (auto &classMember : newClassPtr->extraMembers)
-        {
-            classMember->processed = false;
-        }
-
-        for (auto &classMember : classDeclarationAST->members)
-        {
-            classMember->processed = false;
-        }
 
         // dummy class, not used, needed to sync code
         // TODO: refactor it
@@ -9756,6 +9747,17 @@ class MLIRGenImpl
             }
 
         } while (notResolved > 0);
+
+        // to be ablt to run next time, code succeeded, and we know where to continue from
+        for (auto &classMember : newClassPtr->extraMembers)
+        {
+            classMember->processed = false;
+        }
+
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            classMember->processed = false;
+        }
 
         return mlir::success();
     }
@@ -10858,13 +10860,11 @@ genContext);
                 generateConstructorStatements(classDeclarationAST, isStatic, funcGenContext);
             }
 
-            auto res = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
-            if (mlir::failed(std::get<0>(res)))
+            auto [result, funcOp, funcName, isGeneric] = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
+            if (mlir::failed(result))
             {
                 return mlir::failure();
             }
-
-            auto funcOp = std::get<1>(res);
 
             funcLikeDeclaration->processed = true;
 
