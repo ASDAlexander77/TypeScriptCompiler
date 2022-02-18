@@ -10187,17 +10187,7 @@ genContext);
             }
 
             newClassPtr->hasRTTI = true;
-
-            // register global
-            auto fullClassStaticFieldName = concat(newClassPtr->fullName, INSTANCEOF_NAME);
-
-            // prevent double generating
-            if (fullNameGlobalsMap.count(fullClassStaticFieldName))
-            {
-                // already declared
-                return mlir::success();
-            }            
-
+  
             NodeFactory nf(NodeFactoryFlags::None);
 
             Block body = undefined;
