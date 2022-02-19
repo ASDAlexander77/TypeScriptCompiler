@@ -517,6 +517,14 @@ class MLIRGenImpl
         llvm_unreachable("unknown body type");
     }
 
+    void clearState(NodeArray<Statement> statements)
+    {
+        for (auto &statement : statements)
+        {
+            statement->processed = false;
+        }        
+    }
+
     mlir::LogicalResult mlirGen(NodeArray<Statement> statements, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -569,9 +577,80 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, std::function<bool(Statement)> filter, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto notResolved = 0;
+        do
+        {
+            auto noErrorLocation = true;
+            mlir::Location errorLocation = mlir::UnknownLoc::get(builder.getContext());
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
+            for (auto &statement : statements)
+            {
+                if (statement->processed)
+                {
+                    continue;
+                }
+
+                if (!filter(statement))
+                {
+                    continue;
+                }
+
+                if (failed(mlirGen(statement, genContext)))
+                {
+                    if (noErrorLocation)
+                    {
+                        errorLocation = loc(statement);
+                        noErrorLocation = false;
+                    }
+
+                    notResolved++;
+                }
+                else
+                {
+                    statement->processed = true;
+                }
+            }
+
+            // repeat if not all resolved
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+            {
+                // class can depends on other class declarations
+                emitError(errorLocation, "can't resolve dependencies in namespace");
+                return mlir::failure();
+            }
+        } while (notResolved > 0);
+
+        // clear up state
+        for (auto &statement : statements)
+        {
+            statement->processed = false;
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGen(ModuleBlock moduleBlockAST, const GenContext &genContext)
     {
         return mlirGen(moduleBlockAST->statements, genContext);
+    }
+
+    static bool processIfDeclaration(Statement statement)
+    {
+        switch ((SyntaxKind)statement)
+        {
+            case SyntaxKind::FunctionDeclaration:
+            case SyntaxKind::ClassDeclaration:
+            case SyntaxKind::InterfaceDeclaration:
+            case SyntaxKind::EnumDeclaration:
+                return true;
+        }
+
+        return false;
     }
 
     mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
@@ -589,14 +668,46 @@ class MLIRGenImpl
             const_cast<GenContext &>(genContext).generatedStatements.clear();
 
             // auto generated code
-            if (failed(mlirGen(generatedStatements, genContext)))
+            for (auto statement : generatedStatements)
             {
-                // TODO: do I need to restore generatedStatements?
-                return mlir::failure();
+                if (failed(mlirGen(statement, genContext)))
+                {
+                    return mlir::failure();
+                }
             }
+
         }
 
-        return mlirGen(blockAST->statements, genContext);
+        for (auto statement : blockAST->statements)
+        {
+            if (statement->processed)
+            {
+                continue;
+            }
+
+            if (failed(mlirGen(statement, genContext)))
+            {
+                // now try to process all internal declarations
+                // process all declrations
+                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContext)))
+                {
+                    return mlir::failure(); 
+                }
+
+                // try to process it again
+                if (failed(mlirGen(statement, genContext)))
+                {
+                    return mlir::failure(); 
+                }
+            }
+
+            statement->processed = true;
+        }
+
+        // clear states to be able to run second time
+        clearState(blockAST->statements);
+
+        return mlir::success();
     }
 
     mlir::LogicalResult mlirGen(Statement statementAST, const GenContext &genContext)
