@@ -852,7 +852,7 @@ struct ValueOrLogicalResult
             return false;
         }
 
-        return mlir::succeeded(result) || !!value;
+        return !!value;
     }
 
     operator mlir::LogicalResult()

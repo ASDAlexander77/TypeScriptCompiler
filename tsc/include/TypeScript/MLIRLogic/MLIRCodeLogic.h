@@ -156,12 +156,12 @@ class MLIRCustomMethods
     {
     }
 
-    mlir::Value callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, const GenContext &genContext)
     {
         // validate params
         for (auto &oper : operands)
         {
-            VALIDATE(oper, location)
+            VALIDATE1(oper, location)
         }
 
         mlir::Value result;
@@ -234,7 +234,7 @@ class MLIRCustomMethods
             emitError(location) << "no defined function found for '" << functionName << "'";
         }
 
-        return result;
+        return mlir::failure();
     }
 
     mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands)
