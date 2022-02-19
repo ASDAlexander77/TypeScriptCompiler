@@ -156,54 +156,53 @@ class MLIRCustomMethods
     {
     }
 
-    mlir::Value callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    static bool isInternalName (StringRef functionName)
     {
-        // validate params
-        for (auto &oper : operands)
-        {
-            VALIDATE(oper, location)
-        }
+        static std::map<std::string, bool> m { {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {"switchstate", true}};
+        return m[functionName.str()];    
+    }
 
-        mlir::Value result;
+    ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    {
         if (functionName == "print")
         {
             // print - internal command;
-            mlir::succeeded(mlirGenPrint(location, operands));
+            return mlirGenPrint(location, operands);
         }
         else if (functionName == "assert")
         {
             // assert - internal command;
-            mlir::succeeded(mlirGenAssert(location, operands));
+            return mlirGenAssert(location, operands);
         }
         else if (functionName == "parseInt")
         {
             // assert - internal command;
-            result = mlirGenParseInt(location, operands);
+            return mlirGenParseInt(location, operands);
         }
         else if (functionName == "parseFloat")
         {
-            result = mlirGenParseFloat(location, operands);
+            return mlirGenParseFloat(location, operands);
         }
         else if (functionName == "isNaN")
         {
-            result = mlirGenIsNaN(location, operands);
+            return mlirGenIsNaN(location, operands);
         }
         else if (functionName == "sizeof")
         {
-            result = mlirGenSizeOf(location, operands);
+            return mlirGenSizeOf(location, operands);
         }
         else if (functionName == "__array_push")
         {
-            result = mlirGenArrayPush(location, operands);
+            return mlirGenArrayPush(location, operands);
         }
         else if (functionName == "__array_pop")
         {
-            result = mlirGenArrayPop(location, operands);
+            return mlirGenArrayPop(location, operands);
         }
         else if (functionName == "switchstate")
         {
             // switchstate - internal command;
-            mlir::succeeded(mlirGenSwitchState(location, operands, genContext));
+            return mlirGenSwitchState(location, operands, genContext);
         }
         /*
         else
@@ -234,7 +233,7 @@ class MLIRCustomMethods
             emitError(location) << "no defined function found for '" << functionName << "'";
         }
 
-        return result;
+        return mlir::failure();
     }
 
     mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands)

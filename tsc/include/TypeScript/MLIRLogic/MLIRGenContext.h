@@ -66,7 +66,6 @@ struct GenContext
         capturedVars = nullptr;
 
         currentOperation = nullptr;
-        unresolved = nullptr;
     }
 
     // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
@@ -106,15 +105,6 @@ struct GenContext
         }
     }
 
-    void cleanUnresolved()
-    {
-        if (unresolved)
-        {
-            delete unresolved;
-            unresolved = nullptr;
-        }
-    }
-
     void cleanFuncOp()
     {
         if (funcOp)
@@ -147,7 +137,6 @@ struct GenContext
     llvm::StringMap<mlir::Type> typeAliasMap;
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
     ArrayRef<mlir::Value> callOperands;
-    mlir::SmallVector<std::pair<mlir::Location, std::string>> *unresolved;
     int *state;
 };
 
@@ -835,6 +824,43 @@ struct NamespaceInfo
 
     NamespaceInfo::TypePtr parentNamespace;
 };
+
+struct ValueOrLogicalResult 
+{
+    ValueOrLogicalResult() = default;
+    ValueOrLogicalResult(mlir::LogicalResult result) : result(result) {};
+    ValueOrLogicalResult(mlir::Value value) : result(mlir::success()), value(value) {};
+
+    mlir::LogicalResult result;
+    mlir::Value value;
+
+    operator bool()
+    {
+        return mlir::succeeded(result);
+    }
+
+    bool failed()
+    {
+        return mlir::failed(result);
+    }
+
+    bool failed_or_no_value()
+    {
+        return failed() || !value;
+    }
+
+    operator mlir::LogicalResult()
+    {
+        return failed_or_no_value() ? mlir::failure() : mlir::success();
+    } 
+
+    operator mlir::Value()
+    {
+        return value;
+    }    
+};
+
+#define V(x) static_cast<mlir::Value>(x)
 
 } // namespace
 

@@ -201,10 +201,6 @@ class MLIRGenImpl
         {
             // clear previous errors
             postponedMessages.clear();
-            if (genContext.unresolved)
-            {
-                genContext.unresolved->clear();
-            }
 
             // main cycles
             auto noErrorLocation = true;
@@ -220,6 +216,8 @@ class MLIRGenImpl
 
                 if (failed(mlirGen(statement, genContext)))
                 {
+                    emitError(loc(statement), "failed statement");
+
                     notResolved++;
                     if (noErrorLocation)
                     {
@@ -235,16 +233,7 @@ class MLIRGenImpl
 
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                if (genContext.unresolved->size() == 0)
-                {
-                    emitError(errorLocation, "can't resolve dependencies");
-                }
-
-                for (auto unresolvedRef : *genContext.unresolved)
-                {
-                    emitError(std::get<0>(unresolvedRef), "can't resolve reference: ") << std::get<1>(unresolvedRef);
-                }
-
+                emitError(errorLocation, "can't resolve dependencies");
                 break;
             }
 
@@ -292,7 +281,6 @@ class MLIRGenImpl
         genContextPartial.allowPartialResolve = true;
         genContextPartial.dummyRun = true;
         genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
-        genContextPartial.unresolved = new mlir::SmallVector<std::pair<mlir::Location, std::string>>();
 
         for (auto includeFile : this->includeFiles)
         {
@@ -305,7 +293,6 @@ class MLIRGenImpl
         auto notResolved = processStatements(module->statements, postponedMessages, genContextPartial);
 
         genContextPartial.clean();
-        genContextPartial.cleanUnresolved();
 
         // clean up
         theModule.getBody()->clear();
@@ -484,6 +471,7 @@ class MLIRGenImpl
 
         GenContext moduleGenContext{};
         auto result = mlirGenBody(moduleDeclarationAST->body, moduleGenContext);
+        auto result = V(result);
 
         // restore
         theModule = parentModule;
@@ -515,9 +503,11 @@ class MLIRGenImpl
         if (body.is<Expression>())
         {
             auto result = mlirGen(body.as<Expression>(), genContext);
-            if (result)
+            EXIT_IF_FAILED(result)
+            auto resultValue = V(result);
+            if (resultValue)
             {
-                return mlirGenReturnValue(loc(body), result, false, genContext);
+                return mlirGenReturnValue(loc(body), resultValue, false, genContext);
             }
 
             builder.create<mlir_ts::ReturnOp>(loc(body));
@@ -527,15 +517,17 @@ class MLIRGenImpl
         llvm_unreachable("unknown body type");
     }
 
-    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, const GenContext &genContext)
+    void clearState(NodeArray<Statement> statements)
     {
-        SymbolTableScopeT varScope(symbolTable);
-
-        // clear up state
         for (auto &statement : statements)
         {
             statement->processed = false;
-        }
+        }        
+    }
+
+    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
 
         auto notResolved = 0;
         do
@@ -576,12 +568,89 @@ class MLIRGenImpl
             }
         } while (notResolved > 0);
 
+        // clear up state
+        for (auto &statement : statements)
+        {
+            statement->processed = false;
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, std::function<bool(Statement)> filter, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto notResolved = 0;
+        do
+        {
+            auto noErrorLocation = true;
+            mlir::Location errorLocation = mlir::UnknownLoc::get(builder.getContext());
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
+            for (auto &statement : statements)
+            {
+                if (statement->processed)
+                {
+                    continue;
+                }
+
+                if (!filter(statement))
+                {
+                    continue;
+                }
+
+                if (failed(mlirGen(statement, genContext)))
+                {
+                    if (noErrorLocation)
+                    {
+                        errorLocation = loc(statement);
+                        noErrorLocation = false;
+                    }
+
+                    notResolved++;
+                }
+                else
+                {
+                    statement->processed = true;
+                }
+            }
+
+            // repeat if not all resolved
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+            {
+                // class can depends on other class declarations
+                emitError(errorLocation, "can't resolve dependencies in namespace");
+                return mlir::failure();
+            }
+        } while (notResolved > 0);
+
+        // clear up state
+        for (auto &statement : statements)
+        {
+            statement->processed = false;
+        }
+
         return mlir::success();
     }
 
     mlir::LogicalResult mlirGen(ModuleBlock moduleBlockAST, const GenContext &genContext)
     {
         return mlirGen(moduleBlockAST->statements, genContext);
+    }
+
+    static bool processIfDeclaration(Statement statement)
+    {
+        switch ((SyntaxKind)statement)
+        {
+            case SyntaxKind::FunctionDeclaration:
+            case SyntaxKind::ClassDeclaration:
+            case SyntaxKind::InterfaceDeclaration:
+            case SyntaxKind::EnumDeclaration:
+                return true;
+        }
+
+        return false;
     }
 
     mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
@@ -599,27 +668,44 @@ class MLIRGenImpl
             const_cast<GenContext &>(genContext).generatedStatements.clear();
 
             // auto generated code
-            for (auto &statement : generatedStatements)
+            for (auto statement : generatedStatements)
             {
                 if (failed(mlirGen(statement, genContext)))
                 {
                     return mlir::failure();
                 }
             }
+
         }
 
-        for (auto &statement : blockAST->statements)
+        for (auto statement : blockAST->statements)
         {
-            if (genContext.skipProcessed && statement->processed)
+            if (statement->processed)
             {
                 continue;
             }
 
             if (failed(mlirGen(statement, genContext)))
             {
-                return mlir::failure();
+                // now try to process all internal declarations
+                // process all declrations
+                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContext)))
+                {
+                    return mlir::failure(); 
+                }
+
+                // try to process it again
+                if (failed(mlirGen(statement, genContext)))
+                {
+                    return mlir::failure(); 
+                }
             }
+
+            statement->processed = true;
         }
+
+        // clear states to be able to run second time
+        clearState(blockAST->statements);
 
         return mlir::success();
     }
@@ -743,16 +829,25 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(ExpressionStatement expressionStatementAST, const GenContext &genContext)
     {
-        mlirGen(expressionStatementAST->expression, genContext);
+        auto result = mlirGen(expressionStatementAST->expression, genContext);
+        EXIT_IF_FAILED(result)
         return mlir::success();
     }
 
-    mlir::Value mlirGen(Expression expressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(Expression expressionAST, const GenContext &genContext)
     {
         auto kind = (SyntaxKind)expressionAST;
         if (kind == SyntaxKind::Identifier)
         {
             return mlirGen(expressionAST.as<Identifier>(), genContext);
+        }
+        else if (kind == SyntaxKind::PropertyAccessExpression)
+        {
+            return mlirGen(expressionAST.as<PropertyAccessExpression>(), genContext);
+        }
+        else if (kind == SyntaxKind::CallExpression)
+        {
+            return mlirGen(expressionAST.as<CallExpression>(), genContext);
         }
         else if (kind == SyntaxKind::NumericLiteral)
         {
@@ -790,10 +885,6 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<ObjectLiteralExpression>(), genContext);
         }
-        else if (kind == SyntaxKind::CallExpression)
-        {
-            return mlirGen(expressionAST.as<CallExpression>(), genContext);
-        }
         else if (kind == SyntaxKind::SpreadElement)
         {
             return mlirGen(expressionAST.as<SpreadElement>(), genContext);
@@ -821,10 +912,6 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::ConditionalExpression)
         {
             return mlirGen(expressionAST.as<ConditionalExpression>(), genContext);
-        }
-        else if (kind == SyntaxKind::PropertyAccessExpression)
-        {
-            return mlirGen(expressionAST.as<PropertyAccessExpression>(), genContext);
         }
         else if (kind == SyntaxKind::ElementAccessExpression)
         {
@@ -861,7 +948,7 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::DeleteExpression)
         {
             mlirGen(expressionAST.as<DeleteExpression>(), genContext);
-            return mlir::Value();
+            return mlir::success();
         }
         else if (kind == SyntaxKind::ThisKeyword)
         {
@@ -893,11 +980,11 @@ class MLIRGenImpl
         }
         else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
         {
-            return mlir::Value();
+            return mlir::success();
         }
         else if (kind == SyntaxKind::OmittedExpression /*TODO: temp solution to treat null expr as empty expr*/)
         {
-            return mlir::Value();
+            return mlir::success();
         }
 
         llvm_unreachable("unknown expression");
@@ -1686,8 +1773,8 @@ class MLIRGenImpl
         return {mlir::success(), mlir::Type()};
     }
 
-    mlir::Value mlirGenSpecialized(mlir::Location location, mlir::Value genResult, NodeArray<TypeNode> typeArguments,
-                                   const GenContext &genContext)
+    ValueOrLogicalResult mlirGenSpecialized(mlir::Location location, mlir::Value genResult,
+                                            NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
         // in case it is generic arrow function
         auto currValue = genResult;
@@ -1716,7 +1803,7 @@ class MLIRGenImpl
                                         << "' not all generic types can be identified";
                 }
 
-                return mlir::Value();
+                return mlir::failure();
             }
 
             return resolveFunctionWithCapture(location, StringRef(funcSymbolName), funcType, false, false, genContext);
@@ -1728,14 +1815,14 @@ class MLIRGenImpl
             auto [result, specType] = instantiateSpecializedClassType(location, classType, typeArguments, genContext);
             if (mlir::failed(result))
             {
-                return mlir::Value();
+                return mlir::failure();
             }
 
             if (auto specClassType = specType.dyn_cast_or_null<mlir_ts::ClassType>())
             {
-                return builder.create<mlir_ts::ClassRefOp>(
+                return V(builder.create<mlir_ts::ClassRefOp>(
                     location, specClassType,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), specClassType.getName().getValue()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), specClassType.getName().getValue())));
             }
 
             return genResult;
@@ -1748,9 +1835,9 @@ class MLIRGenImpl
                 instantiateSpecializedInterfaceType(location, interfaceType, typeArguments, genContext);
             if (auto specInterfaceType = specType.dyn_cast_or_null<mlir_ts::InterfaceType>())
             {
-                return builder.create<mlir_ts::InterfaceRefOp>(
+                return V(builder.create<mlir_ts::InterfaceRefOp>(
                     location, specInterfaceType,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), specInterfaceType.getName().getValue()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), specInterfaceType.getName().getValue())));
             }
 
             return genResult;
@@ -1759,9 +1846,11 @@ class MLIRGenImpl
         return genResult;
     }
 
-    mlir::Value mlirGen(Expression expression, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(Expression expression, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
-        auto genResult = mlirGen(expression, genContext);
+        auto result = mlirGen(expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto genResult = V(result);
         if (typeArguments.size() == 0)
         {
             return genResult;
@@ -1772,13 +1861,14 @@ class MLIRGenImpl
         return mlirGenSpecialized(location, genResult, typeArguments, genContext);
     }
 
-    mlir::Value mlirGen(ExpressionWithTypeArguments expressionWithTypeArgumentsAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ExpressionWithTypeArguments expressionWithTypeArgumentsAST,
+                                 const GenContext &genContext)
     {
         return mlirGen(expressionWithTypeArgumentsAST->expression, expressionWithTypeArgumentsAST->typeArguments,
                        genContext);
     }
 
-    mlir::Value registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type,
+    ValueOrLogicalResult registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type,
                                               const GenContext &genContext)
     {
         if (genContext.passResult)
@@ -1797,7 +1887,9 @@ class MLIRGenImpl
         auto _name = nf.createIdentifier(stows(std::string(name)));
         auto _this_name = nf.createPropertyAccessExpression(_this, _name);
 
-        auto thisVarValue = mlirGen(_this_name, genContext);
+        auto result = mlirGen(_this_name, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto thisVarValue = V(result);
 
         assert(thisVarValue);
 
@@ -1806,7 +1898,7 @@ class MLIRGenImpl
 
         assert(thisVarValueRef);
 
-        return thisVarValueRef;
+        return V(thisVarValueRef);
     }
 
     bool isConstValue(mlir::Value init)
@@ -2146,7 +2238,8 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern: [" << init << "] prop: " << propertyName << "\n");
 
-            auto subInit = mlirGenPropertyAccessExpression(location, init, propertyName, false, genContext);
+            auto result = mlirGenPropertyAccessExpression(location, init, propertyName, false, genContext);
+            auto subInit = V(result);
 
             assert(subInit);
 
@@ -2251,13 +2344,23 @@ class MLIRGenImpl
         if (item->type)
         {
             type = getType(item->type, genContext);
+            if (!type)
+            {
+                return { mlir::Type(), mlir::Value() };
+            }
         }
 
         // init
         mlir::Value init;
         if (auto initializer = item->initializer)
         {
-            init = mlirGen(initializer, genContext);
+            auto result = mlirGen(initializer, genContext);
+            if (result.failed())
+            {
+                return { mlir::Type(), mlir::Value() };
+            }
+
+            init = V(result);
             if (init)
             {
                 if (!type)
@@ -2793,7 +2896,6 @@ class MLIRGenImpl
             genContextWithPassResult.allocateVarsInContextThis =
                 (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::VarsInObjectContext) ==
                 InternalFlags::VarsInObjectContext;
-            genContextWithPassResult.unresolved = genContext.unresolved;
             genContextWithPassResult.discoverParamsOnly = genContext.discoverParamsOnly;
             genContextWithPassResult.typeAliasMap = genContext.typeAliasMap;
             genContextWithPassResult.typeParamsWithArgs = genContext.typeParamsWithArgs;
@@ -2871,7 +2973,7 @@ class MLIRGenImpl
         return std::get<0>(res);
     }
 
-    mlir::Value mlirGen(FunctionExpression functionExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(FunctionExpression functionExpressionAST, const GenContext &genContext)
     {
         auto location = loc(functionExpressionAST);
         mlir_ts::FuncOp funcOp;
@@ -2891,7 +2993,7 @@ class MLIRGenImpl
                 mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
             if (mlir::failed(result))
             {
-                return mlir::Value();
+                return mlir::failure();
             }
 
             funcOp = funcOpRet;
@@ -2917,14 +3019,14 @@ class MLIRGenImpl
                     emitError(location) << "can't find generic function: " << funcName;
                 }
 
-                return mlir::Value();
+                return mlir::failure();
             }
         }
 
         return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, false, genContext);
     }
 
-    mlir::Value mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
     {
         auto location = loc(arrowFunctionAST);
         mlir_ts::FuncOp funcOp;
@@ -2943,7 +3045,7 @@ class MLIRGenImpl
                 mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (mlir::failed(result))
             {
-                return mlir::Value();
+                return mlir::failure();
             }
 
             funcOp = funcOpRet;
@@ -2969,7 +3071,7 @@ class MLIRGenImpl
                     emitError(location) << "can't find generic function: " << funcName;
                 }
 
-                return mlir::Value();
+                return mlir::failure();
             }
         }
 
@@ -3487,7 +3589,9 @@ class MLIRGenImpl
             auto _captured = nf.createIdentifier(stows(CAPTURED_NAME));
             auto _name = nf.createIdentifier(stows(std::string(name)));
             auto _captured_name = nf.createPropertyAccessExpression(_captured, _name);
-            auto capturedVarValue = mlirGen(_captured_name, genContext);
+            auto result = mlirGen(_captured_name, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto capturedVarValue = V(result);
             auto variableRefType = mlir_ts::RefType::get(variableInfo->getType());
 
             auto capturedParam =
@@ -3596,31 +3700,37 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::Value mlirGen(TypeAssertion typeAssertionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(TypeAssertion typeAssertionAST, const GenContext &genContext)
     {
         auto location = loc(typeAssertionAST);
 
         auto typeInfo = getType(typeAssertionAST->type, genContext);
-        auto exprValue = mlirGen(typeAssertionAST->expression, genContext);
+        auto result = mlirGen(typeAssertionAST->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto exprValue = V(result);
 
         auto castedValue = cast(location, typeInfo, exprValue, genContext);
         return castedValue;
     }
 
-    mlir::Value mlirGen(AsExpression asExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(AsExpression asExpressionAST, const GenContext &genContext)
     {
         auto location = loc(asExpressionAST);
 
         auto typeInfo = getType(asExpressionAST->type, genContext);
-        auto exprValue = mlirGen(asExpressionAST->expression, genContext);
+        auto result = mlirGen(asExpressionAST->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto exprValue = V(result);
 
         auto castedValue = cast(location, typeInfo, exprValue, genContext);
         return castedValue;
     }
 
-    mlir::Value mlirGen(ComputedPropertyName computedPropertyNameAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ComputedPropertyName computedPropertyNameAST, const GenContext &genContext)
     {
-        auto exprValue = mlirGen(computedPropertyNameAST->expression, genContext);
+        auto result = mlirGen(computedPropertyNameAST->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto exprValue = V(result);
         return exprValue;
     }
 
@@ -3629,7 +3739,9 @@ class MLIRGenImpl
         auto location = loc(returnStatementAST);
         if (auto expression = returnStatementAST->expression)
         {
-            auto expressionValue = mlirGen(expression, genContext);
+            auto result = mlirGen(expression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto expressionValue = V(result);
             return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
 
@@ -3654,7 +3766,7 @@ class MLIRGenImpl
         return retObject;
     };
 
-    mlir::Value mlirGenYieldStar(YieldExpression yieldExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenYieldStar(YieldExpression yieldExpressionAST, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -3670,12 +3782,10 @@ class MLIRGenImpl
             nf.createForOfStatement(undefined, declList, yieldExpressionAST->expression,
                                     nf.createExpressionStatement(nf.createYieldExpression(undefined, _v_ident)));
 
-        mlirGen(forOfStat, genContext);
-
-        return mlir::Value();
+        return mlirGen(forOfStat, genContext);
     }
 
-    mlir::Value mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext)
     {
         if (yieldExpressionAST->asteriskToken)
         {
@@ -3715,7 +3825,9 @@ class MLIRGenImpl
 
         // return value
         auto yieldRetValue = getYieldReturnObject(nf, yieldExpressionAST->expression, false);
-        auto yieldValue = mlirGen(yieldRetValue, genContext);
+        auto result = mlirGen(yieldRetValue, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto yieldValue = V(result);
 
         mlirGenReturnValue(location, yieldValue, true, genContext);
 
@@ -3725,16 +3837,17 @@ class MLIRGenImpl
 
         // TODO: yield value to continue, should be loaded from "next(value)" parameter
         // return yieldValue;
-        return mlir::Value();
+        return mlir::success();
     }
 
-    mlir::Value mlirGen(AwaitExpression awaitExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(AwaitExpression awaitExpressionAST, const GenContext &genContext)
     {
 #ifdef ENABLE_ASYNC
         auto location = loc(awaitExpressionAST);
 
         auto resultType = evaluate(awaitExpressionAST->expression, genContext);
 
+        ValueOrLogicalResult result(mlir::failure());
         auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
             location, resultType ? mlir::TypeRange{resultType} : mlir::TypeRange(), mlir::ValueRange{},
             mlir::ValueRange{}, [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
@@ -3745,16 +3858,22 @@ class MLIRGenImpl
                     types.push_back(resultType);
                 }
 
-                auto value = mlirGen(awaitExpressionAST->expression, genContext);
-                if (value)
+                result = mlirGen(awaitExpressionAST->expression, genContext);
+                if (result)
                 {
-                    builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{value});
-                }
-                else
-                {
-                    builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
+                    auto value = V(result);
+                    if (value)
+                    {
+                        builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{value});
+                    }
+                    else
+                    {
+                        builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
+                    }
                 }
             });
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+
         if (resultType)
         {
             auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.results().back());
@@ -3765,7 +3884,7 @@ class MLIRGenImpl
             auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.token());
         }
 
-        return mlir::Value();
+        return mlir::success();
 #else
         return mlirGen(awaitExpressionAST->expression, genContext);
 #endif
@@ -4112,9 +4231,9 @@ class MLIRGenImpl
         auto hasElse = !!ifStatementAST->elseStatement;
 
         // condition
-        auto condValue = mlirGen(ifStatementAST->expression, genContext);
-
-        VALIDATE_LOGIC(condValue, location)
+        auto result = mlirGen(ifStatementAST->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto condValue = V(result);
 
         if (condValue.getType() != getBooleanType())
         {
@@ -4169,9 +4288,9 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location);
 
         builder.setInsertionPointToStart(&doWhileOp.cond().front());
-        auto conditionValue = mlirGen(doStatementAST->expression, genContext);
-
-        VALIDATE_LOGIC(conditionValue, location)
+        auto result = mlirGen(doStatementAST->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto conditionValue = V(result);
 
         if (conditionValue.getType() != getBooleanType())
         {
@@ -4205,9 +4324,9 @@ class MLIRGenImpl
 
         // condition
         builder.setInsertionPointToStart(&whileOp.cond().front());
-        auto conditionValue = mlirGen(whileStatementAST->expression, genContext);
-
-        VALIDATE_LOGIC(conditionValue, location)
+        auto result = mlirGen(whileStatementAST->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto conditionValue = V(result);
 
         if (conditionValue.getType() != getBooleanType())
         {
@@ -4237,7 +4356,9 @@ class MLIRGenImpl
         // TODO: why do we have ForInitialier
         if (forStatementAST->initializer.is<Expression>())
         {
-            auto init = mlirGen(forStatementAST->initializer.as<Expression>(), genContext);
+            auto result = mlirGen(forStatementAST->initializer.as<Expression>(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto init = V(result);
             if (!init)
             {
                 return mlir::failure();
@@ -4246,6 +4367,7 @@ class MLIRGenImpl
         else if (forStatementAST->initializer.is<VariableDeclarationList>())
         {
             auto result = mlirGen(forStatementAST->initializer.as<VariableDeclarationList>(), genContext);
+            EXIT_IF_FAILED(result)
             if (failed(result))
             {
                 return result;
@@ -4278,7 +4400,9 @@ class MLIRGenImpl
         /*auto *incr =*/builder.createBlock(&forOp.incr(), {}, types);
 
         builder.setInsertionPointToStart(&forOp.cond().front());
-        auto conditionValue = mlirGen(forStatementAST->condition, genContext);
+        auto result = mlirGen(forStatementAST->condition, genContext);
+        EXIT_IF_FAILED(result)
+        auto conditionValue = V(result);
         if (conditionValue)
         {
             builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
@@ -4525,9 +4649,9 @@ class MLIRGenImpl
     {
         auto location = loc(forOfStatementAST);
 
-        auto exprValue = mlirGen(forOfStatementAST->expression, genContext);
-
-        VALIDATE_LOGIC(exprValue, location)
+        auto result = mlirGen(forOfStatementAST->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto exprValue = V(result);
 
         auto propertyType = evaluateProperty(exprValue, "next", genContext);
         if (propertyType)
@@ -4668,7 +4792,9 @@ class MLIRGenImpl
             }
 
             auto caseExpr = caseBlock.as<CaseClause>()->expression;
-            auto caseValue = mlirGen(caseExpr, genContext);
+            auto result = mlirGen(caseExpr, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto caseValue = V(result);
 
             extraCode(caseExpr, caseValue);
 
@@ -4783,9 +4909,9 @@ class MLIRGenImpl
         auto location = loc(switchStatementAST);
 
         auto switchExpr = switchStatementAST->expression;
-        auto switchValue = mlirGen(switchExpr, genContext);
-
-        VALIDATE_LOGIC(switchValue, location)
+        auto result = mlirGen(switchExpr, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto switchValue = V(result);
 
         auto switchOp = builder.create<mlir_ts::SwitchOp>(location, switchValue);
 
@@ -4851,9 +4977,9 @@ class MLIRGenImpl
     {
         auto location = loc(throwStatementAST);
 
-        auto exception = mlirGen(throwStatementAST->expression, genContext);
-
-        VALIDATE_LOGIC(exception, location)
+        auto result = mlirGen(throwStatementAST->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto exception = V(result);
 
         auto throwOp = builder.create<mlir_ts::ThrowOp>(location, exception);
 
@@ -4916,6 +5042,7 @@ class MLIRGenImpl
         // body
         builder.setInsertionPointToStart(&tryOp.body().front());
         auto result = mlirGen(tryStatementAST->tryBlock, tryGenContext);
+        EXIT_IF_FAILED(result)
         if (mlir::failed(result))
         {
             return mlir::failure();
@@ -4975,18 +5102,18 @@ class MLIRGenImpl
         return result;
     }
 
-    mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
     {
         return mlirGen(unaryExpressionAST.as<Expression>(), genContext);
     }
 
-    mlir::Value mlirGen(LeftHandSideExpression leftHandSideExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(LeftHandSideExpression leftHandSideExpressionAST, const GenContext &genContext)
     {
         return mlirGen(leftHandSideExpressionAST.as<Expression>(), genContext);
     }
 
-    mlir::Value mlirGenPrefixUnaryExpression(mlir::Location location, mlir_ts::ConstantOp constantOp,
-                                             const GenContext &genContext)
+    ValueOrLogicalResult mlirGenPrefixUnaryExpression(mlir::Location location, mlir_ts::ConstantOp constantOp,
+                                                      const GenContext &genContext)
     {
         mlir::Value value;
         auto valueAttr = constantOp.valueAttr();
@@ -5003,16 +5130,16 @@ class MLIRGenImpl
         return value;
     }
 
-    mlir::Value mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(prefixUnaryExpressionAST);
 
         auto opCode = prefixUnaryExpressionAST->_operator;
 
         auto expression = prefixUnaryExpressionAST->operand;
-        auto expressionValue = mlirGen(expression, genContext);
-
-        VALIDATE(expressionValue, location)
+        auto result = mlirGen(expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto expressionValue = V(result);
 
         // special case "-" for literal value
         if (opCode == SyntaxKind::MinusToken)
@@ -5038,53 +5165,53 @@ class MLIRGenImpl
                 boolValue = cast(location, getBooleanType(), expressionValue, genContext);
             }
 
-            return builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(),
-                                                              builder.getI32IntegerAttr((int)opCode), boolValue);
+            return V(builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(),
+                                                                builder.getI32IntegerAttr((int)opCode), boolValue));
         case SyntaxKind::TildeToken:
         case SyntaxKind::PlusToken:
         case SyntaxKind::MinusToken:
-            return builder.create<mlir_ts::ArithmeticUnaryOp>(location, expressionValue.getType(),
-                                                              builder.getI32IntegerAttr((int)opCode), expressionValue);
+            return V(builder.create<mlir_ts::ArithmeticUnaryOp>(
+                location, expressionValue.getType(), builder.getI32IntegerAttr((int)opCode), expressionValue));
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
-            return builder.create<mlir_ts::PrefixUnaryOp>(location, expressionValue.getType(),
-                                                          builder.getI32IntegerAttr((int)opCode), expressionValue);
+            return V(builder.create<mlir_ts::PrefixUnaryOp>(location, expressionValue.getType(),
+                                                            builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
             llvm_unreachable("not implemented");
         }
     }
 
-    mlir::Value mlirGen(PostfixUnaryExpression postfixUnaryExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(PostfixUnaryExpression postfixUnaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(postfixUnaryExpressionAST);
 
         auto opCode = postfixUnaryExpressionAST->_operator;
 
         auto expression = postfixUnaryExpressionAST->operand;
-        auto expressionValue = mlirGen(expression, genContext);
-
-        VALIDATE(expressionValue, location)
+        auto result = mlirGen(expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto expressionValue = V(result);
 
         switch (opCode)
         {
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
-            return builder.create<mlir_ts::PostfixUnaryOp>(location, expressionValue.getType(),
-                                                           builder.getI32IntegerAttr((int)opCode), expressionValue);
+            return V(builder.create<mlir_ts::PostfixUnaryOp>(location, expressionValue.getType(),
+                                                             builder.getI32IntegerAttr((int)opCode), expressionValue));
         default:
             llvm_unreachable("not implemented");
         }
     }
 
-    mlir::Value mlirGen(ConditionalExpression conditionalExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ConditionalExpression conditionalExpressionAST, const GenContext &genContext)
     {
         auto location = loc(conditionalExpressionAST);
 
         // condition
         auto condExpression = conditionalExpressionAST->condition;
-        auto condValue = mlirGen(condExpression, genContext);
-
-        VALIDATE(condValue, location);
+        auto result = mlirGen(condExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto condValue = V(result);
 
         if (condValue.getType() != getBooleanType())
         {
@@ -5112,7 +5239,7 @@ class MLIRGenImpl
         {
             if (!resultType)
             {
-                return mlir::Value();
+                return mlir::failure();
             }
 
             if (!resultWhenTrueType || !resultWhenFalseType)
@@ -5121,7 +5248,7 @@ class MLIRGenImpl
             }
 
             auto udef = builder.create<mlir_ts::UndefOp>(location, mlir::TypeRange{resultType});
-            return udef;
+            return V(udef);
         }
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
@@ -5134,19 +5261,19 @@ class MLIRGenImpl
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
             checkSafeCast(conditionalExpressionAST->condition, genContext);
-            resultTrue = mlirGen(whenTrueExpression, genContext);
+            auto result = mlirGen(whenTrueExpression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            resultTrue = V(result);
         }
-
-        VALIDATE(resultTrue, location);
 
         builder.create<mlir_ts::ResultOp>(location,
                                           mlir::ValueRange{cast(location, resultType, resultTrue, genContext)});
 
         builder.setInsertionPointToStart(&ifOp.elseRegion().front());
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
-        auto resultFalse = mlirGen(whenFalseExpression, genContext);
-
-        VALIDATE(resultFalse, location);
+        auto result2 = mlirGen(whenFalseExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
+        auto resultFalse = V(result2);
 
         builder.create<mlir_ts::ResultOp>(location,
                                           mlir::ValueRange{cast(location, resultType, resultFalse, genContext)});
@@ -5156,8 +5283,8 @@ class MLIRGenImpl
         return ifOp.getResult(0);
     }
 
-    mlir::Value mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext, bool andOp,
-                                  bool saveResult)
+    ValueOrLogicalResult mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext,
+                                           bool andOp, bool saveResult)
     {
         auto location = loc(binaryExpressionAST);
 
@@ -5165,9 +5292,9 @@ class MLIRGenImpl
         auto rightExpression = binaryExpressionAST->right;
 
         // condition
-        auto leftExpressionValue = mlirGen(leftExpression, genContext);
-
-        VALIDATE(leftExpressionValue, location)
+        auto result = mlirGen(leftExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto leftExpressionValue = V(result);
 
         MLIRTypeHelper mth(builder.getContext());
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
@@ -5178,11 +5305,21 @@ class MLIRGenImpl
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
 
         builder.setInsertionPointToStart(&ifOp.thenRegion().front());
-        auto resultTrue = andOp ? mlirGen(rightExpression, genContext) : leftExpressionValue;
+        mlir::Value resultTrue;
+        if (andOp)
+        {
+            auto result = mlirGen(rightExpression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            resultTrue = V(result);
+        }
+        else
+        {
+            resultTrue = leftExpressionValue;
+        }
 
         if (andOp)
         {
-            VALIDATE(resultTrue, location)
+            VALIDATE1(resultTrue, location)
         }
 
         // sync left part
@@ -5194,11 +5331,21 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
         builder.setInsertionPointToStart(&ifOp.elseRegion().front());
-        auto resultFalse = andOp ? leftExpressionValue : mlirGen(rightExpression, genContext);
+        mlir::Value resultFalse;
+        if (andOp)
+        {
+            resultFalse = leftExpressionValue;
+        }
+        else
+        {
+            auto result = mlirGen(rightExpression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            resultFalse = V(result);
+        }
 
         if (!andOp)
         {
-            VALIDATE(resultFalse, location)
+            VALIDATE1(resultFalse, location)
         }
 
         // sync right part
@@ -5211,16 +5358,17 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(ifOp);
 
-        auto result = ifOp.results().front();
+        auto resultFirst = ifOp.results().front();
         if (saveResult)
         {
-            return mlirGenSaveLogicOneItem(location, leftExpressionValue, result, genContext);
+            return mlirGenSaveLogicOneItem(location, leftExpressionValue, resultFirst, genContext);
         }
 
-        return result;
+        return resultFirst;
     }
 
-    mlir::Value mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST,
+                                                      const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
 
@@ -5228,9 +5376,9 @@ class MLIRGenImpl
         auto rightExpression = binaryExpressionAST->right;
 
         // condition
-        auto leftExpressionValue = mlirGen(leftExpression, genContext);
-
-        VALIDATE(leftExpressionValue, location)
+        auto result = mlirGen(leftExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto leftExpressionValue = V(result);
 
         MLIRTypeHelper mth(builder.getContext());
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
@@ -5247,9 +5395,8 @@ class MLIRGenImpl
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, compareToNull, true);
 
         builder.setInsertionPointToStart(&ifOp.thenRegion().front());
-        auto resultTrue = mlirGen(rightExpression, genContext);
-
-        VALIDATE(resultTrue, location)
+        auto result2 = mlirGen(rightExpression, genContext);
+        auto resultTrue = V(result2);
 
         // sync left part
         if (resultType != resultTrue.getType())
@@ -5275,7 +5422,7 @@ class MLIRGenImpl
         return ifOp.results().front();
     }
 
-    mlir::Value mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         // Supports only array now
         auto location = loc(binaryExpressionAST);
@@ -5290,9 +5437,9 @@ class MLIRGenImpl
         return mlirGen(cond, genContext);
     }
 
-    mlir::Value mlirGenCallThisMethod(mlir::Location location, mlir::Value thisValue, StringRef methodName,
-                                      NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
-                                      const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCallThisMethod(mlir::Location location, mlir::Value thisValue, StringRef methodName,
+                                               NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
+                                               const GenContext &genContext)
     {
         // to remove temp var .ctor after call
         SymbolTableScopeT varScope(symbolTable);
@@ -5310,15 +5457,15 @@ class MLIRGenImpl
         return mlirGen(callLogic, genContext);
     }
 
-    mlir::Value mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
 
         MLIRTypeHelper mth(builder.getContext());
 
-        auto result = mlirGen(binaryExpressionAST->left, genContext);
-
-        VALIDATE(result, location);
+        auto result2 = mlirGen(binaryExpressionAST->left, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
+        auto result = V(result2);
 
         auto resultType = result.getType();
         if (auto refType = resultType.dyn_cast<mlir_ts::RefType>())
@@ -5337,7 +5484,7 @@ class MLIRGenImpl
                 emitError(location, "type of instanceOf can't be resolved.");
             }
 
-            return mlir::Value();
+            return mlir::failure();
         }
 
         type = mth.wideStorageType(type);
@@ -5411,7 +5558,8 @@ class MLIRGenImpl
                                 << "' is '" << type << "'\n";);
 
         // default logic
-        return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type));
+        return V(
+            builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type)));
     }
 
     mlir::Value evaluateBinaryOp(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp leftConstOp,
@@ -5450,8 +5598,8 @@ class MLIRGenImpl
         return builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getI64IntegerAttr(result));
     }
 
-    mlir::Value mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
-                                        mlir::Value rightExpressionValue, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
+                                                 mlir::Value rightExpressionValue, const GenContext &genContext)
     {
         auto leftExpressionValueBeforeCast = leftExpressionValue;
 
@@ -5520,13 +5668,13 @@ class MLIRGenImpl
         {
             LLVM_DEBUG(dbgs() << "\n!! left expr.: " << leftExpressionValueBeforeCast << " ...\n";);
             emitError(location, "saving to constant object");
-            return mlir::Value();
+            return mlir::failure();
         }
 
         return savingValue;
     }
 
-    mlir::Value mlirGenSaveLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenSaveLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
 
@@ -5545,9 +5693,9 @@ class MLIRGenImpl
                                           genContext);
         }
 
-        auto leftExpressionValue = mlirGen(leftExpression, genContext);
-
-        VALIDATE(leftExpressionValue, location)
+        auto result = mlirGen(leftExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto leftExpressionValue = V(result);
 
         auto rightExprGenContext = GenContext(genContext);
         if (auto hybridFuncType = leftExpressionValue.getType().dyn_cast<mlir_ts::HybridFunctionType>())
@@ -5559,19 +5707,19 @@ class MLIRGenImpl
             rightExprGenContext.argTypeDestFuncType = funcType;
         }
 
-        auto rightExpressionValue = mlirGen(rightExpression, rightExprGenContext);
-
-        VALIDATE(rightExpressionValue, location)
+        auto result2 = mlirGen(rightExpression, rightExprGenContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
+        auto rightExpressionValue = V(result2);
 
         return mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
     }
 
-    mlir::Value mlirGenSaveLogicArray(mlir::Location location, ArrayLiteralExpression arrayLiteralExpression,
-                                      Expression rightExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenSaveLogicArray(mlir::Location location, ArrayLiteralExpression arrayLiteralExpression,
+                                               Expression rightExpression, const GenContext &genContext)
     {
-        auto rightExpressionValue = mlirGen(rightExpression, genContext);
-
-        VALIDATE(rightExpressionValue, location)
+        auto result = mlirGen(rightExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto rightExpressionValue = V(result);
 
         mlir::Type elementType;
         TypeSwitch<mlir::Type>(rightExpressionValue.getType())
@@ -5582,9 +5730,9 @@ class MLIRGenImpl
         auto index = 0;
         for (auto leftItem : arrayLiteralExpression->elements)
         {
-            auto leftExpressionValue = mlirGen(leftItem, genContext);
-
-            VALIDATE(leftExpressionValue, location)
+            auto result = mlirGen(leftItem, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto leftExpressionValue = V(result);
 
             // TODO: unify array access like Property access
             auto indexValue =
@@ -5598,15 +5746,16 @@ class MLIRGenImpl
         }
 
         // no passing value
-        return mlir::Value();
+        return mlir::success();
     }
 
-    mlir::Value mlirGenSaveLogicObject(mlir::Location location, ObjectLiteralExpression objectLiteralExpression,
-                                       Expression rightExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenSaveLogicObject(mlir::Location location,
+                                                ObjectLiteralExpression objectLiteralExpression,
+                                                Expression rightExpression, const GenContext &genContext)
     {
-        auto rightExpressionValue = mlirGen(rightExpression, genContext);
-
-        VALIDATE(rightExpressionValue, location)
+        auto result = mlirGen(rightExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto rightExpressionValue = V(result);
 
         auto index = 0;
         for (auto item : objectLiteralExpression->properties)
@@ -5648,7 +5797,7 @@ class MLIRGenImpl
         }
 
         // no passing value
-        return mlir::Value();
+        return mlir::success();
     }
 
     mlir::LogicalResult unwrapForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue,
@@ -5866,7 +6015,7 @@ class MLIRGenImpl
         return result;
     }
 
-    mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
 
@@ -5903,11 +6052,12 @@ class MLIRGenImpl
             return mlirGenSaveLogic(binaryExpressionAST, genContext);
         }
 
-        auto leftExpressionValue = mlirGen(leftExpression, genContext);
-        auto rightExpressionValue = mlirGen(rightExpression, genContext);
-
-        VALIDATE(rightExpressionValue, location)
-        VALIDATE(leftExpressionValue, location)
+        auto result = mlirGen(leftExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto leftExpressionValue = V(result);
+        auto result2 = mlirGen(rightExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
+        auto rightExpressionValue = V(result2);
 
         // check if const expr.
         if (genContext.allowConstEval)
@@ -5928,48 +6078,48 @@ class MLIRGenImpl
 
         adjustTypesForBinaryOp(opCode, leftExpressionValue, rightExpressionValue, genContext);
 
-        auto result = binaryOpLogic(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
+        auto resultReturn = binaryOpLogic(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
 
         if (saveResult)
         {
-            return mlirGenSaveLogicOneItem(location, leftExpressionValueBeforeCast, result, genContext);
+            return mlirGenSaveLogicOneItem(location, leftExpressionValueBeforeCast, resultReturn, genContext);
         }
 
-        return result;
+        return resultReturn;
     }
 
-    mlir::Value mlirGen(SpreadElement spreadElement, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(SpreadElement spreadElement, const GenContext &genContext)
     {
         return mlirGen(spreadElement->expression, genContext);
     }
 
-    mlir::Value mlirGen(ParenthesizedExpression parenthesizedExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ParenthesizedExpression parenthesizedExpression, const GenContext &genContext)
     {
         return mlirGen(parenthesizedExpression->expression, genContext);
     }
 
-    mlir::Value mlirGen(QualifiedName qualifiedName, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(QualifiedName qualifiedName, const GenContext &genContext)
     {
         auto location = loc(qualifiedName);
 
         auto expression = qualifiedName->left;
-        auto expressionValue = mlirGenModuleReference(expression, genContext);
-
-        VALIDATE(expressionValue, location)
+        auto result = mlirGenModuleReference(expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto expressionValue = V(result);
 
         auto name = MLIRHelper::getName(qualifiedName->right);
 
         return mlirGenPropertyAccessExpression(location, expressionValue, name, genContext);
     }
 
-    mlir::Value mlirGen(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext)
     {
         auto location = loc(propertyAccessExpression);
 
         auto expression = propertyAccessExpression->expression.as<Expression>();
-        auto expressionValue = mlirGen(expression, genContext);
-
-        VALIDATE(expressionValue, location)
+        auto result = mlirGen(expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto expressionValue = V(result);
 
         auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
 
@@ -5977,39 +6127,41 @@ class MLIRGenImpl
                                                !!propertyAccessExpression->questionDotToken, genContext);
     }
 
-    mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::StringRef name,
-                                                const GenContext &genContext)
+    ValueOrLogicalResult mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue,
+                                                         mlir::StringRef name, const GenContext &genContext)
     {
         assert(objectValue);
         MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, false, cl, genContext);
     }
 
-    mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::StringRef name,
-                                                bool isConditional, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue,
+                                                         mlir::StringRef name, bool isConditional,
+                                                         const GenContext &genContext)
     {
         assert(objectValue);
         MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
     }
 
-    mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::Attribute id,
-                                                const GenContext &genContext)
+    ValueOrLogicalResult mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue,
+                                                         mlir::Attribute id, const GenContext &genContext)
     {
         MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, id);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, false, cl, genContext);
     }
 
-    mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::Attribute id,
-                                                bool isConditional, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue,
+                                                         mlir::Attribute id, bool isConditional,
+                                                         const GenContext &genContext)
     {
         MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, id);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
     }
 
-    mlir::Value mlirGenPropertyAccessExpressionLogic(mlir::Location location, mlir::Value objectValue,
-                                                     bool isConditional, MLIRPropertyAccessCodeLogic &cl,
-                                                     const GenContext &genContext)
+    ValueOrLogicalResult mlirGenPropertyAccessExpressionLogic(mlir::Location location, mlir::Value objectValue,
+                                                              bool isConditional, MLIRPropertyAccessCodeLogic &cl,
+                                                              const GenContext &genContext)
     {
         if (isConditional)
         {
@@ -6022,7 +6174,8 @@ class MLIRGenImpl
             builder.setInsertionPointToStart(&ifOp.thenRegion().front());
 
             // value if true
-            auto value = mlirGenPropertyAccessExpressionBaseLogic(location, objectValue, cl, genContext);
+            auto result = mlirGenPropertyAccessExpressionBaseLogic(location, objectValue, cl, genContext);
+            auto value = V(result);
             auto optValue =
                 builder.create<mlir_ts::CreateOptionalOp>(location, getOptionalType(value.getType()), value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
@@ -6043,8 +6196,9 @@ class MLIRGenImpl
         }
     }
 
-    mlir::Value mlirGenPropertyAccessExpressionBaseLogic(mlir::Location location, mlir::Value objectValue,
-                                                         MLIRPropertyAccessCodeLogic &cl, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenPropertyAccessExpressionBaseLogic(mlir::Location location, mlir::Value objectValue,
+                                                                  MLIRPropertyAccessCodeLogic &cl,
+                                                                  const GenContext &genContext)
     {
         mlir::Value value;
         auto name = cl.getName();
@@ -6207,7 +6361,8 @@ class MLIRGenImpl
             // TODO:
             auto effectiveThisValue = thisValue;
 
-            auto vtableAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
+            auto result = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
+            auto vtableAccess = V(result);
 
             assert(genContext.allowPartialResolve || fieldInfo.virtualIndex >= 0);
 
@@ -6370,7 +6525,8 @@ class MLIRGenImpl
         {
             if (first && name == SUPER_NAME)
             {
-                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, genContext);
+                auto result = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, genContext);
+                auto value = V(result);
                 return value;
             }
 
@@ -6405,7 +6561,8 @@ class MLIRGenImpl
                 }
 
                 // last value
-                auto value = mlirGenPropertyAccessExpression(location, currentObject, name, genContext);
+                auto result = mlirGenPropertyAccessExpression(location, currentObject, name, genContext);
+                auto value = V(result);
                 if (value)
                 {
                     return value;
@@ -6551,8 +6708,8 @@ class MLIRGenImpl
     }
 
     template <typename T>
-    mlir::Value mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression,
-                                     T tupleType)
+    ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression,
+                                              mlir::Value argumentExpression, T tupleType)
     {
         // get index
         if (auto indexConstOp = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
@@ -6569,17 +6726,17 @@ class MLIRGenImpl
         }
     }
 
-    mlir::Value mlirGen(ElementAccessExpression elementAccessExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ElementAccessExpression elementAccessExpression, const GenContext &genContext)
     {
         auto location = loc(elementAccessExpression);
 
-        auto expression = mlirGen(elementAccessExpression->expression.as<Expression>(), genContext);
+        auto result = mlirGen(elementAccessExpression->expression.as<Expression>(), genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto expression = V(result);
 
-        VALIDATE(expression, location)
-
-        auto argumentExpression = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
-
-        VALIDATE(argumentExpression, location)
+        auto result2 = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
+        auto argumentExpression = V(result2);
 
         MLIRTypeHelper mth(builder.getContext());
 
@@ -6627,28 +6784,18 @@ class MLIRGenImpl
 
         auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), expression,
                                                              argumentExpression);
-        return builder.create<mlir_ts::LoadOp>(location, elementType, elemRef);
+        return V(builder.create<mlir_ts::LoadOp>(location, elementType, elemRef));
     }
 
-    mlir::Value mlirGen(CallExpression callExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(CallExpression callExpression, const GenContext &genContext)
     {
         auto location = loc(callExpression);
 
         auto callExpr = callExpression->expression.as<Expression>();
 
-        auto funcResult = mlirGen(callExpr, genContext);
-        if (!funcResult)
-        {
-            if (genContext.allowPartialResolve)
-            {
-                return mlir::Value();
-            }
-
-            emitError(location, "call expression is empty");
-
-            assert(false);
-            return mlir::Value();
-        }
+        auto result = mlirGen(callExpr, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto funcResult = V(result);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
@@ -6660,8 +6807,10 @@ class MLIRGenImpl
                 emitError(location) << "Call Method: can't resolve values of all parameters";
             }
 
-            return mlir::Value();
+            return mlir::failure();
         }
+
+        assert(operands.size() == callExpression->arguments.size());
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! function: [" << funcResult << "] ops: "; for (auto o
                                                                                        : operands) llvm::dbgs()
@@ -6709,7 +6858,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::Value mlirGenArrayEvery(mlir::Location location, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenArrayEvery(mlir::Location location, ArrayRef<mlir::Value> operands,
+                                           const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -6761,7 +6911,8 @@ class MLIRGenImpl
         return resolveIdentifier(location, varName, genContext);
     }
 
-    mlir::Value mlirGenArraySome(mlir::Location location, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenArraySome(mlir::Location location, ArrayRef<mlir::Value> operands,
+                                          const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -6811,7 +6962,8 @@ class MLIRGenImpl
         return resolveIdentifier(location, varName, genContext);
     }
 
-    mlir::Value mlirGenArrayMap(mlir::Location location, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenArrayMap(mlir::Location location, ArrayRef<mlir::Value> operands,
+                                         const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -6861,8 +7013,8 @@ class MLIRGenImpl
         return mlirGen(callOfIter, genContext);
     }
 
-    mlir::Value mlirGenArrayFilter(mlir::Location location, ArrayRef<mlir::Value> operands,
-                                   const GenContext &genContext)
+    ValueOrLogicalResult mlirGenArrayFilter(mlir::Location location, ArrayRef<mlir::Value> operands,
+                                            const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -6913,8 +7065,8 @@ class MLIRGenImpl
         return mlirGen(callOfIter, genContext);
     }
 
-    mlir::Value mlirGenArrayReduce(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
-                                   const GenContext &genContext)
+    ValueOrLogicalResult mlirGenArrayReduce(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
+                                            const GenContext &genContext)
     {
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "___array_reduce";
@@ -6931,7 +7083,7 @@ class MLIRGenImpl
             if (mlir::failed(parsePartialStatements(src)))
             {
                 assert(false);
-                return mlir::Value();
+                return mlir::failure();
             }
         }
 
@@ -6942,19 +7094,17 @@ class MLIRGenImpl
         return mlirGenCallExpression(location, funcResult, {}, operands, genContext);
     }
 
-    mlir::Value mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
-                                      NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
-                                      const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
+                                               NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
+                                               const GenContext &genContext)
     {
         GenContext specGenContext(genContext);
         specGenContext.callOperands = operands;
 
         // get function ref.
-        auto actualFuncRefValue = mlirGenSpecialized(location, funcResult, typeArguments, specGenContext);
-        if (!actualFuncRefValue)
-        {
-            return mlir::Value();
-        }
+        auto result = mlirGenSpecialized(location, funcResult, typeArguments, specGenContext);
+        EXIT_IF_FAILED(result)
+        auto actualFuncRefValue = V(result);
 
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
         auto virtAttrName = StringRef(VIRTUALFUNC_ATTR_NAME);
@@ -6976,7 +7126,7 @@ class MLIRGenImpl
             if (functionName == "__array_foreach")
             {
                 mlirGenArrayForEach(location, operands, genContext);
-                return mlir::Value();
+                return mlir::success();
             }
 
             if (functionName == "__array_every")
@@ -7027,7 +7177,8 @@ class MLIRGenImpl
                 builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), actualFuncRefValue);
 
             auto hasReturn = false;
-            auto value = mlirGenCall(location, innerFuncRef, operands, hasReturn, genContext);
+            auto result = mlirGenCall(location, innerFuncRef, operands, hasReturn, genContext);
+            auto value = V(result);
             if (hasReturn)
             {
                 auto optValue =
@@ -7051,11 +7202,12 @@ class MLIRGenImpl
                 return ifOp.results().front();
             }
 
-            return mlir::Value();
+            return mlir::success();
         }
 
         auto hasReturn = false;
-        auto value = mlirGenCall(location, actualFuncRefValue, operands, hasReturn, genContext);
+        auto result2 = mlirGenCall(location, actualFuncRefValue, operands, hasReturn, genContext);
+        auto value = V(result2);
         if (value)
         {
             return value;
@@ -7231,8 +7383,9 @@ class MLIRGenImpl
         return paramsType;
     }
 
-    mlir::Value mlirGenCall(mlir::Location location, mlir::Value funcRefValue, SmallVector<mlir::Value, 4> &operands,
-                            bool &hasReturn, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
+                                     SmallVector<mlir::Value, 4> &operands, bool &hasReturn,
+                                     const GenContext &genContext)
     {
         mlir::Value value;
         hasReturn = false;
@@ -7285,18 +7438,18 @@ class MLIRGenImpl
     }
 
     template <typename T = mlir_ts::FunctionType>
-    mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
-                                    SmallVector<mlir::Value, 4> &operands, bool &hasReturn,
-                                    const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
+                                             SmallVector<mlir::Value, 4> &operands, bool &hasReturn,
+                                             const GenContext &genContext)
     {
         return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, hasReturn,
                                    genContext);
     }
 
     template <typename T = mlir_ts::FunctionType>
-    mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
-                                    mlir::Value thisValue, SmallVector<mlir::Value, 4> &operands, bool &hasReturn,
-                                    const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
+                                             mlir::Value thisValue, SmallVector<mlir::Value, 4> &operands,
+                                             bool &hasReturn, const GenContext &genContext)
     {
         hasReturn = false;
         mlir::Value value;
@@ -7315,7 +7468,7 @@ class MLIRGenImpl
         {
             for (auto &oper : operands)
             {
-                VALIDATE(oper, location)
+                VALIDATE1(oper, location)
             }
 
             // if last is vararg
@@ -7424,9 +7577,9 @@ class MLIRGenImpl
                 }
             }
 
-            auto value = mlirGen(expression, argGenContext);
-
-            TEST_LOGIC(value)
+            auto result = mlirGen(expression, argGenContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto value = V(result);
 
             operands.push_back(value);
 
@@ -7467,7 +7620,7 @@ class MLIRGenImpl
                 argTypeDestFuncType = argFuncTypes[i];
             }
 
-            VALIDATE_LOGIC(value, value.getLoc())
+            VALIDATE_LOGIC1(value, value.getLoc())
 
             if (value.getType() != argTypeDestFuncType)
             {
@@ -7490,7 +7643,8 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        auto vtableVal = mlirGenPropertyAccessExpression(location, thisValue, VTABLE_NAME, genContext);
+        auto result = mlirGenPropertyAccessExpression(location, thisValue, VTABLE_NAME, genContext);
+        auto vtableVal = V(result);
         MLIRCodeLogic mcl(builder);
         auto vtableRefVal = mcl.GetReferenceOfLoadOp(vtableVal);
 
@@ -7568,7 +7722,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::Value NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
+    ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
                                  bool suppressConstructorCall, const GenContext &genContext)
     {
         MLIRTypeHelper mth(builder.getContext());
@@ -7606,7 +7760,7 @@ class MLIRGenImpl
                         emitError(location) << "Call constructor: can't resolve values of all parameters";
                     }
 
-                    return mlir::Value();
+                    return mlir::failure();
                 }
 
                 assert(newOp);
@@ -7619,7 +7773,7 @@ class MLIRGenImpl
         return NewClassInstanceLogicAsOp(location, resultType, false, genContext);
     }
 
-    mlir::Value NewClassInstanceLogicAsOp(mlir::Location location, mlir::Type typeOfInstance, bool stackAlloc,
+    ValueOrLogicalResult NewClassInstanceLogicAsOp(mlir::Location location, mlir::Type typeOfInstance, bool stackAlloc,
                                           const GenContext &genContext)
     {
         if (auto classType = typeOfInstance.dyn_cast<mlir_ts::ClassType>())
@@ -7630,7 +7784,7 @@ class MLIRGenImpl
         }
 
         auto newOp = builder.create<mlir_ts::NewOp>(location, typeOfInstance, builder.getBoolAttr(stackAlloc));
-        return newOp;
+        return V(newOp);
     }
 
     mlir::Value NewClassInstanceLogicAsOp(mlir::Location location, ClassInfo::TypePtr classInfo, bool stackAlloc,
@@ -7653,7 +7807,8 @@ class MLIRGenImpl
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
 
             // call <Class>..new to create new instance
-            auto newFuncRef = mlirGenPropertyAccessExpression(location, classRefVal, ".new", false, genContext);
+            auto result = mlirGenPropertyAccessExpression(location, classRefVal, ".new", false, genContext);
+            auto newFuncRef = V(result);
 
             assert(newFuncRef);
 
@@ -7667,7 +7822,7 @@ class MLIRGenImpl
         return NewClassInstanceLogicAsOp(location, classInfo, false, genContext);
     }
 
-    mlir::Value mlirGen(NewExpression newExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(NewExpression newExpression, const GenContext &genContext)
     {
         MLIRTypeHelper mth(builder.getContext());
         auto location = loc(newExpression);
@@ -7677,9 +7832,9 @@ class MLIRGenImpl
         auto typeExpression = newExpression->expression;
         if (typeExpression != SyntaxKind::ElementAccessExpression)
         {
-            auto value = mlirGen(typeExpression, newExpression->typeArguments, genContext);
-
-            VALIDATE(value, location);
+            auto result = mlirGen(typeExpression, newExpression->typeArguments, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto value = V(result);
 
             auto suppressConstructorCall = (newExpression->internalFlags & InternalFlags::SuppressConstructorCall) ==
                                            InternalFlags::SuppressConstructorCall;
@@ -7695,7 +7850,9 @@ class MLIRGenImpl
 
             assert(type);
 
-            auto count = mlirGen(elementAccessExpression->argumentExpression, genContext);
+            auto result = mlirGen(elementAccessExpression->argumentExpression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto count = V(result);
 
             if (count.getType() != builder.getI32Type())
             {
@@ -7703,7 +7860,7 @@ class MLIRGenImpl
             }
 
             auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(type), count);
-            return newArrOp;
+            return V(newArrOp);
         }
     }
 
@@ -7712,7 +7869,9 @@ class MLIRGenImpl
         MLIRTypeHelper mth(builder.getContext());
         auto location = loc(deleteExpression);
 
-        auto expr = mlirGen(deleteExpression->expression, genContext);
+        auto result = mlirGen(deleteExpression->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto expr = V(result);
 
         if (!expr.getType().isa<mlir_ts::RefType>() && !expr.getType().isa<mlir_ts::ValueRefType>() &&
             !expr.getType().isa<mlir_ts::ClassType>())
@@ -7732,33 +7891,36 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::Value mlirGen(VoidExpression voidExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(VoidExpression voidExpression, const GenContext &genContext)
     {
         MLIRTypeHelper mth(builder.getContext());
         auto location = loc(voidExpression);
 
-        auto expr = mlirGen(voidExpression->expression, genContext);
+        auto result = mlirGen(voidExpression->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto expr = V(result);
 
         auto value = getUndefined(location);
 
         return value;
     }
 
-    mlir::Value mlirGen(TypeOfExpression typeOfExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(TypeOfExpression typeOfExpression, const GenContext &genContext)
     {
         auto location = loc(typeOfExpression);
 
         auto result = mlirGen(typeOfExpression->expression, genContext);
-        auto typeOfValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), result);
-        return typeOfValue;
+        auto resultValue = V(result);
+        auto typeOfValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), resultValue);
+        return V(typeOfValue);
     }
 
-    mlir::Value mlirGen(NonNullExpression nonNullExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(NonNullExpression nonNullExpression, const GenContext &genContext)
     {
         return mlirGen(nonNullExpression->expression, genContext);
     }
 
-    mlir::Value mlirGen(TemplateLiteralLikeNode templateExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(TemplateLiteralLikeNode templateExpressionAST, const GenContext &genContext)
     {
         auto location = loc(templateExpressionAST);
 
@@ -7773,9 +7935,9 @@ class MLIRGenImpl
         for (auto span : templateExpressionAST->templateSpans)
         {
             auto expression = span->expression;
-            auto exprValue = mlirGen(expression, genContext);
-
-            VALIDATE(exprValue, location)
+            auto result = mlirGen(expression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto exprValue = V(result);
 
             if (exprValue.getType() != stringType)
             {
@@ -7794,16 +7956,16 @@ class MLIRGenImpl
 
         if (strs.size() <= 1)
         {
-            return head;
+            return V(head);
         }
 
         auto concatValues =
             builder.create<mlir_ts::StringConcatOp>(location, stringType, mlir::ArrayRef<mlir::Value>{strs});
 
-        return concatValues;
+        return V(concatValues);
     }
 
-    mlir::Value mlirGen(TaggedTemplateExpression taggedTemplateExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(TaggedTemplateExpression taggedTemplateExpressionAST, const GenContext &genContext)
     {
         auto location = loc(taggedTemplateExpressionAST);
 
@@ -7820,9 +7982,9 @@ class MLIRGenImpl
         {
             // expr value
             auto expression = span->expression;
-            auto exprValue = mlirGen(expression, genContext);
-
-            VALIDATE(exprValue, location)
+            auto result = mlirGen(expression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto exprValue = V(result);
 
             vals.push_back(exprValue);
 
@@ -7840,9 +8002,9 @@ class MLIRGenImpl
 
         vals.insert(vals.begin(), strArrayValue);
 
-        auto callee = mlirGen(taggedTemplateExpressionAST->tag, genContext);
-
-        VALIDATE(callee, location)
+        auto result = mlirGen(taggedTemplateExpressionAST->tag, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto callee = V(result);
 
         auto inputs = getParamsFromFuncRef(callee.getType());
 
@@ -7875,26 +8037,26 @@ class MLIRGenImpl
         return callIndirectOp.getResult(0);
     }
 
-    mlir::Value mlirGen(NullLiteral nullLiteral, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(NullLiteral nullLiteral, const GenContext &genContext)
     {
-        return builder.create<mlir_ts::NullOp>(loc(nullLiteral), getNullType());
+        return V(builder.create<mlir_ts::NullOp>(loc(nullLiteral), getNullType()));
     }
 
-    mlir::Value mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
     {
         auto attrVal = mlir::BoolAttr::get(builder.getContext(), true);
         auto literalType = mlir_ts::LiteralType::get(attrVal, getBooleanType());
-        return builder.create<mlir_ts::ConstantOp>(loc(trueLiteral), literalType, attrVal);
+        return V(builder.create<mlir_ts::ConstantOp>(loc(trueLiteral), literalType, attrVal));
     }
 
-    mlir::Value mlirGen(FalseLiteral falseLiteral, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(FalseLiteral falseLiteral, const GenContext &genContext)
     {
         auto attrVal = mlir::BoolAttr::get(builder.getContext(), false);
         auto literalType = mlir_ts::LiteralType::get(attrVal, getBooleanType());
-        return builder.create<mlir_ts::ConstantOp>(loc(falseLiteral), literalType, attrVal);
+        return V(builder.create<mlir_ts::ConstantOp>(loc(falseLiteral), literalType, attrVal));
     }
 
-    mlir::Value mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
     {
         if (numericLiteral->text.find(S(".")) == string::npos)
         {
@@ -7902,54 +8064,55 @@ class MLIRGenImpl
             {
                 auto attrVal = builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text));
                 auto literalType = mlir_ts::LiteralType::get(attrVal, builder.getI32Type());
-                return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal);
+                return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
             }
             catch (const std::out_of_range &)
             {
                 auto attrVal = builder.getI64IntegerAttr(to_bignumber(numericLiteral->text));
                 auto literalType = mlir_ts::LiteralType::get(attrVal, builder.getI64Type());
-                return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal);
+                return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
             }
         }
 
 #ifdef NUMBER_F64
         auto attrVal = builder.getF64FloatAttr(to_float(numericLiteral->text));
         auto literalType = mlir_ts::LiteralType::get(attrVal, getNumberType());
-        return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal);
+        return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
 #else
         auto attrVal = builder.getF32FloatAttr(to_float(numericLiteral->text));
         auto literalType = mlir_ts::LiteralType::get(attrVal, getNumberType());
-        return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal);
+        return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
 #endif
     }
 
-    mlir::Value mlirGen(BigIntLiteral bigIntLiteral, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(BigIntLiteral bigIntLiteral, const GenContext &genContext)
     {
         auto attrVal = builder.getI64IntegerAttr(to_bignumber(bigIntLiteral->text));
         auto literalType = mlir_ts::LiteralType::get(attrVal, builder.getI64Type());
-        return builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), literalType, attrVal);
+        return V(builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), literalType, attrVal));
     }
 
-    mlir::Value mlirGen(ts::StringLiteral stringLiteral, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ts::StringLiteral stringLiteral, const GenContext &genContext)
     {
         auto text = convertWideToUTF8(stringLiteral->text);
 
         auto attrVal = getStringAttr(text);
         auto literalType = mlir_ts::LiteralType::get(attrVal, getStringType());
-        return builder.create<mlir_ts::ConstantOp>(loc(stringLiteral), literalType, attrVal);
+        return V(builder.create<mlir_ts::ConstantOp>(loc(stringLiteral), literalType, attrVal));
     }
 
-    mlir::Value mlirGen(ts::NoSubstitutionTemplateLiteral noSubstitutionTemplateLiteral, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ts::NoSubstitutionTemplateLiteral noSubstitutionTemplateLiteral,
+                                 const GenContext &genContext)
     {
         auto text = convertWideToUTF8(noSubstitutionTemplateLiteral->text);
 
         auto attrVal = getStringAttr(text);
         auto literalType = mlir_ts::LiteralType::get(attrVal, getStringType());
-        return builder.create<mlir_ts::ConstantOp>(loc(noSubstitutionTemplateLiteral), literalType, attrVal);
+        return V(builder.create<mlir_ts::ConstantOp>(loc(noSubstitutionTemplateLiteral), literalType, attrVal));
     }
 
-    mlir::Value mlirGenAppendArray(mlir::Location location, mlir::Value arrayDest, mlir::Value arraySrc,
-                                   const GenContext &genContext)
+    ValueOrLogicalResult mlirGenAppendArray(mlir::Location location, mlir::Value arrayDest, mlir::Value arraySrc,
+                                            const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -7984,12 +8147,10 @@ class MLIRGenImpl
             undefined, declList, _src_array_ident,
             nf.createExpressionStatement(nf.createCallExpression(pushExpr, undefined, argumentsArray)));
 
-        mlirGen(forOfStat, genContext);
-
-        return mlir::Value();
+        return mlirGen(forOfStat, genContext);
     }
 
-    mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
     {
         auto location = loc(arrayLiteral);
 
@@ -8004,7 +8165,8 @@ class MLIRGenImpl
 
         for (auto &item : arrayLiteral->elements)
         {
-            auto itemValue = mlirGen(item, genContext);
+            auto result = mlirGen(item, genContext);
+            auto itemValue = V(result);
             if (!itemValue)
             {
                 // omitted expression
@@ -8087,7 +8249,7 @@ class MLIRGenImpl
                     arrayValues.push_back(std::get<1>(val));
                 }
 
-                return builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues);
+                return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
             }
 
             if (!elementType)
@@ -8111,7 +8273,7 @@ class MLIRGenImpl
 
                 auto newArrayOp =
                     builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(elementType), arrayValues);
-                return newArrayOp;
+                return V(newArrayOp);
             }
             else
             {
@@ -8141,7 +8303,7 @@ class MLIRGenImpl
                 }
 
                 auto loadedVarArray2 = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
-                return loadedVarArray2;
+                return V(loadedVarArray2);
             }
         }
         else
@@ -8174,7 +8336,8 @@ class MLIRGenImpl
                     fieldInfos.push_back({mlir::Attribute(), type});
                 }
 
-                return builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstTupleType(fieldInfos), arrayAttr);
+                return V(
+                    builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstTupleType(fieldInfos), arrayAttr));
             }
 
             if (!elementType)
@@ -8183,12 +8346,12 @@ class MLIRGenImpl
                 elementType = getAnyType();
             }
 
-            return builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral),
-                                                       getConstArrayType(elementType, constValues.size()), arrayAttr);
+            return V(builder.create<mlir_ts::ConstantOp>(
+                loc(arrayLiteral), getConstArrayType(elementType, constValues.size()), arrayAttr));
         }
     }
 
-    mlir::Value mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
     {
         // TODO: replace all Opaque with ThisType
 
@@ -8330,9 +8493,9 @@ class MLIRGenImpl
                     continue;
                 }
 
-                itemValue = mlirGen(propertyAssignment->initializer, genContext);
-
-                VALIDATE(itemValue, loc(propertyAssignment->initializer))
+                auto result = mlirGen(propertyAssignment->initializer, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                itemValue = V(result);
 
                 fieldId = TupleFieldName(propertyAssignment->name, genContext);
             }
@@ -8345,9 +8508,9 @@ class MLIRGenImpl
                     continue;
                 }
 
-                itemValue = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
-
-                VALIDATE(itemValue, loc(shorthandPropertyAssignment->name))
+                auto result = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                itemValue = V(result);
 
                 fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
             }
@@ -8358,7 +8521,9 @@ class MLIRGenImpl
             else if (item == SyntaxKind::SpreadAssignment)
             {
                 auto spreadAssignment = item.as<SpreadAssignment>();
-                auto tupleValue = mlirGen(spreadAssignment->expression, genContext);
+                auto result = mlirGen(spreadAssignment->expression, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                auto tupleValue = V(result);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment value: " << tupleValue << "\n";);
 
@@ -8473,7 +8638,7 @@ class MLIRGenImpl
             if (mlir::failed(mlirGenResolveCapturedVars(location, accumulatedCaptureVars, accumulatedCapturedValues,
                                                         genContext)))
             {
-                return mlir::Value();
+                return mlir::failure();
             }
 
             auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars),
@@ -8552,16 +8717,16 @@ class MLIRGenImpl
             builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleTypeWithReplacedThis, arrayAttr);
         if (fieldsToSet.empty())
         {
-            return constantVal;
+            return V(constantVal);
         }
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
         return mlirGenCreateTuple(constantVal.getLoc(), tupleType, constantVal, fieldsToSet, genContext);
     }
 
-    mlir::Value mlirGenCreateTuple(mlir::Location location, mlir::Type tupleType, mlir::Value initValue,
-                                   SmallVector<std::pair<mlir::Attribute, mlir::Value>> &fieldsToSet,
-                                   const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCreateTuple(mlir::Location location, mlir::Type tupleType, mlir::Value initValue,
+                                            SmallVector<std::pair<mlir::Attribute, mlir::Value>> &fieldsToSet,
+                                            const GenContext &genContext)
     {
         // we need to cast it to tuple and set values
         auto tupleVar = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(tupleType), initValue,
@@ -8569,18 +8734,21 @@ class MLIRGenImpl
         for (auto fieldToSet : fieldsToSet)
         {
             auto location = fieldToSet.second.getLoc();
-            auto getField = mlirGenPropertyAccessExpression(location, tupleVar, fieldToSet.first, genContext);
+            auto result = mlirGenPropertyAccessExpression(location, tupleVar, fieldToSet.first, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            auto getField = V(result);
 
-            VALIDATE(fieldToSet.second, location)
+            VALIDATE1(fieldToSet.second, location)
 
-            auto savedValue = mlirGenSaveLogicOneItem(location, getField, fieldToSet.second, genContext);
+            auto result2 = mlirGenSaveLogicOneItem(location, getField, fieldToSet.second, genContext);
+            auto savedValue = V(result2);
         }
 
         auto loadedValue = builder.create<mlir_ts::LoadOp>(location, tupleType, tupleVar);
-        return loadedValue;
+        return V(loadedValue);
     }
 
-    mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(Identifier identifier, const GenContext &genContext)
     {
         auto location = loc(identifier);
 
@@ -8588,11 +8756,7 @@ class MLIRGenImpl
         auto name = MLIRHelper::getName(identifier);
 
         // info: can't validate it here, in case of "print" etc
-        auto value = mlirGen(location, name, genContext);
-
-        // VALIDATE(value)
-
-        return value;
+        return mlirGen(location, name, genContext);
     }
 
     mlir::Value resolveIdentifierAsVariable(mlir::Location location, StringRef name, const GenContext &genContext)
@@ -8663,7 +8827,8 @@ class MLIRGenImpl
         MLIRCodeLogic mcl(builder);
         for (auto &item : captureVars)
         {
-            auto varValue = mlirGen(location, item.first(), genContext);
+            auto result = mlirGen(location, item.first(), genContext);
+            auto varValue = V(result);
 
             // review capturing by ref.  it should match storage type
             auto refValue = mcl.GetReferenceOfLoadOp(varValue);
@@ -8703,14 +8868,14 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::Value mlirGenCreateCapture(mlir::Location location, mlir::Type capturedType,
-                                     SmallVector<mlir::Value> capturedValues, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCreateCapture(mlir::Location location, mlir::Type capturedType,
+                                              SmallVector<mlir::Value> capturedValues, const GenContext &genContext)
     {
         LLVM_DEBUG(for (auto &val : capturedValues) llvm::dbgs() << "\n!! captured val: " << val << "\n";);
 
         // add attributes to track which one sent by ref.
         auto captured = builder.create<mlir_ts::CaptureOp>(location, capturedType, capturedValues);
-        return captured;
+        return V(captured);
     }
 
     mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir_ts::FunctionType funcType,
@@ -8739,7 +8904,8 @@ class MLIRGenImpl
                 return mlir::Value();
             }
 
-            auto captured = mlirGenCreateCapture(location, funcType.getInput(0), capturedValues, genContext);
+            auto result = mlirGenCreateCapture(location, funcType.getInput(0), capturedValues, genContext);
+            auto captured = V(result);
             auto opaqueTypeValue = cast(location, getOpaqueType(), captured, genContext);
             return builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
                                                                   opaqueTypeValue, funcSymbolOp);
@@ -8752,7 +8918,7 @@ class MLIRGenImpl
             funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
         }
 
-        return funcSymbolOp;
+        return V(funcSymbolOp);
     }
 
     mlir::Value resolveFunctionNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
@@ -9021,7 +9187,8 @@ class MLIRGenImpl
 
         if (genContext.thisType && name == SUPER_NAME)
         {
-            auto thisValue = mlirGen(location, THIS_NAME, genContext);
+            auto result = mlirGen(location, THIS_NAME, genContext);
+            auto thisValue = V(result);
 
             auto classInfo =
                 getClassInfoByFullName(genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue());
@@ -9039,7 +9206,7 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
-    mlir::Value mlirGen(mlir::Location location, StringRef name, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(mlir::Location location, StringRef name, const GenContext &genContext)
     {
         auto value = resolveIdentifier(location, name, genContext);
         if (value)
@@ -9047,16 +9214,17 @@ class MLIRGenImpl
             return value;
         }
 
-        // unresolved reference (for call for example)
-        // TODO: put assert here to see which ref names are not resolved
-        auto unresolvedSymbol = builder.create<mlir_ts::UnresolvedSymbolRefOp>(
-            location, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
-        if (genContext.unresolved)
+        if (MLIRCustomMethods::isInternalName(name))
         {
-            genContext.unresolved->push_back(std::make_pair(location, name.str()));
+            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
+                location, builder.getNoneType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+            symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return V(symbOp);            
         }
 
-        return unresolvedSymbol;
+        emitError(location, "can't resolve name: ") << name;
+
+        return mlir::failure();
     }
 
     TypeParameterDOM::TypePtr processTypeParameter(TypeParameterDeclaration typeParameter, const GenContext &genContext)
@@ -9128,7 +9296,7 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
-    mlir::Value mlirGenModuleReference(Node moduleReference, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenModuleReference(Node moduleReference, const GenContext &genContext)
     {
         auto kind = (SyntaxKind)moduleReference;
         if (kind == SyntaxKind::QualifiedName)
@@ -9148,7 +9316,8 @@ class MLIRGenImpl
         auto name = MLIRHelper::getName(importEqualsDeclarationAST->name);
         if (!name.empty())
         {
-            auto value = mlirGenModuleReference(importEqualsDeclarationAST->moduleReference, genContext);
+            auto result = mlirGenModuleReference(importEqualsDeclarationAST->moduleReference, genContext);
+            auto value = V(result);
             if (auto namespaceOp = value.getDefiningOp<mlir_ts::NamespaceRefOp>())
             {
                 getImportEqualsMap().insert({name, namespaceOp.identifier()});
@@ -9195,7 +9364,8 @@ class MLIRGenImpl
             {
                 GenContext enumValueGenContext(genContext);
                 enumValueGenContext.allowConstEval = true;
-                auto enumValue = mlirGen(enumMember->initializer, enumValueGenContext);
+                auto result = mlirGen(enumMember->initializer, enumValueGenContext);
+                auto enumValue = V(result);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: " << memberNamePtr << " = " << enumValue << "\n");
 
@@ -9295,7 +9465,7 @@ class MLIRGenImpl
         return std::get<0>(value);
     }
 
-    mlir::Value mlirGen(ClassExpression classExpressionAST, const GenContext &genContext)
+    ValueOrLogicalResult mlirGen(ClassExpression classExpressionAST, const GenContext &genContext)
     {
         std::string fullName;
 
@@ -9307,7 +9477,7 @@ class MLIRGenImpl
             auto [result, fullNameRet] = mlirGen(classExpressionAST.as<ClassLikeDeclaration>(), genContext);
             if (mlir::failed(result))
             {
-                return mlir::Value();
+                return mlir::failure();
             }
 
             fullName = fullNameRet;
@@ -9321,7 +9491,7 @@ class MLIRGenImpl
             if (classInfo->isDeclaration)
             {
                 auto undefClass = builder.create<mlir_ts::UndefOp>(location, classInfo->classType);
-                return undefClass;
+                return V(undefClass);
             }
             else
             {
@@ -9333,7 +9503,7 @@ class MLIRGenImpl
             }
         }
 
-        return mlir::Value();
+        return mlir::failure();
     }
 
     std::pair<mlir::LogicalResult, mlir::StringRef> mlirGen(ClassLikeDeclaration classDeclarationAST,
@@ -9810,7 +9980,8 @@ class MLIRGenImpl
 
             for (auto &extendingType : heritageClause->types)
             {
-                auto baseType = mlirGen(extendingType, genContext);
+                auto result = mlirGen(extendingType, genContext);
+                auto baseType = V(result);
                 TypeSwitch<mlir::Type>(baseType.getType())
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
@@ -9841,7 +10012,8 @@ class MLIRGenImpl
                     continue;
                 }
 
-                auto ifaceType = mlirGen(implementingType, genContext);
+                auto result = mlirGen(implementingType, genContext);
+                auto ifaceType = V(result);
                 TypeSwitch<mlir::Type>(ifaceType.getType())
                     .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
@@ -10254,9 +10426,9 @@ genContext);
         return mlir::success();
     }
 
-    mlir::Value mlirGenCreateInterfaceVTableForClass(mlir::Location location, ClassInfo::TypePtr newClassPtr,
-                                                     InterfaceInfo::TypePtr newInterfacePtr,
-                                                     const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCreateInterfaceVTableForClass(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                              InterfaceInfo::TypePtr newInterfacePtr,
+                                                              const GenContext &genContext)
     {
         auto fullClassInterfaceVTableFieldName = interfaceVTableNameForClass(newClassPtr, newInterfacePtr);
         auto existValue = resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, true, genContext);
@@ -10271,12 +10443,12 @@ genContext);
             return resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, true, genContext);
         }
 
-        return mlir::Value();
+        return mlir::failure();
     }
 
-    mlir::Value mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir_ts::ObjectType objectType,
-                                                      InterfaceInfo::TypePtr newInterfacePtr,
-                                                      const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir_ts::ObjectType objectType,
+                                                               InterfaceInfo::TypePtr newInterfacePtr,
+                                                               const GenContext &genContext)
     {
         auto fullObjectInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
         auto existValue = resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
@@ -10291,7 +10463,7 @@ genContext);
             return resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
         }
 
-        return mlir::Value();
+        return mlir::failure();
     }
 
     StringRef interfaceVTableNameForClass(ClassInfo::TypePtr newClassPtr, InterfaceInfo::TypePtr newInterfacePtr)
@@ -10634,7 +10806,8 @@ genContext);
                 continue;
             }
 
-            auto ifaceType = mlirGen(implementingType, genContext);
+            auto result = mlirGen(implementingType, genContext);
+            auto ifaceType = V(result);
             auto success = false;
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
@@ -11156,7 +11329,8 @@ genContext);
                 continue;
             }
 
-            auto ifaceType = mlirGen(extendsType, genContext);
+            auto result = mlirGen(extendsType, genContext);
+            auto ifaceType = V(result);
             auto success = false;
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
@@ -11293,6 +11467,10 @@ genContext);
 
             auto typeAndInit = getTypeAndInit(propertySignature, genContext);
             type = typeAndInit.first;
+            if (!type)
+            {
+                return mlir::failure();
+            }
 
             // fix type for fields with FuncType
             if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
@@ -11453,7 +11631,8 @@ genContext);
 
             GenContext evalGenContext(genContext);
             evalGenContext.allowPartialResolve = true;
-            auto initValue = mlirGen(expr, evalGenContext);
+            auto result = mlirGen(expr, evalGenContext);
+            auto initValue = V(result);
             if (initValue)
             {
                 func(initValue);
@@ -11483,13 +11662,14 @@ genContext);
         auto insertPoint = builder.saveInsertionPoint();
         builder.setInsertionPointToStart(&entryBlock);
 
-        mlir::Type result;
+        mlir::Type resultType;
         GenContext evalGenContext(genContext);
         evalGenContext.allowPartialResolve = true;
-        auto initValue = mlirGenPropertyAccessExpression(location, exprValue, propertyName, evalGenContext);
+        auto result = mlirGenPropertyAccessExpression(location, exprValue, propertyName, evalGenContext);
+        auto initValue = V(result);
         if (initValue)
         {
-            result = initValue.getType();
+            resultType = initValue.getType();
         }
 
         // remove temp block
@@ -11497,10 +11677,10 @@ genContext);
         entryBlock.erase();
         tempFuncOp.erase();
 
-        return result;
+        return resultType;
     }
 
-    mlir::Value cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
+    ValueOrLogicalResult cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         if (type == value.getType())
         {
@@ -11524,7 +11704,8 @@ genContext);
         {
             if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
             {
-                auto vtableAccess = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
+                auto result = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
+                auto vtableAccess = V(result);
 
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
                 assert(classInfo);
@@ -11543,7 +11724,7 @@ genContext);
 
                     auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(
                         location, mlir::TypeRange{interfaceType}, value, interfaceVTablePtr);
-                    return newInterface;
+                    return V(newInterface);
                 }
 
                 // create interface vtable from current class
@@ -11558,11 +11739,11 @@ genContext);
                     auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(
                         location, mlir::TypeRange{interfaceType}, value, createdInterfaceVTableForClass);
 
-                    return newInterface;
+                    return V(newInterface);
                 }
 
                 emitError(location) << "type: " << classType << " missing interface: " << interfaceType;
-                return mlir::Value();
+                return mlir::failure();
             }
         }
 
@@ -11584,11 +11765,11 @@ genContext);
         if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
         {
             auto valueCasted = cast(location, optType.getElementType(), value, genContext);
-            VALIDATE(valueCasted, location)
-            return builder.create<mlir_ts::CreateOptionalOp>(location, optType, valueCasted);
+            EXIT_IF_FAILED_OR_NO_VALUE(valueCasted)
+            return V(builder.create<mlir_ts::CreateOptionalOp>(location, optType, valueCasted));
         }
 
-        return builder.create<mlir_ts::CastOp>(location, type, value);
+        return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
     mlir::Value castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,
@@ -11869,7 +12050,13 @@ genContext);
         mlir::Type type;
         if (node == SyntaxKind::QualifiedName)
         {
-            auto value = mlirGen(node.as<QualifiedName>(), genContext);
+            auto result = mlirGen(node.as<QualifiedName>(), genContext);
+            if (result.failed())
+            {
+                return mlir::Type();
+            }
+
+            auto value = V(result);
             assert(value);
             type = value.getType();
         }
@@ -11890,7 +12077,7 @@ genContext);
             return type;
         }
 
-        llvm_unreachable("not implemented");
+        return mlir::Type();
     }
 
     mlir::Type getFirstTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext)
@@ -12950,7 +13137,8 @@ genContext);
 
         if (name == SyntaxKind::ComputedPropertyName)
         {
-            auto value = mlirGen(name.as<ComputedPropertyName>(), genContext);
+            auto result = mlirGen(name.as<ComputedPropertyName>(), genContext);
+            auto value = V(result);
             LLVM_DEBUG(llvm::dbgs() << "!! ComputedPropertyName: " << value << "\n";);
             auto attr = mcl.ExtractAttr(value);
             if (!attr)
@@ -12964,7 +13152,8 @@ genContext);
         auto namePtr = MLIRHelper::getName(name, stringAllocator);
         if (namePtr.empty())
         {
-            auto value = mlirGen(name.as<Expression>(), genContext);
+            auto result = mlirGen(name.as<Expression>(), genContext);
+            auto value = V(result);
             auto attr = mcl.ExtractAttr(value);
             if (!attr)
             {
@@ -12999,7 +13188,8 @@ genContext);
             else if (typeItem == SyntaxKind::LiteralType)
             {
                 auto literalTypeNode = typeItem.as<LiteralTypeNode>();
-                auto literalValue = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
+                auto result = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
+                auto literalValue = V(result);
 
                 assert(literalValue);
 
@@ -13541,7 +13731,8 @@ genContext);
         GenContext genContext{};
         genContext.dummyRun = true;
         genContext.allowPartialResolve = true;
-        auto value = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
+        auto result = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
+        auto value = V(result);
         auto type = value.getType();
 
         if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
