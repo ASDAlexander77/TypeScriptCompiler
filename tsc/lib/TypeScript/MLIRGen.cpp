@@ -11467,6 +11467,10 @@ genContext);
 
             auto typeAndInit = getTypeAndInit(propertySignature, genContext);
             type = typeAndInit.first;
+            if (!type)
+            {
+                return mlir::failure();
+            }
 
             // fix type for fields with FuncType
             if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
