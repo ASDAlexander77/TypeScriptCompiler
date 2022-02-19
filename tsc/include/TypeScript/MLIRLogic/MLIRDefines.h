@@ -6,14 +6,14 @@
 
 #include "llvm/ADT/ScopedHashTable.h"
 
-#define EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(value)                                                                                    \
-    if (!value)                                                                                                                            \
+#define EXIT_IF_FAILED_OR_NO_VALUE(value)                                                                                                  \
+    if (value.failed_or_no_value())                                                                                                        \
     {                                                                                                                                      \
         return value;                                                                                                                      \
     }                                                                                                                                      
 
 #define EXIT_IF_FAILED(value)                                                                                                              \
-    if (mlir::failed(value))                                                                                                               \
+    if (value.failed())                                                                                                                    \
     {                                                                                                                                      \
         return mlir::failure();                                                                                                            \
     }

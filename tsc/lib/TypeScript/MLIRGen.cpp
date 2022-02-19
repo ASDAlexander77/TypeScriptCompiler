@@ -201,10 +201,6 @@ class MLIRGenImpl
         {
             // clear previous errors
             postponedMessages.clear();
-            if (genContext.unresolved)
-            {
-                genContext.unresolved->clear();
-            }
 
             // main cycles
             auto noErrorLocation = true;
@@ -220,6 +216,8 @@ class MLIRGenImpl
 
                 if (failed(mlirGen(statement, genContext)))
                 {
+                    emitError(loc(statement), "failed statement");
+
                     notResolved++;
                     if (noErrorLocation)
                     {
@@ -235,16 +233,7 @@ class MLIRGenImpl
 
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                if (genContext.unresolved->size() == 0)
-                {
-                    emitError(errorLocation, "can't resolve dependencies");
-                }
-
-                for (auto unresolvedRef : *genContext.unresolved)
-                {
-                    emitError(std::get<0>(unresolvedRef), "can't resolve reference: ") << std::get<1>(unresolvedRef);
-                }
-
+                emitError(errorLocation, "can't resolve dependencies");
                 break;
             }
 
@@ -292,7 +281,6 @@ class MLIRGenImpl
         genContextPartial.allowPartialResolve = true;
         genContextPartial.dummyRun = true;
         genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
-        genContextPartial.unresolved = new mlir::SmallVector<std::pair<mlir::Location, std::string>>();
 
         for (auto includeFile : this->includeFiles)
         {
@@ -305,7 +293,6 @@ class MLIRGenImpl
         auto notResolved = processStatements(module->statements, postponedMessages, genContextPartial);
 
         genContextPartial.clean();
-        genContextPartial.cleanUnresolved();
 
         // clean up
         theModule.getBody()->clear();
@@ -534,12 +521,6 @@ class MLIRGenImpl
     {
         SymbolTableScopeT varScope(symbolTable);
 
-        // clear up state
-        for (auto &statement : statements)
-        {
-            statement->processed = false;
-        }
-
         auto notResolved = 0;
         do
         {
@@ -579,6 +560,12 @@ class MLIRGenImpl
             }
         } while (notResolved > 0);
 
+        // clear up state
+        for (auto &statement : statements)
+        {
+            statement->processed = false;
+        }
+
         return mlir::success();
     }
 
@@ -602,29 +589,14 @@ class MLIRGenImpl
             const_cast<GenContext &>(genContext).generatedStatements.clear();
 
             // auto generated code
-            for (auto &statement : generatedStatements)
+            if (failed(mlirGen(generatedStatements, genContext)))
             {
-                if (failed(mlirGen(statement, genContext)))
-                {
-                    return mlir::failure();
-                }
-            }
-        }
-
-        for (auto &statement : blockAST->statements)
-        {
-            if (genContext.skipProcessed && statement->processed)
-            {
-                continue;
-            }
-
-            if (failed(mlirGen(statement, genContext)))
-            {
+                // TODO: do I need to restore generatedStatements?
                 return mlir::failure();
             }
         }
 
-        return mlir::success();
+        return mlirGen(blockAST->statements, genContext);
     }
 
     mlir::LogicalResult mlirGen(Statement statementAST, const GenContext &genContext)
@@ -758,6 +730,14 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<Identifier>(), genContext);
         }
+        else if (kind == SyntaxKind::PropertyAccessExpression)
+        {
+            return mlirGen(expressionAST.as<PropertyAccessExpression>(), genContext);
+        }
+        else if (kind == SyntaxKind::CallExpression)
+        {
+            return mlirGen(expressionAST.as<CallExpression>(), genContext);
+        }
         else if (kind == SyntaxKind::NumericLiteral)
         {
             return mlirGen(expressionAST.as<NumericLiteral>(), genContext);
@@ -794,10 +774,6 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<ObjectLiteralExpression>(), genContext);
         }
-        else if (kind == SyntaxKind::CallExpression)
-        {
-            return mlirGen(expressionAST.as<CallExpression>(), genContext);
-        }
         else if (kind == SyntaxKind::SpreadElement)
         {
             return mlirGen(expressionAST.as<SpreadElement>(), genContext);
@@ -825,10 +801,6 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::ConditionalExpression)
         {
             return mlirGen(expressionAST.as<ConditionalExpression>(), genContext);
-        }
-        else if (kind == SyntaxKind::PropertyAccessExpression)
-        {
-            return mlirGen(expressionAST.as<PropertyAccessExpression>(), genContext);
         }
         else if (kind == SyntaxKind::ElementAccessExpression)
         {
@@ -1766,7 +1738,7 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(Expression expression, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
         auto result = mlirGen(expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto genResult = V(result);
         if (typeArguments.size() == 0)
         {
@@ -1805,7 +1777,7 @@ class MLIRGenImpl
         auto _this_name = nf.createPropertyAccessExpression(_this, _name);
 
         auto result = mlirGen(_this_name, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto thisVarValue = V(result);
 
         assert(thisVarValue);
@@ -2803,7 +2775,6 @@ class MLIRGenImpl
             genContextWithPassResult.allocateVarsInContextThis =
                 (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::VarsInObjectContext) ==
                 InternalFlags::VarsInObjectContext;
-            genContextWithPassResult.unresolved = genContext.unresolved;
             genContextWithPassResult.discoverParamsOnly = genContext.discoverParamsOnly;
             genContextWithPassResult.typeAliasMap = genContext.typeAliasMap;
             genContextWithPassResult.typeParamsWithArgs = genContext.typeParamsWithArgs;
@@ -3498,7 +3469,7 @@ class MLIRGenImpl
             auto _name = nf.createIdentifier(stows(std::string(name)));
             auto _captured_name = nf.createPropertyAccessExpression(_captured, _name);
             auto result = mlirGen(_captured_name, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto capturedVarValue = V(result);
             auto variableRefType = mlir_ts::RefType::get(variableInfo->getType());
 
@@ -3614,7 +3585,7 @@ class MLIRGenImpl
 
         auto typeInfo = getType(typeAssertionAST->type, genContext);
         auto result = mlirGen(typeAssertionAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
         auto castedValue = cast(location, typeInfo, exprValue, genContext);
@@ -3627,7 +3598,7 @@ class MLIRGenImpl
 
         auto typeInfo = getType(asExpressionAST->type, genContext);
         auto result = mlirGen(asExpressionAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
         auto castedValue = cast(location, typeInfo, exprValue, genContext);
@@ -3637,7 +3608,7 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(ComputedPropertyName computedPropertyNameAST, const GenContext &genContext)
     {
         auto result = mlirGen(computedPropertyNameAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
         return exprValue;
     }
@@ -3648,7 +3619,7 @@ class MLIRGenImpl
         if (auto expression = returnStatementAST->expression)
         {
             auto result = mlirGen(expression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto expressionValue = V(result);
             return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
@@ -3734,7 +3705,7 @@ class MLIRGenImpl
         // return value
         auto yieldRetValue = getYieldReturnObject(nf, yieldExpressionAST->expression, false);
         auto result = mlirGen(yieldRetValue, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto yieldValue = V(result);
 
         mlirGenReturnValue(location, yieldValue, true, genContext);
@@ -3780,7 +3751,7 @@ class MLIRGenImpl
                     }
                 }
             });
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
 
         if (resultType)
         {
@@ -4140,7 +4111,7 @@ class MLIRGenImpl
 
         // condition
         auto result = mlirGen(ifStatementAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto condValue = V(result);
 
         if (condValue.getType() != getBooleanType())
@@ -4197,7 +4168,7 @@ class MLIRGenImpl
 
         builder.setInsertionPointToStart(&doWhileOp.cond().front());
         auto result = mlirGen(doStatementAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto conditionValue = V(result);
 
         if (conditionValue.getType() != getBooleanType())
@@ -4233,7 +4204,7 @@ class MLIRGenImpl
         // condition
         builder.setInsertionPointToStart(&whileOp.cond().front());
         auto result = mlirGen(whileStatementAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto conditionValue = V(result);
 
         if (conditionValue.getType() != getBooleanType())
@@ -4265,7 +4236,7 @@ class MLIRGenImpl
         if (forStatementAST->initializer.is<Expression>())
         {
             auto result = mlirGen(forStatementAST->initializer.as<Expression>(), genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto init = V(result);
             if (!init)
             {
@@ -4309,7 +4280,7 @@ class MLIRGenImpl
 
         builder.setInsertionPointToStart(&forOp.cond().front());
         auto result = mlirGen(forStatementAST->condition, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED(result)
         auto conditionValue = V(result);
         if (conditionValue)
         {
@@ -4558,7 +4529,7 @@ class MLIRGenImpl
         auto location = loc(forOfStatementAST);
 
         auto result = mlirGen(forOfStatementAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
         auto propertyType = evaluateProperty(exprValue, "next", genContext);
@@ -4701,7 +4672,7 @@ class MLIRGenImpl
 
             auto caseExpr = caseBlock.as<CaseClause>()->expression;
             auto result = mlirGen(caseExpr, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto caseValue = V(result);
 
             extraCode(caseExpr, caseValue);
@@ -4818,7 +4789,7 @@ class MLIRGenImpl
 
         auto switchExpr = switchStatementAST->expression;
         auto result = mlirGen(switchExpr, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto switchValue = V(result);
 
         auto switchOp = builder.create<mlir_ts::SwitchOp>(location, switchValue);
@@ -4886,7 +4857,7 @@ class MLIRGenImpl
         auto location = loc(throwStatementAST);
 
         auto result = mlirGen(throwStatementAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exception = V(result);
 
         auto throwOp = builder.create<mlir_ts::ThrowOp>(location, exception);
@@ -5046,7 +5017,7 @@ class MLIRGenImpl
 
         auto expression = prefixUnaryExpressionAST->operand;
         auto result = mlirGen(expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expressionValue = V(result);
 
         // special case "-" for literal value
@@ -5097,7 +5068,7 @@ class MLIRGenImpl
 
         auto expression = postfixUnaryExpressionAST->operand;
         auto result = mlirGen(expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expressionValue = V(result);
 
         switch (opCode)
@@ -5118,7 +5089,7 @@ class MLIRGenImpl
         // condition
         auto condExpression = conditionalExpressionAST->condition;
         auto result = mlirGen(condExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto condValue = V(result);
 
         if (condValue.getType() != getBooleanType())
@@ -5170,7 +5141,7 @@ class MLIRGenImpl
             SymbolTableScopeT varScope(symbolTable);
             checkSafeCast(conditionalExpressionAST->condition, genContext);
             auto result = mlirGen(whenTrueExpression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             resultTrue = V(result);
         }
 
@@ -5180,7 +5151,7 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(&ifOp.elseRegion().front());
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
         auto result2 = mlirGen(whenFalseExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result2)
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto resultFalse = V(result2);
 
         builder.create<mlir_ts::ResultOp>(location,
@@ -5201,7 +5172,7 @@ class MLIRGenImpl
 
         // condition
         auto result = mlirGen(leftExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
         MLIRTypeHelper mth(builder.getContext());
@@ -5217,7 +5188,7 @@ class MLIRGenImpl
         if (andOp)
         {
             auto result = mlirGen(rightExpression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             resultTrue = V(result);
         }
         else
@@ -5247,7 +5218,7 @@ class MLIRGenImpl
         else
         {
             auto result = mlirGen(rightExpression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             resultFalse = V(result);
         }
 
@@ -5285,7 +5256,7 @@ class MLIRGenImpl
 
         // condition
         auto result = mlirGen(leftExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
         MLIRTypeHelper mth(builder.getContext());
@@ -5372,7 +5343,7 @@ class MLIRGenImpl
         MLIRTypeHelper mth(builder.getContext());
 
         auto result2 = mlirGen(binaryExpressionAST->left, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result2)
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto result = V(result2);
 
         auto resultType = result.getType();
@@ -5602,7 +5573,7 @@ class MLIRGenImpl
         }
 
         auto result = mlirGen(leftExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
         auto rightExprGenContext = GenContext(genContext);
@@ -5616,7 +5587,7 @@ class MLIRGenImpl
         }
 
         auto result2 = mlirGen(rightExpression, rightExprGenContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result2)
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto rightExpressionValue = V(result2);
 
         return mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
@@ -5626,7 +5597,7 @@ class MLIRGenImpl
                                                Expression rightExpression, const GenContext &genContext)
     {
         auto result = mlirGen(rightExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto rightExpressionValue = V(result);
 
         mlir::Type elementType;
@@ -5639,7 +5610,7 @@ class MLIRGenImpl
         for (auto leftItem : arrayLiteralExpression->elements)
         {
             auto result = mlirGen(leftItem, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto leftExpressionValue = V(result);
 
             // TODO: unify array access like Property access
@@ -5662,7 +5633,7 @@ class MLIRGenImpl
                                                 Expression rightExpression, const GenContext &genContext)
     {
         auto result = mlirGen(rightExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto rightExpressionValue = V(result);
 
         auto index = 0;
@@ -5961,10 +5932,10 @@ class MLIRGenImpl
         }
 
         auto result = mlirGen(leftExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
         auto result2 = mlirGen(rightExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result2)
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto rightExpressionValue = V(result2);
 
         // check if const expr.
@@ -6012,7 +5983,7 @@ class MLIRGenImpl
 
         auto expression = qualifiedName->left;
         auto result = mlirGenModuleReference(expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expressionValue = V(result);
 
         auto name = MLIRHelper::getName(qualifiedName->right);
@@ -6026,7 +5997,7 @@ class MLIRGenImpl
 
         auto expression = propertyAccessExpression->expression.as<Expression>();
         auto result = mlirGen(expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expressionValue = V(result);
 
         auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
@@ -6639,11 +6610,11 @@ class MLIRGenImpl
         auto location = loc(elementAccessExpression);
 
         auto result = mlirGen(elementAccessExpression->expression.as<Expression>(), genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expression = V(result);
 
         auto result2 = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result2)
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto argumentExpression = V(result2);
 
         MLIRTypeHelper mth(builder.getContext());
@@ -6702,7 +6673,7 @@ class MLIRGenImpl
         auto callExpr = callExpression->expression.as<Expression>();
 
         auto result = mlirGen(callExpr, genContext);
-        EXIT_IF_FAILED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto funcResult = V(result);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
@@ -6717,6 +6688,8 @@ class MLIRGenImpl
 
             return mlir::failure();
         }
+
+        assert(operands.size() == callExpression->arguments.size());
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! function: [" << funcResult << "] ops: "; for (auto o
                                                                                        : operands) llvm::dbgs()
@@ -7484,7 +7457,7 @@ class MLIRGenImpl
             }
 
             auto result = mlirGen(expression, argGenContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto value = V(result);
 
             operands.push_back(value);
@@ -7739,7 +7712,7 @@ class MLIRGenImpl
         if (typeExpression != SyntaxKind::ElementAccessExpression)
         {
             auto result = mlirGen(typeExpression, newExpression->typeArguments, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto value = V(result);
 
             auto suppressConstructorCall = (newExpression->internalFlags & InternalFlags::SuppressConstructorCall) ==
@@ -7757,7 +7730,7 @@ class MLIRGenImpl
             assert(type);
 
             auto result = mlirGen(elementAccessExpression->argumentExpression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto count = V(result);
 
             if (count.getType() != builder.getI32Type())
@@ -7776,7 +7749,7 @@ class MLIRGenImpl
         auto location = loc(deleteExpression);
 
         auto result = mlirGen(deleteExpression->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expr = V(result);
 
         if (!expr.getType().isa<mlir_ts::RefType>() && !expr.getType().isa<mlir_ts::ValueRefType>() &&
@@ -7803,7 +7776,7 @@ class MLIRGenImpl
         auto location = loc(voidExpression);
 
         auto result = mlirGen(voidExpression->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expr = V(result);
 
         auto value = getUndefined(location);
@@ -7842,7 +7815,7 @@ class MLIRGenImpl
         {
             auto expression = span->expression;
             auto result = mlirGen(expression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto exprValue = V(result);
 
             if (exprValue.getType() != stringType)
@@ -7889,7 +7862,7 @@ class MLIRGenImpl
             // expr value
             auto expression = span->expression;
             auto result = mlirGen(expression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto exprValue = V(result);
 
             vals.push_back(exprValue);
@@ -7909,7 +7882,7 @@ class MLIRGenImpl
         vals.insert(vals.begin(), strArrayValue);
 
         auto result = mlirGen(taggedTemplateExpressionAST->tag, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto callee = V(result);
 
         auto inputs = getParamsFromFuncRef(callee.getType());
@@ -8400,7 +8373,7 @@ class MLIRGenImpl
                 }
 
                 auto result = mlirGen(propertyAssignment->initializer, genContext);
-                EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
                 itemValue = V(result);
 
                 fieldId = TupleFieldName(propertyAssignment->name, genContext);
@@ -8415,7 +8388,7 @@ class MLIRGenImpl
                 }
 
                 auto result = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
-                EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
                 itemValue = V(result);
 
                 fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
@@ -8428,7 +8401,7 @@ class MLIRGenImpl
             {
                 auto spreadAssignment = item.as<SpreadAssignment>();
                 auto result = mlirGen(spreadAssignment->expression, genContext);
-                EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto tupleValue = V(result);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment value: " << tupleValue << "\n";);
@@ -8641,7 +8614,7 @@ class MLIRGenImpl
         {
             auto location = fieldToSet.second.getLoc();
             auto result = mlirGenPropertyAccessExpression(location, tupleVar, fieldToSet.first, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(result)
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto getField = V(result);
 
             VALIDATE1(fieldToSet.second, location)
@@ -11667,7 +11640,7 @@ genContext);
         if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
         {
             auto valueCasted = cast(location, optType.getElementType(), value, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(valueCasted)
+            EXIT_IF_FAILED_OR_NO_VALUE(valueCasted)
             return V(builder.create<mlir_ts::CreateOptionalOp>(location, optType, valueCasted));
         }
 

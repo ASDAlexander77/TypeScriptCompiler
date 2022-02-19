@@ -66,7 +66,6 @@ struct GenContext
         capturedVars = nullptr;
 
         currentOperation = nullptr;
-        unresolved = nullptr;
     }
 
     // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
@@ -106,15 +105,6 @@ struct GenContext
         }
     }
 
-    void cleanUnresolved()
-    {
-        if (unresolved)
-        {
-            delete unresolved;
-            unresolved = nullptr;
-        }
-    }
-
     void cleanFuncOp()
     {
         if (funcOp)
@@ -147,7 +137,6 @@ struct GenContext
     llvm::StringMap<mlir::Type> typeAliasMap;
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
     ArrayRef<mlir::Value> callOperands;
-    mlir::SmallVector<std::pair<mlir::Location, std::string>> *unresolved;
     int *state;
 };
 
@@ -847,17 +836,22 @@ struct ValueOrLogicalResult
 
     operator bool()
     {
-        if (mlir::failed(result))
-        {
-            return false;
-        }
+        return mlir::succeeded(result);
+    }
 
-        return !!value;
+    bool failed()
+    {
+        return mlir::failed(result);
+    }
+
+    bool failed_or_no_value()
+    {
+        return failed() || !value;
     }
 
     operator mlir::LogicalResult()
     {
-        return result;
+        return failed_or_no_value() ? mlir::failure() : mlir::success();
     } 
 
     operator mlir::Value()

@@ -164,12 +164,6 @@ class MLIRCustomMethods
 
     ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, const GenContext &genContext)
     {
-        // validate params
-        for (auto &oper : operands)
-        {
-            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(oper)
-        }
-
         if (functionName == "print")
         {
             // print - internal command;
