@@ -2233,13 +2233,23 @@ class MLIRGenImpl
         if (item->type)
         {
             type = getType(item->type, genContext);
+            if (!type)
+            {
+                return { mlir::Type(), mlir::Value() };
+            }
         }
 
         // init
         mlir::Value init;
         if (auto initializer = item->initializer)
         {
-            init = mlirGen(initializer, genContext);
+            auto result = mlirGen(initializer, genContext);
+            if (result.failed())
+            {
+                return { mlir::Type(), mlir::Value() };
+            }
+
+            init = V(result);
             if (init)
             {
                 if (!type)
@@ -11926,6 +11936,11 @@ genContext);
         if (node == SyntaxKind::QualifiedName)
         {
             auto result = mlirGen(node.as<QualifiedName>(), genContext);
+            if (result.failed())
+            {
+                return mlir::Type();
+            }
+
             auto value = V(result);
             assert(value);
             type = value.getType();
@@ -11947,7 +11962,7 @@ genContext);
             return type;
         }
 
-        llvm_unreachable("not implemented");
+        return mlir::Type();
     }
 
     mlir::Type getFirstTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext)
