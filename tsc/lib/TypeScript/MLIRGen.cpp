@@ -1785,7 +1785,7 @@ class MLIRGenImpl
                        genContext);
     }
 
-    mlir::Value registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type,
+    ValueOrLogicalResult registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type,
                                               const GenContext &genContext)
     {
         if (genContext.passResult)
@@ -1815,7 +1815,7 @@ class MLIRGenImpl
 
         assert(thisVarValueRef);
 
-        return thisVarValueRef;
+        return V(thisVarValueRef);
     }
 
     bool isConstValue(mlir::Value init)

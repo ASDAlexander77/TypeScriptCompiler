@@ -14,7 +14,7 @@
                                                                                                                                            \
     if (auto unresolved = V(value).getDefiningOp<mlir_ts::UnresolvedSymbolRefOp>())                                                        \
     {                                                                                                                                      \
-        return value;                                                                                                                      \
+        return mlir::failure();                                                                                                            \
     }
 
 #define EXIT_IF_FAILED(value)                                                                                                              \
