@@ -9120,16 +9120,17 @@ class MLIRGenImpl
             return value;
         }
 
-        // unresolved reference (for call for example)
-        // TODO: put assert here to see which ref names are not resolved
-        auto unresolvedSymbol = builder.create<mlir_ts::UnresolvedSymbolRefOp>(
-            location, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
-        if (genContext.unresolved)
+        if (MLIRCustomMethods::isInternalName(name))
         {
-            genContext.unresolved->push_back(std::make_pair(location, name.str()));
+            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
+                location, builder.getNoneType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+            symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return V(symbOp);            
         }
 
-        return V(unresolvedSymbol);
+        emitError(location, "can't resolve name: ") << name;
+
+        return mlir::failure();
     }
 
     TypeParameterDOM::TypePtr processTypeParameter(TypeParameterDeclaration typeParameter, const GenContext &genContext)

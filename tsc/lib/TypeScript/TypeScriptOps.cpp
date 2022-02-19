@@ -182,15 +182,6 @@ template <typename T> struct RemoveUnused : public OpRewritePattern<T>
 } // end anonymous namespace.
 
 //===----------------------------------------------------------------------===//
-// UnresolvedSymbolRefOp
-//===----------------------------------------------------------------------===//
-
-void mlir_ts::UnresolvedSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
-{
-    results.insert<RemoveUnused<mlir_ts::UnresolvedSymbolRefOp>>(context);
-}
-
-//===----------------------------------------------------------------------===//
 // SymbolRefOp
 //===----------------------------------------------------------------------===//
 

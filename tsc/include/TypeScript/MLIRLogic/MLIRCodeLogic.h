@@ -156,6 +156,12 @@ class MLIRCustomMethods
     {
     }
 
+    static bool isInternalName (StringRef functionName)
+    {
+        static std::map<const char*, bool> m { {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {"switchstate", true}};
+        return m[functionName.str().c_str()];    
+    }
+
     ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, const GenContext &genContext)
     {
         // validate params
