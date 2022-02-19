@@ -161,49 +161,48 @@ class MLIRCustomMethods
         // validate params
         for (auto &oper : operands)
         {
-            VALIDATE1(oper, location)
+            EXIT_IF_FAILED_OR_NO_VALUE_OR_UNRESOLVED(oper)
         }
 
-        mlir::Value result;
         if (functionName == "print")
         {
             // print - internal command;
-            mlir::succeeded(mlirGenPrint(location, operands));
+            return mlirGenPrint(location, operands);
         }
         else if (functionName == "assert")
         {
             // assert - internal command;
-            mlir::succeeded(mlirGenAssert(location, operands));
+            return mlirGenAssert(location, operands);
         }
         else if (functionName == "parseInt")
         {
             // assert - internal command;
-            result = mlirGenParseInt(location, operands);
+            return mlirGenParseInt(location, operands);
         }
         else if (functionName == "parseFloat")
         {
-            result = mlirGenParseFloat(location, operands);
+            return mlirGenParseFloat(location, operands);
         }
         else if (functionName == "isNaN")
         {
-            result = mlirGenIsNaN(location, operands);
+            return mlirGenIsNaN(location, operands);
         }
         else if (functionName == "sizeof")
         {
-            result = mlirGenSizeOf(location, operands);
+            return mlirGenSizeOf(location, operands);
         }
         else if (functionName == "__array_push")
         {
-            result = mlirGenArrayPush(location, operands);
+            return mlirGenArrayPush(location, operands);
         }
         else if (functionName == "__array_pop")
         {
-            result = mlirGenArrayPop(location, operands);
+            return mlirGenArrayPop(location, operands);
         }
         else if (functionName == "switchstate")
         {
             // switchstate - internal command;
-            mlir::succeeded(mlirGenSwitchState(location, operands, genContext));
+            return mlirGenSwitchState(location, operands, genContext);
         }
         /*
         else
