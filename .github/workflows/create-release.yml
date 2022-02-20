@@ -13,7 +13,7 @@ env:
 jobs:
   build_on_windows:
     name: Create/Upload Release Asset (Windows)
-    runs-on: windows-latest
+    runs-on: windows-2019
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
