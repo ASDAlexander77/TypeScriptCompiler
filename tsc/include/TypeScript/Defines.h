@@ -37,6 +37,7 @@
 #define TS_GC_ATTRIBUTE "ts.gc"
 #define TYPESCRIPT_GC_NAME "tsgc"
 #define GLOBAL_CONSTUCTIONS_NAME "llvm.global_ctors"
+#define TYPE_BITMAP_NAME ".type_bitmap"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

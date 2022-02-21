@@ -1,4 +1,5 @@
 #define ENABLE_RTTI true
+#define ENABLE_TYPED_GC true
 #define ALL_METHODS_VIRTUAL true
 #define USE_BOUND_FUNCTION_FOR_OBJECTS true
 #ifdef GC_ENABLE
@@ -9579,8 +9580,12 @@ class MLIRGenImpl
         // INFO: .instanceOf must be first element in VTable for Cast Any
         mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, classGenContext);
 #endif
-        mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
 
+#if ENABLE_TYPED_GC
+        mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
+#endif        
+
+        mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
         mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, classGenContext);
 
         /*
@@ -10342,6 +10347,39 @@ genContext);
         {
             staticFieldInfos.push_back({fieldId, getStringType(), fullClassStaticFieldName, -1});
         }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassTypeBitmap(mlir::Location location, ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
+        MLIRCodeLogic mcl(builder);
+        MLIRTypeHelper mth(builder.getContext());
+
+        auto fieldId = mcl.TupleFieldName(TYPE_BITMAP_NAME);
+
+        // register global
+        auto fullClassStaticFieldName = concat(newClassPtr->fullName, TYPE_BITMAP_NAME);
+
+        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            registerVariable(
+                location, fullClassStaticFieldName, true,
+                newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
+                [&]() {
+                    auto constArrayType = mth.getConstArrayValueType(mth.getTypeBitmapValueType(), 1);
+
+                    SmallVector<mlir::Attribute> attrs;
+                    auto intAttr = mth.getTypeBitmapAttrValue(0);
+
+                    attrs.push_back(intAttr);
+
+                    auto init = builder.create<mlir_ts::ConstantOp>(location, constArrayType, builder.getArrayAttr(attrs));
+
+                    return std::make_pair(constArrayType, init);
+                },
+                genContext);
+        }        
 
         return mlir::success();
     }
