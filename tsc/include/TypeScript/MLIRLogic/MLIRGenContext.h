@@ -694,6 +694,17 @@ struct ClassInfo
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
     }
 
+    mlir_ts::FieldInfo fieldInfoByIndex(int index)
+    {
+        if (index >= 0)
+        {
+            auto storageClass = classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+            return storageClass.getFieldInfo(index);
+        }
+
+        return mlir_ts::FieldInfo();
+    }
+
     mlir_ts::FieldInfo findField(mlir::Attribute id, bool &foundField)
     {
         foundField = false;

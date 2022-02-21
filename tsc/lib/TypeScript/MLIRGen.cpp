@@ -523,7 +523,7 @@ class MLIRGenImpl
         for (auto &statement : statements)
         {
             statement->processed = false;
-        }        
+        }
     }
 
     mlir::LogicalResult mlirGen(NodeArray<Statement> statements, const GenContext &genContext)
@@ -578,7 +578,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, std::function<bool(Statement)> filter, const GenContext &genContext)
+    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, std::function<bool(Statement)> filter,
+                                const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -644,11 +645,11 @@ class MLIRGenImpl
     {
         switch ((SyntaxKind)statement)
         {
-            case SyntaxKind::FunctionDeclaration:
-            case SyntaxKind::ClassDeclaration:
-            case SyntaxKind::InterfaceDeclaration:
-            case SyntaxKind::EnumDeclaration:
-                return true;
+        case SyntaxKind::FunctionDeclaration:
+        case SyntaxKind::ClassDeclaration:
+        case SyntaxKind::InterfaceDeclaration:
+        case SyntaxKind::EnumDeclaration:
+            return true;
         }
 
         return false;
@@ -676,7 +677,6 @@ class MLIRGenImpl
                     return mlir::failure();
                 }
             }
-
         }
 
         for (auto statement : blockAST->statements)
@@ -692,13 +692,13 @@ class MLIRGenImpl
                 // process all declrations
                 if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContext)))
                 {
-                    return mlir::failure(); 
+                    return mlir::failure();
                 }
 
                 // try to process it again
                 if (failed(mlirGen(statement, genContext)))
                 {
-                    return mlir::failure(); 
+                    return mlir::failure();
                 }
             }
 
@@ -1870,7 +1870,7 @@ class MLIRGenImpl
     }
 
     ValueOrLogicalResult registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type,
-                                              const GenContext &genContext)
+                                                       const GenContext &genContext)
     {
         if (genContext.passResult)
         {
@@ -2347,7 +2347,7 @@ class MLIRGenImpl
             type = getType(item->type, genContext);
             if (!type)
             {
-                return { mlir::Type(), mlir::Value() };
+                return {mlir::Type(), mlir::Value()};
             }
         }
 
@@ -2358,7 +2358,7 @@ class MLIRGenImpl
             auto result = mlirGen(initializer, genContext);
             if (result.failed())
             {
-                return { mlir::Type(), mlir::Value() };
+                return {mlir::Type(), mlir::Value()};
             }
 
             init = V(result);
@@ -7724,7 +7724,7 @@ class MLIRGenImpl
     }
 
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
-                                 bool suppressConstructorCall, const GenContext &genContext)
+                                          bool suppressConstructorCall, const GenContext &genContext)
     {
         MLIRTypeHelper mth(builder.getContext());
 
@@ -7775,7 +7775,7 @@ class MLIRGenImpl
     }
 
     ValueOrLogicalResult NewClassInstanceLogicAsOp(mlir::Location location, mlir::Type typeOfInstance, bool stackAlloc,
-                                          const GenContext &genContext)
+                                                   const GenContext &genContext)
     {
         if (auto classType = typeOfInstance.dyn_cast<mlir_ts::ClassType>())
         {
@@ -9220,7 +9220,7 @@ class MLIRGenImpl
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                 location, builder.getNoneType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
             symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-            return V(symbOp);            
+            return V(symbOp);
         }
 
         emitError(location, "can't resolve name: ") << name;
@@ -9583,7 +9583,7 @@ class MLIRGenImpl
 
 #if ENABLE_TYPED_GC
         mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
-#endif        
+#endif
 
         mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
         mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, classGenContext);
@@ -10351,7 +10351,8 @@ genContext);
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenClassTypeBitmap(mlir::Location location, ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    mlir::LogicalResult mlirGenClassTypeBitmap(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                               const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
         MLIRTypeHelper mth(builder.getContext());
@@ -10369,17 +10370,34 @@ genContext);
                 [&]() {
                     auto constArrayType = mth.getConstArrayValueType(mth.getTypeBitmapValueType(), 1);
 
+                    /*
                     SmallVector<mlir::Attribute> attrs;
-                    auto intAttr = mth.getTypeBitmapAttrValue(0);
-
                     attrs.push_back(intAttr);
-
                     auto init = builder.create<mlir_ts::ConstantOp>(location, constArrayType, builder.getArrayAttr(attrs));
+                    */
+                    
+                    mlir::Value arrayValue = builder.create<mlir_ts::UndefOp>(location, constArrayType);
 
+                    auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
+                    auto classNull = cast(location, newClassPtr->classType, nullOp, genContext);
+
+                    //
+                    auto val0 = builder.create<mlir_ts::ConstantOp>(location, mth.getTypeBitmapValueType(), mth.getTypeBitmapAttrValue(0));
+
+                    // property ref
+                    auto fieldInfo = newClassPtr->fieldInfoByIndex(1);
+                    auto fieldValue = mlirGenPropertyAccessExpression(location, classNull, fieldInfo.id, genContext);
+                    assert(fieldValue);
+                    auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
+
+                    auto index = 0;
+                    arrayValue = builder.create<mlir_ts::InsertPropertyOp>(location, constArrayType, val0, arrayValue, builder.getArrayAttr(mth.getStructIndexAttrValue(index)));
+
+                    auto init = arrayValue;
                     return std::make_pair(constArrayType, init);
                 },
                 genContext);
-        }        
+        }
 
         return mlir::success();
     }
