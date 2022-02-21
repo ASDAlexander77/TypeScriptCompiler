@@ -348,7 +348,8 @@ class MLIRGenImpl
 
             theModule.emitError("module verification error");
 
-            outputDiagnostics(postponedMessages, notResolved);
+            // to show all errors now
+            outputDiagnostics(postponedMessages, 1);
             return mlir::failure();
         }
 
@@ -10376,10 +10377,12 @@ genContext);
                     auto init = builder.create<mlir_ts::ConstantOp>(location, constArrayType, builder.getArrayAttr(attrs));
                     */
                     
-                    mlir::Value arrayValue = builder.create<mlir_ts::UndefOp>(location, constArrayType);
+                    mlir::Value arrayValue = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(constArrayType), mlir::Value(), builder.getBoolAttr(false));
 
                     auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
                     auto classNull = cast(location, newClassPtr->classType, nullOp, genContext);
+
+                    auto sizeOfStoreElement = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), mth.getTypeBitmapValueType());
 
                     //
                     auto val0 = builder.create<mlir_ts::ConstantOp>(location, mth.getTypeBitmapValueType(), mth.getTypeBitmapAttrValue(0));
@@ -10390,10 +10393,18 @@ genContext);
                     assert(fieldValue);
                     auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
 
-                    auto index = 0;
-                    arrayValue = builder.create<mlir_ts::InsertPropertyOp>(location, constArrayType, val0, arrayValue, builder.getArrayAttr(mth.getStructIndexAttrValue(index)));
+                    // cast to int64
+                    auto fieldAddrAsInt = cast(location, mth.getIndexType(), fieldRef, genContext);
 
-                    auto init = arrayValue;
+                    // calc index
+                    auto calcIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), fieldAddrAsInt, sizeOfStoreElement);
+
+                    auto elemRef = builder.create<mlir_ts::ElementRefOp>(
+                         location, mlir_ts::RefType::get(constArrayType.getElementType()), arrayValue, calcIndex);
+
+                    //auto saveToElement = builder.create<mlir_ts::StoreOp>(location, val0, elemRef);
+
+                    auto init = builder.create<mlir_ts::LoadOp>(location, constArrayType, arrayValue);
                     return std::make_pair(constArrayType, init);
                 },
                 genContext);

@@ -1554,10 +1554,17 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         {
             // put all allocs at 'func' top
             auto parentFuncOp = varOp->getParentOfType<LLVM::LLVMFuncOp>();
-            assert(parentFuncOp);
-            mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-            rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
-            allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
+            if (parentFuncOp)
+            {
+                // if inside function (not in global op)
+                mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+                rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
+                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
+            }
+            else
+            {
+                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
+            }
         }
         else
         {
@@ -2543,7 +2550,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         auto visitorAllOps = [&](Operation *op) {
             if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op) ||
                 isa<mlir_ts::SymbolCallInternalOp>(op) || isa<mlir_ts::CallInternalOp>(op) ||
-                isa<mlir_ts::CallHybridInternalOp>(op))
+                isa<mlir_ts::CallHybridInternalOp>(op) || isa<mlir_ts::VariableOp>(op))
             {
                 createAsGlobalConstructor = true;
             }
