@@ -2214,12 +2214,12 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
             return success();
 
         case SyntaxKind::SlashToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, SignedDivIOp, DivFOp, UnsignedDivIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::GreaterThanGreaterThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp>(
+            BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp, UnsignedShiftRightOp>(
                 arithmeticBinaryOp, transformed.operand1(), transformed.operand2(), rewriter);
             return success();
 
@@ -2249,7 +2249,7 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
             return success();
 
         case SyntaxKind::PercentToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, RemFOp, RemFOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, SignedRemIOp, RemFOp, UnsignedRemIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                transformed.operand2(), rewriter);
             return success();
 
