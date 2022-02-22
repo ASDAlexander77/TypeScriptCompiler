@@ -1,11 +1,6 @@
-#define ENABLE_RTTI true
-#define ENABLE_TYPED_GC true
-#define ALL_METHODS_VIRTUAL true
-#define USE_BOUND_FUNCTION_FOR_OBJECTS true
 #ifdef GC_ENABLE
 #define ADD_GC_ATTRIBUTE true
 #endif
-#define MODULE_AS_NAMESPACE true
 
 #define DEBUG_TYPE "mlir"
 
@@ -10352,6 +10347,7 @@ genContext);
         return mlir::success();
     }
 
+#ifdef ENABLE_TYPED_GC
     mlir::LogicalResult mlirGenClassTypeBitmap(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                const GenContext &genContext)
     {
@@ -10416,6 +10412,7 @@ genContext);
 
         return mlir::success();
     }
+#endif
 
     mlir::LogicalResult mlirGenClassInstanceOfMethod(ClassLikeDeclaration classDeclarationAST,
                                                      ClassInfo::TypePtr newClassPtr, const GenContext &genContext)

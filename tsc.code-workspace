@@ -169,6 +169,9 @@
         "editor.defaultFormatter": "xaver.clang-format",
         "[cpp]": {
             "editor.defaultFormatter": "xaver.clang-format"
+        },
+        "[json]": {
+            "editor.defaultFormatter": "vscode.json-language-features"
         }
     }
 }
