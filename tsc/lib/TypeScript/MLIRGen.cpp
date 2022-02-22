@@ -10398,14 +10398,15 @@ genContext);
                     auto fieldAddrAsInt = cast(location, mth.getIndexType(), fieldRef, genContext);
 
                     // calc index
-                    auto calcIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), fieldAddrAsInt, sizeOfStoreElement);
+                    auto calcIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), fieldAddrAsInt, sizeOfStoreElement);
 
                     auto calcIndex32 = cast(location, mth.getStructIndexType(), calcIndex, genContext);
 
                     auto elemRef = builder.create<mlir_ts::ElementRefOp>(
                          location, mlir_ts::RefType::get(constArrayType.getElementType()), arrayValue, calcIndex32);
 
-                    auto saveToElement = builder.create<mlir_ts::StoreOp>(location, val0, elemRef);
+                    //auto saveToElement = builder.create<mlir_ts::StoreOp>(location, val0, elemRef);
 
                     auto init = builder.create<mlir_ts::LoadOp>(location, constArrayType, arrayValue);
                     return std::make_pair(constArrayType, init);

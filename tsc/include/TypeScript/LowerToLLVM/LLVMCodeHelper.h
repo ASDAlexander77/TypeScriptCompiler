@@ -606,7 +606,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0}));
     }
 
-    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleType, mlir::Value arrayOrStringOrTuple,
+    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleType, mlir::Value arrayOrStringOrTupleOrConstArrayValue,
                                          mlir::Value index)
     {
         TypeHelper th(rewriter);
@@ -619,16 +619,25 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto ptrType = tch.convertType(elementRefType);
 
-        auto dataPtr = arrayOrStringOrTuple;
-        if (auto arrayType = arrayOrStringOrTupleType.isa<mlir_ts::ArrayType>())
+        auto dataPtr = arrayOrStringOrTupleOrConstArrayValue;
+        if (arrayOrStringOrTupleType.isa<mlir_ts::ArrayType>())
         {
             // extract pointer from struct
-            dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTuple,
+            dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTupleOrConstArrayValue,
                                                             rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
         }
 
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
+        if (auto ptrType = arrayOrStringOrTupleType.dyn_cast<LLVM::LLVMPointerType>())
+        {
+            if (ptrType.getElementType().isa<LLVM::LLVMArrayType>())
+            {
+                mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
+                auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{cst0, index});
+                return addr;
+            }
+        }
 
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
         return addr;
     }
 
