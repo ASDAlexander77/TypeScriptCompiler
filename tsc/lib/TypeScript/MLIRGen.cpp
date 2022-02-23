@@ -10365,14 +10365,9 @@ genContext);
                 location, fullClassStaticFieldName, true,
                 newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
                 [&]() {
-                    auto constArrayType = mth.getConstArrayValueType(mth.getTypeBitmapValueType(), 1);
+                    auto bitmapValueType = mth.getTypeBitmapValueType();
+                    auto constArrayType = mth.getConstArrayValueType(bitmapValueType, 1);
 
-                    /*
-                    SmallVector<mlir::Attribute> attrs;
-                    attrs.push_back(intAttr);
-                    auto init = builder.create<mlir_ts::ConstantOp>(location, constArrayType, builder.getArrayAttr(attrs));
-                    */
-                    
                     mlir::Value arrayValue = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(constArrayType), mlir::Value(), builder.getBoolAttr(false));
                     //mlir::Value arrayValue = builder.create<mlir_ts::UndefOp>(location, constArrayType);
 
@@ -10381,8 +10376,9 @@ genContext);
 
                     auto sizeOfStoreElement = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), mth.getTypeBitmapValueType());
 
-                    //
-                    auto val0 = builder.create<mlir_ts::ConstantOp>(location, mth.getTypeBitmapValueType(), mth.getTypeBitmapAttrValue(0));
+                    auto _8Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 8));
+                    auto sizeOfStoreElementInBits = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfStoreElement, _8Value);
 
                     // property ref
                     auto fieldInfo = newClassPtr->fieldInfoByIndex(1);
@@ -10400,9 +10396,29 @@ genContext);
                     auto calcIndex32 = cast(location, mth.getStructIndexType(), calcIndex, genContext);
 
                     auto elemRef = builder.create<mlir_ts::ElementRefOp>(
-                         location, mlir_ts::RefType::get(constArrayType.getElementType()), arrayValue, calcIndex32);
+                         location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex32);
 
-                    //auto saveToElement = builder.create<mlir_ts::StoreOp>(location, val0, elemRef);
+                    // calc bit
+                    auto indexModIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PercentToken), calcIndex, sizeOfStoreElementInBits);
+
+                    auto indexMod = builder.create<mlir_ts::CastOp>(location, bitmapValueType, indexModIndex);
+
+                    auto _1Value = builder.create<mlir_ts::ConstantOp>(location, bitmapValueType, builder.getIntegerAttr(bitmapValueType, 1));
+
+                    // 1 << index_mod
+                    auto bitValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                         location, bitmapValueType, builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanGreaterThanToken), _1Value, indexMod);
+
+                    // load val
+                    auto val = builder.create<mlir_ts::LoadOp>(location, bitmapValueType, elemRef);
+
+                    // apply or
+                    auto valWithBit = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                       location, bitmapValueType, builder.getI32IntegerAttr((int)SyntaxKind::BarToken), val, bitValue);
+
+                    // save value
+                    auto saveToElement = builder.create<mlir_ts::StoreOp>(location, valWithBit, elemRef);
 
                     auto init = builder.create<mlir_ts::LoadOp>(location, constArrayType, arrayValue);
                     return std::make_pair(constArrayType, init);

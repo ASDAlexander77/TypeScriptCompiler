@@ -2458,7 +2458,7 @@ struct ElementRefOpLowering : public TsLlvmPattern<mlir_ts::ElementRefOp>
 
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter());
 
-        LLVM_DEBUG(llvm::dbgs() << "!! ElementRefOpLowering: array type: " << transformed.array().getType() << " value: [" << transformed.array() << "]\n");
+        LLVM_DEBUG(llvm::dbgs() << "!! ElementRefOpLowering: array type: " << elementOp.array().getType() << " LLVM type: " << transformed.array().getType() << " value: [" << transformed.array() << "]\n");
 
         auto addr = ch.GetAddressOfArrayElement(elementOp.getResult().getType(), elementOp.array().getType(),
                                                 transformed.array(), transformed.index());

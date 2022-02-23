@@ -45,6 +45,6 @@
 #define USE_BOUND_FUNCTION_FOR_OBJECTS true
 #define MODULE_AS_NAMESPACE true
 
-//#define ENABLE_TYPED_GC true
+#define ENABLE_TYPED_GC true
 
 #endif // CONFIG_H_

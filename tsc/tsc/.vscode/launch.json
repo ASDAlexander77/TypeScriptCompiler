@@ -127,7 +127,8 @@
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
             "args": [
                 "-emit=llvm",
-                "-debug-only=pass",
+                "-mlir-disable-threading",
+                "-debug-only=llvm",
                 "-opt",
                 "C:/temp/1.ts"
             ],

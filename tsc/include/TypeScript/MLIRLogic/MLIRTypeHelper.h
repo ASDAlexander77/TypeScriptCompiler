@@ -123,12 +123,17 @@ class MLIRTypeHelper
 
     mlir::IntegerAttr getI32AttrValue(int32_t value)
     {
-        return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value));
+        return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value, true));
     }
 
     mlir::IntegerAttr getI64AttrValue(int64_t value)
     {
-        return mlir::IntegerAttr::get(getI64Type(), mlir::APInt(64, value));
+        return mlir::IntegerAttr::get(getI64Type(), mlir::APInt(64, value, true));
+    }
+
+    mlir::IntegerAttr getU64AttrValue(int64_t value)
+    {
+        return mlir::IntegerAttr::get(getU64Type(), mlir::APInt(64, value));
     }
 
     mlir::Type getIndexType()
@@ -149,12 +154,7 @@ class MLIRTypeHelper
 #ifdef ENABLE_TYPED_GC
     mlir::IntegerType getTypeBitmapValueType()
     {
-        return getU64Type();
-    }
-
-    mlir::IntegerAttr getTypeBitmapAttrValue(uint64_t value)
-    {
-        return mlir::IntegerAttr::get(getU64Type(), mlir::APInt(64, value));
+        return getI64Type();
     }
 #endif    
 
