@@ -1552,6 +1552,13 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         mlir::Value allocated;
         if (!isCaptured)
         {
+            auto count = 1;
+            if (varOp->hasAttrOfType<mlir::IntegerAttr>(INSTANCES_COUNT_ATTR_NAME))
+            {
+                auto intAttr = varOp->getAttrOfType<mlir::IntegerAttr>(INSTANCES_COUNT_ATTR_NAME);
+                count = intAttr.getInt();
+            }
+
             // put all allocs at 'func' top
             auto parentFuncOp = varOp->getParentOfType<LLVM::LLVMFuncOp>();
             if (parentFuncOp)
@@ -1559,11 +1566,11 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                 // if inside function (not in global op)
                 mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
-                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
+                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
             }
             else
             {
-                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
+                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
             }
         }
         else
@@ -2457,8 +2464,6 @@ struct ElementRefOpLowering : public TsLlvmPattern<mlir_ts::ElementRefOp>
         Adaptor transformed(operands);
 
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter());
-
-        LLVM_DEBUG(llvm::dbgs() << "!! ElementRefOpLowering: array type: " << elementOp.array().getType() << " LLVM type: " << transformed.array().getType() << " value: [" << transformed.array() << "]\n");
 
         auto addr = ch.GetAddressOfArrayElement(elementOp.getResult().getType(), elementOp.array().getType(),
                                                 transformed.array(), transformed.index());

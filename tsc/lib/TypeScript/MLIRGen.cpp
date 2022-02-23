@@ -7843,9 +7843,10 @@ class MLIRGenImpl
             auto elementAccessExpression = typeExpression.as<ElementAccessExpression>();
             typeExpression = elementAccessExpression->expression;
             type = getTypeByTypeName(typeExpression, genContext);
-            type = mth.convertConstTupleTypeToTupleType(type);
 
             assert(type);
+
+            type = mth.convertConstTupleTypeToTupleType(type);
 
             auto result = mlirGen(elementAccessExpression->argumentExpression, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
@@ -10366,10 +10367,10 @@ genContext);
                 newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
                 [&]() {
                     auto bitmapValueType = mth.getTypeBitmapValueType();
-                    auto constArrayType = mth.getConstArrayValueType(bitmapValueType, 1);
 
-                    mlir::Value arrayValue = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(constArrayType), mlir::Value(), builder.getBoolAttr(false));
-                    //mlir::Value arrayValue = builder.create<mlir_ts::UndefOp>(location, constArrayType);
+                    auto arrayValue = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(bitmapValueType), mlir::Value(), builder.getBoolAttr(false));
+                    // size
+                    arrayValue->setAttr(INSTANCES_COUNT_ATTR_NAME, builder.getI32IntegerAttr(10));
 
                     auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
                     auto classNull = cast(location, newClassPtr->classType, nullOp, genContext);
@@ -10420,8 +10421,8 @@ genContext);
                     // save value
                     auto saveToElement = builder.create<mlir_ts::StoreOp>(location, valWithBit, elemRef);
 
-                    auto init = builder.create<mlir_ts::LoadOp>(location, constArrayType, arrayValue);
-                    return std::make_pair(constArrayType, init);
+                    auto init = builder.create<mlir_ts::LoadOp>(location, bitmapValueType, arrayValue);
+                    return std::make_pair(init.getType(), init);
                 },
                 genContext);
         }
