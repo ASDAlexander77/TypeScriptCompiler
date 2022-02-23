@@ -154,7 +154,7 @@ class MLIRTypeHelper
 #ifdef ENABLE_TYPED_GC
     mlir::IntegerType getTypeBitmapValueType()
     {
-        return getI64Type();
+        return getU64Type();
     }
 #endif    
 
