@@ -10368,10 +10368,6 @@ genContext);
                 [&]() {
                     auto bitmapValueType = mth.getTypeBitmapValueType();
 
-                    auto arrayValue = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(bitmapValueType), mlir::Value(), builder.getBoolAttr(false));
-                    // size
-                    arrayValue->setAttr(INSTANCES_COUNT_ATTR_NAME, builder.getI32IntegerAttr(10));
-
                     auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
                     auto classNull = cast(location, newClassPtr->classType, nullOp, genContext);
 
@@ -10380,6 +10376,28 @@ genContext);
                     auto _8Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 8));
                     auto sizeOfStoreElementInBits = builder.create<mlir_ts::ArithmeticBinaryOp>(
                         location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfStoreElement, _8Value);
+
+                    // calc bitmap size
+                    auto sizeOfType = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
+
+                    // calc count of store elements of type size
+                    auto sizeOfTypeInBitmapTypes = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfType, sizeOfStoreElement);
+
+                    // size alligned by size of bits
+                    auto sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), sizeOfTypeInBitmapTypes, sizeOfStoreElementInBits);
+
+                    auto _1I64Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 1));
+
+                    sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::MinusToken), sizeOfTypeAligned, _1I64Value);
+
+                    sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfTypeAligned, sizeOfStoreElementInBits);
+
+                    // allocate in stack
+                    auto arrayValue = builder.create<mlir_ts::AllocaOp>(location, mlir_ts::RefType::get(bitmapValueType), sizeOfTypeAligned);
 
                     // property ref
                     auto fieldInfo = newClassPtr->fieldInfoByIndex(1);
