@@ -10414,7 +10414,7 @@ genContext);
 
                     auto calcIndex32 = cast(location, mth.getStructIndexType(), calcIndex, genContext);
 
-                    auto elemRef = builder.create<mlir_ts::ElementRefOp>(
+                    auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
                          location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex32);
 
                     // calc bit

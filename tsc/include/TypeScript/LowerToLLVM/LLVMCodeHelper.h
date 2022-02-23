@@ -606,8 +606,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0}));
     }
 
-    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleConstArrayValueMlirTSType, mlir::Value arrayOrStringOrTupleOrConstArrayValue,
-                                         mlir::Value index)
+    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleMlirTSType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -619,22 +618,12 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto ptrType = tch.convertType(elementRefType);
 
-        auto dataPtr = arrayOrStringOrTupleOrConstArrayValue;
-        if (arrayOrStringOrTupleConstArrayValueMlirTSType.isa<mlir_ts::ArrayType>())
+        auto dataPtr = arrayOrStringOrTuple;
+        if (arrayOrStringOrTupleMlirTSType.isa<mlir_ts::ArrayType>())
         {
             // extract pointer from struct
-            dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTupleOrConstArrayValue,
+            dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTuple,
                                                             rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
-        }
-
-        if (auto refType = arrayOrStringOrTupleConstArrayValueMlirTSType.dyn_cast<mlir_ts::RefType>())
-        {
-            if (refType.getElementType().isa<mlir_ts::ConstArrayValueType>())
-            {
-                mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
-                auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{cst0, index});
-                return addr;
-            }
         }
 
         auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
@@ -672,6 +661,26 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         return addr;
     }
+
+    mlir::Value GetAddressOfPointerOffset(mlir::Type elementRefType, mlir::Type refValueType, mlir::Value refValue, mlir::Value index)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        CodeLogicHelper clh(op, rewriter);
+
+        auto loc = op->getLoc();
+
+        assert(elementRefType.isa<mlir_ts::RefType>());
+
+        auto ptrType = tch.convertType(elementRefType);
+
+        auto dataPtr = refValue;
+
+        auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0));
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{firstIndex, index});
+        return addr;
+    }
+
 };
 
 } // namespace typescript

@@ -1043,7 +1043,7 @@ def TypeScript_ValueOp : TypeScript_Op<"Value",
 
 def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   let summary = [{
-    Allocate an object in stack memory.
+    Allocate an object in stack or heap memory.
   }];
 
   let description = [{
@@ -1065,6 +1065,22 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   );
 
   let assemblyFormat = "`(` $initializer `)` `{` $captured `}` attr-dict `:` type($initializer) `->` type($reference)";
+}
+
+def TypeScript_AllocaOp : TypeScript_Op<"Alloca", []> {
+  let summary = [{
+    Allocate an object in stack memory.
+  }];
+
+  let arguments = (ins
+    I64:$count
+  );
+
+  let results = (outs
+    TypeScript_Ref:$reference
+  );
+
+  let assemblyFormat = "`(` $count `)` attr-dict `:` type($reference)";
 }
 
 // TODO: add verify logic to match types for BoundRef and BoundFunction
@@ -1164,6 +1180,25 @@ def TypeScript_PropertyRefOp : TypeScript_Op<"PropertyRef"> {
   );
 
   let assemblyFormat = "$objectRef `<` $position `>` attr-dict `:` type($objectRef) `->` type($result)";
+}
+
+def TypeScript_PointerOffsetRefOp : TypeScript_Op<"PointerOffsetRef"> {
+  let description = [{
+    ```mlir
+    %3 = ts.pointer_offset_ref %1, %2 : !ts.ref<f32>
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_Ref:$ref,
+    I32:$index
+  );
+
+  let results = (outs
+    TypeScript_Ref:$result
+  );
+
+  let assemblyFormat = "$ref `[` $index `]` attr-dict `:` type($ref) `[` type($index) `]` `->` type($result)";
 }
 
 def TypeScript_StoreBoundRefOp : TypeScript_Op<"StoreBoundRef", []> {
