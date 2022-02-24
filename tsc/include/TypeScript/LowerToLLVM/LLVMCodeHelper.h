@@ -676,8 +676,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto dataPtr = refValue;
 
-        auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0));
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{firstIndex, index});
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
         return addr;
     }
 
