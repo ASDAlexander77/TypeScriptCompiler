@@ -10417,6 +10417,7 @@ genContext);
                     auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
                          location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex32);
 
+                    /*
                     // calc bit
                     auto indexModIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
                         location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PercentToken), calcIndex, sizeOfStoreElementInBits);
@@ -10438,6 +10439,7 @@ genContext);
 
                     // save value
                     auto saveToElement = builder.create<mlir_ts::StoreOp>(location, valWithBit, elemRef);
+                    */
 
                     auto init = builder.create<mlir_ts::LoadOp>(location, bitmapValueType, arrayValue);
                     return std::make_pair(init.getType(), init);

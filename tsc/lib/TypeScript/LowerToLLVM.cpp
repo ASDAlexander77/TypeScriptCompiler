@@ -1638,7 +1638,6 @@ struct AllocaOpLowering : public TsLlvmPattern<mlir_ts::AllocaOp>
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! alloca: " << storageType << "\n";);
 
-        mlir::Value allocated;
         mlir::Value count;
         if (transformed.count())
         {
@@ -1649,19 +1648,7 @@ struct AllocaOpLowering : public TsLlvmPattern<mlir_ts::AllocaOp>
             count = clh.createI32ConstantOf(1);
         }
 
-        // put all allocs at 'func' top
-        auto parentFuncOp = varOp->getParentOfType<LLVM::LLVMFuncOp>();
-        if (parentFuncOp)
-        {
-            // if inside function (not in global op)
-            mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-            rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
-            allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, count);
-        }
-        else
-        {
-            allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, count);
-        }
+        mlir::Value allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, count);
 
         rewriter.replaceOp(varOp, ValueRange{allocated});
         return success();
@@ -2626,7 +2613,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         auto visitorAllOps = [&](Operation *op) {
             if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op) ||
                 isa<mlir_ts::SymbolCallInternalOp>(op) || isa<mlir_ts::CallInternalOp>(op) ||
-                isa<mlir_ts::CallHybridInternalOp>(op) || isa<mlir_ts::VariableOp>(op))
+                isa<mlir_ts::CallHybridInternalOp>(op) || isa<mlir_ts::VariableOp>(op) || isa<mlir_ts::AllocaOp>(op))
             {
                 createAsGlobalConstructor = true;
             }
@@ -4748,9 +4735,16 @@ static LogicalResult verifyAlloca(mlir::Block *block)
             return;
         }
 
-        if (isa<LLVM::AllocaOp>(op))
+        if (auto alloca = dyn_cast<LLVM::AllocaOp>(op))
         {
             if (beginAlloca)
+            {
+                return;
+            }
+
+            // check only alloca with const size
+            auto sizeOp = alloca.arraySize().getDefiningOp();
+            if (!isa<mlir_ts::ConstantOp>(sizeOp) && !isa<mlir::ConstantOp>(sizeOp))
             {
                 return;
             }
