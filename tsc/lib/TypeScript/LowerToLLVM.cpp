@@ -1650,6 +1650,8 @@ struct AllocaOpLowering : public TsLlvmPattern<mlir_ts::AllocaOp>
 
         mlir::Value allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, count);
 
+        // TODO: call MemSet
+
         rewriter.replaceOp(varOp, ValueRange{allocated});
         return success();
     }

@@ -2159,4 +2159,12 @@ def TypeScript_NoOp : TypeScript_Op<"noop"> {
   let summary = "no operation";
 }
 
+// GC support
+def TypeScript_GCMakeDescriptorOp : TypeScript_Op<"GCMakeDescriptor"> {
+  let summary = "GC make descriptor operation";
+
+  let arguments = (ins TypeScript_Ref:$typeBitmap, I64:$sizeOfBitmapInElements);
+  let results = (outs I64:$descr);
+}
+
 #endif // TYPESCRIPT_OPS

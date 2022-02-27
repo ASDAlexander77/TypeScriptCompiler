@@ -1676,6 +1676,11 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp, mlir_ts::BoxOp, mlir_ts::UnboxOp,
         mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp, mlir_ts::GetTypeInfoFromUnionOp,
         mlir_ts::CreateOptionalOp, mlir_ts::UndefOptionalOp>();
+#ifdef ENABLE_TYPED_GC
+    target.addLegalOp<
+        mlir_ts::GCMakeDescriptorOp>();
+#endif
+
 }
 
 void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, RewritePatternSet &patterns,

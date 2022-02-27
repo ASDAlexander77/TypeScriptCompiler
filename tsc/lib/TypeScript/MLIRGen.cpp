@@ -10375,7 +10375,7 @@ genContext);
 
                     auto _8Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 8));
                     auto sizeOfStoreElementInBits = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfStoreElement, _8Value);
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::AsteriskToken), sizeOfStoreElement, _8Value);
 
                     // calc bitmap size
                     auto sizeOfType = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
@@ -10439,7 +10439,7 @@ genContext);
                     // save value
                     auto saveToElement = builder.create<mlir_ts::StoreOp>(location, valWithBit, elemRef);
 
-                    auto init = builder.create<mlir_ts::LoadOp>(location, bitmapValueType, arrayValue);
+                    auto init = builder.create<mlir_ts::GCMakeDescriptorOp>(location, builder.getI64Type(), arrayValue, sizeOfTypeInBitmapTypes);
                     return std::make_pair(init.getType(), init);
                 },
                 genContext);
