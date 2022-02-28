@@ -4391,6 +4391,30 @@ struct NoOpLowering : public TsLlvmPattern<mlir_ts::NoOp>
     }
 };
 
+#ifdef ENABLE_TYPED_GC
+class GCMakeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::GCMakeDescriptorOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::GCMakeDescriptorOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GCMakeDescriptorOp op, ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+
+        auto i64PtrTy = th.getPointerType(th.getI64Type());
+
+        auto gcMakeDescriptorFunc = ch.getOrInsertFunction("GC_make_descriptor", th.getFunctionType(rewriter.getI64Type(), {i64PtrTy, rewriter.getI64Type()}));
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, gcMakeDescriptorFunc, ValueRange{transformed.typeBitmap(), transformed.sizeOfBitmapInElements()});
+
+        return success();
+    }
+};
+#endif
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m,
                                                  mlir::SetVector<mlir::Type> &stack)
 {
@@ -4889,7 +4913,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ,
         SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
-    // patterns.insert<SwitchStateOpLowering2>(typeConverter, &getContext(), &tsLlvmContext, /*benegit*/ 2);
+#ifdef ENABLE_TYPED_GC
+    patterns.insert<
+        GCMakeDescriptorOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+#endif        
 
     mlir::SetVector<mlir::Type> stack;
     populateTypeScriptConversionPatterns(typeConverter, m, stack);
