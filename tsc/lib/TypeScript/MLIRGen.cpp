@@ -3352,7 +3352,12 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, FunctionPrototypeDOM::TypePtr funcProto,
                                              const GenContext &genContext)
     {
-        auto retType = funcProto->getReturnType();
+        return mlirGenFunctionEntry(location, funcProto->getReturnType(), genContext);
+    }
+
+    mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, mlir::Type retType,
+                                             const GenContext &genContext)
+    {
         auto hasReturn = retType && !retType.isa<mlir_ts::VoidType>();
         if (hasReturn)
         {
@@ -3696,6 +3701,51 @@ class MLIRGenImpl
 
         return mlir::success();
     }
+
+    mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef fullFuncName, mlir_ts::FunctionType funcType, std::function<void()> funcBody,
+                                            const GenContext &genContext)
+    {
+        auto funcOp = mlir_ts::FuncOp::create(location, fullFuncName, funcType);
+
+        auto *blockPtr = funcOp.addEntryBlock();
+        auto &entryBlock = *blockPtr;
+
+        builder.setInsertionPointToStart(&entryBlock);
+
+        auto arguments = entryBlock.getArguments();
+
+        // add exit code
+        if (failed(mlirGenFunctionEntry(location, getReturnTypeFromFuncRef(funcType), genContext)))
+        {
+            return mlir::failure();
+        }
+
+        funcBody();
+
+        // add exit code
+        auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
+        if (retVarInfo.first)
+        {
+            builder.create<mlir_ts::ExitOp>(location, retVarInfo.first);
+        }
+        else
+        {
+            builder.create<mlir_ts::ExitOp>(location, mlir::Value());
+        }
+
+        if (genContext.dummyRun)
+        {
+            genContext.cleanUps->push_back(blockPtr);
+        }
+        else
+        {
+            theModule.push_back(funcOp);
+        }
+
+        funcOp.setPrivate();
+
+        return mlir::success();
+    }    
 
     ValueOrLogicalResult mlirGen(TypeAssertion typeAssertionAST, const GenContext &genContext)
     {
@@ -10349,7 +10399,7 @@ genContext);
     }
 
 #ifdef ENABLE_TYPED_GC
-    mlir::LogicalResult mlirGenClassTypeBitmap(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+    mlir::LogicalResult mlirGenClassTypeBitmap_AsField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
@@ -10447,6 +10497,103 @@ genContext);
 
         return mlir::success();
     }
+        
+    mlir::LogicalResult mlirGenClassTypeBitmap(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                               const GenContext &genContext)
+    {
+        MLIRCodeLogic mcl(builder);
+        MLIRTypeHelper mth(builder.getContext());
+
+        // register global
+        auto fullClassStaticFieldName = concat(newClassPtr->fullName, TYPE_BITMAP_NAME);
+
+        auto funcType = getFunctionType({}, builder.getI64Type(), false);
+
+        mlirGenFunctionBody(location, fullClassStaticFieldName, funcType,
+            [&]() {
+                auto bitmapValueType = mth.getTypeBitmapValueType();
+
+                auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
+                auto classNull = cast(location, newClassPtr->classType, nullOp, genContext);
+
+                auto sizeOfStoreElement = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), mth.getTypeBitmapValueType());
+
+                auto _8Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 8));
+                auto sizeOfStoreElementInBits = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::AsteriskToken), sizeOfStoreElement, _8Value);
+
+                // calc bitmap size
+                auto sizeOfType = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
+
+                // calc count of store elements of type size
+                auto sizeOfTypeInBitmapTypes = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfType, sizeOfStoreElement);
+
+                // size alligned by size of bits
+                auto sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), sizeOfTypeInBitmapTypes, sizeOfStoreElementInBits);
+
+                auto _1I64Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 1));
+
+                sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::MinusToken), sizeOfTypeAligned, _1I64Value);
+
+                sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfTypeAligned, sizeOfStoreElementInBits);
+
+                // allocate in stack
+                auto arrayValue = builder.create<mlir_ts::AllocaOp>(location, mlir_ts::RefType::get(bitmapValueType), sizeOfTypeAligned);
+
+                // property ref
+                auto fieldInfo = newClassPtr->fieldInfoByIndex(1);
+                auto fieldValue = mlirGenPropertyAccessExpression(location, classNull, fieldInfo.id, genContext);
+                assert(fieldValue);
+                auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
+
+                // cast to int64
+                auto fieldAddrAsInt = cast(location, mth.getIndexType(), fieldRef, genContext);
+
+                // calc index
+                auto calcIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), fieldAddrAsInt, sizeOfStoreElement);
+
+                auto calcIndex32 = cast(location, mth.getStructIndexType(), calcIndex, genContext);
+
+                auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
+                        location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex32);
+
+                // calc bit
+                auto indexModIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PercentToken), calcIndex, sizeOfStoreElementInBits);
+
+                auto indexMod = builder.create<mlir_ts::CastOp>(location, bitmapValueType, indexModIndex);
+
+                auto _1Value = builder.create<mlir_ts::ConstantOp>(location, bitmapValueType, builder.getIntegerAttr(bitmapValueType, 1));
+
+                // 1 << index_mod
+                auto bitValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                        location, bitmapValueType, builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanGreaterThanToken), _1Value, indexMod);
+
+                // load val
+                auto val = builder.create<mlir_ts::LoadOp>(location, bitmapValueType, elemRef);
+
+                // apply or
+                auto valWithBit = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                    location, bitmapValueType, builder.getI32IntegerAttr((int)SyntaxKind::BarToken), val, bitValue);
+
+                // save value
+                auto saveToElement = builder.create<mlir_ts::StoreOp>(location, valWithBit, elemRef);
+
+                auto typeDescr = builder.create<mlir_ts::GCMakeDescriptorOp>(location, builder.getI64Type(), arrayValue, sizeOfTypeInBitmapTypes);
+
+                auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
+                builder.create<mlir_ts::ReturnValOp>(location, typeDescr, retVarInfo.first);
+            },
+            genContext);
+
+        return mlir::success();
+    }
+
 #endif
 
     mlir::LogicalResult mlirGenClassInstanceOfMethod(ClassLikeDeclaration classDeclarationAST,
