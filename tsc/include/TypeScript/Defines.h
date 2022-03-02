@@ -39,6 +39,7 @@
 #define TYPESCRIPT_GC_NAME "tsgc"
 #define GLOBAL_CONSTUCTIONS_NAME "llvm.global_ctors"
 #define TYPE_BITMAP_NAME ".type_bitmap"
+#define TYPE_DESCR_NAME ".type_descr"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

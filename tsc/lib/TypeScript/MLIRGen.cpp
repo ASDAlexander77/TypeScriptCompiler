@@ -7837,7 +7837,21 @@ class MLIRGenImpl
     mlir::Value NewClassInstanceLogicAsOp(mlir::Location location, ClassInfo::TypePtr classInfo, bool stackAlloc,
                                           const GenContext &genContext)
     {
+#if ENABLE_TYPED_GC
+        // call typr bitmap
+        auto fullClassStaticFieldName = getTypeBitmapMethodName(classInfo);
+
+        auto funcType = getFunctionType({}, {builder.getI64Type()});
+
+        auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
+            location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullClassStaticFieldName));
+
+        auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcSymbolOp, mlir::ValueRange{});
+        auto typeDescr = callIndirectOp.getResult(0);
         auto newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
+#else
+        auto newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
+#endif
         mlirGenSetVTableToInstance(location, classInfo, newOp, genContext);
         return newOp;
     }
@@ -9630,6 +9644,7 @@ class MLIRGenImpl
 
 #if ENABLE_TYPED_GC
         mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
+        mlirGenClassTypeDescriptorField(location, newClassPtr, classGenContext);
 #endif
 
         mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
@@ -10399,16 +10414,19 @@ genContext);
     }
 
 #ifdef ENABLE_TYPED_GC
-    mlir::LogicalResult mlirGenClassTypeBitmap_AsField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+    StringRef getTypeBitmapMethodName(ClassInfo::TypePtr newClassPtr)
+    {
+        return concat(newClassPtr->fullName, TYPE_BITMAP_NAME);
+    }    
+
+    mlir::LogicalResult mlirGenClassTypeDescriptorField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
         MLIRTypeHelper mth(builder.getContext());
 
-        auto fieldId = mcl.TupleFieldName(TYPE_BITMAP_NAME);
-
         // register global
-        auto fullClassStaticFieldName = concat(newClassPtr->fullName, TYPE_BITMAP_NAME);
+        auto fullClassStaticFieldName = concat(newClassPtr->fullName, TYPE_DESCR_NAME);
 
         if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
         {
@@ -10416,80 +10434,7 @@ genContext);
                 location, fullClassStaticFieldName, true,
                 newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
                 [&]() {
-                    auto bitmapValueType = mth.getTypeBitmapValueType();
-
-                    auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
-                    auto classNull = cast(location, newClassPtr->classType, nullOp, genContext);
-
-                    auto sizeOfStoreElement = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), mth.getTypeBitmapValueType());
-
-                    auto _8Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 8));
-                    auto sizeOfStoreElementInBits = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::AsteriskToken), sizeOfStoreElement, _8Value);
-
-                    // calc bitmap size
-                    auto sizeOfType = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
-
-                    // calc count of store elements of type size
-                    auto sizeOfTypeInBitmapTypes = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfType, sizeOfStoreElement);
-
-                    // size alligned by size of bits
-                    auto sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), sizeOfTypeInBitmapTypes, sizeOfStoreElementInBits);
-
-                    auto _1I64Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 1));
-
-                    sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::MinusToken), sizeOfTypeAligned, _1I64Value);
-
-                    sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfTypeAligned, sizeOfStoreElementInBits);
-
-                    // allocate in stack
-                    auto arrayValue = builder.create<mlir_ts::AllocaOp>(location, mlir_ts::RefType::get(bitmapValueType), sizeOfTypeAligned);
-
-                    // property ref
-                    auto fieldInfo = newClassPtr->fieldInfoByIndex(1);
-                    auto fieldValue = mlirGenPropertyAccessExpression(location, classNull, fieldInfo.id, genContext);
-                    assert(fieldValue);
-                    auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
-
-                    // cast to int64
-                    auto fieldAddrAsInt = cast(location, mth.getIndexType(), fieldRef, genContext);
-
-                    // calc index
-                    auto calcIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), fieldAddrAsInt, sizeOfStoreElement);
-
-                    auto calcIndex32 = cast(location, mth.getStructIndexType(), calcIndex, genContext);
-
-                    auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
-                         location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex32);
-
-                    // calc bit
-                    auto indexModIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PercentToken), calcIndex, sizeOfStoreElementInBits);
-
-                    auto indexMod = builder.create<mlir_ts::CastOp>(location, bitmapValueType, indexModIndex);
-
-                    auto _1Value = builder.create<mlir_ts::ConstantOp>(location, bitmapValueType, builder.getIntegerAttr(bitmapValueType, 1));
-
-                    // 1 << index_mod
-                    auto bitValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                         location, bitmapValueType, builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanGreaterThanToken), _1Value, indexMod);
-
-                    // load val
-                    auto val = builder.create<mlir_ts::LoadOp>(location, bitmapValueType, elemRef);
-
-                    // apply or
-                    auto valWithBit = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                       location, bitmapValueType, builder.getI32IntegerAttr((int)SyntaxKind::BarToken), val, bitValue);
-
-                    // save value
-                    auto saveToElement = builder.create<mlir_ts::StoreOp>(location, valWithBit, elemRef);
-
-                    auto init = builder.create<mlir_ts::GCMakeDescriptorOp>(location, builder.getI64Type(), arrayValue, sizeOfTypeInBitmapTypes);
+                    auto init = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), mth.getI64AttrValue(0));
                     return std::make_pair(init.getType(), init);
                 },
                 genContext);
@@ -10497,7 +10442,7 @@ genContext);
 
         return mlir::success();
     }
-        
+
     mlir::LogicalResult mlirGenClassTypeBitmap(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                const GenContext &genContext)
     {
@@ -10505,7 +10450,7 @@ genContext);
         MLIRTypeHelper mth(builder.getContext());
 
         // register global
-        auto fullClassStaticFieldName = concat(newClassPtr->fullName, TYPE_BITMAP_NAME);
+        auto fullClassStaticFieldName = getTypeBitmapMethodName(newClassPtr);
 
         auto funcType = getFunctionType({}, builder.getI64Type(), false);
 
