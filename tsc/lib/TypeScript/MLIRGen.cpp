@@ -10419,6 +10419,11 @@ genContext);
         return concat(newClassPtr->fullName, TYPE_BITMAP_NAME);
     }    
 
+    StringRef getTypeDescriptorFieldName(ClassInfo::TypePtr newClassPtr)
+    {
+        return concat(newClassPtr->fullName, TYPE_DESCR_NAME);
+    }    
+
     mlir::LogicalResult mlirGenClassTypeDescriptorField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                const GenContext &genContext)
     {
@@ -10426,7 +10431,7 @@ genContext);
         MLIRTypeHelper mth(builder.getContext());
 
         // register global
-        auto fullClassStaticFieldName = concat(newClassPtr->fullName, TYPE_DESCR_NAME);
+        auto fullClassStaticFieldName = getTypeDescriptorFieldName(newClassPtr);
 
         if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
         {
