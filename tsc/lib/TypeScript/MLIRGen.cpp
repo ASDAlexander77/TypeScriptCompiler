@@ -7838,16 +7838,39 @@ class MLIRGenImpl
                                           const GenContext &genContext)
     {
 #if ENABLE_TYPED_GC
-        // call typr bitmap
-        auto fullClassStaticFieldName = getTypeBitmapMethodName(classInfo);
+        auto typeDescrType = builder.getI64Type();
+        auto typeDescGlobalName = getTypeDescriptorFieldName(classInfo);
+        auto typeDescRef = resolveFullNameIdentifier(location, typeDescGlobalName, true, genContext);
+        auto typeDescCurrentValue = builder.create<mlir_ts::LoadOp>(location, typeDescrType, typeDescRef);
 
-        auto funcType = getFunctionType({}, {builder.getI64Type()});
+        auto condVal = cast(location, getBooleanType(), typeDescCurrentValue, genContext);
 
-        auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
-            location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullClassStaticFieldName));
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{typeDescrType}, condVal,
+            [&](mlir::OpBuilder &opBuilder, mlir::Location loc) 
+            {
+                builder.create<mlir_ts::ResultOp>(loc, mlir::ValueRange{typeDescCurrentValue});
+            }, 
+            [&](mlir::OpBuilder &opBuilder, mlir::Location loc) 
+            {
+                // call typr bitmap
+                auto fullClassStaticFieldName = getTypeBitmapMethodName(classInfo);
 
-        auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcSymbolOp, mlir::ValueRange{});
-        auto typeDescr = callIndirectOp.getResult(0);
+                auto funcType = getFunctionType({}, {typeDescrType});
+
+                auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
+                    location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullClassStaticFieldName));
+
+                auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcSymbolOp, mlir::ValueRange{});
+                auto typeDescr = callIndirectOp.getResult(0);
+
+                // save value
+                builder.create<mlir_ts::StoreOp>(location, typeDescr, typeDescRef);
+
+                builder.create<mlir_ts::ResultOp>(loc, mlir::ValueRange{typeDescr});
+            });
+
+        auto typeDescrValue = ifOp.getResult(0);
+
         auto newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
 #else
         auto newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
