@@ -694,6 +694,12 @@ struct ClassInfo
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
     }
 
+    unsigned fieldsCount()
+    {
+        auto storageClass = classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+        return storageClass.size();
+    }
+
     mlir_ts::FieldInfo fieldInfoByIndex(int index)
     {
         if (index >= 0)
