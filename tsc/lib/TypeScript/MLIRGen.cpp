@@ -7871,7 +7871,8 @@ class MLIRGenImpl
 
         auto typeDescrValue = ifOp.getResult(0);
 
-        auto newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
+        assert(!stackAlloc);
+        auto newOp = builder.create<mlir_ts::GCNewExplicitlyTypedOp>(location, classInfo->classType, typeDescrValue);
 #else
         auto newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
 #endif

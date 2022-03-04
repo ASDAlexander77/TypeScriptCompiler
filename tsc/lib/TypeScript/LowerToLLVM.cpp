@@ -4413,6 +4413,45 @@ class GCMakeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::GCMakeDescripto
         return success();
     }
 };
+
+class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplicitlyTypedOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::GCNewExplicitlyTypedOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GCNewExplicitlyTypedOp op, ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        CodeLogicHelper clh(op, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = op.getLoc();
+
+        mlir::Type storageType;
+        mlir::TypeSwitch<mlir::Type>(op.getType())
+            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
+            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
+            .Default([&](auto type) { storageType = type; });
+
+        auto resultType = tch.convertType(op.getType());
+
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), resultType);
+
+        auto i8PtrTy = th.getI8PtrType();
+
+        auto gcMallocExplicitlyTypedFunc = ch.getOrInsertFunction("GC_malloc_explicitly_typed", th.getFunctionType(i8PtrTy, {rewriter.getI64Type(), rewriter.getI64Type()}));
+        auto value = rewriter.create<LLVM::CallOp>(loc, gcMallocExplicitlyTypedFunc, ValueRange{sizeOfTypeValue, transformed.typeDescr()});
+
+        rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, resultType, value.getResult(0));
+
+        return success();
+    }
+};
+
 #endif
 
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m,
@@ -4915,7 +4954,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
 #ifdef ENABLE_TYPED_GC
     patterns.insert<
-        GCMakeDescriptorOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+        GCMakeDescriptorOpLowering, GCNewExplicitlyTypedOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 #endif        
 
     mlir::SetVector<mlir::Type> stack;

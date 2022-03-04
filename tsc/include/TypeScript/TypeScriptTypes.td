@@ -1460,4 +1460,9 @@ def TypeScript_BoundFunctionLike : AnyTypeOf<[
     TypeScript_BoundFunction, TypeScript_HybridFunction
   ]>;
 
+def TypeScript_AnyClassOrValueRef : AnyTypeOf<[
+    TypeScript_Class, TypeScript_ValueRef
+  ]>;
+
+
 #endif // TYPESCRIPT_TYPEDEFS

@@ -1678,7 +1678,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::CreateOptionalOp, mlir_ts::UndefOptionalOp>();
 #ifdef ENABLE_TYPED_GC
     target.addLegalOp<
-        mlir_ts::GCMakeDescriptorOp>();
+        mlir_ts::GCMakeDescriptorOp, GCNewExplicitlyTypedOp>();
 #endif
 
 }

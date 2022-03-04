@@ -521,7 +521,7 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
   }];
 
   let arguments = (ins OptionalAttr<BoolAttr>:$stackAlloc);
-  let results = (outs AnyType:$instance);
+  let results = (outs TypeScript_AnyClassOrValueRef:$instance);
 
   let assemblyFormat = "`{` $stackAlloc `}` attr-dict `:` type($instance)";
 }
@@ -2165,6 +2165,13 @@ def TypeScript_GCMakeDescriptorOp : TypeScript_Op<"GCMakeDescriptor"> {
 
   let arguments = (ins TypeScript_Ref:$typeBitmap, I64:$sizeOfBitmapInElements);
   let results = (outs I64:$descr);
+}
+
+def TypeScript_GCNewExplicitlyTypedOp : TypeScript_Op<"GCNewExplicitlyTyped"> {
+  let summary = "GC new exmplicitly typed operation";
+
+  let arguments = (ins I64:$typeDescr);
+  let results = (outs TypeScript_AnyClassOrValueRef:$instance);
 }
 
 #endif // TYPESCRIPT_OPS
