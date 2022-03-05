@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <cstdint>
 
 #ifndef NDEBUG
 #define GC_DEBUG
@@ -16,6 +17,7 @@
 #endif
 
 #include "gc.h"
+#include "gc_typed.h"
 
 void _mlir__GC_init()
 {
@@ -47,4 +49,14 @@ void _mlir__GC_win32_free_heap()
 #ifdef WIN32
     GC_win32_free_heap();
 #endif
+}
+
+void *_mlir__GC_malloc_explicitly_typed(size_t size, int64_t descr)
+{
+    return GC_MALLOC_EXPLICITLY_TYPED(size, descr);
+}
+
+int64_t _mlir__GC_make_descriptor(const int64_t *descr, size_t size)
+{
+    return GC_make_descriptor(reinterpret_cast<const GC_word *>(descr), size);
 }
