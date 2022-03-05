@@ -386,13 +386,24 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
         auto loc = op->getLoc();
 
         auto storageType = op.type();
-        auto llvmStorageType = tch.convertType(storageType);
-        auto llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
+
+        auto stripPtr = false;
+        mlir::TypeSwitch<mlir::Type>(storageType)
+            .Case<mlir_ts::ClassType>([&](auto classType) { stripPtr = true; })
+            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { stripPtr = true; })
+            .Default([&](auto type) { });
+
+        mlir::Type llvmStorageType = tch.convertType(storageType);
+        mlir::Type llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
+        if (stripPtr)
+        {
+            llvmStorageTypePtr = llvmStorageType;
+        }
+
         auto nullPtrToTypeValue = rewriter.create<LLVM::NullOp>(loc, llvmStorageTypePtr);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! size of - storage type: [" << storageType << "] llvm storage type: ["
-                                << llvmStorageType << "] llvm ptr: [" << llvmStorageTypePtr << "] value: ["
-                                << nullPtrToTypeValue << "]\n";);
+                                << llvmStorageType << "] llvm ptr: [" << llvmStorageTypePtr << "]\n";);
 
         auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(1));
         auto sizeOfSetAddr =
