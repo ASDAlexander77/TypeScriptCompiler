@@ -1684,11 +1684,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
 
         auto loc = newOp.getLoc();
 
-        mlir::Type storageType;
-        mlir::TypeSwitch<mlir::Type>(newOp.getType())
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
+        mlir::Type storageType = newOp.getType();
 
         auto resultType = tch.convertType(newOp.getType());
 
@@ -4442,15 +4438,11 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
 
         auto loc = op.getLoc();
 
-        mlir::Type storageType;
-        mlir::TypeSwitch<mlir::Type>(op.getType())
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
+        mlir::Type storageType = op.instance().getType();
 
         auto resultType = tch.convertType(op.getType());
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), resultType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
 
         auto i8PtrTy = th.getI8PtrType();
 
