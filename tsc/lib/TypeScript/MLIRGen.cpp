@@ -3705,6 +3705,11 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef fullFuncName, mlir_ts::FunctionType funcType, std::function<void()> funcBody,
                                             const GenContext &genContext)
     {
+        if (theModule.lookupSymbol(fullFuncName))
+        {
+            return mlir::success();
+        }
+
         SymbolTableScopeT varScope(symbolTable);
 
         auto funcOp = mlir_ts::FuncOp::create(location, fullFuncName, funcType);
