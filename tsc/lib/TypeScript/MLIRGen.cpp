@@ -7846,7 +7846,8 @@ class MLIRGenImpl
     {
         mlir::Value newOp;
 #if ENABLE_TYPED_GC
-        if (!stackAlloc)
+        auto enabledGC = !compileOptions.disableGC;
+        if (enabledGC && !stackAlloc)
         {
             auto typeDescrType = builder.getI64Type();
             auto typeDescGlobalName = getTypeDescriptorFieldName(classInfo);
@@ -9682,8 +9683,12 @@ class MLIRGenImpl
 #endif
 
 #if ENABLE_TYPED_GC
-        mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
-        mlirGenClassTypeDescriptorField(location, newClassPtr, classGenContext);
+        auto enabledGC = !compileOptions.disableGC;
+        if (enabledGC)
+        {
+            mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
+            mlirGenClassTypeDescriptorField(location, newClassPtr, classGenContext);
+        }
 #endif
 
         mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
@@ -10538,6 +10543,12 @@ genContext);
                 for (auto index = 0; (unsigned)index < count; index ++)
                 {
                     auto fieldInfo = newClassPtr->fieldInfoByIndex(index);
+                    // skip virrual table for speed adv.
+                    if (index == 0 && fieldInfo.type.isa<mlir_ts::OpaqueType>())
+                    {
+                        continue;
+                    }
+
                     if (mth.isValueType(fieldInfo.type))
                     {
                         continue;
