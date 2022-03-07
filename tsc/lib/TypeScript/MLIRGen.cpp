@@ -4103,9 +4103,7 @@ class MLIRGenImpl
 
         auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
 
-        const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
-
-        return mlir::success();
+        return mlirGen(expr_statement.as<Statement>(), genContext);
     }
 
     mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, const GenContext &genContext)
@@ -4141,7 +4139,7 @@ class MLIRGenImpl
 
                 if (typeToken)
                 {
-                    addSafeCastStatement(expr, typeToken, genContext);
+                    return addSafeCastStatement(expr, typeToken, genContext);
                 }
 
                 return mlir::success();
@@ -4198,8 +4196,7 @@ class MLIRGenImpl
 
                                 NodeFactory nf(NodeFactoryFlags::None);
                                 auto typeRef = nf.createTypeReferenceNode(nf.createIdentifier(typeAliasName));
-                                addSafeCastStatement(objAccessExpression, typeRef, genContext);
-                                break;
+                                return addSafeCastStatement(objAccessExpression, typeRef, genContext);
                             }
                         }
                     }
@@ -4216,19 +4213,21 @@ class MLIRGenImpl
         auto expr = stripParentheses(exprVal);
         if (expr.is<PropertyAccessExpression>())
         {
+            auto isConstVal = isConstValue(constVal, genContext);
+            if (!isConstVal)
+            {
+                return mlir::failure();
+            }
+
             auto propertyAccessExpressionOp = expr.as<PropertyAccessExpression>();
             auto objAccessExpression = propertyAccessExpressionOp->expression;
             auto typeOfObject = evaluate(objAccessExpression, genContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCastCheck: " << typeOfObject << "");
 
-            evaluate(
-                constVal,
-                [&](mlir::Value val) {
-                    checkSafeCastPropertyAccessLogic(constVal, objAccessExpression, typeOfObject,
-                                                     propertyAccessExpressionOp->name, val, genContext);
-                },
-                genContext);
+            auto val = mlirGen(constVal, genContext);
+            return checkSafeCastPropertyAccessLogic(constVal, objAccessExpression, typeOfObject,
+                                                propertyAccessExpressionOp->name, val, genContext);
         }
 
         return mlir::failure();
@@ -4269,8 +4268,7 @@ class MLIRGenImpl
                 if (instanceOf->left.is<Identifier>())
                 {
                     NodeFactory nf(NodeFactoryFlags::None);
-                    addSafeCastStatement(instanceOf->left, nf.createTypeReferenceNode(instanceOf->right), genContext);
-                    return mlir::success();
+                    return addSafeCastStatement(instanceOf->left, nf.createTypeReferenceNode(instanceOf->right), genContext);
                 }
             }
         }
@@ -4296,14 +4294,14 @@ class MLIRGenImpl
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, condValue, hasElse);
 
+        builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
             checkSafeCast(ifStatementAST->expression, genContext);
+            mlirGen(ifStatementAST->thenStatement, genContext);
         }
-
-        builder.setInsertionPointToStart(&ifOp.thenRegion().front());
-        mlirGen(ifStatementAST->thenStatement, genContext);
 
         if (hasElse)
         {
@@ -11314,6 +11312,15 @@ genContext);
         return mlir::success();
     }
 
+    bool isConstValue(Expression expr, const GenContext &genContext)
+    {
+        auto isConst = false;
+        evaluate(
+            expr, [&](mlir::Value val) { isConst = isConstValue(val); },
+            genContext);
+        return isConst;
+    }
+
     mlir::LogicalResult generateConstructorStatements(ClassLikeDeclaration classDeclarationAST, bool staticConstructor,
                                                       const GenContext &genContext)
     {
@@ -11337,10 +11344,7 @@ genContext);
 
                 if (staticConstructor)
                 {
-                    auto isConst = false;
-                    evaluate(
-                        propertyDeclaration->initializer, [&](mlir::Value val) { isConst = isConstValue(val); },
-                        genContext);
+                    auto isConst = isConstValue(propertyDeclaration->initializer, genContext);
                     if (isConst)
                     {
                         continue;
