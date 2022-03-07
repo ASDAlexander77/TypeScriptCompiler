@@ -39,7 +39,7 @@ void UnaryOp(UnaryOpTy &unaryOp, mlir::Value oper, PatternRewriter &builder)
     }
 }
 
-template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
+template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy, typename UnsignedStdIOpTy = StdIOpTy>
 void BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, PatternRewriter &builder)
 {
     auto loc = binOp->getLoc();
@@ -47,7 +47,14 @@ void BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, PatternRewriter 
     auto leftType = left.getType();
     if (leftType.isIntOrIndex())
     {
-        builder.replaceOpWithNewOp<StdIOpTy>(binOp, left, right);
+        if (leftType.isUnsignedInteger())
+        {
+            builder.replaceOpWithNewOp<UnsignedStdIOpTy>(binOp, left, right);
+        }
+        else
+        {
+            builder.replaceOpWithNewOp<StdIOpTy>(binOp, left, right);
+        }
     }
     else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
     {

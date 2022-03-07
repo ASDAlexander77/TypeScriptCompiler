@@ -606,8 +606,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0}));
     }
 
-    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleType, mlir::Value arrayOrStringOrTuple,
-                                         mlir::Value index)
+    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleMlirTSType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -620,7 +619,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto ptrType = tch.convertType(elementRefType);
 
         auto dataPtr = arrayOrStringOrTuple;
-        if (auto arrayType = arrayOrStringOrTupleType.isa<mlir_ts::ArrayType>())
+        if (arrayOrStringOrTupleMlirTSType.isa<mlir_ts::ArrayType>())
         {
             // extract pointer from struct
             dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTuple,
@@ -628,7 +627,6 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         }
 
         auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
-
         return addr;
     }
 
@@ -663,6 +661,25 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         return addr;
     }
+
+    mlir::Value GetAddressOfPointerOffset(mlir::Type elementRefType, mlir::Type refValueType, mlir::Value refValue, mlir::Value index)
+    {
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+        CodeLogicHelper clh(op, rewriter);
+
+        auto loc = op->getLoc();
+
+        assert(elementRefType.isa<mlir_ts::RefType>());
+
+        auto ptrType = tch.convertType(elementRefType);
+
+        auto dataPtr = refValue;
+
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
+        return addr;
+    }
+
 };
 
 } // namespace typescript

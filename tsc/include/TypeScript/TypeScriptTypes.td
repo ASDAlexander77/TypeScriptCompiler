@@ -1404,8 +1404,12 @@ def TypeScript_IsArrayRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()
 
 def TypeScript_AnyArrayRef : DialectType<TypeScript_Dialect, TypeScript_IsArrayRefType, "any array reference type">;
 
+def TypeScript_IsConstArrayValueRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstArrayValueType>()">;
+
+def TypeScript_AnyConstArrayValueRef : DialectType<TypeScript_Dialect, TypeScript_IsConstArrayValueRefType, "any const array value reference type">;
+
 def TypeScript_ArrayLike : AnyTypeOf<[
-    TypeScript_ConstArray, TypeScript_Array, TypeScript_String
+    TypeScript_ConstArray, TypeScript_Array, TypeScript_String, TypeScript_AnyConstArrayValueRef, TypeScript_Ref
   ]>;
 
 def TypeScript_TupleLike : AnyTypeOf<[
@@ -1455,5 +1459,10 @@ def TypeScript_AnyRefOrCallableOrNone : AnyTypeOf<[
 def TypeScript_BoundFunctionLike : AnyTypeOf<[
     TypeScript_BoundFunction, TypeScript_HybridFunction
   ]>;
+
+def TypeScript_AnyClassOrValueRef : AnyTypeOf<[
+    TypeScript_Class, TypeScript_ValueRef
+  ]>;
+
 
 #endif // TYPESCRIPT_TYPEDEFS

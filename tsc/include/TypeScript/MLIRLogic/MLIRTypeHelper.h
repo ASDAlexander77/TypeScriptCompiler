@@ -53,6 +53,11 @@ class MLIRTypeHelper
         return mlir::IntegerType::get(context, 64);
     }
 
+    mlir::IntegerType getU64Type()
+    {
+        return mlir::IntegerType::get(context, 64, mlir::IntegerType::Unsigned);
+    }
+
     mlir_ts::StringType getStringType()
     {
         return mlir_ts::StringType::get(context);
@@ -118,12 +123,22 @@ class MLIRTypeHelper
 
     mlir::IntegerAttr getI32AttrValue(int32_t value)
     {
-        return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value));
+        return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value, true));
     }
 
     mlir::IntegerAttr getI64AttrValue(int64_t value)
     {
-        return mlir::IntegerAttr::get(getI64Type(), mlir::APInt(64, value));
+        return mlir::IntegerAttr::get(getI64Type(), mlir::APInt(64, value, true));
+    }
+
+    mlir::IntegerAttr getU64AttrValue(int64_t value)
+    {
+        return mlir::IntegerAttr::get(getU64Type(), mlir::APInt(64, value));
+    }
+
+    mlir::Type getIndexType()
+    {
+        return getI64Type();
     }
 
     mlir::Type getStructIndexType()
@@ -135,6 +150,13 @@ class MLIRTypeHelper
     {
         return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value));
     }
+
+#ifdef ENABLE_TYPED_GC
+    mlir::IntegerType getTypeBitmapValueType()
+    {
+        return getU64Type();
+    }
+#endif    
 
     bool isValueType(mlir::Type typeIn)
     {

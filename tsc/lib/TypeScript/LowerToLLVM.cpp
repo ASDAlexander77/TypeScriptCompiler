@@ -386,13 +386,24 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
         auto loc = op->getLoc();
 
         auto storageType = op.type();
-        auto llvmStorageType = tch.convertType(storageType);
-        auto llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
+
+        auto stripPtr = false;
+        mlir::TypeSwitch<mlir::Type>(storageType)
+            .Case<mlir_ts::ClassType>([&](auto classType) { stripPtr = true; })
+            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { stripPtr = true; })
+            .Default([&](auto type) { });
+
+        mlir::Type llvmStorageType = tch.convertType(storageType);
+        mlir::Type llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
+        if (stripPtr)
+        {
+            llvmStorageTypePtr = llvmStorageType;
+        }
+
         auto nullPtrToTypeValue = rewriter.create<LLVM::NullOp>(loc, llvmStorageTypePtr);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! size of - storage type: [" << storageType << "] llvm storage type: ["
-                                << llvmStorageType << "] llvm ptr: [" << llvmStorageTypePtr << "] value: ["
-                                << nullPtrToTypeValue << "]\n";);
+                                << llvmStorageType << "] llvm ptr: [" << llvmStorageTypePtr << "]\n";);
 
         auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(1));
         auto sizeOfSetAddr =
@@ -1552,12 +1563,26 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         mlir::Value allocated;
         if (!isCaptured)
         {
+            auto count = 1;
+            if (varOp->hasAttrOfType<mlir::IntegerAttr>(INSTANCES_COUNT_ATTR_NAME))
+            {
+                auto intAttr = varOp->getAttrOfType<mlir::IntegerAttr>(INSTANCES_COUNT_ATTR_NAME);
+                count = intAttr.getInt();
+            }
+
             // put all allocs at 'func' top
             auto parentFuncOp = varOp->getParentOfType<LLVM::LLVMFuncOp>();
-            assert(parentFuncOp);
-            mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-            rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
-            allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
+            if (parentFuncOp)
+            {
+                // if inside function (not in global op)
+                mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+                rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
+                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
+            }
+            else
+            {
+                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
+            }
         }
         else
         {
@@ -1603,6 +1628,46 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
     }
 };
 
+struct AllocaOpLowering : public TsLlvmPattern<mlir_ts::AllocaOp>
+{
+    using TsLlvmPattern<mlir_ts::AllocaOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AllocaOp varOp, ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        LLVMCodeHelper ch(varOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(varOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto location = varOp.getLoc();
+
+        auto referenceType = varOp.reference().getType().cast<mlir_ts::RefType>();
+        auto storageType = referenceType.getElementType();
+        auto llvmReferenceType = tch.convertType(referenceType);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! alloca: " << storageType << "\n";);
+
+        mlir::Value count;
+        if (transformed.count())
+        {
+            count = transformed.count();
+        }
+        else
+        {
+            count = clh.createI32ConstantOf(1);
+        }
+
+        mlir::Value allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, count);
+
+        // TODO: call MemSet
+
+        rewriter.replaceOp(varOp, ValueRange{allocated});
+        return success();
+    }
+};
+
 struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
 {
     using TsLlvmPattern<mlir_ts::NewOp>::TsLlvmPattern;
@@ -1619,11 +1684,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
 
         auto loc = newOp.getLoc();
 
-        mlir::Type storageType;
-        mlir::TypeSwitch<mlir::Type>(newOp.getType())
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
+        mlir::Type storageType = newOp.getType();
 
         auto resultType = tch.convertType(newOp.getType());
 
@@ -2207,12 +2268,12 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
             return success();
 
         case SyntaxKind::SlashToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, SignedDivIOp, DivFOp, UnsignedDivIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::GreaterThanGreaterThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp>(
+            BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp, UnsignedShiftRightOp>(
                 arithmeticBinaryOp, transformed.operand1(), transformed.operand2(), rewriter);
             return success();
 
@@ -2242,7 +2303,7 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
             return success();
 
         case SyntaxKind::PercentToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, RemFOp, RemFOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, SignedRemIOp, RemFOp, UnsignedRemIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                transformed.operand2(), rewriter);
             return success();
 
@@ -2458,6 +2519,24 @@ struct ElementRefOpLowering : public TsLlvmPattern<mlir_ts::ElementRefOp>
     }
 };
 
+struct PointerOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::PointerOffsetRefOp>
+{
+    using TsLlvmPattern<mlir_ts::PointerOffsetRefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::PointerOffsetRefOp elementOp, ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter());
+
+        auto addr = ch.GetAddressOfPointerOffset(elementOp.getResult().getType(), elementOp.ref().getType(),
+                                                transformed.ref(), transformed.index());
+        rewriter.replaceOp(elementOp, addr);
+        return success();
+    }
+};
+
 struct ExtractPropertyOpLowering : public TsLlvmPattern<mlir_ts::ExtractPropertyOp>
 {
     using TsLlvmPattern<mlir_ts::ExtractPropertyOp>::TsLlvmPattern;
@@ -2543,7 +2622,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         auto visitorAllOps = [&](Operation *op) {
             if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op) ||
                 isa<mlir_ts::SymbolCallInternalOp>(op) || isa<mlir_ts::CallInternalOp>(op) ||
-                isa<mlir_ts::CallHybridInternalOp>(op))
+                isa<mlir_ts::CallHybridInternalOp>(op) || isa<mlir_ts::VariableOp>(op) || isa<mlir_ts::AllocaOp>(op))
             {
                 createAsGlobalConstructor = true;
             }
@@ -4319,6 +4398,65 @@ struct NoOpLowering : public TsLlvmPattern<mlir_ts::NoOp>
     }
 };
 
+#ifdef ENABLE_TYPED_GC
+class GCMakeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::GCMakeDescriptorOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::GCMakeDescriptorOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GCMakeDescriptorOp op, ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+
+        auto i64PtrTy = th.getPointerType(th.getI64Type());
+
+        auto gcMakeDescriptorFunc = ch.getOrInsertFunction("GC_make_descriptor", th.getFunctionType(rewriter.getI64Type(), {i64PtrTy, rewriter.getI64Type()}));
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, gcMakeDescriptorFunc, ValueRange{transformed.typeBitmap(), transformed.sizeOfBitmapInElements()});
+
+        return success();
+    }
+};
+
+class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplicitlyTypedOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::GCNewExplicitlyTypedOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GCNewExplicitlyTypedOp op, ArrayRef<mlir::Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        CodeLogicHelper clh(op, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = op.getLoc();
+
+        mlir::Type storageType = op.instance().getType();
+
+        auto resultType = tch.convertType(op.getType());
+
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+
+        auto i8PtrTy = th.getI8PtrType();
+
+        auto gcMallocExplicitlyTypedFunc = ch.getOrInsertFunction("GC_malloc_explicitly_typed", th.getFunctionType(i8PtrTy, {rewriter.getI64Type(), rewriter.getI64Type()}));
+        auto value = rewriter.create<LLVM::CallOp>(loc, gcMallocExplicitlyTypedFunc, ValueRange{sizeOfTypeValue, transformed.typeDescr()});
+
+        rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, resultType, value.getResult(0));
+
+        return success();
+    }
+};
+
+#endif
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m,
                                                  mlir::SetVector<mlir::Type> &stack)
 {
@@ -4665,9 +4803,16 @@ static LogicalResult verifyAlloca(mlir::Block *block)
             return;
         }
 
-        if (isa<LLVM::AllocaOp>(op))
+        if (auto alloca = dyn_cast<LLVM::AllocaOp>(op))
         {
             if (beginAlloca)
+            {
+                return;
+            }
+
+            // check only alloca with const size
+            auto sizeOp = alloca.arraySize().getDefiningOp();
+            if (!isa<mlir_ts::ConstantOp>(sizeOp) && !isa<mlir::ConstantOp>(sizeOp))
             {
                 return;
             }
@@ -4785,19 +4930,20 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
         HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,
         FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
-        LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering,
-        CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering,
-        DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, StoreOpLowering,
-        SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
-        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
-        ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering, InvokeOpLowering,
-        InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering,
-        InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering,
-        StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering,
-        GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering,
-        LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering,
-        EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering, SymbolCallInternalOpLowering,
-        CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
+        PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
+        DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering,
+        PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering,
+        StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering,
+        StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering,
+        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering,
+        AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
+        ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
+        LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
+        GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
+        UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering,
+        SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering,
+        SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering,
+        NoOpLowering,
         /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, ExtractInterfaceVTableOpLowering,
         BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,
         GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering, BodyInternalOpLowering,
@@ -4809,7 +4955,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ,
         SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
-    // patterns.insert<SwitchStateOpLowering2>(typeConverter, &getContext(), &tsLlvmContext, /*benegit*/ 2);
+#ifdef ENABLE_TYPED_GC
+    patterns.insert<
+        GCMakeDescriptorOpLowering, GCNewExplicitlyTypedOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+#endif        
 
     mlir::SetVector<mlir::Type> stack;
     populateTypeScriptConversionPatterns(typeConverter, m, stack);

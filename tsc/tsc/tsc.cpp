@@ -35,6 +35,17 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "mlir/Support/DebugCounter.h"
+//#include "mlir/Support/FileUtilities.h"
+#include "mlir/Support/Timing.h"
+//#include "mlir/Support/ToolUtilities.h"
+//#include "llvm/Support/CommandLine.h"
+//#include "llvm/Support/FileUtilities.h"
+//#include "llvm/Support/Regex.h"
+//#include "llvm/Support/SourceMgr.h"
+//#include "llvm/Support/StringSaver.h"
+//#include "llvm/Support/ToolOutputFile.h"
+
 #ifdef ENABLE_ASYNC
 #include "mlir/Conversion/AsyncToLLVM/AsyncToLLVM.h"
 #endif
@@ -551,6 +562,8 @@ int main(int argc, char **argv)
     mlir::registerAsmPrinterCLOptions();
     mlir::registerMLIRContextCLOptions();
     mlir::registerPassManagerCLOptions();
+    mlir::registerDefaultTimingManagerCLOptions();
+    mlir::DebugCounter::registerCLOptions();
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript compiler\n");
 

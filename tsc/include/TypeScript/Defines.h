@@ -4,6 +4,7 @@
 #define IDENTIFIER_ATTR_NAME "identifier"
 #define VIRTUALFUNC_ATTR_NAME "__virt"
 #define GENERIC_ATTR_NAME "__generic"
+#define INSTANCES_COUNT_ATTR_NAME "InstancesCount"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
 #define LCAPTURED_NAME L".captured"
@@ -37,6 +38,8 @@
 #define TS_GC_ATTRIBUTE "ts.gc"
 #define TYPESCRIPT_GC_NAME "tsgc"
 #define GLOBAL_CONSTUCTIONS_NAME "llvm.global_ctors"
+#define TYPE_BITMAP_NAME ".type_bitmap"
+#define TYPE_DESCR_NAME ".type_descr"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48
