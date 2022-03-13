@@ -12032,6 +12032,28 @@ genContext);
             return V(builder.create<mlir_ts::CreateOptionalOp>(location, optType, valueCasted));
         }
 
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(unionType, baseType))
+            {
+                auto types = unionType.getTypes();
+                if (std::find(types.begin(), types.end(), value.getType()) == types.end())
+                {
+                    // find which type we can cast to
+                    for (auto subType : types)
+                    {
+                        if (mth.canCastFromTo(value.getType(), subType))
+                        {
+                            value = cast(location, subType, value, genContext);
+                            break;
+                        }
+                    }                    
+                }
+            }
+        }        
+
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
