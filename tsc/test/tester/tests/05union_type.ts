@@ -4,5 +4,5 @@ function main() {
 
     assert(typeof (val) == "number")
 
-    print("done");
+    print("done.");
 }
