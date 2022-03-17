@@ -282,8 +282,8 @@ class FunctionPrototypeDOM
 class TypeParameterDOM : public BaseDOM
 {
     std::string name;
-    mlir::Type constraint;
-    mlir::Type _default;
+    TypeNode constraint;
+    TypeNode _default;
 
   public:
     using TypePtr = std::shared_ptr<TypeParameterDOM>;
@@ -297,22 +297,22 @@ class TypeParameterDOM : public BaseDOM
         return name;
     }
 
-    void setConstraint(mlir::Type constraint_)
+    void setConstraint(TypeNode constraint_)
     {
         constraint = constraint_;
     }
 
-    mlir::Type getConstraint()
+    TypeNode getConstraint()
     {
         return constraint;
     }
 
-    void setDefault(mlir::Type default_)
+    void setDefault(TypeNode default_)
     {
         _default = default_;
     }
 
-    mlir::Type getDefault()
+    TypeNode getDefault()
     {
         return _default;
     }

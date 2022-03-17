@@ -1330,7 +1330,7 @@ class MLIRGenImpl
             auto typeParam = (*found);
 
             auto [result, hasAnyNamedGenericType] = zipTypeParameterWithArgument(
-                location, genericTypeGenContext.typeParamsWithArgs, typeParam, inferredType);
+                location, genericTypeGenContext.typeParamsWithArgs, typeParam, inferredType, genericTypeGenContext);
             if (mlir::failed(result))
             {
                 return mlir::failure();
@@ -9335,12 +9335,12 @@ class MLIRGenImpl
             auto typeParameterDOM = std::make_shared<TypeParameterDOM>(namePtr.str());
             if (typeParameter->constraint)
             {
-                typeParameterDOM->setConstraint(getType(typeParameter->constraint, genContext));
+                typeParameterDOM->setConstraint(typeParameter->constraint);
             }
 
             if (typeParameter->_default)
             {
-                typeParameterDOM->setDefault(getType(typeParameter->_default, genContext));
+                typeParameterDOM->setDefault(typeParameter->_default);
             }
 
             return typeParameterDOM;
@@ -12377,7 +12377,7 @@ genContext);
 
     std::pair<mlir::LogicalResult, bool> zipTypeParameterWithArgument(
         mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
-        const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, bool noExtendTest = false)
+        const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, const GenContext &genContext, bool noExtendTest = false)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! assigning generic type: " << typeParam->getName() << " type: " << type
                                 << "\n";);
@@ -12395,7 +12395,7 @@ genContext);
         }
 
         MLIRTypeHelper mth(builder.getContext());
-        if (!noExtendTest && typeParam->getConstraint() && !mth.extendsType(type, typeParam->getConstraint(), pairs))
+        if (!noExtendTest && typeParam->getConstraint() && !mth.extendsType(type, getType(typeParam->getConstraint(), genContext), pairs))
         {
             emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
                                       << typeParam->getConstraint() << ".";
@@ -12439,14 +12439,14 @@ genContext);
             auto &typeParam = typeParams[index];
             auto isDefault = false;
             auto type =
-                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->getDefault());
+                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, getType(typeParam->getDefault(), genContext));
             if (!type)
             {
                 return {mlir::failure(), anyNamedGenericType};
             }
 
             auto [result, hasNamedGenericType] =
-                zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault);
+                zipTypeParameterWithArgument(location, pairs, typeParam, type, genContext, isDefault);
             if (mlir::failed(result))
             {
                 return {mlir::failure(), anyNamedGenericType};
@@ -12469,7 +12469,7 @@ genContext);
             auto &typeParam = typeParams[index];
             auto isDefault = false;
             auto type =
-                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->getDefault());
+                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, getType(typeParam->getDefault(), genContext));
             if (!type)
             {
                 return {mlir::success(), anyNamedGenericType};
@@ -12481,7 +12481,7 @@ genContext);
             }
 
             auto [result, hasNamedGenericType] =
-                zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault);
+                zipTypeParameterWithArgument(location, pairs, typeParam, type, genContext, isDefault);
             if (mlir::failed(result))
             {
                 return {mlir::failure(), anyNamedGenericType};
@@ -12504,7 +12504,7 @@ genContext);
             auto &typeParam = typeParams[index];
             auto isDefault = false;
             auto type =
-                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->getDefault());
+                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, getType(typeParam->getDefault(), genContext));
             if (!type)
             {
                 return {mlir::success(), anyNamedGenericType};
@@ -12513,7 +12513,7 @@ genContext);
             if (isDefault)
             {
                 auto [result, hasNamedGenericType] =
-                    zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault);
+                    zipTypeParameterWithArgument(location, pairs, typeParam, type, genContext, isDefault);
                 if (mlir::failed(result))
                 {
                     return {mlir::failure(), anyNamedGenericType};
@@ -12964,6 +12964,18 @@ genContext);
         // this is "keyof"
         // TODO: finish it
         auto type = getType(typeOperatorNode->type, genContext);
+        if (!type)
+        {
+            if (!genContext.allowPartialResolve)
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! can't take 'keyof'\n";);
+
+                emitError(loc(typeOperatorNode), "can't take keyof");
+            }
+
+            return type;
+        }
+
         if (type.isa<mlir_ts::AnyType>())
         {
             return getUnionType(getStringType(), getNumberType());
@@ -13225,7 +13237,7 @@ genContext);
         auto hasNameType = !!mappedTypeNode->nameType;
 
         SmallVector<mlir_ts::FieldInfo> fields;
-        for (auto typeParamItem : typeParam->getConstraint().cast<mlir_ts::UnionType>().getTypes())
+        for (auto typeParamItem : getType(typeParam->getConstraint(), genContext).cast<mlir_ts::UnionType>().getTypes())
         {
             const_cast<GenContext &>(genContext)
                 .typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, typeParamItem)});
