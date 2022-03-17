@@ -284,11 +284,13 @@ class TypeParameterDOM : public BaseDOM
     std::string name;
     TypeNode constraint;
     TypeNode _default;
+    bool _hasConstraint;
+    bool _hasDefault;
 
   public:
     using TypePtr = std::shared_ptr<TypeParameterDOM>;
 
-    TypeParameterDOM(std::string name) : BaseDOM(Base_TypeParameter), name(name)
+    TypeParameterDOM(std::string name) : BaseDOM(Base_TypeParameter), name(name), _hasConstraint(false), _hasDefault(false)
     {
     }
 
@@ -299,6 +301,7 @@ class TypeParameterDOM : public BaseDOM
 
     void setConstraint(TypeNode constraint_)
     {
+        _hasConstraint = constraint_;
         constraint = constraint_;
     }
 
@@ -307,8 +310,14 @@ class TypeParameterDOM : public BaseDOM
         return constraint;
     }
 
+    bool hasConstraint()
+    {
+        return _hasConstraint;
+    }    
+
     void setDefault(TypeNode default_)
     {
+        _hasDefault = default_;
         _default = default_;
     }
 
@@ -316,6 +325,11 @@ class TypeParameterDOM : public BaseDOM
     {
         return _default;
     }
+
+    bool hasDefault()
+    {
+        return _hasDefault;
+    }    
 };
 
 } // namespace ts
