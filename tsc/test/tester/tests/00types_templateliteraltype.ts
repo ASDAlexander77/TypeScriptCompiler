@@ -25,6 +25,11 @@ type Cases<T extends string> = `${Uppercase<T>} ${Lowercase<T>} ${Capitalize<T>}
 type TCA1 = Cases<'bar'>;  // 'BAR bar Bar bar'
 type TCA2 = Cases<'BAR'>;  // 'BAR bar BAR bAR'
 
+type Partial<T> = {
+    [P in keyof T]?: T[P];
+};
+type PartialPerson = Partial<Person>;
+
 function main() {
 
     let a: Greeting;
