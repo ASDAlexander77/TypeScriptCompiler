@@ -823,16 +823,16 @@ class MLIRTypeHelper
             return true;
         }
 
-        if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())
-        {
-            return extendsType(literalType.getElementType(), extendType, typeParamsWithArgs);
-        }
-
         if (auto unionType = extendType.dyn_cast<mlir_ts::UnionType>())
         {
             auto pred = [&](auto &item) { return extendsType(srcType, item, typeParamsWithArgs); };
             auto types = unionType.getTypes();
             return std::find_if(types.begin(), types.end(), pred) != types.end();
+        }
+
+        if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())
+        {
+            return extendsType(literalType.getElementType(), extendType, typeParamsWithArgs);
         }
 
         if (auto srcArray = srcType.dyn_cast<mlir_ts::ArrayType>())
@@ -844,7 +844,8 @@ class MLIRTypeHelper
         }
 
         // TODO: finish Function Types, etc
-
+        LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [false] for item type: " << srcType << " ext. type: " << extendType
+                                << "\n";);
         return false;
     }
 

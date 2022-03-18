@@ -282,13 +282,15 @@ class FunctionPrototypeDOM
 class TypeParameterDOM : public BaseDOM
 {
     std::string name;
-    mlir::Type constraint;
-    mlir::Type _default;
+    TypeNode constraint;
+    TypeNode _default;
+    bool _hasConstraint;
+    bool _hasDefault;
 
   public:
     using TypePtr = std::shared_ptr<TypeParameterDOM>;
 
-    TypeParameterDOM(std::string name) : BaseDOM(Base_TypeParameter), name(name)
+    TypeParameterDOM(std::string name) : BaseDOM(Base_TypeParameter), name(name), _hasConstraint(false), _hasDefault(false)
     {
     }
 
@@ -297,25 +299,37 @@ class TypeParameterDOM : public BaseDOM
         return name;
     }
 
-    void setConstraint(mlir::Type constraint_)
+    void setConstraint(TypeNode constraint_)
     {
+        _hasConstraint = constraint_;
         constraint = constraint_;
     }
 
-    mlir::Type getConstraint()
+    TypeNode getConstraint()
     {
         return constraint;
     }
 
-    void setDefault(mlir::Type default_)
+    bool hasConstraint()
     {
+        return _hasConstraint;
+    }    
+
+    void setDefault(TypeNode default_)
+    {
+        _hasDefault = default_;
         _default = default_;
     }
 
-    mlir::Type getDefault()
+    TypeNode getDefault()
     {
         return _default;
     }
+
+    bool hasDefault()
+    {
+        return _hasDefault;
+    }    
 };
 
 } // namespace ts
