@@ -151,6 +151,18 @@ function main8() {
     print(iterator.next().value == 6.0);
 }
 
+function* foo9()
+{
+    yield 1;
+    yield* [2, 3];
+}
+
+function main9() {
+    let count = 0;
+    for (const i of foo9()) count++;
+    assert(count == 3);
+}
+
 function main() {
     main1();
     main2();
@@ -160,5 +172,6 @@ function main() {
     main6();
     main7();
     main8();
+    main9();
     print("done.");
 }
