@@ -1017,8 +1017,9 @@ class MLIRGenImpl
             }
             else
             {
-                // TODO: uncomment this line and find out what is the bug (+one more line)
-                currentType = mth.wideStorageType(currentType);
+                // TODO: when u use literal type to validate extends u need to use original type
+                //currentType = mth.wideStorageType(currentType);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! type: " << name << " = " << currentType << "\n";);
                 results.insert({name, currentType});
             }
 
@@ -1539,6 +1540,16 @@ class MLIRGenImpl
             else
             {
                 llvm_unreachable("not implemented");
+            }
+
+            // we need to wide all types when initializing function
+            MLIRTypeHelper mth(builder.getContext());
+            for (auto &typeParam : genericTypeGenContext.typeParamsWithArgs) 
+            {
+                auto name = std::get<0>(typeParam.getValue())->getName();
+                auto type = std::get<1>(typeParam.getValue());
+                auto widenType = mth.wideStorageType(type);            
+                genericTypeGenContext.typeParamsWithArgs[name] = std::make_pair(std::get<0>(typeParam.getValue()), widenType);
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized function: " << functionGenericTypeInfo->name
@@ -12822,6 +12833,8 @@ genContext);
                 return mlir_ts::LiteralType::get(builder.getStringAttr(copyVal), getStringType());
             }
         }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! can't apply string literal type for:" << type << "\n";);
 
         return mlir::Type();
     }
