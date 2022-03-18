@@ -844,7 +844,8 @@ class MLIRTypeHelper
         }
 
         // TODO: finish Function Types, etc
-
+        LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [false] for item type: " << srcType << " ext. type: " << extendType
+                                << "\n";);
         return false;
     }
 
