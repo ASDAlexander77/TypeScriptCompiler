@@ -14488,7 +14488,10 @@ genContext);
         mlir::StringRef refFileName(sys::path::remove_leading_dotslash(fileName));
         SmallString<128> fullPath = path;
         sys::path::append(fullPath, refFileName);
-        fullPath += ".ts";
+        if (sys::path::extension(fullPath) == "")
+        {
+            fullPath += ".ts";
+        }
 
         auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(fullPath);
         if (std::error_code ec = fileOrErr.getError())
