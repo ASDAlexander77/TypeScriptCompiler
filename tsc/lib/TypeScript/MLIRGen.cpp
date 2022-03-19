@@ -95,10 +95,11 @@ class MLIRGenImpl
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
-    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam, CompileOptions compileOptions)
+    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam, const llvm::StringRef &pathParam, CompileOptions compileOptions)
         : builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
     {
         fileName = fileNameParam;
+        path = pathParam;
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
@@ -14484,7 +14485,9 @@ genContext);
 
     SourceFile loadFile(StringRef fileName)
     {
-        SmallString<128> fullPath = fileName;
+        mlir::StringRef refFileName(sys::path::remove_leading_dotslash(fileName));
+        SmallString<128> fullPath = path;
+        sys::path::append(fullPath, refFileName);
         fullPath += ".ts";
 
         auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(fullPath);
@@ -14515,6 +14518,8 @@ genContext);
     mlir::ModuleOp theModule;
 
     mlir::StringRef fileName;
+
+    mlir::StringRef path;
 
     /// An allocator used for alias names.
     llvm::BumpPtrAllocator stringAllocator;
@@ -14613,7 +14618,7 @@ mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const 
 {
 
     SmallString<128> path = llvm::sys::path::parent_path(fileName);
-    MLIRGenImpl mlirGenImpl(context, fileName, compileOptions);
+    MLIRGenImpl mlirGenImpl(context, fileName, path, compileOptions);
 
     std::vector<SourceFile> includeFiles;
     std::vector<string> filesToProcess;
