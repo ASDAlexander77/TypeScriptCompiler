@@ -479,6 +479,23 @@ class MLIRGenImpl
 #endif
     }
 
+    mlir::LogicalResult mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext)
+    {
+        auto modulePath = mlirGen(importDeclarationAST->moduleSpecifier, genContext);
+        auto modulePathValue = V(modulePath);
+
+        auto constantOp = modulePathValue.getDefiningOp<mlir_ts::ConstantOp>();
+        assert(constantOp);
+        auto valueAttr = constantOp.valueAttr().cast<mlir::StringAttr>();
+
+        auto stringVal = valueAttr.getValue();
+
+        // todo
+        auto importSource = loadFile(stringVal);
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenBody(Node body, const GenContext &genContext)
     {
         auto kind = (SyntaxKind)body;
@@ -806,6 +823,11 @@ class MLIRGenImpl
         {
             // declaration
             return mlirGen(statementAST.as<ImportEqualsDeclaration>(), genContext);
+        }
+        else if (kind == SyntaxKind::ImportDeclaration)
+        {
+            // declaration
+            return mlirGen(statementAST.as<ImportDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::ModuleDeclaration)
         {
@@ -14458,6 +14480,28 @@ genContext);
         Printer<std::wostream> printer(std::wcerr);
         printer.printNode(node);
         std::wcerr << std::endl << "end of dump ========================================" << std::endl;
+    }
+
+    SourceFile loadFile(StringRef fileName)
+    {
+        SmallString<128> fullPath = fileName;
+        fullPath += ".ts";
+
+        auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(fullPath);
+        if (std::error_code ec = fileOrErr.getError())
+        {
+            emitError(mlir::UnknownLoc::get(builder.getContext()))
+                << "Could not open file: '" << fileName << "' Error:" << ec.message() << "\n";
+            return SourceFile();
+        }
+
+        auto moduleSource = fileOrErr.get()->getBuffer();
+
+        Parser parser;
+        auto moduleFile =
+            parser.parseSourceFile(stows(fileName.str()), stows(moduleSource.str()), ScriptTarget::Latest);
+
+        return moduleFile;        
     }
 
     /// The builder is a helper class to create IR inside a function. The builder
