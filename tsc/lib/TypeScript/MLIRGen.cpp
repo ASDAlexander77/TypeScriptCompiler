@@ -143,6 +143,54 @@ class MLIRGenImpl
         return hasAnyError ? mlir::failure() : mlir::success();
     }
 
+    std::pair<SourceFile, std::vector<SourceFile>> loadSourceFile(StringRef fileName, StringRef source)
+    {
+        std::vector<SourceFile> includeFiles;
+        std::vector<string> filesToProcess;
+
+        Parser parser;
+        auto sourceFile = parser.parseSourceFile(stows(fileName.str()), stows(source.str()), ScriptTarget::Latest);
+        for (auto refFile : sourceFile->referencedFiles)
+        {
+            filesToProcess.push_back(refFile.fileName);
+        }
+
+        while (filesToProcess.size() > 0)
+        {
+            string includeFileName = filesToProcess.back();
+            std::string includeFileNameChar = wstos(includeFileName);
+            mlir::StringRef refFileName(includeFileNameChar);
+            SmallString<128> fullPath = path;
+            sys::path::append(fullPath, refFileName);
+
+            filesToProcess.pop_back();
+
+            auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(fullPath);
+            if (std::error_code ec = fileOrErr.getError())
+            {
+                emitError(mlir::UnknownLoc::get(builder.getContext()))
+                    << "Could not open file: '" << refFileName << "' Error:" << ec.message() << "\n";
+                continue;
+            }
+
+            auto includeSource = fileOrErr.get()->getBuffer();
+
+            Parser parser;
+            auto includeFile =
+                parser.parseSourceFile(stows(refFileName.str()), stows(includeSource.str()), ScriptTarget::Latest);
+            for (auto refFile : includeFile->referencedFiles)
+            {
+                filesToProcess.push_back(refFile.fileName);
+            }
+
+            includeFiles.push_back(includeFile);
+        }
+
+        std::reverse(includeFiles.begin(), includeFiles.end());
+
+        return {sourceFile, includeFiles};
+    } 
+
     mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles)
     {
         if (mlir::failed(report(module, includeFiles)))
@@ -14483,7 +14531,7 @@ genContext);
         std::wcerr << std::endl << "end of dump ========================================" << std::endl;
     }
 
-    SourceFile loadFile(StringRef fileName)
+    std::pair<SourceFile, std::vector<SourceFile>> loadFile(StringRef fileName)
     {
         mlir::StringRef refFileName(sys::path::remove_leading_dotslash(fileName));
         SmallString<128> fullPath = path;
@@ -14498,16 +14546,12 @@ genContext);
         {
             emitError(mlir::UnknownLoc::get(builder.getContext()))
                 << "Could not open file: '" << fileName << "' Error:" << ec.message() << "\n";
-            return SourceFile();
+            return {SourceFile(), std::vector<SourceFile>()};
         }
 
         auto moduleSource = fileOrErr.get()->getBuffer();
 
-        Parser parser;
-        auto moduleFile =
-            parser.parseSourceFile(stows(fileName.str()), stows(moduleSource.str()), ScriptTarget::Latest);
-
-        return moduleFile;        
+        return loadSourceFile(fileName, moduleSource.str());        
     }
 
     /// The builder is a helper class to create IR inside a function. The builder
@@ -14622,50 +14666,7 @@ mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const 
 
     SmallString<128> path = llvm::sys::path::parent_path(fileName);
     MLIRGenImpl mlirGenImpl(context, fileName, path, compileOptions);
-
-    std::vector<SourceFile> includeFiles;
-    std::vector<string> filesToProcess;
-
-    Parser parser;
-    auto sourceFile = parser.parseSourceFile(stows(fileName.str()), stows(source.str()), ScriptTarget::Latest);
-    for (auto refFile : sourceFile->referencedFiles)
-    {
-        filesToProcess.push_back(refFile.fileName);
-    }
-
-    while (filesToProcess.size() > 0)
-    {
-        string includeFileName = filesToProcess.back();
-        std::string includeFileNameChar = wstos(includeFileName);
-        mlir::StringRef refFileName(includeFileNameChar);
-        SmallString<128> fullPath = path;
-        sys::path::append(fullPath, refFileName);
-
-        filesToProcess.pop_back();
-
-        auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(fullPath);
-        if (std::error_code ec = fileOrErr.getError())
-        {
-            emitError(mlir::UnknownLoc::get(const_cast<mlir::MLIRContext *>(&context)))
-                << "Could not open file: '" << refFileName << "' Error:" << ec.message() << "\n";
-            continue;
-        }
-
-        auto includeSource = fileOrErr.get()->getBuffer();
-
-        Parser parser;
-        auto includeFile =
-            parser.parseSourceFile(stows(refFileName.str()), stows(includeSource.str()), ScriptTarget::Latest);
-        for (auto refFile : includeFile->referencedFiles)
-        {
-            filesToProcess.push_back(refFile.fileName);
-        }
-
-        includeFiles.push_back(includeFile);
-    }
-
-    std::reverse(includeFiles.begin(), includeFiles.end());
-
+    auto [sourceFile, includeFiles] = mlirGenImpl.loadSourceFile(fileName, source); 
     return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
 }
 

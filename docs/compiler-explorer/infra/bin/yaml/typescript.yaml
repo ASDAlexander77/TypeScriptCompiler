@@ -1,7 +1,7 @@
 compilers:
-  tsc:
+  tsc-native:
     type: tarballs
-    dir: tsc
+    dir: tsc-{name}
     untar_dir: tsc-ninja-release
     compression: gz
     check_exe: bin/tsc --version
