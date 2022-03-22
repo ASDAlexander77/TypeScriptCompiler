@@ -540,7 +540,7 @@ class MLIRGenImpl
         auto stringVal = valueAttr.getValue();
 
         // todo
-        auto importSource = loadFile(stringVal);
+        auto [importSource, importIncludeFiles] = loadFile(stringVal);
 
         return mlir::success();
     }
