@@ -89,14 +89,14 @@ class MLIRGenImpl
 {
   public:
     MLIRGenImpl(const mlir::MLIRContext &context, CompileOptions compileOptions)
-        : builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions), declarationMode(false)
     {
         fileName = "<unknown>";
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
     MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam, const llvm::StringRef &pathParam, CompileOptions compileOptions)
-        : builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions), declarationMode(false)
     {
         fileName = fileNameParam;
         path = pathParam;
@@ -539,10 +539,19 @@ class MLIRGenImpl
 
         auto stringVal = valueAttr.getValue();
 
-        // todo
-        auto [importSource, importIncludeFiles] = loadFile(stringVal);
+        declarationMode = true;
 
-        return mlir::success();
+        auto [importSource, importIncludeFiles] = loadFile(stringVal);
+        if (mlir::succeeded(report(importSource, includeFiles)) 
+            && mlir::succeeded(mlirDiscoverAllDependencies(importSource)) 
+            && mlir::succeeded(mlirCodeGenModule(importSource)))
+        {
+            declarationMode = false;
+            return mlir::success();
+        }
+
+        declarationMode = false;
+        return mlir::failure();
     }
 
     mlir::LogicalResult mlirGenBody(Node body, const GenContext &genContext)
@@ -14599,6 +14608,8 @@ genContext);
     mlir::OpBuilder::InsertPoint functionBeginPoint;
 
     std::string label;
+
+    bool declarationMode;
 };
 } // namespace
 
