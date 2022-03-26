@@ -356,7 +356,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirCodeGenModule(SourceFile module)
+    mlir::LogicalResult mlirCodeGenModule(SourceFile module, bool validate = true)
     {
         mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
@@ -386,7 +386,7 @@ class MLIRGenImpl
         // Verify the module after we have finished constructing it, this will check
         // the structural properties of the IR and invoke any specific verifiers we
         // have on the TypeScript operations.
-        if (failed(mlir::verify(theModule)))
+        if (validate && failed(mlir::verify(theModule)))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! broken module: \n" << theModule << "\n";);
 
@@ -544,7 +544,7 @@ class MLIRGenImpl
         auto [importSource, importIncludeFiles] = loadFile(stringVal);
         if (mlir::succeeded(report(importSource, includeFiles)) 
             && mlir::succeeded(mlirDiscoverAllDependencies(importSource)) 
-            && mlir::succeeded(mlirCodeGenModule(importSource)))
+            && mlir::succeeded(mlirCodeGenModule(importSource, false)))
         {
             declarationMode = false;
             return mlir::success();
@@ -3406,6 +3406,11 @@ class MLIRGenImpl
             funcOp.setPrivate();
         }
 
+        if (declarationMode && !genContext.dummyRun && funcProto->getNoBody())
+        {
+            funcOp.setPrivate();
+        }
+
         if (!genContext.dummyRun)
         {
             theModule.push_back(funcOp);
@@ -3708,13 +3713,13 @@ class MLIRGenImpl
                                             mlir_ts::FuncOp funcOp, FunctionPrototypeDOM::TypePtr funcProto,
                                             const GenContext &genContext)
     {
-        if (!functionLikeDeclarationBaseAST->body)
+        if (!functionLikeDeclarationBaseAST->body || declarationMode && !genContext.dummyRun)
         {
             // it is just declaration
             funcProto->setNoBody(true);
             return mlir::success();
         }
-
+ 
         auto location = loc(functionLikeDeclarationBaseAST);
 
         auto *blockPtr = funcOp.addEntryBlock();
