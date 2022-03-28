@@ -2021,6 +2021,10 @@ class MLIRGenImpl
         auto isConst = (varClass == VariableClass::Const || varClass == VariableClass::ConstRef) &&
                        !genContext.allocateVarsOutsideOfOperation && !genContext.allocateVarsInContextThis;
         auto isExternal = varClass == VariableClass::External;
+        if (declarationMode)
+        {
+            isExternal = true;
+        }
 
         auto effectiveName = name;
 
@@ -2475,6 +2479,12 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext)
     {
+        auto isExternal = varClass == VariableClass::External;
+        if (declarationMode)
+        {
+            isExternal = true;
+        }
+
 #ifndef ANY_AS_DEFAULT
         if (isNoneType(item->type) && !item->initializer && !isExternal)
         {
@@ -2485,7 +2495,15 @@ class MLIRGenImpl
         }
 #endif
 
-        auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
+        auto initFunc = [&]() {
+            if (declarationMode)
+            { 
+                auto [t, b] = evaluateTypeAndInit(item, genContext);
+                return std::make_pair(t, mlir::Value());
+            }
+
+            return getTypeAndInit(item, genContext); 
+        };
 
         auto valClassItem = varClass;
         if ((item->internalFlags & InternalFlags::ForceConst) == InternalFlags::ForceConst)
