@@ -9972,6 +9972,12 @@ class MLIRGenImpl
                                                        ClassLikeDeclaration classDeclarationAST,
                                                        ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
+        if (declarationMode)
+        {
+            newClassPtr->isDeclaration = true;
+            return mlir::success();
+        }
+
         if (classDeclarationAST != SyntaxKind::ClassExpression)
         {
             return mlir::success();
@@ -10607,6 +10613,12 @@ genContext);
     mlir::LogicalResult mlirGenClassTypeBitmap(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                const GenContext &genContext)
     {
+        // no need to generate
+        if (declarationMode)
+        {
+            return mlir::success();
+        }
+
         MLIRCodeLogic mcl(builder);
         MLIRTypeHelper mth(builder.getContext());
 
