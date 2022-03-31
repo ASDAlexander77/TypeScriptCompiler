@@ -28,7 +28,8 @@
                 "-emit=mlir",
                 "-debug-only=mlir",
                 "-mlir-disable-threading",
-                "C:/temp/1.ts"
+                "C:/temp/experiment/src/main.ts"
+                //"C:/temp/1.ts"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

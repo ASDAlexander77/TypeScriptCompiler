@@ -1,9 +1,6 @@
 /// <reference path="window.win32.d.ts" />
 
-declare class AppWindow {
-    declare constructor(parent_handler_window?: intptr_t);
-    declare protected onMessage(uMsg: uint32_t, wParam: uint64_t, lParam: uint64_t): intptr_t;
-}
+import "./appwindow";
 
 export class Application {
     static appWindow: AppWindow;

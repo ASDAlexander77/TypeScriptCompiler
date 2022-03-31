@@ -12,6 +12,7 @@
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
 #include "TypeScript/MLIRLogic/MLIRNamespaceGuard.h"
+#include "TypeScript/MLIRLogic/MLIRValueGuard.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #ifdef WIN_EXCEPTION
@@ -539,6 +540,7 @@ class MLIRGenImpl
 
         auto stringVal = valueAttr.getValue();
 
+        MLIRValueGuard<bool> vg(declarationMode);
         declarationMode = true;
 
         auto [importSource, importIncludeFiles] = loadFile(stringVal);
@@ -546,11 +548,9 @@ class MLIRGenImpl
             && mlir::succeeded(mlirDiscoverAllDependencies(importSource)) 
             && mlir::succeeded(mlirCodeGenModule(importSource, false)))
         {
-            declarationMode = false;
             return mlir::success();
         }
 
-        declarationMode = false;
         return mlir::failure();
     }
 
@@ -9946,7 +9946,7 @@ class MLIRGenImpl
             newClassPtr->name = namePtr;
             newClassPtr->fullName = fullNamePtr;
             newClassPtr->isAbstract = hasModifier(classDeclarationAST, SyntaxKind::AbstractKeyword);
-            newClassPtr->isDeclaration = hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
+            newClassPtr->isDeclaration = declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             getClassesMap().insert({namePtr, newClassPtr});
@@ -10614,7 +10614,7 @@ genContext);
                                                const GenContext &genContext)
     {
         // no need to generate
-        if (declarationMode)
+        if (newClassPtr->isDeclaration)
         {
             return mlir::success();
         }
