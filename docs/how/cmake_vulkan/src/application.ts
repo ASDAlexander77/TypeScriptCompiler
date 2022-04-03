@@ -1,5 +1,3 @@
-/// <reference path="window.win32.d.ts" />
-
 import "./appwindow";
 
 export class Application {

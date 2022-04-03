@@ -122,8 +122,6 @@ class MLIRGenImpl
             }
         }
 
-        this->includeFiles = includeFiles;
-
         for (auto incFile : includeFiles)
         {
             auto fileName = convertWideToUTF8(incFile->fileName);
@@ -217,7 +215,8 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
 
-        if (mlir::succeeded(mlirDiscoverAllDependencies(module)) && mlir::succeeded(mlirCodeGenModule(module)))
+        if (mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)) 
+            && mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
         {
             return theModule;
         }
@@ -312,7 +311,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirDiscoverAllDependencies(SourceFile module)
+    mlir::LogicalResult mlirDiscoverAllDependencies(SourceFile module, std::vector<SourceFile> includeFiles = {})
     {
         mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
@@ -328,7 +327,7 @@ class MLIRGenImpl
         genContextPartial.dummyRun = true;
         genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
 
-        for (auto includeFile : this->includeFiles)
+        for (auto includeFile : includeFiles)
         {
             if (failed(mlirGen(includeFile->statements, genContextPartial)))
             {
@@ -357,7 +356,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirCodeGenModule(SourceFile module, bool validate = true)
+    mlir::LogicalResult mlirCodeGenModule(SourceFile module, std::vector<SourceFile> includeFiles = {}, bool validate = true)
     {
         mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
@@ -370,7 +369,7 @@ class MLIRGenImpl
         // Process generating here
         GenContext genContext{};
 
-        for (auto includeFile : this->includeFiles)
+        for (auto includeFile : includeFiles)
         {
             if (failed(mlirGen(includeFile->statements, genContext)))
             {
@@ -544,9 +543,9 @@ class MLIRGenImpl
         declarationMode = true;
 
         auto [importSource, importIncludeFiles] = loadFile(stringVal);
-        if (mlir::succeeded(report(importSource, includeFiles)) 
-            && mlir::succeeded(mlirDiscoverAllDependencies(importSource)) 
-            && mlir::succeeded(mlirCodeGenModule(importSource, false)))
+        if (mlir::succeeded(report(importSource, importIncludeFiles)) 
+            && mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) 
+            && mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false)))
         {
             return mlir::success();
         }
@@ -14638,7 +14637,6 @@ genContext);
     // helper to get line number
     Parser parser;
     ts::SourceFile sourceFile;
-    std::vector<SourceFile> includeFiles;
 
     mlir::OpBuilder::InsertPoint functionBeginPoint;
 
