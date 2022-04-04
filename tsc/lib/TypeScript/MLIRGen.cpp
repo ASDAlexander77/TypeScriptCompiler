@@ -12,8 +12,9 @@
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
 #include "TypeScript/MLIRLogic/MLIRNamespaceGuard.h"
-#include "TypeScript/MLIRLogic/MLIRValueGuard.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+#include "TypeScript/MLIRLogic/MLIRValueGuard.h"
+
 
 #ifdef WIN_EXCEPTION
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
@@ -90,14 +91,17 @@ class MLIRGenImpl
 {
   public:
     MLIRGenImpl(const mlir::MLIRContext &context, CompileOptions compileOptions)
-        : builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions), declarationMode(false)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), mth(&const_cast<mlir::MLIRContext &>(context)),
+          compileOptions(compileOptions), declarationMode(false)
     {
         fileName = "<unknown>";
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
-    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam, const llvm::StringRef &pathParam, CompileOptions compileOptions)
-        : builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions), declarationMode(false)
+    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam,
+                const llvm::StringRef &pathParam, CompileOptions compileOptions)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), mth(&const_cast<mlir::MLIRContext &>(context)),
+          compileOptions(compileOptions), declarationMode(false)
     {
         fileName = fileNameParam;
         path = pathParam;
@@ -188,7 +192,7 @@ class MLIRGenImpl
         std::reverse(includeFiles.begin(), includeFiles.end());
 
         return {sourceFile, includeFiles};
-    } 
+    }
 
     mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles)
     {
@@ -215,8 +219,8 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
 
-        if (mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)) 
-            && mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
+        if (mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)) &&
+            mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
         {
             return theModule;
         }
@@ -356,7 +360,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirCodeGenModule(SourceFile module, std::vector<SourceFile> includeFiles = {}, bool validate = true)
+    mlir::LogicalResult mlirCodeGenModule(SourceFile module, std::vector<SourceFile> includeFiles = {},
+                                          bool validate = true)
     {
         mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
@@ -543,9 +548,9 @@ class MLIRGenImpl
         declarationMode = true;
 
         auto [importSource, importIncludeFiles] = loadFile(stringVal);
-        if (mlir::succeeded(report(importSource, importIncludeFiles)) 
-            && mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) 
-            && mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false)))
+        if (mlir::succeeded(report(importSource, importIncludeFiles)) &&
+            mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
+            mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false)))
         {
             return mlir::success();
         }
@@ -1083,7 +1088,6 @@ class MLIRGenImpl
         if (auto namedGenType = currentTemplateType.dyn_cast<mlir_ts::NamedGenericType>())
         {
             // merge if exists
-            MLIRTypeHelper mth(builder.getContext());
 
             auto name = namedGenType.getName().getValue();
             auto existType = results.lookup(name);
@@ -1097,7 +1101,7 @@ class MLIRGenImpl
             else
             {
                 // TODO: when u use literal type to validate extends u need to use original type
-                //currentType = mth.wideStorageType(currentType);
+                // currentType = mth.wideStorageType(currentType);
                 LLVM_DEBUG(llvm::dbgs() << "\n!! type: " << name << " = " << currentType << "\n";);
                 results.insert({name, currentType});
             }
@@ -1409,8 +1413,9 @@ class MLIRGenImpl
 
             auto typeParam = (*found);
 
-            auto [result, hasAnyNamedGenericType] = zipTypeParameterWithArgument(
-                location, genericTypeGenContext.typeParamsWithArgs, typeParam, inferredType, false, genericTypeGenContext);
+            auto [result, hasAnyNamedGenericType] =
+                zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam,
+                                             inferredType, false, genericTypeGenContext);
             if (mlir::failed(result))
             {
                 return mlir::failure();
@@ -1622,13 +1627,14 @@ class MLIRGenImpl
             }
 
             // we need to wide all types when initializing function
-            MLIRTypeHelper mth(builder.getContext());
-            for (auto &typeParam : genericTypeGenContext.typeParamsWithArgs) 
+
+            for (auto &typeParam : genericTypeGenContext.typeParamsWithArgs)
             {
                 auto name = std::get<0>(typeParam.getValue())->getName();
                 auto type = std::get<1>(typeParam.getValue());
-                auto widenType = mth.wideStorageType(type);            
-                genericTypeGenContext.typeParamsWithArgs[name] = std::make_pair(std::get<0>(typeParam.getValue()), widenType);
+                auto widenType = mth.wideStorageType(type);
+                genericTypeGenContext.typeParamsWithArgs[name] =
+                    std::make_pair(std::get<0>(typeParam.getValue()), widenType);
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized function: " << functionGenericTypeInfo->name
@@ -1648,7 +1654,6 @@ class MLIRGenImpl
             // revalidate all types
             if (anyNamedGenericType)
             {
-                MLIRTypeHelper mth(builder.getContext());
 
                 anyNamedGenericType = false;
                 for (auto &typeParamWithArg : genericTypeGenContext.typeParamsWithArgs)
@@ -1960,7 +1965,7 @@ class MLIRGenImpl
     {
         if (genContext.passResult)
         {
-            MLIRTypeHelper mth(builder.getContext());
+
             // create new type with added field
             genContext.passResult->extraFieldsInThisContext.push_back({mth.TupleFieldName(name), type});
             return mlir::Value();
@@ -2059,8 +2064,6 @@ class MLIRGenImpl
             else
             {
                 assert(type);
-
-                MLIRTypeHelper mth(builder.getContext());
 
                 auto actualType = mth.wideStorageType(type);
 
@@ -2496,12 +2499,12 @@ class MLIRGenImpl
 
         auto initFunc = [&]() {
             if (declarationMode)
-            { 
+            {
                 auto [t, b] = evaluateTypeAndInit(item, genContext);
                 return std::make_pair(t, mlir::Value());
             }
 
-            return getTypeAndInit(item, genContext); 
+            return getTypeAndInit(item, genContext);
         };
 
         auto valClassItem = varClass;
@@ -2578,8 +2581,6 @@ class MLIRGenImpl
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
         }
 
-        MLIRTypeHelper mth(builder.getContext());
-
         auto formalParams = parametersContextAST->parameters;
         auto index = 0;
         for (auto arg : formalParams)
@@ -2626,7 +2627,7 @@ class MLIRGenImpl
             {
                 type = getParamFromFuncRef(genContext.argTypeDestFuncType, index);
 
-                LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "\n\n");
+                LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "");
 
                 isGenericTypes |= mth.isGenericType(type);
             }
@@ -2634,7 +2635,6 @@ class MLIRGenImpl
             // in case of binding
             if (isNoneType(type) && isBindingPattern)
             {
-                MLIRTypeHelper mth(builder.getContext());
 
                 SmallVector<mlir_ts::FieldInfo> fieldInfos;
 
@@ -2666,7 +2666,7 @@ class MLIRGenImpl
 
                 type = getTupleType(fieldInfos);
 
-                LLVM_DEBUG(dbgs() << "\n!! binding param " << namePtr << " is type " << type << "\n\n");
+                LLVM_DEBUG(dbgs() << "\n!! binding param " << namePtr << " is type " << type << "");
             }
 
             if (isNoneType(type))
@@ -3025,7 +3025,7 @@ class MLIRGenImpl
                 if (discoveredType && discoveredType != funcProto->getReturnType())
                 {
                     // TODO: do we need to convert it here? maybe send it as const object?
-                    MLIRTypeHelper mth(builder.getContext());
+
                     funcProto->setReturnType(mth.convertConstArrayTypeToArrayType(discoveredType));
                     LLVM_DEBUG(llvm::dbgs()
                                    << "\n!! ret type: " << funcProto->getReturnType() << ", name: " << name << "\n";);
@@ -3468,8 +3468,7 @@ class MLIRGenImpl
         return mlirGenFunctionEntry(location, funcProto->getReturnType(), genContext);
     }
 
-    mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, mlir::Type retType,
-                                             const GenContext &genContext)
+    mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, mlir::Type retType, const GenContext &genContext)
     {
         auto hasReturn = retType && !retType.isa<mlir_ts::VoidType>();
         if (hasReturn)
@@ -3557,7 +3556,6 @@ class MLIRGenImpl
         auto isObjectType = genContext.thisType != nullptr && genContext.thisType.isa<mlir_ts::ObjectType>();
         if (isObjectType)
         {
-            MLIRTypeHelper mth(builder.getContext());
 
             auto thisVal = resolveIdentifier(loc, THIS_NAME, genContext);
 
@@ -3718,7 +3716,7 @@ class MLIRGenImpl
             }
 
             LLVM_DEBUG(dbgs() << "\n!! captured '\".captured\"->" << name << "' [ " << capturedVarValue
-                              << " ] ref val type: [ " << variableRefType << " ]\n\n");
+                              << " ] ref val type: [ " << variableRefType << " ]");
 
             declare(capturedParam, capturedVarValue, genContext);
         }
@@ -3736,7 +3734,7 @@ class MLIRGenImpl
             funcProto->setNoBody(true);
             return mlir::success();
         }
- 
+
         auto location = loc(functionLikeDeclarationBaseAST);
 
         auto *blockPtr = funcOp.addEntryBlock();
@@ -3815,7 +3813,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef fullFuncName, mlir_ts::FunctionType funcType, std::function<void()> funcBody,
+    mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef fullFuncName,
+                                            mlir_ts::FunctionType funcType, std::function<void()> funcBody,
                                             const GenContext &genContext)
     {
         if (theModule.lookupSymbol(fullFuncName))
@@ -3865,7 +3864,7 @@ class MLIRGenImpl
         funcOp.setPrivate();
 
         return mlir::success();
-    }    
+    }
 
     ValueOrLogicalResult mlirGen(TypeAssertion typeAssertionAST, const GenContext &genContext)
     {
@@ -4069,10 +4068,8 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            MLIRTypeHelper mth(builder.getContext());
-
             auto type = expressionValue.getType();
-            LLVM_DEBUG(dbgs() << "\n!! store return type: " << type << "\n\n");
+            LLVM_DEBUG(dbgs() << "\n!! store return type: " << type << "");
 
             type = mth.stripLiteralType(type);
 
@@ -4340,7 +4337,7 @@ class MLIRGenImpl
 
             auto val = mlirGen(constVal, genContext);
             return checkSafeCastPropertyAccessLogic(constVal, objAccessExpression, typeOfObject,
-                                                propertyAccessExpressionOp->name, val, genContext);
+                                                    propertyAccessExpressionOp->name, val, genContext);
         }
 
         return mlir::failure();
@@ -4381,7 +4378,8 @@ class MLIRGenImpl
                 if (instanceOf->left.is<Identifier>())
                 {
                     NodeFactory nf(NodeFactoryFlags::None);
-                    return addSafeCastStatement(instanceOf->left, nf.createTypeReferenceNode(instanceOf->right), genContext);
+                    return addSafeCastStatement(instanceOf->left, nf.createTypeReferenceNode(instanceOf->right),
+                                                genContext);
                 }
             }
         }
@@ -4907,8 +4905,6 @@ class MLIRGenImpl
     {
         SymbolTableScopeT safeCastVarScope(symbolTable);
 
-        MLIRTypeHelper mth(builder.getContext());
-
         enum
         {
             trueIndex = 0,
@@ -5385,7 +5381,6 @@ class MLIRGenImpl
 
         // detect value type
         // TODO: sync types for 'when' and 'else'
-        MLIRTypeHelper mth(builder.getContext());
 
         auto resultWhenFalseType = evaluate(conditionalExpressionAST->whenFalse, genContext);
 
@@ -5461,7 +5456,6 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
-        MLIRTypeHelper mth(builder.getContext());
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
         auto resultType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
 
@@ -5545,7 +5539,6 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
-        MLIRTypeHelper mth(builder.getContext());
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
         auto defaultUnionType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
         auto resultType = mth.findBaseType(resultWhenFalseType, leftExpressionValue.getType(), defaultUnionType);
@@ -5625,8 +5618,6 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
-
-        MLIRTypeHelper mth(builder.getContext());
 
         auto result2 = mlirGen(binaryExpressionAST->left, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
@@ -6418,7 +6409,7 @@ class MLIRGenImpl
             .Case<mlir_ts::UnionType>([&](auto unionType) {
                 // all union types must have the same property
                 // 1) cast to first type
-                MLIRTypeHelper mth(builder.getContext());
+
                 auto frontType = mth.getFirstNonNullUnionType(unionType);
                 auto casted = cast(location, frontType, objectValue, genContext);
                 value = mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
@@ -6587,7 +6578,7 @@ class MLIRGenImpl
                 {
                     LLVM_DEBUG(dbgs() << "\n!! base call: func '" << funcOp.getName() << "' in context func. '"
                                       << const_cast<GenContext &>(genContext).funcOp.getName()
-                                      << "', this type: " << thisValue.getType() << " value:" << thisValue << "\n\n";);
+                                      << "', this type: " << thisValue.getType() << " value:" << thisValue << "";);
 
                     // get reference in case of classStorage
                     if (isStorageType)
@@ -6903,8 +6894,6 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto argumentExpression = V(result2);
 
-        MLIRTypeHelper mth(builder.getContext());
-
         auto arrayType = expression.getType();
         if (arrayType.isa<mlir_ts::LiteralType>())
         {
@@ -6943,7 +6932,7 @@ class MLIRGenImpl
         auto isAllowableType = indexType.isIntOrIndex() && indexType.getIntOrFloatBitWidth() == 32;
         if (!isAllowableType)
         {
-            MLIRTypeHelper mth(builder.getContext());
+
             argumentExpression = cast(location, mth.getStructIndexType(), argumentExpression, genContext);
         }
 
@@ -7890,7 +7879,6 @@ class MLIRGenImpl
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
                                           bool suppressConstructorCall, const GenContext &genContext)
     {
-        MLIRTypeHelper mth(builder.getContext());
 
         auto type = value.getType();
         type = mth.convertConstTupleTypeToTupleType(type);
@@ -7967,22 +7955,23 @@ class MLIRGenImpl
 
             auto condVal = cast(location, getBooleanType(), typeDescCurrentValue, genContext);
 
-            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{typeDescrType}, condVal,
-                [&](mlir::OpBuilder &opBuilder, mlir::Location loc) 
-                {
+            auto ifOp = builder.create<mlir_ts::IfOp>(
+                location, mlir::TypeRange{typeDescrType}, condVal,
+                [&](mlir::OpBuilder &opBuilder, mlir::Location loc) {
                     builder.create<mlir_ts::ResultOp>(loc, mlir::ValueRange{typeDescCurrentValue});
-                }, 
-                [&](mlir::OpBuilder &opBuilder, mlir::Location loc) 
-                {
+                },
+                [&](mlir::OpBuilder &opBuilder, mlir::Location loc) {
                     // call typr bitmap
                     auto fullClassStaticFieldName = getTypeBitmapMethodName(classInfo);
 
                     auto funcType = getFunctionType({}, {typeDescrType});
 
                     auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
-                        location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullClassStaticFieldName));
+                        location, funcType,
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), fullClassStaticFieldName));
 
-                    auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcSymbolOp, mlir::ValueRange{});
+                    auto callIndirectOp =
+                        builder.create<mlir_ts::CallIndirectOp>(location, funcSymbolOp, mlir::ValueRange{});
                     auto typeDescr = callIndirectOp.getResult(0);
 
                     // save value
@@ -7998,7 +7987,7 @@ class MLIRGenImpl
         }
         else
         {
-            newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));    
+            newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
         }
 #else
         newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
@@ -8036,7 +8025,7 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(NewExpression newExpression, const GenContext &genContext)
     {
-        MLIRTypeHelper mth(builder.getContext());
+
         auto location = loc(newExpression);
 
         // 3 cases, name, index access, method call
@@ -8079,7 +8068,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(DeleteExpression deleteExpression, const GenContext &genContext)
     {
-        MLIRTypeHelper mth(builder.getContext());
+
         auto location = loc(deleteExpression);
 
         auto result = mlirGen(deleteExpression->expression, genContext);
@@ -8106,7 +8095,7 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(VoidExpression voidExpression, const GenContext &genContext)
     {
-        MLIRTypeHelper mth(builder.getContext());
+
         auto location = loc(voidExpression);
 
         auto result = mlirGen(voidExpression->expression, genContext);
@@ -8367,8 +8356,6 @@ class MLIRGenImpl
     {
         auto location = loc(arrayLiteral);
 
-        MLIRTypeHelper mth(builder.getContext());
-
         // first value
         auto isTuple = false;
         mlir::Type elementType;
@@ -8569,7 +8556,6 @@ class MLIRGenImpl
         // TODO: replace all Opaque with ThisType
 
         MLIRCodeLogic mcl(builder);
-        MLIRTypeHelper mth(builder.getContext());
 
         // first value
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -8903,7 +8889,6 @@ class MLIRGenImpl
             auto &methodInfo = fieldInfos[methodRef];
             if (auto funcType = methodInfo.type.dyn_cast<mlir_ts::FunctionType>())
             {
-                MLIRTypeHelper mth(builder.getContext());
 
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
             }
@@ -8918,7 +8903,7 @@ class MLIRGenImpl
 
             if (auto funcType = methodInfo.type.dyn_cast<mlir_ts::FunctionType>())
             {
-                MLIRTypeHelper mth(builder.getContext());
+
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
             }
         }
@@ -9005,7 +8990,7 @@ class MLIRGenImpl
             {
                 LLVM_DEBUG(dbgs() << "\n!! capturing var: [" << value.second->getName()
                                   << "] value pair: " << value.first << " type: " << value.second->getType()
-                                  << " readwrite: " << value.second->getReadWriteAccess() << "\n\n";);
+                                  << " readwrite: " << value.second->getReadWriteAccess() << "";);
 
                 // valueRegion->viewGraph();
                 // const_cast<GenContext &>(genContext).funcOpVarScope.getCallableRegion()->viewGraph();
@@ -9620,7 +9605,6 @@ class MLIRGenImpl
             index++;
         }
 
-        MLIRTypeHelper mth(builder.getContext());
         auto storeType = mth.getUnionTypeWithMerge(enumLiteralTypes);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " storage type: " << storeType << "\n");
@@ -9945,7 +9929,8 @@ class MLIRGenImpl
             newClassPtr->name = namePtr;
             newClassPtr->fullName = fullNamePtr;
             newClassPtr->isAbstract = hasModifier(classDeclarationAST, SyntaxKind::AbstractKeyword);
-            newClassPtr->isDeclaration = declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
+            newClassPtr->isDeclaration =
+                declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             getClassesMap().insert({namePtr, newClassPtr});
@@ -10270,7 +10255,6 @@ class MLIRGenImpl
 
         auto location = loc(classMember);
 
-        MLIRTypeHelper mth(builder.getContext());
         MLIRCodeLogic mcl(builder);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
@@ -10323,7 +10307,7 @@ class MLIRGenImpl
                     type = mth.wideStorageType(type);
                 }
 
-                LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "\n\n");
+                LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "");
 
                 if (isNoneType(type))
                 {
@@ -10396,7 +10380,7 @@ class MLIRGenImpl
                 auto typeAndInit = getTypeAndInit(parameter, genContext);
                 type = typeAndInit.first;
 
-                LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "\n\n");
+                LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
                 if (isNoneType(type))
                 {
                     return mlir::failure();
@@ -10578,18 +10562,17 @@ genContext);
     StringRef getTypeBitmapMethodName(ClassInfo::TypePtr newClassPtr)
     {
         return concat(newClassPtr->fullName, TYPE_BITMAP_NAME);
-    }    
+    }
 
     StringRef getTypeDescriptorFieldName(ClassInfo::TypePtr newClassPtr)
     {
         return concat(newClassPtr->fullName, TYPE_DESCR_NAME);
-    }    
+    }
 
     mlir::LogicalResult mlirGenClassTypeDescriptorField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
-                                               const GenContext &genContext)
+                                                        const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
-        MLIRTypeHelper mth(builder.getContext());
 
         // register global
         auto fullClassStaticFieldName = getTypeDescriptorFieldName(newClassPtr);
@@ -10600,7 +10583,8 @@ genContext);
                 location, fullClassStaticFieldName, true,
                 newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
                 [&]() {
-                    auto init = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), mth.getI64AttrValue(0));
+                    auto init =
+                        builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), mth.getI64AttrValue(0));
                     return std::make_pair(init.getType(), init);
                 },
                 genContext);
@@ -10619,51 +10603,61 @@ genContext);
         }
 
         MLIRCodeLogic mcl(builder);
-        MLIRTypeHelper mth(builder.getContext());
 
         // register global
         auto fullClassStaticFieldName = getTypeBitmapMethodName(newClassPtr);
 
         auto funcType = getFunctionType({}, builder.getI64Type(), false);
 
-        mlirGenFunctionBody(location, fullClassStaticFieldName, funcType,
+        mlirGenFunctionBody(
+            location, fullClassStaticFieldName, funcType,
             [&]() {
                 auto bitmapValueType = mth.getTypeBitmapValueType();
 
                 auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
                 auto classNull = cast(location, newClassPtr->classType, nullOp, genContext);
 
-                auto sizeOfStoreElement = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), mth.getTypeBitmapValueType());
+                auto sizeOfStoreElement =
+                    builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), mth.getTypeBitmapValueType());
 
-                auto _8Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 8));
+                auto _8Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(),
+                                                                   builder.getIntegerAttr(mth.getIndexType(), 8));
                 auto sizeOfStoreElementInBits = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::AsteriskToken), sizeOfStoreElement, _8Value);
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::AsteriskToken),
+                    sizeOfStoreElement, _8Value);
 
                 // calc bitmap size
-                auto sizeOfType = builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
+                auto sizeOfType =
+                    builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
 
                 // calc count of store elements of type size
                 auto sizeOfTypeInBitmapTypes = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfType, sizeOfStoreElement);
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfType,
+                    sizeOfStoreElement);
 
                 // size alligned by size of bits
                 auto sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PlusToken), sizeOfTypeInBitmapTypes, sizeOfStoreElementInBits);
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PlusToken),
+                    sizeOfTypeInBitmapTypes, sizeOfStoreElementInBits);
 
-                auto _1I64Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(), builder.getIntegerAttr(mth.getIndexType(), 1));
+                auto _1I64Value = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(),
+                                                                      builder.getIntegerAttr(mth.getIndexType(), 1));
 
                 sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::MinusToken), sizeOfTypeAligned, _1I64Value);
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::MinusToken),
+                    sizeOfTypeAligned, _1I64Value);
 
                 sizeOfTypeAligned = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), sizeOfTypeAligned, sizeOfStoreElementInBits);
+                    location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken),
+                    sizeOfTypeAligned, sizeOfStoreElementInBits);
 
                 // allocate in stack
-                auto arrayValue = builder.create<mlir_ts::AllocaOp>(location, mlir_ts::RefType::get(bitmapValueType), sizeOfTypeAligned);
+                auto arrayValue = builder.create<mlir_ts::AllocaOp>(location, mlir_ts::RefType::get(bitmapValueType),
+                                                                    sizeOfTypeAligned);
 
                 // property ref
                 auto count = newClassPtr->fieldsCount();
-                for (auto index = 0; (unsigned)index < count; index ++)
+                for (auto index = 0; (unsigned)index < count; index++)
                 {
                     auto fieldInfo = newClassPtr->fieldInfoByIndex(index);
                     // skip virrual table for speed adv.
@@ -10686,24 +10680,28 @@ genContext);
 
                     // calc index
                     auto calcIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken), fieldAddrAsInt, sizeOfStoreElement);
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken),
+                        fieldAddrAsInt, sizeOfStoreElement);
 
                     auto calcIndex32 = cast(location, mth.getStructIndexType(), calcIndex, genContext);
 
                     auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
-                            location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex32);
+                        location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex32);
 
                     // calc bit
                     auto indexModIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PercentToken), calcIndex, sizeOfStoreElementInBits);
+                        location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::PercentToken),
+                        calcIndex, sizeOfStoreElementInBits);
 
                     auto indexMod = builder.create<mlir_ts::CastOp>(location, bitmapValueType, indexModIndex);
 
-                    auto _1Value = builder.create<mlir_ts::ConstantOp>(location, bitmapValueType, builder.getIntegerAttr(bitmapValueType, 1));
+                    auto _1Value = builder.create<mlir_ts::ConstantOp>(location, bitmapValueType,
+                                                                       builder.getIntegerAttr(bitmapValueType, 1));
 
                     // 1 << index_mod
                     auto bitValue = builder.create<mlir_ts::ArithmeticBinaryOp>(
-                            location, bitmapValueType, builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanGreaterThanToken), _1Value, indexMod);
+                        location, bitmapValueType,
+                        builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanGreaterThanToken), _1Value, indexMod);
 
                     // load val
                     auto val = builder.create<mlir_ts::LoadOp>(location, bitmapValueType, elemRef);
@@ -10716,7 +10714,8 @@ genContext);
                     auto saveToElement = builder.create<mlir_ts::StoreOp>(location, valWithBit, elemRef);
                 }
 
-                auto typeDescr = builder.create<mlir_ts::GCMakeDescriptorOp>(location, builder.getI64Type(), arrayValue, sizeOfTypeInBitmapTypes);
+                auto typeDescr = builder.create<mlir_ts::GCMakeDescriptorOp>(location, builder.getI64Type(), arrayValue,
+                                                                             sizeOfTypeInBitmapTypes);
 
                 auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
                 builder.create<mlir_ts::ReturnValOp>(location, typeDescr, retVarInfo.first);
@@ -10874,7 +10873,6 @@ genContext);
                                                           SmallVector<VirtualMethodOrFieldInfo> &virtualTable,
                                                           bool suppressErrors = false)
     {
-        MLIRTypeHelper mth(builder.getContext());
 
         MethodInfo emptyMethod;
         mlir_ts::FieldInfo emptyFieldInfo;
@@ -10926,7 +10924,7 @@ genContext);
                                                                         InterfaceInfo::TypePtr newInterfacePtr,
                                                                         const GenContext &genContext)
     {
-        MLIRTypeHelper mth(builder.getContext());
+
         MLIRCodeLogic mcl(builder);
 
         auto storeType = objectType.getStorageType();
@@ -11026,7 +11024,7 @@ genContext);
                                                                        InterfaceInfo::TypePtr newInterfacePtr,
                                                                        const GenContext &genContext)
     {
-        MLIRTypeHelper mth(builder.getContext());
+
         MLIRCodeLogic mcl(builder);
 
         MethodInfo emptyMethod;
@@ -11275,8 +11273,6 @@ genContext);
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
-        MLIRTypeHelper mth(builder.getContext());
-
         // register global
         auto fullClassVTableFieldName = concat(newClassPtr->fullName, VTABLE_NAME);
         auto vtableRegisteredType = registerVariable(
@@ -11441,8 +11437,7 @@ genContext);
     {
         auto isConst = false;
         evaluate(
-            expr, [&](mlir::Value val) { isConst = isConstValue(val); },
-            genContext);
+            expr, [&](mlir::Value val) { isConst = isConstValue(val); }, genContext);
         return isConst;
     }
 
@@ -11863,17 +11858,17 @@ genContext);
             // fix type for fields with FuncType
             if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
             {
-                MLIRTypeHelper mth(builder.getContext());
+
                 auto funcType = getFunctionType(hybridFuncType.getInputs(), hybridFuncType.getResults());
                 type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
             }
             else if (auto funcType = type.dyn_cast<mlir_ts::FunctionType>())
             {
-                MLIRTypeHelper mth(builder.getContext());
+
                 type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
             }
 
-            LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " type: " << type << "\n\n");
+            LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " type: " << type << "");
 
             if (isNoneType(type))
             {
@@ -12105,8 +12100,6 @@ genContext);
 
                     assert(genContext.allowPartialResolve || interfaceVirtTableIndex >= 0);
 
-                    MLIRTypeHelper mth(builder.getContext());
-
                     auto interfaceVTablePtr = builder.create<mlir_ts::VTableOffsetRefOp>(
                         location, mth.getInterfaceVTableType(interfaceType), vtableAccess, interfaceVirtTableIndex);
 
@@ -12159,7 +12152,7 @@ genContext);
 
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
-            MLIRTypeHelper mth(builder.getContext());
+
             mlir::Type baseType;
             if (mth.isUnionTypeNeedsTag(unionType, baseType))
             {
@@ -12174,10 +12167,10 @@ genContext);
                             value = cast(location, subType, value, genContext);
                             break;
                         }
-                    }                    
+                    }
                 }
             }
-        }        
+        }
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
@@ -12185,7 +12178,6 @@ genContext);
     mlir::Value castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,
                                      mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
     {
-        MLIRTypeHelper mth(builder.getContext());
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(tupleTypeIn);
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
@@ -12194,7 +12186,7 @@ genContext);
 
         if (mlir::failed(canCastTupleToInterface(tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
         {
-            MLIRTypeHelper mth(builder.getContext());
+
             SmallVector<mlir_ts::FieldInfo> fields;
             if (mlir::succeeded(interfaceInfo->getTupleTypeFields(fields, mth)))
             {
@@ -12502,7 +12494,8 @@ genContext);
 
     std::pair<mlir::LogicalResult, bool> zipTypeParameterWithArgument(
         mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
-        const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, bool noExtendTest, const GenContext &genContext)
+        const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, bool noExtendTest,
+        const GenContext &genContext)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! assigning generic type: " << typeParam->getName() << " type: " << type
                                 << "\n";);
@@ -12519,8 +12512,8 @@ genContext);
             return {mlir::success(), true};
         }
 
-        MLIRTypeHelper mth(builder.getContext());
-        if (!noExtendTest && typeParam->hasConstraint() && !mth.extendsType(type, getType(typeParam->getConstraint(), genContext), pairs))
+        if (!noExtendTest && typeParam->hasConstraint() &&
+            !mth.extendsType(type, getType(typeParam->getConstraint(), genContext), pairs))
         {
             emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
                                       << typeParam->getConstraint() << ".";
@@ -12563,8 +12556,10 @@ genContext);
         {
             auto &typeParam = typeParams[index];
             auto isDefault = false;
-            auto type =
-                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->hasDefault() ? getType(typeParam->getDefault(), genContext) : mlir::Type());
+            auto type = index < argsCount
+                            ? getType(typeArgs[index], genContext)
+                            : (isDefault = true,
+                               typeParam->hasDefault() ? getType(typeParam->getDefault(), genContext) : mlir::Type());
             if (!type)
             {
                 return {mlir::failure(), anyNamedGenericType};
@@ -12593,8 +12588,10 @@ genContext);
         {
             auto &typeParam = typeParams[index];
             auto isDefault = false;
-            auto type =
-                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->hasDefault() ? getType(typeParam->getDefault(), genContext) : mlir::Type());
+            auto type = index < argsCount
+                            ? getType(typeArgs[index], genContext)
+                            : (isDefault = true,
+                               typeParam->hasDefault() ? getType(typeParam->getDefault(), genContext) : mlir::Type());
             if (!type)
             {
                 return {mlir::success(), anyNamedGenericType};
@@ -12628,8 +12625,10 @@ genContext);
         {
             auto &typeParam = typeParams[index];
             auto isDefault = false;
-            auto type =
-                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->hasDefault() ? getType(typeParam->getDefault(), genContext) : mlir::Type());
+            auto type = index < argsCount
+                            ? getType(typeArgs[index], genContext)
+                            : (isDefault = true,
+                               typeParam->hasDefault() ? getType(typeParam->getDefault(), genContext) : mlir::Type());
             if (!type)
             {
                 return {mlir::success(), anyNamedGenericType};
@@ -12753,7 +12752,7 @@ genContext);
         // can be utility type
         if (name == "TypeOf")
         {
-            MLIRTypeHelper mth(builder.getContext());
+
             auto type = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
             type = mth.wideStorageType(type);
             return type;
@@ -13047,8 +13046,6 @@ genContext);
         auto &typeParamsWithArgs = const_cast<GenContext &>(genContext).typeParamsWithArgs;
         auto checkType = getType(conditionalTypeNode->checkType, genContext);
         auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
-
-        MLIRTypeHelper mth(builder.getContext());
 
         if (mth.extendsType(checkType, extendsType, typeParamsWithArgs))
         {
@@ -13786,7 +13783,6 @@ genContext);
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext)
     {
-        MLIRTypeHelper mth(builder.getContext());
 
         MLIRTypeHelper::UnionTypeProcessContext unionContext = {};
         for (auto typeItem : unionTypeNode->types)
@@ -13821,8 +13817,6 @@ genContext);
             return mlir::Type();
         }
 
-        MLIRTypeHelper mth(builder.getContext());
-
         LLVM_DEBUG(llvm::dbgs() << "\n!! join: " << type1 << " | " << type2;);
 
         auto resType = mth.getUnionType(type1, type2, false);
@@ -13834,7 +13828,7 @@ genContext);
 
     mlir::Type getUnionType(mlir::SmallVector<mlir::Type> &types)
     {
-        MLIRTypeHelper mth(builder.getContext());
+
         return mth.getUnionType(types);
     }
 
@@ -13994,8 +13988,6 @@ genContext);
             return mlir::Type();
         }
 
-        MLIRTypeHelper mth(builder.getContext());
-
         LLVM_DEBUG(llvm::dbgs() << "\n!! intersection: " << type1 << " & " << type2;);
 
         auto resType = mth.getIntersectionType(type1, type2);
@@ -14007,7 +13999,7 @@ genContext);
 
     mlir::Type getIntersectionType(mlir::SmallVector<mlir::Type> &types)
     {
-        MLIRTypeHelper mth(builder.getContext());
+
         return mth.getIntersectionType(types);
     }
 
@@ -14058,7 +14050,7 @@ genContext);
 
         if (left.isa<mlir_ts::NullType>())
         {
-            MLIRTypeHelper mth(builder.getContext());
+
             if (mth.isValueType(right))
             {
                 return getNeverType();
@@ -14069,7 +14061,7 @@ genContext);
 
         if (right.isa<mlir_ts::NullType>())
         {
-            MLIRTypeHelper mth(builder.getContext());
+
             if (mth.isValueType(left))
             {
                 return getNeverType();
@@ -14080,7 +14072,7 @@ genContext);
 
         if (left.isa<mlir_ts::NullType>())
         {
-            MLIRTypeHelper mth(builder.getContext());
+
             if (mth.isValueType(right))
             {
                 return getNeverType();
@@ -14594,13 +14586,15 @@ genContext);
 
         auto moduleSource = fileOrErr.get()->getBuffer();
 
-        return loadSourceFile(fileName, moduleSource.str());        
+        return loadSourceFile(fileName, moduleSource.str());
     }
 
     /// The builder is a helper class to create IR inside a function. The builder
     /// is stateful, in particular it keeps an "insertion point": this is where
     /// the next operations will be introduced.
     mlir::OpBuilder builder;
+
+    MLIRTypeHelper mth;
 
     CompileOptions compileOptions;
 
@@ -14710,7 +14704,7 @@ mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const 
 
     SmallString<128> path = llvm::sys::path::parent_path(fileName);
     MLIRGenImpl mlirGenImpl(context, fileName, path, compileOptions);
-    auto [sourceFile, includeFiles] = mlirGenImpl.loadSourceFile(fileName, source); 
+    auto [sourceFile, includeFiles] = mlirGenImpl.loadSourceFile(fileName, source);
     return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
 }
 
