@@ -3266,6 +3266,10 @@ class MLIRGenImpl
 
         // LLVM_DEBUG(printDebug(funcOp););
 
+        // copy location info, to fix issue with names of anonymous functions
+        funcOp->pos = functionLikeDeclarationBaseAST->pos;
+        funcOp->_end = functionLikeDeclarationBaseAST->_end;        
+
         auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
         return genFuncOp;
     }
