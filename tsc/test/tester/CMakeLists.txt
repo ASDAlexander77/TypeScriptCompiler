@@ -177,6 +177,8 @@ add_test(NAME test-compile-00-safe-cast-2 COMMAND test-runner "${PROJECT_SOURCE_
 add_test(NAME test-compile-00-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional.ts")
 add_test(NAME test-compile-00-async-await COMMAND test-runner -async "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
 add_test(NAME test-compile-00-for-await COMMAND test-runner -async "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
+# TODO: in opt mode, error
+#add_test(NAME test-compile-00-for-await-yield COMMAND test-runner -async "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 add_test(NAME test-compile-00-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types.ts")
 add_test(NAME test-compile-00-try-catch COMMAND test-runner -llc "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
 add_test(NAME test-compile-01-try-catch COMMAND test-runner -llc "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")
@@ -353,6 +355,8 @@ add_test(NAME test-jit-00-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DI
 if (NOT(WIN32))
 add_test(NAME test-jit-00-async-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
 add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
+# TODO: in opt mode, error
+#add_test(NAME test-jit-00-for-await-yield COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 endif()
 if (NOT(WIN32))
 add_test(NAME test-jit-00-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
