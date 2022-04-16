@@ -1,7 +1,7 @@
 # TypeScript Native Compiler
 ###### Powered by [![LLVM|MLIR](https://llvm.org/img/LLVM-Logo-Derivative-1.png)](https://llvm.org/)
 
-[![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](BBJ4SQYLA6D2L)
+[![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=BBJ4SQYLA6D2L)
 
 # Build
 
