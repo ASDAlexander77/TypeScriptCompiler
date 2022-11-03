@@ -63,7 +63,7 @@ jobs:
       continue-on-error: true
       shell: sh
       if: hashFiles('llvm_13_release.tgz') == ''
-      run: curl -L https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/blob/main/llvm_13_release.tgz --output llvm_13_release.tgz
+      run: curl -L https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/raw/main/llvm_13_release.tgz --output llvm_13_release.tgz
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
@@ -76,13 +76,13 @@ jobs:
       continue-on-error: true
       shell: sh
       if: hashFiles('gc-8.0.4.tar.gz') == ''
-      run: curl https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/blob/main/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
+      run: curl https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/raw/main/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
 
     - name: Download 3rd party source - GC:Atomic_ops
       continue-on-error: true
       shell: sh
       if: hashFiles('libatomic_ops-7.6.10.tar.gz') == ''
-      run: curl https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/blob/main/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
+      run: curl https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/raw/main/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
 
     - name: UnZip 3rd party source - GC
       continue-on-error: false
