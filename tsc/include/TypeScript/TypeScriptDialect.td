@@ -20,7 +20,7 @@ def TypeScript_Dialect : Dialect {
 // Base typescript operation definition.
 //===----------------------------------------------------------------------===//
 
-class TypeScript_Op<string mnemonic, list<OpTrait> traits = []> :
+class TypeScript_Op<string mnemonic, list<Trait> traits = []> :
         Op<TypeScript_Dialect, mnemonic, traits> {
           //string llvmBuilder = "";
         }

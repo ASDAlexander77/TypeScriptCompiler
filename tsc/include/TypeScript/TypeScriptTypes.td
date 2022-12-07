@@ -1,6 +1,7 @@
 #ifndef TYPESCRIPT_TYPEDEFS
 #define TYPESCRIPT_TYPEDEFS
 
+include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/OpBase.td"
 
 //===----------------------------------------------------------------------===//
