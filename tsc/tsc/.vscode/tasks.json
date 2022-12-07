@@ -4,16 +4,28 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "config CMake",
+            "type": "shell",
+            "command": "config_tsc_debug.bat",
+            "args": [],
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/..",
+            }
+        },        
+        {
             "label": "build CMake",
             "type": "shell",
-            "command": "..\\build_tsc_debug.bat",
-	    "args": ["..\\"],
+            "command": "build_tsc_debug.bat",
+            "args": [],
             "problemMatcher": [],
-	    "cwd": "${workspaceFolder}",
+            "options": {
+                "cwd": "${workspaceFolder}/..",
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true
-            }
+            } 
         }
     ]
 }
