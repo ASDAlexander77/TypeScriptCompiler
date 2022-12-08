@@ -4,7 +4,6 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/BuiltinAttributes.h"

@@ -100,8 +100,6 @@ def TypeScript_Ref : TypeScript_Type<"Ref"> {
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;
 }
 
 def TypeScript_ValueRef : TypeScript_Type<"ValueRef"> {
@@ -130,9 +128,6 @@ def TypeScript_ValueRef : TypeScript_Type<"ValueRef"> {
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;
-
 }
 
 def TypeScript_Optional : TypeScript_Type<"Optional"> {
@@ -161,8 +156,6 @@ def TypeScript_Optional : TypeScript_Type<"Optional"> {
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;
 }
 
 def TypeScript_Enum : TypeScript_Type<"Enum"> {
@@ -191,8 +184,6 @@ def TypeScript_Enum : TypeScript_Type<"Enum"> {
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_LiteralType : TypeScript_Type<"Literal"> {
@@ -221,8 +212,6 @@ def TypeScript_LiteralType : TypeScript_Type<"Literal"> {
       return Base::get(elementType.getContext(), value, elementType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_ConstArrayValue : TypeScript_Type<"ConstArrayValue"> {
@@ -251,8 +240,6 @@ def TypeScript_ConstArrayValue : TypeScript_Type<"ConstArrayValue"> {
       return Base::get(elementType.getContext(), elementType, size);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
@@ -281,8 +268,6 @@ def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
       return Base::get(elementType.getContext(), elementType, size);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_Array : TypeScript_Type<"Array"> {
@@ -311,8 +296,6 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
@@ -344,7 +327,7 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
   }];
   let parameters = (ins ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
 
-  let assemblyFormat = "`<` params `>`";
+  let hasCustomAssemblyFormat = 1;  
 
   let extraClassDeclaration = [{
     /// Return the number of held types.
@@ -408,7 +391,7 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
   }];
   let parameters = (ins ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
 
-  let assemblyFormat = "`<` params `>`";
+  let hasCustomAssemblyFormat = 1;
 
   let extraClassDeclaration = [{
     /// Return the number of held types.
@@ -469,8 +452,6 @@ def TypeScript_Object : TypeScript_Type<"Object"> {
       return Base::get(storageType.getContext(), storageType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
@@ -569,8 +550,6 @@ def TypeScript_Class : TypeScript_Type<"Class"> {
       return Base::get(storageType.getContext(), name, storageType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_Namespace : TypeScript_Type<"Namespace"> {
@@ -598,8 +577,6 @@ def TypeScript_Namespace : TypeScript_Type<"Namespace"> {
       return Base::get(name.getContext(), name);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_Interface : TypeScript_Type<"Interface"> {
@@ -627,8 +604,6 @@ def TypeScript_Interface : TypeScript_Type<"Interface"> {
       return Base::get(name.getContext(), name);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_BoundRef : TypeScript_Type<"BoundRef"> {
@@ -657,8 +632,6 @@ def TypeScript_BoundRef : TypeScript_Type<"BoundRef"> {
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;
 }
 
 def TypeScript_Function : TypeScript_Type<"Function"> {
@@ -680,7 +653,7 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
      }]>
   ];
   
-  let skipDefaultBuilders = 1;
+  let skipDefaultBuilders = 1;  
   //let genStorageClass = 0;
   let extraClassDeclaration = [{
     bool isVarArg() const;
@@ -725,9 +698,9 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
      TypeBuilder<(ins "FunctionType":$funcType), [{
        return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults(), funcType.isVarArg());
      }]>
-  ];
-  
-  let skipDefaultBuilders = 1;
+  ]; 
+
+  let skipDefaultBuilders = 1;  
   //let genStorageClass = 0;
   let extraClassDeclaration = [{
     bool isVarArg() const;
@@ -759,9 +732,9 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
      TypeBuilder<(ins "FunctionType":$funcType), [{
        return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults(), funcType.isVarArg());
      }]>
-  ];
-  
-  let skipDefaultBuilders = 1;
+  ]; 
+
+  let skipDefaultBuilders = 1;  
   //let genStorageClass = 0;
   let extraClassDeclaration = [{
     bool isVarArg() const;
@@ -909,8 +882,6 @@ def TypeScript_Infer : TypeScript_Type<"Infer"> {
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  let skipDefaultBuilders = 1;  
 }
 
 

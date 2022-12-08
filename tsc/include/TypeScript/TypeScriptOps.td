@@ -332,7 +332,7 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
     /// getType, getNumFuncArguments, and getNumFuncResults can be called
     /// safely.
     LogicalResult verifyType() {
-        auto type = getTypeAttr().getValue().dyn_cast_or_null<FunctionType>();
+        auto type = getFunctionTypeAttr().getValue().dyn_cast_or_null<FunctionType>();
         if (!type)
             return emitOpError("requires '" + getTypeAttrName() +
                             "' attribute of function type");
