@@ -341,7 +341,7 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
     }
   }];
 
-  let verifier = [{ return ::verify(*this); }];
+  let hasVerifier = 1;
 
   let assemblyFormat =
       [{ $sym_name $type attr-dict $body }];
@@ -368,7 +368,7 @@ def TypeScript_NullOp : TypeScript_Op<"Null", []> {
     TypeScript_Null:$result
   );
 
-  let verifier = [{ return success(); }];
+  let hasVerifier = 1;
 
   let hasCanonicalizer = 1;
 
@@ -399,7 +399,6 @@ def TypeScript_UndefOp : TypeScript_Op<"Undef", []> {
   );
 
   let hasCanonicalizer = 1;
-  let verifier = [{ return success(); }];
 
   let assemblyFormat = "attr-dict `:` type($result)";
 }
@@ -430,9 +429,6 @@ def TypeScript_AssertOp : TypeScript_Op<"Assert"> {
   let arguments = (ins TypeScript_Boolean:$arg, StrAttr:$msg);
 
   let assemblyFormat = "$arg `,` $msg attr-dict";
-
-  // AssertOp is fully verified by its traits.
-  let verifier = ?;
 
   let hasCanonicalizer = 1;
 }
@@ -690,7 +686,6 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
   let assemblyFormat = [{
     $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
   }];
-  let verifier = ?;
 }
 
 def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
@@ -747,7 +742,6 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     CallInterfaceCallable getCallableForCallee() { return getCallee(); }
   }];
 
-  let verifier = ?;
   let hasCanonicalizer = 1;
 
   let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` type($callee)";
@@ -779,7 +773,7 @@ def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [
       build($_builder, $_state, tys, /*callee=*/FlatSymbolRefAttr(), ops, normalOps,
             unwindOps, normal, unwind);
     }]>];
-  let verifier = [{ return ::verify(*this);  }];
+  let hasVerifier = 1;
 }
 
 def TypeScript_InvokeHybridOp : TypeScript_Op<"InvokeHybrid", [
@@ -793,8 +787,6 @@ def TypeScript_InvokeHybridOp : TypeScript_Op<"InvokeHybrid", [
   let results = (outs Variadic<AnyType>);
   let successors = (successor AnySuccessor:$normalDest,
                               AnySuccessor:$unwindDest);
-
-  let verifier = ?;
 }
 
 def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
@@ -847,7 +839,6 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
   let assemblyFormat = [{
     $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
   }];
-  let verifier = ?;
 }
 
 def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
@@ -885,7 +876,6 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
   let assemblyFormat = [{
       `(` $operands `)` attr-dict `:` functional-type($operands, results)
   }];
-  let verifier = ?;
 }
 
 def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
@@ -921,7 +911,6 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
   let assemblyFormat = [{
     $callee `(` $operands `)` attr-dict `:` type($callee) `+` functional-type($operands, results)
   }];
-  let verifier = ?;
 }
 
 def TypeScript_CaptureOp : TypeScript_Op<"Capture", []> {
@@ -995,7 +984,6 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [NoSideEffect
   let arguments = (ins Variadic<AnyType>:$results);
 
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
-  let verifier = ?;
 
   let assemblyFormat = "$results attr-dict `:` type($results)";
 }
@@ -1402,7 +1390,7 @@ def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpI
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 
   let hasCanonicalizer = 1;
-  let verifier = [{ return ::verify(*this); }];
+  let hasVerifier = 1;
 }
 
 def TypeScript_BoxOp : TypeScript_Op<"Box", [NoSideEffect]> {
@@ -1620,9 +1608,6 @@ def TypeScript_ResultOp : TypeScript_Op<"Result", [NoSideEffect, ReturnLike, Ter
 
   let arguments = (ins Variadic<AnyType>:$results);
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
-  // Override default verifier, no custom verification
-  // needed.
-  let verifier = ?;
 }
 
 def TypeScript_WhileOp : TypeScript_Op<"While",
@@ -1710,9 +1695,6 @@ def TypeScript_ConditionOp : TypeScript_Op<"Condition",
 
   let assemblyFormat =
       [{ `(` $condition `)` ($args^)? attr-dict `:` type($args) }];
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_NoConditionOp : TypeScript_Op<"NoCondition",
@@ -1729,9 +1711,6 @@ def TypeScript_NoConditionOp : TypeScript_Op<"NoCondition",
 
   let assemblyFormat =
       [{ attr-dict ($args^ `:` type($args))? }];
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_ContinueOp : TypeScript_Op<"Continue"> {
@@ -1847,9 +1826,6 @@ def TypeScript_CatchOp : TypeScript_Op<"Catch",
   }];
 
   let arguments = (ins TypeScript_Ref:$catchArg);
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_ThrowOp : TypeScript_Op<"Throw"> {
@@ -1865,9 +1841,6 @@ def TypeScript_LandingPadOp : TypeScript_Op<"LandingPad"> {
 
   let arguments = (ins BoolAttr:$cleanup, Variadic<AnyType>:$catches);
   let results = (outs TypeScript_Tuple:$result);
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_CompareCatchTypeOp : TypeScript_Op<"CompareCatchType"> {
@@ -1877,9 +1850,6 @@ def TypeScript_CompareCatchTypeOp : TypeScript_Op<"CompareCatchType"> {
 
   let arguments = (ins TypeScript_Tuple:$landingPad, TypeScript_Ref:$throwTypeInfo);
   let results = (outs TypeScript_Boolean:$result);
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_BeginCatchOp : TypeScript_Op<"BeginCatch"> {
@@ -1889,9 +1859,6 @@ def TypeScript_BeginCatchOp : TypeScript_Op<"BeginCatch"> {
 
   let arguments = (ins TypeScript_Tuple:$landingPad);
   let results = (outs TypeScript_Opaque:$exceptionInfo);
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_SaveCatchVarOp : TypeScript_Op<"SaveCatchVar"> {
@@ -1901,9 +1868,6 @@ def TypeScript_SaveCatchVarOp : TypeScript_Op<"SaveCatchVar"> {
 
   let arguments = (ins TypeScript_Opaque:$exceptionInfo, TypeScript_Ref:$varStore);
   let results = (outs );
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_EndCatchOp : TypeScript_Op<"EndCatch"> {
@@ -1913,9 +1877,6 @@ def TypeScript_EndCatchOp : TypeScript_Op<"EndCatch"> {
 
   let arguments = (ins );
   let results = (outs );
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_BeginCleanupOp : TypeScript_Op<"BeginCleanup"> {
@@ -1925,9 +1886,6 @@ def TypeScript_BeginCleanupOp : TypeScript_Op<"BeginCleanup"> {
 
   let arguments = (ins );
   let results = (outs );
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_EndCleanupOp : TypeScript_Op<"EndCleanup", [Terminator]> {
@@ -1938,9 +1896,6 @@ def TypeScript_EndCleanupOp : TypeScript_Op<"EndCleanup", [Terminator]> {
   let arguments = (ins TypeScript_Tuple:$landingPad);
   let results = (outs );
   let successors = (successor VariadicSuccessor<AnySuccessor>:$unwindDest);
-
-  // Override the default verifier, everything is checked by traits.
-  let verifier = ?;
 }
 
 def TypeScript_ThrowUnwindOp : TypeScript_Op<"ThrowUnwind", [Terminator]> {
@@ -2044,9 +1999,6 @@ def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [NoSideEffect, Ret
 
   let arguments = (ins Variadic<AnyType>:$results);
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
-  // Override default verifier, no custom verification
-  // needed.
-  let verifier = ?;
 }
 
 def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
@@ -2098,9 +2050,6 @@ def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [NoSid
 
   let arguments = (ins Variadic<AnyType>:$results);
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
-  // Override default verifier, no custom verification
-  // needed.
-  let verifier = ?;
 }
 
 def TypeScript_PushOp : TypeScript_Op<"Push"> {
