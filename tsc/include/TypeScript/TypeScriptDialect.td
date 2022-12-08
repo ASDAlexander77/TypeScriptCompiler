@@ -14,6 +14,7 @@ def TypeScript_Dialect : Dialect {
         This dialect is a typescript out-of-tree MLIR dialect.
     }];
     let cppNamespace = "::mlir::typescript";
+    let useDefaultTypePrinterParser = 0;
 }
 
 //===----------------------------------------------------------------------===//
