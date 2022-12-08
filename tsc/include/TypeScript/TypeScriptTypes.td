@@ -93,8 +93,7 @@ def TypeScript_Ref : TypeScript_Type<"Ref"> {
   }];
   let parameters = (ins "Type":$elementType);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "ref<" << getImpl()->elementType << ">"; }];
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
@@ -102,17 +101,7 @@ def TypeScript_Ref : TypeScript_Type<"Ref"> {
     }]>
   ];
 
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(elementType);
-  }];
-
   let skipDefaultBuilders = 1;
-
 }
 
 def TypeScript_ValueRef : TypeScript_Type<"ValueRef"> {
@@ -134,23 +123,13 @@ def TypeScript_ValueRef : TypeScript_Type<"ValueRef"> {
   }];
   let parameters = (ins "Type":$elementType);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "value_ref<" << getImpl()->elementType << ">"; }];
-
+  let assemblyFormat = "`<` params `>`";
+  
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(elementType);
-  }];
 
   let skipDefaultBuilders = 1;
 
@@ -175,25 +154,13 @@ def TypeScript_Optional : TypeScript_Type<"Optional"> {
   }];
   let parameters = (ins "Type":$elementType);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "optional<" << getImpl()->elementType << ">"; }];
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseLBrace()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseRBrace()) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(elementType);
-  }];
 
   let skipDefaultBuilders = 1;
 }
@@ -217,23 +184,13 @@ def TypeScript_Enum : TypeScript_Type<"Enum"> {
   }];
   let parameters = (ins "Type":$elementType);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "enum<" << getImpl()->elementType << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(elementType);
-  }];  
 
   let skipDefaultBuilders = 1;  
 }
@@ -257,26 +214,13 @@ def TypeScript_LiteralType : TypeScript_Type<"Literal"> {
   }];
   let parameters = (ins "Attribute":$value, "Type":$elementType);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "literal<" << getImpl()->value << "," << getImpl()->elementType << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Attribute":$value, "Type":$elementType), [{
       return Base::get(elementType.getContext(), value, elementType);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    Attribute value;
-    if ($_parser.parseAttribute(value)) return Type();
-    if ($_parser.parseComma()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(value, elementType);
-  }];  
 
   let skipDefaultBuilders = 1;  
 }
@@ -300,26 +244,13 @@ def TypeScript_ConstArrayValue : TypeScript_Type<"ConstArrayValue"> {
   }];
   let parameters = (ins "Type":$elementType, "unsigned":$size);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "const_array_value<" << getImpl()->elementType << "," << getImpl()->size << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType, "unsigned":$size), [{
       return Base::get(elementType.getContext(), elementType, size);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseComma()) return Type();
-    int size;
-    if ($_parser.parseInteger(size)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(elementType, size);
-  }];  
 
   let skipDefaultBuilders = 1;  
 }
@@ -343,26 +274,13 @@ def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
   }];
   let parameters = (ins "Type":$elementType, "unsigned":$size);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "const_array<" << getImpl()->elementType << "," << getImpl()->size << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType, "unsigned":$size), [{
       return Base::get(elementType.getContext(), elementType, size);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseComma()) return Type();
-    int size;
-    if ($_parser.parseInteger(size)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(elementType, size);
-  }];  
 
   let skipDefaultBuilders = 1;  
 }
@@ -386,23 +304,13 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
   }];
   let parameters = (ins "Type":$elementType);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "array<" << getImpl()->elementType << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(elementType);
-  }];  
 
   let skipDefaultBuilders = 1;  
 }
@@ -436,42 +344,7 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
   }];
   let parameters = (ins ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
 
-  let printer = [{
-    $_printer << "const_tuple" << "<";
-    for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
-      const auto& field = getImpl()->fields[i];
-      if (field.id) 
-      {
-          $_printer << "{" << field.id << "," << field.type << "}";
-      }
-      else
-      {
-          $_printer << field.type;
-      }
-      
-      if (i < getImpl()->fields.size() - 1)
-          $_printer << ",";
-    }
-    $_printer << ">";
-  }];
-
-  // Parses the above format
-  let parser = [{
-    SmallVector<FieldInfo, 4> parameters;
-    if ($_parser.parseLess()) return Type();
-    while (mlir::succeeded($_parser.parseOptionalLBrace())) {
-      Attribute id;
-      if ($_parser.parseAttribute(id)) return Type();
-      if ($_parser.parseComma()) return Type();
-      Type type;
-      if ($_parser.parseType(type)) return Type();
-      if ($_parser.parseRBrace()) return Type();
-      parameters.push_back(FieldInfo {id, type});
-      if ($_parser.parseOptionalComma()) break;
-    }
-    if ($_parser.parseGreater()) return Type();
-    return get($_ctxt, parameters);
-  }];  
+  let assemblyFormat = "`<` params `>`";
 
   let extraClassDeclaration = [{
     /// Return the number of held types.
@@ -535,42 +408,7 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
   }];
   let parameters = (ins ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
 
-  let printer = [{
-    $_printer << "tuple" << "<";
-    for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
-      const auto& field = getImpl()->fields[i];
-      if (field.id) 
-      {
-          $_printer << "{" << field.id << "," << field.type << "}";
-      }
-      else
-      {
-          $_printer << field.type;
-      }
-
-      if (i < getImpl()->fields.size() - 1)
-          $_printer << ",";
-    }
-    $_printer << ">";
-  }];
-
-  // Parses the above format
-  let parser = [{
-    SmallVector<FieldInfo, 4> parameters;
-    if ($_parser.parseLess()) return Type();
-    while (mlir::succeeded($_parser.parseOptionalLBrace())) {
-      Attribute id;
-      if ($_parser.parseAttribute(id)) return Type();
-      if ($_parser.parseComma()) return Type();
-      Type type;
-      if ($_parser.parseType(type)) return Type();
-      if ($_parser.parseRBrace()) return Type();
-      parameters.push_back(FieldInfo {id, type});
-      if ($_parser.parseOptionalComma()) break;
-    }
-    if ($_parser.parseGreater()) return Type();
-    return get($_ctxt, parameters);
-  }];  
+  let assemblyFormat = "`<` params `>`";
 
   let extraClassDeclaration = [{
     /// Return the number of held types.
@@ -624,23 +462,13 @@ def TypeScript_Object : TypeScript_Type<"Object"> {
   }];
   let parameters = (ins "Type":$storageType);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "object<" << getImpl()->storageType << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$storageType), [{
       return Base::get(storageType.getContext(), storageType);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type storageType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseType(storageType)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(storageType);
-  }];  
 
   let skipDefaultBuilders = 1;  
 }
@@ -674,47 +502,7 @@ def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
   }];
   let parameters = (ins "FlatSymbolRefAttr":$name);
 
-  let printer = [{
-    $_printer << "class_storage<" << getName() << ",";
-    for (size_t i=0, e = getFields().size(); i < e; i++) {
-      const auto& field = getFields()[i];
-      if (field.id) 
-      {
-          $_printer << "{" << field.id << "," << field.type << "}";
-      }
-      else
-      {
-          $_printer << field.type;
-      }
-
-      if (i < getFields().size() - 1)
-          $_printer << ",";
-    }
-    $_printer << ">";
-  }];
-
-  // Parses the above format
-  let parser = [{
-    Attribute name;
-    SmallVector<FieldInfo, 4> parameters;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseAttribute(name)) return Type();    
-    if ($_parser.parseComma()) return Type();
-    while (mlir::succeeded($_parser.parseOptionalLBrace())) {
-      Attribute id;
-      if ($_parser.parseAttribute(id)) return Type();
-      if ($_parser.parseComma()) return Type();
-      Type type;
-      if ($_parser.parseType(type)) return Type();
-      if ($_parser.parseRBrace()) return Type();
-      parameters.push_back(FieldInfo {id, type});
-      if ($_parser.parseOptionalComma()) break;
-    }
-    if ($_parser.parseGreater()) return Type();
-    auto resType = get($_ctxt, name.dyn_cast_or_null<FlatSymbolRefAttr>());
-    resType.setFields(parameters);
-    return resType;
-  }];  
+  let assemblyFormat = "`<` params `>`";
 
   let extraClassDeclaration = [{
     /// Return the number of held types.
@@ -774,28 +562,13 @@ def TypeScript_Class : TypeScript_Type<"Class"> {
   }];
   let parameters = (ins "FlatSymbolRefAttr":$name, "Type":$storageType);
 
-  // We define the printer inline.
-  // TODO: fix recursive issue
-  //let printer = [{ $_printer << "class<" << getImpl()->name << "," << getImpl()->storageType << ">"; }];  
-  let printer = [{ $_printer << "class<" << getImpl()->name << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name, "Type":$storageType), [{
       return Base::get(storageType.getContext(), name, storageType);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Attribute name;
-    Type storageType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseAttribute(name)) return Type();
-    if ($_parser.parseComma()) return Type();
-    if ($_parser.parseType(storageType)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(name.dyn_cast_or_null<FlatSymbolRefAttr>(), storageType);
-  }];  
 
   let skipDefaultBuilders = 1;  
 }
@@ -818,23 +591,13 @@ def TypeScript_Namespace : TypeScript_Type<"Namespace"> {
   }];
   let parameters = (ins "FlatSymbolRefAttr":$name);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "namespace<" << getImpl()->name << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name), [{
       return Base::get(name.getContext(), name);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Attribute name;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseAttribute(name)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(name.dyn_cast_or_null<FlatSymbolRefAttr>());
-  }];  
 
   let skipDefaultBuilders = 1;  
 }
@@ -857,23 +620,13 @@ def TypeScript_Interface : TypeScript_Type<"Interface"> {
   }];
   let parameters = (ins "FlatSymbolRefAttr":$name);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "iface<" << getImpl()->name << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name), [{
       return Base::get(name.getContext(), name);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Attribute name;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseAttribute(name)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(name.dyn_cast_or_null<FlatSymbolRefAttr>());
-  }];  
 
   let skipDefaultBuilders = 1;  
 }
@@ -897,23 +650,13 @@ def TypeScript_BoundRef : TypeScript_Type<"BoundRef"> {
   }];
   let parameters = (ins "Type":$elementType);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "bound_ref<" << getImpl()->elementType << ">"; }];
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(elementType);
-  }];
 
   let skipDefaultBuilders = 1;
 }
@@ -926,54 +669,7 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
   }];
   let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results, "bool":$isVarArg);
 
-  // We define the printer inline.
-  let printer = [{ 
-      $_printer << "func<("; 
-      for (size_t i=0, e = getImpl()->inputs.size(); i < e; i++) {
-        const auto& input = getImpl()->inputs[i];
-        $_printer << input;
-        if (i < e - 1)
-          $_printer << ",";
-      }      
-      if (getImpl()->isVarArg)
-      {
-        $_printer << "...";    
-      }
-      $_printer << ") -> (";
-      for (size_t i=0, e = getImpl()->results.size(); i < e; i++) {
-        const auto& result = getImpl()->results[i];
-        $_printer << result;
-        if (i < e - 1)
-          $_printer << ",";
-      }      
-      $_printer << ")>";
-  }];
-
-  // Parses the above format
-  let parser = [{
-    bool isVarArg = false;
-    Type elementType;
-    SmallVector<Type> inputs;
-    SmallVector<Type> results;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseLParen()) return Type();
-    while (!mlir::succeeded($_parser.parseOptionalRParen())) 
-    {
-        if ($_parser.parseType(elementType)) return Type();
-        inputs.push_back(elementType);
-        if ($_parser.parseOptionalEllipsis()) isVarArg = true;
-        if ($_parser.parseOptionalComma()) break;
-    }
-    if ($_parser.parseArrow()) return Type();
-    while (!mlir::succeeded($_parser.parseOptionalRParen())) 
-    {
-        if ($_parser.parseType(elementType)) return Type();
-        results.push_back(elementType);
-        if ($_parser.parseOptionalComma()) break;
-    }    
-    if ($_parser.parseGreater()) return Type();
-    return get(context, inputs, results, isVarArg);
-  }]; 
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
      TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
@@ -1020,54 +716,7 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
   }];
   let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results, "bool":$isVarArg);
 
-  // We define the printer inline.
-  let printer = [{ 
-      $_printer << "hybrid_func<("; 
-      for (size_t i=0, e = getImpl()->inputs.size(); i < e; i++) {
-        const auto& input = getImpl()->inputs[i];
-        $_printer << input;
-        if (i < getImpl()->inputs.size() - 1)
-          $_printer << ",";
-      }      
-      if (getImpl()->isVarArg)
-      {
-        $_printer << "...";    
-      }
-      $_printer << ") -> (";
-      for (size_t i=0, e = getImpl()->results.size(); i < e; i++) {
-        const auto& result = getImpl()->results[i];
-        $_printer << result;
-        if (i < getImpl()->results.size() - 1)
-          $_printer << ",";
-      }      
-      $_printer << ")>";
-  }];
-
-  // Parses the above format
-  let parser = [{
-    bool isVarArg = false;
-    Type elementType;
-    SmallVector<Type> inputs;
-    SmallVector<Type> results;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseLParen()) return Type();
-    while (!mlir::succeeded($_parser.parseOptionalRParen())) 
-    {
-        if ($_parser.parseType(elementType)) return Type();
-        inputs.push_back(elementType);
-        if ($_parser.parseOptionalEllipsis()) isVarArg = true;
-        if ($_parser.parseOptionalComma()) break;
-    }
-    if ($_parser.parseArrow()) return Type();
-    while (!mlir::succeeded($_parser.parseOptionalRParen())) 
-    {
-        if ($_parser.parseType(elementType)) return Type();
-        results.push_back(elementType);
-        if ($_parser.parseOptionalComma()) break;
-    }    
-    if ($_parser.parseGreater()) return Type();
-    return get(context, inputs, results, isVarArg);
-  }]; 
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
      TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
@@ -1101,54 +750,7 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
   }];
   let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results, "bool":$isVarArg);
 
-  // We define the printer inline.
-  let printer = [{ 
-      $_printer << "bound_func<("; 
-      for (size_t i=0, e = getImpl()->inputs.size(); i < e; i++) {
-        const auto& input = getImpl()->inputs[i];
-        $_printer << input;
-        if (i < getImpl()->inputs.size() - 1)
-          $_printer << ",";
-      }      
-      if (getImpl()->isVarArg)
-      {
-        $_printer << "...";    
-      }
-      $_printer << ") -> (";
-      for (size_t i=0, e = getImpl()->results.size(); i < e; i++) {
-        const auto& result = getImpl()->results[i];
-        $_printer << result;
-        if (i < getImpl()->results.size() - 1)
-          $_printer << ",";
-      }      
-      $_printer << ")>";
-  }];
-
-  // Parses the above format
-  let parser = [{
-    bool isVarArg = false;
-    Type elementType;
-    SmallVector<Type> inputs;
-    SmallVector<Type> results;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseLParen()) return Type();
-    while (!mlir::succeeded($_parser.parseOptionalRParen())) 
-    {
-        if ($_parser.parseType(elementType)) return Type();
-        inputs.push_back(elementType);
-        if ($_parser.parseOptionalEllipsis()) isVarArg = true;
-        if ($_parser.parseOptionalComma()) break;
-    }
-    if ($_parser.parseArrow()) return Type();
-    while (!mlir::succeeded($_parser.parseOptionalRParen())) 
-    {
-        if ($_parser.parseType(elementType)) return Type();
-        results.push_back(elementType);
-        if ($_parser.parseOptionalComma()) break;
-    }    
-    if ($_parser.parseGreater()) return Type();
-    return get(context, inputs, results, isVarArg);
-  }]; 
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
      TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
@@ -1203,31 +805,7 @@ def TypeScript_Union : TypeScript_Type<"Union"> {
   }];
   let parameters = (ins ArrayRefParameter<"Type", "type">:$types);
 
-  let printer = [{
-    $_printer << "union" << "<";
-    size_t i = 0;
-    for (auto typeItem : getImpl()->types) 
-    {
-      $_printer << typeItem;
-      if (i++ < getImpl()->types.size() - 1)
-          $_printer << ",";              
-    }
-    $_printer << ">";
-  }];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    SmallVector<Type> types;
-    if ($_parser.parseLess()) return Type();
-    while (!mlir::succeeded($_parser.parseOptionalGreater())) 
-    {
-        if ($_parser.parseType(elementType)) return Type();
-        if ($_parser.parseOptionalComma()) break;
-    }
-    if ($_parser.parseGreater()) return Type();
-    return get(context, types);
-  }];  
+  let assemblyFormat = "`<` params `>`";
 
   let extraClassDeclaration = [{
     /// Return the number of held types.
@@ -1275,31 +853,7 @@ def TypeScript_Intersection : TypeScript_Type<"Intersection"> {
   }];
   let parameters = (ins ArrayRefParameter<"Type", "type">:$types);
 
-  let printer = [{
-    $_printer << "intersection" << "<";
-    size_t i = 0;
-    for (auto typeItem : getImpl()->types) 
-    {
-      $_printer << typeItem;
-      if (i++ < getImpl()->types.size() - 1)
-          $_printer << ",";              
-    }
-    $_printer << ">";
-  }];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    SmallVector<Type> types;
-    if ($_parser.parseLess()) return Type();
-    while (!mlir::succeeded($_parser.parseOptionalGreater())) 
-    {
-        if ($_parser.parseType(elementType)) return Type();
-        if ($_parser.parseOptionalComma()) break;
-    }
-    if ($_parser.parseGreater()) return Type();
-    return get(context, types);
-  }];  
+  let assemblyFormat = "`<` params `>`";
 
   let extraClassDeclaration = [{
     /// Return the number of held types.
@@ -1327,18 +881,7 @@ def TypeScript_NamedGeneric : TypeScript_Type<"NamedGeneric"> {
 
     let parameters = (ins "FlatSymbolRefAttr":$name);
 
-    let printer = [{
-        $_printer << getImpl()->name;
-    }];
-
-    let parser = [{
-        Type elementType;
-        if ($_parser.parseLess()) return Type();
-        Attribute name;
-        if ($_parser.parseAttribute(name)) return Type();
-        if ($_parser.parseGreater()) return Type();
-        return get($_ctxt, name.dyn_cast_or_null<FlatSymbolRefAttr>());
-    }];  
+    let assemblyFormat = "`<` params `>`";
 }
 
 def TypeScript_Infer : TypeScript_Type<"Infer"> {
@@ -1359,23 +902,13 @@ def TypeScript_Infer : TypeScript_Type<"Infer"> {
   }];
   let parameters = (ins "Type":$elementType);
 
-  // We define the printer inline.
-  let printer = [{ $_printer << "infer<" << getImpl()->elementType << ">"; }];  
+  let assemblyFormat = "`<` params `>`";
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
     }]>
   ];
-
-  // Parses the above format
-  let parser = [{
-    Type elementType;
-    if ($_parser.parseLess()) return Type();
-    if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseGreater()) return Type();
-    return get(elementType);
-  }];  
 
   let skipDefaultBuilders = 1;  
 }

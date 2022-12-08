@@ -4,6 +4,7 @@
 include "TypeScriptDialect.td"
 include "TypeScriptTypes.td"
 include "TypeScriptInterfaces.td"
+include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CallInterfaces.td"
@@ -243,7 +244,7 @@ def InterfaceRefOp : TypeScript_Op<"InterfaceRef",
 }
 
 def TypeScript_FuncOp : TypeScript_Op<"Func", [
-  AffineScope, AutomaticAllocationScope, CallableOpInterface, FunctionLike,
+  AffineScope, AutomaticAllocationScope, CallableOpInterface, FunctionOpInterface,
   IsolatedFromAbove, Symbol
 ]> {
   let description = [{
