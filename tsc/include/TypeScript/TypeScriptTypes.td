@@ -14,10 +14,7 @@ include "TypeScriptDialect.td"
 // All of the types will extend this class.
 class TypeScript_Type<string name, list<Trait> traits = []> : TypeDef<TypeScript_Dialect, name, traits> { }
 
-class IsMutable_TypeTrait : NativeTrait<"IsMutable", "Type">;
-
-def IsMutable : IsMutable_TypeTrait {
-}
+def IsMutable : NativeTypeTrait<"IsMutable">;
 
 def TypeScript_Void : TypeScript_Type<"Void"> {
     let mnemonic = "void";
