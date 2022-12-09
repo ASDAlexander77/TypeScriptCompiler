@@ -12,7 +12,12 @@ include "mlir/IR/OpBase.td"
 include "TypeScriptDialect.td"
 
 // All of the types will extend this class.
-class TypeScript_Type<string name> : TypeDef<TypeScript_Dialect, name> { }
+class TypeScript_Type<string name, list<Trait> traits = []> : TypeDef<TypeScript_Dialect, name, traits> { }
+
+class IsMutable_TypeTrait : NativeTrait<"IsMutable", "Type">;
+
+def IsMutable : IsMutable_TypeTrait {
+}
 
 def TypeScript_Void : TypeScript_Type<"Void"> {
     let mnemonic = "void";
@@ -454,7 +459,7 @@ def TypeScript_Object : TypeScript_Type<"Object"> {
   ];
 }
 
-def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
+def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage", [IsMutable]> {
   let mnemonic = "class_storage";
 
   let summary = "Fixed-sized collection of other types for class";

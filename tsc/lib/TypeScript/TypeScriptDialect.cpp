@@ -4,6 +4,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -223,7 +224,7 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
         {
             // Replace the values directly with the return operands.
             OpBuilder builder(op);
-            builder.create<mlir::BranchOp>(op->getLoc(), newDest, returnOp.getOperands());
+            builder.create<mlir::cf::BranchOp>(op->getLoc(), newDest, returnOp.getOperands());
             op->erase();
         }
     }
@@ -251,76 +252,6 @@ void mlir_ts::TypeScriptDialect::initialize()
 #include "TypeScript/TypeScriptOpsTypes.cpp.inc"
         >();
     addInterfaces<TypeScriptInlinerInterface>();
-}
-
-Type mlir_ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
-{
-    llvm::SMLoc typeLoc = parser.getCurrentLocation();
-
-    mlir::Type booleanType;
-    if (*generatedTypeParser(getContext(), parser, "boolean", booleanType))
-    {
-        return booleanType;
-    }
-
-    mlir::Type numberType;
-    if (*generatedTypeParser(getContext(), parser, "number", numberType))
-    {
-        return numberType;
-    }
-
-    mlir::Type stringType;
-    if (*generatedTypeParser(getContext(), parser, "string", stringType))
-    {
-        return stringType;
-    }
-
-    mlir::Type refType;
-    if (*generatedTypeParser(getContext(), parser, "ref", refType))
-    {
-        return refType;
-    }
-
-    mlir::Type valueRefType;
-    if (*generatedTypeParser(getContext(), parser, "value_ref", valueRefType))
-    {
-        return valueRefType;
-    }
-
-    mlir::Type optionalType;
-    if (*generatedTypeParser(getContext(), parser, "optional", optionalType))
-    {
-        return optionalType;
-    }
-
-    mlir::Type enumType;
-    if (*generatedTypeParser(getContext(), parser, "enum", enumType))
-    {
-        return enumType;
-    }
-
-    mlir::Type arrayType;
-    if (*generatedTypeParser(getContext(), parser, "array", arrayType))
-    {
-        return arrayType;
-    }
-
-    mlir::Type tupleType;
-    if (*generatedTypeParser(getContext(), parser, "tuple", tupleType))
-    {
-        return tupleType;
-    }
-
-    parser.emitError(typeLoc, "unknown type in TypeScript dialect");
-    return Type();
-}
-
-void mlir_ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
-{
-    if (failed(generatedTypePrinter(type, os)))
-    {
-        llvm_unreachable("unknown 'TypeScript' type");
-    }
 }
 
 // The functions don't need to be in the header file, but need to be in the mlir
