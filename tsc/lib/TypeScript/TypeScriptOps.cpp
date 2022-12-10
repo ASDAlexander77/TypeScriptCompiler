@@ -1094,7 +1094,7 @@ void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attri
 // WhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::WhileOp::getSuccessorEntryOperands(unsigned index)
+OperandRange mlir_ts::WhileOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
     assert(index == 0 && "WhileOp is expected to branch only to the first region");
 
@@ -1127,7 +1127,7 @@ void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<At
 // DoWhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(unsigned index)
+OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
     assert(index == 0 && "DoWhileOp is expected to branch only to the first region");
 
@@ -1160,7 +1160,7 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<
 // ForOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::ForOp::getSuccessorEntryOperands(unsigned index)
+OperandRange mlir_ts::ForOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
     assert(index == 0 && "ForOp is expected to branch only to the first region");
 
@@ -1341,7 +1341,7 @@ void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type t
 // TryOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::TryOp::getSuccessorEntryOperands(unsigned index)
+OperandRange mlir_ts::TryOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
     assert(index == 0 && "TryOp is expected to branch only to the first region");
 
@@ -1386,7 +1386,7 @@ void mlir_ts::LabelOp::addMergeBlock()
 // BodyInternalOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::BodyInternalOp::getSuccessorEntryOperands(unsigned index)
+OperandRange mlir_ts::BodyInternalOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
     assert(index == 0 && "BodyInternalOp is expected to branch only to the first region");
 

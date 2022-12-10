@@ -1643,7 +1643,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
   let regions = (region SizedRegion<1>:$cond, AnyRegion:$body);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(unsigned index);
+    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
   }];
 
   let assemblyFormat =
@@ -1662,7 +1662,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
   let regions = (region AnyRegion:$body, SizedRegion<1>:$cond);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(unsigned index);
+    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
   }];
 
   let assemblyFormat =
@@ -1678,7 +1678,7 @@ def TypeScript_ForOp : TypeScript_Op<"For",
   let regions = (region SizedRegion<1>:$cond, AnyRegion:$body, SizedRegion<1>:$incr);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(unsigned index);
+    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
   }];
 
   let assemblyFormat =
@@ -1817,7 +1817,7 @@ def TypeScript_TryOp : TypeScript_Op<"Try",
   let regions = (region AnyRegion:$body, AnyRegion:$catches, AnyRegion:$finallyBlock);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(unsigned index);
+    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
   }];
 
   let assemblyFormat = "attr-dict $body $catches $finallyBlock";
@@ -2035,7 +2035,7 @@ def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",
       [{ attr-dict `->` type($results) `:` $body }];
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(unsigned index);
+    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
 
     Region &getBodyRegion() {
       return getOperation()->getRegion(0);
