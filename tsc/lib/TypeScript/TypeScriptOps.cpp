@@ -107,7 +107,19 @@ ArrayRef<mlir::Type> mlir_ts::FunctionType::getParams()
 }
 
 mlir_ts::FunctionType mlir_ts::FunctionType::clone(mlir::TypeRange inputs, mlir::TypeRange results) const {
-  return get(getContext(), ArrayRef<mlir::Type>(inputs.begin(), inputs.end()), ArrayRef<mlir::Type>(results.begin(), results.end()), isVarArg());
+    SmallVector<mlir::Type> clonedInputs;
+    for (auto type : inputs)
+    {
+        clonedInputs.push_back(type);
+    }
+
+    SmallVector<mlir::Type> clonedResults;
+    for (auto type : results)
+    {
+        clonedResults.push_back(type);
+    }
+
+    return get(getContext(), clonedInputs, clonedResults, isVarArg());
 }
 
 /// Returns a new function type with the specified arguments and results
