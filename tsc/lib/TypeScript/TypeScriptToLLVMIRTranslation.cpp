@@ -10,6 +10,7 @@
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/Support/Debug.h"
 
 using namespace mlir;
 using namespace mlir::LLVM;
@@ -78,10 +79,10 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
     LogicalResult amendOperation(Operation *op, NamedAttribute attribute, LLVM::ModuleTranslation &moduleTranslation) const final
     {
         LLVM_DEBUG(llvm::dbgs() << "\n === amendOperation === \n");
-        LLVM_DEBUG(llvm::dbgs() << "attribute: " << attribute.first << " val: " << attribute.second << "\n");
+        LLVM_DEBUG(llvm::dbgs() << "attribute: " << attribute.getName() << " val: " << attribute.getValue() << "\n");
 
-        auto isNestAttr = attribute.first == TS_NEST_ATTRIBUTE;
-        auto isGcAttr = attribute.first == TS_GC_ATTRIBUTE;
+        auto isNestAttr = attribute.getName() == TS_NEST_ATTRIBUTE;
+        auto isGcAttr = attribute.getValue().dyn_cast<StringAttr>().str() == TS_GC_ATTRIBUTE;
 
         // TODO:
         if (isNestAttr || isGcAttr)
@@ -107,7 +108,9 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
 void mlir::typescript::registerTypeScriptDialectTranslation(DialectRegistry &registry)
 {
     registry.insert<mlir::typescript::TypeScriptDialect>();
-    registry.addDialectInterface<mlir::typescript::TypeScriptDialect, TypeScriptDialectLLVMIRTranslationInterface>();
+    registry.addExtension(+[](MLIRContext *ctx, mlir::typescript::TypeScriptDialect *dialect) {
+        dialect->addInterfaces<TypeScriptDialectLLVMIRTranslationInterface>();
+    });
 }
 
 void mlir::typescript::registerTypeScriptDialectTranslation(MLIRContext &context)
