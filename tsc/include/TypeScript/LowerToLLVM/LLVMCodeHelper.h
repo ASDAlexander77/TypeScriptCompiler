@@ -16,7 +16,7 @@
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
 #include "mlir/Transforms/DialectConversion.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 #include "llvm/ADT/TypeSwitch.h"
@@ -469,7 +469,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             auto llvmType = typesRange[position];
 
             // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
-            auto itemValue = rewriter.create<mlir::ConstantOp>(loc, llvmType, item);
+            auto itemValue = rewriter.create<mlir::arith::ConstantOp>(loc, llvmType, item);
             structVal = rewriter.create<LLVM::InsertValueOp>(loc, structVal, itemValue, rewriter.getI64ArrayAttr(position++));
         }
 
@@ -559,7 +559,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             else
             {
                 // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
-                auto itemValue = rewriter.create<mlir::ConstantOp>(loc, llvmType, item);
+                auto itemValue = rewriter.create<mlir::arith::ConstantOp>(loc, llvmType, item);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
             }
         }

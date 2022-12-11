@@ -4,7 +4,7 @@
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -40,7 +40,7 @@ class LLVMCodeHelperBase
         auto lastUse = [&](Operation *op) {
             if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
             {
-                if (globalOp.valueAttr() && globalOp.valueAttr().isa<T>())
+                if (globalOp.getValueAttr() && globalOp.getValueAttr().isa<T>())
                 {
                     rewriter.setInsertionPointAfter(globalOp);
                 }
@@ -106,7 +106,7 @@ class LLVMCodeHelperBase
             auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op);
             if (!constantOp)
             {
-                auto constOp = dyn_cast_or_null<mlir::ConstantOp>(op);
+                auto constOp = dyn_cast_or_null<mlir::arith::ConstantOp>(op);
                 if (!constOp)
                 {
                     found = true;

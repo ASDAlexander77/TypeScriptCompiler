@@ -18,7 +18,7 @@
 #include "TypeScript/LowerToLLVM/AnyLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -456,28 +456,28 @@ class CastLogicHelper
 
         if (isInt(inLLVMType) && isFloat(resLLVMType))
         {
-            return rewriter.create<SIToFPOp>(loc, resLLVMType, in);
+            return rewriter.create<mlir::arith::SIToFPOp>(loc, resLLVMType, in);
         }
 
         if (isFloat(inLLVMType) && isInt(resLLVMType))
         {
-            return rewriter.create<FPToSIOp>(loc, resLLVMType, in);
+            return rewriter.create<mlir::arith::FPToSIOp>(loc, resLLVMType, in);
         }
 
         if (isInt(inLLVMType) && isBool(resLLVMType))
         {
-            return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, in, clh.createIConstantOf(inLLVMType.getIntOrFloatBitWidth(), 0));
+            return rewriter.create<mlir::arith::CmpIOp>(loc, arith::CmpIPredicate::ne, in, clh.createIConstantOf(inLLVMType.getIntOrFloatBitWidth(), 0));
         }
 
         if (isFloat(inLLVMType) && isBool(resLLVMType))
         {
-            return rewriter.create<CmpFOp>(loc, CmpFPredicate::ONE, in, clh.createFConstantOf(inLLVMType.getIntOrFloatBitWidth(), 0.0));
+            return rewriter.create<mlir::arith::CmpFOp>(loc, arith::CmpFPredicate::ONE, in, clh.createFConstantOf(inLLVMType.getIntOrFloatBitWidth(), 0.0));
         }
 
         if (inLLVMType.isa<LLVM::LLVMPointerType>() && isBool(resLLVMType))
         {
             auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
-            return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
+            return rewriter.create<mlir::arith::CmpIOp>(loc, arith::CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
         }
 
         if (inLLVMType.isa<LLVM::LLVMPointerType>() && isInt(resLLVMType))
@@ -488,7 +488,7 @@ class CastLogicHelper
         if (inLLVMType.isa<LLVM::LLVMPointerType>() && isFloat(resLLVMType))
         {
             auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
-            return rewriter.create<SIToFPOp>(loc, resLLVMType, intVal);
+            return rewriter.create<mlir::arith::SIToFPOp>(loc, resLLVMType, intVal);
         }
 
         if (isInt(inLLVMType) && resLLVMType.isa<LLVM::LLVMPointerType>())
@@ -498,22 +498,22 @@ class CastLogicHelper
 
         if (isIntOrBool(inLLVMType) && isInt(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() < resLLVMType.getIntOrFloatBitWidth())
         {
-            return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
+            return rewriter.create<LLVM::ZExtOp>(loc, in, resLLVMType);
         }
 
         if (isInt(inLLVMType) && isInt(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() > resLLVMType.getIntOrFloatBitWidth())
         {
-            return rewriter.create<TruncateIOp>(loc, in, resLLVMType);
+            return rewriter.create<LLVM::TruncOp>(loc, in, resLLVMType);
         }
 
         if (isFloat(inLLVMType) && isFloat(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() < resLLVMType.getIntOrFloatBitWidth())
         {
-            return rewriter.create<FPExtOp>(loc, in, resLLVMType);
+            return rewriter.create<LLVM::FPExtOp>(loc, in, resLLVMType);
         }
 
         if (isFloat(inLLVMType) && isFloat(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() > resLLVMType.getIntOrFloatBitWidth())
         {
-            return rewriter.create<FPTruncOp>(loc, in, resLLVMType);
+            return rewriter.create<LLVM::FPTruncOp>(loc, in, resLLVMType);
         }
 
         // ptrs cast

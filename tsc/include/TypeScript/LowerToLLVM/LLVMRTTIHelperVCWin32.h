@@ -235,13 +235,13 @@ class LLVMRTTIHelperVCWin32
             mlir::Value structVal = rewriter.create<LLVM::UndefOp>(loc, rttiTypeDescriptor2Ty);
 
             auto itemValue1 =
-                rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoExtRef));
+                rewriter.create<mlir::arith::ConstantOp>(loc, th.getI8PtrPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoExtRef));
             ch.setStructValue(loc, structVal, itemValue1, 0);
 
             auto itemValue2 = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
             ch.setStructValue(loc, structVal, itemValue2, 1);
 
-            auto itemValue3 = rewriter.create<mlir::ConstantOp>(loc, th.getI8Array(StringRef(typeName).size() + 1),
+            auto itemValue3 = rewriter.create<mlir::arith::ConstantOp>(loc, th.getI8Array(StringRef(typeName).size() + 1),
                                                                 ch.getStringAttrWith0(typeName.str()));
             ch.setStructValue(loc, structVal, itemValue3, 2);
 
@@ -298,17 +298,17 @@ class LLVMRTTIHelperVCWin32
             // begin
             mlir::Value structVal = rewriter.create<LLVM::UndefOp>(loc, ehCatchableTypeTy);
 
-            auto itemValue1 = rewriter.create<mlir::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(1));
+            auto itemValue1 = rewriter.create<mlir::arith::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(1));
             ch.setStructValue(loc, structVal, itemValue1, 0);
 
             // value 2
             auto rttiTypeDescriptor2PtrValue =
-                rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(StringRef(typeName).size()),
+                rewriter.create<mlir::arith::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(StringRef(typeName).size()),
                                                   FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName));
             auto rttiTypeDescriptor2IntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiTypeDescriptor2PtrValue);
 
             auto imageBasePtrValue =
-                rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+                rewriter.create<mlir::arith::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
             auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
             // sub
@@ -320,19 +320,19 @@ class LLVMRTTIHelperVCWin32
             auto itemValue2 = subRes32Value;
             ch.setStructValue(loc, structVal, itemValue2, 1);
 
-            auto itemValue3 = rewriter.create<mlir::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0));
+            auto itemValue3 = rewriter.create<mlir::arith::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0));
             ch.setStructValue(loc, structVal, itemValue3, 2);
 
-            auto itemValue4 = rewriter.create<mlir::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(-1));
+            auto itemValue4 = rewriter.create<mlir::arith::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(-1));
             ch.setStructValue(loc, structVal, itemValue4, 3);
 
-            auto itemValue5 = rewriter.create<mlir::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0));
+            auto itemValue5 = rewriter.create<mlir::arith::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0));
             ch.setStructValue(loc, structVal, itemValue5, 4);
 
-            auto itemValue6 = rewriter.create<mlir::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(8));
+            auto itemValue6 = rewriter.create<mlir::arith::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(8));
             ch.setStructValue(loc, structVal, itemValue6, 5);
 
-            auto itemValue7 = rewriter.create<mlir::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0));
+            auto itemValue7 = rewriter.create<mlir::arith::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(0));
             ch.setStructValue(loc, structVal, itemValue7, 6);
 
             // end
@@ -346,12 +346,12 @@ class LLVMRTTIHelperVCWin32
 
     mlir::Value catchableArrayTypeItem(mlir::Location loc, StringRef catchableTypeRefName)
     {
-        auto rttiCatchableTypePtrValue = rewriter.create<mlir::ConstantOp>(
+        auto rttiCatchableTypePtrValue = rewriter.create<mlir::arith::ConstantOp>(
             loc, getCatchableTypePtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), catchableTypeRefName));
         auto rttiCatchableTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableTypePtrValue);
 
         auto imageBasePtrValue =
-            rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+            rewriter.create<mlir::arith::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
         auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
         // sub
@@ -384,7 +384,7 @@ class LLVMRTTIHelperVCWin32
             // begin
             mlir::Value structVal = rewriter.create<LLVM::UndefOp>(loc, ehCatchableArrayTypeTy);
 
-            auto sizeValue = rewriter.create<mlir::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(arraySize));
+            auto sizeValue = rewriter.create<mlir::arith::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(arraySize));
             ch.setStructValue(loc, structVal, sizeValue, 0);
 
             // value 2
@@ -437,12 +437,12 @@ class LLVMRTTIHelperVCWin32
             rewriter.getArrayAttr({rewriter.getI32IntegerAttr(0), rewriter.getI32IntegerAttr(0), rewriter.getI32IntegerAttr(0)}));
 
         // value 3
-        auto rttiCatchableArrayTypePtrValue = rewriter.create<mlir::ConstantOp>(
+        auto rttiCatchableArrayTypePtrValue = rewriter.create<mlir::arith::ConstantOp>(
             loc, getCatchableArrayTypePtrTy(arraySize), FlatSymbolRefAttr::get(rewriter.getContext(), catchableTypeInfoArrayRef));
         auto rttiCatchableArrayTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableArrayTypePtrValue);
 
         auto imageBasePtrValue =
-            rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+            rewriter.create<mlir::arith::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
         auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
         // sub
@@ -467,7 +467,7 @@ class LLVMRTTIHelperVCWin32
     mlir::Value typeInfoPtrValue(mlir::Location loc)
     {
         auto firstType = types.front();
-        auto typeInfoPtr = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(StringRef(firstType.typeName).size()),
+        auto typeInfoPtr = rewriter.create<mlir::arith::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(StringRef(firstType.typeName).size()),
                                                              FlatSymbolRefAttr::get(rewriter.getContext(), firstType.typeInfoRef));
         return typeInfoPtr;
     }
@@ -475,7 +475,7 @@ class LLVMRTTIHelperVCWin32
     mlir::Value throwInfoPtrValue(mlir::Location loc)
     {
         auto throwInfoPtr =
-            rewriter.create<mlir::ConstantOp>(loc, getThrowInfoPtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), throwInfoRef));
+            rewriter.create<mlir::arith::ConstantOp>(loc, getThrowInfoPtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), throwInfoRef));
         return throwInfoPtr;
     }
 

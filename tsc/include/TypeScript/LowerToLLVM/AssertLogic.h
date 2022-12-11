@@ -12,6 +12,8 @@
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+
 #include "mlir/IR/PatternMatch.h"
 
 using namespace mlir;
@@ -160,7 +162,7 @@ class AssertLogic
 
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes, funcName});
         // rewriter.create<LLVM::UnreachableOp>(loc);
-        rewriter.create<mlir::BranchOp>(loc, unreachable);
+        rewriter.create<mlir::cf::BranchOp>(loc, unreachable);
 
         // Generate assertion test.
         rewriter.setInsertionPointToEnd(opBlock);

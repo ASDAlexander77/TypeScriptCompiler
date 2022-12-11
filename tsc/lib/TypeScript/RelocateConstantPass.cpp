@@ -40,7 +40,7 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
         return seekFirstNonOp(f, [](Operation *op) {
             if (auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op))
                 return true;
-            if (auto constOp = dyn_cast_or_null<mlir::ConstantOp>(op))
+            if (auto constOp = dyn_cast_or_null<mlir::arith::ConstantOp>(op))
                 return true;
             return false;
         });

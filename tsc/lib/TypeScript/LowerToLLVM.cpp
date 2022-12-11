@@ -11,7 +11,6 @@
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
-#include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -787,7 +786,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
             return success();
         }
 
-        rewriter.replaceOpWithNewOp<mlir::ConstantOp>(constantOp, tch.convertType(type), constantOp.value());
+        rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(constantOp, tch.convertType(type), constantOp.value());
         return success();
     }
 };
@@ -800,7 +799,7 @@ struct SymbolRefOpLowering : public TsLlvmPattern<mlir_ts::SymbolRefOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeConverterHelper tch(getTypeConverter());
-        rewriter.replaceOpWithNewOp<mlir::ConstantOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()),
+        rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()),
                                                       symbolRefOp.identifierAttr());
         return success();
     }
@@ -4812,7 +4811,7 @@ static LogicalResult verifyAlloca(mlir::Block *block)
 
             // check only alloca with const size
             auto sizeOp = alloca.arraySize().getDefiningOp();
-            if (!isa<mlir_ts::ConstantOp>(sizeOp) && !isa<mlir::ConstantOp>(sizeOp))
+            if (!isa<mlir_ts::ConstantOp>(sizeOp) && !isa<mlir::arith::ConstantOp>(sizeOp))
             {
                 return;
             }
