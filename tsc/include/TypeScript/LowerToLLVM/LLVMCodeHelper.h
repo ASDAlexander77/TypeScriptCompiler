@@ -192,7 +192,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 rewriter.create<LLVM::StoreOp>(location, value, addrToSave);
             }
 
-            rewriter.replaceOpWithNewOp<mlir::ReturnOp>(lastBlock->getTerminator());
+            rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(lastBlock->getTerminator());
 
             rewriter.eraseBlock(&newFuncOp.getBody().back());
 

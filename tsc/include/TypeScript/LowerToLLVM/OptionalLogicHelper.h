@@ -12,7 +12,6 @@
 
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Builders.h"
-#include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 #include "scanner_enums.h"

@@ -2660,7 +2660,7 @@ struct GlobalResultOpLowering : public TsLlvmPattern<mlir_ts::GlobalResultOp>
     {
         Adaptor transformed(operands);
 
-        rewriter.replaceOpWithNewOp<mlir::ReturnOp>(globalResultOp, transformed.results());
+        rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(globalResultOp, transformed.results());
         return success();
     }
 };

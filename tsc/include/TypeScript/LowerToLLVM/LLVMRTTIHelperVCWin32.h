@@ -116,7 +116,7 @@ class LLVMRTTIHelperVCWin32
         auto name = "__CxxFrameHandler3";
         auto cxxFrameHandler3 = ch.getOrInsertFunction(name, th.getFunctionType(th.getI32Type(), {}, true));
 
-        newFuncOp->setAttr(rewriter.getIdentifier("personality"), FlatSymbolRefAttr::get(rewriter.getContext(), name));
+        newFuncOp->setAttr(StringAttr::get(rewriter.getContext(), "personality"), FlatSymbolRefAttr::get(rewriter.getContext(), name));
         return success();
     }
 
