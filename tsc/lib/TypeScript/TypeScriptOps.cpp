@@ -813,22 +813,6 @@ LogicalResult verify(mlir_ts::InvokeOp op)
     return success();
 }
 
-Optional<MutableOperandRange> mlir_ts::InvokeOp::getMutableSuccessorOperands(unsigned index)
-{
-    assert(index < getNumSuccessors() && "invalid successor index");
-    return index == 0 ? normalDestOperandsMutable() : unwindDestOperandsMutable();
-}
-
-//===----------------------------------------------------------------------===//
-// InvokeHybridOp
-//===----------------------------------------------------------------------===//
-
-Optional<MutableOperandRange> mlir_ts::InvokeHybridOp::getMutableSuccessorOperands(unsigned index)
-{
-    assert(index < getNumSuccessors() && "invalid successor index");
-    return index == 0 ? normalDestOperandsMutable() : unwindDestOperandsMutable();
-}
-
 //===----------------------------------------------------------------------===//
 // AssertOp
 //===----------------------------------------------------------------------===//
@@ -853,7 +837,7 @@ struct EraseRedundantAssertions : public OpRewritePattern<mlir_ts::AssertOp>
 };
 } // namespace
 
-void mlir_ts::AssertOp::getCanonicalizationPatterns(OwningRewritePatternList &patterns, MLIRContext *context)
+void mlir_ts::AssertOp::getCanonicalizationPatterns(RewritePatternSet &patterns, MLIRContext *context)
 {
     patterns.insert<EraseRedundantAssertions>(context);
 }
@@ -878,7 +862,7 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
     }
 
     // Verify that the operand and result types match the callee.
-    auto fnType = fn.getType();
+    auto fnType = fn.getFunctionType();
 
     auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
     for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
@@ -1079,7 +1063,7 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
 };
 } // end anonymous namespace.
 
-void mlir_ts::CallIndirectOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::CallIndirectOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<SimplifyIndirectCallWithKnownCallee>(context);
 }
@@ -1210,7 +1194,7 @@ void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attri
 
 OperandRange mlir_ts::WhileOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
-    assert(index == 0 && "WhileOp is expected to branch only to the first region");
+    assert((!index || *index == 0) && "WhileOp is expected to branch only to the first region");
 
     return inits();
 }
@@ -1243,7 +1227,7 @@ void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<At
 
 OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
-    assert(index == 0 && "DoWhileOp is expected to branch only to the first region");
+    assert((!index || *index == 0) && "DoWhileOp is expected to branch only to the first region");
 
     return inits();
 }
@@ -1276,7 +1260,7 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<
 
 OperandRange mlir_ts::ForOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
-    assert(index == 0 && "ForOp is expected to branch only to the first region");
+    assert((!index || *index == 0) && "ForOp is expected to branch only to the first region");
 
     return inits();
 }
@@ -1427,7 +1411,7 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
 };
 } // namespace
 
-void mlir_ts::IfOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::IfOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert</*RemoveUnusedResults,*/ RemoveStaticCondition>(context);
 }
@@ -1457,7 +1441,7 @@ void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type t
 
 OperandRange mlir_ts::TryOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
-    assert(index == 0 && "TryOp is expected to branch only to the first region");
+    assert((!index || *index == 0) && "TryOp is expected to branch only to the first region");
 
     return getODSOperands(0);
 }
@@ -1502,7 +1486,7 @@ void mlir_ts::LabelOp::addMergeBlock()
 
 OperandRange mlir_ts::BodyInternalOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
-    assert(index == 0 && "BodyInternalOp is expected to branch only to the first region");
+    assert((!index || *index == 0) && "BodyInternalOp is expected to branch only to the first region");
 
     return getODSOperands(0);
 }
