@@ -144,8 +144,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             {
                 setStructWritingPoint(global);
 
-                rewriter.inlineRegionBefore(initRegion, &global.initializer().back());
-                rewriter.eraseBlock(&global.initializer().back());
+                rewriter.inlineRegionBefore(initRegion, &global.getInitializer().back());
+                rewriter.eraseBlock(&global.getInitializer().back());
             }
 
             return success();
