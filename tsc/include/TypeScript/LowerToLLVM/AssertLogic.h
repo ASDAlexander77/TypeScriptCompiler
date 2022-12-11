@@ -100,7 +100,7 @@ class AssertLogic
 
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes});
         // rewriter.create<LLVM::UnreachableOp>(loc);
-        rewriter.create<mlir::BranchOp>(loc, unreachable);
+        rewriter.create<mlir::cf::BranchOp>(loc, unreachable);
 
         // Generate assertion test.
         rewriter.setInsertionPointToEnd(opBlock);

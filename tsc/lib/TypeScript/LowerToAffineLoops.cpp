@@ -95,7 +95,7 @@ struct ExitOpLowering : public TsPattern<mlir_ts::ExitOp>
 
         auto retBlock = tsContext->returnBlock;
 
-        rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+        rewriter.create<mlir::cfBranchOp>(op.getLoc(), retBlock);
 
         rewriter.eraseOp(op);
         return success();
@@ -124,7 +124,7 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        rewriter.create<mlir::BranchOp>(loc, retBlock);
+        rewriter.create<mlir::cf::BranchOp>(loc, retBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
 
@@ -159,7 +159,7 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        rewriter.create<mlir::BranchOp>(loc, retBlock);
+        rewriter.create<mlir::cf::BranchOp>(loc, retBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
 
@@ -1623,7 +1623,7 @@ void cleanupEmptyBlocksWithoutPredecessors(mlir_ts::FuncOp f)
             if (regionBlock.getPredecessors().empty())
             {
                 auto count = std::distance(regionBlock.begin(), regionBlock.end());
-                if (count == 0 || count == 1 && (isa<mlir::BranchOp>(regionBlock.begin()) ||
+                if (count == 0 || count == 1 && (isa<mlir::cf::BranchOp>(regionBlock.begin()) ||
                                                  isa<mlir_ts::UnreachableOp>(regionBlock.begin())))
                 {
                     workSet.insert(&regionBlock);

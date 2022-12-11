@@ -4975,7 +4975,7 @@ class MLIRGenImpl
 
             auto conditionI1 = cast(location, builder.getI1Type(), condition, genContext);
 
-            auto condBranchOp = builder.create<mlir::CondBranchOp>(location, conditionI1, mergeBlock,
+            auto condBranchOp = builder.create<mlir::cf::CondBranchOp>(location, conditionI1, mergeBlock,
                                                                    /*trueArguments=*/mlir::ValueRange{},
                                                                    defaultBlock ? defaultBlock : mergeBlock,
                                                                    /*falseArguments=*/mlir::ValueRange{});
@@ -4991,7 +4991,7 @@ class MLIRGenImpl
 
             // this is first default and there is more conditions
             // add jump to first condition
-            auto branchOp = builder.create<mlir::BranchOp>(location, mergeBlock);
+            auto branchOp = builder.create<mlir::cf::BranchOp>(location, mergeBlock);
 
             previousConditionOrFirstBranchOp = branchOp;
         }
@@ -5056,7 +5056,7 @@ class MLIRGenImpl
             }
 
             // exit;
-            auto branchOp = builder.create<mlir::BranchOp>(location, mergeBlock);
+            auto branchOp = builder.create<mlir::cf::BranchOp>(location, mergeBlock);
             if (!hasBreak && !isDefaultCase)
             {
                 pendingBranches.push_back(branchOp);
@@ -5090,8 +5090,8 @@ class MLIRGenImpl
 
         auto &clauses = switchStatementAST->caseBlock->clauses;
 
-        SmallVector<mlir::CondBranchOp> pendingConditions;
-        SmallVector<mlir::BranchOp> pendingBranches;
+        SmallVector<mlir::cf::CondBranchOp> pendingConditions;
+        SmallVector<mlir::cf::BranchOp> pendingBranches;
         mlir::Operation *previousConditionOrFirstBranchOp = nullptr;
         mlir::Block *defaultBlock = nullptr;
 

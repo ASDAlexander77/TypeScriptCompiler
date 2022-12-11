@@ -2972,7 +2972,7 @@ struct UnreachableOpLowering : public TsLlvmPattern<mlir_ts::UnreachableOp>
 
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
-        rewriter.replaceOpWithNewOp<mlir::BranchOp>(unreachableOp, unreachable);
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(unreachableOp, unreachable);
 
         // no need for cut if this is last op in block
         auto terminator = rewriter.getInsertionBlock()->getTerminator();
