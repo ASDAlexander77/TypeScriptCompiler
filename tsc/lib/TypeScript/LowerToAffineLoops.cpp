@@ -17,6 +17,9 @@
 #include "TypeScript/LowerToLLVMLogic.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Async/IR/Async.h"
 #include "mlir/Pass/Pass.h"
@@ -1510,7 +1513,9 @@ struct TypeScriptToAffineLoweringTSFuncPass : public PassWrapper<TypeScriptToAff
 {
     void getDependentDialects(DialectRegistry &registry) const override
     {
-        registry.insert<StandardOpsDialect>();
+        registry.insert<arith::ArithmeticDialect>();
+        registry.insert<cf::ControlFlowDialect>();
+        registry.insert<func::FuncDialect>();
     }
 
     void runOnFunction() final;
@@ -1521,14 +1526,16 @@ struct TypeScriptToAffineLoweringTSFuncPass : public PassWrapper<TypeScriptToAff
 
 namespace
 {
-struct TypeScriptToAffineLoweringFuncPass : public PassWrapper<TypeScriptToAffineLoweringFuncPass, FunctionPass>
+struct TypeScriptToAffineLoweringFuncPass : public PassWrapper<TypeScriptToAffineLoweringFuncPass, OperationPass<func::FuncOp>>
 {
     void getDependentDialects(DialectRegistry &registry) const override
     {
-        registry.insert<StandardOpsDialect>();
+        registry.insert<arith::ArithmeticDialect>();
+        registry.insert<cf::ControlFlowDialect>();
+        registry.insert<func::FuncDialect>();
     }
 
-    void runOnFunction() final;
+    void runOnOperation() final;
 
     TSContext tsContext;
 };
@@ -1540,7 +1547,9 @@ struct TypeScriptToAffineLoweringModulePass : public PassWrapper<TypeScriptToAff
 {
     void getDependentDialects(DialectRegistry &registry) const override
     {
-        registry.insert<StandardOpsDialect>();
+        registry.insert<arith::ArithmeticDialect>();
+        registry.insert<cf::ControlFlowDialect>();
+        registry.insert<func::FuncDialect>();
     }
 
     void runOnOperation() final;
@@ -1646,7 +1655,9 @@ void AddTsAffineLegalOps(ConversionTarget &target)
     // We define the specific operations, or dialects, that are legal targets for
     // this lowering. In our case, we are lowering to a combination of the
     // `Affine` and `Standard` dialects.
-    target.addLegalDialect<StandardOpsDialect>();
+    target.addLegalDialect<arith::ArithmeticDialect>();
+    target.addLegalDialect<cf::ControlFlowDialect>();
+    target.addLegalDialect<func::FuncDialect>();
 
     // We also define the TypeScript dialect as Illegal so that the conversion will fail
     // if any of these operations are *not* converted. Given that we actually want
@@ -1707,7 +1718,7 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
         auto voidType = mlir_ts::VoidType::get(function.getContext());
         // Verify that the given main has no inputs and results.
         if (function.getNumArguments() ||
-            llvm::any_of(function.getType().getResults(), [&](mlir::Type type) { return type != voidType; }))
+            llvm::any_of(function.getFunctionType().getResults(), [&](mlir::Type type) { return type != voidType; }))
         {
             function.emitError("expected 'main' to have 0 inputs and 0 results");
             return signalPassFailure();
@@ -1740,9 +1751,9 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
     LLVM_DEBUG(verifyFunction(function););
 }
 
-void TypeScriptToAffineLoweringFuncPass::runOnFunction()
+void TypeScriptToAffineLoweringFuncPass::runOnOperation()
 {
-    auto function = getFunction();
+    auto function = getOperation();
 
     // The first thing to define is the conversion target. This will define the
     // final target for this lowering.
