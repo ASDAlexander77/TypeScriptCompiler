@@ -6543,7 +6543,7 @@ class MLIRGenImpl
 
             auto methodInfo = classInfo->methods[methodIndex];
             auto funcOp = methodInfo.funcOp;
-            auto effectiveFuncType = funcOp.getType();
+            auto effectiveFuncType = funcOp.getFunctionType();
 
             if (methodInfo.isStatic)
             {
@@ -6634,7 +6634,7 @@ class MLIRGenImpl
             mlir::Type effectiveFuncType;
             if (getFuncOp)
             {
-                auto funcType = getFuncOp.getType().dyn_cast<mlir_ts::FunctionType>();
+                auto funcType = getFuncOp.getFunctionType().dyn_cast<mlir_ts::FunctionType>();
                 if (funcType.getNumResults() > 0)
                 {
                     effectiveFuncType = funcType.getResult(0);
@@ -6644,7 +6644,7 @@ class MLIRGenImpl
             if (!effectiveFuncType && setFuncOp)
             {
                 effectiveFuncType =
-                    setFuncOp.getType().dyn_cast<mlir_ts::FunctionType>().getInput(accessorInfo.isStatic ? 0 : 1);
+                    setFuncOp.getFunctionType().dyn_cast<mlir_ts::FunctionType>().getInput(accessorInfo.isStatic ? 0 : 1);
             }
 
             if (!effectiveFuncType)
@@ -8644,7 +8644,7 @@ class MLIRGenImpl
 
             // fix this parameter type (taking in account that first type can be captured type)
             auto funcName = funcOp.getName().str();
-            auto funcType = funcOp.getType();
+            auto funcType = funcOp.getFunctionType();
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType: " << funcType << "\n";);
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType - This: " << funcGenContext.thisType << "\n";);
@@ -9129,7 +9129,7 @@ class MLIRGenImpl
         if (fn != getFunctionMap().end())
         {
             auto funcOp = fn->getValue();
-            auto funcType = funcOp.getType();
+            auto funcType = funcOp.getFunctionType();
             auto funcName = funcOp.getName();
 
             return resolveFunctionWithCapture(location, funcName, funcType, false, false, genContext);
@@ -9604,7 +9604,7 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " value attr: " << enumValueAttr << "\n");
 
-            enumValues.push_back({mlir::Identifier::get(memberNamePtr, builder.getContext()), enumValueAttr});
+            enumValues.push_back({getStringAttr(memberNamePtr.str()), enumValueAttr});
             index++;
         }
 
@@ -9659,7 +9659,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(ClassDeclaration classDeclarationAST, const GenContext &genContext)
     {
         mlir::OpBuilder::InsertionGuard guard(builder);
-        builder.setInsertionPointToStart(&theModule.body().front());
+        builder.setInsertionPointToStart(theModule.getBody());
 
         auto value = mlirGen(classDeclarationAST.as<ClassLikeDeclaration>(), genContext);
         return std::get<0>(value);
@@ -9672,7 +9672,7 @@ class MLIRGenImpl
         // go to root
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
-            builder.setInsertionPointToStart(&theModule.body().front());
+            builder.setInsertionPointToStart(theModule.getBody());
 
             auto [result, fullNameRet] = mlirGen(classExpressionAST.as<ClassLikeDeclaration>(), genContext);
             if (mlir::failed(result))
@@ -9766,7 +9766,7 @@ class MLIRGenImpl
         if (isGenericClass)
         {
             savePoint = builder.saveInsertionPoint();
-            builder.setInsertionPointToStart(&theModule.body().front());
+            builder.setInsertionPointToStart(theModule.getBody());
         }
 
         // prepare VTable
@@ -11069,7 +11069,7 @@ genContext);
                     return emptyMethod;
                 }
 
-                auto foundMethodFunctionType = foundMethodPtr->funcOp.getType().cast<mlir_ts::FunctionType>();
+                auto foundMethodFunctionType = foundMethodPtr->funcOp.getFunctionType().cast<mlir_ts::FunctionType>();
 
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
@@ -11128,7 +11128,7 @@ genContext);
                     else
                     {
                         auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
-                            location, methodOrField.methodInfo.funcOp.getType(),
+                            location, methodOrField.methodInfo.funcOp.getFunctionType(),
                             mlir::FlatSymbolRefAttr::get(builder.getContext(),
                                                          methodOrField.methodInfo.funcOp.sym_name()));
 
@@ -11224,7 +11224,7 @@ genContext);
             else
             {
                 fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name),
-                                  vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getType()
+                                  vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getFunctionType()
                                                                  : vtableRecord.methodInfo.funcType});
             }
         }
@@ -11249,7 +11249,7 @@ genContext);
                 if (!vtableRecord.isStaticField)
                 {
                     fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name),
-                                      vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getType()
+                                      vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getFunctionType()
                                                                      : vtableRecord.methodInfo.funcType});
                 }
                 else
@@ -11322,7 +11322,7 @@ genContext);
                         if (!vtRecord.isStaticField)
                         {
                             methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
-                                location, vtRecord.methodInfo.funcOp.getType(),
+                                location, vtRecord.methodInfo.funcOp.getFunctionType(),
                                 mlir::FlatSymbolRefAttr::get(builder.getContext(),
                                                              vtRecord.methodInfo.funcOp.sym_name()));
                         }
@@ -11423,7 +11423,7 @@ genContext);
             if (newClassPtr->getMethodIndex(methodName) < 0)
             {
                 methodInfos.push_back(
-                    {methodName, funcOp.getType(), funcOp, isStatic, isAbstract || isVirtual, isAbstract, -1});
+                    {methodName, funcOp.getFunctionType(), funcOp, isStatic, isAbstract || isVirtual, isAbstract, -1});
             }
 
             if (propertyName.size() > 0)
