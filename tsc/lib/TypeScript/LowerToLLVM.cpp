@@ -900,7 +900,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                                           ArrayRef<NamedAttribute>{}, argDictAttrs);
         for (const auto &namedAttr : funcOp->getAttrs())
         {
-            if (namedAttr.first == function_like_impl::getTypeAttrName())
+            if (namedAttr.first == function_interface_impl::getTypeAttrName())
             {
                 continue;
             }

@@ -650,7 +650,7 @@ mlir::Block *mlir_ts::FuncOp::addEntryBlock()
     mlir_ts::FunctionType type = getFunctionType();
     for (unsigned i = 0, e = type.getNumParams(); i < e; ++i)
     {
-        entry->addArgument(type.getParamType(i));
+        entry->addArgument(type.getParamType(i), getLoc());
     }
 
     return entry;
@@ -686,7 +686,7 @@ void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef
     }
 
     assert(type.getNumInputs() == argAttrs.size());
-    function_like_impl::addArgAndResultAttrs(builder, state, argAttrs, /*resultAttrs=*/llvm::None);
+    function_interface_impl::addArgAndResultAttrs(builder, state, argAttrs, /*resultAttrs=*/llvm::None);
 }
 
 /// Clone the internal blocks from this function into dest and all attributes
