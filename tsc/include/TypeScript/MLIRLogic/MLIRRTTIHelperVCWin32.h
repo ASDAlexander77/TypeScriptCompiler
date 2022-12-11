@@ -287,7 +287,7 @@ class MLIRRTTIHelperVCWin32
         }
 
         SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({IDENT("Linkage"), ATTR("External")});
+        attrs.push_back({ATTR("Linkage"), ATTR("External")});
 
         rewriter.create<mlir_ts::GlobalOp>(loc, mth.getOpaqueType(), true, /*LLVM::Linkage::External,*/ name, mlir::Attribute{}, attrs);
         return mlir::success();
@@ -332,7 +332,7 @@ class MLIRRTTIHelperVCWin32
         auto rttiTypeDescriptor2Ty = getRttiTypeDescriptor2Ty(StringRef(typeName).size());
 
         SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({IDENT("Linkage"), ATTR("LinkonceODR")});
+        attrs.push_back({ATTR("Linkage"), ATTR("LinkonceODR")});
 
         auto _r0n_Value = rewriter.create<mlir_ts::GlobalOp>(loc, rttiTypeDescriptor2Ty, false, /*LLVM::Linkage::LinkonceODR,*/ name,
                                                              mlir::Attribute{}, attrs);
@@ -372,7 +372,7 @@ class MLIRRTTIHelperVCWin32
         }
 
         SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({IDENT("Linkage"), ATTR("External")});
+        attrs.push_back({ATTR("Linkage"), ATTR("External")});
 
         rewriter.create<mlir_ts::GlobalOp>(loc, mth.getI8Type(), true, /*LLVM::Linkage::External,*/ name, mlir::Attribute{}, attrs);
         return mlir::success();
@@ -400,7 +400,7 @@ class MLIRRTTIHelperVCWin32
         auto ehCatchableTypeTy = getCatchableTypeTy();
 
         SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({IDENT("Linkage"), ATTR("LinkonceODR")});
+        attrs.push_back({ATTR("Linkage"), ATTR("LinkonceODR")});
 
         auto _ct_r0n_Value = rewriter.create<mlir_ts::GlobalOp>(loc, ehCatchableTypeTy, true, /*LLVM::Linkage::LinkonceODR,*/ name,
                                                                 mlir::Attribute{}, attrs);
@@ -494,7 +494,7 @@ class MLIRRTTIHelperVCWin32
         auto ehCatchableArrayTypeTy = getCatchableArrayTypeTy(arraySize);
 
         SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({IDENT("Linkage"), ATTR("LinkonceODR")});
+        attrs.push_back({ATTR("Linkage"), ATTR("LinkonceODR")});
 
         auto _cta1nValue = rewriter.create<mlir_ts::GlobalOp>(loc, ehCatchableArrayTypeTy, true, /*LLVM::Linkage::LinkonceODR,*/ name,
                                                               mlir::Attribute{}, attrs);
@@ -568,7 +568,7 @@ class MLIRRTTIHelperVCWin32
         auto throwInfoTy = getThrowInfoTy();
 
         SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({IDENT("Linkage"), ATTR("LinkonceODR")});
+        attrs.push_back({ATTR("Linkage"), ATTR("LinkonceODR")});
 
         auto _TI1NValue =
             rewriter.create<mlir_ts::GlobalOp>(loc, throwInfoTy, true, /*LLVM::Linkage::LinkonceODR,*/ name, mlir::Attribute{}, attrs);

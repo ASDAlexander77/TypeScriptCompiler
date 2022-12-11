@@ -7,7 +7,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 
 #include "mlir/IR/PatternMatch.h"

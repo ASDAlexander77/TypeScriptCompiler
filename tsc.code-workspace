@@ -146,7 +146,8 @@
             "forward_list": "cpp",
             "charconv": "cpp",
             "format": "cpp",
-            "ranges": "cpp"
+            "ranges": "cpp",
+            "span": "cpp"
         },
         "cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
         "cmake.sourceDirectory": "${workspaceFolder}/..",

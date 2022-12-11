@@ -42,10 +42,9 @@
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Verifier.h"
 
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
-#include "mlir/Dialect/SCF/SCF.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/Diagnostics.h"
 #ifdef ENABLE_ASYNC
 #include "mlir/Dialect/Async/IR/Async.h"
@@ -1369,21 +1368,21 @@ class MLIRGenImpl
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! fixing arrow func: " << arrowFuncName << " type: ["
-                                    << arrowFuncOp.getType() << "\n";);
+                                    << arrowFuncOp.getFunctionType() << "\n";);
 
             // fix symbolref
-            currValue.setType(arrowFuncOp.getType());
+            currValue.setType(arrowFuncOp.getFunctionType());
 
             if (createBoundFunctionOp)
             {
                 // fix create bound if any
                 TypeSwitch<mlir::Type>(createBoundFunctionOp.getType())
                     .template Case<mlir_ts::BoundFunctionType>([&](auto boundFunc) {
-                        arrowFunctionRefValue.setType(getBoundFunctionType(arrowFuncOp.getType()));
+                        arrowFunctionRefValue.setType(getBoundFunctionType(arrowFuncOp.getFunctionType()));
                     })
                     .template Case<mlir_ts::HybridFunctionType>([&](auto hybridFuncType) {
                         arrowFunctionRefValue.setType(
-                            mlir_ts::HybridFunctionType::get(builder.getContext(), arrowFuncOp.getType()));
+                            mlir_ts::HybridFunctionType::get(builder.getContext(), arrowFuncOp.getFunctionType()));
                     })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
             }
@@ -1698,9 +1697,9 @@ class MLIRGenImpl
                     if (isDelayedInstantiationForSpeecializedArrowFunctionReference(op))
                     {
                         LLVM_DEBUG(llvm::dbgs() << "\n!! delayed arrow func instantiation for func type: "
-                                                << funcOp.getType() << "\n";);
+                                                << funcOp.getFunctionType() << "\n";);
                         auto result = instantiateSpecializedArrowFunctionHelper(
-                            location, op, funcOp.getType().getInput(opIndex), genContext);
+                            location, op, funcOp.getFunctionType().getInput(opIndex), genContext);
                         if (mlir::failed(result))
                         {
                             return {mlir::failure(), mlir_ts::FunctionType(), ""};
@@ -1708,7 +1707,7 @@ class MLIRGenImpl
                     }
                 }
 
-                return {mlir::success(), funcOp.getType(), funcOp.getName().str()};
+                return {mlir::success(), funcOp.getFunctionType(), funcOp.getName().str()};
             }
 
             if (!genContext.allowPartialResolve)
@@ -1749,7 +1748,7 @@ class MLIRGenImpl
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! func name: " << funcProto->getName()
-                                << ", Op type (resolving from operands): " << funcOp.getType() << "\n";);
+                                << ", Op type (resolving from operands): " << funcOp.getFunctionType() << "\n";);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! func args: "; auto index = 0; for (auto argInfo
                                                                             : funcProto->getArgs()) {
@@ -2137,7 +2136,7 @@ class MLIRGenImpl
                 if (isExternal)
                 {
                     attrs.push_back(
-                        {mlir::Identifier::get("Linkage", builder.getContext()), builder.getStringAttr("External")});
+                        {builder.getStringAttr("Linkage"), builder.getStringAttr("External")});
                 }
 
                 globalOp = builder.create<mlir_ts::GlobalOp>(location,
@@ -2841,7 +2840,7 @@ class MLIRGenImpl
         auto funcIt = getFunctionMap().find(name);
         if (funcIt != getFunctionMap().end())
         {
-            auto cachedFuncType = funcIt->second.getType();
+            auto cachedFuncType = funcIt->second.getFunctionType();
             if (cachedFuncType.getNumResults() > 0)
             {
                 auto returnType = cachedFuncType.getResult(0);
@@ -3128,7 +3127,7 @@ class MLIRGenImpl
             }
         }
 
-        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, false, genContext);
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), false, false, genContext);
     }
 
     ValueOrLogicalResult mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
@@ -3182,7 +3181,7 @@ class MLIRGenImpl
 
         assert(funcOp);
 
-        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, isGeneric, genContext);
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), false, isGeneric, genContext);
     }
 
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionGenerator(
@@ -3363,7 +3362,7 @@ class MLIRGenImpl
         if (isGenericFunction)
         {
             savePoint = builder.saveInsertionPoint();
-            builder.setInsertionPointToStart(&theModule.body().front());
+            builder.setInsertionPointToStart(theModule.getBody());
         }
 
         auto location = loc(functionLikeDeclarationBaseAST);
@@ -3442,16 +3441,16 @@ class MLIRGenImpl
         {
             getFunctionMap().insert({name, funcOp});
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << "\n";);
             LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " full name: " << funcProto->getName()
-                                    << " num inputs:" << funcOp.getType().cast<mlir_ts::FunctionType>().getNumInputs()
+                                    << " num inputs:" << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs()
                                     << "\n";);
         }
         else
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getFunctionType() << "\n";);
             LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " num inputs:"
-                                    << funcOp.getType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
+                                    << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
         }
 
         if (isGenericFunction)
@@ -4901,8 +4900,8 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenSwitchCase(mlir::Location location, Expression switchExpr, mlir::Value switchValue,
                                           NodeArray<ts::CaseOrDefaultClause> &clauses, int index,
                                           mlir::Block *mergeBlock, mlir::Block *&defaultBlock,
-                                          SmallVector<mlir::CondBranchOp> &pendingConditions,
-                                          SmallVector<mlir::BranchOp> &pendingBranches,
+                                          SmallVector<mlir::cf::CondBranchOp> &pendingConditions,
+                                          SmallVector<mlir::cf::BranchOp> &pendingBranches,
                                           mlir::Operation *&previousConditionOrFirstBranchOp,
                                           std::function<void(Expression, mlir::Value)> extraCode,
                                           const GenContext &genContext)
@@ -4929,13 +4928,13 @@ class MLIRGenImpl
         }
 
         auto setPreviousCondOrJumpOp = [&](mlir::Operation *jump, mlir::Block *where) {
-            if (auto condOp = dyn_cast<mlir::CondBranchOp>(jump))
+            if (auto condOp = dyn_cast<mlir::cf::CondBranchOp>(jump))
             {
                 condOp->setSuccessor(where, falseIndex);
                 return;
             }
 
-            if (auto branchOp = dyn_cast<mlir::BranchOp>(jump))
+            if (auto branchOp = dyn_cast<mlir::cf::BranchOp>(jump))
             {
                 branchOp.setDest(where);
                 return;
