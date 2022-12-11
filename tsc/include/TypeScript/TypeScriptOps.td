@@ -257,7 +257,7 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttr:$type,
+                       TypeAttrOf<TypeScript_Callable>:$function_type,
                        OptionalAttr<StrAttr>:$sym_visibility,
                        OptionalAttr<BoolAttr>:$personality);
   let regions = (region AnyRegion:$body);
@@ -276,13 +276,13 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
                          ArrayRef<NamedAttribute> attrs,
                          ArrayRef<DictionaryAttr> argAttrs);
 
-    FunctionType getType() {
-      return (*this)->getAttrOfType<TypeAttr>(getTypeAttrName())
-          .getValue().cast<FunctionType>();
+    FunctionType getFunctionType() {
+        auto attr = getFunctionTypeAttr();
+        return attr.getValue().cast<FunctionType>();
     }
-    
+
     bool isVarArg() {
-     return getType().isVarArg();
+     return getFunctionType().isVarArg();
     }
 
     /// Create a deep copy of this function and all of its blocks, remapping any
@@ -312,7 +312,7 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
 
     /// Returns the results types that the callable region produces when
     /// executed.
-    ArrayRef<Type> getCallableResults() { return getType().getResults(); }
+    ArrayRef<Type> getCallableResults() { return getFunctionType().getResults(); }
 
     //===------------------------------------------------------------------===//
     // SymbolOpInterface Methods
@@ -322,29 +322,24 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
 
     /// Returns the number of arguments. This is a hook for
     /// OpTrait::FunctionLike.
-    unsigned getNumFuncArguments() { return getType().getInputs().size(); }
+    unsigned getNumFuncArguments() { return getFunctionType().getInputs().size(); }
 
     /// Returns the number of results. This is a hook for OpTrait::FunctionLike.
-    unsigned getNumFuncResults() { return getType().getResults().size(); }
+    unsigned getNumFuncResults() { return getFunctionType().getResults().size(); }
 
-    /// Hook for OpTrait::FunctionLike, called after verifying that the 'type'
-    /// attribute is present and checks if it holds a function type. Ensures
-    /// getType, getNumFuncArguments, and getNumFuncResults can be called
-    /// safely.
-    LogicalResult verifyType() {
-        auto type = getFunctionTypeAttr().getValue().dyn_cast_or_null<FunctionType>();
-        if (!type)
-            return emitOpError("requires '" + getTypeAttrName() +
-                            "' attribute of function type");
+    //===------------------------------------------------------------------===//
+    // FunctionOpInterface Methods
+    //===------------------------------------------------------------------===//
 
-        return success();
-    }
+    /// Returns the argument types of this function.
+    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+
+    /// Returns the result types of this function.
+    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
   }];
 
-  let hasVerifier = 1;
-
   let assemblyFormat =
-      [{ $sym_name $type attr-dict $body }];
+      [{ $sym_name $function_type attr-dict $body }];
 }
 
 def TypeScript_NullOp : TypeScript_Op<"Null", []> {

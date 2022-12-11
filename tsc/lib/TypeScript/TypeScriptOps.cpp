@@ -650,6 +650,79 @@ void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef
     function_like_impl::addArgAndResultAttrs(builder, state, argAttrs, /*resultAttrs=*/llvm::None);
 }
 
+/// Clone the internal blocks from this function into dest and all attributes
+/// from this function to dest.
+void mlir_ts::FuncOp::cloneInto(FuncOp dest, BlockAndValueMapping &mapper)
+{
+    // Add the attributes of this function to dest.
+    llvm::MapVector<StringAttr, Attribute> newAttrMap;
+    for (const auto &attr : dest->getAttrs())
+        newAttrMap.insert({attr.getName(), attr.getValue()});
+    for (const auto &attr : (*this)->getAttrs())
+        newAttrMap.insert({attr.getName(), attr.getValue()});
+
+    auto newAttrs = llvm::to_vector(llvm::map_range(newAttrMap, [](std::pair<StringAttr, Attribute> attrPair) {
+        return NamedAttribute(attrPair.first, attrPair.second);
+    }));
+    dest->setAttrs(DictionaryAttr::get(getContext(), newAttrs));
+
+    // Clone the body.
+    getBody().cloneInto(&dest.getBody(), mapper);
+}
+
+/// Create a deep copy of this function and all of its blocks, remapping
+/// any operands that use values outside of the function using the map that is
+/// provided (leaving them alone if no entry is present). Replaces references
+/// to cloned sub-values with the corresponding value that is copied, and adds
+/// those mappings to the mapper.
+FuncOp mlir_ts::FuncOp::clone(BlockAndValueMapping &mapper)
+{
+    // Create the new function.
+    FuncOp newFunc = cast<FuncOp>(getOperation()->cloneWithoutRegions());
+
+    // If the function has a body, then the user might be deleting arguments to
+    // the function by specifying them in the mapper. If so, we don't add the
+    // argument to the input type vector.
+    if (!isExternal())
+    {
+        FunctionType oldType = getFunctionType();
+
+        unsigned oldNumArgs = oldType.getNumInputs();
+        SmallVector<Type, 4> newInputs;
+        newInputs.reserve(oldNumArgs);
+        for (unsigned i = 0; i != oldNumArgs; ++i)
+            if (!mapper.contains(getArgument(i)))
+                newInputs.push_back(oldType.getInput(i));
+
+        /// If any of the arguments were dropped, update the type and drop any
+        /// necessary argument attributes.
+        if (newInputs.size() != oldNumArgs)
+        {
+            newFunc.setType(FunctionType::get(oldType.getContext(), newInputs, oldType.getResults()));
+
+            if (ArrayAttr argAttrs = getAllArgAttrs())
+            {
+                SmallVector<Attribute> newArgAttrs;
+                newArgAttrs.reserve(newInputs.size());
+                for (unsigned i = 0; i != oldNumArgs; ++i)
+                    if (!mapper.contains(getArgument(i)))
+                        newArgAttrs.push_back(argAttrs[i]);
+                newFunc.setAllArgAttrs(newArgAttrs);
+            }
+        }
+    }
+
+    /// Clone the current function into the new one and return it.
+    cloneInto(newFunc, mapper);
+    return newFunc;
+}
+
+FuncOp mlir_ts::FuncOp::clone()
+{
+    BlockAndValueMapping mapper;
+    return clone(mapper);
+}
+
 LogicalResult verify(mlir_ts::FuncOp op)
 {
     // If this function is external there is nothing to do.
