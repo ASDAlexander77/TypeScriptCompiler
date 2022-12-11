@@ -106,6 +106,33 @@ ArrayRef<mlir::Type> mlir_ts::FunctionType::getParams()
     return getInputs();
 }
 
+mlir_ts::FunctionType mlir_ts::FunctionType::clone(mlir::TypeRange inputs, mlir::TypeRange results) const {
+  return get(getContext(), ArrayRef<mlir::Type>(inputs.begin(), inputs.end()), ArrayRef<mlir::Type>(results.begin(), results.end()), isVarArg());
+}
+
+/// Returns a new function type with the specified arguments and results
+/// inserted.
+mlir_ts::FunctionType mlir_ts::FunctionType::getWithArgsAndResults(ArrayRef<unsigned> argIndices, TypeRange argTypes,
+                                                                   ArrayRef<unsigned> resultIndices,
+                                                                   TypeRange resultTypes)
+{
+    SmallVector<Type> argStorage, resultStorage;
+    TypeRange newArgTypes = function_interface_impl::insertTypesInto(getInputs(), argIndices, argTypes, argStorage);
+    TypeRange newResultTypes =
+        function_interface_impl::insertTypesInto(getResults(), resultIndices, resultTypes, resultStorage);
+    return clone(newArgTypes, newResultTypes);
+}
+
+/// Returns a new function type without the specified arguments and results.
+mlir_ts::FunctionType mlir_ts::FunctionType::getWithoutArgsAndResults(const BitVector &argIndices,
+                                                                      const BitVector &resultIndices)
+{
+    SmallVector<Type> argStorage, resultStorage;
+    TypeRange newArgTypes = function_interface_impl::filterTypesOut(getInputs(), argIndices, argStorage);
+    TypeRange newResultTypes = function_interface_impl::filterTypesOut(getResults(), resultIndices, resultStorage);
+    return clone(newArgTypes, newResultTypes);
+}
+
 //===----------------------------------------------------------------------===//
 /// HybridFunctionType
 //===----------------------------------------------------------------------===//
