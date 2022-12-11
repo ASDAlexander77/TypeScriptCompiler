@@ -644,7 +644,7 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
     OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
       $_state.addOperands(operands);
       $_state.addAttribute("callee", SymbolRefAttr::get(callee));
-      $_state.addTypes(callee.getType().getResults());
+      $_state.addTypes(callee.getFunctionType().getResults());
     }]>,
     OpBuilder<(ins "SymbolRefAttr":$callee, "TypeRange":$results,
       CArg<"ValueRange", "{}">:$operands), [{
@@ -801,7 +801,7 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
     OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
       $_state.addOperands(operands);
       $_state.addAttribute("callee", SymbolRefAttr::get(callee));
-      $_state.addTypes(callee.getType().getResults());
+      $_state.addTypes(callee.getFunctionType().getResults());
     }]>,
     OpBuilder<(ins "SymbolRefAttr":$callee, "TypeRange":$results,
       CArg<"ValueRange", "{}">:$operands), [{
@@ -1925,7 +1925,7 @@ def TypeScript_AddressOfOp : TypeScript_Op<"AddressOf"> {
     }]>,
     OpBuilder<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
     [{
-      build($_builder, $_state, RefType::get(func.getType()), func.getName(), mlir::IntegerAttr());
+      build($_builder, $_state, RefType::get(func.getFunctionType()), func.getName(), mlir::IntegerAttr());
       $_state.addAttributes(attrs);
     }]>
   ];
@@ -2007,7 +2007,7 @@ def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
   let builders = [
     OpBuilder<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
     [{
-      build($_builder, $_state, RefType::get(func.getType()), func.getName());
+      build($_builder, $_state, RefType::get(func.getFunctionType()), func.getName());
       $_state.addAttributes(attrs);
     }]>
   ];
