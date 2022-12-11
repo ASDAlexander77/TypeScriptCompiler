@@ -18,8 +18,6 @@
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/SCF/SCF.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Async/IR/Async.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -95,7 +93,7 @@ struct ExitOpLowering : public TsPattern<mlir_ts::ExitOp>
 
         auto retBlock = tsContext->returnBlock;
 
-        rewriter.create<mlir::cfBranchOp>(op.getLoc(), retBlock);
+        rewriter.create<mlir::cf::BranchOp>(op.getLoc(), retBlock);
 
         rewriter.eraseOp(op);
         return success();
@@ -359,7 +357,7 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
         else
         {
             continueBlock = rewriter.createBlock(remainingOpsBlock, ifOp.getResultTypes());
-            rewriter.create<BranchOp>(loc, remainingOpsBlock);
+            rewriter.create<mlir::cf::BranchOp>(loc, remainingOpsBlock);
         }
 
         // Move blocks from the "then" region to the region containing 'ts.if',
@@ -369,7 +367,7 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
         Operation *thenTerminator = thenRegion.back().getTerminator();
         ValueRange thenTerminatorOperands = thenTerminator->getOperands();
         rewriter.setInsertionPointToEnd(&thenRegion.back());
-        rewriter.create<BranchOp>(loc, continueBlock, thenTerminatorOperands);
+        rewriter.create<mlir::cf::BranchOp>(loc, continueBlock, thenTerminatorOperands);
         rewriter.eraseOp(thenTerminator);
         rewriter.inlineRegionBefore(thenRegion, continueBlock);
 
@@ -384,14 +382,14 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
             Operation *elseTerminator = elseRegion.back().getTerminator();
             ValueRange elseTerminatorOperands = elseTerminator->getOperands();
             rewriter.setInsertionPointToEnd(&elseRegion.back());
-            rewriter.create<BranchOp>(loc, continueBlock, elseTerminatorOperands);
+            rewriter.create<mlir::cf::BranchOp>(loc, continueBlock, elseTerminatorOperands);
             rewriter.eraseOp(elseTerminator);
             rewriter.inlineRegionBefore(elseRegion, continueBlock);
         }
 
         rewriter.setInsertionPointToEnd(condBlock);
         auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), ifOp.condition());
-        rewriter.create<CondBranchOp>(loc, castToI1, thenBlock,
+        rewriter.create<mlir::cf::CondBranchOp>(loc, castToI1, thenBlock,
                                       /*trueArgs=*/ArrayRef<mlir::Value>(), elseBlock,
                                       /*falseArgs=*/ArrayRef<mlir::Value>());
 
@@ -461,7 +459,7 @@ struct WhileOpLowering : public TsPattern<mlir_ts::WhileOp>
 
         // Branch to the "before" region.
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<BranchOp>(loc, cond, whileOp.inits());
+        rewriter.create<mlir::cf::BranchOp>(loc, cond, whileOp.inits());
 
         // Replace terminators with branches. Assuming bodies are SESE, which holds
         // given only the patterns from this file, we only need to look at the last
@@ -469,11 +467,11 @@ struct WhileOpLowering : public TsPattern<mlir_ts::WhileOp>
         rewriter.setInsertionPointToEnd(condLast);
         auto condOp = cast<mlir_ts::ConditionOp>(condLast->getTerminator());
         auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-        rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
+        rewriter.replaceOpWithNewOp<mlir::cf::CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
 
         rewriter.setInsertionPointToEnd(bodyLast);
         auto yieldOp = cast<mlir_ts::ResultOp>(bodyLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, cond, yieldOp.results());
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOp, cond, yieldOp.results());
 
         // Replace the op with values "yielded" from the "before" region, which are
         // visible by dominance.
@@ -534,17 +532,17 @@ struct DoWhileOpLowering : public TsPattern<mlir_ts::DoWhileOp>
 
         // Branch to the "before" region.
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<BranchOp>(doWhileOp.getLoc(), body, doWhileOp.inits());
+        rewriter.create<mlir::cf::BranchOp>(doWhileOp.getLoc(), body, doWhileOp.inits());
 
         rewriter.setInsertionPointToEnd(bodyLast);
         auto yieldOp = cast<mlir_ts::ResultOp>(bodyLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, cond, yieldOp.results());
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOp, cond, yieldOp.results());
 
         // Loop around the "before" region based on condition.
         rewriter.setInsertionPointToEnd(condLast);
         auto condOp = cast<mlir_ts::ConditionOp>(condLast->getTerminator());
         auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-        rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
+        rewriter.replaceOpWithNewOp<mlir::cf::CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
 
         // Replace the op with values "yielded" from the "before" region, which are
         // visible by dominance.
@@ -603,7 +601,7 @@ struct ForOpLowering : public TsPattern<mlir_ts::ForOp>
 
         // Branch to the "before" region.
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<BranchOp>(loc, cond, forOp.inits());
+        rewriter.create<mlir::cf::BranchOp>(loc, cond, forOp.inits());
 
         // Replace terminators with branches. Assuming bodies are SESE, which holds
         // given only the patterns from this file, we only need to look at the last
@@ -614,24 +612,24 @@ struct ForOpLowering : public TsPattern<mlir_ts::ForOp>
         {
             args = condOp.args();
             auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-            rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation,
+            rewriter.replaceOpWithNewOp<mlir::cf::CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation,
                                                       ValueRange());
         }
         else
         {
             auto noCondOp = cast<mlir_ts::NoConditionOp>(condLast->getTerminator());
-            rewriter.replaceOpWithNewOp<BranchOp>(noCondOp, body, noCondOp.args());
+            rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(noCondOp, body, noCondOp.args());
         }
 
         rewriter.setInsertionPointToEnd(bodyLast);
 
         auto yieldOpBody = cast<mlir_ts::ResultOp>(bodyLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(yieldOpBody, incr, yieldOpBody.results());
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpBody, incr, yieldOpBody.results());
 
         rewriter.setInsertionPointToEnd(incrLast);
 
         auto yieldOpIncr = cast<mlir_ts::ResultOp>(incrLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(yieldOpIncr, cond, yieldOpIncr.results());
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpIncr, cond, yieldOpIncr.results());
 
         // Replace the op with values "yielded" from the "before" region, which are
         // visible by dominance.
@@ -692,7 +690,7 @@ struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
 
         // Branch to the "labelRegion" region.
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<BranchOp>(loc, labelRegion, ValueRange{});
+        rewriter.create<mlir::cf::BranchOp>(loc, labelRegion, ValueRange{});
 
         rewriter.inlineRegionBefore(labelOp.labelRegion(), continuation);
 
@@ -702,7 +700,7 @@ struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
 
         if (auto mergeOp = dyn_cast_or_null<mlir_ts::MergeOp>(labelRegionWithMerge->getTerminator()))
         {
-            rewriter.replaceOpWithNewOp<BranchOp>(mergeOp, continuation, ValueRange{});
+            rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(mergeOp, continuation, ValueRange{});
         }
         else
         {
@@ -729,7 +727,7 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
         auto jump = tsContext->jumps[breakOp];
         assert(jump);
 
-        rewriter.replaceOpWithNewOp<BranchOp>(breakOp, jump);
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(breakOp, jump);
         clh.CutBlock();
 
         return success();
@@ -750,7 +748,7 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
         auto jump = tsContext->jumps[continueOp];
         assert(jump);
 
-        rewriter.replaceOpWithNewOp<BranchOp>(continueOp, jump);
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(continueOp, jump);
         clh.CutBlock();
 
         return success();
@@ -783,7 +781,7 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
 
         // Branch to the "casesRegion" region.
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<BranchOp>(loc, casesRegion, ValueRange{});
+        rewriter.create<mlir::cf::BranchOp>(loc, casesRegion, ValueRange{});
 
         rewriter.inlineRegionBefore(switchOp.casesRegion(), continuation);
 
@@ -793,7 +791,7 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
 
         if (auto mergeOp = dyn_cast_or_null<mlir_ts::MergeOp>(casesRegionWithMerge->getTerminator()))
         {
-            rewriter.replaceOpWithNewOp<BranchOp>(mergeOp, continuation, ValueRange{});
+            rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(mergeOp, continuation, ValueRange{});
         }
         else
         {
@@ -918,7 +916,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         // Branch to the "body" region.
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<BranchOp>(loc, bodyRegion, ValueRange{});
+        rewriter.create<mlir::cf::BranchOp>(loc, bodyRegion, ValueRange{});
 
         auto beforeBodyBlock = continuation->getPrevNode();
         rewriter.inlineRegionBefore(tryOp.body(), continuation);
@@ -1023,7 +1021,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
         // rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
-        rewriter.replaceOpWithNewOp<BranchOp>(resultOp, exitBlock, ValueRange{});
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOp, exitBlock, ValueRange{});
 
         mlir::Value cmpValue;
         if (catchHasOps)
@@ -1150,7 +1148,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
             // rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, ValueRange{});
-            rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, exitBlock, ValueRange{});
+            rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpCatches, exitBlock, ValueRange{});
         }
 
         if (cmpValue)
@@ -1164,7 +1162,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             rewriter.setInsertionPointAfterValue(cmpValue);
             // TODO: when catch not matching - should go into result (rethrow)
             auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), cmpValue);
-            rewriter.create<CondBranchOp>(loc, castToI1, continuationBrCmp, continuation);
+            rewriter.create<mlir::cf::CondBranchOp>(loc, castToI1, continuationBrCmp, continuation);
             // end of condbr
         }
 
@@ -1176,7 +1174,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             rewriter.setInsertionPointToEnd(finallyBlockRegionLast);
 
             auto yieldOpFinallyBlock = cast<mlir_ts::ResultOp>(finallyBlockRegionLast->getTerminator());
-            rewriter.replaceOpWithNewOp<BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
+            rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
         }
 
         rewriter.replaceOp(tryOp, continuation->getArguments());

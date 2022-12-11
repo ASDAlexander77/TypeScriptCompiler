@@ -106,7 +106,7 @@ class OptionalLogicHelper
                 return whenBothHasNoValues(rewriter, loc);
             }
 
-            auto andOpResult = rewriter.create<mlir::AndOp>(loc, th.getI32Type(), leftUndefFlagValue, rightUndefFlagValue);
+            auto andOpResult = rewriter.create<LLVM::AndOp>(loc, th.getI32Type(), leftUndefFlagValue, rightUndefFlagValue);
             auto const0 = clh.createI32ConstantOf(0);
             auto bothHasResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, andOpResult, const0);
 
