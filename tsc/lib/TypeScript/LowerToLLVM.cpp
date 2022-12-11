@@ -14,7 +14,6 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
-#include "mlir/Dialect/SCF/SCF.h"
 
 #ifdef ENABLE_ASYNC
 #include "mlir/Conversion/AsyncToLLVM/AsyncToLLVM.h"
@@ -71,10 +70,10 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
   public:
     using TsLlvmPattern<mlir_ts::PrintOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PrintOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::PrintOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
@@ -202,10 +201,10 @@ class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
   public:
     using TsLlvmPattern<mlir_ts::AssertOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::AssertOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::AssertOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeConverterHelper tch(getTypeConverter());
         AssertLogic al(op, rewriter, tch, op->getLoc());
@@ -217,10 +216,10 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
   public:
     using TsLlvmPattern<mlir_ts::PrintOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PrintOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::PrintOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
@@ -284,10 +283,10 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
   public:
     using TsLlvmPattern<mlir_ts::ParseIntOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ParseIntOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ParseIntOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
@@ -319,10 +318,10 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
   public:
     using TsLlvmPattern<mlir_ts::ParseFloatOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ParseFloatOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ParseFloatOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
@@ -349,12 +348,12 @@ class IsNaNOpLowering : public TsLlvmPattern<mlir_ts::IsNaNOp>
   public:
     using TsLlvmPattern<mlir_ts::IsNaNOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::IsNaNOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::IsNaNOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         auto loc = op->getLoc();
 
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter.getContext());
 
@@ -371,10 +370,10 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
   public:
     using TsLlvmPattern<mlir_ts::SizeOfOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SizeOfOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::SizeOfOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
@@ -416,10 +415,10 @@ class LengthOfOpLowering : public TsLlvmPattern<mlir_ts::LengthOfOp>
   public:
     using TsLlvmPattern<mlir_ts::LengthOfOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::LengthOfOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::LengthOfOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
 
@@ -437,10 +436,10 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
   public:
     using TsLlvmPattern<mlir_ts::StringLengthOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::StringLengthOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::StringLengthOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
@@ -463,10 +462,10 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
   public:
     using TsLlvmPattern<mlir_ts::StringConcatOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::StringConcatOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::StringConcatOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         CodeLogicHelper clh(op, rewriter);
@@ -525,10 +524,10 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
   public:
     using TsLlvmPattern<mlir_ts::StringCompareOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::StringCompareOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::StringCompareOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         CodeLogicHelper clh(op, rewriter);
@@ -648,10 +647,10 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
   public:
     using TsLlvmPattern<mlir_ts::CharToStringOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CharToStringOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CharToStringOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         CodeLogicHelper clh(op, rewriter);
@@ -728,10 +727,10 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         rewriter.replaceOp(constantOp, ValueRange{tupleVal});
     }
 
-    LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         // load address of const string
         auto type = constantOp.getType();
@@ -792,7 +791,7 @@ struct SymbolRefOpLowering : public TsLlvmPattern<mlir_ts::SymbolRefOp>
 {
     using TsLlvmPattern<mlir_ts::SymbolRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SymbolRefOp symbolRefOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::SymbolRefOp symbolRefOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeConverterHelper tch(getTypeConverter());
@@ -806,10 +805,10 @@ struct NullOpLowering : public TsLlvmPattern<mlir_ts::NullOp>
 {
     using TsLlvmPattern<mlir_ts::NullOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::NullOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::NullOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeConverterHelper tch(getTypeConverter());
         rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, tch.convertType(op.getType()));
@@ -822,10 +821,10 @@ class UndefOpLowering : public TsLlvmPattern<mlir_ts::UndefOp>
   public:
     using TsLlvmPattern<mlir_ts::UndefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::UndefOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::UndefOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         if (op.getType().isa<mlir_ts::OptionalType>())
         {
@@ -843,10 +842,10 @@ struct ReturnInternalOpLowering : public TsLlvmPattern<mlir_ts::ReturnInternalOp
 {
     using TsLlvmPattern<mlir_ts::ReturnInternalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ReturnInternalOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ReturnInternalOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, ValueRange{transformed.operands()});
         return success();
@@ -857,25 +856,25 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 {
     using TsLlvmPattern<mlir_ts::FuncOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::FuncOp funcOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::FuncOp funcOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto location = funcOp->getLoc();
 
         auto &typeConverter = *getTypeConverter();
-        auto fnType = funcOp.getType();
+        auto fnType = funcOp.getFunctionType();
 
         TypeConverter::SignatureConversion signatureInputsConverter(fnType.getNumInputs());
-        for (auto argType : enumerate(funcOp.getType().getInputs()))
+        for (auto argType : enumerate(funcOp.getFunctionType().getInputs()))
         {
             auto convertedType = typeConverter.convertType(argType.value());
             signatureInputsConverter.addInputs(argType.index(), convertedType);
         }
 
         TypeConverter::SignatureConversion signatureResultsConverter(fnType.getNumResults());
-        for (auto argType : enumerate(funcOp.getType().getResults()))
+        for (auto argType : enumerate(funcOp.getFunctionType().getResults()))
         {
             auto convertedType = typeConverter.convertType(argType.value());
             signatureResultsConverter.addInputs(argType.index(), convertedType);
@@ -972,10 +971,10 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
 {
     using TsLlvmPattern<mlir_ts::SymbolCallInternalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SymbolCallInternalOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::SymbolCallInternalOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = op->getLoc();
 
@@ -998,10 +997,10 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
 {
     using TsLlvmPattern<mlir_ts::CallInternalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CallInternalOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CallInternalOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = op->getLoc();
 
@@ -1032,10 +1031,10 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
 {
     using TsLlvmPattern<mlir_ts::CallHybridInternalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CallHybridInternalOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CallHybridInternalOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = op->getLoc();
 
@@ -1122,10 +1121,9 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
 {
     using TsLlvmPattern<mlir_ts::InvokeOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::InvokeOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::InvokeOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands, op->getAttrDictionary());
 
         if (!op.callee().hasValue())
         {
@@ -1160,10 +1158,9 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
 {
     using TsLlvmPattern<mlir_ts::InvokeHybridOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::InvokeHybridOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::InvokeHybridOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands, op->getAttrDictionary());
 
         auto loc = op->getLoc();
 
@@ -1268,12 +1265,12 @@ struct DialectCastOpLowering : public TsLlvmPattern<mlir_ts::DialectCastOp>
 {
     using TsLlvmPattern<mlir_ts::DialectCastOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::DialectCastOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::DialectCastOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         auto loc = op->getLoc();
 
-        Adaptor transformed(operands);
+        
 
         TypeConverterHelper tch(getTypeConverter());
 
@@ -1297,12 +1294,12 @@ struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
 {
     using TsLlvmPattern<mlir_ts::CastOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CastOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CastOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         auto loc = op->getLoc();
 
-        Adaptor transformed(operands);
+        
 
         // TODO: review usage of CastOp from LLVM level
         if (op.getType().isa<mlir_ts::AnyType>())
@@ -1348,10 +1345,10 @@ struct BoxOpLowering : public TsLlvmPattern<mlir_ts::BoxOp>
 {
     using TsLlvmPattern<mlir_ts::BoxOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::BoxOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::BoxOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = op->getLoc();
 
@@ -1372,10 +1369,10 @@ struct UnboxOpLowering : public TsLlvmPattern<mlir_ts::UnboxOp>
 {
     using TsLlvmPattern<mlir_ts::UnboxOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::UnboxOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::UnboxOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = op->getLoc();
 
@@ -1397,10 +1394,10 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
 {
     using TsLlvmPattern<mlir_ts::CreateUnionInstanceOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CreateUnionInstanceOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CreateUnionInstanceOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = op->getLoc();
 
@@ -1449,10 +1446,10 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
 {
     using TsLlvmPattern<mlir_ts::GetValueFromUnionOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::GetValueFromUnionOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::GetValueFromUnionOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = op->getLoc();
 
@@ -1495,10 +1492,10 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
 {
     using TsLlvmPattern<mlir_ts::GetTypeInfoFromUnionOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::GetTypeInfoFromUnionOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::GetTypeInfoFromUnionOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(op, rewriter);
@@ -1530,10 +1527,10 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 {
     using TsLlvmPattern<mlir_ts::VariableOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::VariableOp varOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::VariableOp varOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(varOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(varOp, rewriter);
@@ -1628,10 +1625,10 @@ struct AllocaOpLowering : public TsLlvmPattern<mlir_ts::AllocaOp>
 {
     using TsLlvmPattern<mlir_ts::AllocaOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::AllocaOp varOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::AllocaOp varOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(varOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(varOp, rewriter);
@@ -1668,10 +1665,10 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
 {
     using TsLlvmPattern<mlir_ts::NewOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::NewOp newOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::NewOp newOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(newOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(newOp, rewriter);
@@ -1703,10 +1700,10 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
 {
     using TsLlvmPattern<mlir_ts::CreateTupleOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CreateTupleOp createTupleOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CreateTupleOp createTupleOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(createTupleOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(createTupleOp, rewriter);
@@ -1766,10 +1763,10 @@ struct DeconstructTupleOpLowering : public TsLlvmPattern<mlir_ts::DeconstructTup
 {
     using TsLlvmPattern<mlir_ts::DeconstructTupleOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::DeconstructTupleOp deconstructTupleOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::DeconstructTupleOp deconstructTupleOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         CodeLogicHelper clh(deconstructTupleOp, rewriter);
 
@@ -1802,10 +1799,10 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
 {
     using TsLlvmPattern<mlir_ts::CreateArrayOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CreateArrayOp createArrayOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CreateArrayOp createArrayOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(createArrayOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(createArrayOp, rewriter);
@@ -1882,10 +1879,10 @@ struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
 {
     using TsLlvmPattern<mlir_ts::NewEmptyArrayOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::NewEmptyArrayOp newEmptyArrOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::NewEmptyArrayOp newEmptyArrOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(newEmptyArrOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(newEmptyArrOp, rewriter);
@@ -1927,10 +1924,10 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
 {
     using TsLlvmPattern<mlir_ts::NewArrayOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::NewArrayOp newArrOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::NewArrayOp newArrOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(newArrOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(newArrOp, rewriter);
@@ -1976,10 +1973,10 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
 {
     using TsLlvmPattern<mlir_ts::PushOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PushOp pushOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::PushOp pushOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(pushOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(pushOp, rewriter);
@@ -2003,7 +2000,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
                                                               ValueRange{ind0, ind1});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
 
-        auto countAsIndexType = rewriter.create<ZeroExtendIOp>(loc, countAsI32Type, th.getIndexType());
+        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, countAsI32Type, th.getIndexType());
 
         auto incSize = clh.createIndexConstantOf(transformed.items().size());
         auto newCountAsIndexType =
@@ -2051,7 +2048,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
-        auto newCountAsI32Type = rewriter.create<TruncateIOp>(loc, newCountAsIndexType, th.getI32Type());
+        auto newCountAsI32Type = rewriter.create<LLVM::TuncOp>(loc, newCountAsIndexType, th.getI32Type());
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
@@ -2064,10 +2061,10 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
 {
     using TsLlvmPattern<mlir_ts::PopOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PopOp popOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::PopOp popOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(popOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(popOp, rewriter);
@@ -2097,7 +2094,7 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
                                                               ValueRange{ind0, ind1});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
 
-        auto countAsIndexType = rewriter.create<ZeroExtendIOp>(loc, countAsI32Type, th.getIndexType());
+        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, countAsI32Type, th.getIndexType());
 
         auto incSize = clh.createIndexConstantOf(1);
         auto newCountAsIndexType =
@@ -2116,7 +2113,7 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
-        auto newCountAsI32Type = rewriter.create<TruncateIOp>(loc, newCountAsIndexType, th.getI32Type());
+        auto newCountAsI32Type = rewriter.create<LLVM::TuncOp>(loc, newCountAsIndexType, th.getI32Type());
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
@@ -2129,10 +2126,10 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
 {
     using TsLlvmPattern<mlir_ts::DeleteOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::DeleteOp deleteOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::DeleteOp deleteOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(deleteOp, rewriter, getTypeConverter());
 
@@ -2200,10 +2197,10 @@ struct ArithmeticUnaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticUnary
 {
     using TsLlvmPattern<mlir_ts::ArithmeticUnaryOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ArithmeticUnaryOp arithmeticUnaryOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ArithmeticUnaryOp arithmeticUnaryOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto opCode = (SyntaxKind)arithmeticUnaryOp.opCode();
         switch (opCode)
@@ -2230,10 +2227,10 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
 {
     using TsLlvmPattern<mlir_ts::ArithmeticBinaryOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto opCode = (SyntaxKind)arithmeticBinaryOp.opCode();
         switch (opCode)
@@ -2328,10 +2325,10 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
                                                                              *(LLVMTypeConverter *)getTypeConverter());
     }
 
-    LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp logicalBinaryOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp logicalBinaryOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto op = (SyntaxKind)logicalBinaryOp.opCode();
 
@@ -2383,10 +2380,10 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
 {
     using TsLlvmPattern<mlir_ts::LoadOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::LoadOp loadOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::LoadOp loadOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
@@ -2481,10 +2478,10 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
 {
     using TsLlvmPattern<mlir_ts::StoreOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::StoreOp storeOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::StoreOp storeOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         if (auto boundRefType = storeOp.reference().getType().dyn_cast_or_null<mlir_ts::BoundRefType>())
         {
@@ -2501,10 +2498,10 @@ struct ElementRefOpLowering : public TsLlvmPattern<mlir_ts::ElementRefOp>
 {
     using TsLlvmPattern<mlir_ts::ElementRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ElementRefOp elementOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ElementRefOp elementOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter());
 
@@ -2519,10 +2516,10 @@ struct PointerOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::PointerOffsetR
 {
     using TsLlvmPattern<mlir_ts::PointerOffsetRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PointerOffsetRefOp elementOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::PointerOffsetRefOp elementOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter());
 
@@ -2537,10 +2534,10 @@ struct ExtractPropertyOpLowering : public TsLlvmPattern<mlir_ts::ExtractProperty
 {
     using TsLlvmPattern<mlir_ts::ExtractPropertyOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ExtractPropertyOp extractPropertyOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ExtractPropertyOp extractPropertyOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeConverterHelper tch(getTypeConverter());
 
@@ -2556,10 +2553,10 @@ struct InsertPropertyOpLowering : public TsLlvmPattern<mlir_ts::InsertPropertyOp
 {
     using TsLlvmPattern<mlir_ts::InsertPropertyOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::InsertPropertyOp insertPropertyOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::InsertPropertyOp insertPropertyOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeConverterHelper tch(getTypeConverter());
         auto loc = insertPropertyOp->getLoc();
@@ -2576,10 +2573,10 @@ struct PropertyRefOpLowering : public TsLlvmPattern<mlir_ts::PropertyRefOp>
 {
     using TsLlvmPattern<mlir_ts::PropertyRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PropertyRefOp propertyRefOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::PropertyRefOp propertyRefOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         assert(propertyRefOp.position() != -1);
 
@@ -2605,10 +2602,10 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 {
     using TsLlvmPattern<mlir_ts::GlobalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = globalOp->getLoc();
 
@@ -2655,10 +2652,10 @@ struct GlobalResultOpLowering : public TsLlvmPattern<mlir_ts::GlobalResultOp>
 {
     using TsLlvmPattern<mlir_ts::GlobalResultOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::GlobalResultOp globalResultOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::GlobalResultOp globalResultOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(globalResultOp, transformed.results());
         return success();
@@ -2669,10 +2666,10 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
 {
     using TsLlvmPattern<mlir_ts::AddressOfOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::AddressOfOp addressOfOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::AddressOfOp addressOfOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper lch(addressOfOp, rewriter, getTypeConverter());
         TypeConverterHelper tch(getTypeConverter());
@@ -2717,9 +2714,9 @@ struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfC
     using TsLlvmPattern<mlir_ts::AddressOfConstStringOp>::TsLlvmPattern;
 
     LogicalResult matchAndRewrite(mlir_ts::AddressOfConstStringOp addressOfConstStringOp,
-                                  ArrayRef<mlir::Value> operands, ConversionPatternRewriter &rewriter) const final
+                                  Adaptor transformed, ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
 
@@ -2738,10 +2735,10 @@ struct CreateOptionalOpLowering : public TsLlvmPattern<mlir_ts::CreateOptionalOp
 {
     using TsLlvmPattern<mlir_ts::CreateOptionalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CreateOptionalOp createOptionalOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CreateOptionalOp createOptionalOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = createOptionalOp->getLoc();
 
@@ -2792,10 +2789,10 @@ struct UndefOptionalOpLowering : public TsLlvmPattern<mlir_ts::UndefOptionalOp>
 {
     using TsLlvmPattern<mlir_ts::UndefOptionalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::UndefOptionalOp undefOptionalOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::UndefOptionalOp undefOptionalOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = undefOptionalOp->getLoc();
 
@@ -2846,10 +2843,10 @@ struct HasValueOpLowering : public TsLlvmPattern<mlir_ts::HasValueOp>
 {
     using TsLlvmPattern<mlir_ts::HasValueOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::HasValueOp hasValueOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::HasValueOp hasValueOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = hasValueOp->getLoc();
 
@@ -2866,10 +2863,10 @@ struct ValueOpLowering : public TsLlvmPattern<mlir_ts::ValueOp>
 {
     using TsLlvmPattern<mlir_ts::ValueOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ValueOp valueOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ValueOp valueOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = valueOp->getLoc();
 
@@ -2889,10 +2886,10 @@ struct LoadSaveValueLowering : public TsLlvmPattern<mlir_ts::LoadSaveOp>
 {
     using TsLlvmPattern<mlir_ts::LoadSaveOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::LoadSaveOp loadSaveOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::LoadSaveOp loadSaveOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = loadSaveOp->getLoc();
 
@@ -2909,10 +2906,10 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
 {
     using TsLlvmPattern<mlir_ts::MemoryCopyOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::MemoryCopyOp memoryCopyOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::MemoryCopyOp memoryCopyOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = memoryCopyOp->getLoc();
 
@@ -2958,10 +2955,10 @@ struct UnreachableOpLowering : public TsLlvmPattern<mlir_ts::UnreachableOp>
 {
     using TsLlvmPattern<mlir_ts::UnreachableOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::UnreachableOp unreachableOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::UnreachableOp unreachableOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = unreachableOp.getLoc();
         CodeLogicHelper clh(unreachableOp, rewriter);
@@ -2985,10 +2982,10 @@ struct ThrowCallOpLowering : public TsLlvmPattern<mlir_ts::ThrowCallOp>
 {
     using TsLlvmPattern<mlir_ts::ThrowCallOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ThrowCallOp throwCallOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ThrowCallOp throwCallOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeConverterHelper tch(getTypeConverter());
 
@@ -3005,10 +3002,10 @@ struct ThrowUnwindOpLowering : public TsLlvmPattern<mlir_ts::ThrowUnwindOp>
 {
     using TsLlvmPattern<mlir_ts::ThrowUnwindOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ThrowUnwindOp throwUnwindOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::ThrowUnwindOp throwUnwindOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeConverterHelper tch(getTypeConverter());
         ThrowLogic tl(throwUnwindOp, rewriter, tch, throwUnwindOp.getLoc());
@@ -3026,10 +3023,10 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
 {
     using TsLlvmPattern<mlir_ts::LandingPadOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::LandingPadOp landingPadOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::LandingPadOp landingPadOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = landingPadOp.getLoc();
         if (!landingPadOp.cleanup())
@@ -3057,10 +3054,10 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
 {
     using TsLlvmPattern<mlir_ts::CompareCatchTypeOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CompareCatchTypeOp compareCatchTypeOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CompareCatchTypeOp compareCatchTypeOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         CodeLogicHelper clh(compareCatchTypeOp, rewriter);
 
@@ -3075,10 +3072,10 @@ struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
 {
     using TsLlvmPattern<mlir_ts::BeginCatchOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::BeginCatchOp beginCatchOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::BeginCatchOp beginCatchOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = beginCatchOp.getLoc();
 
@@ -3105,10 +3102,10 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
 {
     using TsLlvmPattern<mlir_ts::SaveCatchVarOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SaveCatchVarOp saveCatchVarOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::SaveCatchVarOp saveCatchVarOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = saveCatchVarOp.getLoc();
 
@@ -3135,10 +3132,10 @@ struct EndCatchOpLowering : public TsLlvmPattern<mlir_ts::EndCatchOp>
 {
     using TsLlvmPattern<mlir_ts::EndCatchOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::EndCatchOp endCatchOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::EndCatchOp endCatchOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = endCatchOp.getLoc();
 
@@ -3159,7 +3156,7 @@ struct BeginCleanupOpLowering : public TsLlvmPattern<mlir_ts::BeginCleanupOp>
 {
     using TsLlvmPattern<mlir_ts::BeginCleanupOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::BeginCleanupOp beginCleanupOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::BeginCleanupOp beginCleanupOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         rewriter.eraseOp(beginCleanupOp);
@@ -3172,10 +3169,10 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
 {
     using TsLlvmPattern<mlir_ts::EndCleanupOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::EndCleanupOp endCleanupOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::EndCleanupOp endCleanupOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = endCleanupOp.getLoc();
 
@@ -3223,10 +3220,10 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
 {
     using TsLlvmPattern<mlir_ts::LandingPadOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::LandingPadOp landingPadOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::LandingPadOp landingPadOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = landingPadOp.getLoc();
 
@@ -3245,10 +3242,10 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
 {
     using TsLlvmPattern<mlir_ts::CompareCatchTypeOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CompareCatchTypeOp compareCatchTypeOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CompareCatchTypeOp compareCatchTypeOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = compareCatchTypeOp.getLoc();
 
@@ -3280,10 +3277,10 @@ struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
 {
     using TsLlvmPattern<mlir_ts::BeginCatchOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::BeginCatchOp beginCatchOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::BeginCatchOp beginCatchOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = beginCatchOp.getLoc();
 
@@ -3310,10 +3307,10 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
 {
     using TsLlvmPattern<mlir_ts::SaveCatchVarOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SaveCatchVarOp saveCatchVarOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::SaveCatchVarOp saveCatchVarOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = saveCatchVarOp.getLoc();
 
@@ -3345,10 +3342,10 @@ struct EndCatchOpLowering : public TsLlvmPattern<mlir_ts::EndCatchOp>
 {
     using TsLlvmPattern<mlir_ts::EndCatchOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::EndCatchOp endCatchOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::EndCatchOp endCatchOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = endCatchOp.getLoc();
 
@@ -3369,7 +3366,7 @@ struct BeginCleanupOpLowering : public TsLlvmPattern<mlir_ts::BeginCleanupOp>
 {
     using TsLlvmPattern<mlir_ts::BeginCleanupOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::BeginCleanupOp beginCleanupOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::BeginCleanupOp beginCleanupOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         rewriter.eraseOp(beginCleanupOp);
@@ -3382,10 +3379,10 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
 {
     using TsLlvmPattern<mlir_ts::EndCleanupOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::EndCleanupOp endCleanupOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::EndCleanupOp endCleanupOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = endCleanupOp.getLoc();
 
@@ -3410,10 +3407,10 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
 {
     using TsLlvmPattern<mlir_ts::TrampolineOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::TrampolineOp trampolineOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::TrampolineOp trampolineOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         // TODO: missing attribute "nest" on parameter
         auto location = trampolineOp->getLoc();
@@ -3493,10 +3490,10 @@ struct VTableOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::VTableOffsetRef
 {
     using TsLlvmPattern<mlir_ts::VTableOffsetRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::VTableOffsetRefOp vtableOffsetRefOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::VTableOffsetRefOp vtableOffsetRefOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = vtableOffsetRefOp.getLoc();
 
@@ -3520,10 +3517,10 @@ struct VirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::VirtualSymbolR
 {
     using TsLlvmPattern<mlir_ts::VirtualSymbolRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::VirtualSymbolRefOp virtualSymbolRefOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::VirtualSymbolRefOp virtualSymbolRefOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         assert(virtualSymbolRefOp.index() != -1);
 
@@ -3558,9 +3555,9 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
     using TsLlvmPattern<mlir_ts::ThisVirtualSymbolRefOp>::TsLlvmPattern;
 
     LogicalResult matchAndRewrite(mlir_ts::ThisVirtualSymbolRefOp thisVirtualSymbolRefOp,
-                                  ArrayRef<mlir::Value> operands, ConversionPatternRewriter &rewriter) const final
+                                  Adaptor transformed, ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         assert(thisVirtualSymbolRefOp.index() != -1);
 
@@ -3596,10 +3593,10 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 {
     using TsLlvmPattern<mlir_ts::InterfaceSymbolRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::InterfaceSymbolRefOp interfaceSymbolRefOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::InterfaceSymbolRefOp interfaceSymbolRefOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         assert(interfaceSymbolRefOp.index() != -1);
 
@@ -3683,10 +3680,10 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
 {
     using TsLlvmPattern<mlir_ts::NewInterfaceOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::NewInterfaceOp newInterfaceOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::NewInterfaceOp newInterfaceOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = newInterfaceOp.getLoc();
 
@@ -3713,9 +3710,9 @@ struct ExtractInterfaceThisOpLowering : public TsLlvmPattern<mlir_ts::ExtractInt
     using TsLlvmPattern<mlir_ts::ExtractInterfaceThisOp>::TsLlvmPattern;
 
     LogicalResult matchAndRewrite(mlir_ts::ExtractInterfaceThisOp extractInterfaceThisOp,
-                                  ArrayRef<mlir::Value> operands, ConversionPatternRewriter &rewriter) const final
+                                  Adaptor transformed, ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         // TODO: hack, if NullOp, return null
 
@@ -3740,9 +3737,9 @@ struct ExtractInterfaceVTableOpLowering : public TsLlvmPattern<mlir_ts::ExtractI
     using TsLlvmPattern<mlir_ts::ExtractInterfaceVTableOp>::TsLlvmPattern;
 
     LogicalResult matchAndRewrite(mlir_ts::ExtractInterfaceVTableOp extractInterfaceVTableOp,
-                                  ArrayRef<mlir::Value> operands, ConversionPatternRewriter &rewriter) const final
+                                  Adaptor transformed, ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         // TODO: hack, if NullOp, return null
 
@@ -3767,10 +3764,10 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
 {
     using TsLlvmPattern<mlir_ts::LoadBoundRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::LoadBoundRefOp loadBoundRefOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::LoadBoundRefOp loadBoundRefOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = loadBoundRefOp.getLoc();
 
@@ -3813,10 +3810,10 @@ struct StoreBoundRefOpLowering : public TsLlvmPattern<mlir_ts::StoreBoundRefOp>
 {
     using TsLlvmPattern<mlir_ts::StoreBoundRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::StoreBoundRefOp storeBoundRefOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::StoreBoundRefOp storeBoundRefOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         auto loc = storeBoundRefOp.getLoc();
 
@@ -3841,10 +3838,10 @@ struct CreateBoundRefOpLowering : public TsLlvmPattern<mlir_ts::CreateBoundRefOp
 {
     using TsLlvmPattern<mlir_ts::CreateBoundRefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CreateBoundRefOp createBoundRefOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CreateBoundRefOp createBoundRefOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = createBoundRefOp.getLoc();
 
@@ -3870,10 +3867,10 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 {
     using TsLlvmPattern<mlir_ts::CreateBoundFunctionOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::CreateBoundFunctionOp createBoundFunctionOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = createBoundFunctionOp.getLoc();
 
@@ -3909,10 +3906,10 @@ struct GetThisOpLowering : public TsLlvmPattern<mlir_ts::GetThisOp>
 {
     using TsLlvmPattern<mlir_ts::GetThisOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::GetThisOp getThisOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::GetThisOp getThisOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = getThisOp.getLoc();
 
@@ -3937,10 +3934,10 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
 {
     using TsLlvmPattern<mlir_ts::GetMethodOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::GetMethodOp getMethodOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::GetMethodOp getMethodOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = getMethodOp.getLoc();
 
@@ -3995,10 +3992,10 @@ struct TypeOfOpLowering : public TsLlvmPattern<mlir_ts::TypeOfOp>
 {
     using TsLlvmPattern<mlir_ts::TypeOfOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeOfOpHelper toh(rewriter);
         auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), transformed.value(), typeOfOp.value().getType());
@@ -4012,10 +4009,10 @@ struct TypeOfAnyOpLowering : public TsLlvmPattern<mlir_ts::TypeOfAnyOp>
 {
     using TsLlvmPattern<mlir_ts::TypeOfAnyOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::TypeOfAnyOp typeOfAnyOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::TypeOfAnyOp typeOfAnyOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         Location loc = typeOfAnyOp.getLoc();
 
@@ -4036,10 +4033,10 @@ class DebuggerOpLowering : public TsLlvmPattern<mlir_ts::DebuggerOp>
   public:
     using TsLlvmPattern<mlir_ts::DebuggerOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::DebuggerOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::DebuggerOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
@@ -4064,7 +4061,7 @@ struct StateLabelOpLowering : public TsLlvmPattern<mlir_ts::StateLabelOp>
 {
     using TsLlvmPattern<mlir_ts::StateLabelOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::StateLabelOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::StateLabelOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         CodeLogicHelper clh(op, rewriter);
@@ -4083,10 +4080,10 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
   public:
     using TsLlvmPattern<mlir_ts::SwitchStateOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SwitchStateOp switchStateOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::SwitchStateOp switchStateOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         CodeLogicHelper clh(switchStateOp, rewriter);
 
@@ -4158,10 +4155,10 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
 {
     using TsLlvmPattern<mlir_ts::YieldReturnValOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp yieldReturnValOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp yieldReturnValOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         CodeLogicHelper clh(yieldReturnValOp, rewriter);
 
@@ -4191,10 +4188,10 @@ class SwitchStateInternalOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateI
   public:
     using TsLlvmPattern<mlir_ts::SwitchStateInternalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SwitchStateInternalOp switchStateOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::SwitchStateInternalOp switchStateOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         CodeLogicHelper clh(switchStateOp, rewriter);
 
@@ -4223,10 +4220,10 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 {
     using TsLlvmPattern<mlir_ts::GlobalConstructorOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::GlobalConstructorOp globalConstructorOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::GlobalConstructorOp globalConstructorOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter.getContext());
         LLVMCodeHelper lch(globalConstructorOp, rewriter, getTypeConverter());
@@ -4338,7 +4335,7 @@ struct BodyInternalOpLowering : public TsLlvmPattern<mlir_ts::BodyInternalOp>
 {
     using TsLlvmPattern<mlir_ts::BodyInternalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::BodyInternalOp bodyInternalOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::BodyInternalOp bodyInternalOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeHelper th(rewriter);
@@ -4374,7 +4371,7 @@ struct BodyResultInternalOpLowering : public TsLlvmPattern<mlir_ts::BodyResultIn
 {
     using TsLlvmPattern<mlir_ts::BodyResultInternalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::BodyResultInternalOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::BodyResultInternalOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         rewriter.replaceOp(op, op.results());
@@ -4386,7 +4383,7 @@ struct NoOpLowering : public TsLlvmPattern<mlir_ts::NoOp>
 {
     using TsLlvmPattern<mlir_ts::NoOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::NoOp noOp, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::NoOp noOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         rewriter.eraseOp(noOp);
@@ -4400,10 +4397,10 @@ class GCMakeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::GCMakeDescripto
   public:
     using TsLlvmPattern<mlir_ts::GCMakeDescriptorOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::GCMakeDescriptorOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::GCMakeDescriptorOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
@@ -4422,10 +4419,10 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
   public:
     using TsLlvmPattern<mlir_ts::GCNewExplicitlyTypedOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::GCNewExplicitlyTypedOp op, ArrayRef<mlir::Value> operands,
+    LogicalResult matchAndRewrite(mlir_ts::GCNewExplicitlyTypedOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
+        
 
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
         CodeLogicHelper clh(op, rewriter);

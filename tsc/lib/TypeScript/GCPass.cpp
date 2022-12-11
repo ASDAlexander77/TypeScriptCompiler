@@ -79,7 +79,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                     return;
                 }
 
-                auto name = callOp.callee().getValue();
+                auto name = callOp.getCallee().getValue();
                 if (name == "memset")
                 {
                     removeRedundantMemSet(callOp);
