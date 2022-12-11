@@ -9,7 +9,6 @@
 
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/PatternMatch.h"
 
 using namespace mlir;

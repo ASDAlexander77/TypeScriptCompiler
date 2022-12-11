@@ -222,7 +222,7 @@ template <typename T> struct RemoveUnused : public OpRewritePattern<T>
 // SymbolRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::SymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::SymbolRefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::SymbolRefOp>>(context);
 }
@@ -231,7 +231,7 @@ void mlir_ts::SymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList 
 // ThisSymbolRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::ThisSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::ThisSymbolRefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::ThisSymbolRefOp>>(context);
 }
@@ -240,7 +240,7 @@ void mlir_ts::ThisSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternL
 // VirtualSymbolRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::VirtualSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::VirtualSymbolRefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::VirtualSymbolRefOp>>(context);
 }
@@ -249,7 +249,7 @@ void mlir_ts::VirtualSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatte
 // ThisVirtualSymbolRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::ThisVirtualSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::ThisVirtualSymbolRefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::ThisVirtualSymbolRefOp>>(context);
 }
@@ -258,7 +258,7 @@ void mlir_ts::ThisVirtualSymbolRefOp::getCanonicalizationPatterns(OwningRewriteP
 // AccessorRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::AccessorOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::AccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::AccessorOp>>(context);
 }
@@ -267,7 +267,7 @@ void mlir_ts::AccessorOp::getCanonicalizationPatterns(OwningRewritePatternList &
 // ThisAccessorRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::ThisAccessorOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::ThisAccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::ThisAccessorOp>>(context);
 }
@@ -276,7 +276,7 @@ void mlir_ts::ThisAccessorOp::getCanonicalizationPatterns(OwningRewritePatternLi
 // InterfaceSymbolRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::InterfaceSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::InterfaceSymbolRefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::InterfaceSymbolRefOp>>(context);
 }
@@ -299,7 +299,7 @@ void mlir_ts::InterfaceSymbolRefOp::getAsmResultNames(llvm::function_ref<void(Va
 // TypeRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::TypeRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::TypeRefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::TypeRefOp>>(context);
 }
@@ -308,7 +308,7 @@ void mlir_ts::TypeRefOp::getCanonicalizationPatterns(OwningRewritePatternList &r
 // ClassRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::ClassRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::ClassRefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::ClassRefOp>>(context);
 }
@@ -317,7 +317,7 @@ void mlir_ts::ClassRefOp::getCanonicalizationPatterns(OwningRewritePatternList &
 // InterfaceRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::InterfaceRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::InterfaceRefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::InterfaceRefOp>>(context);
 }
@@ -326,7 +326,7 @@ void mlir_ts::InterfaceRefOp::getCanonicalizationPatterns(OwningRewritePatternLi
 // NamespaceRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::NamespaceRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::NamespaceRefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::NamespaceRefOp>>(context);
 }
@@ -335,7 +335,7 @@ void mlir_ts::NamespaceRefOp::getCanonicalizationPatterns(OwningRewritePatternLi
 // LoadOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::LoadOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::LoadOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::LoadOp>>(context);
 }
@@ -344,7 +344,7 @@ void mlir_ts::LoadOp::getCanonicalizationPatterns(OwningRewritePatternList &resu
 // NullOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::NullOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::NullOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::NullOp>>(context);
 }
@@ -353,7 +353,7 @@ void mlir_ts::NullOp::getCanonicalizationPatterns(OwningRewritePatternList &resu
 // UndefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::UndefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::UndefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::UndefOp>>(context);
 }
@@ -596,7 +596,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 };
 } // end anonymous namespace.
 
-void mlir_ts::CastOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::CastOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<NormalizeCast>(context);
 }
@@ -647,7 +647,7 @@ mlir::Block *mlir_ts::FuncOp::addEntryBlock()
     auto *entry = new Block;
     push_back(entry);
 
-    mlir_ts::FunctionType type = getType();
+    mlir_ts::FunctionType type = getFunctionType();
     for (unsigned i = 0, e = type.getNumParams(); i < e; ++i)
     {
         entry->addArgument(type.getParamType(i));
