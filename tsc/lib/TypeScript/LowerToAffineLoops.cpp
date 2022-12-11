@@ -1756,7 +1756,7 @@ void TypeScriptToAffineLoweringFuncPass::runOnFunction()
     AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
 
     // TODO: Hack to fix issue with Async
-    target.addLegalOp<mlir::FuncOp>();
+    target.addLegalOp<mlir::func::FuncOp>();
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
@@ -1786,7 +1786,7 @@ void TypeScriptToAffineLoweringModulePass::runOnOperation()
     target.addLegalOp<ModuleOp>();    
 
     // TODO: Hack to fix issue with Async
-    target.addLegalOp<mlir::FuncOp>();    
+    target.addLegalOp<mlir::func::FuncOp>();    
     target.addLegalDialect<mlir::async::AsyncDialect>();
 
     // With the target and rewrite patterns defined, we can now attempt the

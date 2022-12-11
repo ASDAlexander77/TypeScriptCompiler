@@ -894,7 +894,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         std::string name;
         auto newFuncOp =
-            rewriter.create<mlir::FuncOp>(funcOp.getLoc(), funcOp.getName(),
+            rewriter.create<mlir::func::FuncOp>(funcOp.getLoc(), funcOp.getName(),
                                           rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(),
                                                                    signatureResultsConverter.getConvertedTypes()),
                                           ArrayRef<NamedAttribute>{}, argDictAttrs);

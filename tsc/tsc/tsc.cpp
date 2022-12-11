@@ -239,7 +239,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
 
-        mlir::OpPassManager &optPM2 = pm.nest<mlir::FuncOp>();
+        mlir::OpPassManager &optPM2 = pm.nest<mlir::func::FuncOp>();
 
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
         optPM2.addPass(mlir::typescript::createLowerToAffineFuncPass());

@@ -83,7 +83,7 @@ class LLVMRTTIHelperVCLinux
         classType = true;
     }
 
-    LogicalResult setPersonality(mlir::FuncOp newFuncOp)
+    LogicalResult setPersonality(mlir::func::FuncOp newFuncOp)
     {
         auto name = "__gxx_personality_v0";
         auto cxxFrameHandler3 = ch.getOrInsertFunction(name, th.getFunctionType(th.getI32Type(), {}, true));

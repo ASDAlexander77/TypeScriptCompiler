@@ -154,12 +154,12 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return failure();
     }
 
-    mlir::FuncOp createFunctionFromRegion(mlir::Location location, StringRef name, mlir::Region &initRegion, StringRef saveToGlobalName)
+    mlir::func::FuncOp createFunctionFromRegion(mlir::Location location, StringRef name, mlir::Region &initRegion, StringRef saveToGlobalName)
     {
         TypeHelper th(rewriter);
 
         // TODO: finish it
-        auto newFuncOp = rewriter.create<mlir::FuncOp>(
+        auto newFuncOp = rewriter.create<mlir::func::FuncOp>(
             location, name, mlir::FunctionType::get(rewriter.getContext(), llvm::ArrayRef<mlir::Type>(), llvm::ArrayRef<mlir::Type>()));
         if (!initRegion.empty())
         {

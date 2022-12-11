@@ -111,7 +111,7 @@ class LLVMRTTIHelperVCWin32
         return ss.str();
     }
 
-    LogicalResult setPersonality(mlir::FuncOp newFuncOp)
+    LogicalResult setPersonality(mlir::func::FuncOp newFuncOp)
     {
         auto name = "__CxxFrameHandler3";
         auto cxxFrameHandler3 = ch.getOrInsertFunction(name, th.getFunctionType(th.getI32Type(), {}, true));

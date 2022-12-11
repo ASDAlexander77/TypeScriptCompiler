@@ -43,6 +43,7 @@
 #include "mlir/IR/Verifier.h"
 
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -12008,7 +12009,7 @@ genContext);
         // we need to add temporary block
         auto tempFuncType =
             mlir::FunctionType::get(builder.getContext(), ArrayRef<mlir::Type>(), ArrayRef<mlir::Type>());
-        auto tempFuncOp = mlir::FuncOp::create(location, ".tempfunc", tempFuncType);
+        auto tempFuncOp = mlir::func::FuncOp::create(location, ".tempfunc", tempFuncType);
         auto &entryBlock = *tempFuncOp.addEntryBlock();
 
         {
@@ -12042,7 +12043,7 @@ genContext);
         auto location = exprValue.getLoc();
         // we need to add temporary block
         auto tempFuncType = mlir::FunctionType::get(builder.getContext(), llvm::None, llvm::None);
-        auto tempFuncOp = mlir::FuncOp::create(location, ".tempfunc", tempFuncType);
+        auto tempFuncOp = mlir::func::FuncOp::create(location, ".tempfunc", tempFuncType);
         auto &entryBlock = *tempFuncOp.addEntryBlock();
 
         auto insertPoint = builder.saveInsertionPoint();
@@ -14514,7 +14515,7 @@ genContext);
 
     mlir::Location loc2(ts::SourceFile sourceFile, std::string fileName, int start, int length)
     {
-        auto fileId = builder.getIdentifier(fileName);
+        auto fileId = getStringAttr(fileName);
         auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start);
         auto begin =
             mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
@@ -14701,7 +14702,7 @@ namespace typescript
     return convertWideToUTF8(s.str());
 }
 
-mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
+mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
                                         const llvm::StringRef &source, CompileOptions compileOptions)
 {
 

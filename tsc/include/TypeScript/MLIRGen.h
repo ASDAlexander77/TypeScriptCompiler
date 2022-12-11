@@ -9,7 +9,9 @@
 namespace mlir
 {
 class MLIRContext;
-class OwningModuleRef;
+template <typename OpTy>
+class OwningOpRef;
+class ModuleOp;
 } // namespace mlir
 
 namespace llvm
@@ -20,7 +22,7 @@ class StringRef;
 namespace typescript
 {
 ::std::string dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source);
-mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source,
+mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source,
                                         CompileOptions compileOptions);
 } // namespace typescript
 
