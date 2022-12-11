@@ -8,6 +8,7 @@
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BlockAndValueMapping.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/FunctionImplementation.h"
 #include "mlir/IR/Matchers.h"
@@ -16,6 +17,7 @@
 #include "mlir/IR/TypeUtilities.h"
 
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/Support/Debug.h"
 
 using namespace mlir;
@@ -691,7 +693,7 @@ void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef
 
 /// Clone the internal blocks from this function into dest and all attributes
 /// from this function to dest.
-void mlir_ts::FuncOp::cloneInto(FuncOp dest, BlockAndValueMapping &mapper)
+void mlir_ts::FuncOp::cloneInto(FuncOp dest, mlir::BlockAndValueMapping &mapper)
 {
     // Add the attributes of this function to dest.
     llvm::MapVector<StringAttr, Attribute> newAttrMap;
@@ -714,7 +716,7 @@ void mlir_ts::FuncOp::cloneInto(FuncOp dest, BlockAndValueMapping &mapper)
 /// provided (leaving them alone if no entry is present). Replaces references
 /// to cloned sub-values with the corresponding value that is copied, and adds
 /// those mappings to the mapper.
-FuncOp mlir_ts::FuncOp::clone(BlockAndValueMapping &mapper)
+mlir_ts::FuncOp mlir_ts::FuncOp::clone(mlir::BlockAndValueMapping &mapper)
 {
     // Create the new function.
     FuncOp newFunc = cast<FuncOp>(getOperation()->cloneWithoutRegions());
@@ -756,9 +758,9 @@ FuncOp mlir_ts::FuncOp::clone(BlockAndValueMapping &mapper)
     return newFunc;
 }
 
-FuncOp mlir_ts::FuncOp::clone()
+mlir_ts::FuncOp mlir_ts::FuncOp::clone()
 {
-    BlockAndValueMapping mapper;
+    mlir::BlockAndValueMapping mapper;
     return clone(mapper);
 }
 
@@ -771,7 +773,7 @@ LogicalResult verify(mlir_ts::FuncOp op)
     // Verify that the argument list of the function and the arg list of the entry
     // block line up.  The trait already verified that the number of arguments is
     // the same between the signature and the block.
-    auto fnInputTypes = op.getType().getInputs();
+    auto fnInputTypes = op.getFunctionType().getInputs();
     Block &entryBlock = op.front();
     for (unsigned i = 0, e = entryBlock.getNumArguments(); i != e; ++i)
         if (fnInputTypes[i] != entryBlock.getArgument(i).getType())

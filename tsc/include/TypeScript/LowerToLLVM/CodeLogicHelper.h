@@ -376,7 +376,7 @@ class CodeLogicHelper
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        rewriter.create<mlir::BranchOp>(loc, continuationBlock);
+        rewriter.create<mlir::cf::BranchOp>(loc, continuationBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
         return continuationBlock;
@@ -390,7 +390,7 @@ class CodeLogicHelper
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        rewriter.create<mlir::BranchOp>(loc, toBlock);
+        rewriter.create<mlir::cf::BranchOp>(loc, toBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
         return continuationBlock;
