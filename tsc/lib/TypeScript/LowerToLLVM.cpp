@@ -895,18 +895,18 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                                           ArrayRef<NamedAttribute>{}, argDictAttrs);
         for (const auto &namedAttr : funcOp->getAttrs())
         {
-            if (namedAttr.first == function_interface_impl::getTypeAttrName())
+            if (namedAttr.getName() == function_interface_impl::getTypeAttrName())
             {
                 continue;
             }
 
-            if (namedAttr.first == SymbolTable::getSymbolAttrName())
+            if (namedAttr.getName() == SymbolTable::getSymbolAttrName())
             {
-                name = namedAttr.second.dyn_cast_or_null<mlir::StringAttr>().getValue().str();
+                name = namedAttr.getValue().dyn_cast_or_null<mlir::StringAttr>().getValue().str();
                 continue;
             }
 
-            newFuncOp->setAttr(namedAttr.first, namedAttr.second);
+            newFuncOp->setAttr(namedAttr.getName(), namedAttr.getValue());
         }
 
         SmallVector<mlir::Attribute> funcAttrs;
@@ -2048,7 +2048,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
-        auto newCountAsI32Type = rewriter.create<LLVM::TuncOp>(loc, newCountAsIndexType, th.getI32Type());
+        auto newCountAsI32Type = rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType);
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
@@ -2113,7 +2113,7 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
-        auto newCountAsI32Type = rewriter.create<LLVM::TuncOp>(loc, newCountAsIndexType, th.getI32Type());
+        auto newCountAsI32Type = rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType);
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
@@ -2150,11 +2150,11 @@ void NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value oper, mlir
     auto type = oper.getType();
     if (type.isIntOrIndex())
     {
-        builder.replaceOpWithNewOp<SubIOp>(unaryOp, type, clh.createIConstantOf(type.getIntOrFloatBitWidth(), 0), oper);
+        builder.replaceOpWithNewOp<arith::SubIOp>(unaryOp, type, clh.createIConstantOf(type.getIntOrFloatBitWidth(), 0), oper);
     }
     else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
     {
-        builder.replaceOpWithNewOp<SubFOp>(unaryOp, type, clh.createFConstantOf(type.getIntOrFloatBitWidth(), 0.0),
+        builder.replaceOpWithNewOp<arith::SubFOp>(unaryOp, type, clh.createFConstantOf(type.getIntOrFloatBitWidth(), 0.0),
                                            oper);
     }
     else
@@ -2244,59 +2244,59 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
             }
             else
             {
-                BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, transformed.operand1(),
+                BinOp<mlir_ts::ArithmeticBinaryOp, arith::AddIOp, arith::AddFOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                    transformed.operand2(), rewriter);
             }
 
             return success();
 
         case SyntaxKind::MinusToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::SubIOp, arith::SubFOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::AsteriskToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, MulIOp, MulFOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::MulIOp, arith::MulFOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::SlashToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, SignedDivIOp, DivFOp, UnsignedDivIOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::DivSIOp, arith::DivFOp, arith::DivUIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::GreaterThanGreaterThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp, UnsignedShiftRightOp>(
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRSIOp, arith::ShRSIOp, arith::ShRUIOp>(
                 arithmeticBinaryOp, transformed.operand1(), transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, UnsignedShiftRightOp, UnsignedShiftRightOp>(
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::UnsignedShiftRightOp, arith::UnsignedShiftRightOp>(
                 arithmeticBinaryOp, transformed.operand1(), transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::LessThanLessThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, ShiftLeftOp, ShiftLeftOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShiftLeftOp, arith::ShiftLeftOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                          transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::AmpersandToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, AndOp, AndOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::AndOp, arith::AndOp>(arithmeticBinaryOp, transformed.operand1(),
                                                              transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::BarToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, OrOp, OrOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::OrOp, arith::OrOp>(arithmeticBinaryOp, transformed.operand1(),
                                                            transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::CaretToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, XOrOp, XOrOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::XOrOp, arith::XOrOp>(arithmeticBinaryOp, transformed.operand1(),
                                                              transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::PercentToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, SignedRemIOp, RemFOp, UnsignedRemIOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::SignedRemIOp, arith::RemFOp, arith::UnsignedRemIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                transformed.operand2(), rewriter);
             return success();
 
@@ -2343,28 +2343,28 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
         {
         case SyntaxKind::EqualsEqualsToken:
         case SyntaxKind::EqualsEqualsEqualsToken:
-            value = logicOp<CmpIPredicate::eq, CmpFPredicate::OEQ>(logicalBinaryOp, op, op1, opType1, op2, opType2,
+            value = logicOp<arith::CmpIPredicate::eq, arith::CmpFPredicate::OEQ>(logicalBinaryOp, op, op1, opType1, op2, opType2,
                                                                    rewriter);
             break;
         case SyntaxKind::ExclamationEqualsToken:
         case SyntaxKind::ExclamationEqualsEqualsToken:
-            value = logicOp<CmpIPredicate::ne, CmpFPredicate::ONE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
+            value = logicOp<arith::CmpIPredicate::ne, arith::CmpFPredicate::ONE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
                                                                    rewriter);
             break;
         case SyntaxKind::GreaterThanToken:
-            value = logicOp<CmpIPredicate::sgt, CmpFPredicate::OGT>(logicalBinaryOp, op, op1, opType1, op2, opType2,
+            value = logicOp<arith::CmpIPredicate::sgt, arith::CmpFPredicate::OGT>(logicalBinaryOp, op, op1, opType1, op2, opType2,
                                                                     rewriter);
             break;
         case SyntaxKind::GreaterThanEqualsToken:
-            value = logicOp<CmpIPredicate::sge, CmpFPredicate::OGE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
+            value = logicOp<arith::CmpIPredicate::sge, arith::CmpFPredicate::OGE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
                                                                     rewriter);
             break;
         case SyntaxKind::LessThanToken:
-            value = logicOp<CmpIPredicate::slt, CmpFPredicate::OLT>(logicalBinaryOp, op, op1, opType1, op2, opType2,
+            value = logicOp<arith::CmpIPredicate::slt, arith::CmpFPredicate::OLT>(logicalBinaryOp, op, op1, opType1, op2, opType2,
                                                                     rewriter);
             break;
         case SyntaxKind::LessThanEqualsToken:
-            value = logicOp<CmpIPredicate::sle, CmpFPredicate::OLE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
+            value = logicOp<arith::CmpIPredicate::sle, arith::CmpFPredicate::OLE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
                                                                     rewriter);
             break;
         default:
