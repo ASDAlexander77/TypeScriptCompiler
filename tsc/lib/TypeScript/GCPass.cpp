@@ -74,7 +74,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 
             if (auto callOp = dyn_cast_or_null<LLVM::CallOp>(op))
             {
-                if (!callOp.callee().hasValue())
+                if (!callOp.getCallee().hasValue())
                 {
                     return;
                 }
@@ -133,7 +133,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
             return;
         }
 
-        callOp.calleeAttr(::mlir::FlatSymbolRefAttr::get(callOp->getContext(), newName));
+        callOp.setCalleeAttr(::mlir::FlatSymbolRefAttr::get(callOp->getContext(), newName));
     }
 
     void injectInit(LLVM::LLVMFuncOp funcOp)
@@ -154,12 +154,12 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         LLVM_DEBUG(llvm::dbgs() << "DBG: " << memSetCallOp.getOperand(0) << "\n";);
         if (auto probMemAllocCall = dyn_cast_or_null<LLVM::CallOp>(memSetCallOp.getOperand(0).getDefiningOp()))
         {
-            if (!probMemAllocCall.callee().hasValue())
+            if (!probMemAllocCall.getCallee().hasValue())
             {
                 return;
             }
 
-            auto name = probMemAllocCall.callee().getValue();
+            auto name = probMemAllocCall.getCallee().getValue();
             if (name == "GC_malloc")
             {
                 ConversionPatternRewriter rewriter(memSetCallOp.getContext());

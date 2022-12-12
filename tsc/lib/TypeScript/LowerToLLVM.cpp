@@ -10,6 +10,8 @@
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -2281,17 +2283,17 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
             return success();
 
         case SyntaxKind::AmpersandToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::AndOp, LLVM::AndOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::AndIOp, arith::AndIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                              transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::BarToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::OrOp, LLVM::OrOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::OrIOp, arith::OrIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                            transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::CaretToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::XOrOp, LLVM::XOrOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::XOrIOp, arith::XOrIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                              transformed.operand2(), rewriter);
             return success();
 
@@ -4796,7 +4798,7 @@ static LogicalResult verifyAlloca(mlir::Block *block)
             return;
         }
 
-        if (auto alloca = dyn_cast<LLVM::AllocaOp>(op))
+        if (auto allocaOp = dyn_cast<LLVM::AllocaOp>(op))
         {
             if (beginAlloca)
             {
@@ -4804,7 +4806,7 @@ static LogicalResult verifyAlloca(mlir::Block *block)
             }
 
             // check only alloca with const size
-            auto sizeOp = alloca.arraySize().getDefiningOp();
+            auto sizeOp = allocaOp.getArraySize().getDefiningOp();
             if (!isa<mlir_ts::ConstantOp>(sizeOp) && !isa<mlir::arith::ConstantOp>(sizeOp))
             {
                 return;
@@ -4908,8 +4910,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // set of legal ones.
     RewritePatternSet patterns(&getContext());
     populateAffineToStdConversionPatterns(patterns);
-    populateLoopToStdConversionPatterns(patterns);
-    populateStdToLLVMConversionPatterns(typeConverter, patterns);
+    arith::populateArithmeticToLLVMConversionPatterns(typeConverter, patterns);
+    populateFuncToLLVMConversionPatterns(typeConverter, patterns);
     populateMathToLLVMConversionPatterns(typeConverter, patterns);
 
 #ifdef ENABLE_ASYNC
