@@ -498,22 +498,22 @@ class CastLogicHelper
 
         if (isIntOrBool(inLLVMType) && isInt(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() < resLLVMType.getIntOrFloatBitWidth())
         {
-            return rewriter.create<LLVM::ZExtOp>(loc, in, resLLVMType);
+            return rewriter.create<LLVM::ZExtOp>(loc, resLLVMType, in);
         }
 
         if (isInt(inLLVMType) && isInt(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() > resLLVMType.getIntOrFloatBitWidth())
         {
-            return rewriter.create<LLVM::TruncOp>(loc, in, resLLVMType);
+            return rewriter.create<LLVM::TruncOp>(loc, resLLVMType, in);
         }
 
         if (isFloat(inLLVMType) && isFloat(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() < resLLVMType.getIntOrFloatBitWidth())
         {
-            return rewriter.create<LLVM::FPExtOp>(loc, in, resLLVMType);
+            return rewriter.create<LLVM::FPExtOp>(loc, resLLVMType, in);
         }
 
         if (isFloat(inLLVMType) && isFloat(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() > resLLVMType.getIntOrFloatBitWidth())
         {
-            return rewriter.create<LLVM::FPTruncOp>(loc, in, resLLVMType);
+            return rewriter.create<LLVM::FPTruncOp>(loc, resLLVMType, in);
         }
 
         // ptrs cast
