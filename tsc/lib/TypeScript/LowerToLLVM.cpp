@@ -2271,32 +2271,32 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
             return success();
 
         case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::UnsignedShiftRightOp, arith::UnsignedShiftRightOp>(
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRUIOp, arith::ShRUIOp>(
                 arithmeticBinaryOp, transformed.operand1(), transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::LessThanLessThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShiftLeftOp, arith::ShiftLeftOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShLIOp, arith::ShLIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                          transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::AmpersandToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::AndOp, arith::AndOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::AndOp, LLVM::AndOp>(arithmeticBinaryOp, transformed.operand1(),
                                                              transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::BarToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::OrOp, arith::OrOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::OrOp, LLVM::OrOp>(arithmeticBinaryOp, transformed.operand1(),
                                                            transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::CaretToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::XOrOp, arith::XOrOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::XOrOp, LLVM::XOrOp>(arithmeticBinaryOp, transformed.operand1(),
                                                              transformed.operand2(), rewriter);
             return success();
 
         case SyntaxKind::PercentToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::SignedRemIOp, arith::RemFOp, arith::UnsignedRemIOp>(arithmeticBinaryOp, transformed.operand1(),
+            BinOp<mlir_ts::ArithmeticBinaryOp, arith::RemSIOp, arith::RemFOp, arith::RemUIOp>(arithmeticBinaryOp, transformed.operand1(),
                                                                transformed.operand2(), rewriter);
             return success();
 
@@ -2315,12 +2315,12 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
 {
     using TsLlvmPattern<mlir_ts::LogicalBinaryOp>::TsLlvmPattern;
 
-    template <CmpIPredicate v1, CmpFPredicate v2>
+    template <arith::CmpIPredicate v1, arith::CmpFPredicate v2>
     mlir::Value logicOp(mlir_ts::LogicalBinaryOp logicalBinaryOp, SyntaxKind op, mlir::Value left,
                         mlir::Type leftTypeOrig, mlir::Value right, mlir::Type rightTypeOrig,
                         PatternRewriter &builder) const
     {
-        return LogicOp<CmpIOp, CmpIPredicate, v1, CmpFOp, CmpFPredicate, v2>(logicalBinaryOp, op, left, leftTypeOrig,
+        return LogicOp<arith::CmpIOp, arith::CmpIPredicate, v1, arith::CmpFOp, arith::CmpFPredicate, v2>(logicalBinaryOp, op, left, leftTypeOrig,
                                                                              right, rightTypeOrig, builder,
                                                                              *(LLVMTypeConverter *)getTypeConverter());
     }
