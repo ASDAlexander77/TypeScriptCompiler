@@ -50,6 +50,7 @@
 #include "mlir/Conversion/AsyncToLLVM/AsyncToLLVM.h"
 #endif
 
+#include "llvm/PassInfo.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"

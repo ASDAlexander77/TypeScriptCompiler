@@ -19,8 +19,8 @@ set(LIBS
     MLIRExecutionEngine
     MLIRIR
     MLIRJitRunner
-    MLIRLLVMIR
     MLIRLLVMIRTransforms
+    MLIRLLVMCommonConversion
     MLIRLLVMToLLVMIRTranslation
     MLIROptLib
     MLIRParser
