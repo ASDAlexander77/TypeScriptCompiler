@@ -3464,7 +3464,7 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
             }
 
             auto const0 = clh.createI32ConstantOf(0);
-            trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
+            trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, trampoline, ValueRange{const0, const0});
         }
 
         // init trampoline
