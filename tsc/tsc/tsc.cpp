@@ -28,6 +28,7 @@
 #include "mlir/IR/Verifier.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
+#include "mlir/Parser/Parser.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
@@ -130,7 +131,7 @@ static cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JIT
 cl::OptionCategory clTsCompilingOptionsCategory{"TypeScript compiling options"};
 static cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(clTsCompilingOptionsCategory));
 
-int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
+int loadMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &module)
 {
     auto fileName = llvm::StringRef(inputFilename);
 
@@ -161,7 +162,7 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
     // Parse the input mlir.
     llvm::SourceMgr sourceMgr;
     sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
-    module = mlir::parseSourceFile(sourceMgr, &context);
+    module = mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
     if (!module)
     {
         llvm::errs() << "Error can't load file " << inputFilename << "\n";
@@ -205,7 +206,7 @@ void publishDiagnostic(mlir::Diagnostic &diag)
     }
 }
 
-int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
+int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp>  &module)
 {
     if (int error = loadMLIR(context, module))
     {
@@ -500,7 +501,9 @@ int runJit(mlir::ModuleOp module)
 
     // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
     // the module.
-    auto maybeEngine = mlir::ExecutionEngine::create(module, /*llvmModuleBuilder=*/nullptr, optPipeline);
+    mlir::ExecutionEngineOptions engineOptions;
+    engineOptions.transformer = optPipeline;
+    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
     assert(maybeEngine && "failed to construct an execution engine");
     auto &engine = maybeEngine.get();
 
@@ -576,14 +579,16 @@ int main(int argc, char **argv)
     mlir::MLIRContext context;
     // Load our Dialect in this MLIR Context.
     context.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
-    context.getOrLoadDialect<mlir::StandardOpsDialect>();
+    context.getOrLoadDialect<mlir::arith::ArithmeticDialect>();
     context.getOrLoadDialect<mlir::math::MathDialect>();
+    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+    context.getOrLoadDialect<mlir::func::FuncDialect>();
     context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 #ifdef ENABLE_ASYNC
     context.getOrLoadDialect<mlir::async::AsyncDialect>();
 #endif
 
-    mlir::OwningModuleRef module;
+    mlir::OwningOpRef<mlir::ModuleOp> module;
     if (int error = loadAndProcessMLIR(context, module))
     {
         return error;
