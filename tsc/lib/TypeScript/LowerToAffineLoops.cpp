@@ -1511,6 +1511,8 @@ namespace
 {
 struct TypeScriptToAffineLoweringTSFuncPass : public PassWrapper<TypeScriptToAffineLoweringTSFuncPass, TypeScriptFunctionPass>
 {
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TypeScriptToAffineLoweringTSFuncPass)
+
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<arith::ArithmeticDialect>();
@@ -1528,6 +1530,8 @@ namespace
 {
 struct TypeScriptToAffineLoweringFuncPass : public PassWrapper<TypeScriptToAffineLoweringFuncPass, OperationPass<func::FuncOp>>
 {
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TypeScriptToAffineLoweringFuncPass)
+
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<arith::ArithmeticDialect>();
@@ -1545,6 +1549,8 @@ namespace
 {
 struct TypeScriptToAffineLoweringModulePass : public PassWrapper<TypeScriptToAffineLoweringModulePass, OperationPass<ModuleOp>>
 {
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TypeScriptToAffineLoweringModulePass)
+
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<arith::ArithmeticDialect>();

@@ -45,6 +45,8 @@ class ModulePass : public OperationPass<mlir::ModuleOp>
 class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 {
   public:
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(GCPass)
+
     void runOnModule() override
     {
         auto f = getModule();

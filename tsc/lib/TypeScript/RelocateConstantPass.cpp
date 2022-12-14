@@ -23,6 +23,8 @@ namespace
 class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, TypeScriptFunctionPass>
 {
   public:
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(RelocateConstantPass)
+
     void runOnFunction() override
     {
         // TODO: get rid of using it

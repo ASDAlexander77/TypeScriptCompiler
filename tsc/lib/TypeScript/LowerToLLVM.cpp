@@ -4753,6 +4753,8 @@ namespace
 
 struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLoweringPass, OperationPass<ModuleOp>>
 {
+    MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TypeScriptToLLVMLoweringPass)
+
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<LLVM::LLVMDialect>();
