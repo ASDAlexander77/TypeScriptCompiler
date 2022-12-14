@@ -129,8 +129,7 @@ Type mlir_ts::ConstTupleType::parse(AsmParser &parser)
 
 void mlir_ts::ConstTupleType::print(AsmPrinter &printer) const
 {
-    printer << "const_tuple"
-            << "<";
+    printer << "<";
     for (size_t i = 0, e = getImpl()->fields.size(); i < e; i++)
     {
         const auto &field = getImpl()->fields[i];
@@ -177,8 +176,7 @@ Type mlir_ts::TupleType::parse(AsmParser &parser)
 
 void mlir_ts::TupleType::print(AsmPrinter &printer) const
 {
-    printer << "tuple"
-            << "<";
+    printer << "<";
     for (size_t i = 0, e = getImpl()->fields.size(); i < e; i++)
     {
         const auto &field = getImpl()->fields[i];

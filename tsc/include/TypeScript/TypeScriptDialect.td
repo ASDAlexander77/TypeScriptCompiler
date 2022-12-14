@@ -21,6 +21,11 @@ def TypeScript_Dialect : Dialect {
     }];
     let cppNamespace = "::mlir::typescript";
     //let dependentDialects = ["::mlir::arith::ArithmeticDialect", "::mlir::math::MathDialect", "::mlir::cf::ControlFlowDialect", "::mlir::func::FuncDialect", "::mlir::async::AsyncDialect"];
+
+    let useDefaultTypePrinterParser = 1;
+    //let useDefaultAttributePrinterParser = 1;
+
+    let emitAccessorPrefix = kEmitAccessorPrefix_Raw;
 }
 
 //===----------------------------------------------------------------------===//
