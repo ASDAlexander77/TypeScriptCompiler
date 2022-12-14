@@ -212,7 +212,7 @@ class CodeLogicHelper
         auto *elseBlock = rewriter.createBlock(continuationBlock);
 
         // result block
-        auto *resultBlock = rewriter.createBlock(continuationBlock, types);
+        auto *resultBlock = rewriter.createBlock(continuationBlock, types, SmallVector<Location>(types.size(), loc));
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
         rewriter.setInsertionPointToStart(thenBlock);
