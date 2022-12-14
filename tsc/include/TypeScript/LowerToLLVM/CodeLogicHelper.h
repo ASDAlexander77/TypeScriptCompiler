@@ -119,7 +119,7 @@ class CodeLogicHelper
         return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrPtrType(), value);
     }
 
-    mlir::Value conditionalExpressionLowering(mlir::Type type, mlir::Value condition,
+    mlir::Value conditionalExpressionLowering(mlir::Location loc, mlir::Type type, mlir::Value condition,
                                               mlir::function_ref<mlir::Value(OpBuilder &, Location)> thenBuilder,
                                               mlir::function_ref<mlir::Value(OpBuilder &, Location)> elseBuilder)
     {
@@ -137,7 +137,7 @@ class CodeLogicHelper
         auto elseValue = elseBuilder(rewriter, loc);
 
         // result block
-        auto *resultBlock = rewriter.createBlock(continuationBlock, TypeRange{type});
+        auto *resultBlock = rewriter.createBlock(continuationBlock, TypeRange{type}, {loc});
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
         rewriter.setInsertionPointToEnd(thenBlock);

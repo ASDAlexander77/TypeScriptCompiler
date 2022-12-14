@@ -11,7 +11,9 @@
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
+#include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
 #include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -557,7 +559,7 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
         auto ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, cmpResult, const0I32);
 
         auto result = clh.conditionalExpressionLowering(
-            th.getBooleanType(), ptrCmpResult,
+            loc, th.getBooleanType(), ptrCmpResult,
             [&](OpBuilder &builder, Location loc) {
                 // both not null
                 auto const0 = clh.createI32ConstantOf(0);
@@ -2454,7 +2456,7 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             auto ptrCmpResult1 = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, dataIntPtrValue, const0);
 
             loadedValue =
-                clh.conditionalExpressionLowering(resultTypeLlvm, ptrCmpResult1, createOptionalFunc, undefOptionalFunc);
+                clh.conditionalExpressionLowering(loc, resultTypeLlvm, ptrCmpResult1, createOptionalFunc, undefOptionalFunc);
         }
         else
         {
@@ -3662,7 +3664,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                     rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, methodOrFieldIntPtrValue, negative1);
 
                 auto result =
-                    clh.conditionalExpressionLowering(fieldLLVMTypeRef, condVal, nullAddrFunc, calcFieldTotalAddrFunc);
+                    clh.conditionalExpressionLowering(loc, fieldLLVMTypeRef, condVal, nullAddrFunc, calcFieldTotalAddrFunc);
                 fieldAddr = result;
             }
             else
@@ -4759,6 +4761,9 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
     {
         registry.insert<LLVM::LLVMDialect>();
         registry.insert<mlir::math::MathDialect>();
+        registry.insert<mlir::arith::ArithmeticDialect>();
+        registry.insert<mlir::cf::ControlFlowDialect>();
+        registry.insert<mlir::func::FuncDialect>();
     }
 
     void runOnOperation() final;
@@ -4914,6 +4919,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     populateAffineToStdConversionPatterns(patterns);
     arith::populateArithmeticToLLVMConversionPatterns(typeConverter, patterns);
     populateFuncToLLVMConversionPatterns(typeConverter, patterns);
+    cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
     populateMathToLLVMConversionPatterns(typeConverter, patterns);
 
 #ifdef ENABLE_ASYNC

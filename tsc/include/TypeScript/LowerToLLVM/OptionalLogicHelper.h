@@ -111,7 +111,7 @@ class OptionalLogicHelper
             auto bothHasResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, andOpResult, const0);
 
             auto result = clh.conditionalExpressionLowering(
-                th.getBooleanType(), bothHasResult,
+                loc, th.getBooleanType(), bothHasResult,
                 [&](OpBuilder &builder, Location loc) {
                     auto leftSubType = leftOptType.getElementType();
                     auto rightSubType = rightOptType.getElementType();

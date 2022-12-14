@@ -359,7 +359,9 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
         }
         else
         {
-            continueBlock = rewriter.createBlock(remainingOpsBlock, ifOp.getResultTypes());
+            continueBlock =
+                rewriter.createBlock(remainingOpsBlock, ifOp.getResultTypes(),
+                                     SmallVector<Location>(ifOp->getNumResults(), ifOp.getLoc()));
             rewriter.create<mlir::cf::BranchOp>(loc, remainingOpsBlock);
         }
 
