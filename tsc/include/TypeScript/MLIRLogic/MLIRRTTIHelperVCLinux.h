@@ -235,7 +235,7 @@ class MLIRRTTIHelperVCLinux
 
         mlir::OpBuilder::InsertionGuard guard(rewriter);
 
-        rewriter.setInsertionPointToStart(parentModule.getBody());
+        rewriter.setInsertionPointToStart(&parentModule.getBody().front());
         seekLast(parentModule.getBody());
 
         // _ZTId
