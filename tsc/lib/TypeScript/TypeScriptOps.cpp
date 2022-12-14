@@ -364,21 +364,21 @@ void mlir_ts::UndefOp::getCanonicalizationPatterns(RewritePatternSet &results, M
 // CastOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult verify(mlir_ts::CastOp op)
+LogicalResult mlir_ts::CastOp::verify()
 {
-    auto inType = op.in().getType();
-    auto resType = op.res().getType();
+    auto inType = in().getType();
+    auto resType = res().getType();
 
     // funcType -> funcType
     auto inFuncType = inType.dyn_cast_or_null<mlir_ts::FunctionType>();
     auto resFuncType = resType.dyn_cast_or_null<mlir_ts::FunctionType>();
     if (inFuncType && resFuncType)
     {
-        ::typescript::MLIRTypeHelper mth(op.getContext());
+        ::typescript::MLIRTypeHelper mth(getContext());
         auto result = mth.TestFunctionTypesMatchWithObjectMethods(inFuncType, resFuncType);
         if (::typescript::MatchResultType::Match != result.result)
         {
-            op->emitError("can't cast function type ") << inFuncType << "[" << inFuncType.getNumInputs() << "] to type " << resFuncType
+            emitError("can't cast function type ") << inFuncType << "[" << inFuncType.getNumInputs() << "] to type " << resFuncType
                                                        << "[" << resFuncType.getNumInputs() << "]";
             return failure();
         }
@@ -408,7 +408,7 @@ LogicalResult verify(mlir_ts::CastOp op)
     auto resUnionType = resType.dyn_cast_or_null<mlir_ts::UnionType>();
     if (inUnionType || resUnionType)
     {
-        ::typescript::MLIRTypeHelper mth(op.getContext());
+        ::typescript::MLIRTypeHelper mth(getContext());
         auto cmpTypes = [&](mlir::Type t1, mlir::Type t2) { return mth.canCastFromTo(t1, t2); };
 
         if (inUnionType && !resUnionType)
@@ -417,7 +417,7 @@ LogicalResult verify(mlir_ts::CastOp op)
             auto types = inUnionType.getTypes();
             if (std::find_if(types.begin(), types.end(), pred) == types.end())
             {
-                ::typescript::MLIRTypeHelper mth(op.getContext());
+                ::typescript::MLIRTypeHelper mth(getContext());
                 mlir::Type baseType;
                 if (!mth.isUnionTypeNeedsTag(inUnionType, baseType))
                 {
@@ -425,7 +425,7 @@ LogicalResult verify(mlir_ts::CastOp op)
                     return success();
                 }
 
-                return op.emitOpError("type [") << inUnionType << "] does not have [" << resType << "] type";
+                return emitOpError("type [") << inUnionType << "] does not have [" << resType << "] type";
             }
 
             return success();
@@ -437,7 +437,7 @@ LogicalResult verify(mlir_ts::CastOp op)
             auto types = resUnionType.getTypes();
             if (std::find_if(types.begin(), types.end(), pred) == types.end())
             {
-                return op.emitOpError("type [") << inType << "] can't be stored in [" << resUnionType << "]";
+                return emitOpError("type [") << inType << "] can't be stored in [" << resUnionType << "]";
             }
 
             return success();
@@ -453,7 +453,7 @@ LogicalResult verify(mlir_ts::CastOp op)
         auto inUnionTypes = inUnionType.getTypes();
         if (std::find_if(inUnionTypes.begin(), inUnionTypes.end(), predForInUnion) == inUnionTypes.end())
         {
-            return op.emitOpError("type [") << inUnionType << "] can't be stored in [" << resUnionType << ']';
+            return emitOpError("type [") << inUnionType << "] can't be stored in [" << resUnionType << ']';
         }
 
         return success();
@@ -764,20 +764,20 @@ mlir_ts::FuncOp mlir_ts::FuncOp::clone()
     return clone(mapper);
 }
 
-LogicalResult verify(mlir_ts::FuncOp op)
+LogicalResult mlir_ts::FuncOp::verify()
 {
     // If this function is external there is nothing to do.
-    if (op.isExternal())
+    if (isExternal())
         return success();
 
     // Verify that the argument list of the function and the arg list of the entry
     // block line up.  The trait already verified that the number of arguments is
     // the same between the signature and the block.
-    auto fnInputTypes = op.getFunctionType().getInputs();
-    Block &entryBlock = op.front();
+    auto fnInputTypes = getFunctionType().getInputs();
+    Block &entryBlock = front();
     for (unsigned i = 0, e = entryBlock.getNumArguments(); i != e; ++i)
         if (fnInputTypes[i] != entryBlock.getArgument(i).getType())
-            return op.emitOpError("type of entry block argument #")
+            return emitOpError("type of entry block argument #")
                    << i << '(' << entryBlock.getArgument(i).getType() << ") must match the type of the corresponding argument in "
                    << "function signature(" << fnInputTypes[i] << ')';
 
@@ -788,24 +788,24 @@ LogicalResult verify(mlir_ts::FuncOp op)
 // InvokeOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult verify(mlir_ts::InvokeOp op)
+LogicalResult mlir_ts::InvokeOp::verify()
 {
-    if (op.getNumResults() > 1)
+    if (getNumResults() > 1)
     {
-        return op.emitOpError("must have 0 or 1 result");
+        return emitOpError("must have 0 or 1 result");
     }
 
-    Block *unwindDest = op.unwindDest();
-    if (unwindDest->empty())
+    Block *unwindDestBlock = unwindDest();
+    if (unwindDestBlock->empty())
     {
-        return op.emitError("must have at least one operation in unwind destination");
+        return emitError("must have at least one operation in unwind destination");
     }
 
     // In unwind destination, first operation must be LandingpadOp
     /*
-    if (!isa<LandingpadOp>(unwindDest->front()))
+    if (!isa<LandingpadOp>(unwindDestBlock->front()))
     {
-        return op.emitError("first operation in unwind destination should be a "
+        return emitError("first operation in unwind destination should be a "
                             "llvm.landingpad operation");
     }
     */

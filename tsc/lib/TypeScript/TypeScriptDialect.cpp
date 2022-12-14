@@ -23,10 +23,6 @@ namespace mlir_ts = mlir::typescript;
 //===----------------------------------------------------------------------===//
 #include "TypeScript/TypeScriptOpsDialect.cpp.inc"
 
-LogicalResult verify(mlir_ts::FuncOp op);
-LogicalResult verify(mlir_ts::InvokeOp op);
-LogicalResult verify(mlir_ts::CastOp op);
-
 #ifndef DISABLE_CUSTOM_CLASSSTORAGESTORAGE
 namespace mlir
 {
@@ -104,6 +100,54 @@ LogicalResult ClassStorageType::setFields(::llvm::ArrayRef<::mlir::typescript::F
 
 #define GET_OP_CLASSES
 #include "TypeScript/TypeScriptOps.cpp.inc"
+
+Type mlir_ts::ConstTupleType::parse(AsmParser &parser)
+{
+    SmallVector<FieldInfo, 4> parameters;
+    if (parser.parseLess())
+        return Type();
+    while (mlir::succeeded(parser.parseOptionalLBrace()))
+    {
+        Attribute id;
+        if (parser.parseAttribute(id))
+            return Type();
+        if (parser.parseComma())
+            return Type();
+        Type type;
+        if (parser.parseType(type))
+            return Type();
+        if (parser.parseRBrace())
+            return Type();
+        parameters.push_back(FieldInfo{id, type});
+        if (parser.parseOptionalComma())
+            break;
+    }
+    if (parser.parseGreater())
+        return Type();
+    return get(parser.getContext(), parameters);
+}
+
+void mlir_ts::ConstTupleType::print(AsmPrinter &printer) const
+{
+    printer << "const_tuple"
+            << "<";
+    for (size_t i = 0, e = getImpl()->fields.size(); i < e; i++)
+    {
+        const auto &field = getImpl()->fields[i];
+        if (field.id)
+        {
+            printer << "{" << field.id << "," << field.type << "}";
+        }
+        else
+        {
+            printer << field.type;
+        }
+
+        if (i < getImpl()->fields.size() - 1)
+            printer << ",";
+    }
+    printer << ">";
+}
 
 Type mlir_ts::TupleType::parse(AsmParser &parser)
 {

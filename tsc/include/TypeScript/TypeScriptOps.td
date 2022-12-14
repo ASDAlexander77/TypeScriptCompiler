@@ -267,6 +267,9 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
     CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs,
     CArg<"ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
   >];
+
+  let hasVerifier = 1;
+
   let extraClassDeclaration = [{
     Block *addEntryBlock();
 
