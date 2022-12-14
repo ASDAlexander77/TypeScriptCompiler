@@ -813,6 +813,26 @@ LogicalResult mlir_ts::InvokeOp::verify()
     return success();
 }
 
+SuccessorOperands mlir_ts::InvokeOp::getSuccessorOperands(unsigned index)
+{
+    assert(index <= 1 && "invalid successor index");
+    if (index == 1)
+        return SuccessorOperands(normalDestOperandsMutable());
+    return SuccessorOperands(unwindDestOperandsMutable());
+}
+
+//===----------------------------------------------------------------------===//
+// InvokeHybridOp
+//===----------------------------------------------------------------------===//
+
+SuccessorOperands mlir_ts::InvokeHybridOp::getSuccessorOperands(unsigned index)
+{
+    assert(index <= 1 && "invalid successor index");
+    if (index == 1)
+        return SuccessorOperands(normalDestOperandsMutable());
+    return SuccessorOperands(unwindDestOperandsMutable());
+}
+
 //===----------------------------------------------------------------------===//
 // AssertOp
 //===----------------------------------------------------------------------===//
