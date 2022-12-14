@@ -363,8 +363,6 @@ def TypeScript_NullOp : TypeScript_Op<"Null", []> {
     TypeScript_Null:$result
   );
 
-  let hasVerifier = 1;
-
   let hasCanonicalizer = 1;
 
   let assemblyFormat = "attr-dict `:` type($result)";
