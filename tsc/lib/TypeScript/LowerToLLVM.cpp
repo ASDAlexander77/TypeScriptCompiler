@@ -265,7 +265,9 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
             mlir::Value result =
                 rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values, rewriter.getBoolAttr(true));
 
-            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, result);
+            mlir::Value valueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(strType), result);
+
+            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsLLVMType);
 
             rewriter.create<LLVM::StackRestoreOp>(loc, stack);
         }

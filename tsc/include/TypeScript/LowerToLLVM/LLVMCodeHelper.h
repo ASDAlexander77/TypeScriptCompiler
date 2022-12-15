@@ -556,10 +556,15 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, rewriter.getI64ArrayAttr(position++));
             }
+            else if (auto flatSymbRef = item.dyn_cast<mlir::FlatSymbolRefAttr>())
+            {
+                auto itemValue = rewriter.create<LLVM::AddressOfOp>(loc, llvmType, flatSymbRef);                
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
+            }
             else
             {
                 // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
-                auto itemValue = rewriter.create<mlir::arith::ConstantOp>(loc, llvmType, item);
+                auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, llvmType, item);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
             }
         }
