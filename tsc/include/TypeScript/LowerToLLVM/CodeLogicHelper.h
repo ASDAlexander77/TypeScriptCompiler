@@ -194,9 +194,16 @@ class CodeLogicHelper
                                          mlir::function_ref<ValueRange(OpBuilder &, Location)> thenBuilder,
                                          mlir::function_ref<ValueRange(OpBuilder &, Location)> elseBuilder)
     {
+        auto conditionAsI1 = condition;
+        if (condition.getType() != rewriter.getI1Type())
+        {
+            conditionAsI1 = 
+                rewriter.create<mlir_ts::DialectCastOp>(loc, rewriter.getI1Type(), condition);
+        }
+
         if (types.size() == 0)
         {
-            conditionalBlocksLowering(condition, thenBuilder, elseBuilder);
+            conditionalBlocksLowering(conditionAsI1, thenBuilder, elseBuilder);
             return ValueRange{};
         }
 
@@ -225,7 +232,7 @@ class CodeLogicHelper
 
         // Generate condition test.
         rewriter.setInsertionPointToEnd(opBlock);
-        rewriter.create<LLVM::CondBrOp>(loc, condition, thenBlock, elseBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, conditionAsI1, thenBlock, elseBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
 

@@ -4726,22 +4726,6 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion([&](mlir_ts::NeverType type) { return LLVM::LLVMVoidType::get(type.getContext()); });
 
     converter.addConversion([&](mlir_ts::LiteralType type) { return converter.convertType(type.getElementType()); });
-
-    converter.addSourceMaterialization([&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! SourceMaterialization: loc:[ " << loc << " ] result: [ " << resultType
-                                << " ]\n");
-        LLVM_DEBUG(for (auto value
-                        : inputs) llvm::dbgs()
-                       << "\n!! SourceMaterialization value: [ " << value << " ]\n";);
-
-        if (inputs.size() == 1)
-        {
-            return builder.create<mlir_ts::DialectCastOp>(loc, resultType, inputs).getResult();
-        }
-
-        assert("default cast");
-        return builder.create<UnrealizedConversionCastOp>(loc, resultType, inputs).getResult(0);
-    });
 };
 
 } // end anonymous namespace
@@ -4897,8 +4881,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LLVMConversionTarget target(getContext());
     target.addLegalOp<ModuleOp>();
     target.addLegalOp<mlir_ts::GlobalConstructorOp>();
-
-    target.addIllegalOp<UnrealizedConversionCastOp>();
 
     // During this lowering, we will also be lowering the MemRef types, that are
     // currently being operated on, to a representation in LLVM. To perform this
