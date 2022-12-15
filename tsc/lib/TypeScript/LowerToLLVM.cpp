@@ -734,8 +734,6 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
     LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         // load address of const string
         auto type = constantOp.getType();
         if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
@@ -780,13 +778,21 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
             return success();
         }
 
+        if (auto symbolRef = constantOp.getValue().dyn_cast<FlatSymbolRefAttr>())
+        {
+            auto llvmType = tch.convertType(constantOp.getResult().getType());
+            auto newOp = rewriter.create<LLVM::AddressOfOp>(constantOp.getLoc(), llvmType, symbolRef.getValue());
+            rewriter.replaceOp(constantOp, newOp->getResults());
+            return success();
+        }
+
         if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
         {
             rewriter.eraseOp(constantOp);
             return success();
         }
 
-        rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(constantOp, tch.convertType(type), constantOp.value());
+        rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(constantOp, tch.convertType(type), constantOp.value());
         return success();
     }
 };
@@ -799,7 +805,7 @@ struct SymbolRefOpLowering : public TsLlvmPattern<mlir_ts::SymbolRefOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeConverterHelper tch(getTypeConverter());
-        rewriter.replaceOpWithNewOp<mlir::arith::ConstantOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()),
+        rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()),
                                                       symbolRefOp.identifierAttr());
         return success();
     }
@@ -1049,6 +1055,11 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
         SmallVector<mlir::Type> llvmTypes;
         for (auto type : op.getResultTypes())
         {
+            if (type.isa<mlir_ts::VoidType>())
+            {
+                continue;
+            }
+
             llvmTypes.push_back(tch.convertType(type));
         }
 
