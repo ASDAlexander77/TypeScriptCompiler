@@ -2933,7 +2933,7 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
         CodeLogicHelper clh(memoryCopyOp, rewriter);
 
         auto copyMemFuncOp = ch.getOrInsertFunction(
-            "llvm.memcpy.p0i8.p0i8.i64", th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(),
+            "llvm.memcpy.p0.p0.i64", th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(),
                                                                                th.getI64Type(), th.getLLVMBoolType()}));
 
         mlir::SmallVector<mlir::Value, 4> values;
