@@ -778,14 +778,6 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
             return success();
         }
 
-        if (auto symbolRef = constantOp.getValue().dyn_cast<FlatSymbolRefAttr>())
-        {
-            auto llvmType = tch.convertType(constantOp.getResult().getType());
-            auto newOp = rewriter.create<LLVM::AddressOfOp>(constantOp.getLoc(), llvmType, symbolRef.getValue());
-            rewriter.replaceOp(constantOp, newOp->getResults());
-            return success();
-        }
-
         if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
         {
             rewriter.eraseOp(constantOp);
@@ -805,7 +797,7 @@ struct SymbolRefOpLowering : public TsLlvmPattern<mlir_ts::SymbolRefOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeConverterHelper tch(getTypeConverter());
-        rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()),
+        rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()),
                                                       symbolRefOp.identifierAttr());
         return success();
     }
