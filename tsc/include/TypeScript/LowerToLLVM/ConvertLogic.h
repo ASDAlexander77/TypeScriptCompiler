@@ -113,7 +113,9 @@ class ConvertLogic
 
         auto formatSpecifierCst = ch.getOrCreateGlobalString(formatVarName.str(), format);
 
-        rewriter.create<LLVM::CallOp>(loc, sprintfFuncOp, ValueRange{newStringValue, bufferSizeValue, formatSpecifierCst, value});
+        mlir::Value valueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(value.getType()), value);
+
+        rewriter.create<LLVM::CallOp>(loc, sprintfFuncOp, ValueRange{newStringValue, bufferSizeValue, formatSpecifierCst, valueAsLLVMType});
 
         return newStringValue;
     }
