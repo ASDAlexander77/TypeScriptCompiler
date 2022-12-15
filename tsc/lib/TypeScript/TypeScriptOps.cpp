@@ -1177,7 +1177,7 @@ static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op, Region
 void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
 {
     // The `then` and the `else` region branch back to the parent operation.
-    if (index.hasValue())
+    if (index)
     {
         regions.push_back(RegionSuccessor(getResults()));
         return;
@@ -1224,7 +1224,7 @@ void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<At
 {
     (void)operands;
 
-    if (!index.hasValue())
+    if (!index)
     {
         regions.emplace_back(&cond(), cond().getArguments());
         return;
@@ -1257,7 +1257,7 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<
 {
     (void)operands;
 
-    if (!index.hasValue())
+    if (!index)
     {
         regions.emplace_back(&cond(), cond().getArguments());
         return;
@@ -1289,13 +1289,14 @@ void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attr
 {
     (void)operands;
 
-    if (!index.hasValue())
+    if (!index)
     {
         regions.emplace_back(&cond(), cond().getArguments());
         return;
     }
 
-    assert(*index < 2 && "there are only two regions in a ForOp");
+    // TODO: review it
+    //assert(*index < 2 && "there are only two regions in a ForOp");
     if (*index == 0)
     {
         regions.emplace_back(&incr(), incr().getArguments());
