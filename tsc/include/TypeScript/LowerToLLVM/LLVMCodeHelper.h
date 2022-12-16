@@ -311,7 +311,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 // end
                 auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
                 auto attr = DenseElementsAttr::get(dataType, value);
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, attr);
+                global = rewriter.create<LLVM::GlobalOp>(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, attr);
             }
             else if (originalElementType.dyn_cast_or_null<mlir_ts::StringType>())
             {
