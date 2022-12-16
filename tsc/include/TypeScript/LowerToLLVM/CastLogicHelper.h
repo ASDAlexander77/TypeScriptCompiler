@@ -311,7 +311,10 @@ class CastLogicHelper
                 auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
                 auto llvmBoolType = tch.convertType(boolType);
                 auto valAsBool = cast(val, val.getType(), tch.convertType(val.getType()), boolType, llvmBoolType);
-                return rewriter.create<LLVM::AndOp>(loc, llvmBoolType, v1, valAsBool);
+
+                mlir::Value v1AsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, v1);
+
+                return rewriter.create<LLVM::AndOp>(loc, llvmBoolType, v1AsLLVMType, valAsBool);
             }
 
             if (auto unionType = inType.dyn_cast_or_null<mlir_ts::UnionType>())
@@ -444,14 +447,23 @@ class CastLogicHelper
     {
         auto inLLVMType = tch.convertType(inType);
         auto resLLVMType = tch.convertType(resType);
-        return castLLVMTypesLogic(in, inLLVMType, resLLVMType);
+        return castLLVMTypesLogic(in, inLLVMType, resLLVMType, true);
     }
 
-    mlir::Value castLLVMTypesLogic(mlir::Value in, mlir::Type inLLVMType, mlir::Type resLLVMType)
+    mlir::Value castLLVMTypesLogic(mlir::Value inParam, mlir::Type inLLVMType, mlir::Type resLLVMType, bool skipDialectCast = false)
     {
         if (inLLVMType == resLLVMType)
         {
-            return in;
+            return inParam;
+        }
+
+        mlir::Value in = inParam;
+        if (!skipDialectCast)
+        {
+            if (inLLVMType != in.getType())
+            {
+                in = rewriter.create<mlir_ts::DialectCastOp>(loc, inLLVMType, inParam);
+            }
         }
 
         if (isInt(inLLVMType) && isFloat(resLLVMType))
@@ -475,7 +487,7 @@ class CastLogicHelper
         }
 
         if (inLLVMType.isa<LLVM::LLVMPointerType>() && isBool(resLLVMType))
-        {
+        {            
             auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
             return rewriter.create<mlir::arith::CmpIOp>(loc, arith::CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
         }
@@ -798,7 +810,10 @@ class CastLogicHelper
         }
 
         auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false));
-        return clh.castToI8Ptr(valueAddr);
+
+        mlir::Value valueAddrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(valueAddr.getType()), valueAddr);
+
+        return clh.castToI8Ptr(valueAddrAsLLVMType);
     }
 
     template <typename TupleTy> mlir::Value castObjectToString(mlir::Value in, mlir::Type inType, TupleTy tupleTypeIn)

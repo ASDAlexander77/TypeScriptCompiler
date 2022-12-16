@@ -130,8 +130,11 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
 
-        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, left);
-        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, right);
+        mlir::Value leftAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(left.getType()), left);
+        mlir::Value rightAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(right.getType()), right);
+
+        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, leftAsLLVMType);
+        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightAsLLVMType);
 
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
@@ -151,8 +154,11 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
 
-        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, leftVtableValue);
-        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightVtableValue);
+        mlir::Value leftVtableValueAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(leftVtableValue.getType()), leftVtableValue);
+        mlir::Value rightVtableValueAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(rightVtableValue.getType()), rightVtableValue);
+
+        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, leftVtableValueAsLLVMType);
+        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightVtableValueAsLLVMType);
 
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;

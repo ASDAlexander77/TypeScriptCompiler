@@ -2484,8 +2484,8 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
 
         rewriter.replaceOp(loadOp, ValueRange{loadedValue});
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! LoadOp Ref value: \n" << transformed.reference() << "\n";);
-        LLVM_DEBUG(llvm::dbgs() << "\n!! LoadOp DUMP: \n" << *loadOp->getParentOp() << "\n";);
+        //LLVM_DEBUG(llvm::dbgs() << "\n!! LoadOp Ref value: \n" << transformed.reference() << "\n";);
+        //LLVM_DEBUG(llvm::dbgs() << "\n!! LoadOp DUMP: \n" << *loadOp->getParentOp() << "\n";);
 
         return success();
     }
