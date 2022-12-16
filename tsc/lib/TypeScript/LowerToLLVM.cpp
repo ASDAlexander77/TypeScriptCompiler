@@ -1741,7 +1741,10 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
             mlir::Value fieldIndex = clh.createStructIndexConstantOf(index);
             auto llvmValueType = tch.convertType(itemOrig.getType());
             auto llvmValuePtrType = LLVM::LLVMPointerType::get(llvmValueType);
-            auto offset = rewriter.create<LLVM::GEPOp>(loc, llvmValuePtrType, tupleVar, ValueRange{zero, fieldIndex});
+
+            mlir::Value tupleVarAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(tupleVar.getType()), tupleVar);
+
+            auto offset = rewriter.create<LLVM::GEPOp>(loc, llvmValuePtrType, tupleVarAsLLVMType, ValueRange{zero, fieldIndex});
 
             // cast item if needed
             auto destItemType = tupleType.getFields()[index].type;
