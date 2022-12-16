@@ -5804,17 +5804,15 @@ class MLIRGenImpl
 
             auto callRes =
                 builder.create<mlir_ts::CallOp>(location, accessorOp.setAccessor().getValue(),
-                                                mlir::TypeRange{getVoidType()}, mlir::ValueRange{savingValue});
-            savingValue = callRes.getResult(0);
+                                                mlir::TypeRange{}, mlir::ValueRange{savingValue});
         }
         else if (auto thisAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorOp>())
         {
             syncSavingValue(thisAccessorOp.getType());
 
             auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorOp.setAccessor().getValue(),
-                                                           mlir::TypeRange{getVoidType()},
+                                                           mlir::TypeRange{},
                                                            mlir::ValueRange{thisAccessorOp.thisVal(), savingValue});
-            savingValue = callRes.getResult(0);
         }
         /*
         else if (auto createBoundFunction =
@@ -7654,8 +7652,12 @@ class MLIRGenImpl
 
             if (calledFuncType.getResults().size() > 0)
             {
-                value = callIndirectOp.getResult(0);
-                hasReturn = true;
+                auto callValue = callIndirectOp.getResult(0);
+                hasReturn = callValue.getType() != getVoidType();
+                if (hasReturn)
+                {
+                    value = callValue;
+                }
             }
         }
 
