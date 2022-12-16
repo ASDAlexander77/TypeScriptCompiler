@@ -986,12 +986,26 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
         SmallVector<mlir::Type> llvmTypes;
         for (auto type : op.getResultTypes())
         {
+            if (type.isa<mlir_ts::VoidType>())
+            {
+                continue;
+            }
+
             llvmTypes.push_back(tch.convertType(type));
         }
 
-        // just replace
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-            op, llvmTypes, ::mlir::FlatSymbolRefAttr::get(rewriter.getContext(), op.callee()), transformed.operands());
+        auto callRes = rewriter.create<LLVM::CallOp>(
+            loc, llvmTypes, ::mlir::FlatSymbolRefAttr::get(rewriter.getContext(), op.callee()), transformed.operands());
+        
+        auto returns = callRes.getResults();
+        if (returns.size() > 0)
+        {
+            rewriter.replaceOp(op, returns);
+        }
+        else
+        {
+            rewriter.eraseOp(op);
+        }        
 
         return success();
     }
@@ -1004,7 +1018,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
     LogicalResult matchAndRewrite(mlir_ts::CallInternalOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
+      
 
         auto loc = op->getLoc();
 
@@ -1012,6 +1026,11 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         SmallVector<mlir::Type> llvmTypes;
         for (auto type : op.getResultTypes())
         {
+            if (type.isa<mlir_ts::VoidType>())
+            {
+                continue;
+            }
+
             llvmTypes.push_back(tch.convertType(type));
         }
 
@@ -1025,7 +1044,17 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
             return success();
         }
 
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, transformed.getOperands());
+        auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, transformed.getOperands());
+        
+        auto returns = callRes.getResults();
+        if (returns.size() > 0)
+        {
+            rewriter.replaceOp(op, returns);
+        }
+        else
+        {
+            rewriter.eraseOp(op);
+        }      
 
         return success();
     }
