@@ -1247,7 +1247,7 @@ void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<At
 
 OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
-    assert((!index || *index == 0) && "DoWhileOp is expected to branch only to the first region");
+    assert((!index || *index == 1) && "DoWhileOp is expected to branch only to the first region");
 
     return inits();
 }
@@ -1264,7 +1264,7 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<
     }
 
     assert(*index < 2 && "there are only two regions in a DoWhileOp");
-    if (*index == 0)
+    if (*index == 1)
     {
         regions.emplace_back(&body(), body().getArguments());
         regions.emplace_back(getResults());
