@@ -2481,12 +2481,16 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             auto resultTypeLlvm = tch.convertType(resultType);
 
             auto undefOptionalFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
-                return rewriter.create<mlir_ts::UndefOptionalOp>(loc, resultType);
+                mlir::Value val = rewriter.create<mlir_ts::UndefOptionalOp>(loc, resultType);
+                mlir::Value valAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, resultTypeLlvm, val);
+                return valAsLLVMType;
             };
 
             auto createOptionalFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
                 auto dataValue = loadedValueFunc(builder, location);
-                return rewriter.create<mlir_ts::CreateOptionalOp>(loc, resultType, dataValue);
+                mlir::Value val = rewriter.create<mlir_ts::CreateOptionalOp>(loc, resultType, dataValue);
+                mlir::Value valAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, resultTypeLlvm, val);
+                return valAsLLVMType;
             };
 
             LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
