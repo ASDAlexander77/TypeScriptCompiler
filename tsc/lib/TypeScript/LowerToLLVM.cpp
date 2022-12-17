@@ -1045,7 +1045,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         }
 
         auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, transformed.getOperands());
-        
+
         auto returns = callRes.getResults();
         if (returns.size() > 0)
         {
@@ -4768,6 +4768,29 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion([&](mlir_ts::NeverType type) { return LLVM::LLVMVoidType::get(type.getContext()); });
 
     converter.addConversion([&](mlir_ts::LiteralType type) { return converter.convertType(type.getElementType()); });
+
+    converter.addSourceMaterialization(
+        [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {
+            if (inputs.size() != 1)
+                return llvm::None;
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Materialization (Source): " << loc << " result type: " << resultType; for (auto inputType : inputs) llvm::dbgs() << "\n <- input: " << inputType;);
+
+            //mlir::Value val = builder.create<mlir_ts::DialectCastOp>(loc, resultType, inputs[0]);
+            //return val;
+            return inputs[0];
+        });
+    converter.addTargetMaterialization(
+        [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {
+            if (inputs.size() != 1)
+                return llvm::None;
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Materialization (Target): " << loc << " result type: " << resultType; for (auto inputType : inputs) llvm::dbgs() << "\n <- input: " << inputType;);
+
+            //mlir::Value val = builder.create<mlir_ts::DialectCastOp>(loc, resultType, inputs[0]);
+            //return val;
+            return inputs[0];
+        });
 };
 
 } // end anonymous namespace
