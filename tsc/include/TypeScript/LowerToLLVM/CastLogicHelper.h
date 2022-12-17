@@ -676,7 +676,9 @@ class CastLogicHelper
 
     mlir::Value castBoolToString(mlir::Value in)
     {
-        return rewriter.create<LLVM::SelectOp>(loc, in, ch.getOrCreateGlobalString("__true__", std::string("true")),
+        mlir::Value valueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(in.getType()), in);
+
+        return rewriter.create<LLVM::SelectOp>(loc, valueAsLLVMType, ch.getOrCreateGlobalString("__true__", std::string("true")),
                                                ch.getOrCreateGlobalString("__false__", std::string("false")));
     }
 
