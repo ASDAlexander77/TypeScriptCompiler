@@ -10,6 +10,7 @@
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/ArithmeticToLLVM/ArithmeticToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
@@ -4496,6 +4497,32 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
 
 #endif
 
+struct UnrealizedConversionCastOpLowering : public ConvertOpToLLVMPattern<UnrealizedConversionCastOp>
+{
+    using ConvertOpToLLVMPattern<UnrealizedConversionCastOp>::ConvertOpToLLVMPattern;
+
+    LogicalResult matchAndRewrite(UnrealizedConversionCastOp op, OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override
+    {
+        SmallVector<mlir::Type> convertedTypes;
+        if (succeeded(typeConverter->convertTypes(op.getOutputs().getTypes(), convertedTypes)) &&
+            convertedTypes == adaptor.getInputs().getTypes())
+        {
+            rewriter.replaceOp(op, adaptor.getInputs());
+            return success();
+        }
+
+        convertedTypes.clear();
+        if (succeeded(typeConverter->convertTypes(adaptor.getInputs().getTypes(), convertedTypes)) &&
+            convertedTypes == op.getOutputs().getType())
+        {
+            rewriter.replaceOp(op, adaptor.getInputs());
+            return success();
+        }
+        return failure();
+    }
+};
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m,
                                                  mlir::SetVector<mlir::Type> &stack)
 {
@@ -4776,9 +4803,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Materialization (Source): " << loc << " result type: " << resultType; for (auto inputType : inputs) llvm::dbgs() << "\n <- input: " << inputType;);
 
-            //mlir::Value val = builder.create<mlir_ts::DialectCastOp>(loc, resultType, inputs[0]);
-            //return val;
-            return inputs[0];
+            mlir::Value val = builder.create<mlir_ts::DialectCastOp>(loc, resultType, inputs[0]);
+            return val;
+            //return inputs[0];
         });
     converter.addTargetMaterialization(
         [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {
@@ -4787,9 +4814,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Materialization (Target): " << loc << " result type: " << resultType; for (auto inputType : inputs) llvm::dbgs() << "\n <- input: " << inputType;);
 
-            //mlir::Value val = builder.create<mlir_ts::DialectCastOp>(loc, resultType, inputs[0]);
-            //return val;
-            return inputs[0];
+            mlir::Value val = builder.create<mlir_ts::DialectCastOp>(loc, resultType, inputs[0]);
+            return val;
+            //return inputs[0];
         });
 };
 
@@ -4808,11 +4835,12 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
 
     void getDependentDialects(DialectRegistry &registry) const override
     {
-        registry.insert<LLVM::LLVMDialect>();
-        registry.insert<mlir::math::MathDialect>();
-        registry.insert<mlir::arith::ArithmeticDialect>();
-        registry.insert<mlir::cf::ControlFlowDialect>();
-        registry.insert<mlir::func::FuncDialect>();
+        registry.insert<
+            LLVM::LLVMDialect, 
+            mlir::math::MathDialect, 
+            mlir::arith::ArithmeticDialect, 
+            mlir::cf::ControlFlowDialect, 
+            mlir::func::FuncDialect>();            
     }
 
     void runOnOperation() final;
@@ -5028,7 +5056,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     target2.addLegalOp<ModuleOp>();
 
     RewritePatternSet patterns2(&getContext());
-    patterns2.insert<GlobalConstructorOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+    patterns2.insert<GlobalConstructorOpLowering, DialectCastOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     if (failed(applyFullConversion(module, target2, std::move(patterns2))))
     {
