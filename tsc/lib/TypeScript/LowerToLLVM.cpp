@@ -2823,6 +2823,8 @@ struct CreateOptionalOpLowering : public TsLlvmPattern<mlir_ts::CreateOptionalOp
             {
                 return failure();
             }
+
+            value = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoxedType, value);
         }
 
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmOptType, structValue, value,
@@ -3744,7 +3746,7 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
 
         auto llvmInterfaceType = tch.convertType(newInterfaceOp.getType());
 
-        auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmInterfaceType);
+        auto structVal = rewriter.create<LLVM::UndefOp>(loc, llvmInterfaceType);
         auto structVal2 = rewriter.create<LLVM::InsertValueOp>(
             loc, structVal, clh.castToI8Ptr(transformed.interfaceVTable()), clh.getStructIndexAttr(DATA_VALUE_INDEX));
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(transformed.thisVal()),
