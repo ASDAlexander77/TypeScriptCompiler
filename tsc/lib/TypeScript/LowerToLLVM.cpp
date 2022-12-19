@@ -4250,16 +4250,18 @@ class SwitchStateInternalOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateI
 
         SmallVector<int32_t> caseValues;
         SmallVector<mlir::Block *> caseDestinations;
+        SmallVector<ValueRange> caseOperands;
 
         auto index = 0;
         for (auto case1 : switchStateOp.cases())
         {
             caseValues.push_back(index++);
             caseDestinations.push_back(case1);
+            caseOperands.push_back(ValueRange());
         }
 
         rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(switchStateOp, transformed.state(), switchStateOp.defaultDest(),
-                                                    ValueRange{}, caseValues, caseDestinations);
+                                                    ValueRange{}, caseValues, caseDestinations, caseOperands);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
 
