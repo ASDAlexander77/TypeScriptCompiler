@@ -1,3 +1,5 @@
+// TODO: somehow when we use align_alloc & align_free, I can see the error: pointer is broken
+
 #ifndef _WIN32
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <cstdlib>
