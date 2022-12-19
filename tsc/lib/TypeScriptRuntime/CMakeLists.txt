@@ -13,7 +13,8 @@ add_mlir_library(TypeScriptRuntime
   SHARED
   TypeScriptGC.cpp
   gc.cpp
-  AsyncRuntime.cpp
+  MemRuntime.cpp
+  AsyncRuntime.cpp  
   mlir_init.cpp
 
   EXCLUDE_FROM_LIBMLIR

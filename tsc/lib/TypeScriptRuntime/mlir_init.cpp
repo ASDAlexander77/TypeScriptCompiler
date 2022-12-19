@@ -9,6 +9,9 @@
 void init_gcruntime(llvm::StringMap<void *> &exportSymbols);
 void destroy_gcruntime();
 
+void init_memruntime(llvm::StringMap<void *> &exportSymbols);
+//void destroy_memruntime();
+
 void init_asyncruntime(llvm::StringMap<void *> &exportSymbols);
 void destroy_asyncruntime();
 
@@ -25,11 +28,13 @@ extern "C" API void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols);
 void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols)
 {
     init_gcruntime(exportSymbols);
+    init_memruntime(exportSymbols);
     init_asyncruntime(exportSymbols);
 }
 
 extern "C" API void __mlir_runner_destroy()
 {
     destroy_gcruntime();
+    //destory_memruntime();
     destroy_asyncruntime();
 }
