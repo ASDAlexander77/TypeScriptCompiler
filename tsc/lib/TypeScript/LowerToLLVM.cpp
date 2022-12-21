@@ -5010,8 +5010,10 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
 
         LLVM_DEBUG(llvm::dbgs() << "\nUnrealizedConversionCastOp to analyze: \n" << unrealizedConversionCastOp << "\n";);
 
+        auto hasAnyUse = false;
         for (auto user : unrealizedConversionCastOp.getResult(0).getUsers())
         {
+            hasAnyUse = true;
             auto nextUnrealizedConversionCastOp = dyn_cast_or_null<UnrealizedConversionCastOp>(user);
             if (nextUnrealizedConversionCastOp)
             {
@@ -5032,6 +5034,11 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
                 }
             }
 
+            removed.insert(unrealizedConversionCastOp);
+        }
+
+        if (!hasAnyUse)
+        {
             removed.insert(unrealizedConversionCastOp);
         }
     }    
