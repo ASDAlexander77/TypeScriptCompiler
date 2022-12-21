@@ -1720,6 +1720,8 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
 {
     auto function = getFunction();
 
+    LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE FUNC DUMP: \n" << function << "\n";);
+
     // We only lower the main function as we expect that all other functions have been inlined.
     if (function.getName() == "main")
     {

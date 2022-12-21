@@ -4809,6 +4809,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion([&](mlir_ts::LiteralType type) { return converter.convertType(type.getElementType()); });
 
+    /*
     converter.addSourceMaterialization(
         [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {
             if (inputs.size() != 1)
@@ -4831,6 +4832,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
             return val;
             //return inputs[0];
         });
+    */
 };
 
 } // end anonymous namespace
@@ -4977,6 +4979,71 @@ static LogicalResult verifyModule(mlir::ModuleOp &module)
     return success();
 }
 
+static void selectAllUnrealizedConversionCast(mlir::ModuleOp &module, SmallPtrSet<Operation *, 16> &workSet)
+{
+    auto visitorUnrealizedConversionCast = [&](Operation *op) {
+        if (auto unrealizedConversionCastOp = dyn_cast_or_null<UnrealizedConversionCastOp>(op))
+        {
+            workSet.insert(unrealizedConversionCastOp);
+        }
+    };
+
+    module.walk(visitorUnrealizedConversionCast);
+}
+
+static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
+{
+    SmallPtrSet<Operation *, 16> workSet;
+
+    selectAllUnrealizedConversionCast(module, workSet);
+
+    SmallPtrSet<Operation *, 16> removed;
+
+    for (auto op : workSet)
+    {
+        if (removed.find(op) != removed.end())
+        {
+            continue;
+        }
+
+        auto unrealizedConversionCastOp = cast<UnrealizedConversionCastOp>(op);
+
+        LLVM_DEBUG(llvm::dbgs() << "\nUnrealizedConversionCastOp to analyze: \n" << unrealizedConversionCastOp << "\n";);
+
+        for (auto user : unrealizedConversionCastOp.getResult(0).getUsers())
+        {
+            auto nextUnrealizedConversionCastOp = dyn_cast_or_null<UnrealizedConversionCastOp>(user);
+            if (nextUnrealizedConversionCastOp)
+            {
+                LLVM_DEBUG(llvm::dbgs() 
+                    << "\n -> Next UnrealizedConversionCastOp: \n" 
+                    << nextUnrealizedConversionCastOp 
+                    << " <- result type: " 
+                    << nextUnrealizedConversionCastOp.getResult(0).getType() 
+                    << " -> input: " << unrealizedConversionCastOp.getOperand(0).getType() 
+                    << "\n";);
+
+                if (nextUnrealizedConversionCastOp.getResult(0).getType() == unrealizedConversionCastOp.getOperand(0).getType())
+                {
+                    // remove both
+                    nextUnrealizedConversionCastOp->getResult(0).replaceAllUsesWith(unrealizedConversionCastOp.getOperand(0));
+                    
+                    removed.insert(nextUnrealizedConversionCastOp);
+                }
+            }
+
+            removed.insert(unrealizedConversionCastOp);
+        }
+    }    
+
+    for (auto removedOp : removed)
+    {
+        removedOp->erase();
+    }
+
+    return success();
+}
+
 void TypeScriptToLLVMLoweringPass::runOnOperation()
 {
     auto m = getOperation();
@@ -5075,6 +5142,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     {
         signalPassFailure();
     }
+
+    LLVM_DEBUG(cleanupUnrealizedConversionCast(module););
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP: \n" << module << "\n";);
 
