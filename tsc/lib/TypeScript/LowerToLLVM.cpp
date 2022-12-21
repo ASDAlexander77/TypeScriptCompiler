@@ -5143,7 +5143,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         signalPassFailure();
     }
 
-    LLVM_DEBUG(cleanupUnrealizedConversionCast(module););
+    cleanupUnrealizedConversionCast(module);
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP: \n" << module << "\n";);
 
