@@ -100,7 +100,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         {
             newName = "GC_malloc";
         }
-        if (name == "aligned_alloc")
+        else if (name == "aligned_alloc")
         {
             newName = "GC_memalign";
         }
