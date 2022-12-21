@@ -443,11 +443,16 @@ class CastLogicHelper
         return type.isIntOrFloat() && !isIntOrBool(type);
     }
 
-    mlir::Value dialectCast(mlir::Value in, mlir::Type inType, mlir::Type resType)
+    std::pair<mlir::Value, bool> dialectCast(mlir::Value in, mlir::Type inType, mlir::Type resType)
     {
         auto inLLVMType = tch.convertType(inType);
         auto resLLVMType = tch.convertType(resType);
-        return castLLVMTypesLogic(in, inLLVMType, resLLVMType, true);
+        if (inLLVMType == resLLVMType)
+        {
+            return {mlir::Value(), false};
+        }
+
+        return {castLLVMTypesLogic(in, inLLVMType, resLLVMType, true), true};
     }
 
     mlir::Value castLLVMTypesLogic(mlir::Value inParam, mlir::Type inLLVMType, mlir::Type resLLVMType, bool skipDialectCast = false)

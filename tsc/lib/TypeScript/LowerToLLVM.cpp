@@ -1322,14 +1322,19 @@ struct DialectCastOpLowering : public TsLlvmPattern<mlir_ts::DialectCastOp>
         auto resType = op.res().getType();
 
         CastLogicHelper castLogic(op, rewriter, tch);
-        auto result = castLogic.dialectCast(in, in.getType(), resType);
+        auto [result, converted] = castLogic.dialectCast(in, in.getType(), resType);
+        if (!converted)
+        {
+            rewriter.replaceOp(op, in);
+            return success();
+        }
+
         if (!result)
         {
             return failure();
         }
 
         rewriter.replaceOp(op, result);
-
         return success();
     }
 };
@@ -5001,9 +5006,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     RewritePatternSet patterns(&getContext());
     populateAffineToStdConversionPatterns(patterns);
     arith::populateArithmeticToLLVMConversionPatterns(typeConverter, patterns);
-    populateFuncToLLVMConversionPatterns(typeConverter, patterns);
     cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
     populateMathToLLVMConversionPatterns(typeConverter, patterns);
+    populateFuncToLLVMConversionPatterns(typeConverter, patterns);
 
 #ifdef ENABLE_ASYNC
     populateAsyncStructuralTypeConversionsAndLegality(typeConverter, patterns, target);

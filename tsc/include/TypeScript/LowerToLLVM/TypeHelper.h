@@ -67,6 +67,7 @@ class TypeHelper
     mlir::Type getIndexType()
     {
         return getI64Type();
+        //return IndexType::get(context);
     }
 
     IntegerAttr getIndexAttrValue(int64_t value)
