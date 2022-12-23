@@ -1464,9 +1464,9 @@ void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type t
 
 OperandRange mlir_ts::TryOp::getSuccessorEntryOperands(Optional<unsigned int> index)
 {
-    assert((!index || *index == 0) && "TryOp is expected to branch only to the first region");
+    assert((!index || *index < 3) && "TryOp is expected to branch only into 3 regions");
 
-    return getODSOperands(0);
+    return getOperation()->getOperands();
 }
 
 void mlir_ts::TryOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
