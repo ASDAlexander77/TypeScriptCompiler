@@ -3176,11 +3176,11 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         auto saveCatchFunc = ch.getOrInsertFunction(
             saveCatchFuncName,
             th.getFunctionType(th.getVoidType(), ArrayRef<mlir::Type>{getTypeConverter()->convertType(
-                                                                          saveCatchVarOp.exceptionInfo().getType()),
+                                                                          /*saveCatchVarOp*/transformed.exceptionInfo().getType()),
                                                                       ptr.getType()}));
 
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(saveCatchVarOp, saveCatchFunc,
-                                                  ValueRange{saveCatchVarOp.exceptionInfo(), ptr});
+                                                  ValueRange{/*saveCatchVarOp*/transformed.exceptionInfo(), ptr});
 
         return success();
     }
