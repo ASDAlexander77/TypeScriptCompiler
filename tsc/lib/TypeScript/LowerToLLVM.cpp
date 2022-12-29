@@ -787,6 +787,12 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
             return success();
         }
 
+        if (auto valAttr = constantOp.value().dyn_cast<mlir::FlatSymbolRefAttr>())
+        {
+            rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(constantOp, tch.convertType(type), valAttr);
+            return success();
+        }
+
         rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(constantOp, tch.convertType(type), constantOp.value());
         return success();
     }
@@ -5152,7 +5158,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         signalPassFailure();
     }
 
+    /*
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP - BEFORE CLEANUP: \n" << module << "\n";);
+    */
 
     cleanupUnrealizedConversionCast(module);
 
