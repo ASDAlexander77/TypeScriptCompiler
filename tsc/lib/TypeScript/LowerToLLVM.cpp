@@ -5031,10 +5031,12 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
                     nextUnrealizedConversionCastOp->getResult(0).replaceAllUsesWith(unrealizedConversionCastOp.getOperand(0));
                     
                     removed.insert(nextUnrealizedConversionCastOp);
+                    if (removed.find(unrealizedConversionCastOp) != removed.end())
+                    {
+                        removed.insert(unrealizedConversionCastOp);
+                    }                    
                 }
             }
-
-            removed.insert(unrealizedConversionCastOp);
         }
 
         if (!hasAnyUse)
@@ -5149,6 +5151,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     {
         signalPassFailure();
     }
+
+    LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP - BEFORE CLEANUP: \n" << module << "\n";);
 
     cleanupUnrealizedConversionCast(module);
 
