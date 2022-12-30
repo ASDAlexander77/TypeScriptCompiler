@@ -335,6 +335,51 @@ int initDialects(mlir::ModuleOp module)
     return 0;
 }
 
+std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::ArrayRef<const llvm::PassInfo *> llvmPasses,
+                                                                     llvm::Optional<unsigned> mbOptLevel,
+                                                                     llvm::TargetMachine *targetMachine,
+                                                                     unsigned optPassesInsertPos = 0)
+{
+    return [llvmPasses, mbOptLevel, optPassesInsertPos, targetMachine](llvm::Module *m) -> llvm::Error {
+        /*
+        llvm::legacy::PassManager modulePM;
+        llvm::legacy::FunctionPassManager funcPM(m);
+
+        bool insertOptPasses = mbOptLevel.hasValue();
+        for (unsigned i = 0, e = llvmPasses.size(); i < e; ++i)
+        {
+            const auto *passInfo = llvmPasses[i];
+            if (!passInfo->getNormalCtor())
+                continue;
+
+            if (insertOptPasses && optPassesInsertPos == i)
+            {
+                populatePassManagers(modulePM, funcPM, mbOptLevel.getValue(), 0, targetMachine);
+                insertOptPasses = false;
+            }
+
+            auto *pass = passInfo->createPass();
+            if (!pass)
+                return llvm::make_error<llvm::StringError>("could not create pass " + passInfo->getPassName(),
+                                                           llvm::inconvertibleErrorCode());
+            modulePM.add(pass);
+        }
+
+        if (insertOptPasses)
+            populatePassManagers(modulePM, funcPM, mbOptLevel.getValue(), 0, targetMachine);
+
+        runPasses(modulePM, funcPM, *m);
+        //return llvm::Error::success();
+        */
+
+        auto optPipeline = mlir::makeOptimizingTransformer(
+            /*optLevel=*/enableOpt ? optLevel : 0, /*sizeLevel=*/sizeLevel,
+            /*targetMachine=*/nullptr);    
+
+        return optPipeline(m);
+    };
+}
+
 std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const llvm::PassInfo *> &passes, bool enableOpt, int optLevel,
                                                       int sizeLevel)
 {
@@ -356,7 +401,7 @@ std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const ll
     }
 #endif
 
-    auto optPipeline = mlir::makeLLVMPassesTransformer(passes,
+    auto optPipeline = makeLLVMPassesTransformer(passes,
                                                        /*optLevel=*/enableOpt ? optLevel : 0,
                                                        /*targetMachine=*/nullptr);
 #else
