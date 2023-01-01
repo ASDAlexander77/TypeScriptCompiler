@@ -54,11 +54,22 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorOr.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/FormatVariadic.h"
+
+// for custom pass
+#include "llvm/Passes/OptimizationLevel.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Analysis/LoopAnalysisManager.h"
+#undef DEBUG_TYPE
+#include "llvm/Analysis/CGSCCPassManager.h"
+#undef DEBUG_TYPE
+#define DEBUG_TYPE "tsc"
 
 #ifdef GC_ENABLE
 #include "llvm/IR/GCStrategy.h"
@@ -335,48 +346,70 @@ int initDialects(mlir::ModuleOp module)
     return 0;
 }
 
+static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsigned sizeLevel)
+{
+    switch (optLevel)
+    {
+    case 0:
+        return llvm::OptimizationLevel::O0;
+
+    case 1:
+        return llvm::OptimizationLevel::O1;
+
+    case 2:
+        switch (sizeLevel)
+        {
+        case 0:
+            return llvm::OptimizationLevel::O2;
+
+        case 1:
+            return llvm::OptimizationLevel::Os;
+
+        case 2:
+            return llvm::OptimizationLevel::Oz;
+        }
+        break;
+    case 3:
+        return llvm::OptimizationLevel::O3;
+    }
+    return llvm::None;
+}
+
 std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::ArrayRef<const llvm::PassInfo *> llvmPasses,
                                                                      llvm::Optional<unsigned> mbOptLevel,
                                                                      llvm::TargetMachine *targetMachine,
                                                                      unsigned optPassesInsertPos = 0)
 {
     return [llvmPasses, mbOptLevel, optPassesInsertPos, targetMachine](llvm::Module *m) -> llvm::Error {
-        /*
-        llvm::legacy::PassManager modulePM;
-        llvm::legacy::FunctionPassManager funcPM(m);
-
-        bool insertOptPasses = mbOptLevel.hasValue();
-        for (unsigned i = 0, e = llvmPasses.size(); i < e; ++i)
+        llvm::Optional<llvm::OptimizationLevel> ol = mapToLevel(optLevel, sizeLevel);
+        if (!ol)
         {
-            const auto *passInfo = llvmPasses[i];
-            if (!passInfo->getNormalCtor())
-                continue;
-
-            if (insertOptPasses && optPassesInsertPos == i)
-            {
-                populatePassManagers(modulePM, funcPM, mbOptLevel.getValue(), 0, targetMachine);
-                insertOptPasses = false;
-            }
-
-            auto *pass = passInfo->createPass();
-            if (!pass)
-                return llvm::make_error<llvm::StringError>("could not create pass " + passInfo->getPassName(),
-                                                           llvm::inconvertibleErrorCode());
-            modulePM.add(pass);
+            return llvm::make_error<llvm::StringError>(
+                llvm::formatv("invalid optimization/size level {0}/{1}", optLevel, sizeLevel).str(),
+                llvm::inconvertibleErrorCode());
         }
+        
+        llvm::LoopAnalysisManager lam;
+        llvm::FunctionAnalysisManager fam;
+        llvm::CGSCCAnalysisManager cgam;
+        llvm::ModuleAnalysisManager mam;
 
-        if (insertOptPasses)
-            populatePassManagers(modulePM, funcPM, mbOptLevel.getValue(), 0, targetMachine);
+        llvm::PassBuilder pb(targetMachine);
 
-        runPasses(modulePM, funcPM, *m);
-        //return llvm::Error::success();
-        */
+        pb.registerModuleAnalyses(mam);
+        pb.registerCGSCCAnalyses(cgam);
+        pb.registerFunctionAnalyses(fam);
+        pb.registerLoopAnalyses(lam);
+        pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-        auto optPipeline = mlir::makeOptimizingTransformer(
-            /*optLevel=*/enableOpt ? optLevel : 0, /*sizeLevel=*/sizeLevel,
-            /*targetMachine=*/nullptr);    
+        llvm::ModulePassManager mpm;
+        if (*ol == llvm::OptimizationLevel::O0)
+            mpm.addPass(pb.buildO0DefaultPipeline(*ol));
+        else
+            mpm.addPass(pb.buildPerModuleDefaultPipeline(*ol));
 
-        return optPipeline(m);
+        mpm.run(*m, mam);
+        return llvm::Error::success();
     };
 }
 
