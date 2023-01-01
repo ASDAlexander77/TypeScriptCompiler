@@ -63,6 +63,7 @@
 #include "llvm/Support/FormatVariadic.h"
 
 // for custom pass
+#include "llvm/IR/PassManager.h"
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
@@ -375,12 +376,26 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
     return llvm::None;
 }
 
+class PassRunAdaptorPass : public llvm::PassInfoMixin<PassRunAdaptorPass>
+{
+  public:
+    llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
+    {
+        // or return llvm::PreservedAnalyses::none();
+        return llvm::PreservedAnalyses::all();
+    }
+    
+    static bool isRequired()
+    {
+        return true;
+    }
+};
+
 std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::ArrayRef<const llvm::PassInfo *> llvmPasses,
                                                                      llvm::Optional<unsigned> mbOptLevel,
-                                                                     llvm::TargetMachine *targetMachine,
-                                                                     unsigned optPassesInsertPos = 0)
+                                                                     llvm::TargetMachine *targetMachine)
 {
-    return [llvmPasses, mbOptLevel, optPassesInsertPos, targetMachine](llvm::Module *m) -> llvm::Error {
+    return [llvmPasses, mbOptLevel, targetMachine](llvm::Module *m) -> llvm::Error {
         llvm::Optional<llvm::OptimizationLevel> ol = mapToLevel(optLevel, sizeLevel);
         if (!ol)
         {
@@ -403,6 +418,13 @@ std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::Array
         pb.crossRegisterProxies(lam, fam, cgam, mam);
 
         llvm::ModulePassManager mpm;
+
+        // add custom passes
+        for (auto pass : llvmPasses)
+        {
+            mpm.addPass(llvm::createModuleToFunctionPassAdaptor(PassRunAdaptorPass()));
+        }
+
         if (*ol == llvm::OptimizationLevel::O0)
             mpm.addPass(pb.buildO0DefaultPipeline(*ol));
         else
