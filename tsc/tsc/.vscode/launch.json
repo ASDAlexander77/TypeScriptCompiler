@@ -161,6 +161,8 @@
             "args": [
                 "-emit=jit",
                 "C:/temp/1.ts",
+                "-debug-only=pass",
+                "-mlir-disable-threading",
                 "--shared-libs=${workspaceFolder}/../../__build/tsc/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,

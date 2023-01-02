@@ -47,4 +47,6 @@
 
 #define ENABLE_TYPED_GC true
 
+//#define ENABLE_STACK_EXEC 1
+
 #endif // CONFIG_H_

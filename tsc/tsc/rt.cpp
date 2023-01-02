@@ -1,3 +1,5 @@
+#ifdef ENABLE_STACK_EXEC
+
 #include <cstdint>
 
 #ifndef _WIN32
@@ -50,3 +52,5 @@ void _mlir__enable_execute_stack(void *addr)
     (void)mprotect((void *)startPage, length, PROT_READ | PROT_WRITE | PROT_EXEC);
 #endif
 }
+
+#endif // ENABLE_STACK_EXEC

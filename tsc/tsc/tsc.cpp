@@ -421,8 +421,7 @@ std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::Optio
     };
 }
 
-std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const llvm::PassInfo *> &passes, bool enableOpt, int optLevel,
-                                                      int sizeLevel)
+std::function<llvm::Error(llvm::Module *)> initPasses(bool enableOpt, int optLevel, int sizeLevel)
 {
 #ifdef ENABLE_EXCEPTIONS
     auto optPipeline = makeLLVMPassesTransformer(
@@ -459,9 +458,7 @@ int dumpLLVMIR(mlir::ModuleOp module)
 
     // TODO: seems I need to call makeLLVMPassesTransformer the same way as makeOptimizingTransformer
 
-    /// Optionally run an optimization pipeline over the llvm module.
-    mlir::SmallVector<const llvm::PassInfo *> passes;
-    auto optPipeline = initPasses(passes, enableOpt, optLevel, sizeLevel);
+    auto optPipeline = initPasses(enableOpt, optLevel, sizeLevel);
     if (auto err = optPipeline(llvmModule.get()))
     {
         llvm::errs() << "Failed to optimize LLVM IR " << err << "\n";
@@ -480,8 +477,7 @@ int runJit(mlir::ModuleOp module)
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
-    mlir::SmallVector<const llvm::PassInfo *> passes;
-    auto optPipeline = initPasses(passes, enableOpt, optLevel, sizeLevel);
+    auto optPipeline = initPasses(enableOpt, optLevel, sizeLevel);
 
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
@@ -559,8 +555,10 @@ int runJit(mlir::ModuleOp module)
             symbolMap[interner(exportSymbol.getKey())] = llvm::JITEvaluatedSymbol::fromPointer(exportSymbol.getValue());
         }
 
+#ifdef ENABLE_STACK_EXEC
         // adding my ref to __enable_execute_stack
         symbolMap[interner("__enable_execute_stack")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__enable_execute_stack);
+#endif        
 
         if (!disableGC && symbolMap.count(interner("GC_init")) == 0)
         {
