@@ -73,10 +73,9 @@ struct LandingPadFixPassCode
 
 namespace ts
 {
-    static LandingPadFixPassCode LPF;
-
     llvm::PreservedAnalyses LandingPadFixPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
     {
+        LandingPadFixPassCode LPF{};
         if (!LPF.runOnFunction(F))
         {
             return llvm::PreservedAnalyses::all();

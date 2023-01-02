@@ -691,10 +691,9 @@ struct TypeScriptExceptionPassCode
 
 namespace ts
 {
-    static TypeScriptExceptionPassCode TSEP;
-
     llvm::PreservedAnalyses TypeScriptExceptionPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
     {
+        TypeScriptExceptionPassCode TSEP{};
         if (!TSEP.runOnFunction(F))
         {
             return llvm::PreservedAnalyses::all();
