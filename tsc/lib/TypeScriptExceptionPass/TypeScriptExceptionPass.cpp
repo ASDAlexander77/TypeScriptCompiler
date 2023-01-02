@@ -11,6 +11,7 @@
 #include "llvm/Support/CommandLine.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/PostOrderIterator.h"
 
 using namespace llvm;
 using namespace PatternMatch;
@@ -691,11 +692,29 @@ struct TypeScriptExceptionPassCode
 
 namespace ts
 {
+    bool verifyFunction(llvm::Function &F) 
+    {
+        llvm::ReversePostOrderTraversal<llvm::Function *> RPOT(&F);
+
+        for (llvm::BasicBlock *BI : RPOT) 
+        {
+            for (BasicBlock::iterator II = BI->begin(), IE = BI->end(); II != IE;)
+            {
+                assert(II->getParent() == &*BI && "Moved to a different block!");
+                ++II;
+            }
+        }
+
+        return true;            
+    }
+
     llvm::PreservedAnalyses TypeScriptExceptionPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
     {
         TypeScriptExceptionPassCode TSEP{};
         if (!TSEP.runOnFunction(F))
         {
+            LLVM_DEBUG(verifyFunction(F););
+
             return llvm::PreservedAnalyses::all();
         }
 
