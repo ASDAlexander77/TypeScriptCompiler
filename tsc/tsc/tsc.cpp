@@ -376,26 +376,10 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
     return llvm::None;
 }
 
-class PassRunAdaptorPass : public llvm::PassInfoMixin<PassRunAdaptorPass>
-{
-  public:
-    llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
-    {
-        // or return llvm::PreservedAnalyses::none();
-        return llvm::PreservedAnalyses::all();
-    }
-
-    static bool isRequired()
-    {
-        return true;
-    }
-};
-
-std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::ArrayRef<const llvm::PassInfo *> llvmPasses,
-                                                                     llvm::Optional<unsigned> mbOptLevel,
+std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::Optional<unsigned> mbOptLevel,
                                                                      llvm::TargetMachine *targetMachine)
 {
-    return [llvmPasses, mbOptLevel, targetMachine](llvm::Module *m) -> llvm::Error {
+    return [mbOptLevel, targetMachine](llvm::Module *m) -> llvm::Error {
         llvm::Optional<llvm::OptimizationLevel> ol = mapToLevel(optLevel, sizeLevel);
         if (!ol)
         {
@@ -422,10 +406,10 @@ std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::Array
         //pb.parsePassPipeline(mpm, "module(function(landing-pad-fix))");
 
         // add custom passes
-        for (auto pass : llvmPasses)
-        {
-            mpm.addPass(llvm::createModuleToFunctionPassAdaptor(PassRunAdaptorPass()));
-        }
+        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::LandingPadFixPass()));
+#ifdef WIN_EXCEPTION        
+        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::TypeScriptExceptionPass()));
+#endif
 
         if (*ol == llvm::OptimizationLevel::O0)
             mpm.addPass(pb.buildO0DefaultPipeline(*ol));
@@ -441,30 +425,14 @@ std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const ll
                                                       int sizeLevel)
 {
 #ifdef ENABLE_EXCEPTIONS
-
-    auto landingPadFixPass = llvm::PassRegistry::getPassRegistry()->getPassInfo(llvm::getLandingPadFixPassID());
-    assert(landingPadFixPass);
-    if (landingPadFixPass)
-    {
-        passes.push_back(landingPadFixPass);
-    }
-
-#ifdef WIN_EXCEPTION
-    auto exceptPass = llvm::PassRegistry::getPassRegistry()->getPassInfo(llvm::getTypeScriptExceptionPassID());
-    assert(exceptPass);
-    if (exceptPass)
-    {
-        passes.push_back(exceptPass);
-    }
-#endif
-
-    auto optPipeline = makeLLVMPassesTransformer(passes,
-                                                       /*optLevel=*/enableOpt ? optLevel : 0,
-                                                       /*targetMachine=*/nullptr);
+    auto optPipeline = makeLLVMPassesTransformer(
+        /*optLevel=*/enableOpt ? optLevel : 0, 
+        /*targetMachine=*/nullptr);
 #else
     // An optimization pipeline to use within the execution engine.
     auto optPipeline = mlir::makeOptimizingTransformer(
-        /*optLevel=*/enableOpt ? optLevel : 0, /*sizeLevel=*/sizeLevel,
+        /*optLevel=*/enableOpt ? optLevel : 0, 
+        /*sizeLevel=*/sizeLevel,
         /*targetMachine=*/nullptr);
 #endif
 

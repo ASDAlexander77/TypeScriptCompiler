@@ -17,17 +17,13 @@ using namespace PatternMatch;
 
 #define DEBUG_TYPE "pass"
 
-namespace
+struct LandingPadFixPassCode
 {
-
-struct LandingPadFixPass : public FunctionPass
-{
-    static char ID;
-    LandingPadFixPass() : FunctionPass(ID)
+    LandingPadFixPassCode()
     {
     }
 
-    bool runOnFunction(Function &F) override
+    bool runOnFunction(Function &F)
     {
         auto MadeChange = false;
 
@@ -74,18 +70,18 @@ struct LandingPadFixPass : public FunctionPass
         return MadeChange;
     }
 };
-} // namespace
 
-char LandingPadFixPass::ID = 0;
-
-#define CONFIG false
-#define ANALYSIS false
-
-INITIALIZE_PASS(LandingPadFixPass, LANDINGPAD_FIX_PASS_NAME_ARG_NAME, LANDINGPAD_FIX_PASS_NAME, CONFIG, ANALYSIS)
-
-static RegisterPass<LandingPadFixPass> X(LANDINGPAD_FIX_PASS_NAME_ARG_NAME, LANDINGPAD_FIX_PASS_NAME, CONFIG, ANALYSIS);
-
-const void *llvm::getLandingPadFixPassID()
+namespace ts
 {
-    return &LandingPadFixPass::ID;
+    static LandingPadFixPassCode LPF;
+
+    llvm::PreservedAnalyses LandingPadFixPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
+    {
+        if (!LPF.runOnFunction(F))
+        {
+            return llvm::PreservedAnalyses::all();
+        }
+
+        return llvm::PreservedAnalyses::none();
+    }
 }

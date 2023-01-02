@@ -2,17 +2,20 @@
 #define TYPESCRIPTEXCEPTIONPASS__H
 
 #include "llvm/Pass.h"
-#include "llvm/PassRegistry.h"
+#include "llvm/IR/PassManager.h"
 
-#define TYPESCRIPT_EXCEPTION_PASS_ARG_NAME "typescript-exception"
-#define TYPESCRIPT_EXCEPTION_PASS_NAME "TypeScript Exception Pass"
-
-namespace llvm
+namespace ts
 {
+    class TypeScriptExceptionPass : public llvm::PassInfoMixin<TypeScriptExceptionPass>
+    {
+    public:
+        llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &AM);
 
-const void *getTypeScriptExceptionPassID();
-void initializeTypeScriptExceptionPassPass(llvm::PassRegistry &);
-
-} // end namespace llvm
+        static bool isRequired()
+        {
+            return true;
+        }
+    };
+}
 
 #endif // TYPESCRIPTEXCEPTIONPASS__H

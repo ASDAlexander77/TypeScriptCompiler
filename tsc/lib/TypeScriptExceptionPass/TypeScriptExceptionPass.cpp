@@ -17,9 +17,6 @@ using namespace PatternMatch;
 
 #define DEBUG_TYPE "pass"
 
-namespace
-{
-
 struct CatchRegion
 {
     CatchRegion() = default;
@@ -66,16 +63,15 @@ struct CatchRegion
     }
 };
 
-struct TypeScriptExceptionPass : public FunctionPass
+struct TypeScriptExceptionPassCode
 {
     llvm::StructType *ThrowInfoType;
 
-    static char ID;
-    TypeScriptExceptionPass() : FunctionPass(ID), ThrowInfoType{nullptr}
+    TypeScriptExceptionPassCode() : ThrowInfoType{nullptr}
     {
     }
 
-    bool runOnFunction(Function &F) override
+    bool runOnFunction(Function &F)
     {
         auto MadeChange = false;
 
@@ -692,18 +688,18 @@ struct TypeScriptExceptionPass : public FunctionPass
         return nullptr;
     }
 };
-} // namespace
 
-char TypeScriptExceptionPass::ID = 0;
-
-#define CONFIG false
-#define ANALYSIS false
-
-INITIALIZE_PASS(TypeScriptExceptionPass, TYPESCRIPT_EXCEPTION_PASS_ARG_NAME, TYPESCRIPT_EXCEPTION_PASS_NAME, CONFIG, ANALYSIS)
-
-static RegisterPass<TypeScriptExceptionPass> X(TYPESCRIPT_EXCEPTION_PASS_ARG_NAME, TYPESCRIPT_EXCEPTION_PASS_NAME, CONFIG, ANALYSIS);
-
-const void *llvm::getTypeScriptExceptionPassID()
+namespace ts
 {
-    return &TypeScriptExceptionPass::ID;
+    static TypeScriptExceptionPassCode TSEP;
+
+    llvm::PreservedAnalyses TypeScriptExceptionPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
+    {
+        if (!TSEP.runOnFunction(F))
+        {
+            return llvm::PreservedAnalyses::all();
+        }
+
+        return llvm::PreservedAnalyses::none();
+    }
 }

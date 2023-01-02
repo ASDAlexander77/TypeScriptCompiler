@@ -2,17 +2,20 @@
 #define LANDINGPAD_FIX_PASS__H
 
 #include "llvm/Pass.h"
-#include "llvm/PassRegistry.h"
+#include "llvm/IR/PassManager.h"
 
-#define LANDINGPAD_FIX_PASS_NAME_ARG_NAME "landing-pad-fix"
-#define LANDINGPAD_FIX_PASS_NAME "Landing Pad Fix Pass"
-
-namespace llvm
+namespace ts
 {
+    class LandingPadFixPass : public llvm::PassInfoMixin<LandingPadFixPass>
+    {
+    public:
+        llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &AM);
 
-const void *getLandingPadFixPassID();
-void initializeLandingPadFixPassPass(llvm::PassRegistry &);
-
-} // end namespace llvm
+        static bool isRequired()
+        {
+            return true;
+        }
+    };
+}
 
 #endif // LANDINGPAD_FIX_PASS__H
