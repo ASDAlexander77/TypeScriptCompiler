@@ -419,7 +419,7 @@ std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::Array
 
         llvm::ModulePassManager mpm;
 
-        pb.parsePassPipeline(mpm, "module(function(landing-pad-fix))");
+        //pb.parsePassPipeline(mpm, "module(function(landing-pad-fix))");
 
         // add custom passes
         for (auto pass : llvmPasses)
