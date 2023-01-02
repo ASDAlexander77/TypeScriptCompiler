@@ -4,6 +4,7 @@
 #include "llvm/Pass.h"
 #include "llvm/PassRegistry.h"
 
+#define LANDINGPAD_FIX_PASS_NAME_ARG_NAME "landing-pad-fix"
 #define LANDINGPAD_FIX_PASS_NAME "Landing Pad Fix Pass"
 
 namespace llvm

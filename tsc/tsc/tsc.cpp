@@ -384,7 +384,7 @@ class PassRunAdaptorPass : public llvm::PassInfoMixin<PassRunAdaptorPass>
         // or return llvm::PreservedAnalyses::none();
         return llvm::PreservedAnalyses::all();
     }
-    
+
     static bool isRequired()
     {
         return true;
@@ -418,6 +418,8 @@ std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::Array
         pb.crossRegisterProxies(lam, fam, cgam, mam);
 
         llvm::ModulePassManager mpm;
+
+        pb.parsePassPipeline(mpm, "module(function(landing-pad-fix))");
 
         // add custom passes
         for (auto pass : llvmPasses)
