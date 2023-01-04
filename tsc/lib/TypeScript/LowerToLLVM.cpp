@@ -5042,7 +5042,7 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
                     nextUnrealizedConversionCastOp->getResult(0).replaceAllUsesWith(unrealizedConversionCastOp.getOperand(0));
                     
                     removed.insert(nextUnrealizedConversionCastOp);
-                    if (removed.find(unrealizedConversionCastOp) != removed.end())
+                    if (removed.find(unrealizedConversionCastOp) == removed.end())
                     {
                         removed.insert(unrealizedConversionCastOp);
                     }                    
