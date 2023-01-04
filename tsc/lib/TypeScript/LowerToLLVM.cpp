@@ -3103,7 +3103,7 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
         {
             // BUG: in LLVM landing pad is not fully implemented
             // so lets create filter with undef value to mark cleanup landing
-            auto catch1Fake = landingPadOp.catches().front();
+            auto catch1Fake = transformed.catches().front();
 
             mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
             rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, true,
