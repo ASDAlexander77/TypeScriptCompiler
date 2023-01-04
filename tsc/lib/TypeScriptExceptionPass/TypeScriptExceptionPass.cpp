@@ -18,6 +18,8 @@ using namespace PatternMatch;
 
 #define DEBUG_TYPE "pass"
 
+#define SAVE_STACK true
+
 struct CatchRegion
 {
     CatchRegion() = default;
@@ -268,30 +270,23 @@ struct TypeScriptExceptionPassCode
                 catchRegion.cleanupPad = CleanupPadInst::Create(ConstantTokenNone::get(Ctx), None, "cleanuppad", LPI);
             }
 
+            auto opBundle = getCallBundleFromCatchRegion(catchRegion);
+
+#ifdef SAVE_STACK            
             // save stack
             if (catchRegion.hasAlloca)
             {
-                catchRegion.stack = Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stacksave), {});
+                // TODO: it seems I don't need opBundle here
+                auto stackSaveFuncCallee = Intrinsic::getDeclaration(F.getParent(), Intrinsic::stacksave);
+                auto callInst = Builder.CreateCall(stackSaveFuncCallee->getFunctionType(), stackSaveFuncCallee, {}, opBundle);
+                catchRegion.stack = callInst;
             }
+#endif
 
             // set funcset
             llvm::SmallVector<CallBase *> newCalls;
             for (auto callBase : catchRegion.calls)
             {
-                llvm::SmallVector<OperandBundleDef> opBundle;
-                if (catchRegion.catchPad)
-                {
-                    opBundle.emplace_back(OperandBundleDef("funclet", catchRegion.catchPad));
-                }
-                else if (catchRegion.cleanupPad)
-                {
-                    opBundle.emplace_back(OperandBundleDef("funclet", catchRegion.cleanupPad));
-                }
-                else
-                {
-                    llvm_unreachable("not implemented");
-                }
-
                 auto replaceEndData = catchRegion.end == callBase;
                 auto replaceUnwindInfoOp = catchRegion.unwindInfoOp == callBase;
 
@@ -375,12 +370,20 @@ struct TypeScriptExceptionPassCode
 
             toRemoveWorkSet.push_back(&*LPI);
 
+#ifdef SAVE_STACK
             if (catchRegion.hasAlloca)
             {
+                // TODO: if we already have stackrestore before we do not need this stack restore, it will cause the issue for optimization and thus will not be compiled
+                // TODO: it seems I don't need opBundle here
+
                 assert(catchRegion.stack);
+
                 // restore stack
-                Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stackrestore), {catchRegion.stack});
+                auto opBundle = getCallBundleFromCatchRegion(catchRegion);
+                auto stackRestoreFuncCallee = Intrinsic::getDeclaration(F.getParent(), Intrinsic::stackrestore);
+                Builder.CreateCall(stackRestoreFuncCallee->getFunctionType(), stackRestoreFuncCallee, {catchRegion.stack}, opBundle);
             }
+#endif            
 
             if (catchRegion.isCatch())
             {
@@ -566,6 +569,25 @@ struct TypeScriptExceptionPassCode
         LLVM_DEBUG(llvm::dbgs() << "\n!! Dump After: ...\n" << F << "\n\n";);
 
         return MadeChange;
+    }
+
+    llvm::SmallVector<OperandBundleDef> getCallBundleFromCatchRegion(CatchRegion &catchRegion)
+    {
+        llvm::SmallVector<OperandBundleDef> opBundle;
+        if (catchRegion.catchPad)
+        {
+            opBundle.emplace_back(OperandBundleDef("funclet", catchRegion.catchPad));
+        }
+        else if (catchRegion.cleanupPad)
+        {
+            opBundle.emplace_back(OperandBundleDef("funclet", catchRegion.cleanupPad));
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+
+        return opBundle;
     }
 
     int getTypeNumber(Type *catchValType)
