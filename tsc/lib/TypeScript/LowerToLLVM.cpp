@@ -1259,9 +1259,12 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
                         mlir_ts::FunctionType::get(rewriter.getContext(), inputs, hybridFuncType.getResults());
                     auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
 
+                    mlir::Value methodPtrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(methodPtr.getType()), methodPtr);
+                    mlir::Value thisValAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(thisVal.getType()), thisVal);
+
                     mlir::SmallVector<mlir::Value> ops;
-                    ops.push_back(methodPtr);
-                    ops.push_back(thisVal);
+                    ops.push_back(methodPtrAsLLVMType);
+                    ops.push_back(thisValAsLLVMType);
                     ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
 
                     auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
@@ -1280,8 +1283,10 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
                                                                hybridFuncType.getResults());
                     auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
 
+                    mlir::Value methodPtrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(methodPtr.getType()), methodPtr);
+
                     mlir::SmallVector<mlir::Value> ops;
-                    ops.push_back(methodPtr);
+                    ops.push_back(methodPtrAsLLVMType);
                     ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
 
                     auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
