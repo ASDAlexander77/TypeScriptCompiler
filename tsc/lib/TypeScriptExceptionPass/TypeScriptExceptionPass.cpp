@@ -18,7 +18,7 @@ using namespace PatternMatch;
 
 #define DEBUG_TYPE "pass"
 
-#define SAVE_STACK true
+//#define SAVE_STACK true
 
 struct CatchRegion
 {
