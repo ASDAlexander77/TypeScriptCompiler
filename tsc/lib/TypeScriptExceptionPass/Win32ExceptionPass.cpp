@@ -1,4 +1,4 @@
-#include "TypeScript/TypeScriptExceptionPass.h"
+#include "TypeScript/Win32ExceptionPass.h"
 
 #include "llvm/Analysis/DomTreeUpdater.h"
 #include "llvm/IR/Dominators.h"
@@ -66,11 +66,11 @@ struct CatchRegion
     }
 };
 
-struct TypeScriptExceptionPassCode
+struct Win32ExceptionPassCode
 {
     llvm::StructType *ThrowInfoType;
 
-    TypeScriptExceptionPassCode() : ThrowInfoType{nullptr}
+    Win32ExceptionPassCode() : ThrowInfoType{nullptr}
     {
     }
 
@@ -730,9 +730,9 @@ namespace ts
         return true;            
     }
 
-    llvm::PreservedAnalyses TypeScriptExceptionPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
+    llvm::PreservedAnalyses Win32ExceptionPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
     {
-        TypeScriptExceptionPassCode TSEP{};
+        Win32ExceptionPassCode TSEP{};
         if (!TSEP.runOnFunction(F))
         {
             LLVM_DEBUG(verifyFunction(F););

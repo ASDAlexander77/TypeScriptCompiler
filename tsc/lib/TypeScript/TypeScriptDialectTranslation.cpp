@@ -1,6 +1,6 @@
 #define DEBUG_TYPE "llvm"
 
-#include "TypeScript/TypeScriptToLLVMIRTranslation.h"
+#include "TypeScript/TypeScriptDialectTranslation.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"

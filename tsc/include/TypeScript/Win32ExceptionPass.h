@@ -1,12 +1,12 @@
-#ifndef TYPESCRIPTEXCEPTIONPASS__H
-#define TYPESCRIPTEXCEPTIONPASS__H
+#ifndef WIN32EXCEPTIONPASS__H
+#define WIN32EXCEPTIONPASS__H
 
 #include "llvm/Pass.h"
 #include "llvm/IR/PassManager.h"
 
 namespace ts
 {
-    class TypeScriptExceptionPass : public llvm::PassInfoMixin<TypeScriptExceptionPass>
+    class Win32ExceptionPass : public llvm::PassInfoMixin<Win32ExceptionPass>
     {
     public:
         llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &AM);
@@ -18,4 +18,4 @@ namespace ts
     };
 }
 
-#endif // TYPESCRIPTEXCEPTIONPASS__H
+#endif // WIN32EXCEPTIONPASS__H

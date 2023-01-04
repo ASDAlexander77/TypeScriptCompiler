@@ -1,20 +1,18 @@
-#define DEBUG_TYPE "tsc"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
-#include "TypeScript/TypeScriptToLLVMIRTranslation.h"
+#include "TypeScript/TypeScriptDialectTranslation.h"
 #include "TypeScript/TypeScriptGC.h"
 #ifdef ENABLE_ASYNC
-#include "TypeScript/NeededDialectsToLLVMIRTranslation.h"
+#include "TypeScript/AsyncDialectTranslation.h"
 #endif
 #ifdef ENABLE_EXCEPTIONS
 #include "TypeScript/LandingPadFixPass.h"
 #ifdef WIN_EXCEPTION
-#include "TypeScript/TypeScriptExceptionPass.h"
+#include "TypeScript/Win32ExceptionPass.h"
 #endif
 #endif
 
@@ -67,16 +65,15 @@
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Analysis/LoopAnalysisManager.h"
-#undef DEBUG_TYPE
 #include "llvm/Analysis/CGSCCPassManager.h"
-#undef DEBUG_TYPE
-#define DEBUG_TYPE "tsc"
 
 #ifdef GC_ENABLE
 #include "llvm/IR/GCStrategy.h"
 #include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #endif
+
+#define DEBUG_TYPE "tsc"
 
 #define ENABLE_OPT_PASSES 1
 // TODO: if you uncomment it you will have exception in test 00try_finally.ts error: empty block: expect at least a terminator
@@ -341,7 +338,7 @@ int initDialects(mlir::ModuleOp module)
 #endif
 
 #ifdef ENABLE_ASYNC
-    mlir::typescript::registerNeededDialectsTranslation(*module->getContext());
+    mlir::typescript::registerAsyncDialectTranslation(*module->getContext());
 #endif
 
     return 0;
@@ -376,7 +373,7 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
     return llvm::None;
 }
 
-std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::Optional<unsigned> mbOptLevel,
+std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(llvm::Optional<unsigned> mbOptLevel,
                                                                      llvm::TargetMachine *targetMachine)
 {
     return [mbOptLevel, targetMachine](llvm::Module *m) -> llvm::Error {
@@ -408,7 +405,7 @@ std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::Optio
         // add custom passes
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::LandingPadFixPass()));
 #ifdef WIN_EXCEPTION        
-        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::TypeScriptExceptionPass()));
+        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::Win32ExceptionPass()));
 #endif
 
         if (*ol == llvm::OptimizationLevel::O0)
@@ -421,10 +418,10 @@ std::function<llvm::Error(llvm::Module *)> makeLLVMPassesTransformer(llvm::Optio
     };
 }
 
-std::function<llvm::Error(llvm::Module *)> initPasses(bool enableOpt, int optLevel, int sizeLevel)
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int optLevel, int sizeLevel)
 {
 #ifdef ENABLE_EXCEPTIONS
-    auto optPipeline = makeLLVMPassesTransformer(
+    auto optPipeline = makeCustomPassesWithOptimizingTransformer(
         /*optLevel=*/enableOpt ? optLevel : 0, 
         /*targetMachine=*/nullptr);
 #else
@@ -456,9 +453,7 @@ int dumpLLVMIR(mlir::ModuleOp module)
     llvm::InitializeNativeTargetAsmPrinter();
     mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());
 
-    // TODO: seems I need to call makeLLVMPassesTransformer the same way as makeOptimizingTransformer
-
-    auto optPipeline = initPasses(enableOpt, optLevel, sizeLevel);
+    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
     if (auto err = optPipeline(llvmModule.get()))
     {
         llvm::errs() << "Failed to optimize LLVM IR " << err << "\n";
@@ -477,7 +472,7 @@ int runJit(mlir::ModuleOp module)
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
-    auto optPipeline = initPasses(enableOpt, optLevel, sizeLevel);
+    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
 
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
