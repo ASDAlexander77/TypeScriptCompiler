@@ -75,6 +75,8 @@ abstract class C1 {
 
     constructor() {
         let self = this;                // ok
+        //let { x, y: y1 } = this;        // error
+        //({ x, y: y1, "y": y1 } = this); // error
     }
 }
 
