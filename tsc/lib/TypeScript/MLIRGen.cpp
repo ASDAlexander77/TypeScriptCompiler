@@ -8,6 +8,7 @@
 #include "TypeScript/Config.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
+#include "TypeScript/DiagnosticHelper.h"
 
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
@@ -297,11 +298,7 @@ class MLIRGenImpl
         // print errors
         if (notResolved)
         {
-            for (auto &diag : postponedMessages)
-            {
-                // we show messages when they metter
-                publishDiagnostic(*diag.get());
-            }
+            printDiagnostics(postponedMessages);
         }
 
         postponedMessages.clear();
@@ -403,40 +400,6 @@ class MLIRGenImpl
         }
 
         return mlir::success();
-    }
-
-    void publishDiagnostic(const mlir::Diagnostic &diag)
-    {
-        auto printMsg = [](llvm::raw_fd_ostream &os, const mlir::Diagnostic &diag, const char *msg) {
-            if (!diag.getLocation().isa<mlir::UnknownLoc>())
-                os << diag.getLocation() << ": ";
-            os << msg;
-
-            // The default behavior for errors is to emit them to stderr.
-            os << diag << '\n';
-            os.flush();
-        };
-
-        switch (diag.getSeverity())
-        {
-        case mlir::DiagnosticSeverity::Note:
-            printMsg(llvm::outs(), diag, "note: ");
-            for (auto &note : diag.getNotes())
-            {
-                printMsg(llvm::outs(), note, "note: ");
-            }
-
-            break;
-        case mlir::DiagnosticSeverity::Warning:
-            printMsg(llvm::outs(), diag, "warning: ");
-            break;
-        case mlir::DiagnosticSeverity::Error:
-            printMsg(llvm::errs(), diag, "error: ");
-            break;
-        case mlir::DiagnosticSeverity::Remark:
-            printMsg(llvm::outs(), diag, "information: ");
-            break;
-        }
     }
 
     bool registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false)
@@ -6433,14 +6396,13 @@ class MLIRGenImpl
             }
         }
 
-        if (value || genContext.allowPartialResolve)
+        //if (!value && !genContext.allowPartialResolve)
+        if (!value)
         {
-            return value;
+            emitError(location, "Can't resolve property '") << name << "' of type " << objectValue.getType();
         }
 
-        emitError(location, "Can't resolve property name '") << name << "' of type " << objectValue.getType();
-
-        llvm_unreachable("not implemented");
+        return value;
     }
 
     mlir::Value extensionFunction(mlir::Location location, mlir::Value thisValue, StringRef name,

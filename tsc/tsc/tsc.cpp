@@ -2,6 +2,7 @@
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/Passes.h"
+#include "TypeScript/DiagnosticHelper.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptDialectTranslation.h"
@@ -182,40 +183,6 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &modu
     return 0;
 }
 
-void publishDiagnostic(mlir::Diagnostic &diag)
-{
-    auto printMsg = [](llvm::raw_fd_ostream &os, mlir::Diagnostic &diag, const char *msg) {
-        if (!diag.getLocation().isa<mlir::UnknownLoc>())
-            os << diag.getLocation() << ": ";
-        os << msg;
-
-        // The default behavior for errors is to emit them to stderr.
-        os << diag << '\n';
-        os.flush();
-    };
-
-    switch (diag.getSeverity())
-    {
-    case mlir::DiagnosticSeverity::Note:
-        printMsg(llvm::outs(), diag, "note: ");
-        for (auto &note : diag.getNotes())
-        {
-            printMsg(llvm::outs(), note, "note: ");
-        }
-
-        break;
-    case mlir::DiagnosticSeverity::Warning:
-        printMsg(llvm::outs(), diag, "warning: ");
-        break;
-    case mlir::DiagnosticSeverity::Error:
-        printMsg(llvm::errs(), diag, "error: ");
-        break;
-    case mlir::DiagnosticSeverity::Remark:
-        printMsg(llvm::outs(), diag, "information: ");
-        break;
-    }
-}
-
 int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp>  &module)
 {
     if (int error = loadMLIR(context, module))
@@ -223,7 +190,10 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::Modul
         return error;
     }
 
-    mlir::ScopedDiagnosticHandler diagHandler(&context, [&](mlir::Diagnostic &diag) { publishDiagnostic(diag); });
+    mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
+    mlir::ScopedDiagnosticHandler diagHandler(&context, [&](mlir::Diagnostic &diag) {
+        postponedMessages.emplace_back(new mlir::Diagnostic(std::move(diag)));
+    });
 
     mlir::PassManager pm(&context);
     // Apply any generic pass manager command line options and run the pipeline.
@@ -299,12 +269,14 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::Modul
         }
     }
 
+    auto result = 0;
     if (mlir::failed(pm.run(*module)))
     {
-        return 4;
+        result = 4;
     }
 
-    return 0;
+    printDiagnostics(postponedMessages);
+    return result;
 }
 
 int dumpAST()
