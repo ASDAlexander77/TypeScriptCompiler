@@ -170,7 +170,7 @@ class LLVMRTTIHelperVCLinux
         }
 
         mlir::Value throwInfoPtr =
-            rewriter.create<mlir::arith::ConstantOp>(loc, th.getPointerType(tiType), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
+            rewriter.create<LLVM::AddressOfOp>(loc, th.getPointerType(tiType), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
         if (classType)
         {
             throwInfoPtr = clh.castToI8Ptr(throwInfoPtr);
