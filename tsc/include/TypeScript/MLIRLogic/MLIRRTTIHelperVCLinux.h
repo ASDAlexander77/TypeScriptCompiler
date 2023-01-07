@@ -235,7 +235,7 @@ class MLIRRTTIHelperVCLinux
 
         mlir::OpBuilder::InsertionGuard guard(rewriter);
 
-        rewriter.setInsertionPointToStart(&parentModule.getBody().front());
+        rewriter.setInsertionPointToStart(parentModule.getBody());
         seekLast(parentModule.getBody());
 
         // _ZTId
@@ -274,7 +274,7 @@ class MLIRRTTIHelperVCLinux
         }
 
         SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({IDENT("Linkage"), ATTR("External")});
+        attrs.push_back({ATTR("Linkage"), ATTR("External")});
 
         rewriter.create<mlir_ts::GlobalOp>(loc, mth.getOpaqueType(), true, /*LLVM::Linkage::External,*/ name, mlir::Attribute{}, attrs);
         return mlir::success();
@@ -352,7 +352,7 @@ class MLIRRTTIHelperVCLinux
         }
 
         SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({IDENT("Linkage"), ATTR("LinkonceODR")});
+        attrs.push_back({ATTR("Linkage"), ATTR("LinkonceODR")});
 
         rewriter.create<mlir_ts::GlobalOp>(loc, stringConstType(className, ti), true,
                                            /*LLVM::Linkage::LinkonceODR,*/ name, mcl.getStringAttrWith0(label), attrs);
@@ -455,7 +455,7 @@ class MLIRRTTIHelperVCLinux
         }
 
         SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({IDENT("Linkage"), ATTR("LinkonceODR")});
+        attrs.push_back({ATTR("Linkage"), ATTR("LinkonceODR")});
 
         auto typeInfoType = getTIType(ti);
 

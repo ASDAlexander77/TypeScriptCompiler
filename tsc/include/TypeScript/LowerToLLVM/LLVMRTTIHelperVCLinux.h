@@ -88,7 +88,7 @@ class LLVMRTTIHelperVCLinux
         auto name = "__gxx_personality_v0";
         auto cxxFrameHandler3 = ch.getOrInsertFunction(name, th.getFunctionType(th.getI32Type(), {}, true));
 
-        newFuncOp->setAttr(rewriter.getIdentifier("personality"), FlatSymbolRefAttr::get(rewriter.getContext(), name));
+        newFuncOp->setAttr(ATTR("personality"), FlatSymbolRefAttr::get(rewriter.getContext(), name));
         return success();
     }
 
