@@ -18,18 +18,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_CXX_EXTENSIONS Off)
 set(CMAKE_EXPORT_COMPILE_COMMANDS Off)
 
-# add vulkan
-include_directories($ENV{VULKAN_SDK}/Include)
-link_directories($ENV{VULKAN_SDK}/Lib)
-set (EXTRA_LIBS ${EXTRA_LIBS} "vulkan-1")
-
 # add std lib
 if (NOT WIN32)
 	set (EXTRA_LIBS ${EXTRA_LIBS} "stdc++")
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    add_definitions(-DVK_USE_PLATFORM_WIN32_KHR -DVC_EXTRALEAN -DVK_PROTOTYPES -D_USE_MATH_DEFINES)
 endif()
 
 include("typescript.cmake")
@@ -40,8 +31,6 @@ add_executable(
     ${PROJECT_NAME} 
     dummy.cpp
     ${TS_SRC}
-    native/window.win32.cpp
-    native/vulkan.win32.cpp
 )
 
 target_link_directories(
