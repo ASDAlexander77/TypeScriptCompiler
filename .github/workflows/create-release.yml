@@ -55,7 +55,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         if: hashFiles('llvm_13_release.zip') == ''
-        run: Invoke-WebRequest -Uri "https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/raw/main/llvm_13_release.zip" -OutFile "llvm_13_release.zip"
+        run: Invoke-WebRequest -Uri "https://public.am.files.1drv.com/y4m10Qvbrw-g-tUiPxw20oTRpLSp1JoKRxSbg5V395uQFYPyvkVyI6YvDdrT0G5zMDtoF6WljTpDV3hpKszvHdVjCvuLR3ye3OHFSqFzO3PmNl1CBjIE6YcYa8O7QMVTGFIZASpveWikhcsd5qyDe--75g07hg50g7wXAhDl7WXAH1Aiwd_xI3SMimfY8t9ivEVM7cVUyCIZFnN8jWSA_AgjWkP-amlUEg-npWM-_tSbFI" -OutFile "llvm_13_release.zip"
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
@@ -67,13 +67,13 @@ jobs:
         continue-on-error: true
         shell: pwsh
         if: hashFiles('gc-8.0.4.tar.gz') == ''
-        run: Invoke-WebRequest -Uri "https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/raw/main/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
+        run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
 
       - name: Download 3rd party source - GC:Atomic_ops
         continue-on-error: true
         shell: pwsh
         if: hashFiles('libatomic_ops-7.6.10.tar.gz') == ''
-        run: Invoke-WebRequest -Uri "https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/raw/main/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
+        run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
 
       - name: UnZip 3rd party source - GC
         continue-on-error: false
@@ -196,7 +196,7 @@ jobs:
         continue-on-error: true
         shell: sh
         if: hashFiles('llvm_13_release.tgz') == ''
-        run: curl -L https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/raw/main/llvm_13_release.tgz --output llvm_13_release.tgz
+        run: curl -L https://public.am.files.1drv.com/y4mbyNW2o6LXRDl0uZnFRo_x2L35wp33N_9TJIWmjinBdJtj6L7wwy9JpgExcj6wAa_qe7fJta-dYO-219yjXvsfo15O6s2sBiwtZS13RzPUIyN8-yXhA5PapcmKzgTiHHEFhuDGQhWTXANSNMfW21D3YanLGSbgv2ONz8pn-W-3tteLTVDiRvFC6xDffBZCKN9k3zFObOpVmfCD_OkJmLC_714ljdxEgoW3QtsOt1FbCg --output llvm_13_release.tgz
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
@@ -209,13 +209,13 @@ jobs:
         continue-on-error: true
         shell: sh
         if: hashFiles('gc-8.0.4.tar.gz') == ''
-        run: curl -L https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/raw/main/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
+        run: curl -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
 
       - name: Download 3rd party source - GC:Atomic_ops
         continue-on-error: true
         shell: sh
         if: hashFiles('libatomic_ops-7.6.10.tar.gz') == ''
-        run: curl -L https://github.com/ASDAlexander77/TypeScriptCompiler-LFS/raw/main/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
+        run: curl -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
 
       - name: UnZip 3rd party source - GC
         continue-on-error: false
