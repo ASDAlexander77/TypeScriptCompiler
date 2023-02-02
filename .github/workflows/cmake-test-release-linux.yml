@@ -59,10 +59,6 @@ jobs:
       run: mkdir -p ./__build/tsc-ninja-release; mkdir -p ./__build/gc-ninja-release
       shell: sh
 
-    - name: Clone Precompiled files
-      if: hashFiles('llvm_13_release.tgz') == ''
-      run: git clone https://github.com/ASDAlexander77/TypeScriptCompiler-LFS.git
-    
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: sh
