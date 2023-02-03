@@ -5,8 +5,8 @@ on:
 #    branches: [ main ]
   pull_request:
     branches: [ main ]
-#  workflow_dispatch:
-#    branches: [ main ]
+  workflow_dispatch:
+    branches: [ main ]
 #  schedule:
     # 8:30 and 18:30 UTC:
 #    - cron:  '30 8,18 * * *'
@@ -59,15 +59,11 @@ jobs:
       run: mkdir -p ./__build/tsc-ninja-release; mkdir -p ./__build/gc-ninja-release
       shell: sh
 
-    - name: Clone Precompiled files
-      if: hashFiles('llvm_13_release.tgz') == ''
-      run: git clone https://github.com/ASDAlexander77/TypeScriptCompiler-LFS.git
-    
-    - name: Copy 3rd party - LLVM
+    - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: sh
       if: hashFiles('llvm_13_release.tgz') == ''
-      run: cp ./TypeScriptCompiler-LFS.git/llvm_13_release.tgz ./llvm_13_release.tgz
+      run: curl -L https://public.am.files.1drv.com/y4mhQ0ifWzLefsFIY0C_qML9AYDDHnFhvDB6it6r0o827uE0iXQmblCvEHcKx5M7b9xFPw7xCbKAfDcLm6XBig-V0Alf7EDlsBp_b8ewH-fU59s2rl1lcst68Dzm5485YMvu-bBIczCwautxuiZMXOoIW9tbTDOtnM0cdlAXjz28-MlgyF6elqec8OvdOKSLg2ov-3uifrWYXVZkVuDJTPZJ6aKYENoCESRE9H08fQYmuc --output llvm_13_release.tgz
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
@@ -76,17 +72,17 @@ jobs:
       run: file llvm_13_release.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_13_release.tgz -C ./3rdParty/llvm-ninja/
       #run: file llvm_13_release.tgz; unzip llvm_13_release.tgz -d ./3rdParty/llvm-ninja/
 
-    - name: Copy 3rd party source - GC
+    - name: Download 3rd party source - GC
       continue-on-error: true
       shell: sh
       if: hashFiles('gc-8.0.4.tar.gz') == ''
-      run: cp ./TypeScriptCompiler-LFS.git/gc-8.0.4.tar.gz ./gc-8.0.4.tar.gz
+      run: curl -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
 
-    - name: Copy 3rd party source - GC:Atomic_ops
+    - name: Download 3rd party source - GC:Atomic_ops
       continue-on-error: true
       shell: sh
       if: hashFiles('libatomic_ops-7.6.10.tar.gz') == ''
-      run: cp ./TypeScriptCompiler-LFS.git/libatomic_ops-7.6.10.tar.gz ./libatomic_ops-7.6.10.tar.gz
+      run: curl -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
 
     - name: UnZip 3rd party source - GC
       continue-on-error: false

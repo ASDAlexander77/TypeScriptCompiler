@@ -59,15 +59,11 @@ jobs:
       run: if (!(Test-Path -Path ".\__build\tsc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }; if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\gc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc-release" };
       shell: pwsh
 
-    - name: Clone Precompiled files
-      if: hashFiles('llvm_13_release.zip') == ''
-      run: git clone https://github.com/ASDAlexander77/TypeScriptCompiler-LFS.git
-    
-    - name: Copy 3rd party - LLVM
+    - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: pwsh
       if: hashFiles('llvm_13_release.zip') == ''
-      run: copy ./TypeScriptCompiler-LFS.git/llvm_13_release.zip ./llvm_13_release.zip
+      run: Invoke-WebRequest -Uri "https://public.am.files.1drv.com/y4m5HxGYtL9zfQqgPlzFv2RwumSWc5I_GGLdPR9Dodx6OHx3cH6sOaqE7cTh6qjkQqQwKP4HCawYO-nGOBx1L3V8s55A8VHeEISnpWSIQPIT-Ww83QKGFAlURS23orvKPJrUfydhPKCtY0hSi1zIZFL4mfn8zCsv4CXoS3M_yBjzq-6ak9GTt1VpPTKt55Dk-xCQbXd3geTJF3oLVj06wq3ePeEHfgqM9z5gd1gvFhZciM" -OutFile "llvm_13_release.zip"
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
@@ -75,17 +71,17 @@ jobs:
       run: Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\" -Force
       shell: pwsh
 
-    - name: Copy 3rd party source - GC
+    - name: Download 3rd party source - GC
       continue-on-error: true
       shell: pwsh
       if: hashFiles('gc-8.0.4.tar.gz') == ''
-      run: copy ./TypeScriptCompiler-LFS.git/gc-8.0.4.tar.gz ./gc-8.0.4.tar.gz
+      run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
 
-    - name: Copy 3rd party source - GC:Atomic_ops
+    - name: Download 3rd party source - GC:Atomic_ops
       continue-on-error: true
       shell: pwsh
       if: hashFiles('libatomic_ops-7.6.10.tar.gz') == ''
-      run: copy ./TypeScriptCompiler-LFS.git/libatomic_ops-7.6.10.tar.gz ./libatomic_ops-7.6.10.tar.gz
+      run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
 
     - name: UnZip 3rd party source - GC
       continue-on-error: false
