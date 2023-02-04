@@ -26,21 +26,21 @@ jobs:
         uses: actions/cache@v2
         with:
           path: __build/llvm
-          key: ${{ runner.os }}-build-llvm-v3
+          key: ${{ runner.os }}-build-llvm-15-v3
 
       - name: Cache 3rd Party binaries
         id: cache-3rd-party-binary
         uses: actions/cache@v2
         with:
           path: 3rdParty
-          key: ${{ runner.os }}-3rd-party-v3
+          key: ${{ runner.os }}-3rd-party-15-v3
 
-      - name: Cache 3rd Party binaries - LLVM 13 Release
-        id: cache-3rd-party-binary-llvm-13-release
+      - name: Cache 3rd Party binaries - LLVM 15 Release
+        id: cache-3rd-party-binary-llvm-15-release
         uses: actions/cache@v2
         with:
-          path: llvm_13_release.zip
-          key: ${{ runner.os }}-3rd-party-llvm-13-release-v3
+          path: llvm_15_release.zip
+          key: ${{ runner.os }}-3rd-party-llvm-15-release-v3
 
       - name: Delete __Build TS folders
         continue-on-error: true
@@ -54,13 +54,13 @@ jobs:
       - name: Download 3rd party - LLVM
         continue-on-error: true
         shell: pwsh
-        if: hashFiles('llvm_13_release.zip') == ''
-        run: Invoke-WebRequest -Uri "https://public.am.files.1drv.com/y4m10Qvbrw-g-tUiPxw20oTRpLSp1JoKRxSbg5V395uQFYPyvkVyI6YvDdrT0G5zMDtoF6WljTpDV3hpKszvHdVjCvuLR3ye3OHFSqFzO3PmNl1CBjIE6YcYa8O7QMVTGFIZASpveWikhcsd5qyDe--75g07hg50g7wXAhDl7WXAH1Aiwd_xI3SMimfY8t9ivEVM7cVUyCIZFnN8jWSA_AgjWkP-amlUEg-npWM-_tSbFI" -OutFile "llvm_13_release.zip"
+        if: hashFiles('llvm_15_release.zip') == ''
+        run: Invoke-WebRequest -Uri "https://public.am.files.1drv.com/y4m10Qvbrw-g-tUiPxw20oTRpLSp1JoKRxSbg5V395uQFYPyvkVyI6YvDdrT0G5zMDtoF6WljTpDV3hpKszvHdVjCvuLR3ye3OHFSqFzO3PmNl1CBjIE6YcYa8O7QMVTGFIZASpveWikhcsd5qyDe--75g07hg50g7wXAhDl7WXAH1Aiwd_xI3SMimfY8t9ivEVM7cVUyCIZFnN8jWSA_AgjWkP-amlUEg-npWM-_tSbFI" -OutFile "llvm_15_release.zip"
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
-        if: hashFiles('llvm_13_release.zip') != ''
-        run: Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\" -Force
+        if: hashFiles('llvm_15_release.zip') != ''
+        run: Expand-Archive -Path "llvm_15_release.zip" -DestinationPath "3rdParty\llvm\" -Force
         shell: pwsh
 
       - name: Download 3rd party source - GC
@@ -167,21 +167,21 @@ jobs:
         uses: actions/cache@v2
         with:
           path: __build/llvm-ninja
-          key: ${{ runner.os }}-build-llvm-v3
+          key: ${{ runner.os }}-build-llvm-15-v3
 
       - name: Cache 3rd Party binaries
         id: cache-3rd-party-binary
         uses: actions/cache@v2
         with:
           path: 3rdParty
-          key: ${{ runner.os }}-3rd-party-v3
+          key: ${{ runner.os }}-3rd-party-15-v3
 
-      - name: Cache 3rd Party binaries - LLVM 13 Release
-        id: cache-3rd-party-binary-llvm-13-release
+      - name: Cache 3rd Party binaries - LLVM 15 Release
+        id: cache-3rd-party-binary-llvm-15-release
         uses: actions/cache@v2
         with:
-          path: llvm_13_release.tgz
-          key: ${{ runner.os }}-3rd-party-llvm-13-release-v3
+          path: llvm_15_release.tgz
+          key: ${{ runner.os }}-3rd-party-llvm-15-release-v3
 
       - name: Delete __Build TS folders
         continue-on-error: true
@@ -195,15 +195,15 @@ jobs:
       - name: Download 3rd party - LLVM
         continue-on-error: true
         shell: sh
-        if: hashFiles('llvm_13_release.tgz') == ''
-        run: curl -L https://public.am.files.1drv.com/y4mbyNW2o6LXRDl0uZnFRo_x2L35wp33N_9TJIWmjinBdJtj6L7wwy9JpgExcj6wAa_qe7fJta-dYO-219yjXvsfo15O6s2sBiwtZS13RzPUIyN8-yXhA5PapcmKzgTiHHEFhuDGQhWTXANSNMfW21D3YanLGSbgv2ONz8pn-W-3tteLTVDiRvFC6xDffBZCKN9k3zFObOpVmfCD_OkJmLC_714ljdxEgoW3QtsOt1FbCg --output llvm_13_release.tgz
+        if: hashFiles('llvm_15_release.tgz') == ''
+        run: curl -L https://public.am.files.1drv.com/y4mbyNW2o6LXRDl0uZnFRo_x2L35wp33N_9TJIWmjinBdJtj6L7wwy9JpgExcj6wAa_qe7fJta-dYO-219yjXvsfo15O6s2sBiwtZS13RzPUIyN8-yXhA5PapcmKzgTiHHEFhuDGQhWTXANSNMfW21D3YanLGSbgv2ONz8pn-W-3tteLTVDiRvFC6xDffBZCKN9k3zFObOpVmfCD_OkJmLC_714ljdxEgoW3QtsOt1FbCg --output llvm_15_release.tgz
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
         shell: sh
-        if: hashFiles('llvm_13_release.tgz') != ''
-        run: file llvm_13_release.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_13_release.tgz -C ./3rdParty/llvm-ninja/
-        #run: file llvm_13_release.tgz; unzip llvm_13_release.tgz -d ./3rdParty/llvm-ninja/
+        if: hashFiles('llvm_15_release.tgz') != ''
+        run: file llvm_15_release.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_15_release.tgz -C ./3rdParty/llvm-ninja/
+        #run: file llvm_15_release.tgz; unzip llvm_15_release.tgz -d ./3rdParty/llvm-ninja/
 
       - name: Download 3rd party source - GC
         continue-on-error: true
@@ -290,7 +290,7 @@ jobs:
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
-        run: tar -czvf ../tsc.tar.gz ./tsc-ninja-release/bin/tsc ./tsc-ninja-release/lib/libTypeScriptRuntime.so ./tsc-ninja-release/lib/libTypeScriptRuntime.so.13 ./gc-ninja-release/libgc-lib.a 
+        run: tar -czvf ../tsc.tar.gz ./tsc-ninja-release/bin/tsc ./tsc-ninja-release/lib/libTypeScriptRuntime.so ./tsc-ninja-release/lib/libTypeScriptRuntime.so.15 ./gc-ninja-release/libgc-lib.a 
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v2

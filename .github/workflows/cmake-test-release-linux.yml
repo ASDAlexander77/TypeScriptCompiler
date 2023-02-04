@@ -34,21 +34,21 @@ jobs:
       uses: actions/cache@v2
       with:
         path: __build/llvm-ninja
-        key: ${{ runner.os }}-build-llvm-v3
+        key: ${{ runner.os }}-build-llvm-15-v3
 
     - name: Cache 3rd Party binaries
       id: cache-3rd-party-binary
       uses: actions/cache@v2
       with:
         path: 3rdParty
-        key: ${{ runner.os }}-3rd-party-v3
+        key: ${{ runner.os }}-3rd-party-15-v3
 
-    - name: Cache 3rd Party binaries - LLVM 13 Release
-      id: cache-3rd-party-binary-llvm-13-release
+    - name: Cache 3rd Party binaries - LLVM 15 Release
+      id: cache-3rd-party-binary-llvm-15-release
       uses: actions/cache@v2
       with:
-        path: llvm_13_release.tgz
-        key: ${{ runner.os }}-3rd-party-llvm-13-release-v3
+        path: llvm_15_release.tgz
+        key: ${{ runner.os }}-3rd-party-llvm-15-release-v3
 
     - name: Delete __Build TS folders
       continue-on-error: true
@@ -62,15 +62,15 @@ jobs:
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: sh
-      if: hashFiles('llvm_13_release.tgz') == ''
-      run: curl -L https://public.am.files.1drv.com/y4mhQ0ifWzLefsFIY0C_qML9AYDDHnFhvDB6it6r0o827uE0iXQmblCvEHcKx5M7b9xFPw7xCbKAfDcLm6XBig-V0Alf7EDlsBp_b8ewH-fU59s2rl1lcst68Dzm5485YMvu-bBIczCwautxuiZMXOoIW9tbTDOtnM0cdlAXjz28-MlgyF6elqec8OvdOKSLg2ov-3uifrWYXVZkVuDJTPZJ6aKYENoCESRE9H08fQYmuc --output llvm_13_release.tgz
+      if: hashFiles('llvm_15_release.tgz') == ''
+      run: curl -L https://public.am.files.1drv.com/y4mhQ0ifWzLefsFIY0C_qML9AYDDHnFhvDB6it6r0o827uE0iXQmblCvEHcKx5M7b9xFPw7xCbKAfDcLm6XBig-V0Alf7EDlsBp_b8ewH-fU59s2rl1lcst68Dzm5485YMvu-bBIczCwautxuiZMXOoIW9tbTDOtnM0cdlAXjz28-MlgyF6elqec8OvdOKSLg2ov-3uifrWYXVZkVuDJTPZJ6aKYENoCESRE9H08fQYmuc --output llvm_15_release.tgz
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
       shell: sh
-      if: hashFiles('llvm_13_release.tgz') != ''
-      run: file llvm_13_release.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_13_release.tgz -C ./3rdParty/llvm-ninja/
-      #run: file llvm_13_release.tgz; unzip llvm_13_release.tgz -d ./3rdParty/llvm-ninja/
+      if: hashFiles('llvm_15_release.tgz') != ''
+      run: file llvm_15_release.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_15_release.tgz -C ./3rdParty/llvm-ninja/
+      #run: file llvm_15_release.tgz; unzip llvm_15_release.tgz -d ./3rdParty/llvm-ninja/
 
     - name: Download 3rd party source - GC
       continue-on-error: true

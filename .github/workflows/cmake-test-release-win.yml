@@ -34,21 +34,21 @@ jobs:
       uses: actions/cache@v2
       with:
         path: __build/llvm
-        key: ${{ runner.os }}-build-llvm-v3
+        key: ${{ runner.os }}-build-llvm-15-v3
 
     - name: Cache 3rd Party binaries
       id: cache-3rd-party-binary
       uses: actions/cache@v2
       with:
         path: 3rdParty
-        key: ${{ runner.os }}-3rd-party-v3
+        key: ${{ runner.os }}-3rd-party-15-v3
 
-    - name: Cache 3rd Party binaries - LLVM 13 Release
-      id: cache-3rd-party-binary-llvm-13-release
+    - name: Cache 3rd Party binaries - LLVM 15 Release
+      id: cache-3rd-party-binary-llvm-15-release
       uses: actions/cache@v2
       with:
-        path: llvm_13_release.zip
-        key: ${{ runner.os }}-3rd-party-llvm-13-release-v3
+        path: llvm_15_release.zip
+        key: ${{ runner.os }}-3rd-party-llvm-15-release-v3
 
     - name: Delete __Build TS folders
       continue-on-error: true
@@ -62,13 +62,13 @@ jobs:
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: pwsh
-      if: hashFiles('llvm_13_release.zip') == ''
-      run: Invoke-WebRequest -Uri "https://public.am.files.1drv.com/y4m5HxGYtL9zfQqgPlzFv2RwumSWc5I_GGLdPR9Dodx6OHx3cH6sOaqE7cTh6qjkQqQwKP4HCawYO-nGOBx1L3V8s55A8VHeEISnpWSIQPIT-Ww83QKGFAlURS23orvKPJrUfydhPKCtY0hSi1zIZFL4mfn8zCsv4CXoS3M_yBjzq-6ak9GTt1VpPTKt55Dk-xCQbXd3geTJF3oLVj06wq3ePeEHfgqM9z5gd1gvFhZciM" -OutFile "llvm_13_release.zip"
+      if: hashFiles('llvm_15_release.zip') == ''
+      run: Invoke-WebRequest -Uri "https://public.am.files.1drv.com/y4m5HxGYtL9zfQqgPlzFv2RwumSWc5I_GGLdPR9Dodx6OHx3cH6sOaqE7cTh6qjkQqQwKP4HCawYO-nGOBx1L3V8s55A8VHeEISnpWSIQPIT-Ww83QKGFAlURS23orvKPJrUfydhPKCtY0hSi1zIZFL4mfn8zCsv4CXoS3M_yBjzq-6ak9GTt1VpPTKt55Dk-xCQbXd3geTJF3oLVj06wq3ePeEHfgqM9z5gd1gvFhZciM" -OutFile "llvm_15_release.zip"
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
-      if: hashFiles('llvm_13_release.zip') != ''
-      run: Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\" -Force
+      if: hashFiles('llvm_15_release.zip') != ''
+      run: Expand-Archive -Path "llvm_15_release.zip" -DestinationPath "3rdParty\llvm\" -Force
       shell: pwsh
 
     - name: Download 3rd party source - GC
