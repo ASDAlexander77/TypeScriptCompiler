@@ -173,6 +173,8 @@
         },
         "[jsonc]": {
             "editor.defaultFormatter": "vscode.json-language-features"
-        }
+        },
+        "powershell.cwd": "c:\\dev\\TypeScriptCompiler\\tsc\\lib",
+        "git.openRepositoryInParentFolders": "always"
     }
 }
