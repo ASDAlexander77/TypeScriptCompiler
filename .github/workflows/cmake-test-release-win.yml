@@ -34,21 +34,21 @@ jobs:
       uses: actions/cache@v2
       with:
         path: __build/llvm
-        key: ${{ runner.os }}-build-llvm-15-v3
+        key: ${{ runner.os }}-build-llvm-15-v4
 
     - name: Cache 3rd Party binaries
       id: cache-3rd-party-binary
       uses: actions/cache@v2
       with:
         path: 3rdParty
-        key: ${{ runner.os }}-3rd-party-15-v3
+        key: ${{ runner.os }}-3rd-party-15-v4
 
     - name: Cache 3rd Party binaries - LLVM 15 Release
       id: cache-3rd-party-binary-llvm-15-release
       uses: actions/cache@v2
       with:
         path: llvm_15_release.zip
-        key: ${{ runner.os }}-3rd-party-llvm-15-release-v3
+        key: ${{ runner.os }}-3rd-party-llvm-15-release-v4
 
     - name: Delete __Build TS folders
       continue-on-error: true
