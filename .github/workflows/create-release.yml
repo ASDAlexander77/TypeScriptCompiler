@@ -157,7 +157,7 @@ jobs:
     # well on Windows or Mac.  You can convert this to a matrix build if you need
     # cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
       - uses: actions/checkout@v2
@@ -196,7 +196,7 @@ jobs:
         continue-on-error: true
         shell: sh
         if: hashFiles('llvm_15_release.tgz') == ''
-        run: curl -L https://public.am.files.1drv.com/y4mhQ0ifWzLefsFIY0C_qML9AYDDHnFhvDB6it6r0o827uE0iXQmblCvEHcKx5M7b9xFPw7xCbKAfDcLm6XBig-V0Alf7EDlsBp_b8ewH-fU59s2rl1lcst68Dzm5485YMvu-bBIczCwautxuiZMXOoIW9tbTDOtnM0cdlAXjz28-MlgyF6elqec8OvdOKSLg2ov-3uifrWYXVZkVuDJTPZJ6aKYENoCESRE9H08fQYmuc --output llvm_15_release.tgz
+        run: curl -L https://public.db.files.1drv.com/y4mqNo2EboPsAG8SjFn_p5ekYkwWpMBncgjHOfr4vkuwbjEhBK49qe2hSf7DZyw1eVWwIYYtMeWiZsE09oKxInbWW_8G43hoBQfs1ycVfqsFE87ozGbXDtozh4vhQQ9h10rlHrR40iS_3Z5EW3VeeIarsJOJS4JVb240aFowDoOABP5A-C8e1wxLi9a2T-b7jVaO0eAWefKR_0vLA1670Hk6_8bJ8WrdB4QiFBG133sWCA --output llvm_15_release.tgz
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
