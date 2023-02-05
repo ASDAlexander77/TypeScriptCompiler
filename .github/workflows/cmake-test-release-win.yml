@@ -20,7 +20,7 @@ jobs:
     # well on Windows or Mac.  You can convert this to a matrix build if you need
     # cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     steps:
 #    - name: check disk space
@@ -108,7 +108,7 @@ jobs:
     - name: Configure GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc-release
-      run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 16 2019" -A x64 -Wno-dev -Denable_threads=ON -Denable_cplusplus=OFF
+      run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 17 2022" -A x64 -Wno-dev -Denable_threads=ON -Denable_cplusplus=OFF
       shell: pwsh
 
     - name: Build GC
@@ -126,7 +126,7 @@ jobs:
     - name: Configure
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/tsc-release
-      run: cmake ../../tsc -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
+      run: cmake ../../tsc -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
       shell: pwsh
 
     - name: Build
