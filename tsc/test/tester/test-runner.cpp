@@ -459,7 +459,7 @@ void createCompileBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 2>$FILENAME.il" << std::endl;
-    batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "/usr/bin/llc-14 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o -lm -frtti -fexceptions -lstdc++" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
@@ -482,7 +482,7 @@ void createCompileBatchFileWithAsyncRT()
     batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 2>$FILENAME.il" << std::endl;
-    batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "/usr/bin/llc-14 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o -L$LLVM_LIBPATH -L$TSCLIBPATH " << TYPESCRIPT_ASYNC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
@@ -504,7 +504,7 @@ void createCompileBatchFileGC()
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "$2 2>$FILENAME.il" << std::endl;
-    batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "/usr/bin/llc-14 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o " << GC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
@@ -529,7 +529,7 @@ void createCompileBatchFileGCWithAsyncRT()
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "$2 2>$FILENAME.il" << std::endl;
-    batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "/usr/bin/llc-14 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME -L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH -L$CLANGLIBPATH $FILENAME.o " << GC_LIB
             << " " TYPESCRIPT_ASYNC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
