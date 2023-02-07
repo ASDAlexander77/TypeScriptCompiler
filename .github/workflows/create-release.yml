@@ -55,7 +55,7 @@ jobs:
         continue-on-error: true
         shell: pwsh
         if: hashFiles('llvm_15_release.zip') == ''
-        run: Invoke-WebRequest -Uri "https://public.db.files.1drv.com/y4m-yRV7mbPTq7vVarIJQZWV_0WiDEzMNrbmOX4uc_aJMYsTbp0REeAncNWwgZs0WQOERG3C4j4YB_aTNyRMtazZm6ULj5gKLw9KY6gppyiQjuv3enDR_L-JzZ5agVd1m9xVDKjdDiYJHM89SIQpYVx5o87r-Kh3-USSUDQ7b9HjRZWDjlCaloXOkZvyFmaSpG8FgYinhEG3SWzJrfrT1szwk_Z1bTmX9wS1saV1KgJm6c" -OutFile "llvm_15_release.zip"
+        run: Invoke-WebRequest -Uri "https://www.dropbox.com/s/hfs9isf16hm7vii/llvm_15_release.zip?dl=1" -OutFile "llvm_15_release.zip"
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
@@ -196,7 +196,7 @@ jobs:
         continue-on-error: true
         shell: sh
         if: hashFiles('llvm_15_release.tgz') == ''
-        run: curl -L https://public.db.files.1drv.com/y4mpuzgdMFALW1CYZCJ8f3e8kX7FO0lBlZrA-5T7ylhSOPwnD3IhQw8rBjk3U_NUrp5cSgehR5rhEIpu5ZyS1dRObeKEFuD1pdhfM-3wuCTEB2YddSegDucLYhcIPVkoApUmEsRQVI1LXdSy8a1UdC219jYF_5Ntj_HefpwSt3XT9hyOVKGrLyh7wMNcy2u2gJxtChJyGk_6Ni-6Mkp1LdbtzjsrGTg7KmV2lxL6u7i1_Q --output llvm_15_release.tgz
+        run: curl -L https://www.dropbox.com/s/y4wa5r3ms84keb9/llvm_15_release.tgz?dl=1 --output llvm_15_release.tgz
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false

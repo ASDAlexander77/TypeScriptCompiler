@@ -63,7 +63,7 @@ jobs:
       continue-on-error: true
       shell: sh
       if: hashFiles('llvm_15_release.tgz') == ''
-      run: curl -L https://public.db.files.1drv.com/y4mO2fut1j2VmOzciHc_qMOPQoZez7idHB_Dt7sm9Q-WDakHUnOWodRlRm75L_2V2jA1eW1_HNoV3XiwdhS2T5YCoTcADrmWuM0avooUikeFNIEY7fiWLauBRpfFVT_LpYbK2y1dP7_7HVp_0VxDs7z1CfMjozxvmrFnGls4S5QrMuNEmIDe5piBvAuVQ5DsTe6H6sPu0V0J9Ky6zaTgcQg25aoyAw8q9123m53XAckHOE --output llvm_15_release.tgz
+      run: curl -L https://www.dropbox.com/s/y4wa5r3ms84keb9/llvm_15_release.tgz?dl=1 --output llvm_15_release.tgz
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false

@@ -63,7 +63,7 @@ jobs:
       continue-on-error: true
       shell: pwsh
       if: hashFiles('llvm_15_release.zip') == ''
-      run: Invoke-WebRequest -Uri "https://public.db.files.1drv.com/y4m_xfxwHSLT_1_2IdjucduOkOHErqRcZLvU0C_pwSVZ1N_1Wp13wA84_OdSwv_3Us1mX3uXCv4630mMYn4emL_dFY_T7GY9tFdfzOH-VEcs7WC26WtYg1s0JI4WDXcbDbLYKzDg-YrUUiXDF1JJGXpEmgwbmsqhi1pwMr7G1RdqGDhAsxbvRoxMwqF7tt01_iUpIbz56t9jXYDNH4biA3KnfHmcAtD9IBV7TwUjvZGQZs" -OutFile "llvm_15_release.zip"
+      run: Invoke-WebRequest -Uri "https://www.dropbox.com/s/hfs9isf16hm7vii/llvm_15_release.zip?dl=1" -OutFile "llvm_15_release.zip"
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
