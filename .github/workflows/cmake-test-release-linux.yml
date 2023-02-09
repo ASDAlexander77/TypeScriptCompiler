@@ -7,7 +7,7 @@ on:
     branches: [ main ]
   workflow_dispatch:
     branches: [ main ]
-#  schedule:
+  schedule:
     # 8:30 and 18:30 UTC:
 #    - cron:  '30 8,18 * * *'
     - cron:  '30 18 * * 1'
