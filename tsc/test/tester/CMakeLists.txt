@@ -30,11 +30,29 @@ endif()
 
 # Find the VC Libs
 string(FIND "${CMAKE_CXX_COMPILER}" "Hostx86" HAS_Hostx86)
-if ("${HAS_Hostx86}" EQUAL "-1")
-string(REPLACE "bin/Hostx64/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/cl.exe" "lib/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}" VC_LIB_DIR "${CMAKE_CXX_COMPILER}")
-else()
-string(REPLACE "bin/Hostx86/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/cl.exe" "lib/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}" VC_LIB_DIR "${CMAKE_CXX_COMPILER}")
+if (NOT "${HAS_Hostx86}" EQUAL "-1")
+    set(C_HOST "Hostx86")
+else()    
+    string(FIND "${CMAKE_CXX_COMPILER}" "HostX86" HAS_HostX86)
+    if (NOT "${HAS_HostX86}" EQUAL "-1")
+        set(C_HOST "HostX86")
+    else()    
+        string(FIND "${CMAKE_CXX_COMPILER}" "Hostx64" HAS_Hostx64)
+        if (NOT "${HAS_Hostx64}" EQUAL "-1")
+            set(C_HOST "Hostx64")
+        else()    
+            string(FIND "${CMAKE_CXX_COMPILER}" "HostX64" HAS_HostX64)
+            if (NOT "${HAS_HostX64}" EQUAL "-1")
+                set(C_HOST "HostX64")
+            else()    
+                # default
+                set(C_HOST "Hostx86")
+            endif()
+        endif()
+    endif()
 endif()
+
+string(REPLACE "bin/${C_HOST}/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/cl.exe" "lib/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}" VC_LIB_DIR "${CMAKE_CXX_COMPILER}")
 
 message(STATUS ">>> VC_LIB_DIR >>> ${VC_LIB_DIR}")
 
