@@ -1834,6 +1834,36 @@ class MLIRGenImpl
         // in case it is generic arrow function
         auto currValue = genResult;
 
+        // in case of this.generic_func<T>();
+        if (auto boundFuncRef = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        {
+            currValue = boundFuncRef.func();
+
+            SmallVector<mlir::Value, 4> operands;
+            operands.push_back(boundFuncRef.thisVal());
+            operands.append(genContext.callOperands.begin(), genContext.callOperands.end());
+
+            GenContext specGenContext(genContext);
+            specGenContext.callOperands = operands;
+
+            auto newFuncRefOrLogicResult = mlirGenSpecialized(location, currValue, typeArguments, specGenContext);
+            if (newFuncRefOrLogicResult)
+            {
+                mlir::Value newFuncRefValue = newFuncRefOrLogicResult;
+
+                mlir::Value newBoundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(
+                                location, getBoundFunctionType(newFuncRefValue.getType().cast<mlir_ts::FunctionType>()), boundFuncRef.thisVal(), newFuncRefValue);
+
+                boundFuncRef.erase();
+
+                return newBoundFuncVal;
+            }
+            else
+            {
+                return genResult;
+            }
+        }
+
         if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
         {
             // if (!symbolOp.getType().isa<mlir_ts::GenericType>())
@@ -6411,16 +6441,43 @@ class MLIRGenImpl
         auto funcRef = resolveIdentifier(location, name, genContext);
         if (funcRef)
         {
+            LLVM_DEBUG(llvm::dbgs() << "!! found extension by name for type: " << thisValue.getType()
+                                    << " function: " << name << ", value: " << funcRef << "\n";);
+
             auto thisTypeFromFunc = getFirstParamFromFuncRef(funcRef.getType());
-            if (thisTypeFromFunc == thisValue.getType())
+
+            LLVM_DEBUG(llvm::dbgs() << "!! this type of function is : " << thisTypeFromFunc << "\n";);
+
+            if (auto symbolOp = funcRef.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
-                LLVM_DEBUG(llvm::dbgs() << "!! found extension for type: " << thisValue.getType()
-                                        << " function: " << name << ", value: " << funcRef << "\n";);
-                // return funcRef;
-                auto thisRef = thisValue;
-                auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(
-                    location, getBoundFunctionType(funcRef.getType().cast<mlir_ts::FunctionType>()), thisRef, funcRef);
-                return boundFuncVal;
+                // if (!symbolOp.getType().isa<mlir_ts::GenericType>())
+                if (!symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
+                {
+                    if (thisTypeFromFunc == thisValue.getType())
+                    {
+                        // return funcRef;
+                        auto thisRef = thisValue;
+                        auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(
+                            location, getBoundFunctionType(funcRef.getType().cast<mlir_ts::FunctionType>()), thisRef, funcRef);
+                        return boundFuncVal;
+                    }
+                }
+                else
+                {
+                    // TODO: finish it
+                    // it is generic function
+                    StringMap<mlir::Type> inferredTypes;
+                    inferType(thisTypeFromFunc, thisValue.getType(), inferredTypes);
+                    if (inferredTypes.size() > 0)
+                    {
+                        // we found needed function
+                        // return funcRef;
+                        auto thisRef = thisValue;
+                        auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(
+                            location, getBoundFunctionType(funcRef.getType().cast<mlir_ts::FunctionType>()), thisRef, funcRef);
+                        return boundFuncVal;                        
+                    }
+                }
             }
         }
 
