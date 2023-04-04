@@ -22,6 +22,9 @@ function main() {
     print(arr.toLength3(10));
     assert(arr.toLength3(10) == 2);
 
+    print(arr.toLength3<string, TypeOf<1>>(10));
+    assert(arr.toLength3<string, TypeOf<1>>(10) == 2);
+
     let arrInt = [1, 2];
 
     print(arrInt.toLength2());
@@ -29,6 +32,9 @@ function main() {
 
     print(arrInt.toLength3(10));
     assert(arrInt.toLength3(10) == 2);
+
+    print(arrInt.toLength3<TypeOf<1>, TypeOf<1>>(10));
+    assert(arrInt.toLength3<TypeOf<1>, TypeOf<1>>(10) == 2);
 
     print("done.");
 }
