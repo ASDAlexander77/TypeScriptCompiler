@@ -3296,9 +3296,6 @@ class MLIRGenImpl
             newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
             newGenericFunctionPtr->elementNamespace = currentNamespace;
 
-            getGenericFunctionMap().insert({namePtr, newGenericFunctionPtr});
-            fullNameGenericFunctionsMap.insert(fullNamePtr, newGenericFunctionPtr);
-
             // TODO: review it, ignore in case of ArrowFunction,
             if (!ignoreFunctionArgsDecetion)
             {
@@ -3315,6 +3312,9 @@ class MLIRGenImpl
                 LLVM_DEBUG(llvm::dbgs() << "\n!! registered generic function: " << name
                                         << ", type: " << funcOp->getFuncType() << "\n";);
             }
+
+            getGenericFunctionMap().insert({namePtr, newGenericFunctionPtr});
+            fullNameGenericFunctionsMap.insert(fullNamePtr, newGenericFunctionPtr);
 
             return {mlir::success(), name};
         }
