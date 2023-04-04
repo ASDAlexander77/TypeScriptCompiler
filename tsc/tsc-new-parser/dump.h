@@ -545,7 +545,7 @@ template <typename OUT> class Printer
             if (isVar)
                 out << "var ";
 
-            forEachChildrenPrint(variableDeclarationList->declarations);
+            forEachChildrenPrint(variableDeclarationList->declarations, nullptr, ",");
             break;
         }
         case SyntaxKind::ExpressionStatement: {

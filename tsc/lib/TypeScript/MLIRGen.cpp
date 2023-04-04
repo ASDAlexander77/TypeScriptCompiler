@@ -3257,11 +3257,11 @@ class MLIRGenImpl
             functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
             functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
-        // LLVM_DEBUG(printDebug(funcOp););
-
         // copy location info, to fix issue with names of anonymous functions
         funcOp->pos = functionLikeDeclarationBaseAST->pos;
         funcOp->_end = functionLikeDeclarationBaseAST->_end;        
+
+        //LLVM_DEBUG(printDebug(funcOp););
 
         auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
         return genFuncOp;
@@ -4739,6 +4739,8 @@ class MLIRGenImpl
         {
             forStatNode->internalFlags |= InternalFlags::ForAwait;
         }
+
+        // LLVM_DEBUG(printDebug(forStatNode););
 
         return mlirGen(forStatNode, genContext);
     }
@@ -6945,6 +6947,9 @@ class MLIRGenImpl
         }
         else
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: " << arrayType
+                                    << "\n";);
+
             emitError(location) << "ElementAccessExpression: " << arrayType;
             llvm_unreachable("not implemented (ElementAccessExpression)");
         }
