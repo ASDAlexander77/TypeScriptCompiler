@@ -1847,7 +1847,7 @@ class MLIRGenImpl
             specGenContext.callOperands = operands;
 
             auto newFuncRefOrLogicResult = mlirGenSpecialized(location, currValue, typeArguments, specGenContext);
-            if (newFuncRefOrLogicResult)
+            if (newFuncRefOrLogicResult && currValue != newFuncRefOrLogicResult)
             {
                 mlir::Value newFuncRefValue = newFuncRefOrLogicResult;
 
