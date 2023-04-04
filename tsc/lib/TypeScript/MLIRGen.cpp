@@ -7115,12 +7115,14 @@ class MLIRGenImpl
                                         undefined, nf.createCallExpression(_func_ident, undefined, argumentsArray))));
 
         // iterator
+        auto iterName = MLIRHelper::getAnonymousName(location, "_iter_");
+
         NodeArray<Statement> statements;
         statements.push_back(forOfStat);
         auto block = nf.createBlock(statements, false);
         auto funcIter =
             nf.createFunctionExpression(undefined, nf.createToken(SyntaxKind::AsteriskToken),
-                                        nf.createIdentifier(S("_iter_")), undefined, undefined, undefined, block);
+                                        nf.createIdentifier(ConvertUTF8toWide(iterName)), undefined, undefined, undefined, block);
         funcIter->pos.pos = 1;
         funcIter->_end = 2;
 
@@ -7167,12 +7169,14 @@ class MLIRGenImpl
                                  undefined));
 
         // iterator
+        auto iterName = MLIRHelper::getAnonymousName(location, "_iter_");
+
         NodeArray<Statement> statements;
         statements.push_back(forOfStat);
         auto block = nf.createBlock(statements, false);
         auto funcIter =
             nf.createFunctionExpression(undefined, nf.createToken(SyntaxKind::AsteriskToken),
-                                        nf.createIdentifier(S("_iter_")), undefined, undefined, undefined, block);
+                                        nf.createIdentifier(ConvertUTF8toWide(iterName)), undefined, undefined, undefined, block);
         funcIter->pos.pos = 1;
         funcIter->_end = 2;
 
