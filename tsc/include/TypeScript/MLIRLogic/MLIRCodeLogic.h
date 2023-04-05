@@ -346,7 +346,7 @@ class MLIRCustomMethods
         return sizeOfValue;
     }
 
-    mlir::Value mlirGenArrayPush(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder);
 
@@ -358,22 +358,32 @@ class MLIRCustomMethods
         }
 
         auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
-        assert(thisValue);
-        auto sizeOfValue =
+        if (!thisValue)
+        {
+            emitError(location) << "Can't get reference of the array, ensure const array is not used";
+            return mlir::failure();
+        }
+
+        mlir::Value sizeOfValue =
             builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), thisValue, mlir::ValueRange{value});
 
         return sizeOfValue;
     }
 
-    mlir::Value mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder);
         auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
-        assert(thisValue);
-        auto sizeOfValue = builder.create<mlir_ts::PopOp>(
+        if (!thisValue)
+        {
+            emitError(location) << "Can't get reference of the array, ensure const array is not used";
+            return mlir::failure();
+        }
+
+        mlir::Value value = builder.create<mlir_ts::PopOp>(
             location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
 
-        return sizeOfValue;
+        return value;
     }
 
     mlir::LogicalResult mlirGenSwitchState(const mlir::Location &location, ArrayRef<mlir::Value> operands,

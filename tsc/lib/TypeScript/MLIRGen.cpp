@@ -4601,7 +4601,8 @@ class MLIRGenImpl
         else
         {
             // default
-            mlirGen(forStatementAST->statement, genContext);
+            auto result = mlirGen(forStatementAST->statement, genContext);
+            EXIT_IF_FAILED(result)
         }
 
         builder.create<mlir_ts::ResultOp>(location);
@@ -8453,6 +8454,7 @@ class MLIRGenImpl
             }
         }
 
+        // collect const values as attributes
         SmallVector<mlir::Attribute> constValues;
         if (!nonConst)
         {
