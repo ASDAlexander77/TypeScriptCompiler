@@ -61,7 +61,7 @@
             "args": [
                 "-emit=mlir-affine",
                 "-opt",
-                "-debug-only=affine",
+                "-debug-only=mlir,affine",
                 "-mlir-disable-threading",
                 "C:/temp/1.ts"
             ],

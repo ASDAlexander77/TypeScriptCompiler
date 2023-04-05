@@ -766,6 +766,40 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
   }];
 }
 
+def TypeScript_ExtentionFunction : TypeScript_Type<"ExtentionFunction"> {
+  let mnemonic = "extent_func";
+
+  let summary = "Map from a list of inputs to a list of results with 'this' reference";
+  let description = [{
+  }];
+  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results, "bool":$isVarArg);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
+       return Base::get($_ctxt, inputs, results, isVarArg);
+     }]>,
+     TypeBuilder<(ins "FunctionType":$funcType), [{
+       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults(), funcType.isVarArg());
+     }]>
+  ]; 
+
+  let skipDefaultBuilders = 1;  
+  //let genStorageClass = 0;
+  let extraClassDeclaration = [{
+    bool isVarArg() const;
+
+    /// Input types.
+    unsigned getNumInputs() const;
+    Type getInput(unsigned i) const { return getInputs()[i]; }
+
+    /// Result types.
+    unsigned getNumResults() const;
+    Type getResult(unsigned i) const { return getResults()[i]; }
+  }];
+}
+
 def TypeScript_Union : TypeScript_Type<"Union"> {
   let mnemonic = "union";
 
@@ -944,6 +978,10 @@ def TypeScript_AnyStructRefLike : AnyTypeOf<[
 
 def TypeScript_AnyRefLike : AnyTypeOf<[
     TypeScript_Ref, TypeScript_ValueRef, TypeScript_AnyStructRefLike, TypeScript_Array, TypeScript_String, TypeScript_Any, TypeScript_Null, TypeScript_Opaque
+  ]>;
+
+def TypeScript_AnyRefLikeOrInterface : AnyTypeOf<[
+    TypeScript_AnyRefLike, TypeScript_Interface
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[

@@ -1229,6 +1229,24 @@ def TypeScript_CreateBoundRefOp : TypeScript_Op<"CreateBoundRef"> {
   let assemblyFormat = "$thisVal `:``:` $valueRef attr-dict `:` type($thisVal) `,` type($valueRef) `->` type($result)";
 }
 
+def TypeScript_CreateExtentionFunctionOp : TypeScript_Op<"CreateExtentionFunction"> {
+  let description = [{
+    ```mlir
+    %2 = ts.extention_function %1, %2 : !ts.this_func<()->void>
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRefLikeOrInterface:$thisVal, TypeScript_Function:$func
+  );
+
+  let results = (outs
+    TypeScript_ExtentionFunction:$result
+  );
+
+  let assemblyFormat = "$thisVal `,` $func `:` type($thisVal) `,` type($func) attr-dict `->` type($result)";
+}
+
 def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {
   let description = [{
     ```mlir

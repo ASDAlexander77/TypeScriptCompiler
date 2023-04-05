@@ -8,26 +8,38 @@ function* g(): Iterable<string> {
     }
 }
 
-// TODO: fix me
-/*
 function toArray<X>(xs: Iterable<X>): X[] {
-  return [...xs]
+ 	//return [...xs]
+	let arr : X[] = [];
+	for (const e of xs) arr.push(e);
+
+	assert(arr.length == 10);
+
+	return arr;
 }
-*/
 
 function main() {
 
     let count = 0;
 
-    for (const v of g()) {
+    const iter = g();
+
+    for (const v of iter) {
         count++;
         print(v);
     }
 
     assert(count == 10);
 
-    //toArray<string>(g());
-    //g().toArray<string>();
+    const arr = toArray<string>(g());
+    assert(arr.length == 10);
 
+    // TODO: bug
+    //const arr2 = toArray(g());
+    //assert(arr2.length == 10);
+
+    //const arr3 = g().toArray<string>();
+    //assert(arr3.length == 10);
+    
     print("done.");
 }
