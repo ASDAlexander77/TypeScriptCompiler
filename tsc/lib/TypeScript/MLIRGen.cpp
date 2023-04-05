@@ -1902,12 +1902,12 @@ class MLIRGenImpl
                 auto thisRef = extentFuncRef.thisVal();
                 auto funcType = newFuncRefValue.getType().cast<mlir_ts::FunctionType>();
 
-                mlir::Value newBoundFuncVal = builder.create<mlir_ts::CreateExtentionFunctionOp>(
+                mlir::Value newExtentionFuncVal = builder.create<mlir_ts::CreateExtentionFunctionOp>(
                                 location, getExtentionFunctionType(funcType), thisRef, newFuncRefValue);
 
                 extentFuncRef.erase();
 
-                return newBoundFuncVal;
+                return newExtentionFuncVal;
             }
             else
             {
@@ -6528,7 +6528,7 @@ class MLIRGenImpl
                         // return funcRef;
                         auto thisRef = thisValue;
 
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! recreate BoundFunction (generic interface): '" << name << "'\n this ref: '" << thisRef << "'\n func ref: '" << funcRef
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! recreate ExtentionFunctionOp (generic interface): '" << name << "'\n this ref: '" << thisRef << "'\n func ref: '" << funcRef
                         << "'\n";);
 
                         auto funcType = funcRef.getType().cast<mlir_ts::FunctionType>();
@@ -7037,7 +7037,8 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
         SmallVector<mlir::Value, 4> operands;
-        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext)))
+        auto offsetArgs = funcResult.getDefiningOp<mlir_ts::CreateExtentionFunctionOp>() ? 1 : 0;
+        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs)))
         {
             if (!genContext.allowPartialResolve)
             {
@@ -7051,7 +7052,7 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! function: [" << funcResult << "] ops: "; for (auto o
                                                                                        : operands) llvm::dbgs()
-                                                                                  << " param type: " << o.getType();
+                                                                                  << "\n param type: " << o.getType();
                    llvm::dbgs() << "\n";);
 
         return mlirGenCallExpression(location, funcResult, callExpression->typeArguments, operands, genContext);
@@ -7569,10 +7570,12 @@ class MLIRGenImpl
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::ExtentionFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = builder.getNoneType(); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsTupleTypeFromFuncRef is not implemented for " << type
                                         << "\n";);
+                llvm_unreachable("not implemented");
                 paramsType = builder.getNoneType();
             });
 
@@ -7797,7 +7800,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
-                                        mlir::Type funcType, const GenContext &genContext)
+                                        mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0)
     {
         mlir_ts::TupleType tupleTypeWithFuncArgs;
         auto lastArgIndex = operands.size() - 1;
@@ -7817,7 +7820,7 @@ class MLIRGenImpl
             }
         }
 
-        auto i = 0;
+        auto i = offsetArgs;
         for (auto expression : arguments)
         {
             GenContext argGenContext(genContext);
