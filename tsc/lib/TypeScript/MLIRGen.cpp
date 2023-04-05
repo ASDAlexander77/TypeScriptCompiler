@@ -1090,7 +1090,7 @@ class MLIRGenImpl
                         {
                             // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and
                             // add 2 type Parameters to it Constrain, Default
-                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
+                            currentTemplateType = templateParam.getValue().second;
                             currentType = found->getValue().second;
 
                             inferType(currentTemplateType, currentType, results);
@@ -1135,7 +1135,7 @@ class MLIRGenImpl
                         {
                             // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and
                             // add 2 type Parameters to it Constrain, Default
-                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
+                            currentTemplateType = templateParam.getValue().second;
                             currentType = found->getValue().second;
 
                             inferType(currentTemplateType, currentType, results);
