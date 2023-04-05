@@ -1120,9 +1120,48 @@ class MLIRGenImpl
         }
 
         // interface -> interface
-        if (auto tempClass = currentTemplateType.dyn_cast<mlir_ts::InterfaceType>())
+        if (auto tempInterface = currentTemplateType.dyn_cast<mlir_ts::InterfaceType>())
         {
-            llvm_unreachable("not implemented");
+            if (auto typeInterface = concreteType.dyn_cast<mlir_ts::InterfaceType>())
+            {
+                auto typeInterfaceInfo = getInterfaceInfoByFullName(typeInterface.getName().getValue());
+                if (auto tempInterfaceInfo = getInterfaceInfoByFullName(tempInterface.getName().getValue()))
+                {
+                    for (auto &templateParam : tempInterfaceInfo->typeParamsWithArgs)
+                    {
+                        auto name = templateParam.getValue().first->getName();
+                        auto found = typeInterfaceInfo->typeParamsWithArgs.find(name);
+                        if (found != typeInterfaceInfo->typeParamsWithArgs.end())
+                        {
+                            // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and
+                            // add 2 type Parameters to it Constrain, Default
+                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
+                            currentType = found->getValue().second;
+
+                            inferType(currentTemplateType, currentType, results);
+                        }
+                    }
+
+                    return;
+                }
+                else if (auto tempGenericInterfaceInfo = getGenericInterfaceInfoByFullName(tempInterface.getName().getValue()))
+                {
+                    for (auto &templateParam : tempGenericInterfaceInfo->typeParams)
+                    {
+                        auto name = templateParam->getName();
+                        auto found = typeInterfaceInfo->typeParamsWithArgs.find(name);
+                        if (found != typeInterfaceInfo->typeParamsWithArgs.end())
+                        {
+                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
+                            currentType = found->getValue().second;
+
+                            inferType(currentTemplateType, currentType, results);
+                        }
+                    }
+
+                    return;
+                }
+            }
         }
 
         // array -> array
