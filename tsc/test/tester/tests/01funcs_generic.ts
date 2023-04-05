@@ -13,5 +13,10 @@ function main() {
     let foo = getProperty(x, "foo"); // number
     let bar = getProperty(x, "bar"); // string
 
+    // TODO: because in setProperty we send K as 'string' type (should be LiteralType - "foo"
+    // we can't identify value T[K]
+
+    //setProperty(x, "foo", 1); // number
+    //setProperty(x, "bar", "2"); // string
     print("done.");
 }

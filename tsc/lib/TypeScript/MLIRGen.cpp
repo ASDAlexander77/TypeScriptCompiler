@@ -13286,6 +13286,14 @@ genContext);
                     return field.type;
                 }
             }
+
+            if (indexType.isa<mlir_ts::StringType>())
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted, index type should not be 'string' it should be literal type \n";);
+                llvm_unreachable("not implemented");
+            }
+
+            return mlir::Type();
         }
 
         if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
@@ -13302,7 +13310,16 @@ genContext);
             }
         }
 
-        return mlir::Type();
+        // in case of Generic Methods but not specialized yet
+        if (auto namedGenericType = type.dyn_cast<mlir_ts::NamedGenericType>())
+        {
+            return getGenericType();
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted \n";);
+
+        llvm_unreachable("not implemented");
+        //return mlir::Type();
     }
 
     mlir::Type getIndexedAccessType(IndexedAccessTypeNode indexedAccessTypeNode, const GenContext &genContext)
