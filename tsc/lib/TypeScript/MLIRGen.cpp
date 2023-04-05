@@ -3232,11 +3232,22 @@ class MLIRGenImpl
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionGenerator(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
-        // we need to fix this param name
-        // TODO: do not use "this" in extension method for generators
-        // TODO: add warning to it
-        
         auto location = loc(functionLikeDeclarationBaseAST);
+
+        if (functionLikeDeclarationBaseAST->parameters.size() > 0)
+        {
+            auto nameNode = functionLikeDeclarationBaseAST->parameters.front()->name;
+            if ((SyntaxKind)nameNode == SyntaxKind::Identifier)
+            {
+                auto ident = nameNode.as<Identifier>();
+                if (ident->escapedText == S(THIS_NAME))
+                {
+                    emitError(location) << "first parameter name must not be 'this', use 'thisArg' as alternative\n";
+                    return {mlir::failure(), mlir_ts::FuncOp(), "", false};
+                }
+            }
+        }
+        
         NodeFactory nf(NodeFactoryFlags::None);
 
         auto stepIdent = nf.createIdentifier(S("step"));

@@ -1,5 +1,5 @@
-function* Map<T, R>(a: T[], f: (i: T) => R) {
-    for (const v of a) yield f(v);
+function* Map<T, R>(thisArg: T[], f: (i: T) => R) {
+    for (const v of thisArg) yield f(v);
 }
 
 function main() {
