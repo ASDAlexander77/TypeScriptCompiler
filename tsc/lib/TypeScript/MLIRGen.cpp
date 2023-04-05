@@ -3316,7 +3316,7 @@ class MLIRGenImpl
         funcOp->pos = functionLikeDeclarationBaseAST->pos;
         funcOp->_end = functionLikeDeclarationBaseAST->_end;        
 
-        LLVM_DEBUG(printDebug(funcOp););
+        //LLVM_DEBUG(printDebug(funcOp););
 
         auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
         return genFuncOp;
@@ -4858,6 +4858,8 @@ class MLIRGenImpl
         {
             forStatNode->internalFlags |= InternalFlags::ForAwait;
         }
+
+        //LLVM_DEBUG(printDebug(forStatNode););
 
         return mlirGen(forStatNode, genContext);
     }
