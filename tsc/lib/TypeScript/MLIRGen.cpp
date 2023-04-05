@@ -3272,54 +3272,53 @@ class MLIRGenImpl
         const GenContext &genContext)
     {
         auto [fullName, name] = getNameOfFunction(functionLikeDeclarationBaseAST, genContext);
-
-        if (!name.empty())
+        if (name.empty())
         {
-            if (existGenericFunctionMap(name))
-            {
-                return {mlir::success(), name};
-            }
+            return {mlir::failure(), name};
+        }
 
-            llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
-            if (mlir::failed(
-                    processTypeParameters(functionLikeDeclarationBaseAST->typeParameters, typeParameters, genContext)))
+        if (existGenericFunctionMap(name))
+        {
+            return {mlir::success(), name};
+        }
+
+        llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
+        if (mlir::failed(
+                processTypeParameters(functionLikeDeclarationBaseAST->typeParameters, typeParameters, genContext)))
+        {
+            return {mlir::failure(), name};
+        }
+
+        // register class
+        auto namePtr = StringRef(name).copy(stringAllocator);
+        auto fullNamePtr = StringRef(fullName).copy(stringAllocator);
+        GenericFunctionInfo::TypePtr newGenericFunctionPtr = std::make_shared<GenericFunctionInfo>();
+        newGenericFunctionPtr->name = fullNamePtr;
+        newGenericFunctionPtr->typeParams = typeParameters;
+        newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
+        newGenericFunctionPtr->elementNamespace = currentNamespace;
+
+        // TODO: review it, ignore in case of ArrowFunction,
+        if (!ignoreFunctionArgsDecetion)
+        {
+            auto [result, funcOp] =
+                getFuncArgTypesOfGenericMethod(functionLikeDeclarationBaseAST, typeParameters, false, genContext);
+            if (mlir::failed(result))
             {
                 return {mlir::failure(), name};
             }
 
-            // register class
-            auto namePtr = StringRef(name).copy(stringAllocator);
-            auto fullNamePtr = StringRef(fullName).copy(stringAllocator);
-            GenericFunctionInfo::TypePtr newGenericFunctionPtr = std::make_shared<GenericFunctionInfo>();
-            newGenericFunctionPtr->name = fullNamePtr;
-            newGenericFunctionPtr->typeParams = typeParameters;
-            newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
-            newGenericFunctionPtr->elementNamespace = currentNamespace;
+            newGenericFunctionPtr->funcOp = funcOp;
+            newGenericFunctionPtr->funcType = funcOp->getFuncType();
 
-            // TODO: review it, ignore in case of ArrowFunction,
-            if (!ignoreFunctionArgsDecetion)
-            {
-                auto [result, funcOp] =
-                    getFuncArgTypesOfGenericMethod(functionLikeDeclarationBaseAST, typeParameters, false, genContext);
-                if (mlir::failed(result))
-                {
-                    return {mlir::failure(), name};
-                }
-
-                newGenericFunctionPtr->funcOp = funcOp;
-                newGenericFunctionPtr->funcType = funcOp->getFuncType();
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! registered generic function: " << name
-                                        << ", type: " << funcOp->getFuncType() << "\n";);
-            }
-
-            getGenericFunctionMap().insert({namePtr, newGenericFunctionPtr});
-            fullNameGenericFunctionsMap.insert(fullNamePtr, newGenericFunctionPtr);
-
-            return {mlir::success(), name};
+            LLVM_DEBUG(llvm::dbgs() << "\n!! registered generic function: " << name
+                                    << ", type: " << funcOp->getFuncType() << "\n";);
         }
 
-        return {mlir::failure(), name};
+        getGenericFunctionMap().insert({namePtr, newGenericFunctionPtr});
+        fullNameGenericFunctionsMap.insert(fullNamePtr, newGenericFunctionPtr);
+
+        return {mlir::success(), name};
     }
 
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionLikeDeclaration(
