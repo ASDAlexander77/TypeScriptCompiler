@@ -38,8 +38,8 @@ function main() {
     //const arr2 = toArray(g());
     //assert(arr2.length == 10);
 
-    //const arr3 = g().toArray<string>();
-    //assert(arr3.length == 10);
+    const arr3 = g().toArray<string>();
+    assert(arr3.length == 10);
     
     print("done.");
 }
