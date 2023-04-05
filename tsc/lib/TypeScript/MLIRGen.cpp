@@ -7575,7 +7575,7 @@ class MLIRGenImpl
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsTupleTypeFromFuncRef is not implemented for " << type
                                         << "\n";);
-                llvm_unreachable("not implemented");
+                //llvm_unreachable("not implemented");
                 paramsType = builder.getNoneType();
             });
 
