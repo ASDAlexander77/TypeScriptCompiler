@@ -1881,12 +1881,12 @@ class MLIRGenImpl
         auto currValue = genResult;
 
         // in case of this.generic_func<T>();
-        if (auto extentFuncRef = currValue.getDefiningOp<mlir_ts::CreateExtentionFunctionOp>())
+        if (auto extensFuncRef = currValue.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>())
         {
-            currValue = extentFuncRef.func();
+            currValue = extensFuncRef.func();
 
             SmallVector<mlir::Value, 4> operands;
-            operands.push_back(extentFuncRef.thisVal());
+            operands.push_back(extensFuncRef.thisVal());
             operands.append(genContext.callOperands.begin(), genContext.callOperands.end());
 
             GenContext specGenContext(genContext);
@@ -1899,15 +1899,15 @@ class MLIRGenImpl
 
                 // special case to work with interfaces
                 // TODO: finish it, bug
-                auto thisRef = extentFuncRef.thisVal();
+                auto thisRef = extensFuncRef.thisVal();
                 auto funcType = newFuncRefValue.getType().cast<mlir_ts::FunctionType>();
 
-                mlir::Value newExtentionFuncVal = builder.create<mlir_ts::CreateExtentionFunctionOp>(
-                                location, getExtentionFunctionType(funcType), thisRef, newFuncRefValue);
+                mlir::Value newExtensionFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
+                                location, getExtensionFunctionType(funcType), thisRef, newFuncRefValue);
 
-                extentFuncRef.erase();
+                extensFuncRef.erase();
 
-                return newExtentionFuncVal;
+                return newExtensionFuncVal;
             }
             else
             {
@@ -3232,6 +3232,10 @@ class MLIRGenImpl
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionGenerator(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
+        // we need to fix this param name
+        // TODO: do not use "this" in extension method for generators
+        // TODO: add warning to it
+        
         auto location = loc(functionLikeDeclarationBaseAST);
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -3312,7 +3316,7 @@ class MLIRGenImpl
         funcOp->pos = functionLikeDeclarationBaseAST->pos;
         funcOp->_end = functionLikeDeclarationBaseAST->_end;        
 
-        //LLVM_DEBUG(printDebug(funcOp););
+        LLVM_DEBUG(printDebug(funcOp););
 
         auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
         return genFuncOp;
@@ -6511,9 +6515,9 @@ class MLIRGenImpl
                     {
                         // return funcRef;
                         auto thisRef = thisValue;
-                        auto extentFuncVal = builder.create<mlir_ts::CreateExtentionFunctionOp>(
-                            location, getExtentionFunctionType(funcType), thisRef, funcRef);
-                        return extentFuncVal;
+                        auto extensFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
+                            location, getExtensionFunctionType(funcType), thisRef, funcRef);
+                        return extensFuncVal;
                     }
                 }
                 else
@@ -6528,13 +6532,13 @@ class MLIRGenImpl
                         // return funcRef;
                         auto thisRef = thisValue;
 
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! recreate ExtentionFunctionOp (generic interface): '" << name << "'\n this ref: '" << thisRef << "'\n func ref: '" << funcRef
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! recreate ExtensionFunctionOp (generic interface): '" << name << "'\n this ref: '" << thisRef << "'\n func ref: '" << funcRef
                         << "'\n";);
 
                         auto funcType = funcRef.getType().cast<mlir_ts::FunctionType>();
-                        auto extentFuncVal = builder.create<mlir_ts::CreateExtentionFunctionOp>(
-                            location, getExtentionFunctionType(funcType), thisRef, funcRef);
-                        return extentFuncVal;                        
+                        auto extensFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
+                            location, getExtensionFunctionType(funcType), thisRef, funcRef);
+                        return extensFuncVal;                        
                     }
                 }
             }
@@ -7037,7 +7041,7 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
         SmallVector<mlir::Value, 4> operands;
-        auto offsetArgs = funcResult.getDefiningOp<mlir_ts::CreateExtentionFunctionOp>() ? 1 : 0;
+        auto offsetArgs = funcResult.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>() ? 1 : 0;
         if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs)))
         {
             if (!genContext.allowPartialResolve)
@@ -7570,7 +7574,7 @@ class MLIRGenImpl
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
-            .Case<mlir_ts::ExtentionFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = builder.getNoneType(); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsTupleTypeFromFuncRef is not implemented for " << type
@@ -7648,16 +7652,16 @@ class MLIRGenImpl
                 value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, operands,
                                             hasReturn, genContext);
             })
-            .Case<mlir_ts::ExtentionFunctionType>([&](auto calledExtentFuncType) {
+            .Case<mlir_ts::ExtensionFunctionType>([&](auto calledExtentFuncType) {
                 auto calledFuncType =
                     getFunctionType(calledExtentFuncType.getInputs(), calledExtentFuncType.getResults());
-                auto createExtentionFunctionOp = funcRefValue.getDefiningOp<mlir_ts::CreateExtentionFunctionOp>();
-                auto thisValue = createExtentionFunctionOp.thisVal();
-                auto funcRefValue = createExtentionFunctionOp.func();
+                auto createExtensionFunctionOp = funcRefValue.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>();
+                auto thisValue = createExtensionFunctionOp.thisVal();
+                auto funcRefValue = createExtensionFunctionOp.func();
                 value = mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, operands, hasReturn, genContext);
 
                 // cleanup
-                createExtentionFunctionOp.erase();
+                createExtensionFunctionOp.erase();
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
@@ -13851,9 +13855,9 @@ genContext);
         return mlir_ts::FunctionType::get(builder.getContext(), inputs, results, isVarArg);
     }
 
-    mlir_ts::ExtentionFunctionType getExtentionFunctionType(mlir_ts::FunctionType funcType)
+    mlir_ts::ExtensionFunctionType getExtensionFunctionType(mlir_ts::FunctionType funcType)
     {
-        return mlir_ts::ExtentionFunctionType::get(builder.getContext(), funcType);
+        return mlir_ts::ExtensionFunctionType::get(builder.getContext(), funcType);
     }
 
     mlir_ts::FunctionType getSignature(SignatureDeclarationBase signature, const GenContext &genContext)

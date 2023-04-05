@@ -766,7 +766,7 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
   }];
 }
 
-def TypeScript_ExtentionFunction : TypeScript_Type<"ExtentionFunction"> {
+def TypeScript_ExtensionFunction : TypeScript_Type<"ExtensionFunction"> {
   let mnemonic = "extent_func";
 
   let summary = "Map from a list of inputs to a list of results with 'this' reference";
