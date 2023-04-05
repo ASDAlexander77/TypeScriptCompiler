@@ -12715,12 +12715,12 @@ genContext);
             auto classType = genericClassTypeInfo->classType;
             auto [result, specType] = instantiateSpecializedClassType(loc(typeReferenceAST), classType,
                                                                       typeReferenceAST->typeArguments, genContext);
-            if (mlir::failed(result))
+            if (mlir::succeeded(result))
             {
-                return mlir::Type();
+                return specType;
             }
 
-            return specType;
+            return classType;
         }
 
         auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name);
@@ -12729,12 +12729,12 @@ genContext);
             auto interfaceType = genericInterfaceTypeInfo->interfaceType;
             auto [result, specType] = instantiateSpecializedInterfaceType(loc(typeReferenceAST), interfaceType,
                                                                           typeReferenceAST->typeArguments, genContext);
-            if (mlir::failed(result))
+            if (mlir::succeeded(result))
             {
-                return mlir::Type();
+                return specType;
             }
 
-            return specType;
+            return interfaceType;
         }
 
         auto typeArgumentsSize = typeReferenceAST->typeArguments->size();
