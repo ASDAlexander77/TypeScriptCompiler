@@ -6991,6 +6991,11 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto argumentExpression = V(result2);
 
+        return mlirGenElementAccess(location, expression, argumentExpression, genContext);
+    }
+
+    ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, const GenContext &genContext)
+    {
         auto arrayType = expression.getType();
         if (arrayType.isa<mlir_ts::LiteralType>())
         {
@@ -7064,8 +7069,6 @@ class MLIRGenImpl
 
             return mlir::failure();
         }
-
-        assert(operands.size() == callExpression->arguments.size());
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! function: [" << funcResult << "] ops: "; for (auto o
                                                                                        : operands) llvm::dbgs()
@@ -7856,6 +7859,24 @@ class MLIRGenImpl
             auto result = mlirGen(expression, argGenContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto value = V(result);
+
+            if (expression == SyntaxKind::SpreadElement)
+            {
+                auto location = loc(expression);
+                for (auto spreadIndex = 0;  spreadIndex <= lastArgIndex - i; spreadIndex++)
+                {
+                    auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
+                                                        mth.getStructIndexAttrValue(spreadIndex));
+
+                    auto spreadValue = mlirGenElementAccess(location, value, indexVal, genContext);
+
+                    operands.push_back(spreadValue);
+
+                    // must be last expression
+                }
+
+                continue;
+            }
 
             operands.push_back(value);
 
