@@ -9624,7 +9624,11 @@ class MLIRGenImpl
             else
             {
                 auto type = getType(typeAliasDeclarationAST->type, genContext);
-                assert(type);
+                if (!type)
+                {
+                    return mlir::failure();
+                }
+
                 getTypeAliasMap().insert({namePtr, type});
             }
 
@@ -11857,15 +11861,18 @@ genContext);
             }
 
             auto result = mlirGen(extendsType, genContext);
+            EXIT_IF_FAILED(result);
             auto ifaceType = V(result);
             auto success = false;
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
-                    assert(interfaceInfo);
-                    newInterfacePtr->extends.push_back({-1, interfaceInfo});
-                    success = true;
-                    extendsType->processed = true;
+                    if (interfaceInfo)
+                    {
+                        newInterfacePtr->extends.push_back({-1, interfaceInfo});
+                        success = true;
+                        extendsType->processed = true;
+                    }
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
@@ -12529,6 +12536,10 @@ genContext);
         else if (kind == SyntaxKind::InferType)
         {
             return getInferType(typeReferenceAST.as<InferTypeNode>(), genContext);
+        }
+        else if (kind == SyntaxKind::NeverKeyword)
+        {
+            return getNeverType();
         }
 
         llvm_unreachable("not implemented type declaration");
@@ -13323,6 +13334,11 @@ genContext);
         {
             return getKeyOf(typeOperatorNode, genContext);
         }
+        else if (typeOperatorNode->_operator == SyntaxKind::ReadonlyKeyword)
+        {
+            // TODO: finish it
+            return getType(typeOperatorNode->type, genContext);
+        }        
 
         llvm_unreachable("not implemented");
     }
@@ -13436,7 +13452,17 @@ genContext);
     mlir::Type getIndexedAccessType(IndexedAccessTypeNode indexedAccessTypeNode, const GenContext &genContext)
     {
         auto type = getType(indexedAccessTypeNode->objectType, genContext);
+        if (!type)
+        {
+            return type;
+        }
+
         auto indexType = getType(indexedAccessTypeNode->indexType, genContext);
+        if (!indexType)
+        {
+            return indexType;
+        }
+
         return getIndexedAccessType(type, indexType, genContext);
     }
 
@@ -13608,6 +13634,7 @@ genContext);
 
     mlir_ts::EnumType getEnumType(mlir::Type elementType)
     {
+        assert(elementType);
         return mlir_ts::EnumType::get(elementType);
     }
 
@@ -13641,6 +13668,7 @@ genContext);
     mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST, unsigned size, const GenContext &genContext)
     {
         auto type = getType(arrayTypeAST->elementType, genContext);
+        assert(type);
         return getConstArrayType(type, size);
     }
 
@@ -13653,16 +13681,19 @@ genContext);
     mlir_ts::ArrayType getArrayType(ArrayTypeNode arrayTypeAST, const GenContext &genContext)
     {
         auto type = getType(arrayTypeAST->elementType, genContext);
+        assert(type);
         return getArrayType(type);
     }
 
     mlir_ts::ArrayType getArrayType(mlir::Type elementType)
     {
+        assert(elementType);
         return mlir_ts::ArrayType::get(elementType);
     }
 
     mlir_ts::ValueRefType getValueRefType(mlir::Type elementType)
     {
+        assert(elementType);
         return mlir_ts::ValueRefType::get(elementType);
     }
 
@@ -13679,6 +13710,7 @@ genContext);
 
     mlir_ts::InferType getInferType(mlir::Type paramType)
     {
+        assert(paramType);
         return mlir_ts::InferType::get(paramType);
     }
 
@@ -13949,14 +13981,16 @@ genContext);
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext)
     {
-
         MLIRTypeHelper::UnionTypeProcessContext unionContext = {};
         for (auto typeItem : unionTypeNode->types)
         {
             auto type = getType(typeItem, genContext);
             if (!type)
             {
-                llvm_unreachable("wrong type");
+                LLVM_DEBUG(llvm::dbgs() << "\n!! wrong type: " << loc(typeItem) << "\n";);
+
+                //llvm_unreachable("wrong type");
+                return mlir::Type();
             }
 
             mth.processUnionTypeItem(type, unionContext);
