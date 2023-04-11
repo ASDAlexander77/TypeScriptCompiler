@@ -9,12 +9,8 @@ function* g(): Iterable<string> {
 }
 
 function toArray<X>(xs: Iterable<X>): X[] {
- 	//return [...xs]
-	let arr : X[] = [];
-	for (const e of xs) arr.push(e);
-
-	assert(arr.length == 10);
-
+	const arr = [...xs];
+    assert(arr.length == 10);
 	return arr;
 }
 
