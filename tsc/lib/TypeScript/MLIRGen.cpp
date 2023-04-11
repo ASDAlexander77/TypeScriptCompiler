@@ -8456,7 +8456,7 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::ConstantOp>(loc(noSubstitutionTemplateLiteral), literalType, attrVal));
     }
 
-    ValueOrLogicalResult mlirGenAppendArray(mlir::Location location, mlir::Value arrayDest, mlir::Value arraySrc,
+    ValueOrLogicalResult mlirGenAppendArrayByEachElement(mlir::Location location, mlir::Value arrayDest, mlir::Value arraySrc,
                                             const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -8491,6 +8491,8 @@ class MLIRGenImpl
         auto forOfStat = nf.createForOfStatement(
             undefined, declList, _src_array_ident,
             nf.createExpressionStatement(nf.createCallExpression(pushExpr, undefined, argumentsArray)));
+
+        LLVM_DEBUG(printDebug(forOfStat););
 
         return mlirGen(forOfStat, genContext);
     }
@@ -8531,6 +8533,7 @@ class MLIRGenImpl
                 }
                 else if (auto array = type.dyn_cast<mlir_ts::ArrayType>())
                 {
+                    // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
                     nonConst = true;
                     spreadElements = true;
                     if (!elementType)
@@ -8543,7 +8546,42 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, src type: " << type << "\n";);
+
+                    auto nextPropertyType = evaluateProperty(itemValue, "next", genContext);
+                    if (nextPropertyType)
+                    {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
+
+                        auto returnType = getReturnTypeFromFuncRef(nextPropertyType);
+                        if (returnType)
+                        {
+                            // as tuple or const_tuple
+                            ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
+                            TypeSwitch<mlir::Type>(returnType)
+                                .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
+                                .template Case<mlir_ts::ConstTupleType>(
+                                    [&](auto constTupleType) { fields = constTupleType.getFields(); })
+                                .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+                            if (fields.begin() != fields.end() && fields.front().id == mlir::StringAttr::get(builder.getContext(), "value"))
+                            {
+                                nonConst = true;
+                                spreadElements = true;
+                                elementType = mth.wideStorageType(fields.front().type);
+
+                                values.push_back(std::make_tuple(type, itemValue, true));
+                            }
+                            else
+                            {
+                                llvm_unreachable("not implemented");
+                            }
+                        }
+                    }                                        
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
                 }
             }
             else
@@ -8642,7 +8680,7 @@ class MLIRGenImpl
                     }
                     else
                     {
-                        mlirGenAppendArray(location, varArray, std::get<1>(val), genContext);
+                        mlirGenAppendArrayByEachElement(location, varArray, std::get<1>(val), genContext);
                     }
                 }
 
