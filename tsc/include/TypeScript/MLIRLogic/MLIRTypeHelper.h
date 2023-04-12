@@ -36,7 +36,24 @@ class MLIRTypeHelper
     mlir::MLIRContext *context;
 
   public:
-    MLIRTypeHelper(mlir::MLIRContext *context) : context(context)
+
+    MLIRTypeHelper(
+        mlir::MLIRContext *context)
+        : context(context)
+    {
+    }
+
+    MLIRTypeHelper(
+        mlir::MLIRContext *context, 
+        std::function<ClassInfo::TypePtr(StringRef)> getClassInfoByFullName,
+        std::function<GenericClassInfo::TypePtr(StringRef)> getGenericClassInfoByFullName,
+        std::function<InterfaceInfo::TypePtr(StringRef)> getInterfaceInfoByFullName,
+        std::function<GenericInterfaceInfo::TypePtr(StringRef)> getGenericInterfaceInfoByFullName) 
+        : context(context), 
+          getClassInfoByFullName(getClassInfoByFullName),
+          getGenericClassInfoByFullName(getGenericClassInfoByFullName),
+          getInterfaceInfoByFullName(getInterfaceInfoByFullName),
+          getGenericInterfaceInfoByFullName(getGenericInterfaceInfoByFullName)
     {
     }
 
@@ -858,11 +875,41 @@ class MLIRTypeHelper
             }
         }
 
+        // seems it is generic interface
         if (auto srcInterfaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
         {
             if (auto extInterfaceType = extendType.dyn_cast<mlir_ts::InterfaceType>())
             {
-                llvm_unreachable("not implemented");
+                if (auto srcInterfaceInfo = getInterfaceInfoByFullName(srcInterfaceType.getName().getValue()))
+                {
+                    if (auto extInterfaceInfo = getInterfaceInfoByFullName(extInterfaceType.getName().getValue()))
+                    {
+                        if (srcInterfaceInfo->originInterfaceType == extInterfaceInfo->originInterfaceType)
+                        {
+                            LLVM_DEBUG(llvm::dbgs() << "\n!! origin type for interfaces '" << srcInterfaceInfo->originInterfaceType << "' & '" << extInterfaceInfo->originInterfaceType << "'\n";);
+
+                            for (auto &srcTemplateParam : srcInterfaceInfo->typeParamsWithArgs)
+                            {
+                                auto name = srcTemplateParam.getValue().first->getName();
+                                auto found = extInterfaceInfo->typeParamsWithArgs.find(name);
+                                if (found != extInterfaceInfo->typeParamsWithArgs.end())
+                                {
+                                    auto srcType = srcTemplateParam.getValue().second;
+                                    auto extType = found->getValue().second;
+
+                                    return extendsType(srcType, extType, typeParamsWithArgs);
+                                }
+                                else
+                                {
+                                    return false;
+                                }
+                            }
+
+                            // default behavior - false, because something is different
+                            return false;
+                        }
+                    }
+                }
             }
         }
 

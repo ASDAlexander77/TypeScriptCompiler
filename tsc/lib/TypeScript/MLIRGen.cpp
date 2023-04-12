@@ -92,8 +92,14 @@ class MLIRGenImpl
 {
   public:
     MLIRGenImpl(const mlir::MLIRContext &context, CompileOptions compileOptions)
-        : builder(&const_cast<mlir::MLIRContext &>(context)), mth(&const_cast<mlir::MLIRContext &>(context)),
-          compileOptions(compileOptions), declarationMode(false)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), 
+          mth(&const_cast<mlir::MLIRContext &>(context), 
+            std::bind(&MLIRGenImpl::getClassInfoByFullName, this, std::placeholders::_1), 
+            std::bind(&MLIRGenImpl::getGenericClassInfoByFullName, this, std::placeholders::_1), 
+            std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
+            std::bind(&MLIRGenImpl::getGenericInterfaceInfoByFullName, this, std::placeholders::_1)),
+          compileOptions(compileOptions), 
+          declarationMode(false)
     {
         fileName = "<unknown>";
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
@@ -101,8 +107,14 @@ class MLIRGenImpl
 
     MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam,
                 const llvm::StringRef &pathParam, CompileOptions compileOptions)
-        : builder(&const_cast<mlir::MLIRContext &>(context)), mth(&const_cast<mlir::MLIRContext &>(context)),
-          compileOptions(compileOptions), declarationMode(false)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), 
+          mth(&const_cast<mlir::MLIRContext &>(context), 
+            std::bind(&MLIRGenImpl::getClassInfoByFullName, this, std::placeholders::_1), 
+            std::bind(&MLIRGenImpl::getGenericClassInfoByFullName, this, std::placeholders::_1), 
+            std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
+            std::bind(&MLIRGenImpl::getGenericInterfaceInfoByFullName, this, std::placeholders::_1)),
+          compileOptions(compileOptions), 
+          declarationMode(false)
     {
         fileName = fileNameParam;
         path = pathParam;
@@ -11851,6 +11863,7 @@ genContext);
         auto fullSpecializedInterfaceName = getSpecializedInterfaceName(geneticInterfacePtr, genContext);
         auto interfaceInfoType = getInterfaceInfoByFullName(fullSpecializedInterfaceName);
         assert(interfaceInfoType);
+        interfaceInfoType->originInterfaceType = geneticInterfacePtr->interfaceType;
         return interfaceInfoType->interfaceType;
     }
 
