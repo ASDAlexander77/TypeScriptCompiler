@@ -1250,6 +1250,27 @@ class MLIRGenImpl
 
                 return;
             }
+            else 
+            {
+                // TODO: review how to call functions such as: "function* Map<T, R>(a: T[] | Iterable<T>, f: (i: T) => R) { ... }"
+                // special case when UnionType is used in generic method
+                /*
+                for (auto tempSubType : tempUnionType.getTypes())
+                {
+                    currentTemplateType = tempSubType;
+                    currentType = concreteType;
+
+                    auto count = results.size();
+                    inferType(currentTemplateType, currentType, results);
+                    if (count < results.size())
+                    {
+                        return;
+                    }
+                }
+
+                return;
+                */
+            }
         }
     }
 
@@ -1490,6 +1511,10 @@ class MLIRGenImpl
                     auto type = argInfo->getType();
                     auto argOp = genContext.callOperands[index];
 
+                    LLVM_DEBUG(llvm::dbgs()
+                                    << "\n!! resolving param for generic function: '"
+                                    << functionGenericTypeInfo->name << "' parameter type: [ " << type << " ] argument type: [ " << argOp << " ]\n";);
+
                     if (type == argOp.getType())
                     {
                         argInfo->processed = true;
@@ -1519,8 +1544,8 @@ class MLIRGenImpl
                         }
 
                         LLVM_DEBUG(llvm::dbgs()
-                                       << "\n!! instantiate specialized  type function: "
-                                       << functionGenericTypeInfo->name << " type: " << recreatedFuncType << "\n";);
+                                       << "\n!! instantiate specialized  type function: '"
+                                       << functionGenericTypeInfo->name << "' type: " << recreatedFuncType << "\n";);
 
                         auto paramType = getParamFromFuncRef(recreatedFuncType, index);
 
