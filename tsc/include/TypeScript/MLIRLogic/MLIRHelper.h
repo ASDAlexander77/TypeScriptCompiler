@@ -145,24 +145,6 @@ class MLIRHelper
         return false;
     }
 
-    static bool matchSimilarTypes(mlir::Type ty1, mlir::Type ty2)
-    {
-        if (ty1 == ty2)
-        {
-            return true;
-        }
-
-        if (auto constArray1 = ty1.dyn_cast_or_null<mlir_ts::ConstArrayType>())
-        {
-            if (auto constArray2 = ty2.dyn_cast_or_null<mlir_ts::ConstArrayType>())
-            {
-                return matchSimilarTypes(constArray1.getElementType(), constArray2.getElementType());
-            }
-        }
-
-        return false;
-    }
-
     static void loadTypes(mlir::SmallVector<mlir::Type> &types, mlir::Type type)
     {
         if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
@@ -202,6 +184,12 @@ class MLIRHelper
 
         return type;
     }    
+
+    static mlir::Attribute TupleFieldName(mlir::StringRef name, mlir::MLIRContext *context)
+    {
+        assert(!name.empty());
+        return mlir::StringAttr::get(context, name);
+    }
 };
 
 } // namespace typescript

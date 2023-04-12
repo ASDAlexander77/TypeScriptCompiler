@@ -4418,8 +4418,8 @@ struct BodyInternalOpLowering : public TsLlvmPattern<mlir_ts::BodyInternalOp>
         auto opPosition = rewriter.getInsertionPoint();
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
-        Block *beforeBody = &bodyInternalOp.body().front();
-        Block *afterBody = &bodyInternalOp.body().back();
+        mlir::Block *beforeBody = &bodyInternalOp.body().front();
+        mlir::Block *afterBody = &bodyInternalOp.body().back();
         rewriter.inlineRegionBefore(bodyInternalOp.body(), continuationBlock);
 
         rewriter.setInsertionPointToEnd(opBlock);
@@ -4879,7 +4879,7 @@ static LogicalResult verifyTerminatorSuccessors(Operation *op)
     auto *parent = op->getParentRegion();
 
     // Verify that the operands lines up with the BB arguments in the successor.
-    for (Block *succ : op->getSuccessors())
+    for (mlir::Block *succ : op->getSuccessors())
         if (succ->getParent() != parent)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! reference to block defined in another region: "; op->dump();

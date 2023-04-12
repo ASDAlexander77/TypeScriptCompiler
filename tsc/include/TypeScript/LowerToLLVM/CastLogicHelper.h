@@ -828,8 +828,7 @@ class CastLogicHelper
     template <typename TupleTy> mlir::Value castObjectToString(mlir::Value in, mlir::Type inType, TupleTy tupleTypeIn)
     {
         // calling method from object
-        MLIRTypeHelper mth(rewriter.getContext());
-        auto fieldId = mth.TupleFieldName("toString");
+        auto fieldId = MLIRHelper::TupleFieldName("toString", rewriter.getContext());
         auto fieldIndex = tupleTypeIn.getIndex(fieldId);
         if (fieldIndex < 0)
         {

@@ -78,13 +78,6 @@ class MLIRCodeLogic
         return elementType;
     }
 
-    mlir::Attribute TupleFieldName(StringRef name)
-    {
-        assert(!name.empty());
-        MLIRTypeHelper mth(context);
-        return mth.TupleFieldName(name);
-    }
-
     template <typename T>
     std::pair<int, mlir::Type> TupleFieldType(mlir::Location location, T tupleType, mlir::Attribute fieldId,
                                               bool indexAccess = false)
@@ -131,7 +124,7 @@ class MLIRCodeLogic
         for (auto &varInfo : capturedVars)
         {
             auto &value = varInfo.getValue();
-            fields.push_back(mlir_ts::FieldInfo{TupleFieldName(value->getName()),
+            fields.push_back(mlir_ts::FieldInfo{MLIRHelper::TupleFieldName(value->getName(), context),
                                                 value->getReadWriteAccess() ? mlir_ts::RefType::get(value->getType())
                                                                             : value->getType()});
         }
@@ -423,8 +416,7 @@ class MLIRPropertyAccessCodeLogic
                                 StringRef name)
         : builder(builder), location(location), expression(expression), name(name)
     {
-        MLIRCodeLogic mcl(builder);
-        fieldId = mcl.TupleFieldName(name);
+        fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
     }
 
     MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression,

@@ -2036,7 +2036,7 @@ class MLIRGenImpl
         {
 
             // create new type with added field
-            genContext.passResult->extraFieldsInThisContext.push_back({mth.TupleFieldName(name), type});
+            genContext.passResult->extraFieldsInThisContext.push_back({MLIRHelper::TupleFieldName(name, builder.getContext()), type});
             return mlir::Value();
         }
 
@@ -2722,7 +2722,7 @@ class MLIRGenImpl
                     {
                         auto evalType = evaluate(objectBindingElement->initializer, genContext);
                         auto widenType = mth.wideStorageType(evalType);
-                        fieldInfos.push_back({mth.TupleFieldName(propertyName), widenType});
+                        fieldInfos.push_back({MLIRHelper::TupleFieldName(propertyName, builder.getContext()), widenType});
                     }
                     else
                     {
@@ -3649,7 +3649,7 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! this value: " << thisVal << "\n";);
 
             mlir::Value propValue =
-                mlirGenPropertyAccessExpression(loc, thisVal, mth.TupleFieldName(CAPTURED_NAME), genContext);
+                mlirGenPropertyAccessExpression(loc, thisVal, MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), genContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! this->.captured value: " << propValue << "\n";);
 
@@ -6620,8 +6620,7 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! looking for member: " << name << " in class '" << classInfo->fullName
                                 << "'\n";);
 
-        MLIRCodeLogic mcl(builder);
-        auto staticFieldIndex = classInfo->getStaticFieldIndex(mcl.TupleFieldName(name));
+        auto staticFieldIndex = classInfo->getStaticFieldIndex(MLIRHelper::TupleFieldName(name, builder.getContext()));
         if (staticFieldIndex >= 0)
         {
             auto fieldInfo = classInfo->staticFields[staticFieldIndex];
@@ -6864,9 +6863,7 @@ class MLIRGenImpl
 
     bool classHasField(ClassInfo::TypePtr classInfo, mlir::StringRef name, SmallVector<ClassInfo::TypePtr> &fieldPath)
     {
-        MLIRCodeLogic mcl(builder);
-
-        auto fieldId = mcl.TupleFieldName(name);
+        auto fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
         auto classStorageType = classInfo->classType.getStorageType().cast<mlir_ts::ClassStorageType>();
         auto fieldIndex = classStorageType.getIndex(fieldId);
         auto missingField = fieldIndex < 0 || fieldIndex >= classStorageType.size();
@@ -9049,7 +9046,7 @@ class MLIRGenImpl
 
             auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars),
                                                       accumulatedCapturedValues, genContext);
-            addFieldInfo(mcl.TupleFieldName(CAPTURED_NAME), capturedValue);
+            addFieldInfo(MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue);
         }
 
         // final type
@@ -10254,8 +10251,7 @@ class MLIRGenImpl
 
         if (newClassPtr->getHasVirtualTableVariable())
         {
-            MLIRCodeLogic mcl(builder);
-            auto fieldId = mcl.TupleFieldName(VTABLE_NAME);
+            auto fieldId = MLIRHelper::TupleFieldName(VTABLE_NAME, builder.getContext());
             if (fieldInfos.size() == 0 || fieldInfos.front().id != fieldId)
             {
                 fieldInfos.insert(fieldInfos.begin(), {fieldId, getOpaqueType()});
@@ -10409,7 +10405,7 @@ class MLIRGenImpl
                 TypeSwitch<mlir::Type>(baseType.getType())
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
-                        auto fieldId = mcl.TupleFieldName(baseName);
+                        auto fieldId = MLIRHelper::TupleFieldName(baseName, builder.getContext());
                         fieldInfos.push_back({fieldId, baseClassType.getStorageType()});
 
                         auto classInfo = getClassInfoByFullName(baseName);
@@ -10732,9 +10728,7 @@ genContext);
     mlir::LogicalResult mlirGenCustomRTTI(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                           ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
-        MLIRCodeLogic mcl(builder);
-
-        auto fieldId = mcl.TupleFieldName(RTTI_NAME);
+        auto fieldId = MLIRHelper::TupleFieldName(RTTI_NAME, builder.getContext());
 
         // register global
         auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
@@ -11420,8 +11414,6 @@ genContext);
 
     mlir::Type getVirtualTableType(llvm::SmallVector<VirtualMethodOrFieldInfo> &virtualTable)
     {
-        MLIRCodeLogic mcl(builder);
-
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
         for (auto vtableRecord : virtualTable)
         {
@@ -11431,7 +11423,7 @@ genContext);
             }
             else
             {
-                fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name),
+                fields.push_back({MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()),
                                   vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getFunctionType()
                                                                  : vtableRecord.methodInfo.funcType});
             }
@@ -11443,20 +11435,18 @@ genContext);
 
     mlir::Type getVirtualTableType(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &virtualTable)
     {
-        MLIRCodeLogic mcl(builder);
-
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
         for (auto vtableRecord : virtualTable)
         {
             if (vtableRecord.isInterfaceVTable)
             {
-                fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name), getOpaqueType()});
+                fields.push_back({MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()), getOpaqueType()});
             }
             else
             {
                 if (!vtableRecord.isStaticField)
                 {
-                    fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name),
+                    fields.push_back({MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()),
                                       vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getFunctionType()
                                                                      : vtableRecord.methodInfo.funcType});
                 }
@@ -12402,7 +12392,7 @@ genContext);
         {
 
             SmallVector<mlir_ts::FieldInfo> fields;
-            if (mlir::succeeded(interfaceInfo->getTupleTypeFields(fields, mth)))
+            if (mlir::succeeded(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
             {
                 auto newInterfaceTupleType = getTupleType(fields);
                 inEffective = cast(location, newInterfaceTupleType, inEffective, genContext);
@@ -13856,7 +13846,7 @@ genContext);
             return attr;
         }
 
-        return mcl.TupleFieldName(namePtr);
+        return MLIRHelper::TupleFieldName(namePtr, builder.getContext());
     }
 
     void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types,

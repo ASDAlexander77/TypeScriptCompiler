@@ -1161,7 +1161,7 @@ void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond
 static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op, Region &region, ValueRange blockArgs = {})
 {
     assert(llvm::hasSingleElement(region) && "expected single-region block");
-    Block *block = &region.front();
+    mlir::Block *block = &region.front();
     Operation *terminator = block->getTerminator();
     ValueRange results = terminator->getOperands();
     rewriter.mergeBlockBefore(block, op, blockArgs);
@@ -1320,14 +1320,14 @@ void mlir_ts::SwitchOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<A
     regions.push_back(RegionSuccessor(&casesRegion()));
 }
 
-Block *mlir_ts::SwitchOp::getHeaderBlock()
+mlir::Block *mlir_ts::SwitchOp::getHeaderBlock()
 {
     assert(!casesRegion().empty() && "op region should not be empty!");
     // The first block is the loop header block.
     return &casesRegion().front();
 }
 
-Block *mlir_ts::SwitchOp::getMergeBlock()
+mlir::Block *mlir_ts::SwitchOp::getMergeBlock()
 {
     assert(!casesRegion().empty() && "op region should not be empty!");
     // The last block is the loop merge block.
@@ -1485,7 +1485,7 @@ void mlir_ts::LabelOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<At
     regions.push_back(RegionSuccessor(&labelRegion()));
 }
 
-Block *mlir_ts::LabelOp::getMergeBlock()
+mlir::Block *mlir_ts::LabelOp::getMergeBlock()
 {
     assert(!labelRegion().empty() && "op region should not be empty!");
     // The last block is the loop merge block.

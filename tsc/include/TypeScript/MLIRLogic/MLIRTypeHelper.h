@@ -3,10 +3,13 @@
 
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DOM.h"
+#include "TypeScript/MLIRLogic/MLIRGenStore.h"
 #include "TypeScript/MLIRLogic/MLIRTypeIterator.h"
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
 
 #include "llvm/Support/Debug.h"
+
+#include <functional>
 
 namespace mlir_ts = mlir::typescript;
 
@@ -163,12 +166,6 @@ class MLIRTypeHelper
         auto type = getBaseType(typeIn);
         return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::NumberType>() || type.isa<mlir_ts::BooleanType>() ||
                         type.isa<mlir_ts::TupleType>() || type.isa<mlir_ts::ConstTupleType>() || type.isa<mlir_ts::ConstArrayType>());
-    }
-
-    mlir::Attribute TupleFieldName(mlir::StringRef name)
-    {
-        assert(!name.empty());
-        return mlir::StringAttr::get(context, name);
     }
 
     bool isUndefinedType(mlir::Type type)
@@ -1125,6 +1122,15 @@ class MLIRTypeHelper
 
         return currentType;
     }
+
+protected:
+    std::function<ClassInfo::TypePtr(StringRef)> getClassInfoByFullName;
+
+    std::function<GenericClassInfo::TypePtr(StringRef)> getGenericClassInfoByFullName;
+
+    std::function<InterfaceInfo::TypePtr(StringRef)> getInterfaceInfoByFullName;
+
+    std::function<GenericInterfaceInfo::TypePtr(StringRef)> getGenericInterfaceInfoByFullName;
 };
 
 } // namespace typescript
