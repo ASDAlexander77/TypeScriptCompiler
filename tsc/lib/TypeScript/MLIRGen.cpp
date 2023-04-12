@@ -13471,9 +13471,9 @@ genContext);
             type = objType.getStorageType();
         }
 
-        if (auto interfaceType = type.dyn_cast<mlir_ts::ClassType>())
+        if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
         {
-            auto classTypeInfo = getClassInfoByFullName(interfaceType.getName().getValue());
+            auto classTypeInfo = getClassInfoByFullName(classType.getName().getValue());
             type = classTypeInfo->classType.getStorageType();
         }
 

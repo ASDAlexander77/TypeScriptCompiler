@@ -861,6 +861,22 @@ class MLIRTypeHelper
             }
         }
 
+        if (auto srcInterfaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            if (auto extInterfaceType = extendType.dyn_cast<mlir_ts::InterfaceType>())
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+
+        if (auto srcClassType = srcType.dyn_cast<mlir_ts::ClassType>())
+        {
+            if (auto extClassType = extendType.dyn_cast<mlir_ts::ClassType>())
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+
         // TODO: finish Function Types, etc
         LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [false] for item type: " << srcType << " ext. type: " << extendType
                                 << "\n";);
