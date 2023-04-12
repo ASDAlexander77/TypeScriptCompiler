@@ -164,32 +164,32 @@ Run ``run.html``
   <head></head>
   <body>
     <script type="module">
-let buffer;
+        let buffer;
 
-const config = {
-    env: {
-        memory_base: 0,
-        table_base: 0,
-        memory : new WebAssembly.Memory({ initial: 256}),
-        table: new WebAssembly.Table({
-            initial: 0,
-            element: 'anyfunc',
-        })
-    }
-};
+        const config = {
+            env: {
+                memory_base: 0,
+                table_base: 0,
+                memory : new WebAssembly.Memory({ initial: 256}),
+                table: new WebAssembly.Table({
+                    initial: 0,
+                    element: 'anyfunc',
+                })
+            }
+        };
 
-fetch("./hello.wasm")
-    .then(response =>{
-        return response.arrayBuffer();
-    })
-    .then(bytes => {
-        return WebAssembly.instantiate(bytes, config); 
-    })
-    .then(results => { 
-       let { main } =  results.instance.exports;
-       buffer = new Uint8Array(results.instance.exports.memory.buffer);
-       main();
-    });
+        fetch("./hello.wasm")
+            .then(response =>{
+                return response.arrayBuffer();
+            })
+            .then(bytes => {
+                return WebAssembly.instantiate(bytes, config); 
+            })
+            .then(results => { 
+                let { main } =  results.instance.exports;
+                buffer = new Uint8Array(results.instance.exports.memory.buffer);
+                main();
+            });
     </script>
   </body>
 </html>
@@ -204,7 +204,7 @@ First, precompile dependencies
 prepare_3rdParty.bat 
 ```
 
-To build TSC binaries:
+To build ``TSC`` binaries:
 
 ```
 cd tsc
