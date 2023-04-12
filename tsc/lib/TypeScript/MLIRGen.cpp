@@ -13450,6 +13450,22 @@ genContext);
             return getUnionType(resolvedTypes);
         }
 
+        if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
+        {
+            if (indexType.isa<mlir_ts::NumberType>())
+            {
+                return arrayType.getElementType();
+            }
+        }
+
+        if (auto arrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
+        {
+            if (indexType.isa<mlir_ts::NumberType>())
+            {
+                return arrayType.getElementType();
+            }
+        }
+
         if (auto objType = type.dyn_cast<mlir_ts::ObjectType>())
         {
             type = objType.getStorageType();

@@ -792,6 +792,16 @@ class MLIRTypeHelper
             return true;
         }
 
+        if (auto unkwnowType = extendType.dyn_cast<mlir_ts::UnknownType>())
+        {
+            return true;
+        }
+
+        if (auto unkwnowType = extendType.dyn_cast<mlir_ts::AnyType>())
+        {
+            return true;
+        }
+
         // to support infer types
         if (auto inferType = extendType.dyn_cast<mlir_ts::InferType>())
         {
@@ -836,6 +846,14 @@ class MLIRTypeHelper
         }
 
         if (auto srcArray = srcType.dyn_cast<mlir_ts::ArrayType>())
+        {
+            if (auto extArray = extendType.dyn_cast<mlir_ts::ArrayType>())
+            {
+                return extendsType(srcArray.getElementType(), extArray.getElementType(), typeParamsWithArgs);
+            }
+        }
+
+        if (auto srcArray = srcType.dyn_cast<mlir_ts::ConstArrayType>())
         {
             if (auto extArray = extendType.dyn_cast<mlir_ts::ArrayType>())
             {
