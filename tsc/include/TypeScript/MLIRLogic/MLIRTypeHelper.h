@@ -807,15 +807,24 @@ class MLIRTypeHelper
         auto existType = typeParamsWithArgs.lookup(name);
         if (existType.second)
         {
-            auto defaultUnionType = getUnionType(existType.second, currentType);
+            auto namedType = existType.second.dyn_cast<mlir_ts::NamedGenericType>();
+            if (namedType && namedType.getName().getValue().equals(name))
+            {
+                // replace generic type
+                typeParamsWithArgs[name].second = currentType;
+            }
+            else
+            {
+                auto defaultUnionType = getUnionType(existType.second, currentType);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType.second << " default type: " << defaultUnionType
-                                    << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType.second << " default type: " << defaultUnionType
+                                        << "\n";);
 
-            currentType = findBaseType(existType.second, currentType, defaultUnionType);
+                currentType = findBaseType(existType.second, currentType, defaultUnionType);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
-            typeParamsWithArgs[name].second = currentType;
+                LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
+                typeParamsWithArgs[name].second = currentType;
+            }
         }
         else
         {
