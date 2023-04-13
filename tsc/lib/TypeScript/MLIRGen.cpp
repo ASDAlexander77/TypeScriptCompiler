@@ -13267,7 +13267,16 @@ genContext);
     {
         auto &typeParamsWithArgs = const_cast<GenContext &>(genContext).typeParamsWithArgs;
         auto checkType = getType(conditionalTypeNode->checkType, genContext);
+        if (checkType.isa<mlir_ts::NamedGenericType>())
+        {
+            // we do not need to resolve it, it is generic
+            LLVM_DEBUG(llvm::dbgs() << "\n!! condition type is generic: " << checkType << "\n";);
+            return checkType;
+        }
+
         auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! condition type check: " << checkType << ", extends: " << extendsType << "\n";);
 
         mlir::Type resType;
         if (mth.extendsType(checkType, extendsType, typeParamsWithArgs))
