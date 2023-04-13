@@ -12890,8 +12890,7 @@ genContext);
                                                genericTypeGenContext.typeParamsWithArgs, genContext);
             if (mlir::failed(result))
             {
-                // TODO: replace with mlir::Type() and fix other issues
-                return getNeverType();
+                return mlir::Type();
             }
 
             auto newType = getType(typeNode, genericTypeGenContext);
