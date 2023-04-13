@@ -905,20 +905,25 @@ class MLIRTypeHelper
                         {
                             LLVM_DEBUG(llvm::dbgs() << "\n!! origin type for interfaces '" << srcInterfaceInfo->originInterfaceType << "' & '" << extInterfaceInfo->originInterfaceType << "'\n";);
 
-                            for (auto &srcTemplateParam : srcInterfaceInfo->typeParamsWithArgs)
+                            if (auto genericInterface = getGenericInterfaceInfoByFullName(srcInterfaceInfo->originInterfaceType.getName().getValue()))
                             {
-                                auto name = srcTemplateParam.getValue().first->getName();
-                                auto found = extInterfaceInfo->typeParamsWithArgs.find(name);
-                                if (found != extInterfaceInfo->typeParamsWithArgs.end())
+                                for (auto &typeParam : genericInterface->typeParams)
                                 {
-                                    auto srcType = srcTemplateParam.getValue().second;
-                                    auto extType = found->getValue().second;
+                                    auto name = typeParam->getName();
+                                    auto srcFound = srcInterfaceInfo->typeParamsWithArgs.find(name);
+                                    auto extFound = extInterfaceInfo->typeParamsWithArgs.find(name);
+                                    if (srcFound != srcInterfaceInfo->typeParamsWithArgs.end() && 
+                                        extFound != extInterfaceInfo->typeParamsWithArgs.end())
+                                    {
+                                        auto srcType = srcFound->getValue().second;
+                                        auto extType = extFound->getValue().second;
 
-                                    return extendsType(srcType, extType, typeParamsWithArgs);
-                                }
-                                else
-                                {
-                                    return false;
+                                        return extendsType(srcType, extType, typeParamsWithArgs);
+                                    }
+                                    else
+                                    {
+                                        return false;
+                                    }
                                 }
                             }
 
@@ -942,20 +947,25 @@ class MLIRTypeHelper
                         {
                             LLVM_DEBUG(llvm::dbgs() << "\n!! origin type for class '" << srcClassInfo->originClassType << "' & '" << extClassInfo->originClassType << "'\n";);
 
-                            for (auto &srcTemplateParam : srcClassInfo->typeParamsWithArgs)
+                            if (auto genericClass = getGenericClassInfoByFullName(srcClassInfo->originClassType.getName().getValue()))
                             {
-                                auto name = srcTemplateParam.getValue().first->getName();
-                                auto found = extClassInfo->typeParamsWithArgs.find(name);
-                                if (found != extClassInfo->typeParamsWithArgs.end())
+                                for (auto &typeParam : genericClass->typeParams)
                                 {
-                                    auto srcType = srcTemplateParam.getValue().second;
-                                    auto extType = found->getValue().second;
+                                    auto name = typeParam->getName();
+                                    auto srcFound = srcClassInfo->typeParamsWithArgs.find(name);
+                                    auto extFound = extClassInfo->typeParamsWithArgs.find(name);
+                                    if (srcFound != srcClassInfo->typeParamsWithArgs.end() && 
+                                        extFound != extClassInfo->typeParamsWithArgs.end())
+                                    {
+                                        auto srcType = srcFound->getValue().second;
+                                        auto extType = extFound->getValue().second;
 
-                                    return extendsType(srcType, extType, typeParamsWithArgs);
-                                }
-                                else
-                                {
-                                    return false;
+                                        return extendsType(srcType, extType, typeParamsWithArgs);
+                                    }
+                                    else
+                                    {
+                                        return false;
+                                    }
                                 }
                             }
 

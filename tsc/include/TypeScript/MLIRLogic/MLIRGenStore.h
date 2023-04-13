@@ -149,7 +149,7 @@ struct InterfaceInfo
     mlir_ts::InterfaceType interfaceType;
 
     mlir_ts::InterfaceType originInterfaceType;
-
+    
     llvm::SmallVector<InterfaceInfoWithOffset> extends;
 
     llvm::SmallVector<InterfaceFieldInfo> fields;
