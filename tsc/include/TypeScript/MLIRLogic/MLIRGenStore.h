@@ -378,6 +378,8 @@ struct ClassInfo
 
     mlir_ts::ClassType classType;
 
+    mlir_ts::ClassType originClassType;
+
     llvm::SmallVector<ClassInfo::TypePtr> baseClasses;
 
     llvm::SmallVector<ImplementInfo> implements;

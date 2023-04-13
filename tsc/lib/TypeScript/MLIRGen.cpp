@@ -10109,6 +10109,7 @@ class MLIRGenImpl
     {
         auto fullSpecializedClassName = getSpecializedClassName(genericClassPtr, genContext);
         auto classInfoType = getClassInfoByFullName(fullSpecializedClassName);
+        classInfoType->originClassType = genericClassPtr->classType;
         assert(classInfoType);
         return classInfoType->classType;
     }
@@ -11857,13 +11858,13 @@ genContext);
         return name;
     }
 
-    mlir_ts::InterfaceType getSpecializationInterfaceType(GenericInterfaceInfo::TypePtr geneticInterfacePtr,
+    mlir_ts::InterfaceType getSpecializationInterfaceType(GenericInterfaceInfo::TypePtr genericInterfacePtr,
                                                           const GenContext &genContext)
     {
-        auto fullSpecializedInterfaceName = getSpecializedInterfaceName(geneticInterfacePtr, genContext);
+        auto fullSpecializedInterfaceName = getSpecializedInterfaceName(genericInterfacePtr, genContext);
         auto interfaceInfoType = getInterfaceInfoByFullName(fullSpecializedInterfaceName);
         assert(interfaceInfoType);
-        interfaceInfoType->originInterfaceType = geneticInterfacePtr->interfaceType;
+        interfaceInfoType->originInterfaceType = genericInterfacePtr->interfaceType;
         return interfaceInfoType->interfaceType;
     }
 
@@ -13268,12 +13269,16 @@ genContext);
         auto checkType = getType(conditionalTypeNode->checkType, genContext);
         auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
 
+        mlir::Type resType;
         if (mth.extendsType(checkType, extendsType, typeParamsWithArgs))
         {
-            return getType(conditionalTypeNode->trueType, genContext);
+            resType = getType(conditionalTypeNode->trueType, genContext);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [TRUE] = " << resType << "\n";);
+
+            return resType;
         }
 
-        mlir::Type resType;
         TypeSwitch<mlir::Type>(checkType)
             .template Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
                 auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
@@ -13283,6 +13288,9 @@ genContext);
                     if (mth.extendsType(extend.second->interfaceType, extendsType, typeParamsWithArgs))
                     {
                         resType = getType(conditionalTypeNode->trueType, genContext);
+    
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [TRUE] (extends of interface) = " << resType << "\n";);
+
                         break;
                     }
                 }
@@ -13295,6 +13303,9 @@ genContext);
                     if (mth.extendsType(extend->classType, extendsType, typeParamsWithArgs))
                     {
                         resType = getType(conditionalTypeNode->trueType, genContext);
+
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [TRUE] (extends of class) = " << resType << "\n";);
+
                         break;
                     }
                 }
@@ -13304,6 +13315,8 @@ genContext);
         if (!resType)
         {
             resType = getType(conditionalTypeNode->falseType, genContext);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [FALSE] = " << resType << "\n";);
         }
 
         return resType;

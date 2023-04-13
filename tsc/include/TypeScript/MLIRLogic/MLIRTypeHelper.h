@@ -801,8 +801,8 @@ class MLIRTypeHelper
 
     bool extendsType(mlir::Type srcType, mlir::Type extendType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! does extend type: " << srcType << " extend type: " << extendType
-                                << "\n";);        
+        LLVM_DEBUG(llvm::dbgs() << "\n!! is extending type: [ " << srcType << " ] extend type: [ " << extendType
+                                << " ]\n";);        
 
         if (srcType == extendType)
         {
@@ -920,13 +920,41 @@ class MLIRTypeHelper
         {
             if (auto extClassType = extendType.dyn_cast<mlir_ts::ClassType>())
             {
-                llvm_unreachable("not implemented");
+                if (auto srcClassInfo = getClassInfoByFullName(srcClassType.getName().getValue()))
+                {
+                    if (auto extClassInfo = getClassInfoByFullName(extClassType.getName().getValue()))
+                    {
+                        if (srcClassInfo->originClassType == extClassInfo->originClassType)
+                        {
+                            LLVM_DEBUG(llvm::dbgs() << "\n!! origin type for class '" << srcClassInfo->originClassType << "' & '" << extClassInfo->originClassType << "'\n";);
+
+                            for (auto &srcTemplateParam : srcClassInfo->typeParamsWithArgs)
+                            {
+                                auto name = srcTemplateParam.getValue().first->getName();
+                                auto found = extClassInfo->typeParamsWithArgs.find(name);
+                                if (found != extClassInfo->typeParamsWithArgs.end())
+                                {
+                                    auto srcType = srcTemplateParam.getValue().second;
+                                    auto extType = found->getValue().second;
+
+                                    return extendsType(srcType, extType, typeParamsWithArgs);
+                                }
+                                else
+                                {
+                                    return false;
+                                }
+                            }
+
+                            // default behavior - false, because something is different
+                            return false;
+                        }
+                    }
+                }
             }
         }
 
         // TODO: finish Function Types, etc
-        LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [false] for item type: " << srcType << " ext. type: " << extendType
-                                << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [FLASE]\n";);
         return false;
     }
 
