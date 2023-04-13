@@ -801,6 +801,9 @@ class MLIRTypeHelper
 
     bool extendsType(mlir::Type srcType, mlir::Type extendType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs)
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! does extend type: " << srcType << " extend type: " << extendType
+                                << "\n";);        
+
         if (srcType == extendType)
         {
             return true;

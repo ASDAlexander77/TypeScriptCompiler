@@ -13299,7 +13299,12 @@ genContext);
                     }
                 }
             })
-            .Default([&](auto type) { resType = getType(conditionalTypeNode->falseType, genContext); });
+            .Default([&](auto type) {});
+
+        if (!resType)
+        {
+            resType = getType(conditionalTypeNode->falseType, genContext);
+        }
 
         return resType;
     }
