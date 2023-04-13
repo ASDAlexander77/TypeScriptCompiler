@@ -896,10 +896,6 @@ def TypeScript_Intersection : TypeScript_Type<"Intersection"> {
   }];
 }
 
-def TypeScript_Generic : TypeScript_Type<"Generic"> {
-    let mnemonic = "Generic";
-}
-
 def TypeScript_NamedGeneric : TypeScript_Type<"NamedGeneric"> {
     let mnemonic = "named_generic";
 
@@ -935,6 +931,59 @@ def TypeScript_Infer : TypeScript_Type<"Infer"> {
   ];
 }
 
+def TypeScript_Conditional : TypeScript_Type<"Conditional"> {
+  let mnemonic = "conditional";
+
+  let description = [{
+    Syntax:
+
+    ```
+    conditional-type ::= `Conditional<` checkType `,` extendsType `,` trueType `,` falseType  `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    conditional<!Name, !Name, !Name, !Name>
+    ```
+  }];
+  let parameters = (ins "Type":$checkType, "Type":$extendsType, "Type":$trueType, "Type":$falseType);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$checkType, "Type":$extendsType, "Type":$trueType, "Type":$falseType), [{
+      return Base::get(checkType.getContext(), checkType, extendsType, trueType, falseType);
+    }]>
+  ];
+}
+
+def TypeScript_IndexAccess : TypeScript_Type<"IndexAccess"> {
+  let mnemonic = "indexAccess";
+
+  let description = [{
+    Syntax:
+
+    ```
+    index-access-type ::= `IndexAccess<` type `,` indexType `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    index-access<!Name, !Name>
+    ```
+  }];
+  let parameters = (ins "Type":$type, "Type":$indexType);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$type, "Type":$indexType), [{
+      return Base::get(indexType.getContext(), type, indexType);
+    }]>
+  ];
+}
 
 def TypeScript_IsConstTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstTupleType>()">;
 

@@ -799,6 +799,36 @@ class MLIRTypeHelper
         return storeType.isa<mlir_ts::UnionType>();
     }
 
+    bool appendInferTypeToContext(mlir::Type srcType, mlir_ts::InferType inferType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs)
+    {
+        auto name = inferType.getElementType().cast<mlir_ts::NamedGenericType>().getName().getValue();
+        auto currentType = srcType;
+
+        auto existType = typeParamsWithArgs.lookup(name);
+        if (existType.second)
+        {
+            auto defaultUnionType = getUnionType(existType.second, currentType);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType.second << " default type: " << defaultUnionType
+                                    << "\n";);
+
+            currentType = findBaseType(existType.second, currentType, defaultUnionType);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
+            typeParamsWithArgs[name].second = currentType;
+        }
+        else
+        {
+            // TODO: uncomment this line and find out what is the bug (+one more line)
+            auto typeParam = std::make_shared<ts::TypeParameterDOM>(name.str());
+            typeParamsWithArgs.insert({name, std::make_pair(typeParam, srcType)});
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! infered type for '" << name << "' = [" << typeParamsWithArgs[name].second << "]\n";);
+
+        return true;        
+    }
+
     bool extendsType(mlir::Type srcType, mlir::Type extendType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! is extending type: [ " << srcType << " ] extend type: [ " << extendType
@@ -822,32 +852,7 @@ class MLIRTypeHelper
         // to support infer types
         if (auto inferType = extendType.dyn_cast<mlir_ts::InferType>())
         {
-            auto name = inferType.getElementType().cast<mlir_ts::NamedGenericType>().getName().getValue();
-            auto currentType = srcType;
-
-            auto existType = typeParamsWithArgs.lookup(name);
-            if (existType.second)
-            {
-                auto defaultUnionType = getUnionType(existType.second, currentType);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType.second << " default type: " << defaultUnionType
-                                        << "\n";);
-
-                currentType = findBaseType(existType.second, currentType, defaultUnionType);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
-                typeParamsWithArgs[name].second = currentType;
-            }
-            else
-            {
-                // TODO: uncomment this line and find out what is the bug (+one more line)
-                auto typeParam = std::make_shared<ts::TypeParameterDOM>(name.str());
-                typeParamsWithArgs.insert({name, std::make_pair(typeParam, srcType)});
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! infered type for '" << name << "' = [" << typeParamsWithArgs[name].second << "]\n";);
-
-            return true;
+            return appendInferTypeToContext(srcType, inferType, typeParamsWithArgs);
         }
 
         if (auto unionType = extendType.dyn_cast<mlir_ts::UnionType>())

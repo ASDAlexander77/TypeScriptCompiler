@@ -1525,7 +1525,7 @@ class MLIRGenImpl
 
                     LLVM_DEBUG(llvm::dbgs()
                                     << "\n!! resolving param for generic function: '"
-                                    << functionGenericTypeInfo->name << "' parameter type: [ " << type << " ] argument type: [ " << argOp << " ]\n";);
+                                    << functionGenericTypeInfo->name << "'\n\t parameter #" << index << " type: [ " << type << " ] \n\t argument type: [ " << argOp << " ]\n";);
 
                     if (type == argOp.getType())
                     {
@@ -2774,14 +2774,6 @@ class MLIRGenImpl
                     return {mlir::failure(), isGenericTypes, params};
                 }
             }
-
-            /*
-            if (!type)
-            {
-                // TODO: this is begginging of generic types
-                type = getGenericType();
-            }
-            */
 
             if (isBindingPattern)
             {
@@ -12620,6 +12612,10 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! infer type [" << inferType << "]\n";);
 
+        // TODO: review function 'extends' in MLIRTypeHelper with the same logic adding infer types to context
+        auto &typeParamsWithArgs = const_cast<GenContext &>(genContext).typeParamsWithArgs;
+        mth.appendInferTypeToContext(type, inferType, typeParamsWithArgs);
+
         return inferType;
     }
 
@@ -12734,12 +12730,15 @@ genContext);
             return {mlir::success(), true};
         }
 
-        if (!noExtendTest && typeParam->hasConstraint() &&
-            !mth.extendsType(type, getType(typeParam->getConstraint(), genContext), pairs))
+        if (!noExtendTest && typeParam->hasConstraint())
         {
-            emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
-                                      << typeParam->getConstraint() << ".";
-            return {mlir::failure(), false};
+            auto constraintType = getType(typeParam->getConstraint(), genContext);
+            if (!mth.extendsType(type, constraintType, pairs))
+            {
+                emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
+                                        << constraintType << ".";
+                return {mlir::failure(), false};
+            }
         }
 
         auto name = typeParam->getName();
@@ -12891,6 +12890,7 @@ genContext);
                                                genericTypeGenContext.typeParamsWithArgs, genContext);
             if (mlir::failed(result))
             {
+                // TODO: replace with mlir::Type() and fix other issues
                 return getNeverType();
             }
 
@@ -13267,16 +13267,20 @@ genContext);
     {
         auto &typeParamsWithArgs = const_cast<GenContext &>(genContext).typeParamsWithArgs;
         auto checkType = getType(conditionalTypeNode->checkType, genContext);
-        if (checkType.isa<mlir_ts::NamedGenericType>())
-        {
-            // we do not need to resolve it, it is generic
-            LLVM_DEBUG(llvm::dbgs() << "\n!! condition type is generic: " << checkType << "\n";);
-            return checkType;
-        }
-
         auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! condition type check: " << checkType << ", extends: " << extendsType << "\n";);
+
+        if (checkType.isa<mlir_ts::NamedGenericType>() || extendsType.isa<mlir_ts::NamedGenericType>())
+        {
+            // we do not need to resolve it, it is generic
+            auto trueType = getType(conditionalTypeNode->trueType, genContext);
+            auto falseType = getType(conditionalTypeNode->falseType, genContext);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! condition type, check: " << checkType << " extends: " << extendsType << " true: " << trueType << " false: " << falseType << " \n";);
+
+            return getConditionalType(checkType, extendsType, trueType, falseType);
+        }
 
         mlir::Type resType;
         if (mth.extendsType(checkType, extendsType, typeParamsWithArgs))
@@ -13549,7 +13553,7 @@ genContext);
         // in case of Generic Methods but not specialized yet
         if (auto namedGenericType = type.dyn_cast<mlir_ts::NamedGenericType>())
         {
-            return getGenericType();
+            return getIndexAccessType(type, indexType);
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted \n";);
@@ -13806,11 +13810,6 @@ genContext);
         return mlir_ts::ValueRefType::get(elementType);
     }
 
-    mlir_ts::GenericType getGenericType()
-    {
-        return mlir_ts::GenericType::get(builder.getContext());
-    }
-
     mlir_ts::NamedGenericType getNamedGenericType(StringRef name)
     {
         return mlir_ts::NamedGenericType::get(builder.getContext(),
@@ -13822,6 +13821,22 @@ genContext);
         assert(paramType);
         return mlir_ts::InferType::get(paramType);
     }
+
+    mlir_ts::ConditionalType getConditionalType(mlir::Type checkType, mlir::Type extendsType, mlir::Type trueType, mlir::Type falseType)
+    {
+        assert(checkType);
+        assert(extendsType);
+        assert(trueType);
+        assert(falseType);
+        return mlir_ts::ConditionalType::get(checkType, extendsType, trueType, falseType);
+    }
+
+    mlir_ts::IndexAccessType getIndexAccessType(mlir::Type index, mlir::Type indexAccess)
+    {
+        assert(index);
+        assert(indexAccess);
+        return mlir_ts::IndexAccessType::get(index, indexAccess);
+    }    
 
     mlir::Value getUndefined(mlir::Location location)
     {
