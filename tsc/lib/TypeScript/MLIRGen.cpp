@@ -1617,12 +1617,8 @@ class MLIRGenImpl
         // TODO: check if all typeParams are there
         if (genericTypeGenContext.typeParamsWithArgs.size() < typeParams.size())
         {
-            if (!genContext.allowPartialResolve)
-            {
-                // no resolve needed, this type without param
-                emitError(location) << "not all types could be inferred";
-            }
-
+            // no resolve needed, this type without param
+            emitError(location) << "not all types could be inferred";
             return mlir::failure();
         }
 
@@ -1970,12 +1966,8 @@ class MLIRGenImpl
                 instantiateSpecializedFunctionType(location, funcName, typeArguments, initSpecGenContext);
             if (mlir::failed(result))
             {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "can't instantiate function. '" << funcName
-                                        << "' not all generic types can be identified";
-                }
-
+                emitError(location) << "can't instantiate function. '" << funcName
+                                    << "' not all generic types can be identified";
                 return mlir::failure();
             }
 

@@ -8,12 +8,14 @@ function* Map<A extends unknown[] | Iterable<unknown>, R>(a: A, f: (i: ElementTy
     for (const v of a) yield f(v);
 }
 
+function ForEach<A extends unknown[] | Iterable<unknown>>(a: A, f: (i: ElementTypeOf<A>) => void) {
+    for (const v of a) f(v);
+}
+
 function main() {
     let count = 0;
 
-    for (const v of [1, 2, 3].Map((i) => { count++; return i + 1; }).Map((j) => { count++; return j + 10; })) {
-        print(v);
-    }
+    [1, 2, 3].Map((i) => { count++; return i + 1; }).Map((j) => { count++; return j + 10; }).ForEach((e) => print(e));
 
     assert(count == 6);
 
