@@ -165,7 +165,46 @@ class MLIRTypeIterator
 
                               return true;
                           })
-                          .Default([](mlir::Type) { return true; });
+                          .Case<mlir_ts::ConditionalType>([&](mlir_ts::ConditionalType t) {
+                              if (!iterate(t.getCheckType()))
+                                  return false;
+                              if (!iterate(t.getExtendsType()))
+                                  return false;
+                              if (!iterate(t.getTrueType()))
+                                  return false;
+                              if (!iterate(t.getFalseType()))
+                                  return false;
+
+                              return true;
+                          })
+                          .Case<mlir_ts::IndexAccessType>([&](mlir_ts::IndexAccessType t) {
+                              if (!iterate(t.getType()))
+                                  return false;
+                              if (!iterate(t.getIndexType()))
+                                  return false;
+
+                              return true;
+                          })                          
+                          .Case<mlir_ts::NumberType>([&](mlir_ts::NumberType) {
+                              return true;
+                          })                          
+                          .Case<mlir_ts::StringType>([&](mlir_ts::StringType) {
+                              return true;
+                          })                          
+                          .Case<mlir::IntegerType>([&](mlir::IntegerType) {
+                              return true;
+                          })                          
+                          .Case<mlir::FloatType>([&](mlir::FloatType) {
+                              return true;
+                          })                          
+                          .Case<mlir::IndexType>([&](mlir::IndexType) {
+                              return true;
+                          })                          
+                          .Default([](mlir::Type t) { 
+                            LLVM_DEBUG(llvm::dbgs() << "\n!! Type Iteration is not implemented for : " << t << "\n";);
+                            llvm_unreachable("not implemented");
+                            return true; 
+                          });
 
         return result;
     }
