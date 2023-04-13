@@ -1358,7 +1358,7 @@ class MLIRGenImpl
         auto [result, funcOp] = getFuncArgTypesOfGenericMethod(funcDecl, {}, discoverReturnType, funcGenContext);
         if (mlir::failed(result))
         {
-            if (!genContext.allowPartialResolve && !genContext.dummyRun)
+            if (!genContext.dummyRun)
             {
                 emitError(location) << "can't instantiate specialized arrow function.";
             }
@@ -1401,11 +1401,7 @@ class MLIRGenImpl
                 mlirGenFunctionLikeDeclaration(arrowFunctionGenericTypeInfo->functionDeclaration, arrowFuncGenContext);
             if (mlir::failed(result))
             {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "can't instantiate specialized arrow function.";
-                }
-
+                emitError(location) << "can't instantiate specialized arrow function.";
                 return mlir::failure();
             }
 
@@ -1752,19 +1748,11 @@ class MLIRGenImpl
                 return {mlir::success(), funcOp.getFunctionType(), funcOp.getName().str()};
             }
 
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(location) << "can't instantiate specialized function [" << name << "].";
-            }
-
+            emitError(location) << "can't instantiate specialized function [" << name << "].";
             return {mlir::failure(), mlir_ts::FunctionType(), ""};
         }
 
-        if (!genContext.allowPartialResolve)
-        {
-            emitError(location) << "can't find generic [" << name << "] function.";
-        }
-
+        emitError(location) << "can't find generic [" << name << "] function.";
         return {mlir::failure(), mlir_ts::FunctionType(), ""};
     }
 
@@ -3184,11 +3172,7 @@ class MLIRGenImpl
             }
             else
             {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "can't find generic function: " << funcName;
-                }
-
+                emitError(location) << "can't find generic function: " << funcName;
                 return mlir::failure();
             }
         }
@@ -3236,11 +3220,7 @@ class MLIRGenImpl
             }
             else
             {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "can't find generic function: " << funcName;
-                }
-
+                emitError(location) << "can't find generic function: " << funcName;
                 return mlir::failure();
             }
         }
@@ -5723,11 +5703,7 @@ class MLIRGenImpl
         auto type = getTypeByTypeName(binaryExpressionAST->right, genContext);
         if (isNoneType(type))
         {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(location, "type of instanceOf can't be resolved.");
-            }
-
+            emitError(location, "type of instanceOf can't be resolved.");
             return mlir::failure();
         }
 
@@ -6600,7 +6576,7 @@ class MLIRGenImpl
 
         // static field access
         auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, genContext);
-        if (!value && !genContext.allowPartialResolve)
+        if (!value)
         {
             emitError(location, "Class member '") << name << "' can't be found";
         }
@@ -6763,11 +6739,7 @@ class MLIRGenImpl
 
             if (!effectiveFuncType)
             {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "can't resolve type of property";
-                }
-
+                emitError(location) << "can't resolve type of property";
                 return mlir::Value();
             }
 
@@ -6820,12 +6792,8 @@ class MLIRGenImpl
                         mlirGenPropertyAccessExpression(location, currentObject, chain->fullName, genContext);
                     if (!fieldValue)
                     {
-                        if (!genContext.allowPartialResolve)
-                        {
-                            emitError(location) << "Can't resolve field/property/base '" << chain->fullName
-                                                << "' of class '" << classInfo->fullName << "'\n";
-                        }
-
+                        emitError(location) << "Can't resolve field/property/base '" << chain->fullName
+                                            << "' of class '" << classInfo->fullName << "'\n";
                         return fieldValue;
                     }
 
@@ -6902,7 +6870,7 @@ class MLIRGenImpl
 
         // static field access
         auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, id, genContext);
-        if (!value && !genContext.allowPartialResolve)
+        if (!value)
         {
             emitError(location, "Interface member '") << id << "' can't be found";
         }
@@ -7080,11 +7048,7 @@ class MLIRGenImpl
         auto offsetArgs = funcResult.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>() ? 1 : 0;
         if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs)))
         {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(location) << "Call Method: can't resolve values of all parameters";
-            }
-
+            emitError(location) << "Call Method: can't resolve values of all parameters";
             return mlir::failure();
         }
 
@@ -8028,7 +7992,7 @@ class MLIRGenImpl
                 bool hasReturn;
                 mlirGenCall(location, propAccess, operands, hasReturn, genContext);
             }
-            else if (!genContext.allowPartialResolve)
+            else
             {
                 emitError(location) << "Call Constructor: can't find constructor";
             }
@@ -8069,11 +8033,7 @@ class MLIRGenImpl
                 SmallVector<mlir::Value, 4> operands;
                 if (mlir::failed(mlirGenOperands(arguments, operands, funcValueRef, genContext)))
                 {
-                    if (!genContext.allowPartialResolve)
-                    {
-                        emitError(location) << "Call constructor: can't resolve values of all parameters";
-                    }
-
+                    emitError(location) << "Call constructor: can't resolve values of all parameters";
                     return mlir::failure();
                 }
 
@@ -9372,11 +9332,7 @@ class MLIRGenImpl
             auto classInfo = getClassesMap().lookup(name);
             if (!classInfo->classType)
             {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "can't find class: " << name << "\n";
-                }
-
+                emitError(location) << "can't find class: " << name << "\n";
                 return mlir::Value();
             }
 
@@ -9399,11 +9355,7 @@ class MLIRGenImpl
             auto interfaceInfo = getInterfacesMap().lookup(name);
             if (!interfaceInfo->interfaceType)
             {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "can't find interface: " << name << "\n";
-                }
-
+                emitError(location) << "can't find interface: " << name << "\n";
                 return mlir::Value();
             }
 
@@ -13333,13 +13285,8 @@ genContext);
         auto type = getType(typeOperatorNode->type, genContext);
         if (!type)
         {
-            if (!genContext.allowPartialResolve)
-            {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! can't take 'keyof'\n";);
-
-                emitError(loc(typeOperatorNode), "can't take keyof");
-            }
-
+            LLVM_DEBUG(llvm::dbgs() << "\n!! can't take 'keyof'\n";);
+            emitError(loc(typeOperatorNode), "can't take keyof");
             return type;
         }
 
