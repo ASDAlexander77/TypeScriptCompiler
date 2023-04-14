@@ -13873,7 +13873,7 @@ genContext);
         return MLIRHelper::TupleFieldName(namePtr, builder.getContext());
     }
 
-    void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types,
+    bool getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types,
                            const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
@@ -13924,6 +13924,8 @@ genContext);
 
             attrVal = mlir::Attribute();
         }
+
+        return arrayMode;
     }
 
     void getTupleFieldInfo(TypeLiteralNode typeLiteral, mlir::SmallVector<mlir_ts::FieldInfo> &types,
@@ -13973,10 +13975,14 @@ genContext);
         return mlir_ts::ConstTupleType::get(builder.getContext(), fieldInfos);
     }
 
-    mlir_ts::TupleType getTupleType(TupleTypeNode tupleType, const GenContext &genContext)
+    mlir::Type getTupleType(TupleTypeNode tupleType, const GenContext &genContext)
     {
         mlir::SmallVector<mlir_ts::FieldInfo> types;
-        getTupleFieldInfo(tupleType, types, genContext);
+        if (getTupleFieldInfo(tupleType, types, genContext) && types.size() == 1)
+        {
+            return getArrayType(types.front().type);
+        }
+
         return getTupleType(types);
     }
 
