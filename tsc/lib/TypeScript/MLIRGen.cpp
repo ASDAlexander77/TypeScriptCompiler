@@ -1627,6 +1627,13 @@ class MLIRGenImpl
         auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(name);
         if (functionGenericTypeInfo)
         {
+            if (functionGenericTypeInfo->functionDeclaration == SyntaxKind::ArrowFunction 
+                || functionGenericTypeInfo->functionDeclaration == SyntaxKind::FunctionExpression)
+            {
+                // we need to avoid wrong redeclaration of arrow functions (when thisType is provided it will add THIS parameter as first)
+                const_cast<GenContext &>(genContext).thisType = nullptr;
+            }
+
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = functionGenericTypeInfo->elementNamespace;
 
@@ -1948,8 +1955,6 @@ class MLIRGenImpl
             // create new function instance
             GenContext initSpecGenContext(genContext);
             initSpecGenContext.rediscover = true;
-            // we need to avoid wrong redeclaration of arrow functions (when thisType is provided it will add THIS parameter as first)
-            initSpecGenContext.thisType = nullptr;
 
             auto funcName = symbolOp.identifierAttr().getValue();
             auto [result, funcType, funcSymbolName] =
