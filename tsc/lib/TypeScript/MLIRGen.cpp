@@ -13384,7 +13384,7 @@ genContext);
 
         if (auto namedGenericType = type.dyn_cast<mlir_ts::NamedGenericType>())
         {
-            llvm_unreachable("not implemented");
+            return getKeyOfType(namedGenericType);
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! can't take 'keyof' from: " << type << "\n";);
@@ -13639,6 +13639,13 @@ genContext);
             return mlir::Type();
         }
 
+        if (auto keyOfType = constrainType.dyn_cast<mlir_ts::KeyOfType>())
+        {
+            auto type = getType(mappedTypeNode->type, genContext);
+            auto nameType = getType(mappedTypeNode->nameType, genContext);
+            return getMappedType(type, nameType, constrainType);
+        }
+
         if (auto unionType = constrainType.dyn_cast<mlir_ts::UnionType>())
         {
             auto hasNameType = !!mappedTypeNode->nameType;
@@ -13824,6 +13831,20 @@ genContext);
         assert(index);
         assert(indexAccess);
         return mlir_ts::IndexAccessType::get(index, indexAccess);
+    }    
+
+    mlir_ts::KeyOfType getKeyOfType(mlir::Type type)
+    {
+        assert(type);
+        return mlir_ts::KeyOfType::get(type);
+    }      
+
+    mlir_ts::MappedType getMappedType(mlir::Type elementType, mlir::Type nameType, mlir::Type constrainType)
+    {
+        assert(elementType);
+        assert(nameType);
+        assert(constrainType);
+        return mlir_ts::MappedType::get(elementType, nameType, constrainType);
     }    
 
     mlir::Value getUndefined(mlir::Location location)

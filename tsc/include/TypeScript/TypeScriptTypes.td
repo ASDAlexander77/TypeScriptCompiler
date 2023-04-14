@@ -985,6 +985,60 @@ def TypeScript_IndexAccess : TypeScript_Type<"IndexAccess"> {
   ];
 }
 
+def TypeScript_KeyOf : TypeScript_Type<"KeyOf"> {
+  let mnemonic = "keyOf";
+
+  let description = [{
+    Syntax:
+
+    ```
+    key-of-type ::= `KeyOf<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    key-of-type<!Name>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return Base::get(elementType.getContext(), elementType);
+    }]>
+  ];
+}
+
+def TypeScript_Mapped : TypeScript_Type<"Mapped"> {
+  let mnemonic = "mapped";
+
+  let description = [{
+    Syntax:
+
+    ```
+    mapped-type ::= `Mapped<` type `,` nameType `,` constrainType  `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    mapped<!Name, !Name, !Name>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType, "Type":$nameType, "Type":$constrainType);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType, "Type":$nameType, "Type":$constrainType), [{
+      return Base::get(elementType.getContext(), elementType, nameType, constrainType);
+    }]>
+  ];
+}
+
 def TypeScript_IsConstTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstTupleType>()">;
 
 def TypeScript_AnyConstTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsConstTupleRefType, "any const tuple reference type">;
