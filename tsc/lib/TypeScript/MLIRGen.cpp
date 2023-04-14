@@ -8306,7 +8306,10 @@ class MLIRGenImpl
         SmallVector<mlir::Attribute, 4> strs;
         SmallVector<mlir::Value, 4> vals;
 
-        auto text = convertWideToUTF8(templateExpressionAST->head->rawText);
+        std::string text = convertWideToUTF8(
+            templateExpressionAST->head 
+                ? templateExpressionAST->head->rawText 
+                : templateExpressionAST->rawText);
 
         // first string
         strs.push_back(getStringAttr(text));
@@ -12242,6 +12245,11 @@ genContext);
 
     ValueOrLogicalResult cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
+        if (!type)
+        {
+            return mlir::failure();
+        }
+
         if (type == value.getType())
         {
             return value;
