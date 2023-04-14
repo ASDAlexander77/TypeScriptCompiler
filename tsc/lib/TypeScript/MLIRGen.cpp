@@ -1948,6 +1948,8 @@ class MLIRGenImpl
             // create new function instance
             GenContext initSpecGenContext(genContext);
             initSpecGenContext.rediscover = true;
+            // we need to avoid wrong redeclaration of arrow functions (when thisType is provided it will add THIS parameter as first)
+            initSpecGenContext.thisType = nullptr;
 
             auto funcName = symbolOp.identifierAttr().getValue();
             auto [result, funcType, funcSymbolName] =
@@ -2632,7 +2634,8 @@ class MLIRGenImpl
         if (!isStatic && genContext.thisType &&
             (parametersContextAST == SyntaxKind::FunctionExpression ||
              parametersContextAST == SyntaxKind::ArrowFunction))
-        {
+        {            
+            // TODO: this is very tricky code, if we rediscover function again and if by any chance thisType is not null, it will append thisType to lambda which very wrong code
             params.push_back(
                 std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
