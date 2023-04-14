@@ -2814,7 +2814,8 @@ class MLIRGenImpl
                 name = "";
             }
         }
-        else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature)
+        // TODO: for new () interfaces
+        else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature/* || signatureDeclarationBaseAST == SyntaxKind::ConstructSignature*/)
         {
             // class method name
             name = objectOwnerName + "." + name;
@@ -8137,7 +8138,7 @@ class MLIRGenImpl
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
 
             // call <Class>..new to create new instance
-            auto result = mlirGenPropertyAccessExpression(location, classRefVal, ".new", false, genContext);
+            auto result = mlirGenPropertyAccessExpression(location, classRefVal, NEW_METHOD_NAME, false, genContext);
             auto newFuncRef = V(result);
 
             assert(newFuncRef);
@@ -10606,7 +10607,7 @@ class MLIRGenImpl
 
         ModifiersArray modifiers;
         modifiers->push_back(nf.createToken(SyntaxKind::StaticKeyword));
-        auto generatedNew = nf.createMethodDeclaration(undefined, modifiers, undefined, nf.createIdentifier(S(".new")),
+        auto generatedNew = nf.createMethodDeclaration(undefined, modifiers, undefined, nf.createIdentifier(S(NEW_METHOD_NAME)),
                                                        undefined, undefined, undefined, nf.createThisTypeNode(), body);
 
         /*
@@ -10619,7 +10620,7 @@ class MLIRGenImpl
 #endif
         SmallVector<mlir::Type> inputs;
         SmallVector<mlir::Type> results{newClassPtr->classType};
-        mlirGenForwardDeclaration(".new", getFunctionType(inputs, results), isStatic, isVirtual, newClassPtr,
+        mlirGenForwardDeclaration(NEW_METHOD_NAME, getFunctionType(inputs, results), isStatic, isVirtual, newClassPtr,
 genContext);
 
         newClassPtr->extraMembersPost.push_back(generatedNew);
@@ -11776,6 +11777,10 @@ genContext);
             {
                 name = CONSTRUCTOR_NAME;
             }
+            else if (declarationAST == SyntaxKind::ConstructSignature)
+            {
+                name = NEW_METHOD_NAME;
+            }
             else
             {
                 name = MLIRHelper::getAnonymousName(loc_check(declarationAST));
@@ -12002,7 +12007,8 @@ genContext);
 
         MLIRCodeLogic mcl(builder);
 
-        if (interfaceMember == SyntaxKind::PropertySignature)
+        SyntaxKind kind = interfaceMember;
+        if (kind == SyntaxKind::PropertySignature)
         {
             // property declaration
             auto propertySignature = interfaceMember.as<PropertySignature>();
@@ -12042,11 +12048,12 @@ genContext);
                 fieldInfos.push_back({fieldId, type, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
             }
         }
-
-        if (interfaceMember == SyntaxKind::MethodSignature)
+        else if (kind == SyntaxKind::MethodSignature || kind == SyntaxKind::ConstructSignature)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
             auto isConditional = !!methodSignature->questionToken;
+
+            newInterfacePtr->hasNew |= kind == SyntaxKind::ConstructSignature;
 
             std::string methodName;
             std::string propertyName;
@@ -12080,6 +12087,10 @@ genContext);
                     {methodName, funcType, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
             }
         }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
 
         return mlir::success();
     }
@@ -12098,6 +12109,10 @@ genContext);
             {
                 methodName = std::string(CONSTRUCTOR_NAME);
             }
+        }
+        else if (methodSignature == SyntaxKind::ConstructSignature)
+        {
+            methodName = std::string(NEW_METHOD_NAME);
         }
         else if (methodSignature == SyntaxKind::GetAccessor)
         {

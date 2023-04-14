@@ -40,6 +40,8 @@
 #define GLOBAL_CONSTUCTIONS_NAME "llvm.global_ctors"
 #define TYPE_BITMAP_NAME ".type_bitmap"
 #define TYPE_DESCR_NAME ".type_descr"
+#define NEW_METHOD_NAME ".new"
+#define LNEW_METHOD_NAME L".new"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

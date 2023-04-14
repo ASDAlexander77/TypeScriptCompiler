@@ -158,7 +158,9 @@ struct InterfaceInfo
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
-    InterfaceInfo()
+    bool hasNew;
+
+    InterfaceInfo() : hasNew(false)
     {
     }
 
