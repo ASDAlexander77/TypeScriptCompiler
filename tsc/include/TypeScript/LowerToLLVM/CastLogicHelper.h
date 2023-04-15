@@ -593,7 +593,7 @@ class CastLogicHelper
         LLVM_DEBUG(llvm::dbgs() << "invalid cast operator type 1: '" << inLLVMType << "', type 2: '" << resLLVMType << "'\n";);
 
         emitError(loc, "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
-        llvm_unreachable("not implemented");
+        //llvm_unreachable("not implemented");
 
         return mlir::Value();
     }
