@@ -3983,7 +3983,14 @@ class MLIRGenImpl
         auto location = loc(returnStatementAST);
         if (auto expression = returnStatementAST->expression)
         {
-            auto result = mlirGen(expression, genContext);
+            GenContext receiverTypeGenContext(genContext);
+            auto exactReturnType = getExplicitReturnTypeOfCurrentFunction(genContext);
+            if (exactReturnType)
+            {
+                receiverTypeGenContext.receiverType = exactReturnType;
+            }
+
+            auto result = mlirGen(expression, receiverTypeGenContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto expressionValue = V(result);
             return mlirGenReturnValue(location, expressionValue, false, genContext);
@@ -4211,6 +4218,22 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::Type getExplicitReturnTypeOfCurrentFunction(const GenContext &genContext)
+    {
+        auto funcOp = const_cast<GenContext &>(genContext).funcOp;
+        if (funcOp)
+        {
+            auto countResults = funcOp.getCallableResults().size();
+            if (countResults > 0)
+            {
+                auto returnType = funcOp.getCallableResults().front();
+                return returnType;
+            }
+        }
+
+        return mlir::Type();
+    }
+
     mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, bool yieldReturn,
                                            const GenContext &genContext)
     {
@@ -4219,27 +4242,20 @@ class MLIRGenImpl
             genContext.passResult->functionReturnTypeShouldBeProvided = true;
         }
 
-        auto funcOp = const_cast<GenContext &>(genContext).funcOp;
-        if (funcOp)
+        if (auto returnType = getExplicitReturnTypeOfCurrentFunction(genContext))
         {
-            auto countResults = funcOp.getCallableResults().size();
-            if (countResults > 0)
+            if (!expressionValue)
             {
-                auto returnType = funcOp.getCallableResults().front();
-
-                if (!expressionValue)
+                if (!genContext.allowPartialResolve)
                 {
-                    if (!genContext.allowPartialResolve)
-                    {
-                        emitError(location) << "'return' must have value";
-                        return mlir::failure();
-                    }
+                    emitError(location) << "'return' must have value";
+                    return mlir::failure();
                 }
-                else if (returnType != expressionValue.getType())
-                {
-                    auto castValue = cast(location, returnType, expressionValue, genContext);
-                    expressionValue = castValue;
-                }
+            }
+            else if (returnType != expressionValue.getType())
+            {
+                auto castValue = cast(location, returnType, expressionValue, genContext);
+                expressionValue = castValue;
             }
         }
 
