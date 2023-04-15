@@ -129,6 +129,7 @@ struct GenContext
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
     mlir::Type thisType;
     mlir::Type receiverFuncType;
+    mlir::Type receiverType;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
     NodeArray<Statement> generatedStatements;

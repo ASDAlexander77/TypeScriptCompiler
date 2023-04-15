@@ -2516,7 +2516,13 @@ class MLIRGenImpl
         mlir::Value init;
         if (auto initializer = item->initializer)
         {
-            auto result = mlirGen(initializer, genContext);
+            GenContext genContextWithTypeReceiver(genContext);
+            if (type)
+            {
+                genContextWithTypeReceiver.receiverType = type;
+            }
+
+            auto result = mlirGen(initializer, genContextWithTypeReceiver);
             if (result.failed())
             {
                 return {mlir::Type(), mlir::Value()};
@@ -8497,6 +8503,16 @@ class MLIRGenImpl
         SmallVector<std::tuple<mlir::Type, mlir::Value, bool>> values;
         auto nonConst = false;
         auto spreadElements = false;
+        mlir::Type receiverElementType;
+
+        // check receiverType
+        if (genContext.receiverType)
+        {
+            if (auto arrayType = genContext.receiverType.dyn_cast<mlir_ts::ArrayType>())
+            {
+                receiverElementType = arrayType.getElementType();
+            }
+        }
 
         for (auto &item : arrayLiteral->elements)
         {
@@ -8509,6 +8525,12 @@ class MLIRGenImpl
             }
 
             auto type = itemValue.getType();
+            if (receiverElementType && type != receiverElementType)
+            {
+                itemValue = cast(location, receiverElementType, itemValue, genContext);
+                type = itemValue.getType();
+            }
+
             if (item == SyntaxKind::SpreadElement)
             {
                 if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
