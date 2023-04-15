@@ -128,8 +128,7 @@ struct GenContext
     mlir_ts::FuncOp funcOp;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
     mlir::Type thisType;
-    mlir::Type destFuncType;
-    mlir::Type argTypeDestFuncType;
+    mlir::Type receiverFuncType;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
     NodeArray<Statement> generatedStatements;

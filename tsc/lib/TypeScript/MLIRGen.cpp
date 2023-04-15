@@ -1350,7 +1350,7 @@ class MLIRGenImpl
                                                         const GenContext &genContext)
     {
         GenContext funcGenContext(genContext);
-        funcGenContext.argTypeDestFuncType = recieverType;
+        funcGenContext.receiverFuncType = recieverType;
 
         mlir::OpBuilder::InsertionGuard guard(builder);
         builder.restoreInsertionPoint(functionBeginPoint);
@@ -1388,7 +1388,7 @@ class MLIRGenImpl
         auto arrowFunctionGenericTypeInfo = getGenericFunctionInfoByFullName(arrowFunctionName);
 
         GenContext arrowFuncGenContext(genContext);
-        arrowFuncGenContext.argTypeDestFuncType = recieverType;
+        arrowFuncGenContext.receiverFuncType = recieverType;
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -2692,9 +2692,9 @@ class MLIRGenImpl
                 }
             }
 
-            if (isNoneType(type) && genContext.argTypeDestFuncType)
+            if (isNoneType(type) && genContext.receiverFuncType)
             {
-                type = getParamFromFuncRef(genContext.argTypeDestFuncType, index);
+                type = getParamFromFuncRef(genContext.receiverFuncType, index);
 
                 LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "");
 
@@ -2959,9 +2959,9 @@ class MLIRGenImpl
                     auto returnType = getType(typeParameter, genContext);
                     funcProto->setReturnType(returnType);
                 }
-                else if (genContext.argTypeDestFuncType)
+                else if (genContext.receiverFuncType)
                 {
-                    auto &argTypeDestFuncType = genContext.argTypeDestFuncType;
+                    auto &argTypeDestFuncType = genContext.receiverFuncType;
                     auto retTypeFromReceiver = getReturnTypeFromFuncRef(argTypeDestFuncType);
                     if (retTypeFromReceiver && !isNoneType(retTypeFromReceiver))
                     {
@@ -5927,11 +5927,11 @@ class MLIRGenImpl
         auto rightExprGenContext = GenContext(genContext);
         if (auto hybridFuncType = leftExpressionValue.getType().dyn_cast<mlir_ts::HybridFunctionType>())
         {
-            rightExprGenContext.argTypeDestFuncType = hybridFuncType;
+            rightExprGenContext.receiverFuncType = hybridFuncType;
         }
         else if (auto funcType = leftExpressionValue.getType().dyn_cast<mlir_ts::FunctionType>())
         {
-            rightExprGenContext.argTypeDestFuncType = funcType;
+            rightExprGenContext.receiverFuncType = funcType;
         }
 
         auto result2 = mlirGen(rightExpression, rightExprGenContext);
@@ -7839,11 +7839,11 @@ class MLIRGenImpl
             {
                 if (isVarArg && i >= lastArgIndex)
                 {
-                    argGenContext.argTypeDestFuncType = varArgType;
+                    argGenContext.receiverFuncType = varArgType;
                 }
                 else
                 {
-                    argGenContext.argTypeDestFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+                    argGenContext.receiverFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
                 }
             }
 
