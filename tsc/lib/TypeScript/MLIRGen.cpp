@@ -12863,6 +12863,29 @@ genContext);
             auto [result, hasAnyNamedGenericType] =
                 zipTypeParametersWithArguments(loc(typeReferenceAST), typeParams, typeReferenceAST->typeArguments,
                                                genericTypeGenContext.typeParamsWithArgs, genContext);
+
+            if (hasAnyNamedGenericType)
+            {
+                mlir::SmallVector<mlir::Type> typeArgs;
+                for (auto typeArgNode : typeReferenceAST->typeArguments)
+                {
+                    auto typeArg = getType(typeArgNode, genericTypeGenContext);
+                    if (!typeArg)
+                    {
+                        return mlir::Type();
+                    }
+
+                    typeArgs.push_back(typeArg);
+                }
+
+                auto nameRef = MLIRHelper::getName(typeReferenceAST->typeName, stringAllocator);
+                auto typeRefType = getTypeReferenceType(nameRef, typeArgs);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! generic TypeReferenceType: " << typeRefType;);
+
+                return typeRefType;
+            }
+
             if (mlir::failed(result))
             {
                 return mlir::Type();
@@ -13847,6 +13870,11 @@ genContext);
         return mlir_ts::MappedType::get(elementType, nameType, constrainType);
     }    
 
+    mlir_ts::TypeReferenceType getTypeReferenceType(mlir::StringRef nameRef, mlir::SmallVector<mlir::Type> &types)
+    {
+        return mlir_ts::TypeReferenceType::get(builder.getContext(), mlir::FlatSymbolRefAttr::get(builder.getContext(), nameRef), types);
+    }    
+
     mlir::Value getUndefined(mlir::Location location)
     {
         return builder.create<mlir_ts::UndefOp>(location, getOptionalType(getUndefPlaceHolderType()));
@@ -14167,7 +14195,6 @@ genContext);
 
     mlir::Type getUnionType(mlir::SmallVector<mlir::Type> &types)
     {
-
         return mth.getUnionType(types);
     }
 
@@ -14338,7 +14365,6 @@ genContext);
 
     mlir::Type getIntersectionType(mlir::SmallVector<mlir::Type> &types)
     {
-
         return mth.getIntersectionType(types);
     }
 

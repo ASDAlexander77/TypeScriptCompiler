@@ -29,12 +29,12 @@ class MLIRTypeIterator
             return false;
 
         auto result = llvm::TypeSwitch<mlir::Type, bool>(def)
-                          .Case<mlir_ts::ArrayType>([&](mlir_ts::ArrayType t) {
+                          .Case<mlir_ts::ArrayType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
                               return true;
                           })
-                          .Case<mlir_ts::BoundFunctionType>([&](mlir_ts::BoundFunctionType t) {
+                          .Case<mlir_ts::BoundFunctionType>([&](auto t) {
                               for (auto subType : t.getInputs())
                               {
                                   if (!iterate(subType))
@@ -49,30 +49,30 @@ class MLIRTypeIterator
 
                               return true;
                           })
-                          .Case<mlir_ts::BoundRefType>([&](mlir_ts::BoundRefType t) {
+                          .Case<mlir_ts::BoundRefType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
                               return true;
                           })
-                          .Case<mlir_ts::ClassType>([&](mlir_ts::ClassType t) {
+                          .Case<mlir_ts::ClassType>([&](auto t) {
                               // TODO:
                               return true;
                           })
-                          .Case<mlir_ts::ClassStorageType>([&](mlir_ts::ClassStorageType t) {
+                          .Case<mlir_ts::ClassStorageType>([&](auto t) {
                               // TODO:
                               return true;
                           })
-                          .Case<mlir_ts::ConstArrayType>([&](mlir_ts::ConstArrayType t) {
+                          .Case<mlir_ts::ConstArrayType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
                               return true;
                           })
-                          .Case<mlir_ts::ConstArrayValueType>([&](mlir_ts::ConstArrayValueType t) {
+                          .Case<mlir_ts::ConstArrayValueType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
                               return true;
                           })
-                          .Case<mlir_ts::ConstTupleType>([&](mlir_ts::ConstTupleType t) {
+                          .Case<mlir_ts::ConstTupleType>([&](auto t) {
                               for (auto subType : t.getFields())
                               {
                                   if (!iterate(subType.type))
@@ -81,13 +81,13 @@ class MLIRTypeIterator
 
                               return true;
                           })
-                          .Case<mlir_ts::EnumType>([&](mlir_ts::EnumType t) {
+                          .Case<mlir_ts::EnumType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
 
                               return true;
                           })
-                          .Case<mlir_ts::FunctionType>([&](mlir_ts::FunctionType t) {
+                          .Case<mlir_ts::FunctionType>([&](auto t) {
                               for (auto subType : t.getInputs())
                               {
                                   if (!iterate(subType))
@@ -102,7 +102,7 @@ class MLIRTypeIterator
 
                               return true;
                           })
-                          .Case<mlir_ts::HybridFunctionType>([&](mlir_ts::HybridFunctionType t) {
+                          .Case<mlir_ts::HybridFunctionType>([&](auto t) {
                               for (auto subType : t.getInputs())
                               {
                                   if (!iterate(subType))
@@ -117,31 +117,31 @@ class MLIRTypeIterator
 
                               return true;
                           })
-                          .Case<mlir_ts::InferType>([&](mlir_ts::InferType t) {
+                          .Case<mlir_ts::InferType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
                               return true;
                           })
-                          .Case<mlir_ts::InterfaceType>([&](mlir_ts::InterfaceType t) {
+                          .Case<mlir_ts::InterfaceType>([&](auto t) {
                               // TODO:
                               return true;
                           })
-                          .Case<mlir_ts::LiteralType>([&](mlir_ts::LiteralType t) {
+                          .Case<mlir_ts::LiteralType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
                               return true;
                           })
-                          .Case<mlir_ts::OptionalType>([&](mlir_ts::OptionalType t) {
+                          .Case<mlir_ts::OptionalType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
                               return true;
                           })
-                          .Case<mlir_ts::RefType>([&](mlir_ts::RefType t) {
+                          .Case<mlir_ts::RefType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
                               return true;
                           })
-                          .Case<mlir_ts::TupleType>([&](mlir_ts::TupleType t) {
+                          .Case<mlir_ts::TupleType>([&](auto t) {
                               for (auto subType : t.getFields())
                               {
                                   if (!iterate(subType.type))
@@ -150,7 +150,7 @@ class MLIRTypeIterator
 
                               return true;
                           })
-                          .Case<mlir_ts::UnionType>([&](mlir_ts::UnionType t) {
+                          .Case<mlir_ts::UnionType>([&](auto t) {
                               for (auto subType : t.getTypes())
                               {
                                   if (!iterate(subType))
@@ -159,13 +159,22 @@ class MLIRTypeIterator
 
                               return true;
                           })
-                          .Case<mlir_ts::ValueRefType>([&](mlir_ts::ValueRefType t) {
+                          .Case<mlir_ts::IntersectionType>([&](auto t) {
+                              for (auto subType : t.getTypes())
+                              {
+                                  if (!iterate(subType))
+                                      return false;
+                              }
+
+                              return true;
+                          })
+                          .Case<mlir_ts::ValueRefType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
 
                               return true;
                           })
-                          .Case<mlir_ts::ConditionalType>([&](mlir_ts::ConditionalType t) {
+                          .Case<mlir_ts::ConditionalType>([&](auto t) {
                               if (!iterate(t.getCheckType()))
                                   return false;
                               if (!iterate(t.getExtendsType()))
@@ -177,7 +186,7 @@ class MLIRTypeIterator
 
                               return true;
                           })
-                          .Case<mlir_ts::IndexAccessType>([&](mlir_ts::IndexAccessType t) {
+                          .Case<mlir_ts::IndexAccessType>([&](auto t) {
                               if (!iterate(t.getType()))
                                   return false;
                               if (!iterate(t.getIndexType()))
@@ -185,19 +194,44 @@ class MLIRTypeIterator
 
                               return true;
                           })                          
-                          .Case<mlir_ts::NumberType>([&](mlir_ts::NumberType) {
+                          .Case<mlir_ts::KeyOfType>([&](auto t) {
+                              if (!iterate(t.getElementType()))
+                                  return false;
+
                               return true;
                           })                          
-                          .Case<mlir_ts::StringType>([&](mlir_ts::StringType) {
+                          .Case<mlir_ts::MappedType>([&](auto t) {
+                              if (!iterate(t.getElementType()))
+                                  return false;
+                              if (!iterate(t.getNameType()))
+                                  return false;
+                              if (!iterate(t.getConstrainType()))
+                                  return false;
+
                               return true;
                           })                          
-                          .Case<mlir::IntegerType>([&](mlir::IntegerType) {
+                          .Case<mlir_ts::TypeReferenceType>([&](auto t) {
+                              for (auto subType : t.getTypes())
+                              {
+                                  if (!iterate(subType))
+                                      return false;
+                              }
+
                               return true;
                           })                          
-                          .Case<mlir::FloatType>([&](mlir::FloatType) {
+                          .Case<mlir_ts::NumberType>([&](auto) {
                               return true;
                           })                          
-                          .Case<mlir::IndexType>([&](mlir::IndexType) {
+                          .Case<mlir_ts::StringType>([&](auto) {
+                              return true;
+                          })                          
+                          .Case<mlir::IntegerType>([&](auto) {
+                              return true;
+                          })                          
+                          .Case<mlir::FloatType>([&](auto) {
+                              return true;
+                          })                          
+                          .Case<mlir::IndexType>([&](auto) {
                               return true;
                           })                          
                           .Default([](mlir::Type t) { 

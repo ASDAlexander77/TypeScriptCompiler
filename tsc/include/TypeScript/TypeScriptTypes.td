@@ -1039,6 +1039,27 @@ def TypeScript_Mapped : TypeScript_Type<"Mapped"> {
   ];
 }
 
+def TypeScript_TypeReference : TypeScript_Type<"TypeReference"> {
+  let mnemonic = "typeref";
+
+  let description = [{
+    Syntax:
+
+    ```
+    typeref-type ::= `typeref` `<` name `,` (type ( `,` type)*)? `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    typeref<'name', @f1>
+    ```
+  }];
+  let parameters = (ins "FlatSymbolRefAttr":$name, ArrayRefParameter<"Type", "type">:$types);
+
+  let assemblyFormat = "`<` params `>`";
+}
+
 def TypeScript_IsConstTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstTupleType>()">;
 
 def TypeScript_AnyConstTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsConstTupleRefType, "any const tuple reference type">;
