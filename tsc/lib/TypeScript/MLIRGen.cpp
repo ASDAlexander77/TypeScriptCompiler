@@ -8526,6 +8526,7 @@ class MLIRGenImpl
         {
             if (auto arrayType = genContext.receiverType.dyn_cast<mlir_ts::ArrayType>())
             {
+                // TODO: remove it "if" to find out the issue with types
                 if (!mth.isGenericType(arrayType.getElementType()))
                 {
                     receiverElementType = arrayType.getElementType();
@@ -8619,7 +8620,8 @@ class MLIRGenImpl
             {
                 values.push_back(std::make_tuple(type, itemValue, false));
 
-                type = mth.wideStorageType(type);
+                // if we have receiver type we do not need to "adopt it"
+                type = receiverElementType ? type : mth.wideStorageType(type);
                 if (!elementType)
                 {
                     elementType = type;
