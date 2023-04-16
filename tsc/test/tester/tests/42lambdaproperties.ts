@@ -10,8 +10,8 @@ namespace LambdaProperty {
     export function test() {
 
         let x: IFoo = {
-            y: <number>3, z: <number>4, bar: () => {
-                return <number>0
+            y: 3, z: 4, bar: () => {
+                return 0
             }, baz: (i: number) => i + 1
         }
 

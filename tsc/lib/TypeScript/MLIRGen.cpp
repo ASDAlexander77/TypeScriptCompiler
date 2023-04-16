@@ -2632,19 +2632,20 @@ class MLIRGenImpl
         auto isGenericTypes = false;
         std::vector<std::shared_ptr<FunctionParamDOM>> params;
 
+        SyntaxKind kind = parametersContextAST;
         // add this param
         auto isStatic = hasModifier(parametersContextAST, SyntaxKind::StaticKeyword);
         if (!isStatic &&
-            (parametersContextAST == SyntaxKind::MethodDeclaration || parametersContextAST == SyntaxKind::Constructor ||
-             parametersContextAST == SyntaxKind::GetAccessor || parametersContextAST == SyntaxKind::SetAccessor))
+            (kind == SyntaxKind::MethodDeclaration || kind == SyntaxKind::Constructor ||
+             kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor))
         {
             params.push_back(
                 std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
 
-        if (!isStatic && genContext.thisType &&
-            (parametersContextAST == SyntaxKind::FunctionExpression ||
-             parametersContextAST == SyntaxKind::ArrowFunction))
+        if (!isStatic && genContext.thisType && !!parametersContextAST->parent &&
+            (kind == SyntaxKind::FunctionExpression ||
+             kind == SyntaxKind::ArrowFunction))
         {            
             // TODO: this is very tricky code, if we rediscover function again and if by any chance thisType is not null, it will append thisType to lambda which very wrong code
             params.push_back(
@@ -8894,6 +8895,8 @@ class MLIRGenImpl
             funcGenContext.clearScopeVars();
             funcGenContext.thisType = getObjectType(getConstTupleType(fieldInfos));
 
+            funcLikeDecl->parent = objectLiteral;
+
             auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
             if (mlir::failed(result) || !funcOp)
             {
@@ -8934,6 +8937,8 @@ class MLIRGenImpl
             funcGenContext.clearScopeVars();
             funcGenContext.thisType = objThis;
             funcGenContext.rediscover = true;
+
+            funcLikeDecl->parent = objectLiteral;
 
             mlir::OpBuilder::InsertionGuard guard(builder);
             auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
@@ -9163,7 +9168,6 @@ class MLIRGenImpl
             auto &methodInfo = fieldInfos[methodRef];
             if (auto funcType = methodInfo.type.dyn_cast<mlir_ts::FunctionType>())
             {
-
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
             }
         }
