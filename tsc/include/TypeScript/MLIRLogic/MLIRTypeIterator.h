@@ -219,6 +219,15 @@ class MLIRTypeIterator
 
                               return true;
                           })                          
+                          .Case<mlir_ts::NeverType>([&](auto) {
+                              return true;
+                          })                          
+                          .Case<mlir_ts::UnknownType>([&](auto) {
+                              return true;
+                          })                          
+                          .Case<mlir_ts::AnyType>([&](auto) {
+                              return true;
+                          })                          
                           .Case<mlir_ts::NumberType>([&](auto) {
                               return true;
                           })                          

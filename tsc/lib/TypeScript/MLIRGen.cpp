@@ -8526,7 +8526,7 @@ class MLIRGenImpl
         {
             if (auto arrayType = genContext.receiverType.dyn_cast<mlir_ts::ArrayType>())
             {
-                if (!arrayType.getElementType().isa<mlir_ts::NamedGenericType>())
+                if (!mth.isGenericType(arrayType.getElementType()))
                 {
                     receiverElementType = arrayType.getElementType();
                 }
