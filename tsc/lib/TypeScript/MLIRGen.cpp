@@ -7861,11 +7861,11 @@ class MLIRGenImpl
             {
                 if (isVarArg && i >= lastArgIndex)
                 {
-                    argGenContext.receiverFuncType = varArgType;
+                    argGenContext.receiverFuncType = argGenContext.receiverType = varArgType;
                 }
                 else
                 {
-                    argGenContext.receiverFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+                    argGenContext.receiverFuncType = argGenContext.receiverType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
                 }
             }
 
@@ -8526,7 +8526,10 @@ class MLIRGenImpl
         {
             if (auto arrayType = genContext.receiverType.dyn_cast<mlir_ts::ArrayType>())
             {
-                receiverElementType = arrayType.getElementType();
+                if (!arrayType.getElementType().isa<mlir_ts::NamedGenericType>())
+                {
+                    receiverElementType = arrayType.getElementType();
+                }
             }
         }
 
