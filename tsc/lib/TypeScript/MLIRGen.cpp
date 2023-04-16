@@ -8777,6 +8777,11 @@ class MLIRGenImpl
             }
         }
 
+        if (auto interfaceType = receiverType.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            llvm_unreachable("not implemented for interface");
+        }        
+
         return mlir::Type();
     }
 
@@ -8828,7 +8833,7 @@ class MLIRGenImpl
             fieldInfos.push_back({fieldId, type});
         };
 
-        auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue) {
+        auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue, mlir::Type receiverElementType) {
             mlir::Type type;
             mlir::Attribute value;
             auto isConstValue = true;
@@ -8855,13 +8860,6 @@ class MLIRGenImpl
             }
 
             type = mth.wideStorageType(type);
-
-            //
-            mlir::Type receiverElementType;
-            if (receiverType)
-            {
-                receiverElementType = getTypeByFieldNameFromReceiverType(fieldId, receiverType);
-            }
 
             if (receiverElementType)
             {
@@ -8941,6 +8939,7 @@ class MLIRGenImpl
         {
             mlir::Value itemValue;
             mlir::Attribute fieldId;
+            mlir::Type receiverElementType;
             if (item == SyntaxKind::PropertyAssignment)
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
@@ -8950,11 +8949,23 @@ class MLIRGenImpl
                     continue;
                 }
 
-                auto result = mlirGen(propertyAssignment->initializer, genContext);
+                fieldId = TupleFieldName(propertyAssignment->name, genContext);
+
+                if (receiverType)
+                {
+                    receiverElementType = getTypeByFieldNameFromReceiverType(fieldId, receiverType);
+                }
+
+                // TODO: send context with receiver type
+                GenContext receiverTypeGenContext(genContext);
+                if (receiverElementType)
+                {
+                    receiverTypeGenContext.receiverType = receiverElementType;
+                }
+
+                auto result = mlirGen(propertyAssignment->initializer, receiverTypeGenContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 itemValue = V(result);
-
-                fieldId = TupleFieldName(propertyAssignment->name, genContext);
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
@@ -9003,7 +9014,7 @@ class MLIRGenImpl
                 // read all fields
                 for (auto pair : llvm::zip(fields, res.results()))
                 {
-                    addFieldInfo(std::get<0>(pair).id, std::get<1>(pair));
+                    addFieldInfo(std::get<0>(pair).id, std::get<1>(pair), receiverType ? getTypeByFieldNameFromReceiverType(std::get<0>(pair).id, receiverType) : mlir::Type());
                 }
 
                 continue;
@@ -9015,7 +9026,7 @@ class MLIRGenImpl
 
             assert(genContext.allowPartialResolve || itemValue);
 
-            addFieldInfo(fieldId, itemValue);
+            addFieldInfo(fieldId, itemValue, receiverElementType);
         }
 
         // process all methods
@@ -9100,7 +9111,7 @@ class MLIRGenImpl
 
             auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars),
                                                       accumulatedCapturedValues, genContext);
-            addFieldInfo(MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue);
+            addFieldInfo(MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue, mlir::Type());
         }
 
         // final type
