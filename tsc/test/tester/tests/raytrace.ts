@@ -246,13 +246,8 @@ class RayTracer {
                     Color.times(thing.surface.specular(pos), scolor)));
             }
         }
-        //return scene.lights.reduce(addLight, Color.defaultColor);
-        let resColor = Color.defaultColor;
-        for (const light of scene.lights) {
-            resColor = addLight(resColor, light);
-        }
-
-        return resColor;
+        
+        return scene.lights.reduce(addLight, Color.defaultColor);
     }
 
     render(scene: Scene, screenWidth: number, screenHeight: number) {
