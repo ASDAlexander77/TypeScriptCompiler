@@ -8766,6 +8766,20 @@ class MLIRGenImpl
         }
     }
 
+    mlir::Type getTypeByFieldNameFromReceiverType(mlir::Attribute fieldName, mlir::Type receiverType)
+    {
+        if (auto tupleType = receiverType.dyn_cast<mlir_ts::TupleType>())
+        {
+            auto index = tupleType.getIndex(fieldName);
+            if (index >= 0)
+            {
+                return tupleType.getType(index);
+            }
+        }
+
+        return mlir::Type();
+    }
+
     ValueOrLogicalResult mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
     {
         // TODO: replace all Opaque with ThisType
@@ -8778,6 +8792,8 @@ class MLIRGenImpl
         SmallVector<size_t> methodInfos;
         SmallVector<std::pair<std::string, size_t>> methodInfosWithCaptures;
         SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldsToSet;
+
+        mlir::Type receiverType = genContext.receiverType;
 
         auto location = loc(objectLiteral);
 
@@ -8815,6 +8831,7 @@ class MLIRGenImpl
         auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue) {
             mlir::Type type;
             mlir::Attribute value;
+            auto isConstValue = true;
             if (auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 value = constOp.valueAttr();
@@ -8834,13 +8851,39 @@ class MLIRGenImpl
             {
                 value = builder.getUnitAttr();
                 type = itemValue.getType();
-                fieldsToSet.push_back({fieldId, itemValue});
+                isConstValue = false;
+            }
+
+            type = mth.wideStorageType(type);
+
+            //
+            mlir::Type receiverElementType;
+            if (receiverType)
+            {
+                receiverElementType = getTypeByFieldNameFromReceiverType(fieldId, receiverType);
+            }
+
+            if (receiverElementType)
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type and receiver type: " << type << " type: " << receiverElementType << "\n";);
+
+                if (type != receiverElementType)
+                {
+                    value = builder.getUnitAttr();
+                    itemValue = cast(location, receiverElementType, itemValue, genContext);
+                    isConstValue = false;
+                }
+
+                type = receiverElementType;
+                LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type (from receiver) - id: " << fieldId << " type: " << type << "\n";);
             }
 
             values.push_back(value);
-
-            type = mth.wideStorageType(type);
             fieldInfos.push_back({fieldId, type});
+            if (!isConstValue)
+            {
+                fieldsToSet.push_back({fieldId, itemValue});
+            }
         };
 
         auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) {
@@ -9127,7 +9170,7 @@ class MLIRGenImpl
 
         auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
         auto constantVal =
-            builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleTypeWithReplacedThis, arrayAttr);
+            builder.create<mlir_ts::ConstantOp>(location, constTupleTypeWithReplacedThis, arrayAttr);
         if (fieldsToSet.empty())
         {
             return V(constantVal);
