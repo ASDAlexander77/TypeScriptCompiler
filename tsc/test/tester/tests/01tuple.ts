@@ -1,3 +1,8 @@
+interface IObj
+{
+	field1: string
+}
+
 function main() {
 
     const obj: { name: string } = { name: 1 };
@@ -25,6 +30,14 @@ function main() {
 
     assert(obj6.name[0].val1 === "3");
     assert(obj6.name[1].val1 === "6");
+
+    const obj7 : IObj = { field1: "asdf1" };
+    print(obj7.field1);
+
+    const obj8 : IObj = { field1: 10 };
+    print(obj8.field1);
+
+    assert(obj8.field1 === 10);
 
     print("done.");
 }

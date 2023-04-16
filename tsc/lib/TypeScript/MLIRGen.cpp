@@ -8779,7 +8779,12 @@ class MLIRGenImpl
 
         if (auto interfaceType = receiverType.dyn_cast<mlir_ts::InterfaceType>())
         {
-            llvm_unreachable("not implemented for interface");
+            auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            auto index = interfaceInfo->getFieldIndex(fieldName);
+            if (index >= 0)
+            {
+                return interfaceInfo->fields[index].type;
+            }
         }        
 
         return mlir::Type();
