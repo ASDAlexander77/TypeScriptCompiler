@@ -3898,7 +3898,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef fullFuncName,
-                                            mlir_ts::FunctionType funcType, std::function<void()> funcBody,
+                                            mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult()> funcBody,
                                             const GenContext &genContext)
     {
         if (theModule.lookupSymbol(fullFuncName))
@@ -3923,7 +3923,10 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        funcBody();
+        if (failed(funcBody()))
+        {
+            return mlir::failure();
+        }
 
         // add exit code
         auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
@@ -8081,7 +8084,7 @@ class MLIRGenImpl
         if (auto classType = resultType.dyn_cast<mlir_ts::ClassType>())
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-            auto newOp = NewClassInstanceAsMethodOrOp(location, classInfo, methodCallWay, genContext);
+            auto newOp = NewClassInstanceAsMethodCallOp(location, classInfo, methodCallWay, genContext);
             if (methodCallWay)
             {
                 // evaluate constructor
@@ -8175,7 +8178,7 @@ class MLIRGenImpl
         return newOp;
     }
 
-    mlir::Value NewClassInstanceAsMethodOrOp(mlir::Location location, ClassInfo::TypePtr classInfo, bool asMethodCall,
+    mlir::Value NewClassInstanceAsMethodCallOp(mlir::Location location, ClassInfo::TypePtr classInfo, bool asMethodCall,
                                              const GenContext &genContext)
     {
         mlir::Value newOp;
@@ -11036,6 +11039,7 @@ genContext);
 
                 auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
                 builder.create<mlir_ts::ReturnValOp>(location, typeDescr, retVarInfo.first);
+                return mlir::success();
             },
             genContext);
 
@@ -11229,7 +11233,7 @@ genContext);
 
                 return emptyFieldInfo;
             },
-            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional) -> MethodInfo & {
+            [&](std::string, mlir_ts::FunctionType, bool, int) -> MethodInfo & {
                 llvm_unreachable("not implemented yet");
             });
 
@@ -11369,18 +11373,28 @@ genContext);
 
                 return foundField;
             },
-            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional) -> MethodInfo & {
+            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> MethodInfo & {
                 auto foundMethodPtr = newClassPtr->findMethod(name);
                 if (!foundMethodPtr)
                 {
-                    if (!isConditional)
+                    // TODO: generate method wrapper for calling new/ctor method
+                    if (name == NEW_CTOR_METHOD_NAME)
                     {
-                        emitError(location)
-                            << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName
-                            << "' in class '" << newClassPtr->fullName << "'";
+                        // TODO: generate method                        
+                        foundMethodPtr = generateSynthMethodToCallNewCtor(location, newClassPtr, newInterfacePtr, funcType, interfacePosIndex, genContext);
                     }
 
-                    return emptyMethod;
+                    if (!foundMethodPtr)
+                    {
+                        if (!isConditional)
+                        {
+                            emitError(location)
+                                << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName
+                                << "' in class '" << newClassPtr->fullName << "'";
+                        }
+
+                        return emptyMethod;
+                    }
                 }
 
                 auto foundMethodFunctionType = foundMethodPtr->funcOp.getFunctionType().cast<mlir_ts::FunctionType>();
@@ -11459,6 +11473,57 @@ genContext);
             genContext);
 
         return mlir::success();
+    }
+
+    MethodInfo *generateSynthMethodToCallNewCtor(mlir::Location location, ClassInfo::TypePtr newClassPtr, InterfaceInfo::TypePtr newInterfacePtr, 
+                                            mlir_ts::FunctionType funcType, int interfacePosIndex, const GenContext &genContext)
+    {
+        auto fullClassStaticName = concat(newClassPtr->fullName, newInterfacePtr->fullName, NEW_CTOR_METHOD_NAME, interfacePosIndex);
+
+        auto retType = getReturnTypeFromFuncRef(funcType);
+
+        // go to root
+        mlir::OpBuilder::InsertPoint savePoint = builder.saveInsertionPoint();
+        builder.setInsertionPointToStart(theModule.getBody());
+
+        GenContext funcGenContext(genContext);
+        //funcGenContext.thisType = newClassPtr->classType;
+
+        mlirGenFunctionBody(
+            location, fullClassStaticName, funcType,
+            [&]() {
+                NodeFactory nf(NodeFactoryFlags::None);
+                auto newInst = nf.createNewExpression(nf.createToken(SyntaxKind::ThisKeyword), undefined, undefined);
+                auto instRes = mlirGen(newInst, funcGenContext);
+                auto instVal = V(instRes);
+                auto castToRet = cast(location, retType, instVal, funcGenContext);
+                auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
+                if (retVarInfo.second)
+                {
+                    builder.create<mlir_ts::ReturnValOp>(location, castToRet, retVarInfo.first);
+                }
+                else
+                {
+                    return mlir::failure();
+                }
+
+                return mlir::success();
+            },
+            funcGenContext);        
+
+        builder.restoreInsertionPoint(savePoint);
+
+        // register method in info
+        if (newClassPtr->getMethodIndex(fullClassStaticName) < 0)
+        {
+            auto funcOp = mlir_ts::FuncOp::create(location, fullClassStaticName, funcType);
+
+            auto &methodInfos = newClassPtr->methods;
+            methodInfos.push_back(
+                {fullClassStaticName.str(), funcType, funcOp, true, false, false, -1});
+        }        
+
+        return newClassPtr->findMethod(fullClassStaticName);
     }
 
     mlir::LogicalResult mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr,
@@ -14833,6 +14898,21 @@ genContext);
         auto namePtr = StringRef(res).copy(stringAllocator);
         return namePtr;
     }
+
+    auto concat(StringRef fullNamespace, StringRef className, StringRef name, int index) -> StringRef
+    {
+        std::string res;
+        res += fullNamespace;
+        res += ".";
+        res += className;
+        res += ".";
+        res += name;
+        res += "#";
+        res += std::to_string(index);
+
+        auto namePtr = StringRef(res).copy(stringAllocator);
+        return namePtr;
+    }    
 
     template <typename T> bool is_default(T &t)
     {

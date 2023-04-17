@@ -191,7 +191,7 @@ struct InterfaceInfo
     mlir::LogicalResult getVirtualTable(
         llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
         std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type, bool)> resolveField,
-        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool)> resolveMethod)
+        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod)
     {
         for (auto &extent : extends)
         {
@@ -204,7 +204,7 @@ struct InterfaceInfo
         // do vtable for current
         for (auto &method : methods)
         {
-            auto &classMethodInfo = resolveMethod(method.name, method.funcType, method.isConditional);
+            auto &classMethodInfo = resolveMethod(method.name, method.funcType, method.isConditional, method.interfacePosIndex);
             if (classMethodInfo.name.empty())
             {
                 if (method.isConditional)
