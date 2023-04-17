@@ -8181,7 +8181,6 @@ class MLIRGenImpl
     mlir::Value NewClassInstanceAsMethodCallOp(mlir::Location location, ClassInfo::TypePtr classInfo, bool asMethodCall,
                                              const GenContext &genContext)
     {
-        mlir::Value newOp;
 #ifdef USE_NEW_AS_METHOD
         if (asMethodCall)
         {
@@ -8191,18 +8190,37 @@ class MLIRGenImpl
 
             // call <Class>..new to create new instance
             auto result = mlirGenPropertyAccessExpression(location, classRefVal, NEW_METHOD_NAME, false, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto newFuncRef = V(result);
 
             assert(newFuncRef);
 
             SmallVector<mlir::Value, 4> emptyOperands;
-            bool hasReturn;
-            newOp = mlirGenCall(location, newFuncRef, emptyOperands, hasReturn, genContext);
+            auto resultCall = mlirGenCallExpression(location, newFuncRef, {}, emptyOperands, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(resultCall)
+            auto newOp = V(resultCall);
             return newOp;
         }
 #endif
 
         return NewClassInstanceLogicAsOp(location, classInfo, false, genContext);
+    }
+
+    ValueOrLogicalResult NewClassInstanceFromInterface(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
+            const GenContext &genContext)
+    {
+        auto result = mlirGenPropertyAccessExpression(location, value, NEW_CTOR_METHOD_NAME, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto newCtorMethod = V(result);        
+
+        SmallVector<mlir::Value, 4> operands;
+        if (mlir::failed(mlirGenOperands(arguments, operands, newCtorMethod.getType(), genContext)))
+        {
+            emitError(location) << "Call new instance: can't resolve values of all parameters";
+            return mlir::failure();
+        }
+
+        return mlirGenCallExpression(location, newCtorMethod, {}, operands, genContext);        
     }
 
     ValueOrLogicalResult mlirGen(NewExpression newExpression, const GenContext &genContext)
@@ -8219,6 +8237,12 @@ class MLIRGenImpl
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto value = V(result);
 
+            if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
+            {
+                return NewClassInstanceFromInterface(location, value, newExpression->arguments, genContext);
+            }
+
+            // default - class instance
             auto suppressConstructorCall = (newExpression->internalFlags & InternalFlags::SuppressConstructorCall) ==
                                            InternalFlags::SuppressConstructorCall;
 
