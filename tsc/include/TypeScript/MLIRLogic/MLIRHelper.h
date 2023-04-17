@@ -70,17 +70,18 @@ class MLIRHelper
     static std::string getName(ts::Node name)
     {
         std::string nameValue;
-        if (name == SyntaxKind::Identifier)
+        SyntaxKind kind = name;
+        if (kind == SyntaxKind::Identifier)
         {
             return getName(name.as<ts::Identifier>());
         }
 
-        if (name == SyntaxKind::PrivateIdentifier)
+        if (kind == SyntaxKind::PrivateIdentifier)
         {
             return getName(name.as<ts::PrivateIdentifier>());
         }
 
-        if (name == SyntaxKind::StringLiteral)
+        if (kind == SyntaxKind::StringLiteral)
         {
             return getName(name.as<ts::StringLiteral>());
         }

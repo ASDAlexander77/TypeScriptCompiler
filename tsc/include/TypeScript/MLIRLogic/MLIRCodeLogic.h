@@ -149,7 +149,13 @@ class MLIRCustomMethods
     {
     }
 
-    static bool isInternalName (StringRef functionName)
+    static bool isInternalObjectName (StringRef objectName)
+    {
+        static std::map<std::string, bool> o { {"Symbol", true}};
+        return o[objectName.str()];    
+    }
+
+    static bool isInternalFunctionName (StringRef functionName)
     {
         static std::map<std::string, bool> m { {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {"switchstate", true}};
         return m[functionName.str()];    
@@ -833,6 +839,14 @@ class MLIRPropertyAccessCodeLogic
                                                               builder.getI32IntegerAttr(fieldIndex));
 
         return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+    }
+
+    mlir::Value Symbol(mlir_ts::SymbolType symbol)
+    {
+        auto symbOp = builder.create<mlir_ts::ConstantOp>(
+            location, builder.getNoneType(), mlir::StringAttr::get(builder.getContext(), name));
+
+        return symbOp;
     }
 
     StringRef getName()

@@ -58,6 +58,7 @@ struct StaticFieldInfo
 
 struct MethodInfo
 {
+    // TODO: convert to attribute as fields 
     std::string name;
     mlir_ts::FunctionType funcType;
     // TODO: remove using it, we do not need it, we need actual name of function not function itself

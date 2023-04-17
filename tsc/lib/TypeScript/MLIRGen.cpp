@@ -6471,6 +6471,7 @@ class MLIRGenImpl
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
             .Case<mlir_ts::ObjectType>([&](auto objectType) { value = cl.Object(objectType); })
+            .Case<mlir_ts::SymbolType>([&](auto symbolType) { value = cl.Symbol(symbolType); })
             .Case<mlir_ts::NamespaceType>([&](auto namespaceType) {
                 auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
                 assert(namespaceInfo);
@@ -7046,6 +7047,16 @@ class MLIRGenImpl
         else if (auto tupleType = arrayType.dyn_cast<mlir_ts::ConstTupleType>())
         {
             return mlirGenElementAccess(location, expression, argumentExpression, tupleType);
+        }
+        else if (auto classType = arrayType.dyn_cast<mlir_ts::ClassType>())
+        {
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto attr = fieldName.value();
+                return mlirGenPropertyAccessExpression(location, expression, attr, genContext);
+            }
+
+            llvm_unreachable("not implemented (ElementAccessExpression)");
         }
         else
         {
@@ -9687,11 +9698,30 @@ class MLIRGenImpl
             return value;
         }
 
-        if (MLIRCustomMethods::isInternalName(name))
+        if (MLIRCustomMethods::isInternalFunctionName(name))
         {
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                 location, builder.getNoneType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
             symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return V(symbOp);
+        }
+
+        if (MLIRCustomMethods::isInternalObjectName(name))
+        {
+            mlir::Type type;
+
+            if (name == "Symbol")
+            {
+                type = getSymbolType();
+            }
+            else
+            {
+                type = builder.getNoneType();
+            }
+
+            // set correct type
+            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
+                location, type, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));            
             return V(symbOp);
         }
 
@@ -11648,7 +11678,7 @@ genContext);
             auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
             std::string methodName;
             std::string propertyName;
-            getMethodNameOrPropertyName(funcLikeDeclaration, methodName, propertyName);
+            getMethodNameOrPropertyName(funcLikeDeclaration, methodName, propertyName, genContext);
 
             if (methodName.empty())
             {
@@ -12171,7 +12201,7 @@ genContext);
 
             std::string methodName;
             std::string propertyName;
-            getMethodNameOrPropertyName(methodSignature, methodName, propertyName);
+            getMethodNameOrPropertyName(methodSignature, methodName, propertyName, genContext);
 
             if (methodName.empty())
             {
@@ -12210,9 +12240,10 @@ genContext);
     }
 
     mlir::LogicalResult getMethodNameOrPropertyName(SignatureDeclarationBase methodSignature, std::string &methodName,
-                                                    std::string &propertyName)
+                                                    std::string &propertyName, const GenContext &genContext)
     {
-        if (methodSignature == SyntaxKind::Constructor)
+        SyntaxKind kind = methodSignature;
+        if (kind == SyntaxKind::Constructor)
         {
             auto isStatic = hasModifier(methodSignature, SyntaxKind::StaticKeyword);
             if (isStatic)
@@ -12224,23 +12255,37 @@ genContext);
                 methodName = std::string(CONSTRUCTOR_NAME);
             }
         }
-        else if (methodSignature == SyntaxKind::ConstructSignature)
+        else if (kind == SyntaxKind::ConstructSignature)
         {
             methodName = std::string(NEW_METHOD_NAME);
         }
-        else if (methodSignature == SyntaxKind::GetAccessor)
+        else if (kind == SyntaxKind::GetAccessor)
         {
             propertyName = MLIRHelper::getName(methodSignature->name);
             methodName = std::string("get_") + propertyName;
         }
-        else if (methodSignature == SyntaxKind::SetAccessor)
+        else if (kind == SyntaxKind::SetAccessor)
         {
             propertyName = MLIRHelper::getName(methodSignature->name);
             methodName = std::string("set_") + propertyName;
         }
         else
         {
-            methodName = MLIRHelper::getName(methodSignature->name);
+            if (auto attr = getNameFromComputedPropertyName(methodSignature->name, genContext))
+            {
+                if (auto strAttr = attr.dyn_cast<mlir::StringAttr>())
+                {
+                    methodName = strAttr.getValue();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            }
+            else
+            {
+                methodName = MLIRHelper::getName(methodSignature->name);
+            }
         }
 
         return mlir::success();
@@ -14017,12 +14062,11 @@ genContext);
 #endif
     }
 
-    mlir::Attribute TupleFieldName(Node name, const GenContext &genContext)
+    mlir::Attribute getNameFromComputedPropertyName(Node name, const GenContext &genContext)
     {
-        MLIRCodeLogic mcl(builder);
-
         if (name == SyntaxKind::ComputedPropertyName)
         {
+            MLIRCodeLogic mcl(builder);
             auto result = mlirGen(name.as<ComputedPropertyName>(), genContext);
             auto value = V(result);
             LLVM_DEBUG(llvm::dbgs() << "!! ComputedPropertyName: " << value << "\n";);
@@ -14035,15 +14079,26 @@ genContext);
             return attr;
         }
 
+        return mlir::Attribute();
+    }
+
+    mlir::Attribute TupleFieldName(Node name, const GenContext &genContext)
+    {
+        if (auto attr = getNameFromComputedPropertyName(name, genContext))
+        {
+            return attr;
+        }
+
         auto namePtr = MLIRHelper::getName(name, stringAllocator);
         if (namePtr.empty())
         {
+            MLIRCodeLogic mcl(builder);
             auto result = mlirGen(name.as<Expression>(), genContext);
             auto value = V(result);
             auto attr = mcl.ExtractAttr(value);
             if (!attr)
             {
-                emitError(loc(name), "not supported ComputedPropertyName expression");
+                emitError(loc(name), "not supported name");
             }
 
             return attr;
