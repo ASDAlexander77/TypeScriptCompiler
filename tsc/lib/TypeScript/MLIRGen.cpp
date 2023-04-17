@@ -3728,6 +3728,19 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGenFunctionParams(mlir::Location location, int firstIndex, mlir::Block::BlockArgListType arguments, const GenContext &genContext)
+    {
+        for (auto index = firstIndex; index < arguments.size(); index++)
+        {
+            std::string paramName("p");
+            paramName += std::to_string(index - firstIndex);
+            auto paramDecl = std::make_shared<VariableDeclarationDOM>(paramName, arguments[index].getType(), location);
+            declare(paramDecl, arguments[index], genContext, true);
+        }
+
+        return mlir::success();
+    }    
+
     mlir::LogicalResult mlirGenFunctionParamsBindings(int firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
                                                       mlir::Block::BlockArgListType arguments,
                                                       const GenContext &genContext)
@@ -3919,6 +3932,11 @@ class MLIRGenImpl
 
         // add exit code
         if (failed(mlirGenFunctionEntry(location, getReturnTypeFromFuncRef(funcType), genContext)))
+        {
+            return mlir::failure();
+        }
+
+        if (failed(mlirGenFunctionParams(location, 0, arguments, genContext)))
         {
             return mlir::failure();
         }
