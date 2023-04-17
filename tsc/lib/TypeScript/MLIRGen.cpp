@@ -2822,7 +2822,7 @@ class MLIRGenImpl
             }
         }
         // TODO: for new () interfaces
-        else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature/* || signatureDeclarationBaseAST == SyntaxKind::ConstructSignature*/)
+        else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature || signatureDeclarationBaseAST == SyntaxKind::ConstructSignature)
         {
             // class method name
             name = objectOwnerName + "." + name;
@@ -11933,7 +11933,7 @@ genContext);
             }
             else if (declarationAST == SyntaxKind::ConstructSignature)
             {
-                name = NEW_METHOD_NAME;
+                name = NEW_CTOR_METHOD_NAME;
             }
             else
             {
@@ -12267,7 +12267,7 @@ genContext);
         }
         else if (kind == SyntaxKind::ConstructSignature)
         {
-            methodName = std::string(NEW_METHOD_NAME);
+            methodName = std::string(NEW_CTOR_METHOD_NAME);
         }
         else if (kind == SyntaxKind::GetAccessor)
         {

@@ -42,6 +42,8 @@
 #define TYPE_DESCR_NAME ".type_descr"
 #define NEW_METHOD_NAME ".new"
 #define LNEW_METHOD_NAME L".new"
+#define NEW_CTOR_METHOD_NAME ".new_ctor"
+#define LNEW_CTOR_METHOD_NAME L".new_ctor"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48
