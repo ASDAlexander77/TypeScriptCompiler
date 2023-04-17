@@ -11481,6 +11481,10 @@ genContext);
         auto fullClassStaticName = concat(newClassPtr->fullName, newInterfacePtr->fullName, NEW_CTOR_METHOD_NAME, interfacePosIndex);
 
         auto retType = getReturnTypeFromFuncRef(funcType);
+        if (!retType)
+        {
+            return nullptr;
+        }
 
         // go to root
         mlir::OpBuilder::InsertPoint savePoint = builder.saveInsertionPoint();
@@ -11489,7 +11493,7 @@ genContext);
         GenContext funcGenContext(genContext);
         //funcGenContext.thisType = newClassPtr->classType;
 
-        mlirGenFunctionBody(
+        auto result = mlirGenFunctionBody(
             location, fullClassStaticName, funcType,
             [&]() {
                 NodeFactory nf(NodeFactoryFlags::None);
@@ -11512,6 +11516,11 @@ genContext);
             funcGenContext);        
 
         builder.restoreInsertionPoint(savePoint);
+
+        if (mlir::failed(result))
+        {
+            return nullptr;
+        }
 
         // register method in info
         if (newClassPtr->getMethodIndex(fullClassStaticName) < 0)
@@ -12294,6 +12303,16 @@ genContext);
             auto funcType = std::get<1>(res);
 
             if (!funcType)
+            {
+                return mlir::failure();
+            }
+
+            if (llvm::any_of(funcType.getInputs(), [&](mlir::Type type) { return !type; }))
+            {
+                return mlir::failure();
+            }
+
+            if (llvm::any_of(funcType.getResults(), [&](mlir::Type type) { return !type; }))
             {
                 return mlir::failure();
             }
