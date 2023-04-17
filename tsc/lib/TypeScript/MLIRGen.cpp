@@ -3141,6 +3141,11 @@ class MLIRGenImpl
     {
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
+        // declaring function which is nested and object should not have this context (unless it is part of object declaration)
+        if (!functionDeclarationAST->parent && funcGenContext.thisType != nullptr)
+        {
+            funcGenContext.thisType = nullptr;
+        }
 
         mlir::OpBuilder::InsertionGuard guard(builder);
         auto res = mlirGenFunctionLikeDeclaration(functionDeclarationAST, funcGenContext);
