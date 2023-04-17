@@ -7058,6 +7058,16 @@ class MLIRGenImpl
 
             llvm_unreachable("not implemented (ElementAccessExpression)");
         }
+        else if (auto interfaceType = arrayType.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto attr = fieldName.value();
+                return mlirGenPropertyAccessExpression(location, expression, attr, genContext);
+            }
+
+            llvm_unreachable("not implemented (ElementAccessExpression)");
+        }        
         else
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: " << arrayType
