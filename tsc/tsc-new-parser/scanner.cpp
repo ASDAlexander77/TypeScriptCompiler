@@ -2280,7 +2280,7 @@ auto Scanner::checkBigIntSuffix() -> SyntaxKind
     {
         tokenValue += S("n");
         // Use base 10 instead of base 2 or base 8 for shorter literals
-        if (!!(tokenFlags & TokenFlags::BinaryOrOctalSpecifier))
+        if (!!(tokenFlags & (TokenFlags::BinaryOrOctalSpecifier | TokenFlags::HexSpecifier)))
         {
             tokenValue = parsePseudoBigInt(tokenValue) + S("n");
         }
@@ -2290,9 +2290,9 @@ auto Scanner::checkBigIntSuffix() -> SyntaxKind
     else
     { // not a bigint, so can convert to number in simplified form
         // Number() may not support 0b or 0o, so use stoi() instead
-        auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string_val(to_bignumber_base(tokenValue, 2))  // skip "0b"
+        auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string_val(to_bignumber_base(tokenValue.substr(2), 2))  // skip "0b"
                             : !!(tokenFlags & TokenFlags::OctalSpecifier) ? to_string_val(to_bignumber_base(string(S("0")) + tokenValue.substr(2), 8))  // skip "0o"
-                            : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string_val(to_bignumber_base(tokenValue, 16)) // skip "0x"
+                            : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string_val(to_bignumber_base(tokenValue.substr(2), 16))  // skip "0x"
                                                                           : to_string_val(to_bignumber(tokenValue));
         tokenValue = numericValue;
         return SyntaxKind::NumericLiteral;
@@ -2599,8 +2599,7 @@ auto Scanner::scan() -> SyntaxKind
                     error(data::DiagnosticMessage(Diagnostics::Binary_digit_expected));
                     tokenValue = S("0");
                 }
-                // tokenValue = S("0b") + tokenValue;
-                tokenValue = S("0") + tokenValue;
+                tokenValue = S("0b") + tokenValue;
                 tokenFlags |= TokenFlags::BinarySpecifier;
                 return token = checkBigIntSuffix();
             }
