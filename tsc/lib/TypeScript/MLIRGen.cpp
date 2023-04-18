@@ -1353,7 +1353,7 @@ class MLIRGenImpl
         funcGenContext.receiverFuncType = recieverType;
 
         mlir::OpBuilder::InsertionGuard guard(builder);
-        builder.restoreInsertionPoint(functionBeginPoint);
+        builder.setInsertionPointToStart(theModule.getBody());
 
         auto [result, funcOp] = getFuncArgTypesOfGenericMethod(funcDecl, {}, discoverReturnType, funcGenContext);
         if (mlir::failed(result))
@@ -1392,7 +1392,7 @@ class MLIRGenImpl
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
-            builder.restoreInsertionPoint(functionBeginPoint);
+            builder.setInsertionPointToStart(theModule.getBody());
 
             MLIRNamespaceGuard nsGuard(currentNamespace);
             currentNamespace = arrowFunctionGenericTypeInfo->elementNamespace;
@@ -3161,7 +3161,7 @@ class MLIRGenImpl
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
-            builder.restoreInsertionPoint(functionBeginPoint);
+            builder.setInsertionPointToStart(theModule.getBody());
 
             // provide name for it
             auto funcGenContext = GenContext(genContext);
@@ -3210,7 +3210,7 @@ class MLIRGenImpl
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
-            builder.restoreInsertionPoint(functionBeginPoint);
+            builder.setInsertionPointToStart(theModule.getBody());
 
             // provide name for it
             auto allowFuncGenContext = GenContext(genContext);
@@ -11540,7 +11540,7 @@ genContext);
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
-            builder.restoreInsertionPoint(functionBeginPoint);
+            builder.setInsertionPointToStart(theModule.getBody());
 
             GenContext funcGenContext(genContext);
             //funcGenContext.thisType = newClassPtr->classType;
@@ -15338,8 +15338,6 @@ genContext);
     // helper to get line number
     Parser parser;
     ts::SourceFile sourceFile;
-
-    mlir::OpBuilder::InsertPoint functionBeginPoint;
 
     std::string label;
 
