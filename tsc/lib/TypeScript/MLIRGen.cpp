@@ -3734,7 +3734,16 @@ class MLIRGenImpl
         {
             std::string paramName("p");
             paramName += std::to_string(index - firstIndex);
+            
             auto paramDecl = std::make_shared<VariableDeclarationDOM>(paramName, arguments[index].getType(), location);
+            
+            /*
+            mlir::Value paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(arguments[index].getType()),
+                                                              arguments[index], builder.getBoolAttr(false));
+            paramDecl->setReadWriteAccess();
+            
+            declare(paramDecl, paramValue, genContext, true);
+            */
             declare(paramDecl, arguments[index], genContext, true);
         }
 
@@ -3911,8 +3920,9 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef fullFuncName,
-                                            mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult()> funcBody,
-                                            const GenContext &genContext)
+                                            mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult()> funcBody,                                            
+                                            const GenContext &genContext,
+                                            int firstParam = 0)
     {
         if (theModule.lookupSymbol(fullFuncName))
         {
@@ -3936,7 +3946,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionParams(location, 0, arguments, genContext)))
+        if (failed(mlirGenFunctionParams(location, firstParam, arguments, genContext)))
         {
             return mlir::failure();
         }
@@ -11528,40 +11538,55 @@ genContext);
             return nullptr;
         }
 
-        // go to root
-        mlir::OpBuilder::InsertPoint savePoint = builder.saveInsertionPoint();
-        builder.setInsertionPointToStart(theModule.getBody());
-
-        GenContext funcGenContext(genContext);
-        //funcGenContext.thisType = newClassPtr->classType;
-
-        auto result = mlirGenFunctionBody(
-            location, fullClassStaticName, funcType,
-            [&]() {
-                NodeFactory nf(NodeFactoryFlags::None);
-                auto newInst = nf.createNewExpression(nf.createToken(SyntaxKind::ThisKeyword), undefined, undefined);
-                auto instRes = mlirGen(newInst, funcGenContext);
-                auto instVal = V(instRes);
-                auto castToRet = cast(location, retType, instVal, funcGenContext);
-                auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
-                if (retVarInfo.second)
-                {
-                    builder.create<mlir_ts::ReturnValOp>(location, castToRet, retVarInfo.first);
-                }
-                else
-                {
-                    return mlir::failure();
-                }
-
-                return mlir::success();
-            },
-            funcGenContext);        
-
-        builder.restoreInsertionPoint(savePoint);
-
-        if (mlir::failed(result))
         {
-            return nullptr;
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.restoreInsertionPoint(functionBeginPoint);
+
+            GenContext funcGenContext(genContext);
+            //funcGenContext.thisType = newClassPtr->classType;
+
+            auto result = mlirGenFunctionBody(
+                location, fullClassStaticName, funcType,
+                [&]() {
+                    NodeFactory nf(NodeFactoryFlags::None);
+
+                    NodeArray<Expression> argumentsArray;
+                    auto skip = 1;
+                    auto index = 0;
+                    for (auto &paramType : funcType.getInputs())
+                    {
+                        if (skip-- > 0) 
+                        {
+                            continue;
+                        }
+
+                        std::string paramName("p");
+                        paramName += std::to_string(index++);
+                        argumentsArray.push_back(nf.createIdentifier(stows(paramName)));
+                    }
+
+                    auto newInst = nf.createNewExpression(nf.createToken(SyntaxKind::ThisKeyword), undefined, argumentsArray);
+                    auto instRes = mlirGen(newInst, funcGenContext);
+                    auto instVal = V(instRes);
+                    auto castToRet = cast(location, retType, instVal, funcGenContext);
+                    auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
+                    if (retVarInfo.second)
+                    {
+                        builder.create<mlir_ts::ReturnValOp>(location, castToRet, retVarInfo.first);
+                    }
+                    else
+                    {
+                        return mlir::failure();
+                    }
+
+                    return mlir::success();
+                },
+                funcGenContext, 1/*to skip This*/);        
+
+            if (mlir::failed(result))
+            {
+                return nullptr;
+            }
         }
 
         // register method in info
