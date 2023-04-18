@@ -13282,6 +13282,71 @@ genContext);
             return getArrayType(getStringType());
         }
 
+        if (name == "const")
+        {
+            return getConstType();
+        }        
+
+        if (name == "Int8Array")
+        {
+            return getArrayType(builder.getIntegerType(8, true));
+        }
+
+        if (name == "Uint8Array")
+        {
+            return getArrayType(builder.getIntegerType(8, false));
+        }
+
+        if (name == "Int16Array")
+        {
+            return getArrayType(builder.getIntegerType(16, true));
+        }
+
+        if (name == "Uint16Array")
+        {
+            return getArrayType(builder.getIntegerType(16, false));
+        }        
+
+        if (name == "Int32Array")
+        {
+            return getArrayType(builder.getIntegerType(32, true));
+        }
+
+        if (name == "Uint32Array")
+        {
+            return getArrayType(builder.getIntegerType(32, false));
+        }      
+
+        if (name == "Float16Array")
+        {
+            return getArrayType(builder.getF16Type());
+        }          
+
+        if (name == "Float32Array")
+        {
+            return getArrayType(builder.getF32Type());
+        }          
+
+        if (name == "Float64Array")
+        {
+            return getArrayType(builder.getF64Type());
+        }          
+
+        if (name == "Float128Array")
+        {
+            return getArrayType(builder.getF128Type());
+        }          
+
+        if (name == "BigInt64Array")
+        {
+            return getArrayType(builder.getIntegerType(64, true));
+        }
+
+        if (name == "BigUint64Array")
+        {
+            return getArrayType(builder.getIntegerType(64, false));
+        }  
+
         return mlir::Type();
     }
 
@@ -14894,6 +14959,11 @@ genContext);
     {
         return mlir_ts::NeverType::get(builder.getContext());
     }
+
+    mlir_ts::ConstType getConstType()
+    {
+        return mlir_ts::ConstType::get(builder.getContext());
+    }    
 
     mlir_ts::SymbolType getSymbolType()
     {

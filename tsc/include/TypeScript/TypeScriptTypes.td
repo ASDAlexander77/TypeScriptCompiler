@@ -32,6 +32,10 @@ def TypeScript_Never : TypeScript_Type<"Never"> {
     let mnemonic = "never";
 }
 
+def TypeScript_Const : TypeScript_Type<"Const"> {
+    let mnemonic = "const";
+}
+
 def TypeScript_Symbol : TypeScript_Type<"Symbol"> {
     let mnemonic = "symbol";
 }
