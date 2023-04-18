@@ -11556,6 +11556,8 @@ genContext);
                     auto index = 0;
                     for (auto &paramType : funcType.getInputs())
                     {
+                        (void)paramType;
+
                         if (skip-- > 0) 
                         {
                             continue;

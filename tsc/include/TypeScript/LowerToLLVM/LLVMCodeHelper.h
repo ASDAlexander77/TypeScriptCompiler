@@ -650,7 +650,13 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         assert(isRefType || isBoundRefType);
 
         auto elementType = isRefType ? elementRefType.cast<mlir_ts::RefType>().getElementType()
-                                     : elementRefType.cast<mlir_ts::BoundRefType>().getElementType();
+                         : isBoundRefType ? elementRefType.cast<mlir_ts::BoundRefType>().getElementType()
+                         : mlir::Type();
+
+        if (!elementType)
+        {
+            return mlir::Value();
+        }
 
         auto ptrType = LLVM::LLVMPointerType::get(tch.convertType(elementType));
 
