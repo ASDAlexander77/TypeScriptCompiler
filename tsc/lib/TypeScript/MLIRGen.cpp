@@ -11543,6 +11543,7 @@ genContext);
             builder.setInsertionPointToStart(theModule.getBody());
 
             GenContext funcGenContext(genContext);
+            funcGenContext.clearScopeVars();
             //funcGenContext.thisType = newClassPtr->classType;
 
             auto result = mlirGenFunctionBody(
@@ -11567,8 +11568,10 @@ genContext);
 
                     auto newInst = nf.createNewExpression(nf.createToken(SyntaxKind::ThisKeyword), undefined, argumentsArray);
                     auto instRes = mlirGen(newInst, funcGenContext);
+                    EXIT_IF_FAILED(instRes);
                     auto instVal = V(instRes);
                     auto castToRet = cast(location, retType, instVal, funcGenContext);
+                    EXIT_IF_FAILED(castToRet);
                     auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
                     if (retVarInfo.second)
                     {
