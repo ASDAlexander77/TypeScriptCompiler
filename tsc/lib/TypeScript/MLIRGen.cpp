@@ -8256,12 +8256,56 @@ class MLIRGenImpl
 
         auto location = loc(newExpression);
 
+        auto newArray = [&](auto type, auto count) {
+            if (count.getType() != builder.getI32Type())
+            {
+                count = cast(location, builder.getI32Type(), count, genContext);
+            }
+
+            assert(type);
+            type = mth.convertConstTupleTypeToTupleType(type);
+
+            auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(type), count);
+            return newArrOp;
+        };
+
         // 3 cases, name, index access, method call
         mlir::Type type;
         auto typeExpression = newExpression->expression;
         if (typeExpression != SyntaxKind::ElementAccessExpression)
         {
             auto result = mlirGen(typeExpression, newExpression->typeArguments, genContext);
+            if (result.failed())
+            {
+                if (typeExpression == SyntaxKind::Identifier)
+                {
+                    auto name = MLIRHelper::getName(typeExpression.as<Identifier>());
+                    type = getEmbeddedType(name);
+                    if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
+                    {
+                        mlir::Value count;
+
+                        if (newExpression->arguments.size() == 0)
+                        {
+                            count = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerType(32, false), builder.getUI32IntegerAttr(0));
+                        }
+                        else if (newExpression->arguments.size() == 1)
+                        {
+                            auto result = mlirGen(newExpression->arguments.front(), genContext);
+                            EXIT_IF_FAILED_OR_NO_VALUE(result)
+                            count = V(result);           
+                        }
+                        else
+                        {
+                            llvm_unreachable("not implemented");
+                        }
+
+                        auto newArrOp = newArray(arrayType.getElementType(), count);
+                        return V(newArrOp);                     
+                    }
+                }
+            }
+
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto value = V(result);
 
@@ -8282,20 +8326,11 @@ class MLIRGenImpl
             typeExpression = elementAccessExpression->expression;
             type = getTypeByTypeName(typeExpression, genContext);
 
-            assert(type);
-
-            type = mth.convertConstTupleTypeToTupleType(type);
-
             auto result = mlirGen(elementAccessExpression->argumentExpression, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto count = V(result);
 
-            if (count.getType() != builder.getI32Type())
-            {
-                count = cast(location, builder.getI32Type(), count, genContext);
-            }
-
-            auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(type), count);
+            auto newArrOp = newArray(type, count);
             return V(newArrOp);
         }
     }
@@ -13266,7 +13301,7 @@ genContext);
         auto typeArgumentsSize = typeReferenceAST->typeArguments->size();
         if (typeArgumentsSize == 0)
         {
-            auto type = getEmbeddedType(name, typeReferenceAST, genContext);
+            auto type = getEmbeddedType(name);
             if (type)
             {
                 return type;
@@ -13294,7 +13329,7 @@ genContext);
         return getTypeByTypeName(typeReferenceAST->typeName, genContext);
     }
 
-    mlir::Type getEmbeddedType(mlir::StringRef name, TypeReferenceNode typeReferenceAST, const GenContext &genContext)
+    mlir::Type getEmbeddedType(mlir::StringRef name)
     {
         if (name == "TemplateStringsArray")
         {
