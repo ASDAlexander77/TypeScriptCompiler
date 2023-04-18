@@ -1,0 +1,2 @@
+call config_tools_release.bat
+call config_libs_release.bat

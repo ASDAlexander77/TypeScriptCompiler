@@ -87,7 +87,7 @@ include_directories(${PROJECT_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
-add_definitions(-D_ALLOW_ITERATOR_DEBUG_LEVEL_MISMATCH -D_CRT_SECURE_NO_WARNINGS -D_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
+add_definitions(-D_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
 
 # enabling testing
 enable_testing()
