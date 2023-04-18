@@ -164,7 +164,7 @@ function main() {
         }
     }
 
-    let car = { myCar: 'Saturn', getCar: /* TODO: // carTypes('Honda') */ 'Honda', special: sales };
+    let car = { myCar: 'Saturn', getCar: carTypes('Honda'), special: sales };
 
     print(car.myCar);   // Saturn
     print(car.getCar);  // Honda
