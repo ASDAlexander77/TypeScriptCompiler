@@ -12657,7 +12657,6 @@ genContext);
 
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
-
             mlir::Type baseType;
             if (mth.isUnionTypeNeedsTag(unionType, baseType))
             {
@@ -12674,6 +12673,25 @@ genContext);
                         }
                     }
                 }
+            }
+        }
+
+        if (auto constType = type.dyn_cast<mlir_ts::ConstType>())
+        {
+            // TODO: we can't convert array to const array
+
+            auto currType = value.getType();
+            if (auto refType = currType.dyn_cast<mlir_ts::RefType>())
+            {
+                type = refType.getElementType();        
+            }
+            else if (auto tupleType = currType.dyn_cast<mlir_ts::TupleType>())
+            {
+                type = mth.convertTupleTypeToConstTupleType(tupleType);                
+            }
+            else
+            {
+                return value;
             }
         }
 
