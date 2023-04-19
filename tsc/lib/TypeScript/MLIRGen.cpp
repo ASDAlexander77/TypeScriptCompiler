@@ -7345,9 +7345,8 @@ class MLIRGenImpl
         NodeArray<Expression> argumentsArray;
         argumentsArray.push_back(_v_ident);
 
-        auto _call_expr = nf.createCallExpression(_func_ident, undefined, argumentsArray);
-
-        auto _yield_expr = nf.createYieldExpression(undefined, _call_expr);
+        auto _yield_expr = nf.createYieldExpression(undefined,
+            nf.createCallExpression(_func_ident, undefined, argumentsArray));
         _yield_expr->pos.pos = pos;
         _yield_expr->_end = _end;
 
