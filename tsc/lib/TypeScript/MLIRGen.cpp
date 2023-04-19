@@ -8945,8 +8945,6 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
     {
-        // TODO: replace all Opaque with ThisType
-
         MLIRCodeLogic mcl(builder);
 
         // first value
@@ -9077,8 +9075,6 @@ class MLIRGenImpl
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.thisType = objThis;
-            // TOOD: when using storage type, do we need to rediscover?
-            funcGenContext.rediscover = true;
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object Process function with this type: " << objThis << "\n";);
 
