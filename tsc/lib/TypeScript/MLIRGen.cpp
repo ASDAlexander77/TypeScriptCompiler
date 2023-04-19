@@ -9056,9 +9056,6 @@ class MLIRGenImpl
             auto funcName = funcOp.getName().str();
             auto funcType = funcOp.getFunctionType();
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType: " << funcType << "\n";);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType - This: " << funcGenContext.thisType << "\n";);
-
             // process local vars in this context
             if (funcProto->getHasExtraFields())
             {
@@ -9073,12 +9070,7 @@ class MLIRGenImpl
                 }
             }
 
-            // recreate type with "this" param as "any"
-            auto newFuncType = mth.getFunctionTypeWithOpaqueThis(funcType, true);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Object with this as opaque: " << newFuncType << "\n";);
-
-            // place holder
-            addFuncFieldInfo(fieldId, funcName, newFuncType);
+            addFuncFieldInfo(fieldId, funcName, funcType);
         };
 
         auto processFunctionLike = [&](mlir_ts::ObjectType objThis, FunctionLikeDeclarationBase &funcLikeDecl) {
@@ -9318,29 +9310,6 @@ class MLIRGenImpl
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
                 processFunctionLike(objThis, funcLikeDecl);
-            }
-        }
-
-        // fix all method types again
-        for (auto &methodRef : methodInfos)
-        {
-            auto &methodInfo = fieldInfos[methodRef];
-            if (auto funcType = methodInfo.type.dyn_cast<mlir_ts::FunctionType>())
-            {
-                methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
-            }
-        }
-
-        // fix all method types again and load captured functions
-        for (auto &methodRefWithName : methodInfosWithCaptures)
-        {
-            auto funcName = std::get<0>(methodRefWithName);
-            auto methodRef = std::get<1>(methodRefWithName);
-            auto &methodInfo = fieldInfos[methodRef];
-
-            if (auto funcType = methodInfo.type.dyn_cast<mlir_ts::FunctionType>())
-            {
-                methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
             }
         }
 
