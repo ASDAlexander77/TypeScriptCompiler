@@ -460,6 +460,78 @@ def TypeScript_Object : TypeScript_Type<"Object"> {
   ];
 }
 
+def TypeScript_ObjectStorage : TypeScript_Type<"ObjectStorage", [IsMutable]> {
+  let mnemonic = "object_storage";
+
+  let summary = "Fixed-sized collection of other types for class";
+  let description = [{
+    Syntax:
+
+    ```
+    object-storage-type ::= `object_storage` `<` (type ( `,` type)*)? `>`
+    ```
+
+    The value of `object_storage` type represents a fixed-size collection of elements,
+    where each element may be of a different type.
+
+    Examples:
+
+    ```mlir
+    // Empty tuple.
+    object_storage<>
+
+    // Single element
+    object_storage<{f32}>
+
+    // Many elements.
+    object_storage<{i32}, {f32}, {tensor<i1>}, {i5}>
+    ```
+  }];
+  let parameters = (ins "FlatSymbolRefAttr":$name);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let extraClassDeclaration = [{
+    /// Return the number of held types.
+    size_t size() const {
+        return std::distance(begin(), end());
+    }
+
+    /// Iterate over the held elements.
+    using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
+    iterator begin() const { return getFields().begin(); }
+    iterator end() const { return getFields().end(); }
+
+    int getIndex(Attribute id)
+    {
+        auto dist = std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
+        return (signed)dist >= (signed)size() ? -1 : dist;
+    }
+
+    /// Return the element type at index 'index'.
+    ::mlir::typescript::FieldInfo getFieldInfo(size_t index) const {
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
+      return getFields()[index];
+    }
+
+    Attribute getId(size_t index) const {
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
+      return getFields()[index].id;
+    }
+
+    Type getType(size_t index) const {
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
+      return getFields()[index].type;
+    }
+
+    ::llvm::ArrayRef<::mlir::typescript::FieldInfo> getFields() const;
+    // Mutator
+    LogicalResult setFields(::llvm::ArrayRef<::mlir::typescript::FieldInfo> newFields);
+  }];
+
+  let genStorageClass = 0;
+}
+
 def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage", [IsMutable]> {
   let mnemonic = "class_storage";
 

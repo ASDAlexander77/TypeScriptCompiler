@@ -30,6 +30,51 @@ namespace typescript
 {
 namespace detail
 {
+struct ObjectStorageTypeStorage : public ::mlir::TypeStorage
+{
+    ObjectStorageTypeStorage(FlatSymbolRefAttr name) : name(name), fields({})
+    {
+    }
+
+    /// The hash key is a tuple of the parameter types.
+    using KeyTy = FlatSymbolRefAttr;
+    bool operator==(const KeyTy &tblgenKey) const
+    {
+        if (!(name == tblgenKey))
+            return false;
+        return true;
+    }
+    static ::llvm::hash_code hashKey(const KeyTy &tblgenKey)
+    {
+        return ::llvm::hash_combine(tblgenKey);
+    }
+
+    /// Define a construction method for creating a new instance of this storage.
+    static ObjectStorageTypeStorage *construct(::mlir::TypeStorageAllocator &allocator, const KeyTy &tblgenKey)
+    {
+        auto name = tblgenKey;
+
+        return new (allocator.allocate<ObjectStorageTypeStorage>()) ObjectStorageTypeStorage(name);
+    }
+
+    LogicalResult mutate(TypeStorageAllocator &allocator, ::llvm::ArrayRef<::mlir::typescript::FieldInfo> newFields)
+    {
+        // Cannot set a different body than before.
+        llvm::SmallVector<::mlir::typescript::FieldInfo, 4> tmpFields;
+
+        for (size_t i = 0, e = newFields.size(); i < e; ++i)
+            tmpFields.push_back(newFields[i].allocateInto(allocator));
+        auto copiedFields = allocator.copyInto(ArrayRef<::mlir::typescript::FieldInfo>(tmpFields));
+
+        fields = copiedFields;
+
+        return success();
+    }
+    
+    FlatSymbolRefAttr name;
+    ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
+};
+
 struct ClassStorageTypeStorage : public ::mlir::TypeStorage
 {
     ClassStorageTypeStorage(FlatSymbolRefAttr name) : name(name), fields({})
@@ -76,6 +121,22 @@ struct ClassStorageTypeStorage : public ::mlir::TypeStorage
 };
 } // namespace detail
 
+FlatSymbolRefAttr ObjectStorageType::getName() const
+{
+    return getImpl()->name;
+}
+
+::llvm::ArrayRef<::mlir::typescript::FieldInfo> ObjectStorageType::getFields() const
+{
+    return getImpl()->fields;
+}
+
+LogicalResult ObjectStorageType::setFields(::llvm::ArrayRef<::mlir::typescript::FieldInfo> newFields)
+{
+    return Base::mutate(newFields);
+}
+
+// ClassStorage
 FlatSymbolRefAttr ClassStorageType::getName() const
 {
     return getImpl()->name;

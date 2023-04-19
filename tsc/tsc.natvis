@@ -331,7 +331,9 @@
     </Expand>
   </Type>
 
-
+  <Type Name="ptr&lt;ts::data::TextRange&gt;">
+	<DisplayString>[{instance->pos}-{instance->_end}]</DisplayString>
+  </Type>
   <Type Name="ptr&lt;ts::data::Node&gt;">
 	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
   </Type>
@@ -344,6 +346,9 @@
   <Type Name="ptr&lt;ts::data::Declaration&gt;">
 	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
   </Type>
+  <Type Name="ptr&lt;ts::data::Block&gt;">
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
+  </Type>
   <Type Name="ptr&lt;ts::data::VariableDeclaration&gt;">
 	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] name={(*((ts::data::Identifier*)(*((ts::data::NamedDeclaration*)&amp;(*((ts::data::VariableDeclaration*)instance._Ptr)))).name.instance._Ptr)).escapedText}</DisplayString>
   </Type>
@@ -353,4 +358,14 @@
   <Type Name="ptr&lt;ts::data::NumericLiteral&gt;">
 	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] value={instance->text}</DisplayString>
   </Type>
+  <Type Name="ptr&lt;ts::data::ObjectLiteralExpression&gt;">
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
+  </Type>
+  <Type Name="ptr&lt;ts::data::FunctionLikeDeclarationBase&gt;">
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
+  </Type>
+  <Type Name="ptr&lt;ts::data::ReturnStatement&gt;">
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
+  </Type>
+
 </AutoVisualizer>

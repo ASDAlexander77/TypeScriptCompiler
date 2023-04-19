@@ -771,6 +771,10 @@ class MLIRPropertyAccessCodeLogic
         {
             return RefLogic(tupleType);
         }
+        else if (auto objectStorageType = objectType.getStorageType().template dyn_cast<mlir_ts::ObjectStorageType>())
+        {
+            return RefLogic(objectStorageType);
+        }        
         else
         {
             llvm_unreachable("not implemented");

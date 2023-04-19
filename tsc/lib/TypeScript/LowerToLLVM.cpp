@@ -4730,6 +4730,23 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMPointerType::get(converter.convertType(type.getStorageType()));
     });
 
+    converter.addConversion([&](mlir_ts::ObjectStorageType type) {
+        auto identStruct = LLVM::LLVMStructType::getIdentified(type.getContext(), type.getName().getValue());
+        if (!stack.contains(identStruct))
+        {
+            stack.insert(identStruct);
+            SmallVector<mlir::Type> convertedTypes;
+            for (auto subType : type.getFields())
+            {
+                convertedTypes.push_back(converter.convertType(subType.type));
+            }
+
+            identStruct.setBody(convertedTypes, false);
+        }
+
+        return identStruct;
+    });    
+
     converter.addConversion([&](mlir_ts::UnknownType type) {
         return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8));
     });

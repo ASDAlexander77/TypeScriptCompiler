@@ -3115,6 +3115,11 @@ class MLIRGenImpl
                     funcProto->setHasCapturedVars(true);
 
                     LLVM_DEBUG(llvm::dbgs() << "\n!! has captured vars, name: " << name << "\n";);
+
+                    LLVM_DEBUG(for (auto& var : passResult->outerVariables)
+                    {
+                        llvm::dbgs() << "\n!! ...captured var - name: " << var.second->getName() << ", type: " << var.second->getType() << "\n";
+                    });
                 }
 
                 if (passResult->extraFieldsInThisContext.size() > 0)
@@ -3313,7 +3318,7 @@ class MLIRGenImpl
         // add next statements
         // add default return with empty
         nextStatements.push_back(
-            nf.createReturnStatement(getYieldReturnObject(nf, nf.createIdentifier(S("undefined")), true)));
+            nf.createReturnStatement(getYieldReturnObject(nf, location, nf.createIdentifier(S("undefined")), true)));
 
         // create next body
         auto nextBody = nf.createBlock(nextStatements, /*multiLine*/ false);
@@ -3331,6 +3336,10 @@ class MLIRGenImpl
         generatorObjectProperties.push_back(nextMethodDecl);
 
         auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
+
+        // copy location info, to fix issue with names of anonymous functions
+        generatorObject->pos = functionLikeDeclarationBaseAST->pos;
+        generatorObject->_end = functionLikeDeclarationBaseAST->_end;
 
         // generator body
         NodeArray<Statement> generatorStatements;
@@ -4037,7 +4046,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    ObjectLiteralExpression getYieldReturnObject(NodeFactory &nf, Expression expr, bool stop)
+    ObjectLiteralExpression getYieldReturnObject(NodeFactory &nf, mlir::Location location, Expression expr, bool stop)
     {
         auto valueIdent = nf.createIdentifier(S("value"));
         auto doneIdent = nf.createIdentifier(S("done"));
@@ -4051,6 +4060,15 @@ class MLIRGenImpl
         retObjectProperties.push_back(doneProp);
 
         auto retObject = nf.createObjectLiteralExpression(retObjectProperties, stop);
+        
+        // copy location info, to fix issue with names of anonymous functions
+        auto [pos, _end] = getPos(location);
+
+        assert(pos != _end && pos > 0);
+
+        retObject->pos = pos;
+        retObject->_end = _end;        
+
         return retObject;
     };
 
@@ -4066,9 +4084,14 @@ class MLIRGenImpl
         declarations.push_back(nf.createVariableDeclaration(_v_ident));
         auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
 
+        auto _yield_expr = nf.createYieldExpression(undefined, _v_ident);
+        // copy location info, to fix issue with names of anonymous functions
+        _yield_expr->pos = yieldExpressionAST->pos;
+        _yield_expr->_end = yieldExpressionAST->_end;
+
         auto forOfStat =
             nf.createForOfStatement(undefined, declList, yieldExpressionAST->expression,
-                                    nf.createExpressionStatement(nf.createYieldExpression(undefined, _v_ident)));
+                                    nf.createExpressionStatement(_yield_expr));
 
         return mlirGen(forOfStat, genContext);
     }
@@ -4112,7 +4135,7 @@ class MLIRGenImpl
         mlirGen(setStateExpr, genContext);
 
         // return value
-        auto yieldRetValue = getYieldReturnObject(nf, yieldExpressionAST->expression, false);
+        auto yieldRetValue = getYieldReturnObject(nf, location, yieldExpressionAST->expression, false);
         auto result = mlirGen(yieldRetValue, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto yieldValue = V(result);
@@ -7299,6 +7322,8 @@ class MLIRGenImpl
         auto arraySrc = operands[0];
         auto funcSrc = operands[1];
 
+        auto [pos, _end] = getPos(location);
+
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
         declare(srcArrayVarDecl, arraySrc, genContext);
@@ -7312,7 +7337,7 @@ class MLIRGenImpl
         auto _func_ident = nf.createIdentifier(S("_func_"));
 
         auto _v_ident = nf.createIdentifier(S("_v_"));
-
+        
         NodeArray<VariableDeclaration> declarations;
         declarations.push_back(nf.createVariableDeclaration(_v_ident));
         auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
@@ -7320,10 +7345,15 @@ class MLIRGenImpl
         NodeArray<Expression> argumentsArray;
         argumentsArray.push_back(_v_ident);
 
+        auto _call_expr = nf.createCallExpression(_func_ident, undefined, argumentsArray);
+
+        auto _yield_expr = nf.createYieldExpression(undefined, _call_expr);
+        _yield_expr->pos.pos = pos;
+        _yield_expr->_end = _end;
+
         auto forOfStat =
             nf.createForOfStatement(undefined, declList, _src_array_ident,
-                                    nf.createExpressionStatement(nf.createYieldExpression(
-                                        undefined, nf.createCallExpression(_func_ident, undefined, argumentsArray))));
+                                    nf.createExpressionStatement(_yield_expr));
 
         // iterator
         auto iterName = MLIRHelper::getAnonymousName(location, "_iter_");
@@ -7334,8 +7364,9 @@ class MLIRGenImpl
         auto funcIter =
             nf.createFunctionExpression(undefined, nf.createToken(SyntaxKind::AsteriskToken),
                                         nf.createIdentifier(ConvertUTF8toWide(iterName)), undefined, undefined, undefined, block);
-        funcIter->pos.pos = 1;
-        funcIter->_end = 2;
+
+        funcIter->pos.pos = pos;
+        funcIter->_end = _end;
 
         // call
         NodeArray<Expression> emptyArguments;
@@ -7373,10 +7404,16 @@ class MLIRGenImpl
         NodeArray<Expression> argumentsArray;
         argumentsArray.push_back(_v_ident);
 
+        auto [pos, _end] = getPos(location);
+
+        auto _yield_expr = nf.createYieldExpression(undefined, _v_ident);
+        _yield_expr->pos.pos = pos;
+        _yield_expr->_end = _end;
+
         auto forOfStat = nf.createForOfStatement(
             undefined, declList, _src_array_ident,
             nf.createIfStatement(nf.createCallExpression(_func_ident, undefined, argumentsArray),
-                                 nf.createExpressionStatement(nf.createYieldExpression(undefined, _v_ident)),
+                                 nf.createExpressionStatement(_yield_expr),
                                  undefined));
 
         // iterator
@@ -7388,8 +7425,8 @@ class MLIRGenImpl
         auto funcIter =
             nf.createFunctionExpression(undefined, nf.createToken(SyntaxKind::AsteriskToken),
                                         nf.createIdentifier(ConvertUTF8toWide(iterName)), undefined, undefined, undefined, block);
-        funcIter->pos.pos = 1;
-        funcIter->_end = 2;
+        funcIter->pos.pos = pos;
+        funcIter->_end = _end;
 
         // call
         NodeArray<Expression> emptyArguments;
@@ -8924,23 +8961,20 @@ class MLIRGenImpl
 
         auto location = loc(objectLiteral);
 
+        // Object This Type
+        auto name = MLIRHelper::getAnonymousName(loc_check(objectLiteral), ".obj");
+        auto objectNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), name);
+        auto objectStorageType = getObjectStorageType(objectNameSymbol);
+        auto objThis = getObjectType(objectStorageType);
+        
         auto addFuncFieldInfo = [&](mlir::Attribute fieldId, const std::string &funcName,
                                     mlir_ts::FunctionType funcType) {
             auto type = funcType;
 
-            auto captureVars = getCaptureVarsMap().find(funcName);
-            auto hasCaptures = captureVars != getCaptureVarsMap().end();
-            if (hasCaptures)
-            {
-                values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
-            }
-            else
-            {
-                values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
-            }
-
+            values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
             fieldInfos.push_back({fieldId, type});
-            if (hasCaptures)
+
+            if (getCaptureVarsMap().find(funcName) != getCaptureVarsMap().end())
             {
                 methodInfosWithCaptures.push_back({funcName, fieldInfos.size() - 1});
             }
@@ -9009,7 +9043,7 @@ class MLIRGenImpl
         auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) {
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
-            funcGenContext.thisType = getObjectType(getConstTupleType(fieldInfos));
+            funcGenContext.thisType = objThis;
 
             funcLikeDecl->parent = objectLiteral;
 
@@ -9052,7 +9086,10 @@ class MLIRGenImpl
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.thisType = objThis;
+            // TOOD: when using storage type, do we need to rediscover?
             funcGenContext.rediscover = true;
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Object Process function with this type: " << objThis << "\n";);
 
             funcLikeDecl->parent = objectLiteral;
 
@@ -9140,7 +9177,12 @@ class MLIRGenImpl
                 // read all fields
                 for (auto pair : llvm::zip(fields, res.results()))
                 {
-                    addFieldInfo(std::get<0>(pair).id, std::get<1>(pair), receiverType ? getTypeByFieldNameFromReceiverType(std::get<0>(pair).id, receiverType) : mlir::Type());
+                    addFieldInfo(
+                        std::get<0>(pair).id, 
+                        std::get<1>(pair), 
+                        receiverType 
+                            ? getTypeByFieldNameFromReceiverType(std::get<0>(pair).id, receiverType) 
+                            : mlir::Type());
                 }
 
                 continue;
@@ -9154,6 +9196,9 @@ class MLIRGenImpl
 
             addFieldInfo(fieldId, itemValue, receiverElementType);
         }
+
+        // update after processing all fields
+        objectStorageType.setFields(fieldInfos);
 
         // process all methods
         for (auto &item : objectLiteral->properties)
@@ -9240,9 +9285,8 @@ class MLIRGenImpl
             addFieldInfo(MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue, mlir::Type());
         }
 
-        // final type
-        auto constTupleType = getConstTupleType(fieldInfos);
-        auto objThis = getObjectType(constTupleType);
+        // final type, update
+        objectStorageType.setFields(fieldInfos);
 
         // process all methods
         for (auto &item : objectLiteral->properties)
@@ -9297,7 +9341,6 @@ class MLIRGenImpl
 
             if (auto funcType = methodInfo.type.dyn_cast<mlir_ts::FunctionType>())
             {
-
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
             }
         }
@@ -9464,6 +9507,7 @@ class MLIRGenImpl
                                               SmallVector<mlir::Value> capturedValues, const GenContext &genContext)
     {
         LLVM_DEBUG(for (auto &val : capturedValues) llvm::dbgs() << "\n!! captured val: " << val << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! captured type: " << capturedType << "\n";);
 
         // add attributes to track which one sent by ref.
         auto captured = builder.create<mlir_ts::CaptureOp>(location, capturedType, capturedValues);
@@ -9478,8 +9522,6 @@ class MLIRGenImpl
         auto captureVars = getCaptureVarsMap().find(name);
         if (captureVars != getCaptureVarsMap().end())
         {
-            auto newFuncType = getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
-
             auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
                 location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
             if (addGenericAttrFlag)
@@ -9488,7 +9530,7 @@ class MLIRGenImpl
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! func with capture: first type: [ " << funcType.getInput(0)
-                                    << " ], func name: " << name << " func type: " << funcType << "\n");
+                                    << " ], \n\tfunc name: " << name << " \n\tfunc type: " << funcType << "\n");
 
             SmallVector<mlir::Value> capturedValues;
             if (mlir::failed(mlirGenResolveCapturedVars(location, captureVars->getValue(), capturedValues, genContext)))
@@ -9496,7 +9538,15 @@ class MLIRGenImpl
                 return mlir::Value();
             }
 
-            auto result = mlirGenCreateCapture(location, funcType.getInput(0), capturedValues, genContext);
+            MLIRCodeLogic mcl(builder);
+
+            auto captureType = mcl.CaptureType(captureVars->getValue());
+            if (!genContext.allowPartialResolve)
+            {
+                assert(captureType == funcType.getInput(0));
+            }
+
+            auto result = mlirGenCreateCapture(location, captureType, capturedValues, genContext);
             auto captured = V(result);
             auto opaqueTypeValue = cast(location, getOpaqueType(), captured, genContext);
             return builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
@@ -14209,6 +14259,11 @@ genContext);
         return mlir_ts::EnumType::get(elementType);
     }
 
+    mlir_ts::ObjectStorageType getObjectStorageType(mlir::FlatSymbolRefAttr name)
+    {
+        return mlir_ts::ObjectStorageType::get(builder.getContext(), name);
+    }
+
     mlir_ts::ClassStorageType getClassStorageType(mlir::FlatSymbolRefAttr name)
     {
         return mlir_ts::ClassStorageType::get(builder.getContext(), name);
@@ -15359,6 +15414,46 @@ genContext);
         auto end =
             mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
         return mlir::FusedLoc::get(builder.getContext(), {begin, end});
+    }
+
+    size_t getPos(mlir::FileLineColLoc location)
+    {
+        return location.getLine() + location.getColumn();
+    }
+
+    std::pair<size_t, size_t> getPos(mlir::FusedLoc location)
+    {
+        auto pos = 0;
+        auto _end = 0;
+
+        auto locs = location.getLocations();
+        if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
+        {
+            pos = getPos(fileLineColLoc);
+        }
+        
+        if (auto fileLineColLoc = locs[1].dyn_cast<mlir::FileLineColLoc>())
+        {
+            _end = getPos(fileLineColLoc);
+        }
+            
+        return {pos, _end};
+    }
+
+    std::pair<size_t, size_t> getPos(mlir::Location location)
+    {
+        auto pos = 0;
+        auto _end = 0;
+
+        mlir::TypeSwitch<mlir::LocationAttr>(location)
+            .Case<mlir::FusedLoc>([&](auto locParam) {
+                auto [pos_, _end_] = getPos(locParam);
+                pos = pos_;
+                _end = _end_;
+            }
+        );       
+            
+        return {pos, _end};
     }
 
     mlir::StringAttr getStringAttr(const std::string &text)
