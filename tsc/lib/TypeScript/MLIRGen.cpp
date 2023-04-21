@@ -9159,6 +9159,14 @@ class MLIRGenImpl
                     .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
                     .template Case<mlir_ts::ConstTupleType>(
                         [&](auto constTupleType) { fields = constTupleType.getFields(); })
+                    .template Case<mlir_ts::InterfaceType>(
+                        [&](auto interfaceType) { 
+                            mlir::SmallVector<mlir_ts::FieldInfo> destFields;
+                            if (mlir::succeeded(mth.getFields(interfaceType, destFields)))
+                            {
+                                fields = destFields;
+                            }
+                        })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
                 SmallVector<mlir::Type> types;
@@ -13639,6 +13647,13 @@ genContext);
             return OmitTypes(sourceType, keysType);
         }
 
+        if (name == "Record")
+        {
+            auto keysType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            auto sourceType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            return RecordType(keysType, sourceType);
+        }
+
         return mlir::Type();
     }
 
@@ -13741,6 +13756,40 @@ genContext);
         }
 
         return getUnionType(resTypes);
+    }
+
+    mlir::Type RecordType(mlir::Type keys, mlir::Type valueType)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Record: " << valueType << ", keys: " << keys << "\n";);
+        
+        SmallVector<mlir_ts::FieldInfo> fields;
+
+        auto addTypeProcessKey = [&](mlir::Type keyType)
+        {
+            // get string
+            if (auto litType = keyType.dyn_cast<mlir_ts::LiteralType>())
+            {
+                fields.push_back({ litType.getValue(), valueType });
+            }
+        };
+
+        if (auto unionType = keys.dyn_cast<mlir_ts::UnionType>())
+        {
+            for (auto keyType : unionType.getTypes())
+            {
+                addTypeProcessKey(keyType);
+            }
+        }
+        else if (auto litType = keys.dyn_cast<mlir_ts::LiteralType>())
+        {
+            addTypeProcessKey(litType);
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }        
+
+        return getTupleType(fields);
     }
 
     mlir::Type PickTypes(mlir::Type type, mlir::Type keys)
@@ -14263,6 +14312,7 @@ genContext);
         // PTR(TypeNode) type;
 
         auto typeParam = processTypeParameter(mappedTypeNode->typeParameter, genContext);
+        auto hasNameType = !!mappedTypeNode->nameType;
 
         auto constrainType = getType(typeParam->getConstraint(), genContext);
         if (!constrainType)
@@ -14277,77 +14327,86 @@ genContext);
             return getMappedType(type, nameType, constrainType);
         }
 
-        if (auto unionType = constrainType.dyn_cast<mlir_ts::UnionType>())
-        {
-            auto hasNameType = !!mappedTypeNode->nameType;
+        auto processKeyItem = [&] (mlir::SmallVector<mlir_ts::FieldInfo> &fields, mlir::Type typeParamItem) {
+            const_cast<GenContext &>(genContext)
+                .typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, typeParamItem)});
 
-            SmallVector<mlir_ts::FieldInfo> fields;
-            for (auto typeParamItem : unionType.getTypes())
+            auto type = getType(mappedTypeNode->type, genContext);
+
+            mlir::Type nameType = typeParamItem;
+            if (hasNameType)
             {
-                const_cast<GenContext &>(genContext)
-                    .typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, typeParamItem)});
+                nameType = getType(mappedTypeNode->nameType, genContext);
+            }
 
-                auto type = getType(mappedTypeNode->type, genContext);
+            // remove type param
+            const_cast<GenContext &>(genContext).typeParamsWithArgs.erase(typeParam->getName());
 
-                mlir::Type nameType = typeParamItem;
-                if (hasNameType)
+            LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... \n\t type param: [" << typeParam->getName()
+                                    << " \n\t\tconstraint item: " << typeParamItem << ", \n\t\tname: " << nameType
+                                    << "] \n\ttype: " << type << "\n";);
+
+            if (isNoneType(nameType) || nameType.isa<mlir_ts::NeverType>())
+            {
+                // filterting out
+                LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... filtered.\n";);
+                return;
+            }
+
+            if (auto literalType = nameType.dyn_cast<mlir_ts::LiteralType>())
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... name: " << literalType << " type: " << type << "\n";);
+                fields.push_back({literalType.getValue(), type});
+            }
+            else
+            {
+                auto nameSubType = nameType.dyn_cast<mlir_ts::UnionType>();
+                auto subType = type.dyn_cast<mlir_ts::UnionType>();
+                if (nameSubType && subType)
                 {
-                    nameType = getType(mappedTypeNode->nameType, genContext);
-                }
+                    for (auto pair : llvm::zip(nameSubType, subType))
+                    {
+                        if (auto literalType = std::get<0>(pair).dyn_cast<mlir_ts::LiteralType>())
+                        {
+                            auto mappedType = std::get<1>(pair);
 
-                // remove type param
-                const_cast<GenContext &>(genContext).typeParamsWithArgs.erase(typeParam->getName());
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... \n\t type param: [" << typeParam->getName()
-                                        << " \n\t\tconstraint item: " << typeParamItem << ", \n\t\tname: " << nameType
-                                        << "] \n\ttype: " << type << "\n";);
-
-                if (isNoneType(nameType) || nameType.isa<mlir_ts::NeverType>())
-                {
-                    // filterting out
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... filtered.\n";);
-                    continue;
-                }
-
-                if (auto literalType = nameType.dyn_cast<mlir_ts::LiteralType>())
-                {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... name: " << literalType << " type: " << type << "\n";);
-                    fields.push_back({literalType.getValue(), type});
+                            LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... name: " << literalType << " type: " << mappedType << "\n";);
+                            fields.push_back({literalType.getValue(), mappedType});
+                        }
+                        else
+                        {
+                            llvm_unreachable("not implemented");
+                        }
+                    }
                 }
                 else
                 {
-                    auto nameSubType = nameType.dyn_cast<mlir_ts::UnionType>();
-                    auto subType = type.dyn_cast<mlir_ts::UnionType>();
-                    if (nameSubType && subType)
-                    {
-                        for (auto pair : llvm::zip(nameSubType, subType))
-                        {
-                            if (auto literalType = std::get<0>(pair).dyn_cast<mlir_ts::LiteralType>())
-                            {
-                                auto mappedType = std::get<1>(pair);
-
-                                LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... name: " << literalType << " type: " << mappedType << "\n";);
-                                fields.push_back({literalType.getValue(), mappedType});
-                            }
-                            else
-                            {
-                                llvm_unreachable("not implemented");
-                            }
-                        }
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
-                    }
+                    llvm_unreachable("not implemented");
                 }
             }
+        };
 
-            return getTupleType(fields);
+        SmallVector<mlir_ts::FieldInfo> fields;
+        if (auto unionType = constrainType.dyn_cast<mlir_ts::UnionType>())
+        {
+            for (auto typeParamItem : unionType.getTypes())
+            {
+                processKeyItem(fields, typeParamItem);
+            }
+        }
+        else if (auto litType = constrainType.dyn_cast<mlir_ts::LiteralType>())
+        {
+            processKeyItem(fields, litType);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... not implemented for: " << constrainType << ".\n";);
+        if (fields.size() == 0)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... not implemented for: " << constrainType << ".\n";);
+            llvm_unreachable("not implemented yet");
+            //return mlir::Type();
+        }
 
-        llvm_unreachable("not implemented yet");
+        return getTupleType(fields);            
     }
 
     mlir_ts::VoidType getVoidType()

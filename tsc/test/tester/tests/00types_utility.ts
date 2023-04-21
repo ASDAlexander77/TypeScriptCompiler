@@ -21,6 +21,13 @@ interface Todo2 {
 
 type TodoPreview2 = Omit<Todo2, "description">;
 
+interface CatInfo {
+    age: number;
+    breed: string;
+  }
+   
+type CatName = "miffy" | "boris" | "mordred";
+
 function main() {
     let fiveToHex: OmitThisParameter<typeof toHex>;
 
@@ -42,5 +49,14 @@ function main() {
     assert(!todo2.completed);
     assert(todo2.createdAt === <number>1615544252770);
 
+	const cats: Record<CatName, CatInfo> = {
+        miffy: { age: 10, breed: "Persian" },
+        boris: { age: 5, breed: "Maine Coon" },
+        mordred: { age: 16, breed: "British Shorthair" },
+      };
+  
+    print(cats.boris.breed);
+    assert(cats.boris.breed == "Maine Coon");
+  
     print("done.");
 }
