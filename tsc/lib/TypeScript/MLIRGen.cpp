@@ -1452,7 +1452,7 @@ class MLIRGenImpl
 
             auto [result, hasAnyNamedGenericType] =
                 zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam,
-                                             inferredType, false, genericTypeGenContext);
+                                             inferredType, false, genericTypeGenContext, true);
             if (mlir::failed(result))
             {
                 return mlir::failure();
@@ -9886,8 +9886,6 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
     {
-        auto typeAliasGenContext = GenContext(genContext);
-
         auto namePtr = MLIRHelper::getName(typeAliasDeclarationAST->name, stringAllocator);
         if (!namePtr.empty())
         {
@@ -9895,7 +9893,7 @@ class MLIRGenImpl
             {
                 llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
                 if (mlir::failed(
-                        processTypeParameters(typeAliasDeclarationAST->typeParameters, typeParameters, typeAliasGenContext)))
+                        processTypeParameters(typeAliasDeclarationAST->typeParameters, typeParameters, genContext)))
                 {
                     return mlir::failure();
                 }
@@ -9904,6 +9902,7 @@ class MLIRGenImpl
             }
             else
             {
+                GenContext typeAliasGenContext(genContext);
                 auto type = getType(typeAliasDeclarationAST->type, typeAliasGenContext);
                 if (!type)
                 {
@@ -13082,7 +13081,7 @@ genContext);
     std::pair<mlir::LogicalResult, bool> zipTypeParameterWithArgument(
         mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
         const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, bool noExtendTest,
-        const GenContext &genContext)
+        const GenContext &genContext, bool mergeTypes = false)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! assigning generic type: " << typeParam->getName() << " type: " << type
                                 << "\n";);
@@ -13124,19 +13123,20 @@ genContext);
         auto existType = pairs.lookup(name);
         if (existType.second)
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! replacing existing type for: " << name
-                                    << " exist type: " << existType.second << " new type: " << type << "\n";);
-
-            // TODO: find out how in code "[1, 2, 3].reduce" can be added Generic Type if we have filter here
-            if (!existType.second.isa<mlir_ts::NamedGenericType>())
+            if (existType.second != type)
             {
-                type = mth.mergeType(existType.second, type);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! replacing existing type for: " << name
+                                        << " exist type: " << existType.second << " new type: " << type << "\n";);
+
+                if (!existType.second.isa<mlir_ts::NamedGenericType>() && mergeTypes)
+                {
+                    type = mth.mergeType(existType.second, type);
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! result (after merge) type: " << type << "\n";);
+                }
+
+                // TODO: Do I need to join types?
+                pairs[name] = std::make_pair(typeParam, type);
             }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << type << "\n";);
-
-            // TODO: Do I need to join types?
-            pairs[name] = std::make_pair(typeParam, type);
         }
         else
         {
@@ -13266,7 +13266,7 @@ genContext);
 
             auto [result, hasAnyNamedGenericType] =
                 zipTypeParametersWithArguments(loc(typeReferenceAST), typeParams, typeReferenceAST->typeArguments,
-                                               genericTypeGenContext.typeParamsWithArgs, genContext);
+                                               genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
 
             if (hasAnyNamedGenericType)
             {
