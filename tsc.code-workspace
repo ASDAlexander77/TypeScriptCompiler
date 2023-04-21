@@ -151,19 +151,9 @@
         },
         "cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
         "cmake.sourceDirectory": "${workspaceFolder}/..",
-        "cmake.parallelJobs": 4,
-        "clang-tidy.compilerArgs": [
-            "-I../include",
-            "-I../../3rdParty/llvm/debug/include",
-            "-I../../__build/tsc/include",
-        ],
-        "clang-tidy.checks": [
-            "performance-*"
-        ],
-        "clang-tidy.buildPath": "../../__build/tsc",
+        "cmake.parallelJobs": 16,
+        "cmake.ctestArgs": ["--parallel", "16"],
         "C_Cpp.codeAnalysis.clangTidy.headerFilter": ".*",
-        "clang-tidy.lintOnSave": false,
-        "clang-format.language.cpp.style": "Microsoft",
         "editor.defaultFormatter": "xaver.clang-format",
         "[cpp]": {
             "editor.defaultFormatter": "xaver.clang-format"
@@ -174,7 +164,6 @@
         "[jsonc]": {
             "editor.defaultFormatter": "vscode.json-language-features"
         },
-        "powershell.cwd": "c:\\dev\\TypeScriptCompiler\\tsc\\lib",
         "git.openRepositoryInParentFolders": "always",
         "[typescript]": {
             "editor.defaultFormatter": "vscode.typescript-language-features"
