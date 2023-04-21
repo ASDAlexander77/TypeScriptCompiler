@@ -13095,6 +13095,16 @@ genContext);
             auto constraintType = getType(typeParam->getConstraint(), genContext);
             if (!mth.extendsType(type, constraintType, pairs))
             {
+                LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does not satisfy the constraint "
+                                        << constraintType << ".";);
+
+                // special case when we work with generic type(which are not specialized yet)
+                if (mth.isGenericType(type))
+                {
+                    pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
+                    return {mlir::success(), true};                    
+                }
+
                 emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
                                         << constraintType << ".";
                 return {mlir::failure(), false};
