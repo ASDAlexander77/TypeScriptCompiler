@@ -13101,6 +13101,12 @@ genContext);
         if (!noExtendTest && typeParam->hasConstraint())
         {
             auto constraintType = getType(typeParam->getConstraint(), genContext);
+            if (!constraintType)
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed.\n";);
+                return {mlir::failure(), false};
+            }
+
             if (!mth.extendsType(type, constraintType, pairs))
             {
                 LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does not satisfy the constraint "
@@ -13741,26 +13747,35 @@ genContext);
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! Pick: " << type << ", keys: " << keys << "\n";);
 
-        SmallVector<mlir_ts::FieldInfo> pickedFields;
-
-        SmallVector<mlir_ts::FieldInfo> fields;
-
-        auto pickTypesProcessKey = [&](mlir::Type keyType)
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
-            // get string
-            if (auto litType = keyType.dyn_cast<mlir_ts::LiteralType>())
+            SmallVector<mlir::Type> pickedTypes;
+            for (auto subType : unionType)
             {
-                // find field
-                auto found = std::find_if(fields.begin(), fields.end(), [&] (auto& item) { return item.id == litType.getValue(); });
-                if (found != fields.end())
-                {
-                    pickedFields.push_back(*found);
-                }
+                pickedTypes.push_back(PickTypes(subType, keys));
             }
-        };
 
+            return getUnionType(pickedTypes);
+        }
+
+        SmallVector<mlir_ts::FieldInfo> pickedFields;
+        SmallVector<mlir_ts::FieldInfo> fields;
         if (mlir::succeeded(mth.getFields(type, fields)))
         {
+            auto pickTypesProcessKey = [&](mlir::Type keyType)
+            {
+                // get string
+                if (auto litType = keyType.dyn_cast<mlir_ts::LiteralType>())
+                {
+                    // find field
+                    auto found = std::find_if(fields.begin(), fields.end(), [&] (auto& item) { return item.id == litType.getValue(); });
+                    if (found != fields.end())
+                    {
+                        pickedFields.push_back(*found);
+                    }
+                }
+            };
+
             if (auto unionType = keys.dyn_cast<mlir_ts::UnionType>())
             {
                 for (auto keyType : unionType.getTypes())
@@ -13908,15 +13923,22 @@ genContext);
 
     mlir::Type getKeyOf(TypeOperatorNode typeOperatorNode, const GenContext &genContext)
     {
-        // this is "keyof"
-        // TODO: finish it
+        auto location = loc(typeOperatorNode);
+
         auto type = getType(typeOperatorNode->type, genContext);
         if (!type)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! can't take 'keyof'\n";);
-            emitError(loc(typeOperatorNode), "can't take keyof");
-            return type;
+            emitError(location, "can't take keyof");
+            return mlir::Type();
         }
+
+        return getKeyOf(location, type, genContext);
+    }
+
+    mlir::Type getKeyOf(mlir::Location location, mlir::Type type, const GenContext &genContext)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! 'keyof' from: " << type << "\n";);
 
         if (type.isa<mlir_ts::AnyType>())
         {
@@ -13979,6 +14001,18 @@ genContext);
             return getUnionType(literalTypes);
         }
 
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            SmallVector<mlir::Type> literalTypes;
+            for (auto subType : unionType.getTypes())
+            {
+                auto keyType = getKeyOf(location, subType, genContext);
+                literalTypes.push_back(keyType);
+            }
+
+            return getUnionType(literalTypes);
+        }
+
         if (auto namedGenericType = type.dyn_cast<mlir_ts::NamedGenericType>())
         {
             return getKeyOfType(namedGenericType);
@@ -13986,7 +14020,7 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! can't take 'keyof' from: " << type << "\n";);
 
-        emitError(loc(typeOperatorNode), "can't take keyof: ") << type;
+        emitError(location, "can't take keyof: ") << type;
 
         return mlir::Type();
     }
@@ -14264,9 +14298,9 @@ genContext);
                 // remove type param
                 const_cast<GenContext &>(genContext).typeParamsWithArgs.erase(typeParam->getName());
 
-                LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... type param: [" << typeParam->getName()
-                                        << " constraint item: " << typeParamItem << ", name: " << nameType
-                                        << "] type: " << type << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... \n\t type param: [" << typeParam->getName()
+                                        << " \n\t\tconstraint item: " << typeParamItem << ", \n\t\tname: " << nameType
+                                        << "] \n\ttype: " << type << "\n";);
 
                 if (isNoneType(nameType) || nameType.isa<mlir_ts::NeverType>())
                 {
@@ -14275,8 +14309,37 @@ genContext);
                     continue;
                 }
 
-                auto literalType = nameType.cast<mlir_ts::LiteralType>();
-                fields.push_back({literalType.getValue(), type});
+                if (auto literalType = nameType.dyn_cast<mlir_ts::LiteralType>())
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... name: " << literalType << " type: " << type << "\n";);
+                    fields.push_back({literalType.getValue(), type});
+                }
+                else
+                {
+                    auto nameSubType = nameType.dyn_cast<mlir_ts::UnionType>();
+                    auto subType = type.dyn_cast<mlir_ts::UnionType>();
+                    if (nameSubType && subType)
+                    {
+                        for (auto pair : llvm::zip(nameSubType, subType))
+                        {
+                            if (auto literalType = std::get<0>(pair).dyn_cast<mlir_ts::LiteralType>())
+                            {
+                                auto mappedType = std::get<1>(pair);
+
+                                LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... name: " << literalType << " type: " << mappedType << "\n";);
+                                fields.push_back({literalType.getValue(), mappedType});
+                            }
+                            else
+                            {
+                                llvm_unreachable("not implemented");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+                }
             }
 
             return getTupleType(fields);
