@@ -89,7 +89,9 @@ else()
 endif()
 
 
-######## enable testing ############                     
+######## enable testing ############                  
+# open __build\tsc   
+# ctest.exe -j4 -C Release -T test --output-on-failure
 add_test(NAME test-compile-00-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
 add_test(NAME test-compile-00-enums COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00enum.ts")

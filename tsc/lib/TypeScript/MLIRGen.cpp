@@ -14685,7 +14685,7 @@ genContext);
             auto type = getType(typeItem, genContext);
             if (!type)
             {
-                return getNeverType();
+                return mlir::Type();
             }
 
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
