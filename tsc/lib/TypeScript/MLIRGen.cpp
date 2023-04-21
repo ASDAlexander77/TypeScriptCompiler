@@ -8930,6 +8930,15 @@ class MLIRGenImpl
             }
         }
 
+        if (auto constTupleType = receiverType.dyn_cast<mlir_ts::ConstTupleType>())
+        {
+            auto index = constTupleType.getIndex(fieldName);
+            if (index >= 0)
+            {
+                return constTupleType.getType(index);
+            }
+        }
+
         if (auto interfaceType = receiverType.dyn_cast<mlir_ts::InterfaceType>())
         {
             auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
@@ -13431,7 +13440,6 @@ genContext);
         // can be utility type
         if (name == "TypeOf")
         {
-
             auto type = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
             type = mth.wideStorageType(type);
             return type;
@@ -13611,6 +13619,20 @@ genContext);
             return ExtractTypes(firstType, secondType);
         }
 
+        if (name == "Pick")
+        {
+            auto sourceType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            auto keysType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            return PickTypes(sourceType, keysType);
+        }
+
+        if (name == "Omit")
+        {
+            auto sourceType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            auto keysType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+            return OmitTypes(sourceType, keysType);
+        }
+
         return mlir::Type();
     }
 
@@ -13714,6 +13736,98 @@ genContext);
 
         return getUnionType(resTypes);
     }
+
+    mlir::Type PickTypes(mlir::Type type, mlir::Type keys)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Pick: " << type << ", keys: " << keys << "\n";);
+
+        SmallVector<mlir_ts::FieldInfo> pickedFields;
+
+        SmallVector<mlir_ts::FieldInfo> fields;
+
+        auto pickTypesProcessKey = [&](mlir::Type keyType)
+        {
+            // get string
+            if (auto litType = keyType.dyn_cast<mlir_ts::LiteralType>())
+            {
+                // find field
+                auto found = std::find_if(fields.begin(), fields.end(), [&] (auto& item) { return item.id == litType.getValue(); });
+                if (found != fields.end())
+                {
+                    pickedFields.push_back(*found);
+                }
+            }
+        };
+
+        if (mlir::succeeded(mth.getFields(type, fields)))
+        {
+            if (auto unionType = keys.dyn_cast<mlir_ts::UnionType>())
+            {
+                for (auto keyType : unionType.getTypes())
+                {
+                    pickTypesProcessKey(keyType);
+                }
+            }
+            else if (auto litType = keys.dyn_cast<mlir_ts::LiteralType>())
+            {
+                pickTypesProcessKey(litType);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+
+        return getTupleType(pickedFields);
+    }
+
+    mlir::Type OmitTypes(mlir::Type type, mlir::Type keys)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Omit: " << type << ", keys: " << keys << "\n";);
+
+        SmallVector<mlir_ts::FieldInfo> pickedFields;
+
+        SmallVector<mlir_ts::FieldInfo> fields;
+
+        std::function<boolean(mlir_ts::FieldInfo& fieldInfo, mlir::Type keys)> existKey;
+        existKey = [&](mlir_ts::FieldInfo& fieldInfo, mlir::Type keys)
+        {
+            // get string
+            if (auto unionType = keys.dyn_cast<mlir_ts::UnionType>())
+            {
+                for (auto keyType : unionType.getTypes())
+                {
+                    if (existKey(fieldInfo, keyType))
+                    {
+                        return true;
+                    }
+                }
+            }
+            else if (auto litType = keys.dyn_cast<mlir_ts::LiteralType>())
+            {
+                return fieldInfo.id == litType.getValue();
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+
+            return false;
+        };
+
+        if (mlir::succeeded(mth.getFields(type, fields)))
+        {
+            for (auto& field : fields)
+            {
+                if (!existKey(field, keys))
+                {
+                    pickedFields.push_back(field);
+                }
+            }
+        }
+
+        return getTupleType(pickedFields);
+    }        
 
     mlir::Type getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext)
     {

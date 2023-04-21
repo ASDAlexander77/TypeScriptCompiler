@@ -838,6 +838,50 @@ class MLIRTypeHelper
         return true;        
     }
 
+    mlir::LogicalResult getFields(mlir::Type srcType, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields)
+    {       
+        if (auto constTupleType = srcType.dyn_cast<mlir_ts::TupleType>())
+        {
+            for (auto &fieldInfo : constTupleType.getFields())
+            {
+                destTupleFields.push_back(fieldInfo);
+            }
+        }          
+        else if (auto tupleType = srcType.dyn_cast<mlir_ts::TupleType>())
+        {
+            for (auto &fieldInfo : tupleType.getFields())
+            {
+                destTupleFields.push_back(fieldInfo);
+            }
+        }         
+        else if (auto srcInterfaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            if (auto srcInterfaceInfo = getInterfaceInfoByFullName(srcInterfaceType.getName().getValue()))
+            {
+                if (mlir::succeeded(srcInterfaceInfo->getTupleTypeFields(destTupleFields, context)))
+                {
+                    return mlir::success();
+                }
+            }
+
+            return mlir::failure();
+        } 
+        else if (auto srcClassType = srcType.dyn_cast<mlir_ts::ClassType>())
+        {
+            if (auto srcClassInfo = getClassInfoByFullName(srcClassType.getName().getValue()))
+            {
+                for (auto &fieldInfo : srcClassInfo->classType.getStorageType().cast<mlir_ts::ClassStorageType>().getFields())
+                {
+                    destTupleFields.push_back(fieldInfo);
+                }                
+            }
+
+            return mlir::failure();
+        }         
+
+        llvm_unreachable("not implemented");
+    }
+
     mlir::Type getFieldTypeByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
     {
         if (auto srcInterfaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
