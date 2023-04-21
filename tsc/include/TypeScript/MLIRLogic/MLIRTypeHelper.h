@@ -1065,6 +1065,13 @@ class MLIRTypeHelper
             return extendsType(srcType, literalType.getElementType(), typeParamsWithArgs);
         }        
 
+        if (auto unionType = srcType.dyn_cast<mlir_ts::UnionType>())
+        {
+            auto pred = [&](auto &item) { return extendsType(item, extendType, typeParamsWithArgs); };
+            auto types = unionType.getTypes();
+            return std::find_if(types.begin(), types.end(), pred) != types.end();
+        }
+
         // TODO: finish Function Types, etc
         LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [FLASE]\n";);
         return false;
