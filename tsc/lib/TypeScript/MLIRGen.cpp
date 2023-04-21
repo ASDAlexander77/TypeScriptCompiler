@@ -9505,11 +9505,6 @@ class MLIRGenImpl
             MLIRCodeLogic mcl(builder);
 
             auto captureType = mcl.CaptureType(captureVars->getValue());
-            if (!genContext.allowPartialResolve)
-            {
-                assert(captureType == funcType.getInput(0));
-            }
-
             auto result = mlirGenCreateCapture(location, captureType, capturedValues, genContext);
             auto captured = V(result);
             auto opaqueTypeValue = cast(location, getOpaqueType(), captured, genContext);
@@ -9882,6 +9877,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
     {
+        auto typeAliasGenContext = GenContext(genContext);
+
         auto namePtr = MLIRHelper::getName(typeAliasDeclarationAST->name, stringAllocator);
         if (!namePtr.empty())
         {
@@ -9889,7 +9886,7 @@ class MLIRGenImpl
             {
                 llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
                 if (mlir::failed(
-                        processTypeParameters(typeAliasDeclarationAST->typeParameters, typeParameters, genContext)))
+                        processTypeParameters(typeAliasDeclarationAST->typeParameters, typeParameters, typeAliasGenContext)))
                 {
                     return mlir::failure();
                 }
@@ -9898,7 +9895,7 @@ class MLIRGenImpl
             }
             else
             {
-                auto type = getType(typeAliasDeclarationAST->type, genContext);
+                auto type = getType(typeAliasDeclarationAST->type, typeAliasGenContext);
                 if (!type)
                 {
                     return mlir::failure();
@@ -12385,10 +12382,9 @@ genContext);
                 type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
             }
 
-            LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " type: " << type << "");
-
             if (isNoneType(type))
             {
+                LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " FAILED\n");
                 return mlir::failure();
             }
 

@@ -838,6 +838,79 @@ class MLIRTypeHelper
         return true;        
     }
 
+    mlir::Type getFieldTypeByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
+    {
+        if (auto srcInterfaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            if (auto srcInterfaceInfo = getInterfaceInfoByFullName(srcInterfaceType.getName().getValue()))
+            {
+                int totalOffset = 0;
+                auto fieldInfo = srcInterfaceInfo->findField(fieldName, totalOffset);
+                if (fieldInfo)
+                {
+                    return fieldInfo->type;
+                }
+
+                if (auto strName = fieldName.dyn_cast<mlir::StringAttr>())
+                {
+                    auto methodInfo = srcInterfaceInfo->findMethod(strName, totalOffset);
+                    if (methodInfo)
+                    {
+                        return methodInfo->funcType;
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+                }
+            }
+
+            return mlir::Type();
+        }
+
+        if (auto srcClassType = srcType.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            if (auto srcClassInfo = getInterfaceInfoByFullName(srcClassType.getName().getValue()))
+            {
+                int totalOffset = 0;
+                auto fieldInfo = srcClassInfo->findField(fieldName, totalOffset);
+                if (fieldInfo)
+                {
+                    return fieldInfo->type;
+                }
+
+                if (auto strName = fieldName.dyn_cast<mlir::StringAttr>())
+                {
+                    auto methodInfo = srcClassInfo->findMethod(strName, totalOffset);
+                    if (methodInfo)
+                    {
+                        return methodInfo->funcType;
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+                }
+            }
+
+            return mlir::Type();
+        }
+
+        if (auto unionType = srcType.dyn_cast<mlir_ts::UnionType>())
+        {
+            llvm::SmallVector<mlir::Type> types;
+            for (auto &item : unionType.getTypes())
+            {
+                auto fieldType = getFieldTypeByFieldName(item, fieldName);
+                types.push_back(fieldType);
+            }
+
+            return mlir_ts::UnionType::get(context, types);
+        }        
+
+        llvm_unreachable("not implemented");
+    }
+
     bool extendsType(mlir::Type srcType, mlir::Type extendType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! is extending type: [ " << srcType << " ] extend type: [ " << extendType
@@ -869,6 +942,15 @@ class MLIRTypeHelper
             auto pred = [&](auto &item) { return extendsType(srcType, item, typeParamsWithArgs); };
             auto types = unionType.getTypes();
             return std::find_if(types.begin(), types.end(), pred) != types.end();
+        }
+
+        if (auto tupleType = extendType.dyn_cast<mlir_ts::TupleType>())
+        {
+            auto pred = [&](auto &item) { 
+                auto fieldType = getFieldTypeByFieldName(srcType, item.id);
+                return extendsType(fieldType, item.type, typeParamsWithArgs); 
+            };
+            return std::all_of(tupleType.getFields().begin(), tupleType.getFields().end(), pred);
         }
 
         if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())
@@ -976,6 +1058,12 @@ class MLIRTypeHelper
                 }
             }
         }
+
+        // Special case when we have string type (widen from Literal Type)
+        if (auto literalType = extendType.dyn_cast<mlir_ts::LiteralType>())
+        {
+            return extendsType(srcType, literalType.getElementType(), typeParamsWithArgs);
+        }        
 
         // TODO: finish Function Types, etc
         LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [FLASE]\n";);
@@ -1211,6 +1299,12 @@ class MLIRTypeHelper
         MLIRTypeIteratorLogic iter{};
         return iter.some(type, [](mlir::Type type) { return type.isa<mlir_ts::NamedGenericType>(); });
     }
+
+    bool hasInferType(mlir::Type type)
+    {
+        MLIRTypeIteratorLogic iter{};
+        return iter.some(type, [](mlir::Type type) { return type.isa<mlir_ts::InferType>(); });
+    }    
 
     mlir::Type mergeType(mlir::Type existType, mlir::Type currentType)
     {
