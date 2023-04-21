@@ -14965,8 +14965,12 @@ genContext);
                 }
             }
 
-            return allTupleTypesConst ? (mlir::Type)getConstTupleType(typesForNewTuple)
+            auto resultType = allTupleTypesConst ? (mlir::Type)getConstTupleType(typesForNewTuple)
                                       : (mlir::Type)getTupleType(typesForNewTuple);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! &=: " << resultType << "\n";);
+
+            return resultType;
         }
 
         // calculate of intersaction between types and literal types
