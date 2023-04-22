@@ -482,6 +482,27 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
         auto loc = castOp->getLoc();
 
+        for (auto user : res.getUsers())
+        {
+            auto any = false;
+            if (auto chainCast = dyn_cast_or_null<mlir_ts::CastOp>(user))
+            {
+                if (chainCast.in().getType() == res.getType())
+                {
+                    // we need to 
+                    auto newCastOp = rewriter.create<mlir_ts::CastOp>(loc, chainCast.res().getType(), in);
+                    rewriter.replaceOp(chainCast, ValueRange{newCastOp});
+                    rewriter.eraseOp(castOp);
+                    any = true;
+                }
+            }
+
+            if (any)
+            {
+                return success();
+            }
+        }             
+
         // any support
         if (res.getType().isa<mlir_ts::AnyType>())
         {
@@ -596,6 +617,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         return success();
     }
 };
+
 } // end anonymous namespace.
 
 void mlir_ts::CastOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
