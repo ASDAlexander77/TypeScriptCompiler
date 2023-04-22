@@ -220,7 +220,8 @@ class MLIRTypeHelper
         auto actualType = type;
         if (actualType)
         {
-            actualType = mergeUnionType(actualType);
+            // we do not need to do it for UnionTypes to be able to validate which values it can have
+            //actualType = mergeUnionType(actualType);
             actualType = stripLiteralType(actualType);
             actualType = convertConstArrayTypeToArrayType(actualType);
             actualType = convertConstTupleTypeToTupleType(actualType);

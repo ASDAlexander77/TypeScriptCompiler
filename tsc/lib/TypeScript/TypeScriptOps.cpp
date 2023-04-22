@@ -482,6 +482,8 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
         auto loc = castOp->getLoc();
 
+        // remove chain calls
+        /*
         for (auto user : res.getUsers())
         {
             auto any = false;
@@ -496,7 +498,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
                     {
                         rewriter.eraseOp(castOp);
                     }
-                    
+
                     any = true;
                 }
             }
@@ -505,7 +507,8 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             {
                 return success();
             }
-        }             
+        } 
+        */            
 
         // any support
         if (res.getType().isa<mlir_ts::AnyType>())
