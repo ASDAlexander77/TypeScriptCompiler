@@ -492,7 +492,11 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
                     // we need to 
                     auto newCastOp = rewriter.create<mlir_ts::CastOp>(loc, chainCast.res().getType(), in);
                     rewriter.replaceOp(chainCast, ValueRange{newCastOp});
-                    rewriter.eraseOp(castOp);
+                    if (castOp.res().use_empty())
+                    {
+                        rewriter.eraseOp(castOp);
+                    }
+                    
                     any = true;
                 }
             }
