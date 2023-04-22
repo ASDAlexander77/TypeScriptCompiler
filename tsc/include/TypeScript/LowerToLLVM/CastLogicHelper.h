@@ -74,6 +74,11 @@ class CastLogicHelper
             return in;
         }
 
+        if (auto literalType = inType.dyn_cast<mlir_ts::LiteralType>())
+        {
+            return cast(in, literalType.getElementType(), tch.convertType(literalType.getElementType()), resType, resLLVMType);
+        }
+
         if (inType.isa<mlir_ts::CharType>() && resType.isa<mlir_ts::StringType>())
         {
             // types are equals
@@ -409,15 +414,20 @@ class CastLogicHelper
             }
             else
             {
-                auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
-                auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resUnionType, in, typeOfValue);
-                return unionValue;
+                MLIRTypeHelper mth(resUnionType.getContext());
+                mlir::Type baseType;
+                bool needTag = mth.isUnionTypeNeedsTag(resUnionType, baseType);
+                if (needTag)
+                {
+                    auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+                    auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resUnionType, in, typeOfValue);
+                    return unionValue;
+                }
+                else
+                {
+                    return cast(in, inType, tch.convertType(inType), baseType, tch.convertType(baseType));
+                }
             }
-        }
-
-        if (auto literalType = inType.dyn_cast_or_null<mlir_ts::LiteralType>())
-        {
-            return cast(in, literalType.getElementType(), tch.convertType(literalType.getElementType()), resType, resLLVMType);
         }
 
         return mlir::Value();
