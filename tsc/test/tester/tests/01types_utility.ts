@@ -4,6 +4,8 @@ type Required<T> = { [P in keyof T]-?: T[P]; }
 type Readonly<T> = { readonly [P in keyof T]: T[P]; }
 type Pick<T, K extends keyof T> = { [P in K]: T[P]; }
 type Omit<T, K extends string | number | symbol> = { [P in Exclude<keyof T, K>]: T[P]; }
+type Exclude<T, U> = T extends U ? never : T;
+type Extract<T, U> = T extends U ? T : never;
 
 interface CatInfo {
     age: number;
@@ -43,6 +45,11 @@ interface TodoOmit {
 }
 
 type TodoPreviewOmit = Omit<TodoOmit, "description">;
+
+type T0 = Exclude<"a" | "b" | "c", "a">;
+type T1 = Exclude<"a" | "b" | "c" | "d", "a" | "b">;
+
+type T2 = Extract<"a" | "b" | "c" | "d", "a" | "f" | "d">;
 
 function main() {
     const cats: Record<CatName, CatInfo> = {
@@ -86,6 +93,10 @@ function main() {
         completed: false,
         createdAt: 1615544252770,
     };
+
+	let a: T0 = "b"; a = "c";
+	let b: T1 = "c"; b = "d";
+	let c: T2 = "a"; c = "d";
 
     print("done.");
 }
