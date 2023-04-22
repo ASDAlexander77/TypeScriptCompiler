@@ -215,16 +215,31 @@ class MLIRTypeHelper
 
     mlir::Type wideStorageType(mlir::Type type)
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! widing type: " << type << "\n";);        
+
         auto actualType = type;
         if (actualType)
         {
+            actualType = mergeUnionType(actualType);
             actualType = stripLiteralType(actualType);
             actualType = convertConstArrayTypeToArrayType(actualType);
             actualType = convertConstTupleTypeToTupleType(actualType);
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! wide type: " << actualType << "\n";);        
+
         return actualType;
     }    
+
+    mlir::Type mergeUnionType(mlir::Type type)
+    {
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            return getUnionTypeWithMerge(unionType);
+        }
+
+        return type;
+    }
 
     mlir::Type stripLiteralType(mlir::Type type)
     {
@@ -999,6 +1014,11 @@ class MLIRTypeHelper
 
         if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())
         {
+            if (auto litExt = extendType.dyn_cast<mlir_ts::LiteralType>())
+            {
+                return false;
+            }
+
             return extendsType(literalType.getElementType(), extendType, typeParamsWithArgs);
         }
 

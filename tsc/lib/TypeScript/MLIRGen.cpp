@@ -13898,28 +13898,22 @@ genContext);
         return getTypeByTypeName(typeQueryAST->exprName, genContext);
     }
 
-    mlir::Type getConditionalType(ConditionalTypeNode conditionalTypeNode, const GenContext &genContext)
+    mlir::Type processConditionalForType(ConditionalTypeNode conditionalTypeNode, mlir::Type checkType, mlir::Type extendsType, mlir::Type inferType, const GenContext &genContext)
     {
         auto &typeParamsWithArgs = const_cast<GenContext &>(genContext).typeParamsWithArgs;
-        auto checkType = getType(conditionalTypeNode->checkType, genContext);
-        auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! condition type check: " << checkType << ", extends: " << extendsType << "\n";);
-
-        if (checkType.isa<mlir_ts::NamedGenericType>() || extendsType.isa<mlir_ts::NamedGenericType>())
-        {
-            // we do not need to resolve it, it is generic
-            auto trueType = getType(conditionalTypeNode->trueType, genContext);
-            auto falseType = getType(conditionalTypeNode->falseType, genContext);
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! condition type, check: " << checkType << " extends: " << extendsType << " true: " << trueType << " false: " << falseType << " \n";);
-
-            return getConditionalType(checkType, extendsType, trueType, falseType);
-        }
+        auto location = loc(conditionalTypeNode);
 
         mlir::Type resType;
         if (mth.extendsType(checkType, extendsType, typeParamsWithArgs))
         {
+            if (inferType)
+            {
+                auto namedGenType = inferType.cast<mlir_ts::NamedGenericType>();
+                auto typeParam = std::make_shared<TypeParameterDOM>(namedGenType.getName().getValue().str());
+                zipTypeParameterWithArgument(location, typeParamsWithArgs, typeParam, checkType, false, genContext, false);
+            }
+
             resType = getType(conditionalTypeNode->trueType, genContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [TRUE] = " << resType << "\n";);
@@ -13962,12 +13956,74 @@ genContext);
 
         if (!resType)
         {
+            if (inferType)
+            {
+                auto namedGenType = inferType.cast<mlir_ts::NamedGenericType>();
+                auto typeParam = std::make_shared<TypeParameterDOM>(namedGenType.getName().getValue().str());
+                zipTypeParameterWithArgument(location, typeParamsWithArgs, typeParam, checkType, false, genContext, false);
+            }
+
             resType = getType(conditionalTypeNode->falseType, genContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [FALSE] = " << resType << "\n";);
         }
 
         return resType;
+    }
+
+    mlir::Type getConditionalType(ConditionalTypeNode conditionalTypeNode, const GenContext &genContext)
+    {
+        auto checkType = getType(conditionalTypeNode->checkType, genContext);
+        auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! condition type check: " << checkType << ", extends: " << extendsType << "\n";);
+
+        if (checkType.isa<mlir_ts::NamedGenericType>() || extendsType.isa<mlir_ts::NamedGenericType>())
+        {
+            // we do not need to resolve it, it is generic
+            auto trueType = getType(conditionalTypeNode->trueType, genContext);
+            auto falseType = getType(conditionalTypeNode->falseType, genContext);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! condition type, check: " << checkType << " extends: " << extendsType << " true: " << trueType << " false: " << falseType << " \n";);
+
+            return getConditionalType(checkType, extendsType, trueType, falseType);
+        }
+
+        if (auto unionType = checkType.dyn_cast<mlir_ts::UnionType>())
+        {
+            // we need to have original type to infer types from union
+            GenContext noTypeArgsContext(genContext);
+            llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsOnly;
+            for (auto &pair : noTypeArgsContext.typeParamsWithArgs)
+            {
+                typeParamsOnly[pair.getKey()] = std::make_pair(std::get<0>(pair.getValue()), getNamedGenericType(pair.getKey()));
+            }
+
+            noTypeArgsContext.typeParamsWithArgs = typeParamsOnly;
+
+            auto originalCheckType = getType(conditionalTypeNode->checkType, noTypeArgsContext);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! check type: " << checkType << " original: " << originalCheckType << " \n";);
+
+            SmallVector<mlir::Type> results;
+            for (auto subType : unionType.getTypes())
+            {
+                auto resSubType = processConditionalForType(conditionalTypeNode, subType, extendsType, originalCheckType, genContext);
+                if (!resSubType)
+                {
+                    return mlir::Type();
+                }
+
+                if (resSubType != getNeverType())
+                {
+                    results.push_back(resSubType);
+                }
+            }            
+
+            return getUnionType(results);
+        }
+
+        return processConditionalForType(conditionalTypeNode, checkType, extendsType, mlir::Type(), genContext);
     }
 
     mlir::Type getKeyOf(TypeOperatorNode typeOperatorNode, const GenContext &genContext)
