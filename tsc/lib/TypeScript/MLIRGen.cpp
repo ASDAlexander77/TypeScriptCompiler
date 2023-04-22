@@ -14970,8 +14970,9 @@ genContext);
         mlir_ts::InterfaceType baseInterfaceType;
         mlir_ts::TupleType baseTupleType;
         mlir::SmallVector<mlir::Type> types;
-        mlir::Type firstNonFalseType;
+        mlir::SmallVector<mlir::Type> typesForUnion;
         auto allTupleTypesConst = true;
+        auto unionTypes = false;
         for (auto typeItem : intersectionTypeNode->types)
         {
             auto type = getType(typeItem, genContext);
@@ -15055,9 +15056,22 @@ genContext);
 
         if (baseTupleType)
         {
+            auto anyTypesInBaseTupleType = baseTupleType.getFields().size() > 0;
+
             SmallVector<::mlir::typescript::FieldInfo> typesForNewTuple;
             for (auto type : types)
             {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! processing ... & {...} :" << type << "\n";);
+
+                // umwrap optional
+                if (!anyTypesInBaseTupleType)
+                {
+                    if (auto optionalType = type.dyn_cast<mlir_ts::OptionalType>())
+                    {
+                        type = optionalType.getElementType();
+                    }
+                }
+
                 if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
                 {
                     allTupleTypesConst = false;
@@ -15073,22 +15087,54 @@ genContext);
                         typesForNewTuple.push_back(field);
                     }
                 }
+                else if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+                {
+                    if (!anyTypesInBaseTupleType)
+                    {
+                        unionTypes = true;
+                        for (auto subType : unionType.getTypes())
+                        {
+                            if (subType == getNullType() || subType == getUndefinedType())
+                            {
+                                continue;
+                            }
+
+                            typesForUnion.push_back(subType);
+                        }
+                    }                    
+                }
                 else
                 {
-                    // no intersection
-                    return getNeverType();
+                    if (!anyTypesInBaseTupleType)
+                    {
+                        unionTypes = true; 
+                        typesForUnion.push_back(type);
+                    }
+                    else
+                    {
+                        // no intersection
+                        return getNeverType();
+                    }
                 }
             }
 
-            auto resultType = allTupleTypesConst ? (mlir::Type)getConstTupleType(typesForNewTuple)
-                                      : (mlir::Type)getTupleType(typesForNewTuple);
+            if (unionTypes)
+            {
+                auto resUnion = getUnionType(typesForUnion);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! &=: " << resUnion << "\n";);
+                return resUnion;                
+            }
+
+            auto resultType = allTupleTypesConst 
+                ? (mlir::Type)getConstTupleType(typesForNewTuple)
+                : (mlir::Type)getTupleType(typesForNewTuple);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! &=: " << resultType << "\n";);
 
             return resultType;
         }
 
-        // calculate of intersaction between types and literal types
+        // calculate of intersection between types and literal types
         mlir::Type resType;
         for (auto typeItem : types)
         {

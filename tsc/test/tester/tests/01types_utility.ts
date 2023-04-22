@@ -6,6 +6,7 @@ type Pick<T, K extends keyof T> = { [P in K]: T[P]; }
 type Omit<T, K extends string | number | symbol> = { [P in Exclude<keyof T, K>]: T[P]; }
 type Exclude<T, U> = T extends U ? never : T;
 type Extract<T, U> = T extends U ? T : never;
+type NonNullable<T> = T & {};
 
 interface CatInfo {
     age: number;
@@ -51,6 +52,10 @@ type T1 = Exclude<"a" | "b" | "c" | "d", "a" | "b">;
 
 type T2 = Extract<"a" | "b" | "c" | "d", "a" | "f" | "d">;
 
+type T3 = NonNullable<string | number | undefined>;
+
+type T4 = NonNullable<string[] | null | undefined>;
+
 function main() {
     const cats: Record<CatName, CatInfo> = {
         miffy: { age: 10, breed: "Persian" },
@@ -94,9 +99,12 @@ function main() {
         createdAt: 1615544252770,
     };
 
-	let a: T0 = "b"; a = "c";
-	let b: T1 = "c"; b = "d";
-	let c: T2 = "a"; c = "d";
+    let a: T0 = "b"; a = "c";
+    let b: T1 = "c"; b = "d";
+    let c: T2 = "a"; c = "d";
+
+    let d: T3 = 10;
+    let e: T4 = [];
 
     print("done.");
 }
