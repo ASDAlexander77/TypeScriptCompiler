@@ -7,6 +7,7 @@ type Omit<T, K extends string | number | symbol> = { [P in Exclude<keyof T, K>]:
 type Exclude<T, U> = T extends U ? never : T;
 type Extract<T, U> = T extends U ? T : never;
 type NonNullable<T> = T & {};
+type Parameters<T extends (...args: unknown[]) => any> = T extends (...args: infer P) => any ? P : never;
 
 interface CatInfo {
     age: number;
@@ -55,6 +56,15 @@ type T2 = Extract<"a" | "b" | "c" | "d", "a" | "f" | "d">;
 type T3 = NonNullable<string | number | undefined>;
 
 type T4 = NonNullable<string[] | null | undefined>;
+
+
+// params
+
+type T0 = Parameters<() => string>;
+type T1 = Parameters<(a: string, b: number) => string>;
+type T2 = Parameters<never>;
+// should error
+//type T3 = Parameters<string>;
 
 function main() {
     const cats: Record<CatName, CatInfo> = {
@@ -105,6 +115,12 @@ function main() {
 
     let d: T3 = 10;
     let e: T4 = [];
+
+    // params 
+	let a: T0;
+	let b: T1;
+	// never type should error
+	//let c: T2;
 
     print("done.");
 }
