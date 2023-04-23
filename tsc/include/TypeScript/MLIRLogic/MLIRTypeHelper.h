@@ -988,7 +988,7 @@ class MLIRTypeHelper
         return storeType.isa<mlir_ts::UnionType>();
     }
 
-    bool appendInferTypeToContext(mlir::Type srcType, mlir_ts::InferType inferType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs)
+    bool appendInferTypeToContext(mlir::Type srcType, mlir_ts::InferType inferType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleType = false)
     {
         auto name = inferType.getElementType().cast<mlir_ts::NamedGenericType>().getName().getValue();
         auto currentType = srcType;
@@ -1004,12 +1004,35 @@ class MLIRTypeHelper
             }
             else
             {
-                auto defaultUnionType = getUnionType(existType.second, currentType);
+                if (useTupleType)
+                {
+                    SmallVector<mlir_ts::FieldInfo> fieldInfos;
 
-                LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType.second << " default type: " << defaultUnionType
-                                        << "\n";);
+                    if (auto tupleType = existType.second.dyn_cast<mlir_ts::TupleType>())
+                    {
+                        for (auto param : tupleType.getFields())
+                        {
+                            fieldInfos.push_back(param);
+                        }
+                    }
+                    else
+                    {
+                        fieldInfos.push_back({mlir::Attribute(), existType.second});    
+                    }
 
-                currentType = findBaseType(existType.second, currentType, defaultUnionType);
+                    fieldInfos.push_back({mlir::Attribute(), currentType});
+
+                    currentType = getTupleType(fieldInfos);                    
+                }
+                else
+                {
+                    auto defaultUnionType = getUnionType(existType.second, currentType);
+
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType.second << " default type: " << defaultUnionType
+                                            << "\n";);
+
+                    currentType = findBaseType(existType.second, currentType, defaultUnionType);
+                }
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
                 typeParamsWithArgs[name].second = currentType;
@@ -1325,9 +1348,21 @@ class MLIRTypeHelper
                 auto extParamType = (index < extParams.size()) ? extParams[index] : extIsVarArgs ? extParams[extParams.size() - 1] : mlir::Type();
 
                 auto isIndexAtExtVarArgs = extIsVarArgs && index >= extParams.size() - 1;
+
+                if (auto inferType = extParamType.dyn_cast<mlir_ts::InferType>())
+                {
+                    appendInferTypeToContext(srcParamType, inferType, typeParamsWithArgs, true);
+                    continue;
+                }
+
                 if (isIndexAtExtVarArgs)
                 {
-                    if (extParamType.isa<mlir_ts::AnyType>())
+                    if (auto arrayType = extParamType.dyn_cast<mlir_ts::ArrayType>())
+                    {
+                        extParamType = arrayType.getElementType();
+                    }
+
+                    if (extParamType.isa<mlir_ts::AnyType>() || extParamType.isa<mlir_ts::UnknownType>())
                     {
                         continue;
                     }
@@ -1349,7 +1384,17 @@ class MLIRTypeHelper
             auto isExtVoid = !extReturnType || extReturnType == noneType || extReturnType == voidType;
             if (isSrcVoid != isExtVoid)
             {
-                return extendsType(srcReturnType, extReturnType, typeParamsWithArgs);;
+                return false;
+            }
+
+            if (srcReturnType != extReturnType)
+            {
+                if (auto inferType = extReturnType.dyn_cast<mlir_ts::InferType>())
+                {
+                    appendInferTypeToContext(extReturnType, inferType, typeParamsWithArgs);
+                }
+
+                return extReturnType.isa<mlir_ts::AnyType>() || extReturnType.isa<mlir_ts::UnknownType>();
             }
 
             return true;

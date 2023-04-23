@@ -12961,7 +12961,10 @@ genContext);
 
                 emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
                                         << constraintType << ".";
-                return {mlir::failure(), false};
+
+
+                type = getNeverType();
+                //return {mlir::failure(), false};
             }
         }
 
