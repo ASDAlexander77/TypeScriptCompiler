@@ -130,6 +130,11 @@ class MLIRTypeHelper
         return getConstArrayValueType(getI32Type(), size);
     }
 
+    mlir_ts::TupleType getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+    {
+        return mlir_ts::TupleType::get(context, fieldInfos);
+    }    
+
     mlir_ts::TupleType getTupleType(mlir::ArrayRef<mlir::Type> types)
     {
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
@@ -336,6 +341,174 @@ class MLIRTypeHelper
         }
 
         return mlir_ts::BoundFunctionType::get(context, funcArgTypes, funcType.getResults(), funcType.isVarArg());
+    }
+
+
+    // TODO: review all funcs and removed unsed
+    mlir::Type getReturnTypeFromFuncRef(mlir::Type funcType)
+    {
+        auto types = getReturnsFromFuncRef(funcType);
+        if (types.size() > 0)
+        {
+            return types.front();
+        }
+
+        return mlir::Type();
+    }
+
+    mlir::ArrayRef<mlir::Type> getReturnsFromFuncRef(mlir::Type funcType)
+    {
+        mlir::ArrayRef<mlir::Type> returnTypes;
+
+        auto f = [&](auto calledFuncType) { returnTypes = calledFuncType.getResults(); };
+
+        mlir::TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getReturnTypeFromFuncRef is not implemented for " << type << "\n";);
+            });
+
+        return returnTypes;
+    }
+
+    mlir::Type getParamFromFuncRef(mlir::Type funcType, int index)
+    {
+        mlir::Type paramType;
+
+        auto f = [&](auto calledFuncType) { return calledFuncType.getInput(index); };
+
+        mlir::TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = mlir::NoneType::get(context); })
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getParamFromFuncRef is not implemented for " << type << "\n";);
+                paramType = mlir::NoneType::get(context);;
+            });
+
+        return paramType;
+    }
+
+    // TODO: rename and put in helper class
+    mlir::Type getFirstParamFromFuncRef(mlir::Type funcType)
+    {
+        mlir::Type paramType;
+
+        auto f = [&](auto calledFuncType) { return calledFuncType.getInputs().front(); };
+
+        mlir::TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = mlir::NoneType::get(context); })
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getFirstParamFromFuncRef is not implemented for " << type << "\n";);
+                paramType = mlir::NoneType::get(context);
+            });
+
+        return paramType;
+    }
+
+    // TODO: rename and put in helper class
+    mlir::ArrayRef<mlir::Type> getParamsFromFuncRef(mlir::Type funcType)
+    {
+        mlir::ArrayRef<mlir::Type> paramsType;
+        if (!funcType)
+        {
+            return paramsType;
+        }
+
+        mlir::TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = mlir::NoneType::get(context); })
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsFromFuncRef is not implemented for " << type << "\n";);
+            });
+
+        return paramsType;
+    }
+
+    mlir::Type getParamsTupleTypeFromFuncRef(mlir::Type funcType)
+    {
+        mlir::Type paramsType;
+        if (!funcType)
+        {
+            return paramsType;
+        }
+
+        auto f = [&](auto calledFuncType) {
+            SmallVector<mlir_ts::FieldInfo> fieldInfos;
+            for (auto param : calledFuncType.getInputs())
+            {
+                fieldInfos.push_back({mlir::Attribute(), param});
+            }
+
+            return getTupleType(fieldInfos);
+        };
+
+        mlir::TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = mlir::NoneType::get(context); })
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsTupleTypeFromFuncRef is not implemented for " << type
+                                        << "\n";);
+                //llvm_unreachable("not implemented");
+                paramsType = mlir::NoneType::get(context);
+            });
+
+        return paramsType;
+    }
+
+    bool getVarArgFromFuncRef(mlir::Type funcType)
+    {
+        bool isVarArg = false;
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef for " << funcType << "\n";);
+
+        mlir::TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) {})
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef is not implemented for " << type << "\n";);
+            });
+
+        return isVarArg;
+    }
+
+    mlir::Type getOmitThisFunctionTypeFromFuncRef(mlir::Type funcType)
+    {
+        mlir::Type paramsType;
+
+        auto f = [&](auto calledFuncType) {
+            using t = decltype(calledFuncType);
+            SmallVector<mlir::Type> newInputTypes;
+            if (calledFuncType.getInputs().size() > 0)
+            {
+                newInputTypes.append(calledFuncType.getInputs().begin() + 1, calledFuncType.getInputs().end());
+            }
+
+            auto newType = t::get(context, newInputTypes, calledFuncType.getResults());
+            return newType;
+        };
+
+        mlir::TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = mlir::NoneType::get(context); })
+            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+        return paramsType;
     }
 
     MatchResult TestFunctionTypesMatch(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType, unsigned startParam = 0)
@@ -1137,10 +1310,28 @@ class MLIRTypeHelper
             return std::find_if(types.begin(), types.end(), pred) != types.end();
         }
 
+        if (isFuncType(srcType) && isFuncType(extendType))
+        {
+
+        }
+
         // TODO: finish Function Types, etc
         LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [FLASE]\n";);
         return false;
     }
+
+    bool isFuncType(mlir::Type funcType)
+    {
+        auto ret = false;
+        mlir::TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { ret = true; })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { ret = true; })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { ret = true; })
+            .Default([&](auto type) {
+            });
+
+        return ret;
+    }    
 
     mlir::Type getFirstNonNullUnionType(mlir_ts::UnionType unionType)
     {

@@ -1215,19 +1215,19 @@ class MLIRGenImpl
         }
 
         // lambda -> lambda
-        auto tempfuncType = getParamsFromFuncRef(currentTemplateType);
+        auto tempfuncType = mth.getParamsFromFuncRef(currentTemplateType);
         if (tempfuncType.size() > 0)
         {
-            auto funcType = getParamsFromFuncRef(concreteType);
+            auto funcType = mth.getParamsFromFuncRef(concreteType);
             if (funcType.size() > 0)
             {
                 inferTypeFuncType(tempfuncType, funcType, results);
 
                 // lambda(return) -> lambda(return)
-                auto tempfuncRetType = getReturnsFromFuncRef(currentTemplateType);
+                auto tempfuncRetType = mth.getReturnsFromFuncRef(currentTemplateType);
                 if (tempfuncRetType.size() > 0)
                 {
-                    auto funcRetType = getReturnsFromFuncRef(concreteType);
+                    auto funcRetType = mth.getReturnsFromFuncRef(concreteType);
                     if (funcRetType.size() > 0)
                     {
                         inferTypeFuncType(tempfuncRetType, funcRetType, results);
@@ -1555,7 +1555,7 @@ class MLIRGenImpl
                                        << "\n!! instantiate specialized  type function: '"
                                        << functionGenericTypeInfo->name << "' type: " << recreatedFuncType << "\n";);
 
-                        auto paramType = getParamFromFuncRef(recreatedFuncType, index);
+                        auto paramType = mth.getParamFromFuncRef(recreatedFuncType, index);
 
                         LLVM_DEBUG(llvm::dbgs()
                                        << "\n!! param type for arrow func[" << index << "]: " << paramType << "\n";);
@@ -2701,7 +2701,7 @@ class MLIRGenImpl
 
             if (isNoneType(type) && genContext.receiverFuncType)
             {
-                type = getParamFromFuncRef(genContext.receiverFuncType, index);
+                type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
 
                 LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "");
 
@@ -2969,7 +2969,7 @@ class MLIRGenImpl
                 else if (genContext.receiverFuncType)
                 {
                     auto &argTypeDestFuncType = genContext.receiverFuncType;
-                    auto retTypeFromReceiver = getReturnTypeFromFuncRef(argTypeDestFuncType);
+                    auto retTypeFromReceiver = mth.getReturnTypeFromFuncRef(argTypeDestFuncType);
                     if (retTypeFromReceiver && !isNoneType(retTypeFromReceiver))
                     {
                         funcProto->setReturnType(retTypeFromReceiver);
@@ -3950,7 +3950,7 @@ class MLIRGenImpl
         auto arguments = entryBlock.getArguments();
 
         // add exit code
-        if (failed(mlirGenFunctionEntry(location, getReturnTypeFromFuncRef(funcType), genContext)))
+        if (failed(mlirGenFunctionEntry(location, mth.getReturnTypeFromFuncRef(funcType), genContext)))
         {
             return mlir::failure();
         }
@@ -6603,7 +6603,7 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "!! found extension by name for type: " << thisValue.getType()
                                     << " function: " << name << ", value: " << funcRef << "\n";);
 
-            auto thisTypeFromFunc = getFirstParamFromFuncRef(funcRef.getType());
+            auto thisTypeFromFunc = mth.getFirstParamFromFuncRef(funcRef.getType());
 
             LLVM_DEBUG(llvm::dbgs() << "!! this type of function is : " << thisTypeFromFunc << "\n";);
 
@@ -7532,7 +7532,7 @@ class MLIRGenImpl
         {
             auto condValue = cast(location, getBooleanType(), actualFuncRefValue, genContext);
 
-            auto resultType = getReturnTypeFromFuncRef(optFuncRef.getElementType());
+            auto resultType = mth.getReturnTypeFromFuncRef(optFuncRef.getElementType());
 
             auto ifOp = resultType
                             ? builder.create<mlir_ts::IfOp>(location, getOptionalType(resultType), condValue, true)
@@ -7584,174 +7584,6 @@ class MLIRGenImpl
 
         assert(!hasReturn);
         return mlir::Value();
-    }
-
-    // TODO: rename and put in helper class
-    mlir::Type getReturnTypeFromFuncRef(mlir::Type funcType)
-    {
-        auto types = getReturnsFromFuncRef(funcType);
-        if (types.size() > 0)
-        {
-            return types.front();
-        }
-
-        return mlir::Type();
-    }
-
-    mlir::ArrayRef<mlir::Type> getReturnsFromFuncRef(mlir::Type funcType)
-    {
-        mlir::ArrayRef<mlir::Type> returnTypes;
-
-        auto f = [&](auto calledFuncType) { returnTypes = calledFuncType.getResults(); };
-
-        TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { f(calledFuncType); })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
-            .Default([&](auto type) {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! getReturnTypeFromFuncRef is not implemented for " << type << "\n";);
-            });
-
-        return returnTypes;
-    }
-
-    mlir::Type getParamFromFuncRef(mlir::Type funcType, int index)
-    {
-        mlir::Type paramType;
-
-        auto f = [&](auto calledFuncType) { return calledFuncType.getInput(index); };
-
-        TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
-            .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = builder.getNoneType(); })
-            .Default([&](auto type) {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! getParamFromFuncRef is not implemented for " << type << "\n";);
-                paramType = builder.getNoneType();
-            });
-
-        return paramType;
-    }
-
-    // TODO: rename and put in helper class
-    mlir::Type getFirstParamFromFuncRef(mlir::Type funcType)
-    {
-        mlir::Type paramType;
-
-        auto f = [&](auto calledFuncType) { return calledFuncType.getInputs().front(); };
-
-        TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
-            .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = builder.getNoneType(); })
-            .Default([&](auto type) {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! getFirstParamFromFuncRef is not implemented for " << type << "\n";);
-                paramType = builder.getNoneType();
-            });
-
-        return paramType;
-    }
-
-    // TODO: rename and put in helper class
-    mlir::ArrayRef<mlir::Type> getParamsFromFuncRef(mlir::Type funcType)
-    {
-        mlir::ArrayRef<mlir::Type> paramsType;
-        if (!funcType)
-        {
-            return paramsType;
-        }
-
-        TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
-            .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = builder.getNoneType(); })
-            .Default([&](auto type) {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsFromFuncRef is not implemented for " << type << "\n";);
-            });
-
-        return paramsType;
-    }
-
-    mlir::Type getParamsTupleTypeFromFuncRef(mlir::Type funcType)
-    {
-        mlir::Type paramsType;
-        if (!funcType)
-        {
-            return paramsType;
-        }
-
-        auto f = [&](auto calledFuncType) {
-            SmallVector<mlir_ts::FieldInfo> fieldInfos;
-            for (auto param : calledFuncType.getInputs())
-            {
-                fieldInfos.push_back({mlir::Attribute(), param});
-            }
-
-            return getTupleType(fieldInfos);
-        };
-
-        TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
-            .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
-            .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = builder.getNoneType(); })
-            .Default([&](auto type) {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsTupleTypeFromFuncRef is not implemented for " << type
-                                        << "\n";);
-                //llvm_unreachable("not implemented");
-                paramsType = builder.getNoneType();
-            });
-
-        return paramsType;
-    }
-
-    bool getVarArgFromFuncRef(mlir::Type funcType)
-    {
-        bool isVarArg = false;
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef for " << funcType << "\n";);
-
-        TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
-            .Case<mlir::NoneType>([&](auto calledFuncType) {})
-            .Default([&](auto type) {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef is not implemented for " << type << "\n";);
-            });
-
-        return isVarArg;
-    }
-
-    // TODO: rename and put in helper class
-    mlir::Type getOmitThisFunctionTypeFromFuncRef(mlir::Type funcType)
-    {
-        mlir::Type paramsType;
-
-        auto f = [&](auto calledFuncType) {
-            using t = decltype(calledFuncType);
-            SmallVector<mlir::Type> newInputTypes;
-            if (calledFuncType.getInputs().size() > 0)
-            {
-                newInputTypes.append(calledFuncType.getInputs().begin() + 1, calledFuncType.getInputs().end());
-            }
-
-            auto newType = t::get(builder.getContext(), newInputTypes, calledFuncType.getResults());
-            return newType;
-        };
-
-        TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
-            .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = builder.getNoneType(); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
-
-        return paramsType;
     }
 
     ValueOrLogicalResult mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
@@ -7934,13 +7766,13 @@ class MLIRGenImpl
         auto isVarArg = false;
         mlir::Type varArgType;
         auto hasType = false;
-        auto tupleParamsType = getParamsTupleTypeFromFuncRef(funcType);
+        auto tupleParamsType = mth.getParamsTupleTypeFromFuncRef(funcType);
         if (!isNoneType(tupleParamsType))
         {
             hasType = true;
             tupleTypeWithFuncArgs = tupleParamsType.cast<mlir_ts::TupleType>();
             lastArgIndex = tupleTypeWithFuncArgs.getFields().size() - 1;
-            isVarArg = getVarArgFromFuncRef(funcType);
+            isVarArg = mth.getVarArgFromFuncRef(funcType);
             if (isVarArg)
             {
                 varArgType = tupleTypeWithFuncArgs.getFields().back().type.cast<mlir_ts::ArrayType>().getElementType();
@@ -8516,7 +8348,7 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto callee = V(result);
 
-        auto inputs = getParamsFromFuncRef(callee.getType());
+        auto inputs = mth.getParamsFromFuncRef(callee.getType());
 
         SmallVector<mlir::Value, 4> operands;
 
@@ -8738,7 +8570,7 @@ class MLIRGenImpl
                     {
                         LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
 
-                        auto returnType = getReturnTypeFromFuncRef(nextPropertyType);
+                        auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
                         if (returnType)
                         {
                             // as tuple or const_tuple
@@ -11594,7 +11426,7 @@ genContext);
     {
         auto fullClassStaticName = concat(newClassPtr->fullName, newInterfacePtr->fullName, NEW_CTOR_METHOD_NAME, interfacePosIndex);
 
-        auto retType = getReturnTypeFromFuncRef(funcType);
+        auto retType = mth.getReturnTypeFromFuncRef(funcType);
         if (!retType)
         {
             return nullptr;
@@ -13507,7 +13339,7 @@ genContext);
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! ReturnType Of: " << elementType;);
-            auto retType = getReturnTypeFromFuncRef(elementType);
+            auto retType = mth.getReturnTypeFromFuncRef(elementType);
             LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
             return retType;
         }
@@ -13521,7 +13353,7 @@ genContext);
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-            auto retType = getParamsTupleTypeFromFuncRef(elementType);
+            auto retType = mth.getParamsTupleTypeFromFuncRef(elementType);
             LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
             return retType;
         }
@@ -13535,7 +13367,7 @@ genContext);
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-            auto retType = getParamsTupleTypeFromFuncRef(elementType);
+            auto retType = mth.getParamsTupleTypeFromFuncRef(elementType);
             LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
             return retType;
         }
@@ -13550,7 +13382,7 @@ genContext);
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-            auto retType = getFirstParamFromFuncRef(elementType);
+            auto retType = mth.getFirstParamFromFuncRef(elementType);
             LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
             return retType;
         }
@@ -13564,7 +13396,7 @@ genContext);
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-            auto retType = getOmitThisFunctionTypeFromFuncRef(elementType);
+            auto retType = mth.getOmitThisFunctionTypeFromFuncRef(elementType);
             LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
             return retType;
         }
