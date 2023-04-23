@@ -1351,6 +1351,13 @@ class MLIRTypeHelper
 
                 if (auto inferType = extParamType.dyn_cast<mlir_ts::InferType>())
                 {
+                    if (isIndexAtExtVarArgs && !srcParamType)
+                    {
+                            // default empty tuple
+                        SmallVector<mlir_ts::FieldInfo> fieldInfos;
+                        srcParamType = getTupleType(fieldInfos);    
+                    }
+
                     appendInferTypeToContext(srcParamType, inferType, typeParamsWithArgs, true);
                     continue;
                 }
