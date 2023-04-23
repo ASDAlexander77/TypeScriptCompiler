@@ -1312,7 +1312,47 @@ class MLIRTypeHelper
 
         if (isFuncType(srcType) && isFuncType(extendType))
         {
+            auto srcParams = getParamsFromFuncRef(srcType);
+            auto extParams = getParamsFromFuncRef(extendType);
 
+            //auto srcIsVarArgs = getVarArgFromFuncRef(srcType);
+            auto extIsVarArgs = getVarArgFromFuncRef(extendType);
+
+            auto maxParams = std::max(srcParams.size(), extParams.size());
+            for (auto index = 0; index < maxParams; index++)
+            {
+                auto srcParamType = (index < srcParams.size()) ? srcParams[index] : mlir::Type();
+                auto extParamType = (index < extParams.size()) ? extParams[index] : extIsVarArgs ? extParams[extParams.size() - 1] : mlir::Type();
+
+                auto isIndexAtExtVarArgs = extIsVarArgs && index >= extParams.size() - 1;
+                if (isIndexAtExtVarArgs)
+                {
+                    if (extParamType.isa<mlir_ts::AnyType>())
+                    {
+                        continue;
+                    }
+                }
+
+                if (extParamType != srcParamType)
+                {
+                    return false;
+                }
+            }      
+
+            // compare return types
+            auto srcReturnType = getReturnTypeFromFuncRef(srcType);
+            auto extReturnType = getReturnTypeFromFuncRef(extendType);       
+
+            auto noneType = mlir::NoneType::get(context);
+            auto voidType = mlir_ts::VoidType::get(context);
+            auto isSrcVoid = !srcReturnType || srcReturnType == noneType || srcReturnType == voidType;
+            auto isExtVoid = !extReturnType || extReturnType == noneType || extReturnType == voidType;
+            if (isSrcVoid != isExtVoid)
+            {
+                return extendsType(srcReturnType, extReturnType, typeParamsWithArgs);;
+            }
+
+            return true;
         }
 
         // TODO: finish Function Types, etc

@@ -14696,6 +14696,7 @@ genContext);
     {
         auto resultType = getType(signature->type, genContext);
         SmallVector<mlir::Type> argTypes;
+        auto isVarArg = false;
         for (auto paramItem : signature->parameters)
         {
             auto type = getType(paramItem->type, genContext);
@@ -14705,9 +14706,11 @@ genContext);
             }
 
             argTypes.push_back(type);
+
+            isVarArg |= !!paramItem->dotDotDotToken;
         }
 
-        auto funcType = mlir_ts::FunctionType::get(builder.getContext(), argTypes, resultType);
+        auto funcType = mlir_ts::FunctionType::get(builder.getContext(), argTypes, resultType, isVarArg);
         return funcType;
     }
 
