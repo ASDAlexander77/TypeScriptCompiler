@@ -11,6 +11,12 @@ type Parameters<T extends (...args: any) => any> = T extends (...args: infer P) 
 type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any;
 type ConstructorParameters<T extends abstract new (...args: any) => any> = T extends abstract new (...args: infer P) => any ? P : never;
 type InstanceType<T extends abstract new (...args: any) => any> = T extends abstract new (...args: any) => infer R ? R : any;
+type ThisParameterType<T> = T extends (this: infer U, ...args: never) => any ? U : unknown
+
+// what the heck is this?
+//type OmitThisParameter<T> = unknown extends ThisParameterType<T> ? T : T extends (...args: infer A) => infer R ? (...args: A) => R : T;
+// my implementation
+type OmitThisParameterType<T> = T extends (this: never, ...args: infer A) => infer R ? (...args: A) => R : T;
 
 interface CatInfo {
     age: number;
@@ -75,9 +81,8 @@ type T9 = ReturnType<() => string>;
 type T10 = ReturnType<(s: string) => void>;
 
 // constract
-class S
-{
-   constructor(s: string, n: number) {};
+class S {
+    constructor(s: string, n: number) { };
 }
 
 type TC0 = ConstructorParameters<S>;
@@ -85,6 +90,16 @@ type TC0 = ConstructorParameters<S>;
 // instance
 type TI0 = InstanceType<typeof S>;
 type TI1 = InstanceType<any>;
+
+// ThisParameterType
+function toHex(this: number) {
+    return "asd1";
+}
+
+function numberToString(n: ThisParameterType<typeof toHex>) {
+    return "asd2";
+}
+
 
 function main() {
     const cats: Record<CatName, CatInfo> = {
@@ -137,30 +152,36 @@ function main() {
     let e: T4 = [];
 
     // params 
-	let a1: T5;
-	let b1: T6;
-	// never type should error
-	//let c: T7;
+    let a1: T5;
+    let b1: T6;
+    // never type should error
+    //let c: T7;
 
     // return
-	let a2: T9 = "Hello";
+    let a2: T9 = "Hello";
     // void type
-	//let b2; T10;
+    //let b2; T10;
 
-	print(a2);
+    print(a2);
     assert(a2 === "Hello");
 
     // construct
-	let aC: TC0 = ["asd", 50];
+    let aC: TC0 = ["asd", 50];
 
-	print(aC[0], aC[1]);
+    print(aC[0], aC[1]);
 
     assert(aC[0] === "asd");
     assert(aC[1] === 50);
 
     // instance
-	let aI: TI0 = new S();
-	let bI: TI1;
+    let aI: TI0 = new S();
+    let bI: TI1;
+
+    // ThisParameterType
+    assert(toHex(10) == "asd1");
+	assert(numberToString(10) == "asd2");
+
+    // OmitThisParameterType
+    let fiveToHex: OmitThisParameter<typeof toHex>;
 
     print("done.");
-}

@@ -1197,7 +1197,7 @@ class MLIRTypeHelper
 
             auto isIndexAtExtVarArgs = extIsVarArgs && index >= extParams.size() - 1;
 
-            auto useTupleWhenMergeTypes = false;
+            auto useTupleWhenMergeTypes = isIndexAtExtVarArgs;
             if (auto inferType = extParamType.dyn_cast<mlir_ts::InferType>())
             {
                 useTupleWhenMergeTypes = true;
