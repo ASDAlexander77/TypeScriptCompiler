@@ -185,3 +185,4 @@ function main() {
     let fiveToHex: OmitThisParameter<typeof toHex>;
 
     print("done.");
+}

@@ -9017,10 +9017,41 @@ class MLIRGenImpl
                             mlir::SmallVector<mlir_ts::FieldInfo> destFields;
                             if (mlir::succeeded(mth.getFields(interfaceType, destFields)))
                             {
-                                // destFields;
-                                llvm_unreachable("not implemented");
+                                if (auto srcInterfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue()))
+                                {
+                                    for (auto fieldInfo : destFields)
+                                    {
+                                        auto totalOffset = 0;
+                                        auto interfaceFieldInfo = srcInterfaceInfo->findField(fieldInfo.id, totalOffset);
+
+                                        MLIRPropertyAccessCodeLogic cl(builder, location, tupleValue, fieldInfo.id);
+                                        // TODO: implemenet conditional
+                                        mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, interfaceFieldInfo->isConditional, cl, genContext); 
+                                        addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType);
+                                    }
+                                }
                             }
                         })
+                    .template Case<mlir_ts::ClassType>(
+                        [&](auto classType) { 
+                            mlir::SmallVector<mlir_ts::FieldInfo> destFields;
+                            if (mlir::succeeded(mth.getFields(classType, destFields)))
+                            {
+                                if (auto srcClassInfo = getClassInfoByFullName(classType.getName().getValue()))
+                                {
+                                    for (auto fieldInfo : destFields)
+                                    {
+                                        auto foundField = false;                                        
+                                        auto classFieldInfo = srcClassInfo->findField(fieldInfo.id, foundField);
+
+                                        MLIRPropertyAccessCodeLogic cl(builder, location, tupleValue, fieldInfo.id);
+                                        // TODO: implemenet conditional
+                                        mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, false, cl, genContext); 
+                                        addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType);
+                                    }
+                                }
+                            }
+                        })                        
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
                 continue;

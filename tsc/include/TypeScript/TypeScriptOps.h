@@ -25,6 +25,7 @@ struct FieldInfo
 {
     Attribute id;
     Type type;
+    bool isConditional;
 
     // Custom allocation called from generated constructor code
     FieldInfo allocateInto(TypeStorageAllocator &alloc) const

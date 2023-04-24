@@ -1088,7 +1088,9 @@ class MLIRTypeHelper
                 for (auto &fieldInfo : srcClassInfo->classType.getStorageType().cast<mlir_ts::ClassStorageType>().getFields())
                 {
                     destTupleFields.push_back(fieldInfo);
-                }                
+                }       
+                
+                return mlir::success();         
             }
 
             return mlir::failure();
