@@ -1233,10 +1233,11 @@ class MLIRTypeHelper
         LLVM_DEBUG(llvm::dbgs() << "\n!! is extending type: [ " << srcType << " ] extend type: [ " << extendType
                                 << " ]\n";);        
 
-        if (srcType == extendType)
+        if (auto neverType = extendType.dyn_cast<mlir_ts::NeverType>())
         {
+            // TODO: if extend type is never it should return true
             return true;
-        }
+        }        
 
         if (auto unkwnowType = extendType.dyn_cast<mlir_ts::UnknownType>())
         {
@@ -1248,10 +1249,16 @@ class MLIRTypeHelper
             return true;
         }
 
-        if (auto neverType = extendType.dyn_cast<mlir_ts::NeverType>())
+        if (auto neverType = srcType.dyn_cast<mlir_ts::NeverType>())
         {
-            return false;
+            // TODO: if extend type is never it should return true
+            return true;
         }        
+
+        if (srcType == extendType)
+        {
+            return true;
+        }
 
         // to support infer types
         if (auto inferType = extendType.dyn_cast<mlir_ts::InferType>())
