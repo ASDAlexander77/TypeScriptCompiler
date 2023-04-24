@@ -366,6 +366,7 @@ class MLIRTypeHelper
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Case<mlir_ts::ConstructFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getReturnTypeFromFuncRef is not implemented for " << type << "\n";);
             });
@@ -425,6 +426,7 @@ class MLIRTypeHelper
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
+            .Case<mlir_ts::ConstructFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = mlir::NoneType::get(context); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsFromFuncRef is not implemented for " << type << "\n";);
@@ -477,6 +479,7 @@ class MLIRTypeHelper
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
+            .Case<mlir_ts::ConstructFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
             .Case<mlir::NoneType>([&](auto calledFuncType) {})
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef is not implemented for " << type << "\n";);
@@ -1167,14 +1170,29 @@ class MLIRTypeHelper
         llvm_unreachable("not implemented");
     }
 
+    bool extendsTypeFuncTypes(mlir::Type srcType, mlir::Type extendType,
+        llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, int skipSrcParams = 0)
+    {
+            auto srcParams = getParamsFromFuncRef(srcType);
+            auto extParams = getParamsFromFuncRef(extendType);
+
+            //auto srcIsVarArgs = getVarArgFromFuncRef(srcType);
+            auto extIsVarArgs = getVarArgFromFuncRef(extendType);
+
+            auto srcReturnType = getReturnTypeFromFuncRef(srcType);
+            auto extReturnType = getReturnTypeFromFuncRef(extendType);       
+
+            return extendsTypeFuncTypes(srcParams, extParams, extIsVarArgs, srcReturnType, extReturnType, typeParamsWithArgs, skipSrcParams);    
+    }
+
     bool extendsTypeFuncTypes(ArrayRef<mlir::Type> srcParams, ArrayRef<mlir::Type> extParams, bool extIsVarArgs, 
         mlir::Type srcReturnType, mlir::Type extReturnType,
-        llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs)
+        llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, int skipSrcParams = 0)
     {
-        auto maxParams = std::max(srcParams.size(), extParams.size());
+        auto maxParams = std::max(srcParams.size() - skipSrcParams, extParams.size());
         for (auto index = 0; index < maxParams; index++)
         {
-            auto srcParamType = (index < srcParams.size()) ? srcParams[index] : mlir::Type();
+            auto srcParamType = (index < srcParams.size() - skipSrcParams) ? srcParams[index + skipSrcParams] : mlir::Type();
             auto extParamType = (index < extParams.size()) ? extParams[index] : extIsVarArgs ? extParams[extParams.size() - 1] : mlir::Type();
 
             auto isIndexAtExtVarArgs = extIsVarArgs && index >= extParams.size() - 1;
@@ -1383,16 +1401,33 @@ class MLIRTypeHelper
 
         if (isFuncType(srcType) && isFuncType(extendType))
         {
-            auto srcParams = getParamsFromFuncRef(srcType);
-            auto extParams = getParamsFromFuncRef(extendType);
+            return extendsTypeFuncTypes(srcType, extendType, typeParamsWithArgs);
+        }
 
-            //auto srcIsVarArgs = getVarArgFromFuncRef(srcType);
-            auto extIsVarArgs = getVarArgFromFuncRef(extendType);
+        if (auto constructType = extendType.dyn_cast<mlir_ts::ConstructFunctionType>())
+        {
+            if (auto srcClassType = srcType.dyn_cast<mlir_ts::ClassType>())
+            {
+                if (auto srcClassInfo = getClassInfoByFullName(srcClassType.getName().getValue()))
+                {
+                    // we have class
+                    if (!srcClassInfo->getHasConstructor())
+                    {
+                        return false;
+                    }
 
-            auto srcReturnType = getReturnTypeFromFuncRef(srcType);
-            auto extReturnType = getReturnTypeFromFuncRef(extendType);       
+                    // find constructor type
+                    auto constrMethod = srcClassInfo->findMethod(CONSTRUCTOR_NAME);
+                    auto constrWithRetType = mlir_ts::FunctionType::get(
+                        constrMethod->funcType.getContext(), 
+                        constrMethod->funcType.getInputs(), 
+                        {srcClassInfo->classType}, 
+                        constrMethod->funcType.isVarArg());
+                    return extendsTypeFuncTypes(constrWithRetType, extendType, typeParamsWithArgs, 1/*because of this param*/);
+                }
+            }
 
-            return extendsTypeFuncTypes(srcParams, extParams, extIsVarArgs, srcReturnType, extReturnType, typeParamsWithArgs);
+            return false;
         }
 
         // TODO: finish Function Types, etc

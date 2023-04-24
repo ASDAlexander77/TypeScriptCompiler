@@ -9,6 +9,8 @@ type Extract<T, U> = T extends U ? T : never;
 type NonNullable<T> = T & {};
 type Parameters<T extends (...args: any) => any> = T extends (...args: infer P) => any ? P : never;
 type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any;
+type ConstructorParameters<T extends abstract new (...args: any) => any> = T extends abstract new (...args: infer P) => any ? P : never;
+type InstanceType<T extends abstract new (...args: any) => any> = T extends abstract new (...args: any) => infer R ? R : any;
 
 interface CatInfo {
     age: number;
@@ -71,6 +73,18 @@ type T7 = Parameters<never>;
 
 type T9 = ReturnType<() => string>;
 type T10 = ReturnType<(s: string) => void>;
+
+// constract
+class S
+{
+   constructor(s: string, n: number) {};
+}
+
+type TC0 = ConstructorParameters<S>;
+
+// instance
+type TI0 = InstanceType<typeof S>;
+type TI1 = InstanceType<any>;
 
 function main() {
     const cats: Record<CatName, CatInfo> = {
@@ -135,6 +149,18 @@ function main() {
 
 	print(a2);
     assert(a2 === "Hello");
+
+    // construct
+	let aC: TC0 = ["asd", 50];
+
+	print(aC[0], aC[1]);
+
+    assert(aC[0] === "asd");
+    assert(aC[1] === 50);
+
+    // instance
+	let aI: TI0 = new S();
+	let bI: TI1;
 
     print("done.");
 }

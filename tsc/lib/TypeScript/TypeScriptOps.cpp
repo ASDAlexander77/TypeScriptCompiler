@@ -184,6 +184,24 @@ unsigned mlir_ts::BoundFunctionType::getNumResults() const
 }
 
 //===----------------------------------------------------------------------===//
+/// ConstructFunctionType
+//===----------------------------------------------------------------------===//
+bool mlir_ts::ConstructFunctionType::isVarArg() const
+{
+    return getIsVarArg();
+}
+
+unsigned mlir_ts::ConstructFunctionType::getNumInputs() const
+{
+    return getInputs().size();
+}
+
+unsigned mlir_ts::ConstructFunctionType::getNumResults() const
+{
+    return getResults().size();
+}
+
+//===----------------------------------------------------------------------===//
 /// ClassStorageType
 //===----------------------------------------------------------------------===//
 
