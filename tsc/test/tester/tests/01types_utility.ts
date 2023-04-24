@@ -7,7 +7,7 @@ type Omit<T, K extends string | number | symbol> = { [P in Exclude<keyof T, K>]:
 type Exclude<T, U> = T extends U ? never : T;
 type Extract<T, U> = T extends U ? T : never;
 type NonNullable<T> = T & {};
-type Parameters<T extends (...args: unknown[]) => any> = T extends (...args: infer P) => any ? P : never;
+type Parameters<T extends (...args: any) => any> = T extends (...args: infer P) => any ? P : never;
 
 interface CatInfo {
     age: number;

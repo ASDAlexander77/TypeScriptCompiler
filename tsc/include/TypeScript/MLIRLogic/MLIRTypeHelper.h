@@ -1167,7 +1167,7 @@ class MLIRTypeHelper
         llvm_unreachable("not implemented");
     }
 
-    bool extendsType(mlir::Type srcType, mlir::Type extendType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs)
+    bool extendsType(mlir::Type srcType, mlir::Type extendType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleWhenMergeTypes = false)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! is extending type: [ " << srcType << " ] extend type: [ " << extendType
                                 << " ]\n";);        
@@ -1187,10 +1187,15 @@ class MLIRTypeHelper
             return true;
         }
 
+        if (auto unkwnowType = extendType.dyn_cast<mlir_ts::NeverType>())
+        {
+            return false;
+        }        
+
         // to support infer types
         if (auto inferType = extendType.dyn_cast<mlir_ts::InferType>())
         {
-            return appendInferTypeToContext(srcType, inferType, typeParamsWithArgs);
+            return appendInferTypeToContext(srcType, inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
         }
 
         if (auto unionType = extendType.dyn_cast<mlir_ts::UnionType>())
@@ -1349,17 +1354,16 @@ class MLIRTypeHelper
 
                 auto isIndexAtExtVarArgs = extIsVarArgs && index >= extParams.size() - 1;
 
+                auto useTupleWhenMergeTypes = false;
                 if (auto inferType = extParamType.dyn_cast<mlir_ts::InferType>())
                 {
+                    useTupleWhenMergeTypes = true;
                     if (isIndexAtExtVarArgs && !srcParamType)
                     {
                             // default empty tuple
                         SmallVector<mlir_ts::FieldInfo> fieldInfos;
                         srcParamType = getTupleType(fieldInfos);    
                     }
-
-                    appendInferTypeToContext(srcParamType, inferType, typeParamsWithArgs, true);
-                    continue;
                 }
 
                 if (isIndexAtExtVarArgs)
@@ -1368,14 +1372,9 @@ class MLIRTypeHelper
                     {
                         extParamType = arrayType.getElementType();
                     }
-
-                    if (extParamType.isa<mlir_ts::AnyType>() || extParamType.isa<mlir_ts::UnknownType>())
-                    {
-                        continue;
-                    }
                 }
 
-                if (extParamType != srcParamType)
+                if (!extendsType(srcParamType, extParamType, typeParamsWithArgs, useTupleWhenMergeTypes))
                 {
                     return false;
                 }
@@ -1394,17 +1393,7 @@ class MLIRTypeHelper
                 return false;
             }
 
-            if (srcReturnType != extReturnType)
-            {
-                if (auto inferType = extReturnType.dyn_cast<mlir_ts::InferType>())
-                {
-                    appendInferTypeToContext(extReturnType, inferType, typeParamsWithArgs);
-                }
-
-                return extReturnType.isa<mlir_ts::AnyType>() || extReturnType.isa<mlir_ts::UnknownType>();
-            }
-
-            return true;
+            return extendsType(srcReturnType, extReturnType, typeParamsWithArgs);
         }
 
         // TODO: finish Function Types, etc
