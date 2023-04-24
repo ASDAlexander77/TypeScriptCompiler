@@ -5923,6 +5923,10 @@ class MLIRGenImpl
         }
 
         auto savingValue = rightExpressionValue;
+        if (!savingValue)
+        {
+            return mlir::failure();
+        }
 
         auto syncSavingValue = [&](mlir::Type destType) {
             if (destType != savingValue.getType())
@@ -5944,6 +5948,10 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! Dest type: " << destType << "\n";);
 
             syncSavingValue(destType);
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
 
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have
             // writable array
@@ -5952,6 +5960,10 @@ class MLIRGenImpl
         else if (auto accessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorOp>())
         {
             syncSavingValue(accessorOp.getType());
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
 
             auto callRes =
                 builder.create<mlir_ts::CallOp>(location, accessorOp.setAccessor().getValue(),
@@ -5960,6 +5972,10 @@ class MLIRGenImpl
         else if (auto thisAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorOp>())
         {
             syncSavingValue(thisAccessorOp.getType());
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
 
             auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorOp.setAccessor().getValue(),
                                                            mlir::TypeRange{},
@@ -6007,13 +6023,11 @@ class MLIRGenImpl
         auto leftExpressionValue = V(result);
 
         auto rightExprGenContext = GenContext(genContext);
-        if (auto hybridFuncType = leftExpressionValue.getType().dyn_cast<mlir_ts::HybridFunctionType>())
+
+        // TODO: the following code is not working why?
+        if (mth.isFuncType(leftExpressionValue.getType()))
         {
-            rightExprGenContext.receiverFuncType = hybridFuncType;
-        }
-        else if (auto funcType = leftExpressionValue.getType().dyn_cast<mlir_ts::FunctionType>())
-        {
-            rightExprGenContext.receiverFuncType = funcType;
+            rightExprGenContext.receiverFuncType = leftExpressionValue.getType();
         }
 
         auto result2 = mlirGen(rightExpression, rightExprGenContext);
@@ -12573,6 +12587,92 @@ genContext);
             {
                 return castTupleToInterface(location, value, tupleType, interfaceType, genContext);
             }
+        }
+
+
+        // class to object
+        if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
+        {
+            ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
+            if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+            {
+                fields = tupleType.getFields();
+            }
+            else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
+            {
+                fields = constTupleType.getFields();
+            }
+
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            assert(classInfo);            
+
+            SmallVector<mlir::Value> values;
+            for (auto fieldInfo : fields)
+            {
+                auto foundField = false;                                        
+                auto classFieldInfo = classInfo->findField(fieldInfo.id, foundField);
+                if (!foundField)
+                {
+                    emitError(location)
+                        << "field " << fieldInfo.id << " can't be found in class '" << classInfo->fullName << "'";
+                    return mlir::Value();
+                }                
+
+                MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
+                // TODO: implemenet conditional
+                mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
+                if (propertyAccess)
+                {
+                    values.push_back(propertyAccess);
+                }
+            }
+
+            SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
+            fieldsForTuple.append(fields.begin(), fields.end());
+            return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
+        }
+
+        // interface to object
+        if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
+        {
+            ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
+            if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+            {
+                fields = tupleType.getFields();
+            }
+            else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
+            {
+                fields = constTupleType.getFields();
+            }
+
+            auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            assert(interfaceInfo);            
+
+            SmallVector<mlir::Value> values;
+            for (auto fieldInfo : fields)
+            {
+                auto totalOffset = 0;                                        
+                auto classFieldInfo = interfaceInfo->findField(fieldInfo.id, totalOffset);
+                if (totalOffset < 0)
+                {
+                    emitError(location)
+                        << "field '" << fieldInfo.id << "' can't be found "
+                        << "' in interface '" << interfaceInfo->fullName << "'";
+                    return mlir::Value();
+                }                
+
+                MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
+                // TODO: implemenet conditional
+                mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, classFieldInfo->isConditional, cl, genContext); 
+                if (propertyAccess)
+                {
+                    values.push_back(propertyAccess);
+                }
+            }
+
+            SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
+            fieldsForTuple.append(fields.begin(), fields.end());
+            return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
         }
 
         // optional with union & interface inside
