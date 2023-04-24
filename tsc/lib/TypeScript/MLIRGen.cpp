@@ -8986,40 +8986,42 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment value: " << tupleValue << "\n";);
 
-                ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
+                auto tupleFields = [&] (::llvm::ArrayRef<mlir_ts::FieldInfo> fields) {
+                    SmallVector<mlir::Type> types;
+                    for (auto &field : fields)
+                    {
+                        types.push_back(field.type);
+                    }
+
+                    // deconstruct tuple
+                    auto res = builder.create<mlir_ts::DeconstructTupleOp>(loc(spreadAssignment), types, tupleValue);
+
+                    // read all fields
+                    for (auto pair : llvm::zip(fields, res.results()))
+                    {
+                        addFieldInfo(
+                            std::get<0>(pair).id, 
+                            std::get<1>(pair), 
+                            receiverType 
+                                ? getTypeByFieldNameFromReceiverType(std::get<0>(pair).id, receiverType) 
+                                : mlir::Type());
+                    }
+                };
+
                 TypeSwitch<mlir::Type>(tupleValue.getType())
-                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
+                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { tupleFields(tupleType.getFields()); })
                     .template Case<mlir_ts::ConstTupleType>(
-                        [&](auto constTupleType) { fields = constTupleType.getFields(); })
+                        [&](auto constTupleType) { tupleFields(constTupleType.getFields()); })
                     .template Case<mlir_ts::InterfaceType>(
                         [&](auto interfaceType) { 
                             mlir::SmallVector<mlir_ts::FieldInfo> destFields;
                             if (mlir::succeeded(mth.getFields(interfaceType, destFields)))
                             {
-                                fields = destFields;
+                                // destFields;
+                                llvm_unreachable("not implemented");
                             }
                         })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
-
-                SmallVector<mlir::Type> types;
-                for (auto &field : fields)
-                {
-                    types.push_back(field.type);
-                }
-
-                // deconstruct tuple
-                auto res = builder.create<mlir_ts::DeconstructTupleOp>(loc(spreadAssignment), types, tupleValue);
-
-                // read all fields
-                for (auto pair : llvm::zip(fields, res.results()))
-                {
-                    addFieldInfo(
-                        std::get<0>(pair).id, 
-                        std::get<1>(pair), 
-                        receiverType 
-                            ? getTypeByFieldNameFromReceiverType(std::get<0>(pair).id, receiverType) 
-                            : mlir::Type());
-                }
 
                 continue;
             }
