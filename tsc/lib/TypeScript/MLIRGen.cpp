@@ -14724,9 +14724,9 @@ genContext);
         return funcType;
     }
 
-    mlir_ts::ConstructorFunctionType getConstructorType(SignatureDeclarationBase signature, const GenContext &genContext)
+    mlir_ts::ConstructFunctionType getConstructorType(SignatureDeclarationBase signature, const GenContext &genContext)
     {
-        auto funcType = mlir_ts::ConstructorFunctionType::get(
+        auto funcType = mlir_ts::ConstructFunctionType::get(
             builder.getContext(), 
             getSignature(signature, genContext), 
             hasModifier(signature, SyntaxKind::AbstractKeyword));

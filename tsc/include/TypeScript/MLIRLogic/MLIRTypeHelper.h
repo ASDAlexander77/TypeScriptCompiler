@@ -1167,6 +1167,49 @@ class MLIRTypeHelper
         llvm_unreachable("not implemented");
     }
 
+    bool extendsTypeFuncTypes(ArrayRef<mlir::Type> srcParams, ArrayRef<mlir::Type> extParams, bool extIsVarArgs, 
+        mlir::Type srcReturnType, mlir::Type extReturnType,
+        llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs)
+    {
+        auto maxParams = std::max(srcParams.size(), extParams.size());
+        for (auto index = 0; index < maxParams; index++)
+        {
+            auto srcParamType = (index < srcParams.size()) ? srcParams[index] : mlir::Type();
+            auto extParamType = (index < extParams.size()) ? extParams[index] : extIsVarArgs ? extParams[extParams.size() - 1] : mlir::Type();
+
+            auto isIndexAtExtVarArgs = extIsVarArgs && index >= extParams.size() - 1;
+
+            auto useTupleWhenMergeTypes = false;
+            if (auto inferType = extParamType.dyn_cast<mlir_ts::InferType>())
+            {
+                useTupleWhenMergeTypes = true;
+                if (isIndexAtExtVarArgs && !srcParamType)
+                {
+                        // default empty tuple
+                    SmallVector<mlir_ts::FieldInfo> fieldInfos;
+                    srcParamType = getTupleType(fieldInfos);    
+                }
+            }
+
+            if (isIndexAtExtVarArgs)
+            {
+                if (auto arrayType = extParamType.dyn_cast<mlir_ts::ArrayType>())
+                {
+                    extParamType = arrayType.getElementType();
+                }
+            }
+
+            if (!extendsType(srcParamType, extParamType, typeParamsWithArgs, useTupleWhenMergeTypes))
+            {
+                return false;
+            }
+        }      
+
+        // compare return types
+        return extendsType(srcReturnType, extReturnType, typeParamsWithArgs);
+
+    }
+
     bool extendsType(mlir::Type srcType, mlir::Type extendType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleWhenMergeTypes = false)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! is extending type: [ " << srcType << " ] extend type: [ " << extendType
@@ -1182,12 +1225,12 @@ class MLIRTypeHelper
             return true;
         }
 
-        if (auto unkwnowType = extendType.dyn_cast<mlir_ts::AnyType>())
+        if (auto anyType = extendType.dyn_cast<mlir_ts::AnyType>())
         {
             return true;
         }
 
-        if (auto unkwnowType = extendType.dyn_cast<mlir_ts::NeverType>())
+        if (auto neverType = extendType.dyn_cast<mlir_ts::NeverType>())
         {
             return false;
         }        
@@ -1346,54 +1389,10 @@ class MLIRTypeHelper
             //auto srcIsVarArgs = getVarArgFromFuncRef(srcType);
             auto extIsVarArgs = getVarArgFromFuncRef(extendType);
 
-            auto maxParams = std::max(srcParams.size(), extParams.size());
-            for (auto index = 0; index < maxParams; index++)
-            {
-                auto srcParamType = (index < srcParams.size()) ? srcParams[index] : mlir::Type();
-                auto extParamType = (index < extParams.size()) ? extParams[index] : extIsVarArgs ? extParams[extParams.size() - 1] : mlir::Type();
-
-                auto isIndexAtExtVarArgs = extIsVarArgs && index >= extParams.size() - 1;
-
-                auto useTupleWhenMergeTypes = false;
-                if (auto inferType = extParamType.dyn_cast<mlir_ts::InferType>())
-                {
-                    useTupleWhenMergeTypes = true;
-                    if (isIndexAtExtVarArgs && !srcParamType)
-                    {
-                            // default empty tuple
-                        SmallVector<mlir_ts::FieldInfo> fieldInfos;
-                        srcParamType = getTupleType(fieldInfos);    
-                    }
-                }
-
-                if (isIndexAtExtVarArgs)
-                {
-                    if (auto arrayType = extParamType.dyn_cast<mlir_ts::ArrayType>())
-                    {
-                        extParamType = arrayType.getElementType();
-                    }
-                }
-
-                if (!extendsType(srcParamType, extParamType, typeParamsWithArgs, useTupleWhenMergeTypes))
-                {
-                    return false;
-                }
-            }      
-
-            // compare return types
             auto srcReturnType = getReturnTypeFromFuncRef(srcType);
             auto extReturnType = getReturnTypeFromFuncRef(extendType);       
 
-            auto noneType = mlir::NoneType::get(context);
-            auto voidType = mlir_ts::VoidType::get(context);
-            auto isSrcVoid = !srcReturnType || srcReturnType == noneType || srcReturnType == voidType;
-            auto isExtVoid = !extReturnType || extReturnType == noneType || extReturnType == voidType;
-            if (isSrcVoid != isExtVoid)
-            {
-                return false;
-            }
-
-            return extendsType(srcReturnType, extReturnType, typeParamsWithArgs);
+            return extendsTypeFuncTypes(srcParams, extParams, extIsVarArgs, srcReturnType, extReturnType, typeParamsWithArgs);
         }
 
         // TODO: finish Function Types, etc

@@ -8,6 +8,7 @@ type Exclude<T, U> = T extends U ? never : T;
 type Extract<T, U> = T extends U ? T : never;
 type NonNullable<T> = T & {};
 type Parameters<T extends (...args: any) => any> = T extends (...args: infer P) => any ? P : never;
+type ReturnType<T extends (...args: any) => any> = T extends (...args: any) => infer R ? R : any;
 
 interface CatInfo {
     age: number;
@@ -60,11 +61,16 @@ type T4 = NonNullable<string[] | null | undefined>;
 
 // params
 
-type T0 = Parameters<() => string>;
-type T1 = Parameters<(a: string, b: number) => string>;
-type T2 = Parameters<never>;
+type T5 = Parameters<() => string>;
+type T6 = Parameters<(a: string, b: number) => string>;
+type T7 = Parameters<never>;
 // should error
-//type T3 = Parameters<string>;
+//type T8 = Parameters<string>;
+
+// return
+
+type T9 = ReturnType<() => string>;
+type T10 = ReturnType<(s: string) => void>;
 
 function main() {
     const cats: Record<CatName, CatInfo> = {
@@ -117,10 +123,18 @@ function main() {
     let e: T4 = [];
 
     // params 
-	let a: T0;
-	let b: T1;
+	let a1: T5;
+	let b1: T6;
 	// never type should error
-	//let c: T2;
+	//let c: T7;
+
+    // return
+	let a2: T9 = "Hello";
+    // void type
+	//let b2; T10;
+
+	print(a2);
+    assert(a2 === "Hello");
 
     print("done.");
 }

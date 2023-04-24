@@ -117,6 +117,21 @@ class MLIRTypeIterator
 
                               return true;
                           })
+                          .Case<mlir_ts::ConstructFunctionType>([&](auto t) {
+                              for (auto subType : t.getInputs())
+                              {
+                                  if (!iterate(subType))
+                                      return false;
+                              }
+
+                              for (auto subType : t.getResults())
+                              {
+                                  if (!iterate(subType))
+                                      return false;
+                              }
+
+                              return true;
+                          })
                           .Case<mlir_ts::InferType>([&](auto t) {
                               if (!iterate(t.getElementType()))
                                   return false;
@@ -232,6 +247,12 @@ class MLIRTypeIterator
                               return true;
                           })                          
                           .Case<mlir_ts::StringType>([&](auto) {
+                              return true;
+                          })                          
+                          .Case<mlir_ts::VoidType>([&](auto) {
+                              return true;
+                          })                          
+                          .Case<mlir::NoneType>([&](auto) {
                               return true;
                           })                          
                           .Case<mlir::IntegerType>([&](auto) {

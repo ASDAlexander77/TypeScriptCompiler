@@ -876,7 +876,7 @@ def TypeScript_ExtensionFunction : TypeScript_Type<"ExtensionFunction"> {
   }];
 }
 
-def TypeScript_ConstructorFunction : TypeScript_Type<"ConstructorFunction"> {
+def TypeScript_ConstructFunction : TypeScript_Type<"ConstructFunction"> {
   let mnemonic = "construct_func";
 
   let summary = "Map from a list of inputs to a list of results with 'this' reference";
