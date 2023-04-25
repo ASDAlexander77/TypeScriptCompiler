@@ -1483,6 +1483,11 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
             // this is union of tuples, no need to add Tag to it
             // create tagged union
             auto casted = castLogic.castLLVMTypes(in, in.getType(), op.getType(), resType);
+            if (!casted)
+            {
+                return mlir::failure();
+            }
+
             rewriter.replaceOp(op, ValueRange{casted});
         }
         else
@@ -1494,7 +1499,11 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
             auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, in, clh.getStructIndexAttr(1));
 
             auto casted = castLogic.castLLVMTypes(val1, unionPartialType, op.getType(), resType);
-
+            if (!casted)
+            {
+                return mlir::failure();
+            }
+            
             rewriter.replaceOp(op, ValueRange{casted});
         }
 
@@ -1534,6 +1543,10 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
             CastLogicHelper castLogic(op, rewriter, tch);
             auto casted = castLogic.castLLVMTypes(transformed.in(), transformed.in().getType(), unionPartialType,
                                                   unionPartialType);
+            if (!casted)
+            {
+                return mlir::failure();
+            }
 
             auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, valueType, casted, clh.getStructIndexAttr(1));
 

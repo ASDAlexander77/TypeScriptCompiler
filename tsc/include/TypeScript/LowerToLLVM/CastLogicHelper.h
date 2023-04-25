@@ -572,13 +572,13 @@ class CastLogicHelper
         if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
         {
             LLVMTypeConverterHelper llvmtch((LLVMTypeConverter &)tch.typeConverter);
-            auto size1 = llvmtch.getTypeSize(inLLVMType);
-            auto size2 = llvmtch.getTypeSize(resLLVMType);
+            auto srcSize = llvmtch.getTypeSize(inLLVMType);
+            auto dstSize = llvmtch.getTypeSize(resLLVMType);
 
-            if (size1 != size2)
+            if (srcSize != dstSize)
             {
-                op->emitWarning("types have different sizes: ")
-                    << inLLVMType << " size of " << size1 << ", " << resLLVMType << " size of " << size2;
+                op->emitWarning("types have different sizes:\n ")
+                    << inLLVMType << " size of #" << srcSize << ",\n " << resLLVMType << " size of #" << dstSize;
             }
 
             auto srcAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
