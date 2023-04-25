@@ -457,7 +457,7 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
         auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(th.getI64Type(), {i8PtrTy}));
 
         // calc size
-        auto size = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, ValueRange{transformed.op()});
+        auto size = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, transformed.op());
         rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, th.getI32Type(), size.getResult(0));
 
         return success();
@@ -1503,7 +1503,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
             {
                 return mlir::failure();
             }
-            
+
             rewriter.replaceOp(op, ValueRange{casted});
         }
 
