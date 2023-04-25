@@ -5,8 +5,9 @@
     "tasks": [
         {
             "label": "config CMake",
+            "detail": "config_tsc_debug",
             "type": "shell",
-            "command": "config_tsc_debug.bat",
+            "command": "./config_tsc_debug.bat",
             "args": [],
             "problemMatcher": [],
             "options": {
@@ -15,8 +16,9 @@
         },
         {
             "label": "build CMake",
+            "detail": "build_tsc_debug",
             "type": "shell",
-            "command": "build_tsc_debug.bat",
+            "command": "./build_tsc_debug.bat",
             "args": [],
             "problemMatcher": [],
             "options": {
