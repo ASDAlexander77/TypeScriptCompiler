@@ -31,23 +31,48 @@ class LLVMTypeConverterHelper
         return mlir::IntegerType::get(&typeConverter.getContext(), typeConverter.getPointerBitwidth(addressSpace));
     }
 
-    int32_t getPointerBitwidth(unsigned addressSpace)
+    unsigned getPointerBitwidth(unsigned addressSpace)
     {
         return typeConverter.getPointerBitwidth(addressSpace);
     }
 
-    int32_t getTypeSize(mlir::Type llvmType)
+    uint64_t getStructTypeSizeNonAligned(LLVM::LLVMStructType structType)
     {
-        llvm::LLVMContext llvmContext;
-        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(llvmContext);
+        uint64_t size = 0;
 
+        for (auto subType : structType.getBody())
+        {
+            size += getTypeSizeEstimate(subType);
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! struct type: " << structType 
+                        << "\n estimated size: " << size << "\n";);
+
+        return size;
+    }
+
+    uint64_t getTypeSizeEstimate(mlir::Type llvmType)
+    {
         if (llvmType == LLVM::LLVMVoidType::get(llvmType.getContext()))
         {
             return 0;
         }
 
+        if (auto structData = llvmType.dyn_cast<LLVM::LLVMStructType>())
+        {
+            return getStructTypeSizeNonAligned(structData);
+        }        
+
+        llvm::LLVMContext llvmContext;
+        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(llvmContext);
+
         auto type = typeToLLVMIRTranslator.translateType(llvmType);
-        return typeConverter.getDataLayout().getTypeAllocSize(type);
+        uint64_t typeSize = typeConverter.getDataLayout().getTypeAllocSize(type);
+        
+        LLVM_DEBUG(llvm::dbgs() << "\n!! src type: " << llvmType
+                        << "\n size: " << typeSize << "\n";);
+
+        return typeSize;
     }
 
     mlir::Type findMaxSizeType(mlir_ts::UnionType unionType)
@@ -57,7 +82,7 @@ class LLVMTypeConverterHelper
         for (auto subType : unionType.getTypes())
         {
             auto converted = typeConverter.convertType(subType);
-            auto typeSize = getTypeSize(converted);
+            auto typeSize = getTypeSizeEstimate(converted);
             if (typeSize > currentSize)
             {
                 selectedType = converted;
