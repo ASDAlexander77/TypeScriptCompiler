@@ -12505,6 +12505,71 @@ genContext);
         return resultType;
     }
 
+    ValueOrLogicalResult castClassToTuple(mlir::Location location, mlir::Value value, mlir_ts::ClassType classType, 
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext)
+    {
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        assert(classInfo);            
+
+        SmallVector<mlir::Value> values;
+        for (auto fieldInfo : fields)
+        {
+            auto foundField = false;                                        
+            auto classFieldInfo = classInfo->findField(fieldInfo.id, foundField);
+            if (!foundField)
+            {
+                emitError(location)
+                    << "field " << fieldInfo.id << " can't be found in class '" << classInfo->fullName << "'";
+                return mlir::Value();
+            }                
+
+            MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
+            // TODO: implemenet conditional
+            mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
+            if (propertyAccess)
+            {
+                values.push_back(propertyAccess);
+            }
+        }
+
+        SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
+        fieldsForTuple.append(fields.begin(), fields.end());
+        return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
+    }
+
+    ValueOrLogicalResult castInterfaceToTuple(mlir::Location location, mlir::Value value, mlir_ts::InterfaceType interfaceType, 
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext)
+    {
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+        assert(interfaceInfo);            
+
+        SmallVector<mlir::Value> values;
+        for (auto fieldInfo : fields)
+        {
+            auto totalOffset = 0;                                        
+            auto classFieldInfo = interfaceInfo->findField(fieldInfo.id, totalOffset);
+            if (totalOffset < 0)
+            {
+                emitError(location)
+                    << "field '" << fieldInfo.id << "' can't be found "
+                    << "' in interface '" << interfaceInfo->fullName << "'";
+                return mlir::Value();
+            }                
+
+            MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
+            // TODO: implemenet conditional
+            mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, classFieldInfo->isConditional, cl, genContext); 
+            if (propertyAccess)
+            {
+                values.push_back(propertyAccess);
+            }
+        }
+
+        SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
+        fieldsForTuple.append(fields.begin(), fields.end());
+        return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
+    }
+
     ValueOrLogicalResult cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         if (!type)
@@ -12589,7 +12654,6 @@ genContext);
             }
         }
 
-
         // class to object
         if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
         {
@@ -12597,39 +12661,13 @@ genContext);
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
             {
                 fields = tupleType.getFields();
+                return castClassToTuple(location, value, classType, fields, genContext);
             }
             else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
             {
                 fields = constTupleType.getFields();
+                return castClassToTuple(location, value, classType, fields, genContext);
             }
-
-            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-            assert(classInfo);            
-
-            SmallVector<mlir::Value> values;
-            for (auto fieldInfo : fields)
-            {
-                auto foundField = false;                                        
-                auto classFieldInfo = classInfo->findField(fieldInfo.id, foundField);
-                if (!foundField)
-                {
-                    emitError(location)
-                        << "field " << fieldInfo.id << " can't be found in class '" << classInfo->fullName << "'";
-                    return mlir::Value();
-                }                
-
-                MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
-                // TODO: implemenet conditional
-                mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
-                if (propertyAccess)
-                {
-                    values.push_back(propertyAccess);
-                }
-            }
-
-            SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
-            fieldsForTuple.append(fields.begin(), fields.end());
-            return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
         }
 
         // interface to object
@@ -12639,40 +12677,13 @@ genContext);
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
             {
                 fields = tupleType.getFields();
+                return castInterfaceToTuple(location, value, interfaceType, fields, genContext);
             }
             else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
             {
                 fields = constTupleType.getFields();
+                return castInterfaceToTuple(location, value, interfaceType, fields, genContext);
             }
-
-            auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
-            assert(interfaceInfo);            
-
-            SmallVector<mlir::Value> values;
-            for (auto fieldInfo : fields)
-            {
-                auto totalOffset = 0;                                        
-                auto classFieldInfo = interfaceInfo->findField(fieldInfo.id, totalOffset);
-                if (totalOffset < 0)
-                {
-                    emitError(location)
-                        << "field '" << fieldInfo.id << "' can't be found "
-                        << "' in interface '" << interfaceInfo->fullName << "'";
-                    return mlir::Value();
-                }                
-
-                MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
-                // TODO: implemenet conditional
-                mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, classFieldInfo->isConditional, cl, genContext); 
-                if (propertyAccess)
-                {
-                    values.push_back(propertyAccess);
-                }
-            }
-
-            SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
-            fieldsForTuple.append(fields.begin(), fields.end());
-            return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
         }
 
         // optional with union & interface inside

@@ -153,7 +153,7 @@
         "cmake.sourceDirectory": "${workspaceFolder}/..",
         "cmake.parallelJobs": 16,
         "cmake.ctestArgs": ["--parallel", "16"],
-	    "cmake.useCMakePresets": "auto",
+	"cmake.useCMakePresets": "auto",
         "C_Cpp.codeAnalysis.clangTidy.headerFilter": ".*",
         "editor.defaultFormatter": "xaver.clang-format",
         "[cpp]": {

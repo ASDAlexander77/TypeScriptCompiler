@@ -10,9 +10,9 @@
             "args": [],
             "problemMatcher": [],
             "options": {
-                "cwd": "${workspaceFolder}/..",
+                "cwd": "${workspaceFolder}/.."
             }
-        },        
+        },
         {
             "label": "build CMake",
             "type": "shell",
@@ -20,12 +20,40 @@
             "args": [],
             "problemMatcher": [],
             "options": {
-                "cwd": "${workspaceFolder}/..",
+                "cwd": "${workspaceFolder}/.."
             },
             "group": {
                 "kind": "build",
                 "isDefault": true
-            } 
+            }
+        },
+        {
+            "label": "CTest - All",
+            "type": "shell",
+            "command": "ctest -C Debug -j16 --output-on-failure",
+            "problemMatcher": [],
+            "detail": "CMake CTest - run all",
+            "group": {
+                "kind": "test",
+                "isDefault": false
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/../../__build/tsc"
+            }
+        },
+        {
+            "label": "CTest - Failed",
+            "type": "shell",
+            "command": "ctest -C Debug -j16 --rerun-failed --output-on-failure",
+            "problemMatcher": [],
+            "detail": "CMake CTest - rerun failed",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/../../__build/tsc"
+            }
         }
     ]
 }
