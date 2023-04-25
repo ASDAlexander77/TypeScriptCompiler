@@ -239,6 +239,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::Modul
         if (enableOpt)
         {
             optPM.addPass(mlir::createCSEPass());
+            pm.addPass(mlir::createLoopInvariantCodeMotionPass());
             pm.addPass(mlir::createStripDebugInfoPass());
             pm.addPass(mlir::createInlinerPass());
             pm.addPass(mlir::createSCCPPass());
