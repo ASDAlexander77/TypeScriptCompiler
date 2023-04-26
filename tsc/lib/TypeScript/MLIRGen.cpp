@@ -11724,13 +11724,20 @@ genContext);
         {
             return mlir::success();
         }
-
+       
         // TODO: ...
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
-        // register global
+        // TODO: this is pure hack, add ability to clean up created globals while "dummyRun = true"
+        // look into examnple with class declaraion in generic function
         auto fullClassVTableFieldName = concat(newClassPtr->fullName, VTABLE_NAME);
+        if (fullNameGlobalsMap.count(fullClassVTableFieldName))
+        {
+            return mlir::success();
+        }
+
+        // register global
         auto vtableRegisteredType = registerVariable(
             location, fullClassVTableFieldName, true,
             newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
