@@ -1562,39 +1562,73 @@ class MLIRGenImpl
             auto totalProcessed = 0;
             do
             {
-                auto index = -1;
+                auto paramIndex = -1;
                 auto processed = 0;
                 for (auto paramInfo : funcOp->getParams())
                 {
-                    index++;
+                    paramIndex++;
                     if (paramInfo->processed)
                     {
                         continue;
                     }
 
-                    if (callOpsCount <= index)
+                    if (callOpsCount <= paramIndex)
                     {
                         // there is no more ops
                         break;
                     }
 
-                    auto type = paramInfo->getType();
-                    auto argOp = genContext.callOperands[index];
+                    auto paramType = paramInfo->getType();
+                    auto argOp = genContext.callOperands[paramIndex];
 
                     LLVM_DEBUG(llvm::dbgs()
                         << "\n!! resolving param for generic function: '"
-                        << functionGenericTypeInfo->name << "'\n\t parameter #" << index << " type: [ " << type << " ] \n\t argument type: [ " << argOp << " ]\n";);
+                        << functionGenericTypeInfo->name << "'\n\t parameter #" << paramIndex << " type: [ " << paramType << " ] \n\t argument type: [ " << argOp << " ]\n";);
 
-                    auto [result, cont] = resolveGenericParamFromFunctionCall(
-                        location, type, argOp, index, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext, genContext);
-                    if (mlir::succeeded(result))
+                    if (!paramInfo->getIsMultiArgsParam())
                     {
-                        paramInfo->processed = true;
-                        processed++;
+                        auto [result, cont] = resolveGenericParamFromFunctionCall(
+                            location, paramType, argOp, paramIndex, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext, genContext);
+                        if (mlir::succeeded(result))
+                        {
+                            paramInfo->processed = true;
+                            processed++;
+                        }
+                        else if (!cont)
+                        {
+                            return mlir::failure();
+                        }
                     }
-                    else if (!cont)
+                    else
                     {
-                        return mlir::failure();
+                        if (auto arrayType = paramType.dyn_cast<mlir_ts::ArrayType>())
+                        {
+                            paramType = arrayType.getElementType();
+                        }
+
+                        auto anyFailed = false;
+                        for (auto varArgIndex = paramIndex; varArgIndex < callOpsCount; varArgIndex++)
+                        {
+                            auto argOp = genContext.callOperands[varArgIndex];
+
+                            auto [result, cont] = resolveGenericParamFromFunctionCall(
+                                location, paramType, argOp, paramIndex/*this should be paramIndex*/, functionGenericTypeInfo, anyNamedGenericType, 
+                                    genericTypeGenContext, genContext);
+                            if (mlir::failed(result))
+                            {
+                                anyFailed = true;
+                                if (!cont)
+                                {
+                                    return mlir::failure();
+                                }                            
+                            }
+                        }
+
+                        if (!anyFailed)
+                        {
+                            paramInfo->processed = true;
+                            processed++;
+                        }
                     }
                 }
 
