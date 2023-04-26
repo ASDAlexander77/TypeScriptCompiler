@@ -2264,6 +2264,8 @@ class MLIRGenImpl
                 {
                     if (!isExternal)
                     {
+                        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+
                         auto &region = globalOp.getInitializerRegion();
                         auto *block = builder.createBlock(&region);
 
