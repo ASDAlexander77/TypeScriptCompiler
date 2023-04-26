@@ -338,8 +338,8 @@ class MLIRGenImpl
         GenContext genContextPartial{};
         genContextPartial.allowPartialResolve = true;
         genContextPartial.dummyRun = true;
-        genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
         // TODO: no need to clean up here as whole module will be removed
+        //genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
         //genContextPartial.cleanUpOps = new mlir::SmallVector<mlir::Operation *>();
 
         for (auto includeFile : includeFiles)
@@ -3979,7 +3979,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        if (genContext.dummyRun)
+        if (genContext.dummyRun && genContext.cleanUps)
         {
             genContext.cleanUps->push_back(blockPtr);
         }
@@ -4037,7 +4037,10 @@ class MLIRGenImpl
 
         if (genContext.dummyRun)
         {
-            genContext.cleanUps->push_back(blockPtr);
+            if (genContext.cleanUps)
+            {
+                genContext.cleanUps->push_back(blockPtr);
+            }
         }
         else
         {
