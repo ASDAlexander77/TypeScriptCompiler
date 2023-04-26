@@ -722,6 +722,8 @@ class CastLogicHelper
         mlir::Type srcElementType;
         mlir::Type llvmSrcElementType;
         auto size = 0;
+        bool byValue = true;
+        bool isUndef = false;
         if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
         {
             size = constArrayType.getSize();
@@ -737,6 +739,20 @@ class CastLogicHelper
                 return mlir::Value();
             }
         }
+        else if (auto nullType = type.dyn_cast<mlir_ts::NullType>())
+        {
+            size = 0;
+            srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            llvmSrcElementType = tch.convertType(srcElementType);         
+            byValue = false;               
+        }   
+        else if (auto nullType = type.dyn_cast<mlir_ts::UndefinedType>())
+        {
+            size = 0;
+            srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            llvmSrcElementType = tch.convertType(srcElementType);                  
+            isUndef = true;      
+        }              
         else if (auto ptrValue = type.dyn_cast<LLVM::LLVMPointerType>())
         {
             auto elementType = ptrValue.getElementType();
@@ -747,14 +763,14 @@ class CastLogicHelper
             }
             else
             {
-                LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " type: " << in.getType()
+                LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " as type: " << type
                                         << " to type: " << elementType << "\n";);
                 llvm_unreachable("not implemented");
             }
         }
         else
         {
-            LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(1)] from value: " << in << " type: " << in.getType() << " to type: " << arrayType
+            LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(1)] from value: " << in << " as type: " << type << " to type: " << arrayType
                                     << "\n";);
             llvm_unreachable("not implemented");
         }
@@ -766,12 +782,16 @@ class CastLogicHelper
         auto llvmDestArray = LLVM::LLVMPointerType::get(llvmDestArrayElement);
 
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
+        if (isUndef)
+        {
+            return structValue;
+        }
+        
         auto arrayPtrType = LLVM::LLVMPointerType::get(llvmSrcElementType);
         auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSrcElementType, size);
         auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
 
         mlir::Value arrayPtr;
-        bool byValue = true;
         if (byValue)
         {
             auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
