@@ -46,8 +46,8 @@ class OptionalLogicHelper
         auto right = binOp->getOperand(1);
         auto leftType = left.getType();
         auto rightType = right.getType();
-        auto leftOptType = leftType.dyn_cast_or_null<mlir_ts::OptionalType>();
-        auto rightOptType = rightType.dyn_cast_or_null<mlir_ts::OptionalType>();
+        auto leftOptType = leftType.dyn_cast<mlir_ts::OptionalType>();
+        auto rightOptType = rightType.dyn_cast<mlir_ts::OptionalType>();
 
         assert(leftOptType || rightOptType);
 

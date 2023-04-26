@@ -152,22 +152,22 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
-        if (auto subType = type.dyn_cast_or_null<mlir_ts::RefType>())
+        if (auto subType = type.dyn_cast<mlir_ts::RefType>())
         {
             return typeOfLogic(loc, subType.getElementType());
         }
 
-        if (auto subType = type.dyn_cast_or_null<mlir_ts::ValueRefType>())
+        if (auto subType = type.dyn_cast<mlir_ts::ValueRefType>())
         {
             return typeOfLogic(loc, subType.getElementType());
         }
 
-        if (auto subType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+        if (auto subType = type.dyn_cast<mlir_ts::OptionalType>())
         {
             return typeOfLogic(loc, subType.getElementType());
         }
 
-        if (auto literalType = type.dyn_cast_or_null<mlir_ts::LiteralType>())
+        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
         {
             return typeOfLogic(loc, literalType.getElementType());
         }
@@ -191,7 +191,7 @@ class TypeOfOpHelper
             return rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
         }
 
-        if (auto subType = origType.dyn_cast_or_null<mlir_ts::OptionalType>())
+        if (auto subType = origType.dyn_cast<mlir_ts::OptionalType>())
         {
             auto valueOfOpt = rewriter.create<mlir_ts::ValueOp>(loc, subType.getElementType(), value);
             return typeOfLogic(loc, valueOfOpt, subType.getElementType());

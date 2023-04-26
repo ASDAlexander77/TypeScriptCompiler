@@ -39,7 +39,7 @@ class TypeConverterHelper
 
     mlir::Type makePtrToValue(mlir::Type type)
     {
-        if (auto constArray = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+        if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
         {
             return LLVM::LLVMPointerType::get(LLVM::LLVMArrayType::get(convertType(constArray.getElementType()), constArray.getSize()));
         }

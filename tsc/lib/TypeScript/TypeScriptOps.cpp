@@ -388,8 +388,8 @@ LogicalResult mlir_ts::CastOp::verify()
     auto resType = res().getType();
 
     // funcType -> funcType
-    auto inFuncType = inType.dyn_cast_or_null<mlir_ts::FunctionType>();
-    auto resFuncType = resType.dyn_cast_or_null<mlir_ts::FunctionType>();
+    auto inFuncType = inType.dyn_cast<mlir_ts::FunctionType>();
+    auto resFuncType = resType.dyn_cast<mlir_ts::FunctionType>();
     if (inFuncType && resFuncType)
     {
         ::typescript::MLIRTypeHelper mth(getContext());
@@ -405,7 +405,7 @@ LogicalResult mlir_ts::CastOp::verify()
     }
 
     // optional<T> -> <T>
-    if (auto inOptType = inType.dyn_cast_or_null<mlir_ts::OptionalType>())
+    if (auto inOptType = inType.dyn_cast<mlir_ts::OptionalType>())
     {
         if (inOptType.getElementType() == resType)
         {
@@ -413,7 +413,7 @@ LogicalResult mlir_ts::CastOp::verify()
         }
     }
 
-    if (auto resOptType = resType.dyn_cast_or_null<mlir_ts::OptionalType>())
+    if (auto resOptType = resType.dyn_cast<mlir_ts::OptionalType>())
     {
         if (resOptType.getElementType() == inType)
         {
@@ -422,8 +422,8 @@ LogicalResult mlir_ts::CastOp::verify()
     }
 
     // check if we can cast type to union type
-    auto inUnionType = inType.dyn_cast_or_null<mlir_ts::UnionType>();
-    auto resUnionType = resType.dyn_cast_or_null<mlir_ts::UnionType>();
+    auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>();
+    auto resUnionType = resType.dyn_cast<mlir_ts::UnionType>();
     if (inUnionType || resUnionType)
     {
         ::typescript::MLIRTypeHelper mth(getContext());
@@ -588,8 +588,8 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         */
 
         // null -> interface cast
-        auto anyType = in.getType().dyn_cast_or_null<mlir_ts::AnyType>();
-        auto interfaceType = res.getType().dyn_cast_or_null<mlir_ts::InterfaceType>();
+        auto anyType = in.getType().dyn_cast<mlir_ts::AnyType>();
+        auto interfaceType = res.getType().dyn_cast<mlir_ts::InterfaceType>();
         if (anyType && interfaceType)
         {
             if (auto nullOp = in.getDefiningOp<mlir_ts::NullOp>())
@@ -602,11 +602,11 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         }
 
         // const tuple -> const tuple, for example { value: undefined, done: true } -> { value: <int>, done: <boolean> }
-        if (auto constTupleIn = in.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (auto constTupleIn = in.getType().dyn_cast<mlir_ts::ConstTupleType>())
         {
             ::typescript::MLIRTypeHelper mth(rewriter.getContext());
 
-            if (auto constTupleRes = res.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            if (auto constTupleRes = res.getType().dyn_cast<mlir_ts::ConstTupleType>())
             {
                 if (mth.canCastFromToLogic(constTupleIn, constTupleRes))
                 {
@@ -619,7 +619,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
                     }
                 }
             }
-            else if (auto tupleRes = res.getType().dyn_cast_or_null<mlir_ts::TupleType>())
+            else if (auto tupleRes = res.getType().dyn_cast<mlir_ts::TupleType>())
             {
                 if (mlir_ts::TupleType::get(rewriter.getContext(), constTupleIn.getFields()) != tupleRes &&
                     mth.canCastFromToLogic(constTupleIn, tupleRes))

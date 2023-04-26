@@ -85,7 +85,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     {
         return OptionalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter);
     }
-    else if (leftType.isIntOrIndex() || leftType.dyn_cast_or_null<mlir_ts::BooleanType>())
+    else if (leftType.isIntOrIndex() || leftType.dyn_cast<mlir_ts::BooleanType>())
     {
         auto value = builder.create<StdIOpTy>(loc, v1, left, right);
         return value;
@@ -95,7 +95,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdFOpTy>(loc, v2, left, right);
         return value;
     }
-    else if (leftType.dyn_cast_or_null<mlir_ts::NumberType>())
+    else if (leftType.dyn_cast<mlir_ts::NumberType>())
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftType, left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, leftType, right);
@@ -103,7 +103,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         return value;
     }
     /*
-    else if (auto leftEnumType = leftType.dyn_cast_or_null<mlir_ts::EnumType>())
+    else if (auto leftEnumType = leftType.dyn_cast<mlir_ts::EnumType>())
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), right);
@@ -112,7 +112,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         return value;
     }
     */
-    else if (leftType.dyn_cast_or_null<mlir_ts::StringType>())
+    else if (leftType.dyn_cast<mlir_ts::StringType>())
     {
         if (left.getType() != right.getType())
         {
@@ -124,8 +124,8 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         return value;
     }
-    else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>() || leftType.dyn_cast_or_null<mlir_ts::ClassType>() ||
-             leftType.dyn_cast_or_null<mlir_ts::OpaqueType>())
+    else if (leftType.dyn_cast<mlir_ts::AnyType>() || leftType.dyn_cast<mlir_ts::ClassType>() ||
+             leftType.dyn_cast<mlir_ts::OpaqueType>())
     {
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
@@ -139,7 +139,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }
-    else if (leftType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+    else if (leftType.dyn_cast<mlir_ts::InterfaceType>())
     {
         // TODO, extract interface VTable to compare
         auto leftVtableValue =
