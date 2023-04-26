@@ -71,7 +71,7 @@ struct GenContext
     void clean()
     {
         if (cleanUps)
-        {
+        {    
             for (auto op : *cleanUps)
             {
                 op->dropAllDefinedValueUses();
@@ -82,6 +82,20 @@ struct GenContext
 
             delete cleanUps;
             cleanUps = nullptr;
+        }
+
+        if (cleanUpOps)
+        {
+            for (auto op : *cleanUpOps)
+            {
+                op->dropAllDefinedValueUses();
+                op->dropAllUses();
+                op->dropAllReferences();
+                op->erase();
+            }
+
+            delete cleanUpOps;
+            cleanUpOps = nullptr;               
         }
 
         if (passResult)
@@ -132,6 +146,7 @@ struct GenContext
     mlir::Type receiverType;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
+    mlir::SmallVector<mlir::Operation *> *cleanUpOps;
     NodeArray<Statement> generatedStatements;
     llvm::StringMap<mlir::Type> typeAliasMap;
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;

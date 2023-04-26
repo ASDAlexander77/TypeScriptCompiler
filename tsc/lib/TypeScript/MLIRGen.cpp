@@ -339,6 +339,8 @@ class MLIRGenImpl
         genContextPartial.allowPartialResolve = true;
         genContextPartial.dummyRun = true;
         genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
+        // TODO: no need to clean up here as whole module will be removed
+        //genContextPartial.cleanUpOps = new mlir::SmallVector<mlir::Operation *>();
 
         for (auto includeFile : includeFiles)
         {
@@ -2259,6 +2261,10 @@ class MLIRGenImpl
                                                              // temp type
                                                              builder.getI32Type(), isConst, effectiveName,
                                                              mlir::Attribute(), attrs);
+                if (genContext.dummyRun && genContext.cleanUpOps)
+                {
+                    genContext.cleanUpOps->push_back(globalOp);
+                }
 
                 if (isGlobalScope)
                 {
@@ -3108,12 +3114,16 @@ class MLIRGenImpl
             // simulate scope
             SymbolTableScopeT varScope(symbolTable);
 
+            llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> 
+                fullNameGlobalsMapScope(fullNameGlobalsMap);
+
             GenContext genContextWithPassResult{};
             genContextWithPassResult.funcOp = dummyFuncOp;
             genContextWithPassResult.thisType = genContext.thisType;
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
+            genContextWithPassResult.cleanUpOps = new SmallVector<mlir::Operation *>();
             genContextWithPassResult.passResult = new PassResult();
             genContextWithPassResult.state = new int(1);
             genContextWithPassResult.allocateVarsInContextThis =
