@@ -628,7 +628,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         {
             // extract pointer from struct
             dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTuple,
-                                                            rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+                                                            rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(ARRAY_DATA_INDEX)));
         }
 
         auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});

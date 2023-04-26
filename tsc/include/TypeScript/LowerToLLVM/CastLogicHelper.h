@@ -155,7 +155,7 @@ class CastLogicHelper
                 if (arrayType.getElementType() == refType.getElementType())
                 {
                     return rewriter.create<LLVM::ExtractValueOp>(loc, resLLVMType, in,
-                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(ARRAY_DATA_INDEX)));
                 }
             }
         }
@@ -321,6 +321,14 @@ class CastLogicHelper
 
                 return rewriter.create<LLVM::AndOp>(loc, llvmBoolType, v1AsLLVMType, valAsBool);
             }
+
+            if (auto arrayType = inType.dyn_cast<mlir_ts::ArrayType>())
+            {
+                auto ptrValue = extractArrayPtr(in, arrayType);
+                auto inLLVMType = tch.convertType(ptrValue.getType());
+                auto llvmBoolType = tch.convertType(boolType);
+                return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
+            }            
 
             if (auto unionType = inType.dyn_cast<mlir_ts::UnionType>())
             {
@@ -814,10 +822,10 @@ class CastLogicHelper
         }
 
         auto structValue2 =
-            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, arrayPtr, clh.getStructIndexAttr(0));
+            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, arrayPtr, clh.getStructIndexAttr(ARRAY_DATA_INDEX));
 
         auto structValue3 =
-            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, sizeValue, clh.getStructIndexAttr(1));
+            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, sizeValue, clh.getStructIndexAttr(ARRAY_SIZE_INDEX));
 
         return structValue3;
     }
@@ -904,6 +912,16 @@ class CastLogicHelper
 
         return valueRefVal;
     }
+
+    mlir::Value extractArrayPtr(mlir::Value in, mlir_ts::ArrayType arrayType)
+    {
+        auto llvmType = tch.convertType(arrayType.getElementType());
+        auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
+
+        mlir::Value ptrVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, in, clh.getStructIndexAttr(ARRAY_DATA_INDEX));
+        return ptrVal;
+    }
+
 };
 
 template <typename T>

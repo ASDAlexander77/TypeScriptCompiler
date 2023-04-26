@@ -8041,6 +8041,13 @@ class MLIRGenImpl
         if (auto classType = resultType.dyn_cast<mlir_ts::ClassType>())
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            if (genContext.dummyRun)
+            {
+                // just to cut a lot of calls
+                newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(false));
+                return newOp;
+            }
+
             auto newOp = NewClassInstanceAsMethodCallOp(location, classInfo, methodCallWay, genContext);
             if (methodCallWay)
             {

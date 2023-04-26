@@ -163,6 +163,36 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }
+    else if (auto leftArrayType = leftType.dyn_cast<mlir_ts::ArrayType>())
+    {
+        // TODO, extract array pointer to compare
+        TypeHelper th(builder);
+        LLVMCodeHelper ch(binOp, builder, &typeConverter);
+        TypeConverterHelper tch(&typeConverter);
+
+        CastLogicHelper castLogic(binOp, builder, tch);
+
+        auto leftArrayPtrValue =
+            left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::NullOp>()
+                ? left
+                : castLogic.extractArrayPtr(left, leftArrayType);
+        auto rightArrayPtrValue =
+            right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::NullOp>()
+                ? right
+                : castLogic.extractArrayPtr(right, rightType.dyn_cast<mlir_ts::ArrayType>());
+
+        // excluded string
+        auto intPtrType = llvmtch.getIntPtrType(0);
+
+        mlir::Value leftArrayPtrValueAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(leftArrayPtrValue.getType()), leftArrayPtrValue);
+        mlir::Value rightArrayPtrValueAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(rightArrayPtrValue.getType()), rightArrayPtrValue);
+
+        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, leftArrayPtrValueAsLLVMType);
+        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightArrayPtrValueAsLLVMType);
+
+        auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
+        return value;
+    }    
     else
     {
         emitError(loc, "Not implemented operator for type 1: '") << leftType << "'";

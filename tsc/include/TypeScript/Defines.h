@@ -58,4 +58,7 @@
 #define DATA_VALUE_INDEX 0
 #define THIS_VALUE_INDEX 1
 
+#define ARRAY_DATA_INDEX 0
+#define ARRAY_SIZE_INDEX 1
+
 #endif // DEFINES_H_
