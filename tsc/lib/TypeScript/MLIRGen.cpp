@@ -1553,9 +1553,9 @@ class MLIRGenImpl
         if (funcOp)
         {
             // TODO: we have func params.
-            for (auto argInfo : funcOp->getArgs())
+            for (auto paramInfo : funcOp->getParams())
             {
-                argInfo->processed = false;
+                paramInfo->processed = false;
             }
 
             auto callOpsCount = genContext.callOperands.size();
@@ -1564,10 +1564,10 @@ class MLIRGenImpl
             {
                 auto index = -1;
                 auto processed = 0;
-                for (auto argInfo : funcOp->getArgs())
+                for (auto paramInfo : funcOp->getParams())
                 {
                     index++;
-                    if (argInfo->processed)
+                    if (paramInfo->processed)
                     {
                         continue;
                     }
@@ -1578,7 +1578,7 @@ class MLIRGenImpl
                         break;
                     }
 
-                    auto type = argInfo->getType();
+                    auto type = paramInfo->getType();
                     auto argOp = genContext.callOperands[index];
 
                     LLVM_DEBUG(llvm::dbgs()
@@ -1589,7 +1589,7 @@ class MLIRGenImpl
                         location, type, argOp, index, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext, genContext);
                     if (mlir::succeeded(result))
                     {
-                        argInfo->processed = true;
+                        paramInfo->processed = true;
                         processed++;
                     }
                     else if (!cont)
@@ -1606,7 +1606,7 @@ class MLIRGenImpl
 
                 totalProcessed += processed;
 
-                if (totalProcessed == funcOp->getArgs().size())
+                if (totalProcessed == funcOp->getParams().size())
                 {
                     break;
                 }
@@ -1800,9 +1800,9 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! func name: " << funcProto->getName()
                                 << ", Op type (resolving from operands): " << funcOp.getFunctionType() << "\n";);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! func args: "; auto index = 0; for (auto argInfo
-                                                                            : funcProto->getArgs()) {
-            llvm::dbgs() << "\n_ " << argInfo->getName() << ": " << argInfo->getType() << " = (" << index << ") ";
+        LLVM_DEBUG(llvm::dbgs() << "\n!! func args: "; auto index = 0; for (auto paramInfo
+                                                                            : funcProto->getParams()) {
+            llvm::dbgs() << "\n_ " << paramInfo->getName() << ": " << paramInfo->getType() << " = (" << index << ") ";
             if (genContext.callOperands.size() > index)
                 llvm::dbgs() << genContext.callOperands[index];
             llvm::dbgs() << "\n";
@@ -2909,7 +2909,7 @@ class MLIRGenImpl
                 argTypes.push_back(paramType);
             }
 
-            isMultiArgs |= param->getIsMultiArgs();
+            isMultiArgs |= param->getIsMultiArgsParam();
 
             argNumber++;
         }
@@ -3686,7 +3686,7 @@ class MLIRGenImpl
                                               mlir::Block::BlockArgListType arguments, const GenContext &genContext)
     {
         auto index = firstIndex;
-        for (const auto &param : funcProto->getArgs())
+        for (const auto &param : funcProto->getParams())
         {
             index++;
             mlir::Value paramValue;
@@ -3776,7 +3776,7 @@ class MLIRGenImpl
                                                       mlir::Block::BlockArgListType arguments,
                                                       const GenContext &genContext)
     {
-        for (const auto &param : funcProto->getArgs())
+        for (const auto &param : funcProto->getParams())
         {
             if (auto bindingPattern = param->getBindingPattern())
             {
@@ -3869,7 +3869,7 @@ class MLIRGenImpl
         auto &entryBlock = *blockPtr;
 
         // process function params
-        for (auto paramPairs : llvm::zip(funcProto->getArgs(), entryBlock.getArguments()))
+        for (auto paramPairs : llvm::zip(funcProto->getParams(), entryBlock.getArguments()))
         {
             if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs), genContext)))
             {

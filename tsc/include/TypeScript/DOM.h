@@ -128,9 +128,9 @@ class FunctionParamDOM : public VariableDeclarationDOM
   public:
     using TypePtr = std::shared_ptr<FunctionParamDOM>;
 
-    FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, bool isMultiArgs = false,
+    FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, bool isMultiArgsParam = false,
                      Expression initValue = undefined, Node bindingPattern = undefined)
-        : VariableDeclarationDOM(name, type, loc, initValue), processed(false), isOptional(isOptional), isMultiArgs(isMultiArgs),
+        : VariableDeclarationDOM(name, type, loc, initValue), processed(false), isOptional(isOptional), isMultiArgsParam(isMultiArgsParam),
           bindingPattern(bindingPattern)
     {
     }
@@ -140,9 +140,9 @@ class FunctionParamDOM : public VariableDeclarationDOM
         return isOptional;
     }
 
-    bool getIsMultiArgs()
+    bool getIsMultiArgsParam()
     {
-        return isMultiArgs;
+        return isMultiArgsParam;
     }
 
     Node getBindingPattern()
@@ -160,7 +160,7 @@ class FunctionParamDOM : public VariableDeclarationDOM
 
   private:
     bool isOptional;
-    bool isMultiArgs;
+    bool isMultiArgsParam;
     Node bindingPattern;
 };
 
@@ -168,7 +168,7 @@ class FunctionPrototypeDOM
 {
     std::string name;
     std::string nameWithoutNamespace;
-    std::vector<FunctionParamDOM::TypePtr> args;
+    std::vector<FunctionParamDOM::TypePtr> params;
     mlir_ts::FunctionType funcType;
     mlir::Type returnType;
     bool discovered;
@@ -180,8 +180,8 @@ class FunctionPrototypeDOM
   public:
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
-    FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
-        : name(name.str()), args(args), funcType(), returnType(), discovered(false), hasCapturedVars(false), hasExtraFields(false), isGenericFunction(false), noBody(false)
+    FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> params)
+        : name(name.str()), params(params), funcType(), returnType(), discovered(false), hasCapturedVars(false), hasExtraFields(false), isGenericFunction(false), noBody(false)
     {
     }
 
@@ -200,19 +200,19 @@ class FunctionPrototypeDOM
     }
 
     // ArrayRef should not be "&" or "*"
-    ArrayRef<FunctionParamDOM::TypePtr> getArgs() const
+    ArrayRef<FunctionParamDOM::TypePtr> getParams() const
     {
-        return args;
+        return params;
     }
 
     bool isMultiArgs()
     {
-        if (args.size() == 0)
+        if (params.size() == 0)
         {
             return false;
         }
 
-        return args.back()->getIsMultiArgs();
+        return params.back()->getIsMultiArgsParam();
     }
 
     const mlir_ts::FunctionType &getFuncType() const
