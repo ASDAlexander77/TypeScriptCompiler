@@ -1464,6 +1464,68 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    std::pair<mlir::LogicalResult, bool> resolveGenericParamFromFunctionCall(mlir::Location location, mlir::Type type, mlir::Value argOp, int index,
+        GenericFunctionInfo::TypePtr functionGenericTypeInfo, bool &anyNamedGenericType,  GenContext &genericTypeGenContext, const GenContext &genContext)
+    {
+        if (type == argOp.getType())
+        {
+            return {mlir::success(), true};
+        }
+
+        StringMap<mlir::Type> inferredTypes;
+        inferType(type, argOp.getType(), inferredTypes);
+        if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
+                                                genericTypeGenContext)))
+        {
+            return {mlir::failure(), false};
+        }
+
+        if (isDelayedInstantiationForSpeecializedArrowFunctionReference(argOp))
+        {
+            GenContext typeGenContext(genericTypeGenContext);
+            typeGenContext.dummyRun = true;
+            auto recreatedFuncType = instantiateSpecializedFunctionTypeHelper(
+                location, functionGenericTypeInfo->functionDeclaration, mlir::Type(), false,
+                typeGenContext);
+            if (!recreatedFuncType)
+            {
+                // next param
+                return {mlir::failure(), true};
+            }
+
+            LLVM_DEBUG(llvm::dbgs()
+                            << "\n!! instantiate specialized  type function: '"
+                            << functionGenericTypeInfo->name << "' type: " << recreatedFuncType << "\n";);
+
+            auto paramType = mth.getParamFromFuncRef(recreatedFuncType, index);
+
+            LLVM_DEBUG(llvm::dbgs()
+                            << "\n!! param type for arrow func[" << index << "]: " << paramType << "\n";);
+
+            auto newArrowFuncType = instantiateSpecializedFunctionTypeHelper(location, argOp, paramType,
+                                                                                true, genericTypeGenContext);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized arrow type function: "
+                                    << newArrowFuncType << "\n";);
+
+            if (!newArrowFuncType)
+            {
+                return {mlir::failure(), false};
+            }
+
+            // infer second type when ArrowType is fully built
+            StringMap<mlir::Type> inferredTypes;
+            inferType(type, newArrowFuncType, inferredTypes);
+            if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
+                                                    genericTypeGenContext)))
+            {
+                return {mlir::failure(), false};
+            }
+        }
+
+        return {mlir::success(), true};
+    }
+
     mlir::LogicalResult resolveGenericParamsFromFunctionCall(mlir::Location location,
                                                              GenericFunctionInfo::TypePtr functionGenericTypeInfo,
                                                              NodeArray<TypeNode> typeArguments,
@@ -1520,69 +1582,20 @@ class MLIRGenImpl
                     auto argOp = genContext.callOperands[index];
 
                     LLVM_DEBUG(llvm::dbgs()
-                                    << "\n!! resolving param for generic function: '"
-                                    << functionGenericTypeInfo->name << "'\n\t parameter #" << index << " type: [ " << type << " ] \n\t argument type: [ " << argOp << " ]\n";);
+                        << "\n!! resolving param for generic function: '"
+                        << functionGenericTypeInfo->name << "'\n\t parameter #" << index << " type: [ " << type << " ] \n\t argument type: [ " << argOp << " ]\n";);
 
-                    if (type == argOp.getType())
+                    auto [result, cont] = resolveGenericParamFromFunctionCall(
+                        location, type, argOp, index, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext, genContext);
+                    if (mlir::succeeded(result))
                     {
                         argInfo->processed = true;
                         processed++;
-                        continue;
                     }
-
-                    StringMap<mlir::Type> inferredTypes;
-                    inferType(type, argOp.getType(), inferredTypes);
-                    if (mlir::failed(appendInferredTypes(location, typeParams, inferredTypes, anyNamedGenericType,
-                                                         genericTypeGenContext)))
+                    else if (!cont)
                     {
                         return mlir::failure();
                     }
-
-                    if (isDelayedInstantiationForSpeecializedArrowFunctionReference(argOp))
-                    {
-                        GenContext typeGenContext(genericTypeGenContext);
-                        typeGenContext.dummyRun = true;
-                        auto recreatedFuncType = instantiateSpecializedFunctionTypeHelper(
-                            location, functionGenericTypeInfo->functionDeclaration, mlir::Type(), false,
-                            typeGenContext);
-                        if (!recreatedFuncType)
-                        {
-                            // next param
-                            continue;
-                        }
-
-                        LLVM_DEBUG(llvm::dbgs()
-                                       << "\n!! instantiate specialized  type function: '"
-                                       << functionGenericTypeInfo->name << "' type: " << recreatedFuncType << "\n";);
-
-                        auto paramType = mth.getParamFromFuncRef(recreatedFuncType, index);
-
-                        LLVM_DEBUG(llvm::dbgs()
-                                       << "\n!! param type for arrow func[" << index << "]: " << paramType << "\n";);
-
-                        auto newArrowFuncType = instantiateSpecializedFunctionTypeHelper(location, argOp, paramType,
-                                                                                         true, genericTypeGenContext);
-
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized arrow type function: "
-                                                << newArrowFuncType << "\n";);
-
-                        if (!newArrowFuncType)
-                        {
-                            return mlir::failure();
-                        }
-
-                        // infer second type when ArrowType is fully built
-                        StringMap<mlir::Type> inferredTypes;
-                        inferType(type, newArrowFuncType, inferredTypes);
-                        if (mlir::failed(appendInferredTypes(location, typeParams, inferredTypes, anyNamedGenericType,
-                                                             genericTypeGenContext)))
-                        {
-                            return mlir::failure();
-                        }
-                    }
-
-                    argInfo->processed = true;
-                    processed++;
                 }
 
                 if (processed == 0)
