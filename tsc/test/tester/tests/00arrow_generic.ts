@@ -1,11 +1,8 @@
-// TODO: umcomment to see unused Symbols with generic func
-/*
 function test0() {
     const equal = <T>(lhs: T, rhs: T): boolean {
         return lhs === rhs;
     };
 }
-*/
 
 function test1() {
     const equal = <T>(lhs: T, rhs: T): boolean {
