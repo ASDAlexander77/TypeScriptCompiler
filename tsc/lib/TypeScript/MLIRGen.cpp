@@ -1048,7 +1048,7 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
-    void inferType(mlir::Type templateType, mlir::Type concreteType, StringMap<mlir::Type> &results)
+    void inferType(mlir::Location location, mlir::Type templateType, mlir::Type concreteType, StringMap<mlir::Type> &results, const GenContext &genContext)
     {
         auto currentTemplateType = templateType;
         auto currentType = concreteType;
@@ -1107,7 +1107,7 @@ class MLIRGenImpl
                             currentTemplateType = templateParam.getValue().second;
                             currentType = found->getValue().second;
 
-                            inferType(currentTemplateType, currentType, results);
+                            inferType(location, currentTemplateType, currentType, results, genContext);
                         }
                     }
 
@@ -1124,7 +1124,7 @@ class MLIRGenImpl
                             currentTemplateType = getNamedGenericType(found->getValue().first->getName());
                             currentType = found->getValue().second;
 
-                            inferType(currentTemplateType, currentType, results);
+                            inferType(location, currentTemplateType, currentType, results, genContext);
                         }
                     }
 
@@ -1152,7 +1152,7 @@ class MLIRGenImpl
                             currentTemplateType = templateParam.getValue().second;
                             currentType = found->getValue().second;
 
-                            inferType(currentTemplateType, currentType, results);
+                            inferType(location, currentTemplateType, currentType, results, genContext);
                         }
                     }
 
@@ -1169,7 +1169,7 @@ class MLIRGenImpl
                             currentTemplateType = getNamedGenericType(found->getValue().first->getName());
                             currentType = found->getValue().second;
 
-                            inferType(currentTemplateType, currentType, results);
+                            inferType(location, currentTemplateType, currentType, results, genContext);
                         }
                     }
 
@@ -1185,7 +1185,7 @@ class MLIRGenImpl
             {
                 currentTemplateType = tempArray.getElementType();
                 currentType = typeArray.getElementType();
-                inferType(currentTemplateType, currentType, results);
+                inferType(location, currentTemplateType, currentType, results, genContext);
                 return;
             }
 
@@ -1193,7 +1193,7 @@ class MLIRGenImpl
             {
                 currentTemplateType = tempArray.getElementType();
                 currentType = typeArray.getElementType();
-                inferType(currentTemplateType, currentType, results);
+                inferType(location, currentTemplateType, currentType, results, genContext);
                 return;
             }
         }
@@ -1211,7 +1211,7 @@ class MLIRGenImpl
                     if (index >= 0)
                     {
                         currentType = typeTuple.getFieldInfo(index).type;
-                        inferType(currentTemplateType, currentType, results);
+                        inferType(location, currentTemplateType, currentType, results, genContext);
                     }
                     else
                     {
@@ -1231,7 +1231,7 @@ class MLIRGenImpl
                     if (index >= 0)
                     {
                         currentType = typeTuple.getFieldInfo(index).type;
-                        inferType(currentTemplateType, currentType, results);
+                        inferType(location, currentTemplateType, currentType, results, genContext);
                     }
                     else
                     {
@@ -1250,14 +1250,14 @@ class MLIRGenImpl
             {
                 currentTemplateType = tempOpt.getElementType();
                 currentType = typeOpt.getElementType();
-                inferType(currentTemplateType, currentType, results);
+                inferType(location, currentTemplateType, currentType, results, genContext);
                 return;
             }
 
             // optional -> value
             currentTemplateType = tempOpt.getElementType();
             currentType = concreteType;
-            inferType(currentTemplateType, currentType, results);
+            inferType(location, currentTemplateType, currentType, results, genContext);
             return;
         }
 
@@ -1268,7 +1268,7 @@ class MLIRGenImpl
             auto funcType = mth.getParamsFromFuncRef(concreteType);
             if (funcType.size() > 0)
             {
-                inferTypeFuncType(tempfuncType, funcType, results);
+                inferTypeFuncType(location, tempfuncType, funcType, results, genContext);
 
                 // lambda(return) -> lambda(return)
                 auto tempfuncRetType = mth.getReturnsFromFuncRef(currentTemplateType);
@@ -1277,7 +1277,7 @@ class MLIRGenImpl
                     auto funcRetType = mth.getReturnsFromFuncRef(concreteType);
                     if (funcRetType.size() > 0)
                     {
-                        inferTypeFuncType(tempfuncRetType, funcRetType, results);
+                        inferTypeFuncType(location, tempfuncRetType, funcRetType, results, genContext);
                     }
                 }
 
@@ -1304,7 +1304,7 @@ class MLIRGenImpl
 
                     currentTemplateType = tempSubType;
                     currentType = typeSubType;
-                    inferType(currentTemplateType, currentType, results);
+                    inferType(location, currentTemplateType, currentType, results, genContext);
                 }
 
                 return;
@@ -1331,10 +1331,17 @@ class MLIRGenImpl
                 */
             }
         }
+
+        // typeref -> type
+        if (auto tempTypeRefType = currentTemplateType.dyn_cast<mlir_ts::TypeReferenceType>())
+        {
+            currentTemplateType = getTypeByTypeReference(location, tempTypeRefType, genContext);
+            inferType(location, currentTemplateType, currentType, results, genContext);
+        }
     }
 
-    void inferTypeFuncType(mlir::ArrayRef<mlir::Type> tempfuncType, mlir::ArrayRef<mlir::Type> funcType,
-                           StringMap<mlir::Type> &results)
+    void inferTypeFuncType(mlir::Location location, mlir::ArrayRef<mlir::Type> tempfuncType, mlir::ArrayRef<mlir::Type> funcType,
+                           StringMap<mlir::Type> &results, const GenContext &genContext)
     {
         if (tempfuncType.size() != funcType.size())
         {
@@ -1345,7 +1352,7 @@ class MLIRGenImpl
         {
             auto currentTemplateType = tempfuncType[paramIndex];
             auto currentType = funcType[paramIndex];
-            inferType(currentTemplateType, currentType, results);
+            inferType(location, currentTemplateType, currentType, results, genContext);
         }
     }
 
@@ -1520,7 +1527,7 @@ class MLIRGenImpl
         }
 
         StringMap<mlir::Type> inferredTypes;
-        inferType(paramType, argOp.getType(), inferredTypes);
+        inferType(location, paramType, argOp.getType(), inferredTypes, genContext);
         if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
                                                 genericTypeGenContext)))
         {
@@ -1562,7 +1569,7 @@ class MLIRGenImpl
 
             // infer second type when ArrowType is fully built
             StringMap<mlir::Type> inferredTypes;
-            inferType(paramType, newArrowFuncType, inferredTypes);
+            inferType(location, paramType, newArrowFuncType, inferredTypes, genericTypeGenContext);
             if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
                                                     genericTypeGenContext)))
             {
@@ -6748,7 +6755,7 @@ class MLIRGenImpl
                     // TODO: finish it
                     // it is generic function
                     StringMap<mlir::Type> inferredTypes;
-                    inferType(thisTypeFromFunc, thisValue.getType(), inferredTypes);
+                    inferType(location, thisTypeFromFunc, thisValue.getType(), inferredTypes, genContext);
                     if (inferredTypes.size() > 0)
                     {
                         // we found needed function
@@ -13283,6 +13290,40 @@ genContext);
     }
 
     std::pair<mlir::LogicalResult, bool> zipTypeParametersWithArguments(
+        mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, llvm::ArrayRef<mlir::Type> typeArgs,
+        llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
+    {
+        auto anyNamedGenericType = false;
+        auto argsCount = typeArgs.size();
+        for (auto index = 0; index < typeParams.size(); index++)
+        {
+            auto &typeParam = typeParams[index];
+            auto isDefault = false;
+            auto type = index < argsCount
+                            ? typeArgs[index]
+                            : (isDefault = true, typeParam->hasDefault() 
+                                ? getType(typeParam->getDefault(), genContext) 
+                                : mlir::Type());
+            if (!type)
+            {
+                return {mlir::failure(), anyNamedGenericType};
+            }
+
+            auto [result, hasNamedGenericType] =
+                zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault, genContext);
+            if (mlir::failed(result))
+            {
+                return {mlir::failure(), anyNamedGenericType};
+            }
+
+            anyNamedGenericType |= hasNamedGenericType;
+        }
+
+        return {mlir::success(), anyNamedGenericType};
+    }
+
+
+    std::pair<mlir::LogicalResult, bool> zipTypeParametersWithArguments(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
     {
@@ -13294,8 +13335,9 @@ genContext);
             auto isDefault = false;
             auto type = index < argsCount
                             ? getType(typeArgs[index], genContext)
-                            : (isDefault = true,
-                               typeParam->hasDefault() ? getType(typeParam->getDefault(), genContext) : mlir::Type());
+                            : (isDefault = true, typeParam->hasDefault() 
+                                ? getType(typeParam->getDefault(), genContext) 
+                                : mlir::Type());
             if (!type)
             {
                 return {mlir::failure(), anyNamedGenericType};
@@ -13386,6 +13428,57 @@ genContext);
         return {mlir::success(), anyNamedGenericType};
     }
 
+    mlir::Type createTypeReferenceType(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
+    {
+        mlir::SmallVector<mlir::Type> typeArgs;
+        for (auto typeArgNode : typeReferenceAST->typeArguments)
+        {
+            auto typeArg = getType(typeArgNode, genContext);
+            if (!typeArg)
+            {
+                return mlir::Type();
+            }
+
+            typeArgs.push_back(typeArg);
+        }
+
+        auto nameRef = MLIRHelper::getName(typeReferenceAST->typeName, stringAllocator);
+        auto typeRefType = getTypeReferenceType(nameRef, typeArgs);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! generic TypeReferenceType: " << typeRefType;);
+
+        return typeRefType;
+    };
+
+    mlir::Type getTypeByTypeReference(mlir::Location location, mlir_ts::TypeReferenceType typeReferenceType, const GenContext &genContext)
+    {
+        // check utility types
+        auto name = typeReferenceType.getName().getValue();
+
+        // try to resolve from type alias first
+        auto genericTypeAliasInfo = lookupGenericTypeAliasMap(name);
+        if (!is_default(genericTypeAliasInfo))
+        {
+            GenContext genericTypeGenContext(genContext);
+
+            auto typeParams = std::get<0>(genericTypeAliasInfo);
+            auto typeNode = std::get<1>(genericTypeAliasInfo);
+
+            auto [result, hasAnyNamedGenericType] =
+                zipTypeParametersWithArguments(location, typeParams, typeReferenceType.getTypes(),
+                                               genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
+
+            if (mlir::failed(result))
+            {
+                return mlir::Type();
+            }
+
+            return getType(typeNode, genericTypeGenContext);
+        }  
+
+        return mlir::Type();      
+    }
+
     mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
         // check utility types
@@ -13404,28 +13497,6 @@ genContext);
                 zipTypeParametersWithArguments(loc(typeReferenceAST), typeParams, typeReferenceAST->typeArguments,
                                                genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
 
-            auto createTypeReferenceType = [&]() -> mlir::Type
-            {
-                mlir::SmallVector<mlir::Type> typeArgs;
-                for (auto typeArgNode : typeReferenceAST->typeArguments)
-                {
-                    auto typeArg = getType(typeArgNode, genericTypeGenContext);
-                    if (!typeArg)
-                    {
-                        return mlir::Type();
-                    }
-
-                    typeArgs.push_back(typeArg);
-                }
-
-                auto nameRef = MLIRHelper::getName(typeReferenceAST->typeName, stringAllocator);
-                auto typeRefType = getTypeReferenceType(nameRef, typeArgs);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! generic TypeReferenceType: " << typeRefType;);
-
-                return typeRefType;
-            };
-
             if (mlir::failed(result))
             {
                 return mlir::Type();
@@ -13433,16 +13504,10 @@ genContext);
 
             if (hasAnyNamedGenericType)
             {
-                return createTypeReferenceType();
+                return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
             }
 
-            auto newType = getType(typeNode, genericTypeGenContext);
-            if (!newType)
-            {
-                return mlir::Type(); 
-            }
-
-            return newType;
+            return getType(typeNode, genericTypeGenContext);
         }
 
         auto genericClassTypeInfo = lookupGenericClassesMap(name);
