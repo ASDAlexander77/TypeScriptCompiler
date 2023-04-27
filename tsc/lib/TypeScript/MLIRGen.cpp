@@ -1053,7 +1053,7 @@ class MLIRGenImpl
         auto currentTemplateType = templateType;
         auto currentType = concreteType;
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! inferring template type: " << templateType << ", type: " << concreteType
+        LLVM_DEBUG(llvm::dbgs() << "\n!! inferring \n\ttemplate type: " << templateType << ", \n\ttype: " << concreteType
                                 << "\n";);
 
         if (currentTemplateType == currentType)
@@ -1197,6 +1197,51 @@ class MLIRGenImpl
                 return;
             }
         }
+
+        // TODO: finish it
+        // tuple -> tuple
+        if (auto tempTuple = currentTemplateType.dyn_cast<mlir_ts::TupleType>())
+        {
+            if (auto typeTuple = concreteType.dyn_cast<mlir_ts::TupleType>())
+            {
+                for (auto tempFieldInfo : tempTuple.getFields())
+                {
+                    currentTemplateType = tempFieldInfo.type;
+                    auto index = typeTuple.getIndex(tempFieldInfo.id);
+                    if (index >= 0)
+                    {
+                        currentType = typeTuple.getFieldInfo(index).type;
+                        inferType(currentTemplateType, currentType, results);
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+
+                return;
+            }
+
+            if (auto typeTuple = concreteType.dyn_cast<mlir_ts::ConstTupleType>())
+            {
+                for (auto tempFieldInfo : tempTuple.getFields())
+                {
+                    currentTemplateType = tempFieldInfo.type;
+                    auto index = typeTuple.getIndex(tempFieldInfo.id);
+                    if (index >= 0)
+                    {
+                        currentType = typeTuple.getFieldInfo(index).type;
+                        inferType(currentTemplateType, currentType, results);
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+
+                return;
+            }
+        }        
 
         // optional -> optional
         if (auto tempOpt = currentTemplateType.dyn_cast<mlir_ts::OptionalType>())
@@ -7232,9 +7277,19 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
+        auto noReceiverTypesForGenericCall = false;
+        if (auto symbolOp = funcResult.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            if (symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
+            {
+                // so if method is generic and you need to infer types you can cast to generic types
+                noReceiverTypesForGenericCall = callExpression->typeArguments.size() == 0;
+            }
+        }
+
         SmallVector<mlir::Value, 4> operands;
         auto offsetArgs = funcResult.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>() ? 1 : 0;
-        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs)))
+        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs, noReceiverTypesForGenericCall)))
         {
             emitError(location) << "Call Method: can't resolve values of all parameters";
             return mlir::failure();
@@ -7835,7 +7890,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
-                                        mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0)
+                                        mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false)
     {
         mlir_ts::TupleType tupleTypeWithFuncArgs;
         auto lastArgIndex = operands.size() - 1;
@@ -7863,11 +7918,19 @@ class MLIRGenImpl
             {
                 if (isVarArg && i >= lastArgIndex)
                 {
-                    argGenContext.receiverFuncType = argGenContext.receiverType = varArgType;
+                    argGenContext.receiverFuncType = varArgType;
+                    if (!noReceiverTypesForGenericCall)
+                    {
+                        argGenContext.receiverType = varArgType;
+                    }
                 }
                 else
                 {
-                    argGenContext.receiverFuncType = argGenContext.receiverType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+                    argGenContext.receiverFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+                    if (!noReceiverTypesForGenericCall)
+                    {
+                        argGenContext.receiverType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+                    }                    
                 }
             }
 
@@ -9135,7 +9198,10 @@ class MLIRGenImpl
                                 }
                             }
                         })                        
-                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+                    .Default([&](auto type) { 
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment not implemented for type: " << type << "\n";);
+                        llvm_unreachable("not implemented"); 
+                    });
 
                 continue;
             }
@@ -13338,7 +13404,7 @@ genContext);
                 zipTypeParametersWithArguments(loc(typeReferenceAST), typeParams, typeReferenceAST->typeArguments,
                                                genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
 
-            if (hasAnyNamedGenericType)
+            auto createTypeReferenceType = [&]() -> mlir::Type
             {
                 mlir::SmallVector<mlir::Type> typeArgs;
                 for (auto typeArgNode : typeReferenceAST->typeArguments)
@@ -13358,14 +13424,24 @@ genContext);
                 LLVM_DEBUG(llvm::dbgs() << "\n!! generic TypeReferenceType: " << typeRefType;);
 
                 return typeRefType;
-            }
+            };
 
             if (mlir::failed(result))
             {
                 return mlir::Type();
             }
 
+            if (hasAnyNamedGenericType)
+            {
+                return createTypeReferenceType();
+            }
+
             auto newType = getType(typeNode, genericTypeGenContext);
+            if (!newType)
+            {
+                return mlir::Type(); 
+            }
+
             return newType;
         }
 
@@ -14233,6 +14309,17 @@ genContext);
 
     mlir::Type getIndexedAccessType(mlir::Type type, mlir::Type indexType, const GenContext &genContext)
     {
+        // in case of Generic Methods but not specialized yet
+        if (auto namedGenericType = type.dyn_cast<mlir_ts::NamedGenericType>())
+        {
+            return getIndexAccessType(type, indexType);
+        }
+
+        if (auto namedGenericType = indexType.dyn_cast<mlir_ts::NamedGenericType>())
+        {
+            return getIndexAccessType(type, indexType);
+        }
+
         if (auto unionType = indexType.dyn_cast<mlir_ts::UnionType>())
         {
             SmallVector<mlir::Type> resolvedTypes;
@@ -14314,12 +14401,6 @@ genContext);
                     return field.type;
                 }
             }
-        }
-
-        // in case of Generic Methods but not specialized yet
-        if (auto namedGenericType = type.dyn_cast<mlir_ts::NamedGenericType>())
-        {
-            return getIndexAccessType(type, indexType);
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted \n";);
