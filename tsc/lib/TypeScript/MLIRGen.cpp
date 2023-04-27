@@ -2496,9 +2496,9 @@ class MLIRGenImpl
     {
         auto [type, init] = func();
 
-        auto index = 0;
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
+            auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
             auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
             if (propertyName.empty())
             {
@@ -2507,8 +2507,61 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern: [" << init << "] prop: " << propertyName << "\n");
 
-            auto result = mlirGenPropertyAccessExpression(location, init, propertyName, false, genContext);
-            auto subInit = V(result);
+            mlir::Value subInit;
+            mlir::Type subInitType;
+
+            if (!isSpreadBinding)
+            {
+                auto result = mlirGenPropertyAccessExpression(location, init, propertyName, false, genContext);
+                if (result.failed())
+                {
+                    return false;
+                }
+
+                subInit = V(result);
+                subInitType = subInit.getType();
+            }
+            else
+            {
+                SmallVector<mlir::Attribute> names;
+
+                // take all used fields
+                for (auto objectBindingElement : objectBindingPattern->elements)
+                {
+                    auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
+                    if (isSpreadBinding)
+                    {
+                        continue;
+                    }
+
+                    auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
+                    if (propertyName.empty())
+                    {
+                        propertyName = MLIRHelper::getName(objectBindingElement->name);
+                    }
+
+                    names.push_back(MLIRHelper::TupleFieldName(propertyName, builder.getContext()));
+                }                
+
+                // filter all fields
+                llvm::SmallVector<mlir_ts::FieldInfo> tupleFields;
+                llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+                if (mlir::succeeded(mth.getFields(init.getType(), tupleFields)))
+                {
+                    for (auto fieldInfo : tupleFields)
+                    {
+                        if (std::find_if(names.begin(), names.end(), [&] (auto& item) { return item == fieldInfo.id; }) == names.end())
+                        {
+                            // filter;
+                            destTupleFields.push_back(fieldInfo);
+                        }
+                    }
+                }
+
+                // create object
+                subInitType = getTupleType(destTupleFields);
+                subInit = cast(location, subInitType, init, genContext);
+            }
 
             assert(subInit);
 
@@ -2518,17 +2571,15 @@ class MLIRGenImpl
                 auto objectBindingPattern = objectBindingElement->name.as<ObjectBindingPattern>();
                 return processDeclarationObjectBindingPattern(
                     location, objectBindingPattern, varClass,
-                    [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext);
+                    [&]() { return std::make_pair(subInitType, subInit); }, genContext);
             }
 
             if (!processDeclaration(
-                    objectBindingElement, varClass, [&]() { return std::make_pair(subInit.getType(), subInit); },
+                    objectBindingElement, varClass, [&]() { return std::make_pair(subInitType, subInit); },
                     genContext))
             {
                 return false;
             }
-
-            index++;
         }
 
         return true;
@@ -8302,7 +8353,7 @@ class MLIRGenImpl
                 {
                     auto name = MLIRHelper::getName(typeExpression.as<Identifier>());
                     type = getEmbeddedType(name);
-                    if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
+                    if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
                     {
                         mlir::Value count;
 

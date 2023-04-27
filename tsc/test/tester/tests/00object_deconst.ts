@@ -26,8 +26,6 @@ function main() {
     assert(id == 42);
     assert(is_verified);
 
-    // TODO: finish it
-    /*
     const o = { p: 42, q: true };
     const { p: foo, q: bar } = o;
 
@@ -36,7 +34,15 @@ function main() {
 
     assert(foo == 42);
     assert(bar);
-    */
+
+    let obj = { x: 1, y: 2, z: 3 };
+    let { z, ...obj1 } = obj;
+ 
+    print (z, obj1.y, obj1.x);
+    
+    assert(z === 3);
+    assert(obj1.y === 2);
+    assert(obj1.x === 1);
 
     print("done.");
 }

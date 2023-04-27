@@ -1061,6 +1061,8 @@ class MLIRTypeHelper
             {
                 destTupleFields.push_back(fieldInfo);
             }
+
+            return mlir::success();
         }          
         else if (auto tupleType = srcType.dyn_cast<mlir_ts::TupleType>())
         {
@@ -1068,6 +1070,8 @@ class MLIRTypeHelper
             {
                 destTupleFields.push_back(fieldInfo);
             }
+
+            return mlir::success();
         }         
         else if (auto srcInterfaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
         {
@@ -1096,6 +1100,7 @@ class MLIRTypeHelper
             return mlir::failure();
         }         
 
+        LLVM_DEBUG(llvm::dbgs() << "!! getFields is not implemented for type [" << srcType << "]\n";);
         llvm_unreachable("not implemented");
     }
 
