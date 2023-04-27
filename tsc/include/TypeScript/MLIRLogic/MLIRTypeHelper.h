@@ -1055,7 +1055,7 @@ class MLIRTypeHelper
 
     mlir::LogicalResult getFields(mlir::Type srcType, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields)
     {       
-        if (auto constTupleType = srcType.dyn_cast<mlir_ts::TupleType>())
+        if (auto constTupleType = srcType.dyn_cast<mlir_ts::ConstTupleType>())
         {
             for (auto &fieldInfo : constTupleType.getFields())
             {
@@ -1101,6 +1101,28 @@ class MLIRTypeHelper
 
     mlir::Type getFieldTypeByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
     {
+        if (auto constTupleType = srcType.dyn_cast<mlir_ts::ConstTupleType>())
+        {
+            auto index = constTupleType.getIndex(fieldName);
+            if (index < 0)
+            {
+                return mlir::Type();
+            }
+
+            return constTupleType.getFieldInfo(index).type;
+        }          
+        
+        if (auto tupleType = srcType.dyn_cast<mlir_ts::TupleType>())
+        {
+            auto index = tupleType.getIndex(fieldName);
+            if (index < 0)
+            {
+                return mlir::Type();
+            }
+
+            return tupleType.getFieldInfo(index).type;
+        }  
+
         if (auto srcInterfaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
         {
             if (auto srcInterfaceInfo = getInterfaceInfoByFullName(srcInterfaceType.getName().getValue()))
@@ -1129,7 +1151,7 @@ class MLIRTypeHelper
             return mlir::Type();
         }
 
-        if (auto srcClassType = srcType.dyn_cast<mlir_ts::InterfaceType>())
+        if (auto srcClassType = srcType.dyn_cast<mlir_ts::ClassType>())
         {
             if (auto srcClassInfo = getInterfaceInfoByFullName(srcClassType.getName().getValue()))
             {
@@ -1235,13 +1257,18 @@ class MLIRTypeHelper
         LLVM_DEBUG(llvm::dbgs() << "\n!! is extending type: [ " << srcType << " ] extend type: [ " << extendType
                                 << " ]\n";);        
 
+        if (!extendType)
+        {
+            return false;
+        }
+
         if (auto neverType = extendType.dyn_cast<mlir_ts::NeverType>())
         {
             // TODO: if extend type is never it should return true
             return true;
         }        
 
-        if (auto unkwnowType = extendType.dyn_cast<mlir_ts::UnknownType>())
+        if (auto unknownType = extendType.dyn_cast<mlir_ts::UnknownType>())
         {
             return true;
         }
@@ -1251,7 +1278,7 @@ class MLIRTypeHelper
             return true;
         }
 
-        if (auto neverType = srcType.dyn_cast<mlir_ts::NeverType>())
+        if (auto neverType = srcType.dyn_cast_or_null<mlir_ts::NeverType>())
         {
             // TODO: if extend type is never it should return true
             return true;
@@ -1268,6 +1295,11 @@ class MLIRTypeHelper
             return appendInferTypeToContext(srcType, inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
         }
 
+        if (!srcType)
+        {
+            return false;
+        }        
+
         if (auto unionType = extendType.dyn_cast<mlir_ts::UnionType>())
         {
             auto pred = [&](auto &item) { return extendsType(srcType, item, typeParamsWithArgs); };
@@ -1282,6 +1314,15 @@ class MLIRTypeHelper
                 return extendsType(fieldType, item.type, typeParamsWithArgs); 
             };
             return std::all_of(tupleType.getFields().begin(), tupleType.getFields().end(), pred);
+        }
+
+        if (auto constTupleType = extendType.dyn_cast<mlir_ts::ConstTupleType>())
+        {
+            auto pred = [&](auto &item) { 
+                auto fieldType = getFieldTypeByFieldName(srcType, item.id);
+                return extendsType(fieldType, item.type, typeParamsWithArgs); 
+            };
+            return std::all_of(constTupleType.getFields().begin(), constTupleType.getFields().end(), pred);
         }
 
         if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())

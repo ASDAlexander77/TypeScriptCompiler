@@ -1531,7 +1531,7 @@ class MLIRGenImpl
         if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
                                                 genericTypeGenContext)))
         {
-            return {mlir::failure(), false};
+            return {mlir::failure(), true};
         }
 
         if (isDelayedInstantiationForSpeecializedArrowFunctionReference(argOp))
@@ -13236,7 +13236,7 @@ genContext);
             auto constraintType = getType(typeParam->getConstraint(), genContext);
             if (!constraintType)
             {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed.\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
                 return {mlir::failure(), false};
             }
 
