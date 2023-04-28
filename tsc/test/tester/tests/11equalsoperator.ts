@@ -26,15 +26,25 @@ function main() {
     print("done.");
 }
 
-function eq<A, B>(a: A, b: B) { return a == b as any as A }
+// TODO: finish "as"
+//function eq<A, B>(a: A, b: B) { return a == b as any as A }
+
+function __as<T>(a: any) : T
+{
+    // this is "safe cast" logic
+	if (typeof a == "number") return <T>a;
+	if (typeof a == "string") return <T>a;
+	if (typeof a == "i32") return <T>a;
+	if (typeof a == "class") if (s instanceof T) return <T>a;
+	return <T>null;
+}
+
+function eq<A, B>(a: A, b: B) { return a == __as<A>(b as any); }
 
 function eqG() {
-    // TODO: implement it
-    /*
     assert(eq("2", 2), "2")
     assert(eq(2, "2"), "2'")
     //assert(!eq("null", null), "=1") // TODO: null ref here
-    assert(!eq(null, "null"), "=2")
+    //assert(!eq(null, "null"), "=2") // TODO: null to "null"
     assert(!eq("2", 3), "=3")
-    */
 }

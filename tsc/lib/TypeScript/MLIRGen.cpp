@@ -4571,6 +4571,18 @@ class MLIRGenImpl
                 {
                     typeToken = nf.createToken(SyntaxKind::BooleanKeyword);
                 }
+                else if (text == S("i32"))
+                {
+                    typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
+                        nf.createLiteralTypeNode(nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("1")).as<Node>()) 
+                    });
+                }
+                else if (text == S("i64"))
+                {
+                    typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
+                        nf.createLiteralTypeNode(nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("9223372036854775807")).as<Node>()) 
+                    });
+                }
 
                 if (typeToken)
                 {
