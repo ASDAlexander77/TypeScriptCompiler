@@ -7092,8 +7092,7 @@ class MLIRGenImpl
         emitError(location) << "can't resolve property/field/base '" << name << "' of class '" << classInfo->fullName
                             << "'\n";
 
-        assert(false);
-        llvm_unreachable("not implemented");
+        return mlir::Value();
     }
 
     bool classHasField(ClassInfo::TypePtr classInfo, mlir::StringRef name, SmallVector<ClassInfo::TypePtr> &fieldPath)
@@ -12200,7 +12199,16 @@ genContext);
     template <typename T> std::string getNameWithArguments(T declarationAST, const GenContext &genContext)
     {
         auto name = MLIRHelper::getName(declarationAST->name);
-        if (name.size() == 0)
+        if (name.empty())
+        {
+            auto attr = getNameFromComputedPropertyName(declarationAST->name, genContext);
+            if (auto strAttr = attr.dyn_cast_or_null<mlir::StringAttr>())
+            {
+                name = strAttr.getValue();
+            }
+        }
+
+        if (name.empty())
         {
             if (declarationAST == SyntaxKind::ArrowFunction)
             {
@@ -12228,7 +12236,7 @@ genContext);
             }
         }
 
-        if (name.size() > 0 && genContext.typeParamsWithArgs.size() && declarationAST->typeParameters.size())
+        if (!name.empty() && genContext.typeParamsWithArgs.size() && declarationAST->typeParameters.size())
         {
             appendSpecializedTypeNames(name, declarationAST->typeParameters, genContext);
         }
@@ -12545,6 +12553,23 @@ genContext);
         return mlir::success();
     }
 
+    std::string getNameForMethod(SignatureDeclarationBase methodSignature, const GenContext &genContext)
+    {
+        if (auto attr = getNameFromComputedPropertyName(methodSignature->name, genContext))
+        {
+            if (auto strAttr = attr.dyn_cast<mlir::StringAttr>())
+            {
+                return strAttr.getValue().str();
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+
+        return MLIRHelper::getName(methodSignature->name);
+    }
+
     mlir::LogicalResult getMethodNameOrPropertyName(SignatureDeclarationBase methodSignature, std::string &methodName,
                                                     std::string &propertyName, const GenContext &genContext)
     {
@@ -12567,31 +12592,17 @@ genContext);
         }
         else if (kind == SyntaxKind::GetAccessor)
         {
-            propertyName = MLIRHelper::getName(methodSignature->name);
+            propertyName = getNameForMethod(methodSignature, genContext);
             methodName = std::string("get_") + propertyName;
         }
         else if (kind == SyntaxKind::SetAccessor)
         {
-            propertyName = MLIRHelper::getName(methodSignature->name);
+            propertyName = getNameForMethod(methodSignature, genContext);
             methodName = std::string("set_") + propertyName;
         }
         else
         {
-            if (auto attr = getNameFromComputedPropertyName(methodSignature->name, genContext))
-            {
-                if (auto strAttr = attr.dyn_cast<mlir::StringAttr>())
-                {
-                    methodName = strAttr.getValue();
-                }
-                else
-                {
-                    llvm_unreachable("not implemented");
-                }
-            }
-            else
-            {
-                methodName = MLIRHelper::getName(methodSignature->name);
-            }
+            methodName = getNameForMethod(methodSignature, genContext);
         }
 
         return mlir::success();
@@ -12790,6 +12801,12 @@ genContext);
         {
             if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
             {
+                auto res = mlirGenCallThisMethod(location, value, "get_toStringTag", undefined, undefined, genContext);
+                if (!res.failed_or_no_value())
+                {
+                    return res;
+                }
+                
                 return mlirGenCallThisMethod(location, value, "toString", undefined, undefined, genContext);
             }
         }
