@@ -14990,14 +14990,14 @@ genContext);
 
     mlir::Attribute TupleFieldName(Node name, const GenContext &genContext)
     {
-        if (auto attr = getNameFromComputedPropertyName(name, genContext))
-        {
-            return attr;
-        }
-
         auto namePtr = MLIRHelper::getName(name, stringAllocator);
         if (namePtr.empty())
         {
+            if (auto attr = getNameFromComputedPropertyName(name, genContext))
+            {
+                return attr;
+            }
+                        
             MLIRCodeLogic mcl(builder);
             auto result = mlirGen(name.as<Expression>(), genContext);
             auto value = V(result);

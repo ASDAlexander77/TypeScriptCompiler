@@ -124,6 +124,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst, mlir::Region &initRegion,
                                              LLVM::Linkage linkage = LLVM::Linkage::Internal)
     {
+        if (!type)
+        {
+            return mlir::failure();
+        }
+
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
 
