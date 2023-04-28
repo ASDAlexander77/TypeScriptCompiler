@@ -5,7 +5,7 @@ function main() {
 
     let d: number | undefined
     let e: number | undefined
-    let f: number | undefined
+    let f: string | undefined
 
     let g: 0 | 1 | 42
     let h: 0 | 1 | 42
@@ -19,8 +19,7 @@ function main() {
 
     d &&= 42
     e ||= 42
-    // TODO: finish it
-    //f ??= 42
+    f ??= "42" // must be ref type
 
     g &&= 42
     h ||= 42
