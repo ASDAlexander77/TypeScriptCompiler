@@ -1442,7 +1442,7 @@ struct UnboxOpLowering : public TsLlvmPattern<mlir_ts::UnboxOp>
         auto resType = op.res().getType();
 
         AnyLogic al(op, rewriter, tch, loc);
-        auto result = al.castFromAny(in, tch.convertType(resType));
+        auto result = al.UnboxAny(in, tch.convertType(resType));
 
         rewriter.replaceOp(op, result);
 
@@ -4103,7 +4103,7 @@ struct TypeOfAnyOpLowering : public TsLlvmPattern<mlir_ts::TypeOfAnyOp>
         LLVM_DEBUG(llvm::dbgs() << "\n!! TypeOf: " << typeOfAnyOp.value() << "\n";);
 
         AnyLogic al(typeOfAnyOp, rewriter, tch, loc);
-        auto typeOfValue = al.typeOfFromAny(transformed.value());
+        auto typeOfValue = al.getTypeOfAny(transformed.value());
 
         rewriter.replaceOp(typeOfAnyOp, ValueRange{typeOfValue});
         return success();

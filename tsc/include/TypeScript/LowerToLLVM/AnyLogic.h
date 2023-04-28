@@ -85,7 +85,7 @@ class AnyLogic
         return clh.castToI8Ptr(memValue);
     }
 
-    mlir::Value castFromAny(mlir::Value in, mlir::Type resLLVMType)
+    mlir::Value UnboxAny(mlir::Value in, mlir::Type resLLVMType)
     {
         // TODO: add type id to track data type
         // TODO: add data size check
@@ -105,7 +105,7 @@ class AnyLogic
         return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
     }
 
-    mlir::Value typeOfFromAny(mlir::Value in)
+    mlir::Value getTypeOfAny(mlir::Value in)
     {
         // TODO: add type id to track data type
         // TODO: add data size check

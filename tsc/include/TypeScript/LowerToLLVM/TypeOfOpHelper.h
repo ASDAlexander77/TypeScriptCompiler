@@ -188,7 +188,7 @@ class TypeOfOpHelper
         if (origType.isa<mlir_ts::AnyType>())
         {
             // AnyLogic al(op, rewriter, tch, loc);
-            // return al.typeOfFromAny(value);
+            // return al.getTypeOfAny(value);
             return rewriter.create<mlir_ts::TypeOfAnyOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
         }
 
