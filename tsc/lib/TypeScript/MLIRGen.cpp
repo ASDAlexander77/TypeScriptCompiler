@@ -5850,7 +5850,7 @@ class MLIRGenImpl
         return resultFirst;
     }
 
-    ValueOrLogicalResult mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST,
+    ValueOrLogicalResult mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, bool saveResult,
                                                       const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
@@ -5867,14 +5867,35 @@ class MLIRGenImpl
         auto defaultUnionType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
         auto resultType = mth.findBaseType(resultWhenFalseType, leftExpressionValue.getType(), defaultUnionType);
 
-        auto methodPtr = cast(location, getOpaqueType(), leftExpressionValue, genContext);
+        // extarct value from optional type
+        auto actualLeftValue = leftExpressionValue;
+        auto hasOptional = false;
+        if (auto optType = actualLeftValue.getType().dyn_cast<mlir_ts::OptionalType>())
+        {
+            hasOptional = true;
+            actualLeftValue = cast(location, optType.getElementType(), leftExpressionValue, genContext);
+        }
+
+        auto opaqueValueOfLeftValue = cast(location, getOpaqueType(), actualLeftValue, genContext);
 
         auto nullVal = builder.create<mlir_ts::NullOp>(location, getNullType());
+
         auto compareToNull = builder.create<mlir_ts::LogicalBinaryOp>(
-            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), methodPtr,
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), opaqueValueOfLeftValue,
             nullVal);
 
-        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, compareToNull, true);
+        mlir::Value ifCond = compareToNull;
+        if (hasOptional)
+        {
+            auto hasValue = cast(location, getBooleanType(), leftExpressionValue, genContext);      
+            auto orOp = builder.create<mlir_ts::LogicalBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::ExclamationEqualsEqualsToken), hasValue,
+                compareToNull);   
+
+            ifCond = orOp;            
+        }
+
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, ifCond, true);
 
         builder.setInsertionPointToStart(&ifOp.thenRegion().front());
         auto result2 = mlirGen(rightExpression, genContext);
@@ -5901,7 +5922,13 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(ifOp);
 
-        return ifOp.results().front();
+        auto ifResult = ifOp.results().front();
+        if (saveResult)
+        {
+            return mlirGenSaveLogicOneItem(location, leftExpressionValue, ifResult, genContext);
+        }
+
+        return result;
     }
 
     ValueOrLogicalResult mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
@@ -6522,7 +6549,7 @@ class MLIRGenImpl
 
         if (opCode == SyntaxKind::QuestionQuestionToken)
         {
-            return mlirGenQuestionQuestionLogic(binaryExpressionAST, genContext);
+            return mlirGenQuestionQuestionLogic(binaryExpressionAST, saveResult, genContext);
         }
 
         if (opCode == SyntaxKind::InKeyword)
