@@ -23,9 +23,7 @@ function testNumCollection(): void {
     }
     assert(collXYZ.length == 100, "6");
 
-    //collXYZ = [1, 2, 3];
-    // TODO: cast int[] -> number[]
-    collXYZ = [1.0, 2.0, 3.0];
+    collXYZ = [1, 2, 3];
     assert(collXYZ.length == 3, "cons");
     assert(collXYZ[0] == 1, "cons0");
     assert(collXYZ[1] == 2, "cons1");
