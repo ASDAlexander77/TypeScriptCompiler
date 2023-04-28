@@ -6228,6 +6228,8 @@ class MLIRGenImpl
             rightExprGenContext.receiverFuncType = leftExpressionValue.getType();
         }
 
+        rightExprGenContext.receiverType = leftExpressionValue.getType();
+
         auto result2 = mlirGen(rightExpression, rightExprGenContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto rightExpressionValue = V(result2);
