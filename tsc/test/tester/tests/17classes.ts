@@ -16,8 +16,7 @@ class XFoo {
     }
 
     init() {
-        // TODO: cast [1, 2] to numbers
-        this.buf = [1.0, 2.0];
+        this.buf = [1, 2];
     }
 
     toString() {
