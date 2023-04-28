@@ -125,7 +125,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         return value;
     }
     else if (leftType.dyn_cast<mlir_ts::AnyType>() || leftType.dyn_cast<mlir_ts::ClassType>() ||
-             leftType.dyn_cast<mlir_ts::OpaqueType>())
+             leftType.dyn_cast<mlir_ts::OpaqueType>() || leftType.dyn_cast<mlir_ts::NullType>())
     {
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
@@ -195,6 +195,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     }    
     else
     {
+        LLVM_DEBUG(llvm::dbgs() << loc << "\n!! Not implemented operator for type: " << leftType<< "\n";);
         emitError(loc, "Not implemented operator for type 1: '") << leftType << "'";
         llvm_unreachable("not implemented");
     }

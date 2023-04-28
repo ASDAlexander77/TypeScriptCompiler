@@ -172,6 +172,12 @@ class TypeOfOpHelper
             return typeOfLogic(loc, literalType.getElementType());
         }
 
+        if (type.isa<mlir_ts::NullType>())
+        {
+            auto typeOfValue = strValue(loc, "null");
+            return typeOfValue;
+        }        
+
         LLVM_DEBUG(llvm::dbgs() << "TypeOf: " << type << "\n");
 
         llvm_unreachable("not implemented");
