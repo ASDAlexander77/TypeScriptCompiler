@@ -2234,6 +2234,12 @@ class MLIRGenImpl
             {
                 assert(type);
 
+                // if it is Optional type, we need to set to undefined                
+                if (type.isa<mlir_ts::OptionalType>() && !init)
+                {
+                    init = cast(location, type, getUndefined(location), genContext);
+                }
+
                 auto actualType = mth.wideStorageType(type);
 
                 // this is 'let', if 'let' is func, it should be HybridFunction
