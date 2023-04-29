@@ -350,7 +350,7 @@
 	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
   </Type>
   <Type Name="ptr&lt;ts::data::VariableDeclaration&gt;">
-	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] name={(*((ts::data::Identifier*)(*((ts::data::NamedDeclaration*)&amp;(*((ts::data::VariableDeclaration*)instance._Ptr)))).name.instance._Ptr)).escapedText}</DisplayString>
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] name={((ts::data::Identifier*)instance->name.instance._Ptr)->escapedText}</DisplayString>
   </Type>
   <Type Name="ptr&lt;ts::data::StringLiteral&gt;">
 	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] text={instance->text}</DisplayString>
@@ -358,11 +358,17 @@
   <Type Name="ptr&lt;ts::data::NumericLiteral&gt;">
 	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] value={instance->text}</DisplayString>
   </Type>
+  <Type Name="ptr&lt;ts::data::Identifier&gt;">
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] value={instance->escapedText}</DisplayString>
+  </Type>
   <Type Name="ptr&lt;ts::data::ObjectLiteralExpression&gt;">
 	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
   </Type>
   <Type Name="ptr&lt;ts::data::FunctionLikeDeclarationBase&gt;">
-	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] name={((ts::data::Identifier*)instance->name.instance._Ptr)->escapedText}</DisplayString>
+  </Type>
+  <Type Name="ptr&lt;ts::data::FunctionDeclaration&gt;">
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] name={((ts::data::Identifier*)instance->name.instance._Ptr)->escapedText}</DisplayString>
   </Type>
   <Type Name="ptr&lt;ts::data::ReturnStatement&gt;">
 	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>

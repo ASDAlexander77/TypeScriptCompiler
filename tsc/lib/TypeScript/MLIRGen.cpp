@@ -462,14 +462,10 @@ class MLIRGenImpl
         auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name, stringAllocator);
         auto namePtr = namespaceName;
 
-        {
-            MLIRNamespaceGuard nsGuard(currentNamespace);
-            registerNamespace(namePtr);
+        MLIRNamespaceGuard nsGuard(currentNamespace);
+        registerNamespace(namePtr);
 
-            mlirGenBody(moduleDeclarationAST->body, genContext);
-        }
-
-        return mlir::success();
+        return mlirGenBody(moduleDeclarationAST->body, genContext);
     }
 
     mlir::LogicalResult mlirGen(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
