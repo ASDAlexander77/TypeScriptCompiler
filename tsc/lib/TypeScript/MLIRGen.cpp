@@ -4549,9 +4549,21 @@ class MLIRGenImpl
         */
 
         auto location = loc(expr);
-        auto exprValue = mlirGen(expr, genContext);
+        auto result = mlirGen(expr, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result);
+        auto exprValue = V(result);
         auto safeType = getType(typeToken, genContext);
-        auto castedValue = cast(location, safeType, exprValue, genContext);
+        mlir::Value castedValue;
+        if (exprValue.getType().isa<mlir_ts::AnyType>())
+        {
+            castedValue = builder.create<mlir_ts::UnboxOp>(location, safeType, exprValue);
+        }
+        else
+        {
+            auto result = cast(location, safeType, exprValue, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result);
+            castedValue = V(result);
+        }
 
         if (processDeclarationName(
                 expr.as<DeclarationName>(), VariableClass::Const,
