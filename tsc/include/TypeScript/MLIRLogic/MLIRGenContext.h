@@ -65,6 +65,7 @@ struct GenContext
         capturedVars = nullptr;
 
         currentOperation = nullptr;
+        allocateVarsOutsideOfOperation = false;
     }
 
     // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
