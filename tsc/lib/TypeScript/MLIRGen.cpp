@@ -13059,7 +13059,10 @@ genContext);
         // unboxing
         if (auto anyType = value.getType().dyn_cast<mlir_ts::AnyType>())
         {
-            return castFromAny(location, type, value, genContext);
+            if (!type.isa<mlir_ts::OpaqueType>())
+            {
+                return castFromAny(location, type, value, genContext);
+            }
         }
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
