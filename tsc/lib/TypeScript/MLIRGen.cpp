@@ -6376,6 +6376,11 @@ class MLIRGenImpl
     mlir::LogicalResult unwrapForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                           mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
+        if (opCode == SyntaxKind::CommaToken)
+        {
+            return mlir::success();
+        }
+
         auto leftLoc = leftExpressionValue.getLoc();
         auto rightLoc = rightExpressionValue.getLoc();
 
@@ -6444,6 +6449,11 @@ class MLIRGenImpl
     mlir::LogicalResult adjustTypesForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
+        if (opCode == SyntaxKind::CommaToken)
+        {
+            return mlir::success();
+        }
+
         auto leftLoc = leftExpressionValue.getLoc();
         auto rightLoc = rightExpressionValue.getLoc();
 
@@ -6626,7 +6636,16 @@ class MLIRGenImpl
         }
 
         auto result = mlirGen(leftExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        if (opCode == SyntaxKind::CommaToken)
+        {
+            //in case of "commad" op the result of left op can be "nothing"
+            EXIT_IF_FAILED(result)
+        }
+        else
+        {
+            EXIT_IF_FAILED_OR_NO_VALUE(result)    
+        }
+
         auto leftExpressionValue = V(result);
         auto result2 = mlirGen(rightExpression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
