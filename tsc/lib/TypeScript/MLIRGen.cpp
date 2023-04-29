@@ -2515,7 +2515,7 @@ class MLIRGenImpl
             if (!isSpreadBinding)
             {
                 auto result = mlirGenPropertyAccessExpression(location, init, propertyName, false, genContext);
-                if (result.failed())
+                if (result.failed_or_no_value())
                 {
                     return false;
                 }
