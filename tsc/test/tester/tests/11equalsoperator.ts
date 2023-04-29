@@ -26,20 +26,7 @@ function main() {
     print("done.");
 }
 
-// TODO: finish "as"
-//function eq<A, B>(a: A, b: B) { return a == b as any as A }
-
-function __as<T>(a: any) : T
-{
-    // this is "safe cast" logic
-	if (typeof a == "number") return <T>a;
-	if (typeof a == "string") return <T>a;
-	if (typeof a == "i32") return <T>a;
-	if (typeof a == "class") if (s instanceof T) return <T>a;
-	return <T>null;
-}
-
-function eq<A, B>(a: A, b: B) { return a == __as<A>(b as any); }
+function eq<A, B>(a: A, b: B) { return a == b as any as A }
 
 function eqG() {
     assert(eq("2", 2), "2")

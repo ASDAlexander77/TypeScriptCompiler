@@ -13038,10 +13038,10 @@ genContext);
         }
 
         // unboxing
-        // if (auto anyType = value.getType().dyn_cast<mlir_ts::AnyType>())
-        // {
-        //     return castFromAny(location, type, value, genContext);
-        // }
+        if (auto anyType = value.getType().dyn_cast<mlir_ts::AnyType>())
+        {
+            return castFromAny(location, type, value, genContext);
+        }
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
@@ -13058,7 +13058,7 @@ genContext);
                     if (typeof a == 'number') return <T>a; \
                     if (typeof a == 'string') return <T>a; \
                     if (typeof a == 'i32') return <T>a; \
-                    if (typeof a == 'class') if (s instanceof T) return <T>a; \
+                    if (typeof a == 'class') if (a instanceof T) return <T>a; \
                     return <T>null; \
                 } \
                 ");
@@ -13075,7 +13075,8 @@ genContext);
         assert(funcResult);
 
         GenContext funcCallGenContext(genContext);
-        funcCallGenContext.typeAliasMap.insert({"__TYPE_ALIAS__", type});
+        // "_" added to name
+        funcCallGenContext.typeAliasMap.insert({"___TYPE_ALIAS__", type});
 
         SmallVector<mlir::Value, 4> operands;
         operands.push_back(value);
