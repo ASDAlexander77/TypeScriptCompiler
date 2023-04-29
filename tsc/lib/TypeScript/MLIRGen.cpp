@@ -13059,7 +13059,13 @@ genContext);
         // unboxing
         if (auto anyType = value.getType().dyn_cast<mlir_ts::AnyType>())
         {
-            if (!type.isa<mlir_ts::OpaqueType>())
+            if (type.isa<mlir_ts::NumberType>() 
+                || type.isa<mlir_ts::BooleanType>()
+                || type.isa<mlir_ts::StringType>()
+                || type.isa<mlir::IntegerType>()
+                || type.isa<mlir::Float32Type>()
+                || type.isa<mlir::Float64Type>()
+                || type.isa<mlir_ts::ClassType>())
             {
                 return castFromAny(location, type, value, genContext);
             }
