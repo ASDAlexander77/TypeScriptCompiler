@@ -2591,22 +2591,22 @@ class MLIRGenImpl
         return true;
     }
 
-    bool processDeclaration(NamedDeclaration item, VariableClass varClass,
+    bool processDeclarationName(DeclarationName name, VariableClass varClass,
                             std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
-        auto location = loc(item);
+        auto location = loc(name);
 
-        if (item->name == SyntaxKind::ArrayBindingPattern)
+        if (name == SyntaxKind::ArrayBindingPattern)
         {
-            auto arrayBindingPattern = item->name.as<ArrayBindingPattern>();
+            auto arrayBindingPattern = name.as<ArrayBindingPattern>();
             if (!processDeclarationArrayBindingPattern(location, arrayBindingPattern, varClass, func, genContext))
             {
                 return false;
             }
         }
-        else if (item->name == SyntaxKind::ObjectBindingPattern)
+        else if (name == SyntaxKind::ObjectBindingPattern)
         {
-            auto objectBindingPattern = item->name.as<ObjectBindingPattern>();
+            auto objectBindingPattern = name.as<ObjectBindingPattern>();
             if (!processDeclarationObjectBindingPattern(location, objectBindingPattern, varClass, func, genContext))
             {
                 return false;
@@ -2615,13 +2615,19 @@ class MLIRGenImpl
         else
         {
             // name
-            auto name = MLIRHelper::getName(item->name);
+            auto nameStr = MLIRHelper::getName(name);
 
             // register
-            return !!registerVariable(location, name, false, varClass, func, genContext);
+            return !!registerVariable(location, nameStr, false, varClass, func, genContext);
         }
 
-        return true;
+        return true;       
+    }
+
+    bool processDeclaration(NamedDeclaration item, VariableClass varClass,
+                            std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
+    {
+        return processDeclarationName(item->name, varClass, func, genContext);
     }
 
     template <typename ItemTy>
@@ -4526,6 +4532,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult addSafeCastStatement(Expression expr, Node typeToken, const GenContext &genContext)
     {
+        /*
         NodeFactory nf(NodeFactoryFlags::None);
 
         // init
@@ -4539,6 +4546,25 @@ class MLIRGenImpl
         auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
 
         return mlirGen(expr_statement.as<Statement>(), genContext);
+        */
+
+        auto location = loc(expr);
+        auto exprValue = mlirGen(expr, genContext);
+        auto safeType = getType(typeToken, genContext);
+        auto castedValue = cast(location, safeType, exprValue, genContext);
+
+        if (processDeclarationName(
+                expr.as<DeclarationName>(), VariableClass::Const,
+                [&]() -> std::pair<mlir::Type, mlir::Value>
+                {
+                    return {safeType, castedValue};
+                },
+                genContext))
+        {
+            return mlir::success();
+        }
+
+        return mlir::failure();
     }
 
     mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, const GenContext &genContext)
@@ -8499,6 +8525,7 @@ class MLIRGenImpl
         auto location = loc(typeOfExpression);
 
         auto result = mlirGen(typeOfExpression->expression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto resultValue = V(result);
         auto typeOfValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), resultValue);
         return V(typeOfValue);
@@ -12998,7 +13025,51 @@ genContext);
             }
         }
 
+        // unboxing
+        // if (auto anyType = value.getType().dyn_cast<mlir_ts::AnyType>())
+        // {
+        //     return castFromAny(location, type, value, genContext);
+        // }
+
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
+    }
+
+    ValueOrLogicalResult castFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
+    {
+        // info, we add "_" extra as scanner append "_" in front of "__";
+        auto funcName = "___as";
+
+        if (!existGenericFunctionMap(funcName))
+        {
+            auto src = S("function __as<T>(a: any) : T \
+                { \
+                    if (typeof a == 'number') return <T>a; \
+                    if (typeof a == 'string') return <T>a; \
+                    if (typeof a == 'i32') return <T>a; \
+                    if (typeof a == 'class') if (s instanceof T) return <T>a; \
+                    return <T>null; \
+                } \
+                ");
+
+            if (mlir::failed(parsePartialStatements(src)))
+            {
+                assert(false);
+                return mlir::failure();
+            }
+        }
+
+        auto funcResult = resolveIdentifier(location, funcName, genContext);
+
+        assert(funcResult);
+
+        GenContext funcCallGenContext(genContext);
+        funcCallGenContext.typeAliasMap.insert({"__TYPE_ALIAS__", type});
+
+        SmallVector<mlir::Value, 4> operands;
+        operands.push_back(value);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        return mlirGenCallExpression(location, funcResult, { nf.createTypeReferenceNode(nf.createIdentifier(S("__TYPE_ALIAS__")).as<Node>()) }, operands, funcCallGenContext);
     }
 
     mlir::Value castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,

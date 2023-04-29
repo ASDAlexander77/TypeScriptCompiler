@@ -157,7 +157,7 @@
         "C_Cpp.codeAnalysis.clangTidy.headerFilter": ".*",
         "editor.defaultFormatter": "xaver.clang-format",
         "[cpp]": {
-            "editor.defaultFormatter": "xaver.clang-format"
+            "editor.defaultFormatter": "ms-vscode.cpptools"
         },
         "[json]": {
             "editor.defaultFormatter": "vscode.json-language-features"
