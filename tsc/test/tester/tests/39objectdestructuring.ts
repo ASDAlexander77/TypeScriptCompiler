@@ -1,6 +1,12 @@
 let glb1 = 0;
 
 namespace ObjectDestructuring {
+
+    class Y {
+        public e: number;
+        public f: number;
+    }
+
     class X {
         public a: number;
         public b: string;
@@ -8,12 +14,14 @@ namespace ObjectDestructuring {
         public d: Y;
     }
 
+    // TODO: finish late declaraion
+    /*
     class Y {
         public e: number;
         public f: number;
     }
+    */
 
-    /*
     function testFunction(callBack: (x: X) => void) {
         const test = new X();
         test.a = 17;
@@ -28,19 +36,15 @@ namespace ObjectDestructuring {
 
         callBack(test);
     }
-    */
 
     function arrayAssignment() {
         let [a, b, c] = [1, "foo", 3];
         assert(a == 1, "[]");
         assert(c == 3, "[]");
         assert(b == "foo", "[1]");
-        // TODO:
-        /*
         [a, c] = [c, a];
         assert(a == 3, "[2]");
         assert(c == 1, "[]");
-	*/
 
         const q = [4, 7];
         let p = 0;
@@ -68,7 +72,6 @@ namespace ObjectDestructuring {
     function objectAssignment() {
         let { aa, bb } = { aa: 10, bb: 20 };
         print(aa + bb);
-        /*
 
         let {
             aa,
@@ -83,14 +86,11 @@ namespace ObjectDestructuring {
         assert(y == "foo", "{}");
 
         print("objectAssignment done");
-  */
     }
 
     export function run() {
         glb1 = 0;
 
-        // TODO:
-        /*
         testFunction(({}) => {
             glb1 = 1;
         });
@@ -127,10 +127,9 @@ namespace ObjectDestructuring {
         });
 
         assert(glb1 === 5);
-*/
+
         arrayAssignment();
-        // TODO:
-        //objectAssignment();
+        objectAssignment();
     }
 }
 
