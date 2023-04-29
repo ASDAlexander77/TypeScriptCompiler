@@ -12307,7 +12307,7 @@ genContext);
         if (name.empty())
         {
             auto attr = getNameFromComputedPropertyName(declarationAST->name, genContext);
-            if (auto strAttr = attr.dyn_cast_or_null<mlir::StringAttr>())
+            if (auto strAttr = attr.template dyn_cast_or_null<mlir::StringAttr>())
             {
                 name = strAttr.getValue();
             }

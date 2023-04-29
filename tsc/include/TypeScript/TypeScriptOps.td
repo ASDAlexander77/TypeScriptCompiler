@@ -1993,8 +1993,8 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
       return type();
     }
     /// Return the initializer attribute if it exists, or a null attribute.
-    Attribute getValueOrNull() {
-      return value().getValueOr(Attribute());
+    Attribute value_or() {
+      return value().value_or(Attribute());
     }
     /// Return the initializer region. This may be empty, but if it is not it
     /// terminates in an `llvm.return` op with the initializer value.
