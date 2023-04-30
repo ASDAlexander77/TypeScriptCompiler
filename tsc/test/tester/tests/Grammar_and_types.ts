@@ -32,9 +32,8 @@ function main() {
 
     print("n * 32");
 
-    // TODO: null access
-    //let n : string = null;
-    //print(n * 32); // Will log 0 to the console
+    let n : string = null;
+    print(n * 32); // Will log 0 to the console
 
     // Variable scope
     print("Variable scope");
