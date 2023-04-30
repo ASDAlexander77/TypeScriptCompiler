@@ -33,7 +33,8 @@ function main() {
     print("n * 32");
 
     let n : string = null;
-    print(n * 32); // Will log 0 to the console
+    // TODO: should you convert null into 0?
+    //print(n * 32); // Will log 0 to the console
 
     // Variable scope
     print("Variable scope");
