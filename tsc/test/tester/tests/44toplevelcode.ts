@@ -15,7 +15,6 @@ function main() {
     let forclean = () => { };
     for (let i = 0; i < 11; ++i) {
         xsum = xsum + i;
-        // TODO: this code breaks execution, i think because of variable i in stack which is cleared after exiting
         forclean = () => {
             i = 0;
         };
@@ -49,7 +48,6 @@ function main() {
 
     s2 = "";
     for (let i = 0; i < 3; i++) {
-        // TODO: this code breaks execution, i think because of variable i or copy in stack which is cleared after exiting
         let copy = i;
         control.runInBackground(() => {
             pause(10 * copy + 1);
