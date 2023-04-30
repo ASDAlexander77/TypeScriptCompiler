@@ -360,6 +360,11 @@ class MLIRTypeHelper
     {
         mlir::ArrayRef<mlir::Type> returnTypes;
 
+        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            funcType = optType.getElementType();
+        }
+
         auto f = [&](auto calledFuncType) { returnTypes = calledFuncType.getResults(); };
 
         mlir::TypeSwitch<mlir::Type>(funcType)
@@ -377,6 +382,11 @@ class MLIRTypeHelper
     mlir::Type getParamFromFuncRef(mlir::Type funcType, int index)
     {
         mlir::Type paramType;
+
+        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            funcType = optType.getElementType();
+        }        
 
         auto f = [&](auto calledFuncType) { return calledFuncType.getInput(index); };
 
@@ -397,6 +407,11 @@ class MLIRTypeHelper
     mlir::Type getFirstParamFromFuncRef(mlir::Type funcType)
     {
         mlir::Type paramType;
+
+        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            funcType = optType.getElementType();
+        }        
 
         auto f = [&](auto calledFuncType) { return calledFuncType.getInputs().front(); };
 
@@ -422,6 +437,11 @@ class MLIRTypeHelper
             return paramsType;
         }
 
+        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            funcType = optType.getElementType();
+        }        
+
         mlir::TypeSwitch<mlir::Type>(funcType)
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
@@ -442,6 +462,11 @@ class MLIRTypeHelper
         {
             return paramsType;
         }
+
+        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            funcType = optType.getElementType();
+        }        
 
         auto f = [&](auto calledFuncType) {
             SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -473,6 +498,11 @@ class MLIRTypeHelper
     {
         bool isVarArg = false;
 
+        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            funcType = optType.getElementType();
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef for " << funcType << "\n";);
 
         mlir::TypeSwitch<mlir::Type>(funcType)
@@ -491,6 +521,11 @@ class MLIRTypeHelper
     mlir::Type getOmitThisFunctionTypeFromFuncRef(mlir::Type funcType)
     {
         mlir::Type paramsType;
+
+        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            funcType = optType.getElementType();
+        }        
 
         auto f = [&](auto calledFuncType) {
             using t = decltype(calledFuncType);

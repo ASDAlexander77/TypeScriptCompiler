@@ -60,7 +60,6 @@ namespace ObjectDestructuring {
         constructor(public x: number, public y: string) {}
     }
 
-    // TODO:
     function objectAssignment() {
         let { aa, bb } = { aa: 10, bb: 20 };
         print(aa + bb);
