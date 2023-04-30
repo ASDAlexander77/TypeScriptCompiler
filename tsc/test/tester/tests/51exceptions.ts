@@ -144,12 +144,11 @@ namespace exceptions {
         test3(lambda)
 
         glb1 = x = 0
-        //nested()
-        //assert(glb1 == 11)
+        nested()
+        assert(glb1 == 11)
 
-        // TODO: if uncomment - freeze execution
-        //assert(test4(() => { }) == 10)
-        //assert(test4(() => { throw "foo" }) == 20)
+        assert(test4(() => { }) == 10)
+        assert(test4(() => { throw "foo" }) == 20)
 
         test5()
 
