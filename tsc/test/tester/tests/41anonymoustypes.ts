@@ -21,15 +21,14 @@ namespace AnonymousTypes {
         let nested = { a: { b: { c: 3 } } };
 
         let bar = new Foo(42);
-        // TODO:...
-        //let baz: { a: number } = bar
+        let baz: { a: number } = bar
         assert(nested.a.b.c == 3);
         assert(x.a == 2);
         assert(x.b == "bar");
-        //assert(foo(x) == 3)
-        //assert(foo(bar) == 43);
+        assert(foo(x) == 3)
+        assert(foo(bar) == 43);
         assert(bar.bar() == 43);
-        //assert(foo(baz) == 43)
+        assert(foo(baz) == 43)
         // HUH bar(40) - new (expects any)
     }
 }
