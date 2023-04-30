@@ -2,11 +2,6 @@ let glb1 = 0;
 
 namespace ObjectDestructuring {
 
-    class Y {
-        public e: number;
-        public f: number;
-    }
-
     class X {
         public a: number;
         public b: string;
@@ -14,13 +9,10 @@ namespace ObjectDestructuring {
         public d: Y;
     }
 
-    // TODO: finish late declaraion
-    /*
     class Y {
         public e: number;
         public f: number;
     }
-    */
 
     function testFunction(callBack: (x: X) => void) {
         const test = new X();

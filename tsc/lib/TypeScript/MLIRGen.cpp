@@ -8240,15 +8240,15 @@ class MLIRGenImpl
         {
             auto propAccess =
                 mlirGenPropertyAccessExpression(location, effectiveThisValue, CONSTRUCTOR_NAME, false, genContext);
-            if (propAccess)
-            {
-                bool hasReturn;
-                mlirGenCall(location, propAccess, operands, hasReturn, genContext);
-            }
-            else
+
+            if (!propAccess && !genContext.allowPartialResolve)
             {
                 emitError(location) << "Call Constructor: can't find constructor";
             }
+
+            EXIT_IF_FAILED_OR_NO_VALUE(propAccess)
+            bool hasReturn;
+            mlirGenCall(location, propAccess, operands, hasReturn, genContext);
         }
 
         return mlir::success();
@@ -8298,7 +8298,8 @@ class MLIRGenImpl
                 }
 
                 assert(newOp);
-                mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
+                auto result  = mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
+                EXIT_IF_FAILED(result)
             }
 
             return newOp;
@@ -10917,8 +10918,14 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "");
 
+                auto hasType = !!propertyDeclaration->type;
                 if (isNoneType(type))
                 {
+                    if (hasType)
+                    {
+                        return mlir::failure();
+                    }
+
 #ifndef ANY_AS_DEFAULT
                     emitError(loc(propertyDeclaration))
                         << "type for field '" << fieldId << "' is not provided, field must have type or initializer";
