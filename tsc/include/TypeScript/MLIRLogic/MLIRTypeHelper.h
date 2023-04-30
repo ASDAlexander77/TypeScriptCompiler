@@ -190,16 +190,6 @@ class MLIRTypeHelper
                         type.isa<mlir_ts::TupleType>() || type.isa<mlir_ts::ConstTupleType>() || type.isa<mlir_ts::ConstArrayType>());
     }
 
-    bool isUndefinedType(mlir::Type type)
-    {
-        if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
-        {
-            return optType == mlir_ts::UndefPlaceHolderType::get(context);
-        }
-
-        return false;
-    }
-
     mlir::Type isBoundReference(mlir::Type elementType, bool &isBound)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS

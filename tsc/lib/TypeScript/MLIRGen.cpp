@@ -6268,7 +6268,6 @@ class MLIRGenImpl
 
         auto rightExprGenContext = GenContext(genContext);
 
-        // TODO: the following code is not working why?
         if (mth.isFuncType(leftExpressionValue.getType()))
         {
             rightExprGenContext.receiverFuncType = leftExpressionValue.getType();

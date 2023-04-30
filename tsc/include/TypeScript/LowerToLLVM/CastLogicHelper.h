@@ -754,12 +754,19 @@ class CastLogicHelper
             llvmSrcElementType = tch.convertType(srcElementType);         
             byValue = false;               
         }   
-        else if (auto nullType = type.dyn_cast<mlir_ts::UndefinedType>())
+        else if (auto undefType = type.dyn_cast<mlir_ts::UndefinedType>())
         {
             size = 0;
             srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
             llvmSrcElementType = tch.convertType(srcElementType);                  
             isUndef = true;      
+        }
+        else if (MLIRHelper::isUndefinedType(type))
+        {
+            size = 0;
+            srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            llvmSrcElementType = tch.convertType(srcElementType);                  
+            isUndef = true;     
         }              
         else if (auto ptrValue = type.dyn_cast<LLVM::LLVMPointerType>())
         {
@@ -775,7 +782,7 @@ class CastLogicHelper
                                         << " to type: " << elementType << "\n";);
                 llvm_unreachable("not implemented");
             }
-        }
+        }        
         else
         {
             LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(1)] from value: " << in << " as type: " << type << " to type: " << arrayType
