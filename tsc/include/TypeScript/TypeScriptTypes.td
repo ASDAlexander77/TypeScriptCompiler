@@ -181,13 +181,13 @@ def TypeScript_Enum : TypeScript_Type<"Enum"> {
     enum<i32>
     ```
   }];
-  let parameters = (ins "Type":$elementType);
+  let parameters = (ins "Type":$elementType, "DictionaryAttr":$values);
 
   let assemblyFormat = "`<` params `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
-      return Base::get(elementType.getContext(), elementType);
+    TypeBuilderWithInferredContext<(ins "Type":$elementType, "DictionaryAttr":$values), [{
+      return Base::get(elementType.getContext(), elementType, values);
     }]>
   ];
 }

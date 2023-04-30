@@ -9746,7 +9746,7 @@ class MLIRGenImpl
         if (getEnumsMap().count(name))
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
-            return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first), enumTypeInfo.second);
+            return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first, enumTypeInfo.second), enumTypeInfo.second);
         }
 
         if (getGenericFunctionMap().count(name))
@@ -13418,13 +13418,6 @@ genContext);
 
         if (type)
         {
-            // extra code for extracting enum storage type
-            // TODO: think if you can avoid doing it
-            if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
-            {
-                return enumType.getElementType();
-            }
-
             return type;
         }
 
@@ -14545,6 +14538,18 @@ genContext);
             return getUnionType(literalTypes);
         }
 
+        if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
+        {
+            SmallVector<mlir::Type> literalTypes;
+            for (auto dictValuePair : enumType.getValues())
+            {
+                auto litType = mlir_ts::LiteralType::get(builder.getStringAttr(dictValuePair.getName().str()), getStringType());
+                literalTypes.push_back(litType);
+            }
+
+            return getUnionType(literalTypes);
+        }
+
         if (auto namedGenericType = type.dyn_cast<mlir_ts::NamedGenericType>())
         {
             return getKeyOfType(namedGenericType);
@@ -14944,13 +14949,13 @@ genContext);
 
     mlir_ts::EnumType getEnumType()
     {
-        return getEnumType(builder.getI32Type());
+        return getEnumType(builder.getI32Type(), {});
     }
 
-    mlir_ts::EnumType getEnumType(mlir::Type elementType)
+    mlir_ts::EnumType getEnumType(mlir::Type elementType, mlir::DictionaryAttr values)
     {
         assert(elementType);
-        return mlir_ts::EnumType::get(elementType);
+        return mlir_ts::EnumType::get(elementType, values);
     }
 
     mlir_ts::ObjectStorageType getObjectStorageType(mlir::FlatSymbolRefAttr name)
