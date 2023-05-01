@@ -13014,9 +13014,16 @@ genContext);
         // optional with union & interface inside
         if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
         {
-            auto valueCasted = cast(location, optType.getElementType(), value, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(valueCasted)
-            return V(builder.create<mlir_ts::CreateOptionalOp>(location, optType, valueCasted));
+            if (MLIRHelper::isUndefinedType(value.getType()))
+            {
+                return V(builder.create<mlir_ts::UndefOptionalOp>(location, optType));
+            }
+            else
+            {
+                auto valueCasted = cast(location, optType.getElementType(), value, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(valueCasted)
+                return V(builder.create<mlir_ts::CreateOptionalOp>(location, optType, valueCasted));
+            }
         }
 
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
