@@ -6851,7 +6851,9 @@ class MLIRGenImpl
                 auto castedValue = builder.create<mlir_ts::CastOp>(location, elementType, objectValue);
                 value = mlirGenPropertyAccessExpression(location, castedValue, name, false, genContext);
             })
-            .Default([](auto type) {});
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "Can't resolve property '" << name << "' of type " << objectValue.getType(););
+            });
 
         // extention logic: <obj>.<functionName>(this)
         if (!value)
@@ -7832,18 +7834,14 @@ class MLIRGenImpl
             auto innerFuncRef =
                 builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), actualFuncRefValue);
 
-            auto hasReturn = false;
-            auto result = mlirGenCall(location, innerFuncRef, operands, hasReturn, genContext);
+            auto result = mlirGenCallExpression(location, innerFuncRef, typeArguments, operands, genContext);
             auto value = V(result);
-            if (hasReturn)
+            if (value)
             {
                 auto optValue =
                     builder.create<mlir_ts::CreateOptionalOp>(location, getOptionalType(value.getType()), value);
                 builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
-            }
 
-            if (hasReturn)
-            {
                 // else
                 builder.setInsertionPointToStart(&ifOp.elseRegion().front());
 
