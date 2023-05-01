@@ -2683,9 +2683,11 @@ class MLIRGenImpl
         if (auto initializer = item->initializer)
         {
             GenContext genContextWithTypeReceiver(genContext);
+            genContextWithTypeReceiver.clearReceiverTypes();
             if (type)
             {
                 genContextWithTypeReceiver.receiverType = type;
+                LLVM_DEBUG(dbgs() << "\n!! variable receiverType " << type << "\n");
             }
 
             auto result = mlirGen(initializer, genContextWithTypeReceiver);
@@ -4203,6 +4205,7 @@ class MLIRGenImpl
         if (auto expression = returnStatementAST->expression)
         {
             GenContext receiverTypeGenContext(genContext);
+            receiverTypeGenContext.clearReceiverTypes();
             auto exactReturnType = getExplicitReturnTypeOfCurrentFunction(genContext);
             if (exactReturnType)
             {
@@ -6267,6 +6270,7 @@ class MLIRGenImpl
         auto leftExpressionValue = V(result);
 
         auto rightExprGenContext = GenContext(genContext);
+        rightExprGenContext.clearReceiverTypes();
 
         if (mth.isFuncType(leftExpressionValue.getType()))
         {
@@ -8071,6 +8075,7 @@ class MLIRGenImpl
         for (auto expression : arguments)
         {
             GenContext argGenContext(genContext);
+            argGenContext.clearReceiverTypes();
             if (hasType)
             {
                 if (isVarArg && i >= lastArgIndex)
@@ -9254,6 +9259,7 @@ class MLIRGenImpl
 
                 // TODO: send context with receiver type
                 GenContext receiverTypeGenContext(genContext);
+                receiverTypeGenContext.clearReceiverTypes();
                 if (receiverElementType)
                 {
                     receiverTypeGenContext.receiverType = receiverElementType;

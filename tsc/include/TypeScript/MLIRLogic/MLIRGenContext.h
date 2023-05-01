@@ -68,6 +68,12 @@ struct GenContext
         allocateVarsOutsideOfOperation = false;
     }
 
+    void clearReceiverTypes()
+    {
+        receiverType = mlir::Type();
+        receiverFuncType = mlir::Type();
+    }
+
     // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
     void clean()
     {
