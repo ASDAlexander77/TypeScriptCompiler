@@ -249,6 +249,9 @@ class MLIRTypeIterator
                           .Case<mlir_ts::StringType>([&](auto) {
                               return true;
                           })                          
+                          .Case<mlir_ts::BooleanType>([&](auto) {
+                              return true;
+                          })                          
                           .Case<mlir_ts::VoidType>([&](auto) {
                               return true;
                           })                          
