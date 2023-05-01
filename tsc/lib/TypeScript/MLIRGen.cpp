@@ -6159,6 +6159,11 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
                                                  mlir::Value rightExpressionValue, const GenContext &genContext)
     {
+        if (!leftExpressionValue)
+        {
+            return mlir::failure();
+        }
+
         auto leftExpressionValueBeforeCast = leftExpressionValue;
 
         if (leftExpressionValue.getType() != rightExpressionValue.getType())
@@ -6337,14 +6342,18 @@ class MLIRGenImpl
                 auto propertyAssignment = item.as<PropertyAssignment>();
 
                 auto propertyName = MLIRHelper::getName(propertyAssignment->name);
-                auto varName = MLIRHelper::getName(propertyAssignment->initializer.as<Node>());
 
-                auto ident = resolveIdentifier(location, varName, genContext);
+                auto result = mlirGen(propertyAssignment->initializer, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                auto ident = V(result);
 
                 auto subInit =
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
 
-                mlirGenSaveLogicOneItem(location, ident, subInit, genContext);
+                if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
+                {
+                    return mlir::failure();
+                }
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
@@ -6358,7 +6367,10 @@ class MLIRGenImpl
                 auto subInit =
                     mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
 
-                mlirGenSaveLogicOneItem(location, ident, subInit, genContext);
+                if (mlir::failed(mlirGenSaveLogicOneItem(location, ident, subInit, genContext)))
+                {
+                    return mlir::failure();
+                }
             }
             else
             {
@@ -7395,6 +7407,17 @@ class MLIRGenImpl
 
             llvm_unreachable("not implemented (ElementAccessExpression)");
         }
+        else if (auto classStorageType = arrayType.dyn_cast<mlir_ts::ClassStorageType>())
+        {
+            // seems we are calling "super"
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto attr = fieldName.value();
+                return mlirGenPropertyAccessExpression(location, expression, attr, genContext);
+            }
+
+            llvm_unreachable("not implemented (ElementAccessExpression)");
+        }        
         else if (auto interfaceType = arrayType.dyn_cast<mlir_ts::InterfaceType>())
         {
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
@@ -9536,6 +9559,7 @@ class MLIRGenImpl
             VALIDATE1(fieldToSet.second, location)
 
             auto result2 = mlirGenSaveLogicOneItem(location, getField, fieldToSet.second, genContext);
+            EXIT_IF_FAILED(result2)
             auto savedValue = V(result2);
         }
 
