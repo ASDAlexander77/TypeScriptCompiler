@@ -316,10 +316,15 @@ class CastLogicHelper
                 auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
                 auto llvmBoolType = tch.convertType(boolType);
                 auto valAsBool = cast(val, val.getType(), tch.convertType(val.getType()), boolType, llvmBoolType);
-
-                mlir::Value v1AsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, v1);
-
-                return rewriter.create<LLVM::AndOp>(loc, llvmBoolType, v1AsLLVMType, valAsBool);
+                if (valAsBool)
+                {
+                    mlir::Value v1AsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, v1);
+                    return rewriter.create<LLVM::AndOp>(loc, llvmBoolType, v1AsLLVMType, valAsBool);
+                }
+                else
+                {
+                    return v1;
+                }
             }
 
             if (auto arrayType = inType.dyn_cast<mlir_ts::ArrayType>())

@@ -7823,7 +7823,10 @@ class MLIRGenImpl
 
             auto resultType = mth.getReturnTypeFromFuncRef(optFuncRef.getElementType());
 
-            auto ifOp = resultType
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Conditional call, return type: " << resultType << "\n";);
+
+            auto hasReturn = !isNoneType(resultType) && resultType != getVoidType();
+            auto ifOp = hasReturn
                             ? builder.create<mlir_ts::IfOp>(location, getOptionalType(resultType), condValue, true)
                             : builder.create<mlir_ts::IfOp>(location, condValue, false);
 
@@ -7851,7 +7854,7 @@ class MLIRGenImpl
 
             builder.setInsertionPointAfter(ifOp);
 
-            if (resultType)
+            if (hasReturn)
             {
                 return ifOp.results().front();
             }
