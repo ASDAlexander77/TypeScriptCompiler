@@ -6771,6 +6771,11 @@ class MLIRGenImpl
             auto condValue = cast(location, getBooleanType(), objectValue, genContext);
 
             auto propType = evaluateProperty(objectValue, cl.getName().str(), genContext);
+            if (!propType)
+            {
+                emitError(location, "Can't resolve property '") << cl.getName() << "' of type " << objectValue.getType();
+                return mlir::failure();
+            }
 
             auto ifOp = builder.create<mlir_ts::IfOp>(location, getOptionalType(propType), condValue, true);
 
@@ -7334,7 +7339,7 @@ class MLIRGenImpl
     }
 
     template <typename T>
-    ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression,
+    ValueOrLogicalResult mlirGenElementAccessTuple(mlir::Location location, mlir::Value expression,
                                               mlir::Value argumentExpression, T tupleType)
     {
         // get index
@@ -7364,16 +7369,24 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto argumentExpression = V(result2);
 
-        return mlirGenElementAccess(location, expression, argumentExpression, genContext);
+        return mlirGenElementAccess(location, expression, argumentExpression, !!elementAccessExpression->questionDotToken, genContext);
     }
 
-    ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext)
     {
         auto arrayType = expression.getType();
         if (arrayType.isa<mlir_ts::LiteralType>())
         {
             arrayType = mth.stripLiteralType(arrayType);
             expression = cast(location, arrayType, expression, genContext);
+        }
+
+        if (isConditionalAccess)
+        {
+            if (auto optType = arrayType.dyn_cast<mlir_ts::OptionalType>())
+            {
+                arrayType = optType.getElementType();
+            }
         }
 
         mlir::Type elementType;
@@ -7391,18 +7404,18 @@ class MLIRGenImpl
         }
         else if (auto tupleType = arrayType.dyn_cast<mlir_ts::TupleType>())
         {
-            return mlirGenElementAccess(location, expression, argumentExpression, tupleType);
+            return mlirGenElementAccessTuple(location, expression, argumentExpression, tupleType);
         }
-        else if (auto tupleType = arrayType.dyn_cast<mlir_ts::ConstTupleType>())
+        else if (auto constTupleType = arrayType.dyn_cast<mlir_ts::ConstTupleType>())
         {
-            return mlirGenElementAccess(location, expression, argumentExpression, tupleType);
+            return mlirGenElementAccessTuple(location, expression, argumentExpression, constTupleType);
         }
         else if (auto classType = arrayType.dyn_cast<mlir_ts::ClassType>())
         {
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.value();
-                return mlirGenPropertyAccessExpression(location, expression, attr, genContext);
+                return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
             }
 
             llvm_unreachable("not implemented (ElementAccessExpression)");
@@ -7413,7 +7426,7 @@ class MLIRGenImpl
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.value();
-                return mlirGenPropertyAccessExpression(location, expression, attr, genContext);
+                return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
             }
 
             llvm_unreachable("not implemented (ElementAccessExpression)");
@@ -7423,7 +7436,7 @@ class MLIRGenImpl
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.value();
-                return mlirGenPropertyAccessExpression(location, expression, attr, genContext);
+                return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
             }
 
             llvm_unreachable("not implemented (ElementAccessExpression)");
@@ -8131,7 +8144,7 @@ class MLIRGenImpl
                     auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
                                                         mth.getStructIndexAttrValue(spreadIndex));
 
-                    auto spreadValue = mlirGenElementAccess(location, value, indexVal, genContext);
+                    auto spreadValue = mlirGenElementAccess(location, value, indexVal, false, genContext);
 
                     operands.push_back(spreadValue);
 
@@ -12682,6 +12695,12 @@ genContext);
                 methodInfos.push_back(
                     {methodName, funcType, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
             }
+        }
+        else if (kind == SyntaxKind::IndexSignature)
+        {
+            // TODO: nothing to do here yet
+            //[k: string]: string
+            emitWarning(location, "") << "Index signature ignored.";
         }
         else
         {

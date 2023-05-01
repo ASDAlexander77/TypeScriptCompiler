@@ -300,6 +300,8 @@ add_test(NAME test-compile-Print-Bug-01 COMMAND test-runner "${PROJECT_SOURCE_DI
 add_test(NAME test-compile-Abstract-Property-In-Constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/abstractPropertyInConstructor.ts")
 add_test(NAME test-compile-Dependencies COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/dependencies.ts")
 add_test(NAME test-compile-ArrayFakeFlatNoCrashInferenceDeclarations COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/arrayFakeFlatNoCrashInferenceDeclarations.ts")
+add_test(NAME test-compile-noPropertyAccessFromIndexSignature1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/noPropertyAccessFromIndexSignature1.ts")
+add_test(NAME test-compile-asyncMethodWithSuper_es2017 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/asyncMethodWithSuper_es2017.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -518,3 +520,5 @@ add_test(NAME test-jit-Print-Bug-01 COMMAND test-runner -jit "${PROJECT_SOURCE_D
 add_test(NAME test-jit-Abstract-Property-In-Constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/abstractPropertyInConstructor.ts")
 add_test(NAME test-jit-Dependencies COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/dependencies.ts")
 add_test(NAME test-jit-ArrayFakeFlatNoCrashInferenceDeclarations COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/arrayFakeFlatNoCrashInferenceDeclarations.ts")
+add_test(NAME test-jit-noPropertyAccessFromIndexSignature1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/noPropertyAccessFromIndexSignature1.ts")
+add_test(NAME test-jit-asyncMethodWithSuper_es2017 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/asyncMethodWithSuper_es2017.ts")
