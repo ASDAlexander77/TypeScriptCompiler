@@ -276,6 +276,18 @@ class CastLogicHelper
 
         if (auto boolType = resType.dyn_cast<mlir_ts::BooleanType>())
         {
+            if (auto tupleType = inType.dyn_cast<mlir_ts::TupleType>())
+            {
+                auto llvmBoolType = tch.convertType(boolType);
+                return rewriter.create<mlir_ts::ConstantOp>(loc, llvmBoolType, rewriter.getBoolAttr(true));
+            }
+
+            if (auto constTupleType = inType.dyn_cast<mlir_ts::ConstTupleType>())
+            {
+                auto llvmBoolType = tch.convertType(boolType);
+                return rewriter.create<mlir_ts::ConstantOp>(loc, llvmBoolType, rewriter.getBoolAttr(true));
+            }
+
             if (auto ifaceType = inType.dyn_cast<mlir_ts::InterfaceType>())
             {
                 auto ptrValue =
