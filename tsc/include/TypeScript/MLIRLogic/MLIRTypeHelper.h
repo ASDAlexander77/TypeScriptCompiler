@@ -1707,7 +1707,8 @@ class MLIRTypeHelper
         }
 
         // merge types
-        if (mergeTypes)
+        auto doNotMergeLiterals = !mergeLiterals && isAllLiteralTypes;
+        if (mergeTypes && !doNotMergeLiterals)
         {
             mlir::SmallVector<mlir::Type> mergedTypesAll;
             this->mergeTypes(typesAll, mergedTypesAll);
