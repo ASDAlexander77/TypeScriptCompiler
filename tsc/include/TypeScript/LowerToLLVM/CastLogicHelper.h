@@ -106,11 +106,6 @@ class CastLogicHelper
             return castF32orF64ToString(in);
         }
 
-        if (auto arrType = resType.dyn_cast<mlir_ts::ArrayType>())
-        {
-            return castToArrayType(in, inType, resType);
-        }
-
         auto isResAny = resType.isa<mlir_ts::AnyType>();
         if (isResAny)
         {
@@ -386,6 +381,11 @@ class CastLogicHelper
 
             auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
             return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
+        }
+
+        if (auto arrType = resType.dyn_cast<mlir_ts::ArrayType>())
+        {
+            return castToArrayType(in, inType, resType);
         }
 
         if (auto opaqueType = resType.dyn_cast<mlir_ts::OpaqueType>())

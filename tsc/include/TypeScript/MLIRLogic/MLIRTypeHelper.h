@@ -869,13 +869,14 @@ class MLIRTypeHelper
         return false;
     }
 
-    mlir::Type findBaseType(mlir::Type typeLeft, mlir::Type typeRight, mlir::Type defaultType = mlir::Type())
+    mlir::Type findBaseType(mlir::Type typeLeft, mlir::Type typeRight, bool& found, mlir::Type defaultType = mlir::Type())
     {
         if (!typeLeft && !typeRight)
         {
             return mlir::Type();
         }
 
+        found = true;
         if (typeLeft && !typeRight)
         {
             return typeLeft;
@@ -896,6 +897,7 @@ class MLIRTypeHelper
             return typeLeft;
         }
 
+        found = false;
         if (defaultType)
         {
             return defaultType;
@@ -940,6 +942,19 @@ class MLIRTypeHelper
 
             return canWideTypeWithoutDataLoss(srcType, optionalType.getElementType());
         }
+
+        if (auto arrayType = dstType.dyn_cast<mlir_ts::ArrayType>())
+        {
+            if (auto constArrayType = srcType.dyn_cast<mlir_ts::ConstArrayType>())
+            {
+                if (constArrayType.getSize() == 0)
+                {
+                    return true;
+                }
+
+                return canWideTypeWithoutDataLoss(constArrayType.getElementType(), arrayType.getElementType());
+            }
+        }        
 
         return false;
     }
@@ -1059,7 +1074,8 @@ class MLIRTypeHelper
                     LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType.second << " default type: " << defaultUnionType
                                             << "\n";);
 
-                    currentType = findBaseType(existType.second, currentType, defaultUnionType);
+                    auto merged = false;
+                    currentType = findBaseType(existType.second, currentType, merged, defaultUnionType);
                 }
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
@@ -1617,7 +1633,7 @@ class MLIRTypeHelper
         return mlir::success();
     }
 
-    mlir::Type getUnionType(mlir::Type type1, mlir::Type type2, bool mergeLiterals = true)
+    mlir::Type getUnionType(mlir::Type type1, mlir::Type type2, bool mergeLiterals = true, bool mergeTypes = true)
     {
         if (canCastFromTo(type1, type2))
         {
@@ -1632,10 +1648,11 @@ class MLIRTypeHelper
         mlir::SmallVector<mlir::Type> types;
         types.push_back(type1);
         types.push_back(type2);
-        return getUnionTypeWithMerge(types, mergeLiterals);
+        return getUnionTypeWithMerge(types, mergeLiterals, mergeTypes);
     }
 
-    mlir::Type getUnionTypeMergeTypes(UnionTypeProcessContext &unionContext, bool mergeLiterals = true)
+    // TODO: review all union merge logic
+    mlir::Type getUnionTypeMergeTypes(UnionTypeProcessContext &unionContext, bool mergeLiterals = true, bool mergeTypes = true)
     {
         // merge types with literal types
         for (auto literalType : unionContext.literalTypes)
@@ -1678,6 +1695,32 @@ class MLIRTypeHelper
             typesAll.push_back(getNullType());
         }
 
+        if (typesAll.size() == 1)
+        {
+            auto resType = typesAll.front();
+            if (unionContext.isUndefined)
+            {
+                return mlir_ts::OptionalType::get(resType);
+            }     
+
+            return resType;       
+        }
+
+        // merge types
+        if (mergeTypes)
+        {
+            mlir::SmallVector<mlir::Type> mergedTypesAll;
+            this->mergeTypes(typesAll, mergedTypesAll);
+
+            mlir::Type retType = mergedTypesAll.size() == 1 ? mergedTypesAll.front() : getUnionType(mergedTypesAll);
+            if (unionContext.isUndefined)
+            {
+                return mlir_ts::OptionalType::get(retType);
+            }
+
+            return retType;
+        }
+
         mlir::Type retType = typesAll.size() == 1 ? typesAll.front() : getUnionType(typesAll);
         if (unionContext.isUndefined)
         {
@@ -1687,7 +1730,7 @@ class MLIRTypeHelper
         return retType;
     }
 
-    mlir::Type getUnionTypeWithMerge(mlir::ArrayRef<mlir::Type> types, bool mergeLiterals = true)
+    mlir::Type getUnionTypeWithMerge(mlir::ArrayRef<mlir::Type> types, bool mergeLiterals = true, bool mergeTypes = true)
     {
         UnionTypeProcessContext unionContext = {};
         for (auto type : types)
@@ -1711,7 +1754,7 @@ class MLIRTypeHelper
             }
         }
 
-        return getUnionTypeMergeTypes(unionContext, mergeLiterals);
+        return getUnionTypeMergeTypes(unionContext, mergeLiterals, mergeTypes);
     }
 
     mlir::Type getUnionType(mlir::SmallVector<mlir::Type> &types)
@@ -1763,18 +1806,71 @@ class MLIRTypeHelper
         MLIRTypeIteratorLogic iter{};
         return iter.some(type, [](mlir::Type type) { return type.isa<mlir_ts::InferType>(); });
     }    
-
-    mlir::Type mergeType(mlir::Type existType, mlir::Type currentType)
+    
+    void mergeTypes(mlir::ArrayRef<mlir::Type> types, mlir::SmallVector<mlir::Type> &mergedTypes)
     {
-        auto defaultUnionType = getUnionType(existType, currentType);
+        for (auto typeItem : types)
+        {
+            if (mergedTypes.size() == 0)
+            {
+                mergedTypes.push_back(typeItem);
+                continue;
+            }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType << " default type: " << defaultUnionType
+            auto found = false;
+            for (auto index = 0; index < mergedTypes.size(); index++)
+            {
+                auto mergedType = mergedTypes[index];
+
+                auto merged = false;
+                auto resultType = mergeType(mergedType, typeItem, merged);
+                if (merged)
+                {
+                    mergedTypes[index] = resultType;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                mergedTypes.push_back(typeItem);
+            }
+        }
+    }
+
+    mlir::Type mergeType(mlir::Type existType, mlir::Type currentType, bool& merged)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: " << existType << " with " << currentType << "\n";);
+
+        if (canCastFromTo(currentType, existType))
+        {
+            merged = true;
+            return existType;
+        }
+
+        if (canCastFromTo(existType, currentType))
+        {
+            merged = true;
+            return currentType;
+        }
+        
+        auto resType = wideStorageType(currentType);
+        
+        auto found = false;
+        resType = findBaseType(existType, resType, found);
+        if (!found)
+        {
+            auto defaultUnionType = getUnionType(existType, resType, true, false);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! default type: " << defaultUnionType
                                 << "\n";);
+            return defaultUnionType;
+        }
 
-        currentType = wideStorageType(currentType);
-        currentType = findBaseType(existType, currentType, defaultUnionType);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << resType << "\n";);
 
-        return currentType;
+        merged = true;
+        return resType;
     }
 
 protected:

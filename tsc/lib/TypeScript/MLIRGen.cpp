@@ -1066,7 +1066,8 @@ class MLIRGenImpl
             auto existType = results.lookup(name);
             if (existType)
             {
-                currentType = mth.mergeType(existType, currentType);
+                auto merged = false;
+                currentType = mth.mergeType(existType, currentType, merged);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
                 results[name] = currentType;
@@ -5772,7 +5773,8 @@ class MLIRGenImpl
         }
 
         auto defaultUnionType = getUnionType(resultWhenTrueType, resultWhenFalseType);
-        auto resultType = mth.findBaseType(resultWhenTrueType, resultWhenFalseType, defaultUnionType);
+        auto merged = false;
+        auto resultType = mth.findBaseType(resultWhenTrueType, resultWhenFalseType, merged, defaultUnionType);
 
         if (genContext.allowPartialResolve)
         {
@@ -5920,7 +5922,8 @@ class MLIRGenImpl
 
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
         auto defaultUnionType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
-        auto resultType = mth.findBaseType(resultWhenFalseType, leftExpressionValue.getType(), defaultUnionType);
+        auto merged = false;
+        auto resultType = mth.findBaseType(resultWhenFalseType, leftExpressionValue.getType(), merged, defaultUnionType);
 
         // extarct value from optional type
         auto actualLeftValue = leftExpressionValue;
@@ -13561,7 +13564,8 @@ genContext);
 
                 if (!existType.second.isa<mlir_ts::NamedGenericType>() && mergeTypes)
                 {
-                    type = mth.mergeType(existType.second, type);
+                    auto merged = false;
+                    type = mth.mergeType(existType.second, type, merged);
                     LLVM_DEBUG(llvm::dbgs() << "\n!! result (after merge) type: " << type << "\n";);
                 }
 
@@ -15449,7 +15453,7 @@ genContext);
             }
         }
 
-        return mth.getUnionTypeMergeTypes(unionContext, false);
+        return mth.getUnionTypeMergeTypes(unionContext, false, false);
     }
 
     mlir::Type getUnionType(mlir::Type type1, mlir::Type type2)
