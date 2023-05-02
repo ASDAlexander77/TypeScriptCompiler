@@ -8860,7 +8860,8 @@ class MLIRGenImpl
                 // TODO: remove it "if" to find out the issue with types
                 if (!mth.isGenericType(arrayType.getElementType()))
                 {
-                    receiverElementType = arrayType.getElementType();
+                    elementType = receiverElementType = arrayType.getElementType();
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! array elements - receiver type: " << receiverElementType << "\n";);
                 }
             }
         }
@@ -9056,7 +9057,15 @@ class MLIRGenImpl
         {
             // recheck types, we know all of them are consts
             isTuple = false;
-            elementType = mlir::Type();
+            if (receiverElementType)
+            {
+                elementType = receiverElementType;
+            }
+            else
+            {
+                elementType = mlir::Type();
+            }
+
             SmallVector<mlir::Type> constTypes;
             for (auto &itemValue : values)
             {

@@ -309,7 +309,27 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             // dense value
             auto value = arrayAttr.getValue();
-            if (llvmElementType.isIntOrFloat())
+            if (value.size() == 0/*|| originalElementType.dyn_cast<mlir_ts::AnyType>()*/)
+            {
+                seekLast(parentModule.getBody());
+
+                OpBuilder::InsertionGuard guard(rewriter);
+
+                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
+
+                setStructWritingPoint(global);
+
+                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+
+                for (auto item : arrayAttr.getValue())
+                {
+                    // it must be '[]' empty array
+                    assert(false);
+                }
+
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
+            }
+            else if (llvmElementType.isIntOrFloat())
             {
                 seekLast<DenseElementsAttr>(parentModule.getBody());
 
@@ -337,26 +357,6 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                     auto itemVal = getOrCreateGlobalString(strValue);
 
                     arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, rewriter.getI64ArrayAttr(position++));
-                }
-
-                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
-            }
-            else if (originalElementType.dyn_cast<mlir_ts::AnyType>())
-            {
-                seekLast(parentModule.getBody());
-
-                OpBuilder::InsertionGuard guard(rewriter);
-
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
-
-                setStructWritingPoint(global);
-
-                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
-
-                for (auto item : arrayAttr.getValue())
-                {
-                    // it must be '[]' empty array
-                    assert(false);
                 }
 
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
