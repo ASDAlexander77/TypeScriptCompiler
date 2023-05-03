@@ -10231,15 +10231,6 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: [ " << memberNamePtr << " ] = [ " << enumValue << " ]\n");
 
-                if (!enumValue.getType().isa<mlir_ts::LiteralType>())
-                {
-                    emitError(loc(enumMember->initializer))
-                        << "enum member '" << memberNamePtr << "' must be constant";
-                    return mlir::failure();
-                }
-
-                enumLiteralTypes.push_back(enumValue.getType());
-
                 if (auto constOp = dyn_cast<mlir_ts::ConstantOp>(enumValue.getDefiningOp()))
                 {
                     enumValueAttr = constOp.valueAttr();
@@ -10255,8 +10246,12 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    emitError(loc(enumMember->initializer))
+                        << "enum member '" << memberNamePtr << "' must be constant";
+                    return mlir::failure();
                 }
+
+                enumLiteralTypes.push_back(enumValue.getType());
             }
             else
             {
