@@ -1849,6 +1849,12 @@ class MLIRTypeHelper
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: " << existType << " with " << currentType << "\n";);
 
+        if (existType == currentType)
+        {
+            merged = true;
+            return existType;
+        }
+
         if (canCastFromTo(currentType, existType))
         {
             merged = true;
@@ -1867,9 +1873,22 @@ class MLIRTypeHelper
         resType = findBaseType(existType, resType, found);
         if (!found)
         {
-            auto defaultUnionType = getUnionType(existType, resType, true, false);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! default type: " << defaultUnionType
-                                << "\n";);
+            mlir::Type defaultUnionType;
+            mlir::SmallVector<mlir::Type> types;
+            types.push_back(existType);
+            types.push_back(currentType);
+
+            if (existType.isa<mlir_ts::UnionType>())
+            {
+                defaultUnionType = getUnionTypeWithMerge(types);
+            }
+            else
+            {
+                defaultUnionType = getUnionType(types);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! default type: " << defaultUnionType
+                                    << "\n";);
+            }
+
             return defaultUnionType;
         }
 

@@ -8850,6 +8850,7 @@ class MLIRGenImpl
         // first value
         auto isTuple = false;
         mlir::Type elementType;
+        mlir::Type elementTypeAsUnion;
         SmallVector<std::tuple<mlir::Type, mlir::Value, bool>> values;
         auto nonConst = false;
         auto spreadElements = false;
@@ -8874,7 +8875,6 @@ class MLIRGenImpl
             else if (auto tupleType = genContext.receiverType.dyn_cast<mlir_ts::TupleType>())
             {
                 receiverTupleType = tupleType;
-                isTuple = true;
             }
         }
 
@@ -8902,11 +8902,6 @@ class MLIRGenImpl
             }
 
             auto type = itemValue.getType();
-            if (receiverElementType && type != receiverElementType)
-            {
-                itemValue = cast(location, receiverElementType, itemValue, genContext);
-                type = itemValue.getType();
-            }
 
             if (item == SyntaxKind::SpreadElement)
             {
@@ -8925,11 +8920,8 @@ class MLIRGenImpl
                     // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
                     nonConst = true;
                     spreadElements = true;
-                    if (!elementType)
-                    {
-                        elementType = array.getElementType();
-                        elementType = mth.wideStorageType(elementType);
-                    }
+
+                    type = mth.wideStorageType(array.getElementType());
 
                     values.push_back(std::make_tuple(array, itemValue, true));
                 }
@@ -8957,7 +8949,7 @@ class MLIRGenImpl
                             {
                                 nonConst = true;
                                 spreadElements = true;
-                                elementType = mth.wideStorageType(fields.front().type);
+                                type = mth.wideStorageType(fields.front().type);
 
                                 values.push_back(std::make_tuple(type, itemValue, true));
                             }
@@ -8972,24 +8964,52 @@ class MLIRGenImpl
                         llvm_unreachable("not implemented");
                     }
                 }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! spread element type: " << type << "\n";);
             }
             else
             {
-                values.push_back(std::make_tuple(type, itemValue, false));
+                if (receiverElementType && type != receiverElementType)
+                {
+                    itemValue = cast(location, receiverElementType, itemValue, genContext);
+                    type = itemValue.getType();
+                }
 
-                // if we have receiver type we do not need to "adopt it"
-                type = receiverElementType ? type : mth.wideStorageType(type);
-                if (!elementType)
-                {
-                    elementType = type;
-                }
-                else if (elementType != type)
-                {
-                    // this is tuple.
-                    isTuple = true;
-                }
+                values.push_back(std::make_tuple(type, itemValue, false));
             }
+
+            // if we have receiver type we do not need to "adopt it"
+            type = receiverElementType ? type : mth.wideStorageType(type);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! element type: " << type << "\n";);
+
+            if (!elementType)
+            {
+                elementTypeAsUnion = elementType = type;
+            }
+            else if (elementType != type)
+            {
+                // this is tuple.
+                isTuple = true;
+                // merge as union
+                auto merged = false;
+                elementTypeAsUnion = elementTypeAsUnion ? mth.mergeType(elementTypeAsUnion, type, merged) : type;
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! element type as union: " << elementTypeAsUnion << "\n";);
         }
+
+        if (spreadElements)
+        {
+            if (isTuple)
+            {
+                elementType = elementTypeAsUnion;
+            }
+
+            isTuple = false;
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! array(canceled tuple) element type: " << elementType << "\n";);
+       }
 
         // collect const values as attributes
         SmallVector<mlir::Attribute> constValues;
