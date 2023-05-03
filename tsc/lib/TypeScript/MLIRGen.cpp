@@ -8854,10 +8854,14 @@ class MLIRGenImpl
         auto nonConst = false;
         auto spreadElements = false;
         mlir::Type receiverElementType;
+        mlir_ts::TupleType receiverTupleType;
+        auto receiverTupleTypeIndex = -1;
 
         // check receiverType
         if (genContext.receiverType)
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! array/tuple - receiver type: " << genContext.receiverType << "\n";);
+
             if (auto arrayType = genContext.receiverType.dyn_cast<mlir_ts::ArrayType>())
             {
                 // TODO: remove it "if" to find out the issue with types
@@ -8867,11 +8871,29 @@ class MLIRGenImpl
                     LLVM_DEBUG(llvm::dbgs() << "\n!! array elements - receiver type: " << receiverElementType << "\n";);
                 }
             }
+            else if (auto tupleType = genContext.receiverType.dyn_cast<mlir_ts::TupleType>())
+            {
+                receiverTupleType = tupleType;
+                isTuple = true;
+            }
         }
 
         for (auto &item : arrayLiteral->elements)
         {
-            auto result = mlirGen(item, genContext);
+            receiverTupleTypeIndex++;
+            if (receiverTupleType)
+            {
+                receiverElementType = receiverTupleType.getFieldInfo(receiverTupleTypeIndex).type;
+            }
+
+            GenContext noReceiverGenContext(genContext);
+            noReceiverGenContext.clearReceiverTypes();
+            if (receiverElementType)
+            {
+                noReceiverGenContext.receiverType = receiverElementType;
+            }
+
+            auto result = mlirGen(item, noReceiverGenContext);
             auto itemValue = V(result);
             if (!itemValue)
             {
