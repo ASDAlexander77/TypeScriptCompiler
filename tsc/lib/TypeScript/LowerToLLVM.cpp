@@ -1359,30 +1359,6 @@ struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
     {
         auto loc = op->getLoc();
 
-        
-
-        // TODO: review usage of CastOp from LLVM level
-        if (op.getType().isa<mlir_ts::AnyType>())
-        {
-            // TODO: boxing, finish it, need to send TypeOf
-            TypeOfOpHelper toh(rewriter);
-            auto typeOfValue = toh.typeOfLogic(loc, op.in().getType());
-            // auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc,
-            // mlir_ts::StringType::get(rewriter.getContext()), in);
-            auto boxedValue = rewriter.create<mlir_ts::BoxOp>(loc, mlir_ts::AnyType::get(rewriter.getContext()),
-                                                              transformed.in(), typeOfValue);
-            rewriter.replaceOp(op, ValueRange{boxedValue});
-            return success();
-        }
-
-        if (op.in().getType().isa<mlir_ts::AnyType>())
-        {
-            auto unboxedValue = rewriter.create<mlir_ts::UnboxOp>(loc, op.getType(), transformed.in());
-            rewriter.replaceOp(op, ValueRange{unboxedValue});
-            return success();
-        }
-        // end of hack
-
         TypeConverterHelper tch(getTypeConverter());
 
         auto in = transformed.in();
