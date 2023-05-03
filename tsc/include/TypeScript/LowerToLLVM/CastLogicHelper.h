@@ -653,6 +653,7 @@ class CastLogicHelper
         auto resultsCount = results.getNumResults();
         mlir::SmallVector<mlir::Value> mappedValues;
 
+        auto error = false;
         auto addByIndex = [&](auto dstIndex, auto destField) {
             if (resultsCount > (unsigned) dstIndex)
             {
@@ -661,6 +662,12 @@ class CastLogicHelper
                 {
                     srcValue = cast(srcValue, srcValue.getType(), tch.convertType(srcValue.getType()), destField.type,
                                     tch.convertType(destField.type));
+                }
+
+                if (!srcValue)
+                {
+                    // error
+                    error = true;
                 }
 
                 mappedValues.push_back(srcValue);
@@ -677,6 +684,12 @@ class CastLogicHelper
             if (!destField.id)
             {
                 addByIndex(dstIndex, destField);
+
+                if (error)
+                {
+                    return mlir::Value();
+                }
+
                 continue;
             }
 
@@ -698,6 +711,12 @@ class CastLogicHelper
                     {
                         srcValue = cast(srcValue, srcValue.getType(), tch.convertType(srcValue.getType()), destField.type,
                                         tch.convertType(destField.type));
+                    }
+
+                    if (!srcValue)
+                    {
+                        // error
+                        return mlir::Value();
                     }
 
                     mappedValues.push_back(srcValue);

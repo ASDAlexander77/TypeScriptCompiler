@@ -15327,10 +15327,24 @@ genContext);
         return getTupleType(types);
     }
 
-    mlir_ts::TupleType getTupleType(TypeLiteralNode typeLiteral, const GenContext &genContext)
+    mlir::Type getTupleType(TypeLiteralNode typeLiteral, const GenContext &genContext)
     {
         mlir::SmallVector<mlir_ts::FieldInfo> types;
         getTupleFieldInfo(typeLiteral, types, genContext);
+        if (types.size() == 1)
+        {
+            // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
+            if (auto funcType = types.front().type.dyn_cast<mlir_ts::FunctionType>())
+            {
+                if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 && mth.isNumericType(funcType.getInput(0)))
+                {
+                    auto arrayType = getArrayType(funcType.getResult(0));
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
+                    return arrayType;
+                }
+            }
+        }
+
         return getTupleType(types);
     }
 

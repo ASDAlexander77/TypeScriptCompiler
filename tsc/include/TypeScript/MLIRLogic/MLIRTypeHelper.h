@@ -190,6 +190,11 @@ class MLIRTypeHelper
                         type.isa<mlir_ts::TupleType>() || type.isa<mlir_ts::ConstTupleType>() || type.isa<mlir_ts::ConstArrayType>());
     }
 
+    bool isNumericType(mlir::Type type)
+    {
+        return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::NumberType>());
+    }
+
     mlir::Type isBoundReference(mlir::Type elementType, bool &isBound)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
