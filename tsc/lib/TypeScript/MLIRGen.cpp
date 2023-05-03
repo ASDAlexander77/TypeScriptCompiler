@@ -9004,6 +9004,10 @@ class MLIRGenImpl
             if (isTuple)
             {
                 elementType = elementTypeAsUnion;
+                if (receiverElementType && elementType != receiverElementType)
+                {
+                    elementType = receiverElementType;
+                }
             }
 
             isTuple = false;
