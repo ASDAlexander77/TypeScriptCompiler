@@ -928,7 +928,9 @@ class CastLogicHelper
         auto expectingLlvmType = tch.convertType(refTypeOut);
         auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
 
-        mlir::Value valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, in, clh.getStructIndexAttr(DATA_VALUE_INDEX));
+        mlir::Value inAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(in.getType()), in);
+
+        mlir::Value valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, inAsLLVMType, clh.getStructIndexAttr(DATA_VALUE_INDEX));
         if (expectingLlvmType != llvmRefType)
         {
             valueRefVal = rewriter.create<LLVM::BitcastOp>(loc, expectingLlvmType, valueRefVal);
@@ -942,7 +944,9 @@ class CastLogicHelper
         auto llvmType = tch.convertType(arrayType.getElementType());
         auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
 
-        mlir::Value ptrVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, in, clh.getStructIndexAttr(ARRAY_DATA_INDEX));
+        mlir::Value inAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(in.getType()), in);
+
+        mlir::Value ptrVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, inAsLLVMType, clh.getStructIndexAttr(ARRAY_DATA_INDEX));
         return ptrVal;
     }
 
