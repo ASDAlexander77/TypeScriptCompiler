@@ -10229,9 +10229,14 @@ class MLIRGenImpl
                 auto result = mlirGen(enumMember->initializer, enumValueGenContext);
                 auto enumValue = V(result);
 
-                LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: " << memberNamePtr << " = " << enumValue << "\n");
+                LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: [ " << memberNamePtr << " ] = [ " << enumValue << " ]\n");
 
-                assert(enumValue.getType().isa<mlir_ts::LiteralType>());
+                if (!enumValue.getType().isa<mlir_ts::LiteralType>())
+                {
+                    emitError(loc(enumMember->initializer))
+                        << "enum member '" << memberNamePtr << "' must be constant";
+                    return mlir::failure();
+                }
 
                 enumLiteralTypes.push_back(enumValue.getType());
 
