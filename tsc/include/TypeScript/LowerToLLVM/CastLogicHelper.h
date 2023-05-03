@@ -150,9 +150,17 @@ class CastLogicHelper
                 if (arrayType.getElementType() == refType.getElementType())
                 {
                     return rewriter.create<LLVM::ExtractValueOp>(loc, resLLVMType, in,
-                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(ARRAY_DATA_INDEX)));
+                        rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(ARRAY_DATA_INDEX)));
                 }
             }
+
+            if (auto opaqueType = resType.dyn_cast<mlir_ts::OpaqueType>())
+            {
+                auto ptrOfElementValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPointerType(tch.convertType(arrayType.getElementType())), in,
+                    rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(ARRAY_DATA_INDEX)));                
+
+                return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrType(), ptrOfElementValue);
+            }            
         }
 
         if (auto resFuncType = resType.dyn_cast<mlir_ts::FunctionType>())
