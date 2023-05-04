@@ -8916,12 +8916,12 @@ class MLIRGenImpl
             for (auto val : arrayAttr)
             {
                 auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), val);
-                values.push_back({newConstVal, true, false});
+                values.push_back({newConstVal, false, false});
             }
 
             for (auto valAttr : arrayAttr)
             {
-                accumulateArrayItemType(arrayAttr.getType(), arrayInfo);
+                accumulateArrayItemType(constArray.getElementType(), arrayInfo);
                 // we need only first
                 break;
             }
