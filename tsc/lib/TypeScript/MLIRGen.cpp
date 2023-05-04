@@ -8925,26 +8925,34 @@ class MLIRGenImpl
                 // we need only first
                 break;
             }
+
+            return mlir::success();
         }
-        else if (auto constArray = type.dyn_cast<mlir_ts::ConstTupleType>())
+        
+        if (auto constArray = type.dyn_cast<mlir_ts::ConstTupleType>())
         {
             // because it is tuple it may not have the same types
             arrayInfo.isConst = false;
 
-            auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
-            auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
-            for (auto val : arrayAttr)
+            if (auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), val);
-                values.push_back({newConstVal, true, false});
-            }
+                auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
+                for (auto val : arrayAttr)
+                {
+                    auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), val);
+                    values.push_back({newConstVal, true, false});
+                }
 
-            for (auto valAttr : arrayAttr)
-            {
-                accumulateArrayItemType(arrayAttr.getType(), arrayInfo);
-            }                    
+                for (auto valAttr : arrayAttr)
+                {
+                    accumulateArrayItemType(arrayAttr.getType(), arrayInfo);
+                }    
+
+                return mlir::success();                
+            }
         }       
-        else if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+        
+        if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
             // because it is tuple it may not have the same types
             arrayInfo.isConst = false;
@@ -8954,8 +8962,11 @@ class MLIRGenImpl
             {
                 accumulateArrayItemType(tupleItem.type, arrayInfo);
             }
+
+            return mlir::success();
         }                           
-        else if (auto array = type.dyn_cast<mlir_ts::ArrayType>())
+        
+        if (auto array = type.dyn_cast<mlir_ts::ArrayType>())
         {
             // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
             arrayInfo.isConst = false;
@@ -8964,46 +8975,46 @@ class MLIRGenImpl
 
             auto arrayElementType = mth.wideStorageType(array.getElementType());
             accumulateArrayItemType(arrayElementType, arrayInfo);
+
+            return mlir::success();
         }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, src type: " << type << "\n";);
+
+        auto nextPropertyType = evaluateProperty(itemValue, "next", genContext);
+        if (nextPropertyType)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
+
+            auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
+            if (returnType)
+            {
+                // as tuple or const_tuple
+                ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
+                TypeSwitch<mlir::Type>(returnType)
+                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
+                    .template Case<mlir_ts::ConstTupleType>(
+                        [&](auto constTupleType) { fields = constTupleType.getFields(); })
+                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+                if (fields.begin() != fields.end() && fields.front().id == mlir::StringAttr::get(builder.getContext(), "value"))
+                {
+                    arrayInfo.isConst = false;
+
+                    values.push_back({itemValue, true, true});
+
+                    auto arrayElementType = mth.wideStorageType(fields.front().type);
+                    accumulateArrayItemType(arrayElementType, arrayInfo);
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            }
+        }                                        
         else
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, src type: " << type << "\n";);
-
-            auto nextPropertyType = evaluateProperty(itemValue, "next", genContext);
-            if (nextPropertyType)
-            {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
-
-                auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
-                if (returnType)
-                {
-                    // as tuple or const_tuple
-                    ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
-                    TypeSwitch<mlir::Type>(returnType)
-                        .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
-                        .template Case<mlir_ts::ConstTupleType>(
-                            [&](auto constTupleType) { fields = constTupleType.getFields(); })
-                        .Default([&](auto type) { llvm_unreachable("not implemented"); });
-
-                    if (fields.begin() != fields.end() && fields.front().id == mlir::StringAttr::get(builder.getContext(), "value"))
-                    {
-                        arrayInfo.isConst = false;
-
-                        values.push_back({itemValue, true, true});
-
-                        auto arrayElementType = mth.wideStorageType(fields.front().type);
-                        accumulateArrayItemType(arrayElementType, arrayInfo);
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
-                    }
-                }
-            }                                        
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+            llvm_unreachable("not implemented");
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! spread element type: " << type << "\n";);
