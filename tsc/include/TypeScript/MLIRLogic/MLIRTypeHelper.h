@@ -1150,6 +1150,22 @@ class MLIRTypeHelper
         llvm_unreachable("not implemented");
     }
 
+    mlir::LogicalResult getFieldTypes(mlir::Type srcType, llvm::SmallVector<mlir::Type> &destTupleTypes)
+    {  
+        llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+        if (mlir::failed(getFields(srcType, destTupleFields)))
+        {
+            return mlir::failure();
+        }
+
+        for (auto fieldInfo : destTupleFields)
+        {
+            destTupleTypes.push_back(fieldInfo.type);
+        }
+
+        return mlir::success();
+    }
+
     mlir::Type getFieldTypeByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
     {
         if (auto constTupleType = srcType.dyn_cast<mlir_ts::ConstTupleType>())

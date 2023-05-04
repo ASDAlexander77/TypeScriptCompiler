@@ -8843,20 +8843,184 @@ class MLIRGenImpl
         return mlirGen(forOfStat, genContext);
     }
 
-    ValueOrLogicalResult mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
+    enum class TypeData
     {
-        auto location = loc(arrayLiteral);
+        NotSet,
+        Array,
+        Tuple
+    };
 
-        // first value
-        auto isTuple = false;
-        mlir::Type elementType;
-        mlir::Type elementTypeAsUnion;
-        SmallVector<std::tuple<mlir::Type, mlir::Value, bool>> values;
-        auto nonConst = false;
-        auto spreadElements = false;
+    struct ArrayInfo
+    {
+        TypeData dataType;
+        mlir::Type accumulatedArrayElementType;
         mlir::Type receiverElementType;
+        bool anySpreadElement;
+        bool isConst;
+        mlir::Type arrayElementType;
+    };
+
+    struct ArrayElement
+    {
+    public:
+        mlir::Value value;
+        bool isSpread;
+        bool isVariableSizeOfSpreadElement;
+    };
+
+    mlir::LogicalResult accumulateArrayItemType(mlir::Type type, struct ArrayInfo &arrayInfo) 
+    {
+        auto elementType = arrayInfo.accumulatedArrayElementType;
+
+        // if we have receiver type we do not need to "adopt it"
+        auto wideType = arrayInfo.receiverElementType ? type : mth.wideStorageType(type);
+
+        // TODO: clean it up, special case of undefined
+        if (MLIRHelper::isUndefinedType(wideType))
+        {
+            wideType = getUndefinedType();
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! element type: " << wideType << " original type: " << type << "\n";);
+
+        elementType = elementType ? elementType : wideType;
+        if (elementType != wideType)
+        {
+            if (arrayInfo.dataType == TypeData::NotSet)
+            {
+                // presumably it is tuple
+                arrayInfo.dataType = TypeData::Tuple;
+            }
+            
+            auto merged = false;
+            elementType = mth.mergeType(elementType, wideType, merged);
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! result element type: " << elementType << "\n";);
+
+        arrayInfo.accumulatedArrayElementType = elementType;
+
+        return mlir::success();
+    };
+
+    mlir::LogicalResult processArrayValuesSpreadElement(mlir::Value itemValue, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
+    {
+        arrayInfo.anySpreadElement = true;
+
+        auto type = itemValue.getType();
+
+        if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
+        {
+            auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
+            auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
+            for (auto val : arrayAttr)
+            {
+                auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), val);
+                values.push_back({newConstVal, true, false});
+            }
+
+            for (auto valAttr : arrayAttr)
+            {
+                accumulateArrayItemType(arrayAttr.getType(), arrayInfo);
+                // we need only first
+                break;
+            }
+        }
+        else if (auto constArray = type.dyn_cast<mlir_ts::ConstTupleType>())
+        {
+            // because it is tuple it may not have the same types
+            arrayInfo.isConst = false;
+
+            auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
+            auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
+            for (auto val : arrayAttr)
+            {
+                auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), val);
+                values.push_back({newConstVal, true, false});
+            }
+
+            for (auto valAttr : arrayAttr)
+            {
+                accumulateArrayItemType(arrayAttr.getType(), arrayInfo);
+            }                    
+        }       
+        else if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+        {
+            // because it is tuple it may not have the same types
+            arrayInfo.isConst = false;
+
+            values.push_back({itemValue, true, false});
+            for (auto tupleItem : tupleType)
+            {
+                accumulateArrayItemType(tupleItem.type, arrayInfo);
+            }
+        }                           
+        else if (auto array = type.dyn_cast<mlir_ts::ArrayType>())
+        {
+            // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
+            arrayInfo.isConst = false;
+
+            values.push_back({itemValue, true, true});
+
+            auto arrayElementType = mth.wideStorageType(array.getElementType());
+            accumulateArrayItemType(arrayElementType, arrayInfo);
+        }
+        else
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, src type: " << type << "\n";);
+
+            auto nextPropertyType = evaluateProperty(itemValue, "next", genContext);
+            if (nextPropertyType)
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
+
+                auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
+                if (returnType)
+                {
+                    // as tuple or const_tuple
+                    ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
+                    TypeSwitch<mlir::Type>(returnType)
+                        .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
+                        .template Case<mlir_ts::ConstTupleType>(
+                            [&](auto constTupleType) { fields = constTupleType.getFields(); })
+                        .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+                    if (fields.begin() != fields.end() && fields.front().id == mlir::StringAttr::get(builder.getContext(), "value"))
+                    {
+                        arrayInfo.isConst = false;
+
+                        values.push_back({itemValue, true, true});
+
+                        auto arrayElementType = mth.wideStorageType(fields.front().type);
+                        accumulateArrayItemType(arrayElementType, arrayInfo);
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+                }
+            }                                        
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! spread element type: " << type << "\n";);
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult processArrayValues(ts::ArrayLiteralExpression arrayLiteral, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
+    {
         mlir_ts::TupleType receiverTupleType;
         auto receiverTupleTypeIndex = -1;
+
+        auto location = loc(arrayLiteral);
+
+        arrayInfo.dataType = TypeData::NotSet;
+        arrayInfo.anySpreadElement = false;
+        arrayInfo.isConst = true;
 
         // check receiverType
         if (genContext.receiverType)
@@ -8868,13 +9032,20 @@ class MLIRGenImpl
                 // TODO: remove it "if" to find out the issue with types
                 if (!mth.isGenericType(arrayType.getElementType()))
                 {
-                    elementType = receiverElementType = arrayType.getElementType();
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! array elements - receiver type: " << receiverElementType << "\n";);
+                    arrayInfo.arrayElementType =
+                        arrayInfo.accumulatedArrayElementType = 
+                            arrayInfo.receiverElementType = arrayType.getElementType();
+
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! array elements - receiver type: " << arrayInfo.receiverElementType << "\n";);
                 }
+
+                arrayInfo.dataType = TypeData::Array;
             }
             else if (auto tupleType = genContext.receiverType.dyn_cast<mlir_ts::TupleType>())
             {
                 receiverTupleType = tupleType;
+                arrayInfo.dataType = TypeData::Tuple;
+                arrayInfo.arrayElementType = receiverTupleType;
             }
         }
 
@@ -8883,14 +9054,14 @@ class MLIRGenImpl
             receiverTupleTypeIndex++;
             if (receiverTupleType)
             {
-                receiverElementType = receiverTupleType.getFieldInfo(receiverTupleTypeIndex).type;
+                arrayInfo.receiverElementType = receiverTupleType.getFieldInfo(receiverTupleTypeIndex).type;
             }
 
             GenContext noReceiverGenContext(genContext);
             noReceiverGenContext.clearReceiverTypes();
-            if (receiverElementType)
+            if (arrayInfo.receiverElementType)
             {
-                noReceiverGenContext.receiverType = receiverElementType;
+                noReceiverGenContext.receiverType = arrayInfo.receiverElementType;
             }
 
             auto result = mlirGen(item, noReceiverGenContext);
@@ -8905,254 +9076,187 @@ class MLIRGenImpl
 
             if (item == SyntaxKind::SpreadElement)
             {
-                if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
+                if (mlir::failed(processArrayValuesSpreadElement(itemValue, values, arrayInfo, genContext)))
                 {
-                    auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
-                    auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
-                    for (auto val : arrayAttr)
-                    {
-                        auto newConstVal = builder.create<mlir_ts::ConstantOp>(location, val);
-                        values.push_back(std::make_tuple(constArray.getElementType(), newConstVal, false));
-                    }
+                    return mlir::failure();
                 }
-                else if (auto array = type.dyn_cast<mlir_ts::ArrayType>())
-                {
-                    // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
-                    nonConst = true;
-                    spreadElements = true;
-
-                    type = mth.wideStorageType(array.getElementType());
-
-                    values.push_back(std::make_tuple(array, itemValue, true));
-                }
-                else
-                {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, src type: " << type << "\n";);
-
-                    auto nextPropertyType = evaluateProperty(itemValue, "next", genContext);
-                    if (nextPropertyType)
-                    {
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
-
-                        auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
-                        if (returnType)
-                        {
-                            // as tuple or const_tuple
-                            ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
-                            TypeSwitch<mlir::Type>(returnType)
-                                .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
-                                .template Case<mlir_ts::ConstTupleType>(
-                                    [&](auto constTupleType) { fields = constTupleType.getFields(); })
-                                .Default([&](auto type) { llvm_unreachable("not implemented"); });
-
-                            if (fields.begin() != fields.end() && fields.front().id == mlir::StringAttr::get(builder.getContext(), "value"))
-                            {
-                                nonConst = true;
-                                spreadElements = true;
-                                type = mth.wideStorageType(fields.front().type);
-
-                                values.push_back(std::make_tuple(type, itemValue, true));
-                            }
-                            else
-                            {
-                                llvm_unreachable("not implemented");
-                            }
-                        }
-                    }                                        
-                    else
-                    {
-                        llvm_unreachable("not implemented");
-                    }
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! spread element type: " << type << "\n";);
             }
             else
             {
-                if (receiverElementType && type != receiverElementType)
+                if (arrayInfo.receiverElementType && type != arrayInfo.receiverElementType)
                 {
-                    itemValue = cast(location, receiverElementType, itemValue, genContext);
+                    itemValue = cast(location, arrayInfo.receiverElementType, itemValue, genContext);
                     type = itemValue.getType();
                 }
 
-                values.push_back(std::make_tuple(type, itemValue, false));
+                if (!itemValue.getDefiningOp<mlir_ts::ConstantOp>())
+                {
+                    arrayInfo.isConst = false;
+                }                
+
+                values.push_back({itemValue, false, false});
+                accumulateArrayItemType(type, arrayInfo);
             }
-
-            // if we have receiver type we do not need to "adopt it"
-            type = receiverElementType ? type : mth.wideStorageType(type);
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! element type: " << type << "\n";);
-
-            if (!elementType)
-            {
-                elementTypeAsUnion = elementType = type;
-            }
-            else if (elementType != type)
-            {
-                // this is tuple.
-                isTuple = true;
-                // merge as union
-                auto merged = false;
-                elementTypeAsUnion = elementTypeAsUnion ? mth.mergeType(elementTypeAsUnion, type, merged) : type;
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! element type as union: " << elementTypeAsUnion << "\n";);
         }
 
-        if (spreadElements)
+        // post processing values
+        if (arrayInfo.anySpreadElement || arrayInfo.dataType == TypeData::NotSet)
         {
-            if (isTuple)
-            {
-                elementType = elementTypeAsUnion;
-                if (receiverElementType && elementType != receiverElementType)
-                {
-                    elementType = receiverElementType;
-                }
-            }
+            // this is array
+            arrayInfo.dataType = TypeData::Array;
+        }
 
-            isTuple = false;
+        if (arrayInfo.dataType == TypeData::Array)
+        {
+            arrayInfo.arrayElementType = 
+                arrayInfo.accumulatedArrayElementType 
+                    ? arrayInfo.accumulatedArrayElementType 
+                    : getAnyType();
+        }
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! array(canceled tuple) element type: " << elementType << "\n";);
-       }
+        return mlir::success();
+    }
 
+    ValueOrLogicalResult createConstArrayOrTuple(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
+    {
         // collect const values as attributes
         SmallVector<mlir::Attribute> constValues;
-        if (!nonConst)
+        for (auto &itemValue : values)
         {
-            for (auto &itemValue : values)
-            {
-                auto constOp = std::get<1>(itemValue).getDefiningOp<mlir_ts::ConstantOp>();
-                if (!constOp)
-                {
-                    nonConst = true;
-                    break;
-                }
-
-                constValues.push_back(constOp.valueAttr());
-            }
+            auto constOp = itemValue.value.getDefiningOp<mlir_ts::ConstantOp>();
+            constValues.push_back(constOp.valueAttr());
         }
 
-        if (nonConst)
+        SmallVector<mlir::Type> constTypes;
+        for (auto &itemValue : values)
         {
-            // non const array
-            if (isTuple)
-            {
-                SmallVector<mlir::Value> arrayValues;
-                SmallVector<mlir_ts::FieldInfo> fieldInfos;
-                for (auto val : values)
-                {
-                    fieldInfos.push_back({mlir::Attribute(), mth.wideStorageType(std::get<0>(val))});
-                    arrayValues.push_back(std::get<1>(val));
-                }
+            auto type = mth.wideStorageType(itemValue.value.getType());
+            constTypes.push_back(type);
+        }
 
-                return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
+        auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), constValues);
+        if (arrayInfo.dataType == TypeData::Tuple)
+        {
+            SmallVector<mlir_ts::FieldInfo> fieldInfos;
+            for (auto type : constTypes)
+            {
+                fieldInfos.push_back({mlir::Attribute(), type});
             }
 
-            if (!elementType)
-            {
-#ifdef ANY_AS_DEFAULT
-                // in case of empty array
-                elementType = getAnyType();
-#else
-                emitError(location) << "type of array is not provided";
-                return mlir::Value();
-#endif
-            }
+            return V(
+                builder.create<mlir_ts::ConstantOp>(location, getConstTupleType(fieldInfos), arrayAttr));
+        }
 
-            if (!spreadElements)
-            {
-                SmallVector<mlir::Value> arrayValues;
-                for (auto val : values)
-                {
-                    arrayValues.push_back(std::get<1>(val));
-                }
+        if (arrayInfo.dataType == TypeData::Array)
+        {
+            auto arrayElementType = arrayInfo.arrayElementType ? arrayInfo.arrayElementType : getAnyType();
 
-                auto newArrayOp =
-                    builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(elementType), arrayValues);
-                return V(newArrayOp);
+            return V(builder.create<mlir_ts::ConstantOp>(
+                location, getConstArrayType(arrayElementType, constValues.size()), arrayAttr));
+        }
+
+        llvm_unreachable("not implemented");
+    }
+
+    ValueOrLogicalResult createTupleFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
+    {
+        SmallVector<mlir::Value> arrayValues;
+        SmallVector<mlir_ts::FieldInfo> fieldInfos;
+        for (auto val : values)
+        {
+            fieldInfos.push_back({mlir::Attribute(), mth.wideStorageType(val.value.getType())});
+            arrayValues.push_back(val.value);
+        }
+
+        return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
+    }    
+
+    ValueOrLogicalResult createArrayFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
+    {
+        SmallVector<mlir::Value> arrayValues;
+        for (auto val : values)
+        {
+            arrayValues.push_back(val.value);
+        }
+
+        auto newArrayOp =
+            builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(arrayInfo.arrayElementType), arrayValues);
+        return V(newArrayOp);
+    }
+
+    ValueOrLogicalResult mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
+    {
+        auto location = loc(arrayLiteral);
+
+        SmallVector<ArrayElement> values;
+        struct ArrayInfo arrayInfo{};
+        if (mlir::failed(processArrayValues(arrayLiteral, values, arrayInfo, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        if (arrayInfo.isConst)
+        {
+            return createConstArrayOrTuple(location, values, arrayInfo, genContext);
+        }
+
+        if (arrayInfo.dataType == TypeData::Tuple)
+        {
+            return createTupleFromArrayLiteral(location, values, arrayInfo, genContext);
+        }
+
+        if (!arrayInfo.anySpreadElement)
+        {
+            return createArrayFromArrayLiteral(location, values, arrayInfo, genContext);
+        }
+
+        MLIRCustomMethods cm(builder, location);
+        SmallVector<mlir::Value> emptyArrayValues;
+        auto arrType = getArrayType(arrayInfo.arrayElementType);
+        auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(location, arrType, emptyArrayValues);
+        auto varArray = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(arrType),
+                                                            newArrayOp, builder.getBoolAttr(false));
+
+        auto loadedVarArray = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
+
+        // TODO: push every element into array
+        for (auto val : values)
+        {
+            if (val.isVariableSizeOfSpreadElement)
+            {
+                mlirGenAppendArrayByEachElement(location, varArray, val.value, genContext);
             }
             else
             {
-                MLIRCustomMethods cm(builder, location);
-                SmallVector<mlir::Value> emptyArrayValues;
-                auto arrType = getArrayType(elementType);
-                auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(location, arrType, emptyArrayValues);
-                auto varArray = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(arrType),
-                                                                    newArrayOp, builder.getBoolAttr(false));
-
-                auto loadedVarArray = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
-
-                // TODO: push every element into array
-                for (auto val : values)
+                SmallVector<mlir::Value> vals;
+                if (!val.isSpread)
                 {
-                    if (!std::get<2>(val))
+                    vals.push_back(val.value);
+                }
+                // to process const tuple & tuple
+                else if (auto tupleType = mth.convertConstTupleTypeToTupleType(val.value.getType()).dyn_cast<mlir_ts::TupleType>())
+                {
+                    llvm::SmallVector<mlir::Type> destTupleTypes;
+                    if (mlir::succeeded(mth.getFieldTypes(tupleType, destTupleTypes)))
                     {
-                        SmallVector<mlir::Value> ops;
-                        ops.push_back(loadedVarArray);
-                        ops.push_back(std::get<1>(val));
-                        cm.mlirGenArrayPush(location, ops);
+                        auto resValues = builder.create<mlir_ts::DeconstructTupleOp>(location, destTupleTypes, val.value);
+                        for (auto tupleVal : resValues.getResults())
+                        {
+                            vals.push_back(tupleVal);
+                        }
                     }
                     else
                     {
-                        mlirGenAppendArrayByEachElement(location, varArray, std::get<1>(val), genContext);
+                        return mlir::failure();
                     }
                 }
-
-                auto loadedVarArray2 = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
-                return V(loadedVarArray2);
+                
+                cm.mlirGenArrayPush(location, loadedVarArray, vals);
             }
         }
-        else
-        {
-            // recheck types, we know all of them are consts
-            isTuple = false;
-            if (receiverElementType)
-            {
-                elementType = receiverElementType;
-            }
-            else
-            {
-                elementType = mlir::Type();
-            }
 
-            SmallVector<mlir::Type> constTypes;
-            for (auto &itemValue : values)
-            {
-                auto type = mth.wideStorageType(std::get<1>(itemValue).getType());
-                constTypes.push_back(type);
-                if (!elementType)
-                {
-                    elementType = type;
-                }
-                else if (elementType != type)
-                {
-                    // this is tuple.
-                    isTuple = true;
-                }
-            }
-
-            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), constValues);
-            if (isTuple)
-            {
-                SmallVector<mlir_ts::FieldInfo> fieldInfos;
-                for (auto type : constTypes)
-                {
-                    fieldInfos.push_back({mlir::Attribute(), type});
-                }
-
-                return V(
-                    builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstTupleType(fieldInfos), arrayAttr));
-            }
-
-            if (!elementType)
-            {
-                // in case of empty array
-                elementType = getAnyType();
-            }
-
-            return V(builder.create<mlir_ts::ConstantOp>(
-                loc(arrayLiteral), getConstArrayType(elementType, constValues.size()), arrayAttr));
-        }
+        auto loadedVarArray2 = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
+        return V(loadedVarArray2);
     }
 
     mlir::Type getTypeByFieldNameFromReceiverType(mlir::Attribute fieldName, mlir::Type receiverType)

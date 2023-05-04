@@ -345,28 +345,41 @@ class MLIRCustomMethods
         return sizeOfValue;
     }
 
-    ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
     {
         MLIRCodeLogic mcl(builder);
 
-        auto arrayElement = operands.front().getType().cast<mlir_ts::ArrayType>().getElementType();
-        auto value = operands.slice(1).front();
-        if (value.getType() != arrayElement)
+        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+
+        SmallVector<mlir::Value> castedValues;
+        for (auto value : values)
         {
-            value = builder.create<mlir_ts::CastOp>(location, arrayElement, value);
+            if (value.getType() != arrayElement)
+            {
+                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, arrayElement, value));
+            }
+            else
+            {
+                castedValues.push_back(value);
+            }
         }
 
-        auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
-        if (!thisValue)
+        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(thisValue);
+        if (!thisValueLoaded)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
             return mlir::failure();
         }
 
         mlir::Value sizeOfValue =
-            builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), thisValue, mlir::ValueRange{value});
+            builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), thisValueLoaded, mlir::ValueRange{castedValues});
 
         return sizeOfValue;
+    }    
+
+    ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        return mlirGenArrayPush(location, operands.front(), operands.slice(1));
     }
 
     ValueOrLogicalResult mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
