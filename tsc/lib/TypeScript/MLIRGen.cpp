@@ -7465,7 +7465,7 @@ class MLIRGenImpl
 
             argumentExpression = cast(location, mth.getStructIndexType(), argumentExpression, genContext);
         }
-
+  
         auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), expression,
                                                              argumentExpression);
         return V(builder.create<mlir_ts::LoadOp>(location, elementType, elemRef));
@@ -8914,7 +8914,8 @@ class MLIRGenImpl
             auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
             for (auto val : arrayAttr)
             {
-                auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), val);
+                // TODO: instead of creating new constant, write code to access object by index
+                auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), constArray.getElementType(), val);
                 values.push_back({newConstVal, false, false});
             }
 
@@ -9075,6 +9076,7 @@ class MLIRGenImpl
             }
 
             auto result = mlirGen(item, noReceiverGenContext);
+            EXIT_IF_FAILED(result)
             auto itemValue = V(result);
             if (!itemValue)
             {
@@ -9241,7 +9243,15 @@ class MLIRGenImpl
                 SmallVector<mlir::Value> vals;
                 if (!val.isSpread)
                 {
-                    vals.push_back(val.value);
+                    mlir::Value finalVal;
+                    if (arrayInfo.arrayElementType != val.value.getType())
+                    {
+                        auto result = cast(location, arrayInfo.arrayElementType, val.value, genContext) ;
+                        EXIT_IF_FAILED_OR_NO_VALUE(result)
+                        finalVal = V(result);
+                    }
+
+                    vals.push_back(finalVal);
                 }
                 // to process const tuple & tuple
                 else if (auto tupleType = mth.convertConstTupleTypeToTupleType(val.value.getType()).dyn_cast<mlir_ts::TupleType>())
@@ -9252,7 +9262,15 @@ class MLIRGenImpl
                         auto resValues = builder.create<mlir_ts::DeconstructTupleOp>(location, destTupleTypes, val.value);
                         for (auto tupleVal : resValues.getResults())
                         {
-                            vals.push_back(tupleVal);
+                            mlir::Value finalVal;
+                            if (arrayInfo.arrayElementType != tupleVal.getType())
+                            {
+                                auto result = cast(location, arrayInfo.arrayElementType, tupleVal, genContext) ;
+                                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                                finalVal = V(result);
+                            }
+
+                            vals.push_back(finalVal);
                         }
                     }
                     else
