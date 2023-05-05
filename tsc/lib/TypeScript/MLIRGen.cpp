@@ -4404,11 +4404,10 @@ class MLIRGenImpl
 
             auto undefType = getUndefinedType();
             auto nullType = getNullType();
-            auto undefPlaceHolderType = getUndefPlaceHolderType();
 
             std::function<bool(mlir::Type)> testType;
             testType = [&](mlir::Type type) {
-                if (type == undefType || type == nullType || type == undefPlaceHolderType)
+                if (type == undefType || type == nullType)
                 {
                     return false;
                 }
@@ -8875,12 +8874,6 @@ class MLIRGenImpl
         // if we have receiver type we do not need to "adopt it"
         auto wideType = arrayInfo.receiverElementType ? type : mth.wideStorageType(type);
 
-        // TODO: clean it up, special case of undefined
-        if (MLIRHelper::isUndefinedType(wideType))
-        {
-            wideType = getUndefinedType();
-        }
-
         LLVM_DEBUG(llvm::dbgs() << "\n!! element type: " << wideType << " original type: " << type << "\n";);
 
         elementType = elementType ? elementType : wideType;
@@ -13236,7 +13229,7 @@ genContext);
         // optional with union & interface inside
         if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
         {
-            if (MLIRHelper::isUndefinedType(value.getType()))
+            if (value.getType() == getUndefinedType())
             {
                 return V(builder.create<mlir_ts::UndefOptionalOp>(location, optType));
             }
@@ -14355,7 +14348,7 @@ genContext);
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
         {
-            if (item.isa<mlir_ts::NullType>() || item == getOptionalType(getUndefPlaceHolderType()))
+            if (item.isa<mlir_ts::NullType>() || item == getUndefinedType())
             {
                 continue;
             }
@@ -15301,7 +15294,7 @@ genContext);
 
     mlir::Value getUndefined(mlir::Location location)
     {
-        return builder.create<mlir_ts::UndefOp>(location, getOptionalType(getUndefPlaceHolderType()));
+        return builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
     }
 
     mlir::Value getInfinity(mlir::Location location)
@@ -16047,11 +16040,6 @@ genContext);
     mlir_ts::OptionalType getOptionalType(mlir::Type type)
     {
         return mlir_ts::OptionalType::get(type);
-    }
-
-    mlir_ts::UndefPlaceHolderType getUndefPlaceHolderType()
-    {
-        return mlir_ts::UndefPlaceHolderType::get(builder.getContext());
     }
 
     mlir_ts::AnyType getAnyType()

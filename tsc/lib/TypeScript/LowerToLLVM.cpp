@@ -4790,10 +4790,6 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
     });
 
-    converter.addConversion([&](mlir_ts::UndefPlaceHolderType type) {
-        return mlir::IntegerType::get(m.getContext(), 8 /*, mlir::IntegerType::SignednessSemantics::Unsigned*/);
-    });
-
     converter.addConversion([&](mlir_ts::UnionType type) {
         TypeHelper th(m.getContext());
         LLVMTypeConverterHelper ltch(converter);

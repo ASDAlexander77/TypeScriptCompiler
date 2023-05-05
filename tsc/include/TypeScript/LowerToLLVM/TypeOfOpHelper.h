@@ -128,7 +128,7 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::UndefinedType>() || type.isa<mlir_ts::UndefPlaceHolderType>())
+        if (type.isa<mlir_ts::UndefinedType>())
         {
             auto typeOfValue = strValue(loc, "undefined");
             return typeOfValue;

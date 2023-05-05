@@ -269,7 +269,7 @@ class CastLogicHelper
             }
         }
 
-        if (auto undefPHTypeIn = inType.dyn_cast<mlir_ts::UndefPlaceHolderType>())
+        if (auto undefType = inType.dyn_cast<mlir_ts::UndefinedType>())
         {
             if (auto stringTypeRes = resType.dyn_cast<mlir_ts::StringType>())
             {
@@ -377,18 +377,25 @@ class CastLogicHelper
 
         if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
         {
-            if (optType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
-            {
-                if (auto ifaceType = resType.dyn_cast<mlir_ts::InterfaceType>())
-                {
-                    // create null interface
-                    auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(ifaceType.getContext()));
-                    return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, nullVal, nullVal);
-                }
-            }
-
             auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
             return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
+        }
+
+        if (inType.isa<mlir_ts::UndefinedType>())
+        {
+            if (auto ifaceType = resType.dyn_cast<mlir_ts::InterfaceType>())
+            {
+                // create null interface
+                auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(ifaceType.getContext()));
+                return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, nullVal, nullVal);
+            }
+
+            if (auto classType = resType.dyn_cast<mlir_ts::ClassType>())
+            {
+                // create null class
+                auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(classType.getContext()));
+                return cast(nullVal, nullVal.getType(), tch.convertType(nullVal.getType()), resType, resLLVMType);
+            }
         }
 
         if (auto arrType = resType.dyn_cast<mlir_ts::ArrayType>())
@@ -462,6 +469,16 @@ class CastLogicHelper
                 }
             }
         }
+
+        if (auto resUndefType = resType.dyn_cast<mlir_ts::UndefinedType>())
+        {
+            return rewriter.create<mlir_ts::UndefOp>(loc, inType);
+        }        
+
+        if (auto undefType = inType.dyn_cast<mlir_ts::UndefinedType>())
+        {
+            return rewriter.create<mlir_ts::UndefOp>(loc, resType);
+        }   
 
         return mlir::Value();
     }
@@ -805,13 +822,6 @@ class CastLogicHelper
             llvmSrcElementType = tch.convertType(srcElementType);                  
             isUndef = true;      
         }
-        else if (MLIRHelper::isUndefinedType(type))
-        {
-            size = 0;
-            srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
-            llvmSrcElementType = tch.convertType(srcElementType);                  
-            isUndef = true;     
-        }              
         else if (auto ptrValue = type.dyn_cast<LLVM::LLVMPointerType>())
         {
             auto elementType = ptrValue.getElementType();

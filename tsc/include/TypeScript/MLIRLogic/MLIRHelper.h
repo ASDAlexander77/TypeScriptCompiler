@@ -191,17 +191,6 @@ class MLIRHelper
         assert(!name.empty());
         return mlir::StringAttr::get(context, name);
     }
-
-    
-    static bool isUndefinedType(mlir::Type type)
-    {
-        if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
-        {
-            return optType.getElementType() == mlir_ts::UndefPlaceHolderType::get(type.getContext());
-        }
-
-        return false;
-    }
 };
 
 } // namespace typescript

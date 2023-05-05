@@ -20,6 +20,9 @@ namespace typescript
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
 mlir::Value OptionalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter);
 
+template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
+mlir::Value UndefTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter);
+
 template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
 void UnaryOp(UnaryOpTy &unaryOp, mlir::Value oper, PatternRewriter &builder)
 {
@@ -84,6 +87,10 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     if (leftType.isa<mlir_ts::OptionalType>() || rightType.isa<mlir_ts::OptionalType>())
     {
         return OptionalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter);
+    }
+    else if (leftType.isa<mlir_ts::UndefinedType>() || rightType.isa<mlir_ts::UndefinedType>())
+    {
+        return UndefTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter);
     }
     else if (leftType.isIntOrIndex() || leftType.dyn_cast<mlir_ts::BooleanType>())
     {

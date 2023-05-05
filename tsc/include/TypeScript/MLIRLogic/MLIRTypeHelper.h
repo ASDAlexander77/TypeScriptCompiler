@@ -735,11 +735,10 @@ class MLIRTypeHelper
 
         auto undefType = mlir_ts::UndefinedType::get(context);
         auto nullType = mlir_ts::NullType::get(context);
-        auto undefPlaceHolderType = mlir_ts::UndefPlaceHolderType::get(context);
 
         std::function<bool(mlir::Type)> testType;
         testType = [&](mlir::Type type) {
-            if (type == undefType || type == nullType || type == undefPlaceHolderType)
+            if (type == undefType || type == nullType)
             {
                 return true;
             }
@@ -834,11 +833,10 @@ class MLIRTypeHelper
     {
         auto undefType = mlir_ts::UndefinedType::get(context);
         auto nullType = mlir_ts::NullType::get(context);
-        auto undefPlaceHolderType = mlir_ts::UndefPlaceHolderType::get(context);
 
         std::function<bool(mlir::Type)> testType;
         testType = [&](mlir::Type type) {
-            if (type == undefType || type == nullType || type == undefPlaceHolderType)
+            if (type == undefType || type == nullType)
             {
                 return true;
             }

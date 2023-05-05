@@ -373,8 +373,51 @@ void mlir_ts::NullOp::getCanonicalizationPatterns(RewritePatternSet &results, ML
 // UndefOp
 //===----------------------------------------------------------------------===//
 
+/*
+namespace
+{
+struct NormalizeUndefTypes : public OpRewritePattern<mlir_ts::UndefOp>
+{
+    using OpRewritePattern<mlir_ts::UndefOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::UndefOp undefOp, PatternRewriter &rewriter) const override
+    {
+        if (undefOp.getType() == mlir_ts::UndefinedType::get(rewriter.getContext()))
+        {
+            for (auto user : undefOp.getResult().getUsers())
+            {
+                for (auto operand : user->getOperands())
+                {
+                    if (operand == undefOp && operand.getType() != undefOp.getType())
+                    {
+                        // replace
+                        auto newOp = rewriter.create<mlir_ts::UndefOp>(undefOp.getLoc(), operand.getType());
+                        operand.replaceAllUsesWith(newOp);
+                    }
+                }
+            }
+
+            if (undefOp->use_empty())
+            {
+                rewriter.eraseOp(undefOp);
+            }
+        }        
+        else if (undefOp->getResult(0).use_empty())
+        {
+            // remove unsed
+            rewriter.eraseOp(undefOp);
+        }
+
+        return success();
+    }
+};
+
+} // end anonymous namespace.
+*/
+
 void mlir_ts::UndefOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
+    //results.insert<NormalizeUndefTypes>(context);
     results.insert<RemoveUnused<mlir_ts::UndefOp>>(context);
 }
 
@@ -588,6 +631,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         */
 
         // null -> interface cast
+        // TODO: review if it is used
         auto anyType = in.getType().dyn_cast<mlir_ts::AnyType>();
         auto interfaceType = res.getType().dyn_cast<mlir_ts::InterfaceType>();
         if (anyType && interfaceType)
@@ -597,9 +641,27 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
                 auto undef = rewriter.create<mlir_ts::UndefOp>(castOp->getLoc(), interfaceType);
                 rewriter.replaceOp(castOp, ValueRange{undef});
                 rewriter.eraseOp(nullOp);
+
+                assert(false);
                 return success();
             }
         }
+
+        // undef -> class cast
+        // auto undefType = in.getType().dyn_cast<mlir_ts::UndefinedType>();
+        // auto classType = res.getType().dyn_cast<mlir_ts::ClassType>();
+        // if (undefType && classType)
+        // {
+        //     if (auto undefOp = in.getDefiningOp<mlir_ts::UndefOp>())
+        //     {
+        //         auto undef = rewriter.create<mlir_ts::UndefOp>(castOp->getLoc(), classType);
+        //         rewriter.replaceOp(castOp, ValueRange{undef});
+        //         rewriter.eraseOp(undefOp);
+
+        //         // check if it is being used
+        //         return success();
+        //     }
+        // }
 
         // const tuple -> const tuple, for example { value: undefined, done: true } -> { value: <int>, done: <boolean> }
         if (auto constTupleIn = in.getType().dyn_cast<mlir_ts::ConstTupleType>())

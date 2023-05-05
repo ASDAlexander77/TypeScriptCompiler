@@ -34,6 +34,11 @@ class TypeHelper
         return mlir_ts::BooleanType::get(context);
     }
 
+    mlir::Type getUndefinedType()
+    {
+        return mlir_ts::UndefinedType::get(context);
+    }
+
     mlir::Type getI8Type()
     {
         return mlir::IntegerType::get(context, 8);

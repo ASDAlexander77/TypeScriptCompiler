@@ -21,6 +21,7 @@
 #include "TypeScript/LowerToLLVM/ConvertLogic.h"
 #include "TypeScript/LowerToLLVM/CastLogicHelper.h"
 #include "TypeScript/LowerToLLVM/OptionalLogicHelper.h"
+#include "TypeScript/LowerToLLVM/UndefLogicHelper.h"
 #include "TypeScript/LowerToLLVM/TypeOfOpHelper.h"
 #include "TypeScript/LowerToLLVM/ThrowLogic.h"
 
