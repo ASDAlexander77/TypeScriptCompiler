@@ -16,15 +16,22 @@ function t_val(s?: string) {
     assert(s <= undefined == false, "<=");
 }
 
-function f(s?: string) {
-    print(
-        s == undefined,
-        s != undefined,
-        s > undefined,
-        s < undefined,
-        s >= undefined,
-        s <= undefined
-    );
+function t_undef_undef(s?: string, s2?: string) {
+    assert((s == s2) == true, "is not undefined");
+    assert((s != s2) == false, "is undefined");
+    assert(s > s2 == false, "not >");
+    assert(s < s2 == false, "not <");
+    assert(s >= s2 == true, "not >=");
+    assert(s <= s2 == true, "not <=");
+}
+
+function t_val_undef(s?: string, u?: string) {
+    assert((s == u) == false, "is undefined");
+    assert((s != u) == true, "is not undefined");
+    assert(s > u == true, ">");
+    assert(s < u == false, "<");
+    assert(s >= u == true, ">=");
+    assert(s <= u == false, "<=");
 }
 
 interface IFace {
@@ -44,10 +51,11 @@ function class_iface() {
 }
 
 function main() {
-    f();
     t_undef();
-    f("asd");
     t_val("asd");
+
+    t_undef_undef();
+    t_val_undef("asd");
 
     class_iface();
 
