@@ -15626,6 +15626,10 @@ genContext);
             if (paramItem->questionToken)
             {
                 type = getOptionalType(type);
+                if (!type)
+                {
+                    return mlir::Type();
+                }
             }
 
             argTypes.push_back(type);
@@ -16118,8 +16122,13 @@ genContext);
         llvm_unreachable("not implemented");
     }
 
-    mlir_ts::OptionalType getOptionalType(mlir::Type type)
+    mlir::Type getOptionalType(mlir::Type type)
     {
+        if (!type)
+        {
+            return mlir::Type();
+        }
+
         return mlir_ts::OptionalType::get(type);
     }
 
