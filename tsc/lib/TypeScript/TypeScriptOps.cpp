@@ -572,21 +572,21 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         */            
 
         // any support
-        if (res.getType().isa<mlir_ts::AnyType>())
-        {
-            // TODO: boxing, finish it, need to send TypeOf
-            auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
-            auto boxedValue = rewriter.create<mlir_ts::BoxOp>(loc, mlir_ts::AnyType::get(rewriter.getContext()), in, typeOfValue);
-            rewriter.replaceOp(castOp, ValueRange{boxedValue});
-            return success();
-        }
+        // if (res.getType().isa<mlir_ts::AnyType>())
+        // {
+        //     // TODO: boxing, finish it, need to send TypeOf
+        //     auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+        //     auto boxedValue = rewriter.create<mlir_ts::BoxOp>(loc, mlir_ts::AnyType::get(rewriter.getContext()), in, typeOfValue);
+        //     rewriter.replaceOp(castOp, ValueRange{boxedValue});
+        //     return success();
+        // }
 
-        if (in.getType().isa<mlir_ts::AnyType>())
-        {
-            auto unboxedValue = rewriter.create<mlir_ts::UnboxOp>(loc, res.getType(), in);
-            rewriter.replaceOp(castOp, ValueRange{unboxedValue});
-            return success();
-        }
+        // if (in.getType().isa<mlir_ts::AnyType>())
+        // {
+        //     auto unboxedValue = rewriter.create<mlir_ts::UnboxOp>(loc, res.getType(), in);
+        //     rewriter.replaceOp(castOp, ValueRange{unboxedValue});
+        //     return success();
+        // }
 
         // union support
         // TODO: review this code, should it be in "cast" logic?
@@ -617,51 +617,6 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
             return success();
         }
-
-        /*
-        if (isInUnionType && isResUnionType)
-        {
-            auto maxStoreType = ? ? ? ;
-            auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxStoreType, in);
-            auto typeOfValue = rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
-            auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, res.getType(), value, typeOfValue);
-            rewriter.replaceOp(castOp, ValueRange{unionValue});
-            return success();
-        }
-        */
-
-        // null -> interface cast
-        // TODO: review if it is used
-        auto anyType = in.getType().dyn_cast<mlir_ts::AnyType>();
-        auto interfaceType = res.getType().dyn_cast<mlir_ts::InterfaceType>();
-        if (anyType && interfaceType)
-        {
-            if (auto nullOp = in.getDefiningOp<mlir_ts::NullOp>())
-            {
-                auto undef = rewriter.create<mlir_ts::UndefOp>(castOp->getLoc(), interfaceType);
-                rewriter.replaceOp(castOp, ValueRange{undef});
-                rewriter.eraseOp(nullOp);
-
-                assert(false);
-                return success();
-            }
-        }
-
-        // undef -> class cast
-        // auto undefType = in.getType().dyn_cast<mlir_ts::UndefinedType>();
-        // auto classType = res.getType().dyn_cast<mlir_ts::ClassType>();
-        // if (undefType && classType)
-        // {
-        //     if (auto undefOp = in.getDefiningOp<mlir_ts::UndefOp>())
-        //     {
-        //         auto undef = rewriter.create<mlir_ts::UndefOp>(castOp->getLoc(), classType);
-        //         rewriter.replaceOp(castOp, ValueRange{undef});
-        //         rewriter.eraseOp(undefOp);
-
-        //         // check if it is being used
-        //         return success();
-        //     }
-        // }
 
         // const tuple -> const tuple, for example { value: undefined, done: true } -> { value: <int>, done: <boolean> }
         if (auto constTupleIn = in.getType().dyn_cast<mlir_ts::ConstTupleType>())
