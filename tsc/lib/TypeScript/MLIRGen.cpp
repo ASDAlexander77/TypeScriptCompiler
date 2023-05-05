@@ -13232,7 +13232,11 @@ genContext);
             }
         }
 
-        // optional with union & interface inside
+        // optional
+        // TODO: it is in CastLogic as well, review usage and remove from here
+        // but if optional points to interface then it will not work
+        // example: from path.ts
+        // %6 = ts.Cast %4 : !ts.const_tuple<{"key",!ts.string},{"prev",!ts.undefined},{"typename",!ts.undefined}> to !ts.optional<!ts.iface<@Path>>
         if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
         {
             if (value.getType() == getUndefinedType())

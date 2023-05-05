@@ -372,7 +372,13 @@ class CastLogicHelper
         // cast value value to optional value
         if (auto optType = resType.dyn_cast<mlir_ts::OptionalType>())
         {
-            return rewriter.create<mlir_ts::CreateOptionalOp>(loc, resType, in);
+            if (inType.isa<mlir_ts::UndefinedType>())
+            {
+                return rewriter.create<mlir_ts::UndefOptionalOp>(loc, resType);
+            }
+
+            auto valCasted = cast(in, inType, inLLVMType, optType.getElementType(), tch.convertType(optType.getElementType()));
+            return rewriter.create<mlir_ts::CreateOptionalOp>(loc, resType, valCasted);
         }
 
         if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
