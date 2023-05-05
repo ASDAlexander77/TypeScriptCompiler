@@ -15626,10 +15626,6 @@ genContext);
             if (paramItem->questionToken)
             {
                 type = getOptionalType(type);
-                if (!type)
-                {
-                    return mlir::Type();
-                }
             }
 
             argTypes.push_back(type);
