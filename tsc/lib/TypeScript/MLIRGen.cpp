@@ -6459,6 +6459,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // TODO: review it, seems like big hack
     mlir::LogicalResult adjustTypesForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
@@ -6516,6 +6517,11 @@ class MLIRGenImpl
         case SyntaxKind::GreaterThanEqualsToken:
         case SyntaxKind::LessThanToken:
         case SyntaxKind::LessThanEqualsToken:
+
+            if (leftExpressionValue.getType().isa<mlir_ts::UndefinedType>() || rightExpressionValue.getType().isa<mlir_ts::UndefinedType>())
+            {
+                break;
+            }
 
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {

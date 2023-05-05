@@ -470,12 +470,6 @@ class CastLogicHelper
             }
         }
 
-        if (auto resUndefType = resType.dyn_cast<mlir_ts::UndefinedType>())
-        {
-            in.getDefiningOp()->emitWarning("using casting into undefined value");
-            return rewriter.create<mlir_ts::UndefOp>(loc, inType);
-        }        
-
         if (auto undefType = inType.dyn_cast<mlir_ts::UndefinedType>())
         {
             in.getDefiningOp()->emitWarning("using casting to undefined value");
