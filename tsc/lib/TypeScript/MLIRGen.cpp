@@ -14038,6 +14038,21 @@ genContext);
             return getConstType();
         }        
 
+        if (name == "Number")
+        {
+            return getNumberType();
+        }       
+
+        if (name == "String")
+        {
+            return getStringType();
+        }       
+
+        if (name == "Boolean")
+        {
+            return getBooleanType();
+        }       
+
         if (name == "Int8Array")
         {
             return getArrayType(builder.getIntegerType(8, true));
@@ -15182,12 +15197,16 @@ genContext);
 
     mlir_ts::EnumType getEnumType()
     {
-        return getEnumType(builder.getI32Type(), {});
+        return mlir_ts::EnumType::get(builder.getI32Type(), {});
     }
 
-    mlir_ts::EnumType getEnumType(mlir::Type elementType, mlir::DictionaryAttr values)
+    mlir::Type getEnumType(mlir::Type elementType, mlir::DictionaryAttr values)
     {
-        assert(elementType);
+        if (!elementType)
+        {
+            return mlir::Type();
+        }
+
         return mlir_ts::EnumType::get(elementType, values);
     }
 
@@ -15223,35 +15242,45 @@ genContext);
         return mlir_ts::InterfaceType::get(name);
     }
 
-    mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST, unsigned size, const GenContext &genContext)
+    mlir::Type getConstArrayType(ArrayTypeNode arrayTypeAST, unsigned size, const GenContext &genContext)
     {
         auto type = getType(arrayTypeAST->elementType, genContext);
-        assert(type);
         return getConstArrayType(type, size);
     }
 
-    mlir_ts::ConstArrayType getConstArrayType(mlir::Type elementType, unsigned size)
+    mlir::Type getConstArrayType(mlir::Type elementType, unsigned size)
     {
-        assert(elementType);
+        if (!elementType)
+        {
+            return mlir::Type();
+        }
+
         return mlir_ts::ConstArrayType::get(elementType, size);
     }
 
-    mlir_ts::ArrayType getArrayType(ArrayTypeNode arrayTypeAST, const GenContext &genContext)
+    mlir::Type getArrayType(ArrayTypeNode arrayTypeAST, const GenContext &genContext)
     {
         auto type = getType(arrayTypeAST->elementType, genContext);
-        assert(type);
         return getArrayType(type);
     }
 
-    mlir_ts::ArrayType getArrayType(mlir::Type elementType)
+    mlir::Type getArrayType(mlir::Type elementType)
     {
-        assert(elementType);
+        if (!elementType)
+        {
+            return mlir::Type();
+        }
+
         return mlir_ts::ArrayType::get(elementType);
     }
 
-    mlir_ts::ValueRefType getValueRefType(mlir::Type elementType)
+    mlir::Type getValueRefType(mlir::Type elementType)
     {
-        assert(elementType);
+        if (!elementType)
+        {
+            return mlir::Type();
+        }
+
         return mlir_ts::ValueRefType::get(elementType);
     }
 
@@ -15267,33 +15296,57 @@ genContext);
         return mlir_ts::InferType::get(paramType);
     }
 
-    mlir_ts::ConditionalType getConditionalType(mlir::Type checkType, mlir::Type extendsType, mlir::Type trueType, mlir::Type falseType)
+    mlir::Type getConditionalType(mlir::Type checkType, mlir::Type extendsType, mlir::Type trueType, mlir::Type falseType)
     {
         assert(checkType);
         assert(extendsType);
         assert(trueType);
         assert(falseType);
+
+        if (!checkType || !extendsType || !trueType || !falseType)
+        {
+            return mlir::Type();
+        }
+
         return mlir_ts::ConditionalType::get(checkType, extendsType, trueType, falseType);
     }
 
-    mlir_ts::IndexAccessType getIndexAccessType(mlir::Type index, mlir::Type indexAccess)
+    mlir::Type getIndexAccessType(mlir::Type index, mlir::Type indexAccess)
     {
         assert(index);
         assert(indexAccess);
+
+        if (!index || !indexAccess)
+        {
+            return mlir::Type();
+        }
+
         return mlir_ts::IndexAccessType::get(index, indexAccess);
     }    
 
-    mlir_ts::KeyOfType getKeyOfType(mlir::Type type)
+    mlir::Type getKeyOfType(mlir::Type type)
     {
         assert(type);
+
+        if (!type)
+        {
+            return mlir::Type();
+        }
+
         return mlir_ts::KeyOfType::get(type);
     }      
 
-    mlir_ts::MappedType getMappedType(mlir::Type elementType, mlir::Type nameType, mlir::Type constrainType)
+    mlir::Type getMappedType(mlir::Type elementType, mlir::Type nameType, mlir::Type constrainType)
     {
         assert(elementType);
         assert(nameType);
         assert(constrainType);
+
+        if (!elementType || !nameType || !constrainType)
+        {
+            return mlir::Type();
+        }
+
         return mlir_ts::MappedType::get(elementType, nameType, constrainType);
     }    
 
