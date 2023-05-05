@@ -351,8 +351,8 @@ jobs:
         continue-on-error: false
         shell: sh
         if: hashFiles('llvm_15_release_UB20.tgz') != ''
-        run: file llvm_15_release.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_15_release.tgz -C ./3rdParty/llvm-ninja/
-        #run: file llvm_15_release.tgz; unzip llvm_15_release.tgz -d ./3rdParty/llvm-ninja/
+        run: file llvm_15_release_UB20.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_15_release_UB20.tgz -C ./3rdParty/llvm-ninja/
+        #run: file llvm_15_release_UB20.tgz; unzip llvm_15_release.tgz -d ./3rdParty/llvm-ninja/
 
       - name: Download 3rd party source - GC
         continue-on-error: true
