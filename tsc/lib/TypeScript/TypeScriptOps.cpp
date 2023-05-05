@@ -571,23 +571,6 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         } 
         */            
 
-        // any support
-        // if (res.getType().isa<mlir_ts::AnyType>())
-        // {
-        //     // TODO: boxing, finish it, need to send TypeOf
-        //     auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
-        //     auto boxedValue = rewriter.create<mlir_ts::BoxOp>(loc, mlir_ts::AnyType::get(rewriter.getContext()), in, typeOfValue);
-        //     rewriter.replaceOp(castOp, ValueRange{boxedValue});
-        //     return success();
-        // }
-
-        // if (in.getType().isa<mlir_ts::AnyType>())
-        // {
-        //     auto unboxedValue = rewriter.create<mlir_ts::UnboxOp>(loc, res.getType(), in);
-        //     rewriter.replaceOp(castOp, ValueRange{unboxedValue});
-        //     return success();
-        // }
-
         // union support
         // TODO: review this code, should it be in "cast" logic?
         auto inUnionType = in.getType().dyn_cast<mlir_ts::UnionType>();
@@ -619,6 +602,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         }
 
         // const tuple -> const tuple, for example { value: undefined, done: true } -> { value: <int>, done: <boolean> }
+        // TODO: put it into the code
         if (auto constTupleIn = in.getType().dyn_cast<mlir_ts::ConstTupleType>())
         {
             ::typescript::MLIRTypeHelper mth(rewriter.getContext());
