@@ -8919,17 +8919,12 @@ class MLIRGenImpl
                 values.push_back({newConstVal, false, false});
             }
 
-            for (auto valAttr : arrayAttr)
-            {
-                accumulateArrayItemType(constArray.getElementType(), arrayInfo);
-                // we need only first
-                break;
-            }
+            accumulateArrayItemType(constArray.getElementType(), arrayInfo);
 
             return mlir::success();
         }
         
-        if (auto constArray = type.dyn_cast<mlir_ts::ConstTupleType>())
+        if (auto constTuple = type.dyn_cast<mlir_ts::ConstTupleType>())
         {
             // because it is tuple it may not have the same types
             arrayInfo.isConst = false;
@@ -8937,16 +8932,15 @@ class MLIRGenImpl
             if (auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
+                auto index = -1;
                 for (auto val : arrayAttr)
                 {
-                    auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), val);
-                    values.push_back({newConstVal, true, false});
+                    index++;
+                    auto typeItemType = constTuple.getFieldInfo(index).type;
+                    auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), typeItemType, val);
+                    values.push_back({newConstVal, false, false});
+                    accumulateArrayItemType(typeItemType, arrayInfo);
                 }
-
-                for (auto valAttr : arrayAttr)
-                {
-                    accumulateArrayItemType(arrayAttr.getType(), arrayInfo);
-                }    
 
                 return mlir::success();                
             }
@@ -9278,7 +9272,14 @@ class MLIRGenImpl
                         return mlir::failure();
                     }
                 }
+                else
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! array spread value type: " << val.value.getType() << "\n";);
+                    llvm_unreachable("not implemented");
+                }
                 
+                assert(vals.size() > 0);
+
                 cm.mlirGenArrayPush(location, loadedVarArray, vals);
             }
         }
