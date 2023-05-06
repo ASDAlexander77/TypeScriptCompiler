@@ -8907,15 +8907,18 @@ class MLIRGenImpl
         arrayInfo.anySpreadElement = true;
 
         auto type = itemValue.getType();
+        auto location = itemValue.getLoc();
 
         if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
         {
             auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
             auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
+            auto index = 0;
             for (auto val : arrayAttr)
             {
-                // TODO: instead of creating new constant, write code to access object by index
-                auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), constArray.getElementType(), val);
+                MLIRPropertyAccessCodeLogic cl(builder, location, itemValue, builder.getIndexAttr(index++));
+                auto newConstVal = cl.Array(constArray);
+
                 values.push_back({newConstVal, false, false});
             }
 
@@ -8935,11 +8938,12 @@ class MLIRGenImpl
                 auto index = -1;
                 for (auto val : arrayAttr)
                 {
-                    index++;
-                    auto typeItemType = constTuple.getFieldInfo(index).type;
-                    auto newConstVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), typeItemType, val);
+                    MLIRPropertyAccessCodeLogic cl(builder, location, itemValue, builder.getIndexAttr(++index));
+                    auto newConstVal = cl.Tuple(constTuple, true);
+
                     values.push_back({newConstVal, false, false});
-                    accumulateArrayItemType(typeItemType, arrayInfo);
+
+                    accumulateArrayItemType(constTuple.getFieldInfo(index).type, arrayInfo);
                 }
 
                 return mlir::success();                
