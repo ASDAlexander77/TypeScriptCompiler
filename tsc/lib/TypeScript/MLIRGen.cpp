@@ -12897,6 +12897,12 @@ genContext);
             //[k: string]: string
             emitWarning(location, "") << "Index signature ignored.";
         }
+        else if (kind == SyntaxKind::CallSignature)
+        {
+            // TODO: nothing to do here yet
+            //(k: string) => string
+            emitWarning(location, "") << "Call signature ignored.";
+        }        
         else
         {
             llvm_unreachable("not implemented");
@@ -15454,7 +15460,7 @@ genContext);
         return MLIRHelper::TupleFieldName(namePtr, builder.getContext());
     }
 
-    bool getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types,
+    std::pair<bool, mlir::LogicalResult> getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types,
                            const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
@@ -15468,8 +15474,11 @@ genContext);
                 auto namedTupleMember = typeItem.as<NamedTupleMember>();
 
                 auto type = getType(namedTupleMember->type, genContext);
+                if (!type)
+                {
+                    return {arrayMode, mlir::failure()};
+                }
 
-                assert(type);
                 types.push_back({TupleFieldName(namedTupleMember->name, genContext), type});
                 arrayMode = false;
             }
@@ -15477,14 +15486,15 @@ genContext);
             {
                 auto literalTypeNode = typeItem.as<LiteralTypeNode>();
                 auto result = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
+                if (result.failed_or_no_value())
+                {
+                    return {arrayMode, mlir::failure()};
+                }
+
                 auto literalValue = V(result);
-
-                assert(literalValue);
-
                 auto constantOp = literalValue.getDefiningOp<mlir_ts::ConstantOp>();
 
                 assert(constantOp);
-
                 attrVal = constantOp.valueAttr();
 
                 if (arrayMode)
@@ -15498,15 +15508,18 @@ genContext);
             else
             {
                 auto type = getType(typeItem, genContext);
+                if (!type)
+                {
+                    return {arrayMode, mlir::failure()};
+                }
 
-                assert(type);
                 types.push_back({attrVal, type});
             }
 
             attrVal = mlir::Attribute();
         }
 
-        return arrayMode;
+        return {arrayMode, mlir::success()};
     }
 
     void getTupleFieldInfo(TypeLiteralNode typeLiteral, mlir::SmallVector<mlir_ts::FieldInfo> &types,
@@ -15559,7 +15572,13 @@ genContext);
     mlir::Type getTupleType(TupleTypeNode tupleType, const GenContext &genContext)
     {
         mlir::SmallVector<mlir_ts::FieldInfo> types;
-        if (getTupleFieldInfo(tupleType, types, genContext) && types.size() == 1)
+        auto [arrayMode, result] = getTupleFieldInfo(tupleType, types, genContext);
+        if (mlir::failed(result))
+        {
+            return mlir::Type();
+        }
+
+        if (arrayMode && types.size() == 1)
         {
             return getArrayType(types.front().type);
         }
