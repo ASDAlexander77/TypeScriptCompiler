@@ -8905,6 +8905,7 @@ class MLIRGenImpl
     mlir::LogicalResult processArrayValuesSpreadElement(mlir::Value itemValue, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
     {
         arrayInfo.anySpreadElement = true;
+        arrayInfo.isConst = false;
 
         auto type = itemValue.getType();
         auto location = itemValue.getLoc();
@@ -8914,11 +8915,13 @@ class MLIRGenImpl
             auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
             auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
             auto index = 0;
+            // TODO: improve it with using array concat
             for (auto val : arrayAttr)
             {
-                MLIRPropertyAccessCodeLogic cl(builder, location, itemValue, builder.getIndexAttr(index++));
-                auto newConstVal = cl.Array(constArray);
-
+                auto indexVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), builder.getIntegerType(32), builder.getI32IntegerAttr(index++));
+                auto result = mlirGenElementAccess(location, itemValue, indexVal, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result);
+                auto newConstVal = V(result);
                 values.push_back({newConstVal, false, false});
             }
 
@@ -8952,9 +8955,6 @@ class MLIRGenImpl
         
         if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
-            // because it is tuple it may not have the same types
-            arrayInfo.isConst = false;
-
             values.push_back({itemValue, true, false});
             for (auto tupleItem : tupleType)
             {
@@ -8967,8 +8967,6 @@ class MLIRGenImpl
         if (auto array = type.dyn_cast<mlir_ts::ArrayType>())
         {
             // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
-            arrayInfo.isConst = false;
-
             values.push_back({itemValue, true, true});
 
             auto arrayElementType = mth.wideStorageType(array.getElementType());
@@ -9134,7 +9132,7 @@ class MLIRGenImpl
         for (auto &itemValue : values)
         {
             auto constOp = itemValue.value.getDefiningOp<mlir_ts::ConstantOp>();
-            constValues.push_back(constOp.valueAttr());
+            constValues.push_back(constOp.valueAttr()); 
         }
 
         SmallVector<mlir::Type> constTypes;
@@ -9241,12 +9239,16 @@ class MLIRGenImpl
                 SmallVector<mlir::Value> vals;
                 if (!val.isSpread)
                 {
-                    mlir::Value finalVal;
+                    mlir::Value finalVal = val.value;
                     if (arrayInfo.arrayElementType != val.value.getType())
                     {
                         auto result = cast(location, arrayInfo.arrayElementType, val.value, genContext) ;
                         EXIT_IF_FAILED_OR_NO_VALUE(result)
                         finalVal = V(result);
+                    }
+                    else
+                    {
+                        finalVal = val.value;
                     }
 
                     vals.push_back(finalVal);
@@ -9266,6 +9268,10 @@ class MLIRGenImpl
                                 auto result = cast(location, arrayInfo.arrayElementType, tupleVal, genContext) ;
                                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                                 finalVal = V(result);
+                            }
+                            else
+                            {
+                                finalVal = tupleVal;
                             }
 
                             vals.push_back(finalVal);
