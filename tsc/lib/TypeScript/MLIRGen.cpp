@@ -7115,6 +7115,19 @@ class MLIRGenImpl
             }
         }
 
+        // static generic methods
+        auto staticGenericMethodIndex = classInfo->getStaticGenericMethodIndex(name);
+        if (staticGenericMethodIndex >= 0)
+        {        
+            auto genericStaticMethodInfo = classInfo->staticGenericMethods[staticGenericMethodIndex];
+
+            auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
+                location, genericStaticMethodInfo.funcType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericStaticMethodInfo.name));
+            funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return funcSymbolOp;
+        }        
+
         // check accessor
         auto accessorIndex = classInfo->getAccessorIndex(name);
         if (accessorIndex >= 0)

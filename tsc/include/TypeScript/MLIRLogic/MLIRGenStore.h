@@ -72,7 +72,7 @@ struct MethodInfo
 struct GenericMethodInfo
 {
   public:
-    mlir::StringRef name;
+    std::string name;
     mlir_ts::FunctionType funcType;
 
     FunctionLikeDeclarationBase methodDeclaration;
