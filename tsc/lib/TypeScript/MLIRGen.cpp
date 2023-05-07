@@ -3538,7 +3538,7 @@ class MLIRGenImpl
     }
 
     std::pair<mlir::LogicalResult, std::string> registerGenericFunctionLike(
-        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, bool ignoreFunctionArgsDecetion,
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, bool ignoreFunctionArgsDetection,
         const GenContext &genContext)
     {
         auto [fullName, name] = getNameOfFunction(functionLikeDeclarationBaseAST, genContext);
@@ -3569,7 +3569,7 @@ class MLIRGenImpl
         newGenericFunctionPtr->elementNamespace = currentNamespace;
 
         // TODO: review it, ignore in case of ArrowFunction,
-        if (!ignoreFunctionArgsDecetion)
+        if (!ignoreFunctionArgsDetection)
         {
             auto [result, funcOp] =
                 getFuncArgTypesOfGenericMethod(functionLikeDeclarationBaseAST, typeParameters, false, genContext);
@@ -12307,6 +12307,7 @@ genContext);
         auto location = loc(classMember);
 
         auto &methodInfos = newClassPtr->methods;
+        auto &staticGenericMethodInfos = newClassPtr->staticGenericMethods;
 
         mlir::Value initValue;
         mlir::Attribute fieldId;
@@ -12367,6 +12368,37 @@ genContext);
             }
 
             funcLikeDeclaration->processed = true;
+
+            // if funcOp is null, means it is generic
+            if (isStatic && !funcOp)
+            {
+                if (newClassPtr->getStaticGenericMethodIndex(methodName) < 0)
+                {
+                    llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
+                    if (mlir::failed(
+                            processTypeParameters(funcLikeDeclaration->typeParameters, typeParameters, genContext)))
+                    {
+                        return mlir::failure();
+                    }
+
+                    // TODO: review it, ignore in case of ArrowFunction,
+                    auto [result, funcOp] =
+                        getFuncArgTypesOfGenericMethod(funcLikeDeclaration, typeParameters, false, genContext);
+                    if (mlir::failed(result))
+                    {
+                        return mlir::failure();
+                    }
+
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! registered generic static method: " << methodName
+                                            << ", type: " << funcOp->getFuncType() << "\n";);
+
+                    // this is generic static method
+                    staticGenericMethodInfos.push_back({methodName, funcOp->getFuncType(), funcLikeDeclaration, 
+                        typeParameters, funcOp});
+                }
+
+                return mlir::success();
+            }            
 
             if (newClassPtr->getMethodIndex(methodName) < 0)
             {

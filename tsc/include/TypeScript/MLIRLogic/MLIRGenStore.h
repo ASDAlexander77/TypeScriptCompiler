@@ -69,6 +69,18 @@ struct MethodInfo
     int virtualIndex;
 };
 
+struct GenericMethodInfo
+{
+  public:
+    mlir::StringRef name;
+    mlir_ts::FunctionType funcType;
+
+    FunctionLikeDeclarationBase methodDeclaration;
+    llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
+
+    FunctionPrototypeDOM::TypePtr funcOp;
+};
+
 struct VirtualMethodOrInterfaceVTableInfo
 {
     VirtualMethodOrInterfaceVTableInfo(MethodInfo methodInfo_, bool isInterfaceVTable_) : methodInfo(methodInfo_), isStaticField(false), isInterfaceVTable(isInterfaceVTable_)
@@ -391,6 +403,8 @@ struct ClassInfo
 
     llvm::SmallVector<MethodInfo> methods;
 
+    llvm::SmallVector<GenericMethodInfo> staticGenericMethods;
+
     llvm::SmallVector<AccessorInfo> accessors;
 
     NodeArray<ClassElement> extraMembers;
@@ -560,19 +574,29 @@ struct ClassInfo
     {
         auto dist =
             std::distance(staticFields.begin(), std::find_if(staticFields.begin(), staticFields.end(),
-                                                             [&](StaticFieldInfo fldInf) { return id == fldInf.id; }));
+                                                             [&](auto fldInf) { return id == fldInf.id; }));
         return (signed)dist >= (signed)staticFields.size() ? -1 : dist;
     }
 
     int getMethodIndex(mlir::StringRef name)
     {
         auto dist = std::distance(
-            methods.begin(), std::find_if(methods.begin(), methods.end(), [&](MethodInfo methodInfo) {
+            methods.begin(), std::find_if(methods.begin(), methods.end(), [&](auto methodInfo) {
                 LLVM_DEBUG(dbgs() << "\nmatching method: " << name << " to " << methodInfo.name << "\n\n";);
                 return name == methodInfo.name;
             }));
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
     }
+
+    int getStaticGenericMethodIndex(mlir::StringRef name)
+    {
+        auto dist = std::distance(
+            staticGenericMethods.begin(), std::find_if(staticGenericMethods.begin(), staticGenericMethods.end(), [&](auto staticGenericMethodInfo) {
+                LLVM_DEBUG(dbgs() << "\nmatching static generic method: " << name << " to " << staticGenericMethodInfo.name << "\n\n";);
+                return name == staticGenericMethodInfo.name;
+            }));
+        return (signed)dist >= (signed)staticGenericMethods.size() ? -1 : dist;
+    }    
 
     unsigned fieldsCount()
     {
