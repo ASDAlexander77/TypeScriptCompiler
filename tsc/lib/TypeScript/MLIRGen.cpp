@@ -2980,7 +2980,7 @@ class MLIRGenImpl
 
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
-            if (!genContext.thisType.isa<mlir_ts::ObjectType>())
+            if (!genContext.thisType || !genContext.thisType.isa<mlir_ts::ObjectType>())
             {
                 // class method name
                 name = objectOwnerName + "." + name;
@@ -7123,7 +7123,7 @@ class MLIRGenImpl
 
             auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
                 location, genericStaticMethodInfo.funcType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericStaticMethodInfo.name));
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericStaticMethodInfo.funcOp->getName()));
             funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
             return funcSymbolOp;
         }        
@@ -12406,8 +12406,8 @@ genContext);
                                             << ", type: " << funcOp->getFuncType() << "\n";);
 
                     // this is generic static method
-                    staticGenericMethodInfos.push_back({methodName, funcOp->getFuncType(), funcLikeDeclaration, 
-                        typeParameters, funcOp});
+                    // the main logic will use Global Generic Functions
+                    staticGenericMethodInfos.push_back({methodName, funcOp->getFuncType(), funcOp});
                 }
 
                 return mlir::success();

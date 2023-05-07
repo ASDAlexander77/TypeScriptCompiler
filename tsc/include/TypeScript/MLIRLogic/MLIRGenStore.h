@@ -74,10 +74,6 @@ struct GenericMethodInfo
   public:
     std::string name;
     mlir_ts::FunctionType funcType;
-
-    FunctionLikeDeclarationBase methodDeclaration;
-    llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
-
     FunctionPrototypeDOM::TypePtr funcOp;
 };
 
