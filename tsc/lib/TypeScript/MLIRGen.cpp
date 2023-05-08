@@ -2041,20 +2041,26 @@ class MLIRGenImpl
             }
         }
 
-        if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+        if (currValue.getDefiningOp()->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
         {
-            // if (!symbolOp.getType().isa<mlir_ts::GenericType>())
-            if (!symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
-            {
-                // it is not generic function reference
-                return genResult;
-            }
-
             // create new function instance
             GenContext initSpecGenContext(genContext);
             initSpecGenContext.rediscover = true;
 
-            auto funcName = symbolOp.identifierAttr().getValue();
+            StringRef funcName;
+            if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+            {
+                funcName = symbolOp.identifierAttr().getValue();
+            }
+            else if (auto thisSymbolOp = currValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+            {
+                funcName = thisSymbolOp.identifierAttr().getValue();
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+
             auto [result, funcType, funcSymbolName] =
                 instantiateSpecializedFunctionType(location, funcName, typeArguments, initSpecGenContext);
             if (mlir::failed(result))
@@ -7519,13 +7525,10 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
         auto noReceiverTypesForGenericCall = false;
-        if (auto symbolOp = funcResult.getDefiningOp<mlir_ts::SymbolRefOp>())
+        if (funcResult.getDefiningOp()->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
         {
-            if (symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
-            {
-                // so if method is generic and you need to infer types you can cast to generic types
-                noReceiverTypesForGenericCall = callExpression->typeArguments.size() == 0;
-            }
+            // so if method is generic and you need to infer types you can cast to generic types
+            noReceiverTypesForGenericCall = callExpression->typeArguments.size() == 0;
         }
 
         SmallVector<mlir::Value, 4> operands;
