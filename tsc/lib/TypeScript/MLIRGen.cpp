@@ -10737,7 +10737,10 @@ class MLIRGenImpl
 
         mlirGenClassMembersPost(location, classDeclarationAST, newClassPtr, classGenContext);
 
-        mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext);
+        if (mlir::failed(mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext)))
+        {
+            return {mlir::failure(), ""};
+        }
 
         // here we need to process New method;
 
@@ -11144,6 +11147,7 @@ class MLIRGenImpl
                 }
 
                 auto result = mlirGen(implementingType, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto ifaceType = V(result);
                 TypeSwitch<mlir::Type>(ifaceType.getType())
                     .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
@@ -12341,6 +12345,12 @@ genContext);
                         mlir::Value methodOrFieldNameRef;
                         if (!vtRecord.isStaticField)
                         {
+                            if (vtRecord.methodInfo.isAbstract)
+                            {
+                                emitError(location) << "Abstract method '" << vtRecord.methodInfo.name <<  "' is not implemented in '" << newClassPtr->name << "'";
+                                return std::pair<mlir::Type, mlir::Value>{mlir::Type(), mlir::Value()}; 
+                            }
+
                             methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
                                 location, vtRecord.methodInfo.funcOp.getFunctionType(),
                                 mlir::FlatSymbolRefAttr::get(builder.getContext(),
@@ -12405,6 +12415,13 @@ genContext);
             if (methodName.empty())
             {
                 llvm_unreachable("not implemented");
+                return mlir::failure();
+            }
+
+            if (isAbstract && !newClassPtr->isAbstract)
+            {
+                emitError(location) << "Can't use abstract member '" 
+                    << (propertyName.empty() ? methodName : propertyName)<< "' in non-abstract class '" << newClassPtr->fullName << "'";
                 return mlir::failure();
             }
 

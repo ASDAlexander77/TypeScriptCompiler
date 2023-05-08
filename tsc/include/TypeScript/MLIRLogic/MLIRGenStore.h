@@ -500,6 +500,7 @@ struct ClassInfo
                 vtable[index].methodInfo.funcOp = method.funcOp;
                 method.virtualIndex = index;
                 method.isVirtual = true;
+                vtable[index].methodInfo.isAbstract = method.isAbstract;
             }
             else if (method.isVirtual)
             {
