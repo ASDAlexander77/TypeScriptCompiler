@@ -45,7 +45,8 @@ jobs:
       - name: Retrieve version
         run: echo "TAG_NAME=$(git describe --abbrev=0 --tags)" >> "$GITHUB_OUTPUT"
         id: version
-        shell: pwsh
+        #shell: pwsh
+        shell: bash
 
       - name: Delete __Build TS folders
         continue-on-error: true
