@@ -43,7 +43,7 @@ jobs:
           key: ${{ runner.os }}-3rd-party-llvm-15-release-v4
 
       - name: Retrieve version
-        run: echo "TAG_NAME=$(git describe --abbrev=0)" >> $GITHUB_OUTPUT
+        run: echo "TAG_NAME=$(git describe --abbrev=0 --tags)" >> $GITHUB_OUTPUT
         id: version
 
       - name: Delete __Build TS folders
@@ -188,7 +188,7 @@ jobs:
           key: ${{ runner.os }}-3rd-party-llvm-15-release-v5
 
       - name: Retrieve version
-        run: echo "TAG_NAME=$(git describe --abbrev=0)" >> $GITHUB_OUTPUT
+        run: echo "TAG_NAME=$(git describe --abbrev=0 --tags)" >> $GITHUB_OUTPUT
         id: version
 
       - name: Delete __Build TS folders
