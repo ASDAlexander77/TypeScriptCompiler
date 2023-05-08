@@ -11111,6 +11111,7 @@ class MLIRGenImpl
             for (auto &extendingType : heritageClause->types)
             {
                 auto result = mlirGen(extendingType, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto baseType = V(result);
                 TypeSwitch<mlir::Type>(baseType.getType())
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
