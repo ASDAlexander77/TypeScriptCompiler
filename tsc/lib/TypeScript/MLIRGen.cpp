@@ -2065,6 +2065,7 @@ class MLIRGenImpl
             {
                 funcName = thisSymbolOp.identifierAttr().getValue();
                 skipThisParam = true;
+                initSpecGenContext.thisType = thisSymbolOp.thisVal().getType();
             }
             else
             {
