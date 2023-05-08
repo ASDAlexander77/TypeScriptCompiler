@@ -2054,8 +2054,10 @@ class MLIRGenImpl
             // create new function instance
             GenContext initSpecGenContext(genContext);
             initSpecGenContext.rediscover = true;
+            initSpecGenContext.thisType = mlir::Type();
 
             auto skipThisParam = false;
+            mlir::Value thisValue;
             StringRef funcName;
             if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
@@ -2065,7 +2067,8 @@ class MLIRGenImpl
             {
                 funcName = thisSymbolOp.identifierAttr().getValue();
                 skipThisParam = true;
-                initSpecGenContext.thisType = thisSymbolOp.thisVal().getType();
+                thisValue = thisSymbolOp.thisVal();
+                initSpecGenContext.thisType = thisValue.getType();
             }
             else
             {
@@ -2081,7 +2084,7 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            return resolveFunctionWithCapture(location, StringRef(funcSymbolName), funcType, false, false, genContext);
+            return resolveFunctionWithCapture(location, StringRef(funcSymbolName), funcType, thisValue, false, genContext);
         }
 
         if (auto classOp = genResult.getDefiningOp<mlir_ts::ClassRefOp>())
@@ -3384,7 +3387,7 @@ class MLIRGenImpl
                 auto genericFunctionInfo = getGenericFunctionMap().lookup(funcName);
                 // info: it will not take any capture now
                 return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType,
-                                                  false, true, genContext);
+                                                  mlir::Value(), true, genContext);
             }
             else
             {
@@ -3393,7 +3396,7 @@ class MLIRGenImpl
             }
         }
 
-        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), false, false, genContext);
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), mlir::Value(), false, genContext);
     }
 
     ValueOrLogicalResult mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
@@ -3432,7 +3435,7 @@ class MLIRGenImpl
                 auto genericFunctionInfo = getGenericFunctionMap().lookup(funcName);
                 // info: it will not take any capture now
                 return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType,
-                                                  false, true, genContext);
+                                                  mlir::Value(), true, genContext);
             }
             else
             {
@@ -3443,7 +3446,7 @@ class MLIRGenImpl
 
         assert(funcOp);
 
-        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), false, isGeneric, genContext);
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getFunctionType(), mlir::Value(), isGeneric, genContext);
     }
 
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionGenerator(
@@ -9962,7 +9965,7 @@ class MLIRGenImpl
     }
 
     mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir_ts::FunctionType funcType,
-                                           bool allocTrampolineInHeap, bool addGenericAttrFlag,
+                                           mlir::Value thisValue, bool addGenericAttrFlag,
                                            const GenContext &genContext)
     {
         // check if required capture of vars
@@ -9995,6 +9998,18 @@ class MLIRGenImpl
                                                                   opaqueTypeValue, funcSymbolOp);
         }
 
+        if (thisValue)
+        {
+            auto thisFuncSymbolOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                location, getBoundFunctionType(funcType), thisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+            if (addGenericAttrFlag)
+            {
+                thisFuncSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            }
+
+            return V(thisFuncSymbolOp);
+        }
+
         auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
             location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
         if (addGenericAttrFlag)
@@ -10015,7 +10030,7 @@ class MLIRGenImpl
             auto funcType = funcOp.getFunctionType();
             auto funcName = funcOp.getName();
 
-            return resolveFunctionWithCapture(location, funcName, funcType, false, false, genContext);
+            return resolveFunctionWithCapture(location, funcName, funcType, mlir::Value(), false, genContext);
         }
 
         return mlir::Value();
