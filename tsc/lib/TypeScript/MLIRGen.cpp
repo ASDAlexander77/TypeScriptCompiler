@@ -1580,6 +1580,7 @@ class MLIRGenImpl
     mlir::LogicalResult resolveGenericParamsFromFunctionCall(mlir::Location location,
                                                              GenericFunctionInfo::TypePtr functionGenericTypeInfo,
                                                              NodeArray<TypeNode> typeArguments,
+                                                             bool skipThisParam,
                                                              bool &anyNamedGenericType,
                                                              GenContext &genericTypeGenContext,
                                                              const GenContext &genContext)
@@ -1615,8 +1616,15 @@ class MLIRGenImpl
             {
                 auto paramIndex = -1;
                 auto processed = 0;
+                auto skipCount = skipThisParam ? 1 : 0;
                 for (auto paramInfo : funcOp->getParams())
                 {
+                    if (skipCount-- > 0)
+                    {
+                        processed++;
+                        continue;
+                    }
+
                     paramIndex++;
                     if (paramInfo->processed)
                     {
@@ -1720,7 +1728,7 @@ class MLIRGenImpl
     }
 
     std::tuple<mlir::LogicalResult, mlir_ts::FunctionType, std::string> instantiateSpecializedFunctionType(
-        mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
+        mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, bool skipThisParam, const GenContext &genContext)
     {
         auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(name);
         if (functionGenericTypeInfo)
@@ -1757,7 +1765,7 @@ class MLIRGenImpl
             {
                 auto result =
                     resolveGenericParamsFromFunctionCall(location, functionGenericTypeInfo, typeArguments,
-                                                         anyNamedGenericType, genericTypeGenContext, genContext);
+                                                         skipThisParam, anyNamedGenericType, genericTypeGenContext, genContext);
                 if (mlir::failed(result))
                 {
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
@@ -2047,6 +2055,7 @@ class MLIRGenImpl
             GenContext initSpecGenContext(genContext);
             initSpecGenContext.rediscover = true;
 
+            auto skipThisParam = false;
             StringRef funcName;
             if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
@@ -2055,6 +2064,7 @@ class MLIRGenImpl
             else if (auto thisSymbolOp = currValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
             {
                 funcName = thisSymbolOp.identifierAttr().getValue();
+                skipThisParam = true;
             }
             else
             {
@@ -2062,7 +2072,7 @@ class MLIRGenImpl
             }
 
             auto [result, funcType, funcSymbolName] =
-                instantiateSpecializedFunctionType(location, funcName, typeArguments, initSpecGenContext);
+                instantiateSpecializedFunctionType(location, funcName, typeArguments, skipThisParam, initSpecGenContext);
             if (mlir::failed(result))
             {
                 emitError(location) << "can't instantiate function. '" << funcName
