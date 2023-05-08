@@ -1,3 +1,4 @@
+#include "TypeScript/Version.h"
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRGen.h"
@@ -600,7 +601,7 @@ int runJit(mlir::ModuleOp module)
 
 static void TscPrintVersion(llvm::raw_ostream &OS) {
   OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
-  OS << "  TSNC version 0.0.27" << '\n' << '\n';
+  OS << "  TSNC version " << TSC_PACKAGE_VERSION << '\n' << '\n';
 
   cl::PrintVersionMessage();
 }
