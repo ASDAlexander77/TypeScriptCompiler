@@ -34,6 +34,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/Support/CommandLine.h"
 #include "mlir/Support/DebugCounter.h"
 //#include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/Timing.h"
@@ -548,12 +549,14 @@ int runJit(mlir::ModuleOp module)
     if (noGC)
     {
 #ifdef WIN32
+#define LIB_NAME ""
 #define LIB_EXT "dll"
 #else
+#define LIB_NAME "lib"
 #define LIB_EXT "so"
 #endif
         llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                        "'--shared-libs=TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
+                        "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
         return -1;
     }
 
@@ -595,8 +598,19 @@ int runJit(mlir::ModuleOp module)
     return 0;
 }
 
+static void TscPrintVersion(llvm::raw_ostream &OS) {
+  OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
+  OS << "  TSNC version 0.0.27" << '\n' << '\n';
+
+  cl::PrintVersionMessage();
+}
+
 int main(int argc, char **argv)
 {
+    // version printer
+    cl::SetVersionPrinter(TscPrintVersion);
+    //cl::AddExtraVersionPrinter(TscPrintVersion);
+
     // Register any command line options.
     mlir::registerAsmPrinterCLOptions();
     mlir::registerMLIRContextCLOptions();
@@ -604,7 +618,7 @@ int main(int argc, char **argv)
     mlir::registerDefaultTimingManagerCLOptions();
     mlir::DebugCounter::registerCLOptions();
 
-    cl::ParseCommandLineOptions(argc, argv, "TypeScript compiler\n");
+    cl::ParseCommandLineOptions(argc, argv, "TypeScript native compiler\n");
 
     if (emitAction == Action::DumpAST)
     {
