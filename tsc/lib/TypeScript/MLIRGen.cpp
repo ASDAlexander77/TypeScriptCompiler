@@ -6985,8 +6985,32 @@ class MLIRGenImpl
         return value;
     }
 
+    mlir::Value getThisRefOfClass(mlir_ts::ClassType classType, mlir::Value thisValue, bool isSuperClass, const GenContext &genContext)
+    {
+        auto effectiveThisValue = thisValue;
+        if (isSuperClass)
+        {
+            // LLVM_DEBUG(dbgs() << "\n!! base call: func '" << funcOp.getName() << "' in context func. '"
+            //                     << const_cast<GenContext &>(genContext).funcOp.getName()
+            //                     << "', this type: " << thisValue.getType() << " value:" << thisValue << "";);
+
+            // get reference in case of classStorage
+            auto isStorageType = thisValue.getType().isa<mlir_ts::ClassStorageType>();
+            if (isStorageType)
+            {
+                MLIRCodeLogic mcl(builder);
+                thisValue = mcl.GetReferenceOfLoadOp(thisValue);
+                assert(thisValue);
+            }
+
+            effectiveThisValue = cast(thisValue.getLoc(), classType, thisValue, genContext);
+        }        
+
+        return effectiveThisValue;
+    }
+
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
-                             mlir::StringRef name, bool baseClass, const GenContext &genContext)
+                             mlir::StringRef name, bool isSuperClass, const GenContext &genContext)
     {
         assert(classInfo);
 
@@ -7066,26 +7090,10 @@ class MLIRGenImpl
             }
             else
             {
-                auto isStorageType = thisValue.getType().isa<mlir_ts::ClassStorageType>();
-                auto effectiveThisValue = thisValue;
-                if (baseClass)
-                {
-                    LLVM_DEBUG(dbgs() << "\n!! base call: func '" << funcOp.getName() << "' in context func. '"
-                                      << const_cast<GenContext &>(genContext).funcOp.getName()
-                                      << "', this type: " << thisValue.getType() << " value:" << thisValue << "";);
-
-                    // get reference in case of classStorage
-                    if (isStorageType)
-                    {
-                        MLIRCodeLogic mcl(builder);
-                        thisValue = mcl.GetReferenceOfLoadOp(thisValue);
-                        assert(thisValue);
-                    }
-
-                    effectiveThisValue = cast(location, classInfo->classType, thisValue, genContext);
-                }
+                auto effectiveThisValue = getThisRefOfClass(classInfo->classType, thisValue, isSuperClass, genContext);
 
                 // TODO: check if you can split calls such as "this.method" and "super.method" ...
+                auto isStorageType = thisValue.getType().isa<mlir_ts::ClassStorageType>();
                 if (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType)
                 {
                     LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "' in context func. '"
@@ -7116,16 +7124,30 @@ class MLIRGenImpl
         }
 
         // static generic methods
-        auto staticGenericMethodIndex = classInfo->getStaticGenericMethodIndex(name);
-        if (staticGenericMethodIndex >= 0)
+        auto genericMethodIndex = classInfo->getGenericMethodIndex(name);
+        if (genericMethodIndex >= 0)
         {        
-            auto genericStaticMethodInfo = classInfo->staticGenericMethods[staticGenericMethodIndex];
+            auto genericMethodInfo = classInfo->staticGenericMethods[genericMethodIndex];
 
-            auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
-                location, genericStaticMethodInfo.funcType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericStaticMethodInfo.funcOp->getName()));
-            funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-            return funcSymbolOp;
+            if (genericMethodInfo.isStatic)
+            {
+                auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
+                    location, genericMethodInfo.funcType,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcOp->getName()));
+                funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+                return funcSymbolOp;
+            }
+            else
+            {
+                auto effectiveThisValue = getThisRefOfClass(classInfo->classType, thisValue, isSuperClass, genContext);
+                auto effectiveFuncType = genericMethodInfo.funcOp->getFuncType();
+
+                auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                    location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcOp->getName()));
+                thisSymbOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+                return thisSymbOp;                
+            }
         }        
 
         // check accessor
@@ -7227,7 +7249,7 @@ class MLIRGenImpl
             first = false;
         }
 
-        if (baseClass || genContext.allowPartialResolve)
+        if (isSuperClass || genContext.allowPartialResolve)
         {
             return mlir::Value();
         }
@@ -12320,7 +12342,7 @@ genContext);
         auto location = loc(classMember);
 
         auto &methodInfos = newClassPtr->methods;
-        auto &staticGenericMethodInfos = newClassPtr->staticGenericMethods;
+        auto &genericMethodInfos = newClassPtr->staticGenericMethods;
 
         mlir::Value initValue;
         mlir::Attribute fieldId;
@@ -12330,10 +12352,11 @@ genContext);
         auto isConstructor = classMember == SyntaxKind::Constructor;
         auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
         auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
-        auto isVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
+        auto isForceVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
 #ifdef ALL_METHODS_VIRTUAL
-        isVirtual = !isConstructor;
+        isForceVirtual |= !isConstructor;
 #endif
+        auto isVirtual = isForceVirtual;
         if (classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
             classMember == SyntaxKind::SetAccessor)
         {
@@ -12380,38 +12403,50 @@ genContext);
                 return mlir::failure();
             }
 
-            funcLikeDeclaration->processed = true;
-
             // if funcOp is null, means it is generic
-            if (isStatic && !funcOp)
+            if (!funcOp)
             {
-                if (newClassPtr->getStaticGenericMethodIndex(methodName) < 0)
+                // if it is generic - remove virtual flag
+                if (isForceVirtual)
                 {
-                    llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
-                    if (mlir::failed(
-                            processTypeParameters(funcLikeDeclaration->typeParameters, typeParameters, genContext)))
-                    {
-                        return mlir::failure();
-                    }
-
-                    // TODO: review it, ignore in case of ArrowFunction,
-                    auto [result, funcOp] =
-                        getFuncArgTypesOfGenericMethod(funcLikeDeclaration, typeParameters, false, genContext);
-                    if (mlir::failed(result))
-                    {
-                        return mlir::failure();
-                    }
-
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! registered generic static method: " << methodName
-                                            << ", type: " << funcOp->getFuncType() << "\n";);
-
-                    // this is generic static method
-                    // the main logic will use Global Generic Functions
-                    staticGenericMethodInfos.push_back({methodName, funcOp->getFuncType(), funcOp});
+                    isVirtual = false;
                 }
 
-                return mlir::success();
+                if (isStatic || (!isAbstract && !isVirtual))
+                {
+                    if (newClassPtr->getGenericMethodIndex(methodName) < 0)
+                    {
+                        llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
+                        if (mlir::failed(
+                                processTypeParameters(funcLikeDeclaration->typeParameters, typeParameters, genContext)))
+                        {
+                            return mlir::failure();
+                        }
+
+                        // TODO: review it, ignore in case of ArrowFunction,
+                        auto [result, funcOp] =
+                            getFuncArgTypesOfGenericMethod(funcLikeDeclaration, typeParameters, false, genContext);
+                        if (mlir::failed(result))
+                        {
+                            return mlir::failure();
+                        }
+
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! registered generic method: " << methodName
+                                                << ", type: " << funcOp->getFuncType() << "\n";);
+
+                        // this is generic method
+                        // the main logic will use Global Generic Functions
+                        genericMethodInfos.push_back({methodName, funcOp->getFuncType(), funcOp, isStatic});
+                    }
+
+                    return mlir::success();
+                }
+
+                emitError(location) << "virtual generic methods in class are not allowed";
+                return mlir::failure();
             }            
+
+            funcLikeDeclaration->processed = true;
 
             if (newClassPtr->getMethodIndex(methodName) < 0)
             {
@@ -12907,6 +12942,12 @@ genContext);
             if (methodName.empty())
             {
                 llvm_unreachable("not implemented");
+                return mlir::failure();
+            }
+
+            if (methodSignature->typeParameters.size() > 0)
+            {
+                emitError(location) << "Generic method '" << methodName << "' in the interface is not allowed";
                 return mlir::failure();
             }
 

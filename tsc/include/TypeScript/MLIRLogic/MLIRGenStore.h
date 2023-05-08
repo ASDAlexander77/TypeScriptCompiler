@@ -73,8 +73,10 @@ struct GenericMethodInfo
 {
   public:
     std::string name;
+    // TODO: review usage of funcType (it is inside FunctionPrototypeDOM already)
     mlir_ts::FunctionType funcType;
     FunctionPrototypeDOM::TypePtr funcOp;
+    bool isStatic;
 };
 
 struct VirtualMethodOrInterfaceVTableInfo
@@ -584,7 +586,7 @@ struct ClassInfo
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
     }
 
-    int getStaticGenericMethodIndex(mlir::StringRef name)
+    int getGenericMethodIndex(mlir::StringRef name)
     {
         auto dist = std::distance(
             staticGenericMethods.begin(), std::find_if(staticGenericMethods.begin(), staticGenericMethods.end(), [&](auto staticGenericMethodInfo) {
