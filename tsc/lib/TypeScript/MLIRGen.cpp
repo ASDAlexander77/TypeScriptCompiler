@@ -11678,11 +11678,18 @@ genContext);
                 }
                 */
 
-                // temp return false;
+                // access .rtti via this (as virtual method)
+                // auto cmpRttiToParam = nf.createBinaryExpression(
+                //     nf.createIdentifier(LINSTANCEOF_PARAM_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
+                //     nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword),
+                //                                       nf.createIdentifier(S(RTTI_NAME))));
+
+                // access .rtti via static field
+                auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
+
                 auto cmpRttiToParam = nf.createBinaryExpression(
-                    nf.createIdentifier(LINSTANCEOF_PARAM_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
-                    nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword),
-                                                      nf.createIdentifier(S(RTTI_NAME))));
+                     nf.createIdentifier(LINSTANCEOF_PARAM_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
+                     nf.createIdentifier(ConvertUTF8toWide(std::string(fullClassStaticFieldName))));
 
                 auto cmpLogic = cmpRttiToParam;
 
