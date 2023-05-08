@@ -489,10 +489,32 @@ struct ClassInfo
 
     void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &vtable)
     {
+        auto processMethod = [] (auto &method, auto &vtable) {
+            auto index =
+                std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableMethod) {
+                                  return method.name == vTableMethod.methodInfo.name;
+                              }));
+            if ((size_t)index < vtable.size())
+            {
+                // found method
+                vtable[index].methodInfo.funcOp = method.funcOp;
+                method.virtualIndex = index;
+                method.isVirtual = true;
+            }
+            else if (method.isVirtual)
+            {
+                method.virtualIndex = vtable.size();
+                vtable.push_back({method, false});
+            }
+        };
+
         for (auto &base : baseClasses)
         {
             base->getVirtualTable(vtable);
         }
+        
+        // TODO: we need to process .Rtti first
+        // TODO: then we need to process .instanceOf next
 
         // do vtable for current class
         for (auto &implement : implements)
@@ -523,24 +545,7 @@ struct ClassInfo
             }
 #endif            
 
-            auto index =
-                std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableMethod) {
-                                  return method.name == vTableMethod.methodInfo.name;
-                              }));
-            if ((size_t)index < vtable.size())
-            {
-                // found method
-                vtable[index].methodInfo.funcOp = method.funcOp;
-                method.virtualIndex = index;
-                method.isVirtual = true;
-                continue;
-            }
-
-            if (method.isVirtual)
-            {
-                method.virtualIndex = vtable.size();
-                vtable.push_back({method, false});
-            }
+            processMethod(method, vtable);
         }
 
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
