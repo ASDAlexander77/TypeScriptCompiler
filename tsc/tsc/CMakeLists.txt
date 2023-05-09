@@ -38,5 +38,8 @@ add_llvm_executable(tsc tsc.cpp rt.cpp)
 
 llvm_update_compile_flags(tsc)
 target_link_libraries(tsc PRIVATE ${LIBS})
+target_compile_definitions(tsc PUBLIC TSC_PACKAGE_VERSION="${TSC_PACKAGE_VERSION}")
+
+MESSAGE (STATUS "VERSION = " ${TSC_PACKAGE_VERSION})
 
 mlir_check_all_link_libraries(tsc)
