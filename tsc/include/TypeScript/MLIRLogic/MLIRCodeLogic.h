@@ -259,17 +259,25 @@ class MLIRCustomMethods
 
     mlir::LogicalResult mlirGenAssert(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
+        if (operands.size() == 0)
+        {
+            return mlir::failure();
+        }
+
         auto msg = StringRef("assert");
         if (operands.size() > 1)
         {
-            auto param2 = operands[1];
-            auto constantOp = dyn_cast<mlir_ts::ConstantOp>(param2.getDefiningOp());
-            if (constantOp && constantOp.getType().isa<mlir_ts::StringType>())
+            for (auto opIndex = 1; opIndex < operands.size(); opIndex++)
             {
-                msg = constantOp.value().cast<mlir::StringAttr>().getValue();
-            }
+                auto param2 = operands[opIndex];
+                auto constantOp = dyn_cast<mlir_ts::ConstantOp>(param2.getDefiningOp());
+                if (constantOp && constantOp.getType().isa<mlir_ts::StringType>())
+                {
+                    msg = constantOp.value().cast<mlir::StringAttr>().getValue();
+                }
 
-            param2.getDefiningOp()->erase();
+                param2.getDefiningOp()->erase();
+            }
         }
 
         auto op = operands.front();

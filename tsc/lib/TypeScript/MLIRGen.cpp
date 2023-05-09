@@ -4190,7 +4190,16 @@ class MLIRGenImpl
         auto location = loc(typeAssertionAST);
 
         auto typeInfo = getType(typeAssertionAST->type, genContext);
-        auto result = mlirGen(typeAssertionAST->expression, genContext);
+        if (!typeInfo)
+        {
+            return mlir::failure();
+        }
+
+        GenContext noReceiverGenContext(genContext);
+        noReceiverGenContext.clearReceiverTypes();
+        noReceiverGenContext.receiverType = typeInfo;
+
+        auto result = mlirGen(typeAssertionAST->expression, noReceiverGenContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
@@ -4203,7 +4212,16 @@ class MLIRGenImpl
         auto location = loc(asExpressionAST);
 
         auto typeInfo = getType(asExpressionAST->type, genContext);
-        auto result = mlirGen(asExpressionAST->expression, genContext);
+        if (!typeInfo)
+        {
+            return mlir::failure();
+        }
+
+        GenContext noReceiverGenContext(genContext);
+        noReceiverGenContext.clearReceiverTypes();
+        noReceiverGenContext.receiverType = typeInfo;
+
+        auto result = mlirGen(asExpressionAST->expression, noReceiverGenContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
@@ -9384,6 +9402,17 @@ class MLIRGenImpl
         mlir::Type receiverType = genContext.receiverType;
 
         auto location = loc(objectLiteral);
+
+        if (receiverType && objectLiteral->properties.size() == 0)
+        {
+            // return undef tuple
+            llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+            if (mlir::succeeded(mth.getFields(receiverType, destTupleFields)))
+            {
+                auto tupleType = getTupleType(destTupleFields);
+                return V(builder.create<mlir_ts::UndefOp>(location, tupleType));
+            }
+        }
 
         // Object This Type
         auto name = MLIRHelper::getAnonymousName(loc_check(objectLiteral), ".obj");
