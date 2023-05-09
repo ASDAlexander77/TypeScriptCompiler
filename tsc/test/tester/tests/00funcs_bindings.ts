@@ -17,7 +17,7 @@ function drawText({ text = "", location: [x, y] = [0, 0], bold = false }) {
 }
 
 function main() {
-    objectBindingPattern({ val: 10.0 });
+    objectBindingPattern({ foo: 10.0 });
     arrayBindingPattern([1.0]);
 
     const item1 = { text: "someText", location: [1, 2, 3], style: "italics" };
