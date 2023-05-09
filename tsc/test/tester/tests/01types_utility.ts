@@ -123,15 +123,16 @@ function main() {
 
     const obj: Props = { a: 5 };
 
-    const obj2: Required<Props> = { a: 5 };
+    const obj2: Required<Props> = { a: 5, b: 6 };
 
-    print(obj.a, obj2.a);
+    print(obj.a, obj2.a, obj2.b);
 
     const todo: Readonly<Todo> = {
         title: "Delete inactive users",
+	description: "descr"
     };
 
-    print(todo.title);
+    print(todo.title, todo.description);
 
     const todoPick: TodoPreviewPick = {
         title: "Clean room",
