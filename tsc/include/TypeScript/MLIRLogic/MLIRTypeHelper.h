@@ -1789,7 +1789,26 @@ class MLIRTypeHelper
             return types.front();
         }
 
-        return mlir_ts::UnionType::get(context, types);
+        return normalizeUnionType(types);
+    }
+
+    mlir::Type normalizeUnionType(mlir::SmallVector<mlir::Type> &types)
+    {
+        mlir::SmallPtrSet<mlir::Type, 2> normalizedTypes;
+        for (auto type : types)
+        {
+            normalizedTypes.insert(type);
+        }
+
+        mlir::SmallVector<mlir::Type> newTypes;
+        for (auto type : normalizedTypes)
+        {
+            newTypes.push_back(type);
+        }
+
+        std::sort (newTypes.begin(), newTypes.end(), [](auto i, auto j) { return (i.getAsOpaquePointer() < j.getAsOpaquePointer()); });
+
+        return mlir_ts::UnionType::get(context, newTypes);
     }
 
     mlir::Type getIntersectionType(mlir::Type type1, mlir::Type type2)
