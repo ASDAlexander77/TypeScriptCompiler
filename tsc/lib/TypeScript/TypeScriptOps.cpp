@@ -601,45 +601,6 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
-        // const tuple -> const tuple, for example { value: undefined, done: true } -> { value: <int>, done: <boolean> }
-        // TODO: put it into the code
-        if (auto constTupleIn = in.getType().dyn_cast<mlir_ts::ConstTupleType>())
-        {
-            ::typescript::MLIRTypeHelper mth(rewriter.getContext());
-
-            if (auto constTupleRes = res.getType().dyn_cast<mlir_ts::ConstTupleType>())
-            {
-                if (mth.canCastFromToLogic(constTupleIn, constTupleRes))
-                {
-                    // create other const tuple from source const tuple
-                    if (auto constOp = in.getDefiningOp<mlir_ts::ConstantOp>())
-                    {
-                        auto newConstOp = rewriter.create<mlir_ts::ConstantOp>(loc, constTupleRes, constOp.valueAttr());
-                        rewriter.replaceOp(castOp, ValueRange{newConstOp});
-                        rewriter.eraseOp(constOp);
-                    }
-                }
-            }
-            else if (auto tupleRes = res.getType().dyn_cast<mlir_ts::TupleType>())
-            {
-                if (mlir_ts::TupleType::get(rewriter.getContext(), constTupleIn.getFields()) != tupleRes &&
-                    mth.canCastFromToLogic(constTupleIn, tupleRes))
-                {
-                    // create other const tuple from source const tuple
-                    if (auto constOp = in.getDefiningOp<mlir_ts::ConstantOp>())
-                    {
-                        ::typescript::MLIRTypeHelper mth(rewriter.getContext());
-                        auto constTupleType = mth.convertTupleTypeToConstTupleType(tupleRes);
-
-                        auto newConstOp = rewriter.create<mlir_ts::ConstantOp>(loc, constTupleType, constOp.valueAttr());
-                        rewriter.replaceOp(constOp, ValueRange{newConstOp});
-                        auto newCastOp = rewriter.create<mlir_ts::CastOp>(loc, tupleRes, newConstOp);
-                        rewriter.replaceOp(castOp, ValueRange{newCastOp});
-                    }
-                }
-            }
-        }
-
         return success();
     }
 };
