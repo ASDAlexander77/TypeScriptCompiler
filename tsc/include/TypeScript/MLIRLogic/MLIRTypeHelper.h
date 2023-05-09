@@ -262,6 +262,16 @@ class MLIRTypeHelper
         return type;
     }
 
+    mlir_ts::TupleType convertConstTupleTypeToTupleType(mlir_ts::ConstTupleType constTupleType)
+    {
+        return mlir_ts::TupleType::get(context, constTupleType.getFields());
+    }
+
+    mlir_ts::ConstTupleType convertTupleTypeToConstTupleType(mlir_ts::TupleType tupleType)
+    {
+        return mlir_ts::ConstTupleType::get(context, tupleType.getFields());
+    }
+
     mlir::Type convertConstTupleTypeToTupleType(mlir::Type type)
     {
         // tuple is value and copied already

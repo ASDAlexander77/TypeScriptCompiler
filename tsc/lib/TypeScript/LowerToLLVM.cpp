@@ -1797,6 +1797,8 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
                 {
                     return failure();
                 }
+
+                itemValue = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(itemValue.getType()), itemValue);
             }
 
             rewriter.create<LLVM::StoreOp>(loc, itemValue, offset);

@@ -198,6 +198,19 @@ struct ValueOrLogicalResult
 
 #define V(x) static_cast<mlir::Value>(x)
 
+#define CAST(res_cast, location, to_type, from_value, gen_context) \
+    auto cast_result = cast(location, to_type, from_value, gen_context); \
+    EXIT_IF_FAILED_OR_NO_VALUE(cast_result) \
+    res_cast = V(cast_result);
+
+#define CAST_A(res_cast, location, to_type, from_value, gen_context) \
+    mlir::Value res_cast; \
+    { \
+        auto cast_result = cast(location, to_type, from_value, gen_context); \
+        EXIT_IF_FAILED_OR_NO_VALUE(cast_result) \
+        res_cast = V(cast_result); \
+    }
+
 } // namespace
 
 #endif // MLIR_TYPESCRIPT_MLIRGENCONTEXT_H_
