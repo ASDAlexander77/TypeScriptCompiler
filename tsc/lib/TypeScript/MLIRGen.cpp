@@ -13219,7 +13219,7 @@ genContext);
             index++;
             LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
 
-            if (fieldInfo.id == mlir::Attribute() || srcTupleType.getFieldInfo(index).id == mlir::Attribute())
+            if (fieldInfo.id == mlir::Attribute() || (index < srcTupleType.size() && srcTupleType.getFieldInfo(index).id == mlir::Attribute()))
             {
                 MLIRPropertyAccessCodeLogic cl(builder, location, value, builder.getI32IntegerAttr(index));
                 auto value = cl.Tuple(srcTupleType, true);
@@ -13231,13 +13231,21 @@ genContext);
                 auto fieldIndex = srcTupleType.getIndex(fieldInfo.id);
                 if (fieldIndex < 0)
                 {
+                    if (fieldInfo.type.isa<mlir_ts::OptionalType>())
+                    {
+                        // add undefined value
+                        auto undefVal = builder.create<mlir_ts::UndefOptionalOp>(location, fieldInfo.type);
+                        values.push_back(undefVal);
+                        continue;
+                    }
+
                     emitError(location)
                         << "field " << fieldInfo.id << " can't be found in tuple '" << srcTupleType << "'";
                     return mlir::failure();
                 }                
 
                 MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
-                // TODO: implemenet conditional
+                // TODO: implement conditional
                 auto propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
                 EXIT_IF_FAILED_OR_NO_VALUE(propertyAccess)
                 values.push_back(propertyAccess);
