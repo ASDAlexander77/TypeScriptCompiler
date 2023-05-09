@@ -187,7 +187,7 @@ struct ValueOrLogicalResult
 
     operator mlir::LogicalResult()
     {
-        return failed_or_no_value() ? mlir::failure() : mlir::success();
+        return result;
     } 
 
     operator mlir::Value()

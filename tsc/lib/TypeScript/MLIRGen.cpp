@@ -7959,30 +7959,26 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        auto hasReturn = false;
-        return mlirGenCall(location, actualFuncRefValue, operands, hasReturn, genContext);
+        return mlirGenCall(location, actualFuncRefValue, operands, genContext);
     }
 
     ValueOrLogicalResult mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
-                                     SmallVector<mlir::Value, 4> &operands, bool &hasReturn,
-                                     const GenContext &genContext)
+                                     SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
         ValueOrLogicalResult value(mlir::failure());
-        hasReturn = false;
         TypeSwitch<mlir::Type>(funcRefValue.getType())
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) {
-                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, operands, hasReturn, genContext);
+                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, operands, genContext);
             })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) {
-                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, operands, hasReturn, genContext);
+                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, operands, genContext);
             })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
                 auto calledFuncType =
                     getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults());
                 auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
                 auto unboundFuncRefValue = builder.create<mlir_ts::GetMethodOp>(location, calledFuncType, funcRefValue);
-                value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, operands,
-                                            hasReturn, genContext);
+                value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, operands, genContext);
             })
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledExtentFuncType) {
                 auto calledFuncType =
@@ -7990,7 +7986,7 @@ class MLIRGenImpl
                 auto createExtensionFunctionOp = funcRefValue.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>();
                 auto thisValue = createExtensionFunctionOp.thisVal();
                 auto funcRefValue = createExtensionFunctionOp.func();
-                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, operands, hasReturn, genContext);
+                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, operands, genContext);
 
                 // cleanup
                 createExtensionFunctionOp.erase();
@@ -8001,8 +7997,14 @@ class MLIRGenImpl
                 // using Class..new(true) method
                 auto newOp = NewClassInstanceLogicAsOp(location, classType, true, genContext);
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-                mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
-                value = newOp;
+                if (mlir::failed(mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext)))
+                {
+                    value = mlir::failure();
+                }
+                else
+                {
+                    value = newOp;
+                }
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
                 MLIRCodeLogic mcl(builder);
@@ -8011,7 +8013,8 @@ class MLIRGenImpl
                 {
                     // seems we are calling type constructor for super()
                     auto classInfo = getClassInfoByFullName(classStorageType.getName().getValue());
-                    mlirGenCallConstructor(location, classInfo, refValue, operands, true, genContext);
+                    // to track result call
+                    value = mlirGenCallConstructor(location, classInfo, refValue, operands, true, genContext);
                 }
                 else
                 {
@@ -8030,21 +8033,16 @@ class MLIRGenImpl
 
     template <typename T = mlir_ts::FunctionType>
     ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
-                                             SmallVector<mlir::Value, 4> &operands, bool &hasReturn,
-                                             const GenContext &genContext)
+                                             SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
-        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, hasReturn,
-                                   genContext);
+        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, genContext);
     }
 
     template <typename T = mlir_ts::FunctionType>
     ValueOrLogicalResult mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
                                              mlir::Value thisValue, SmallVector<mlir::Value, 4> &operands,
-                                             bool &hasReturn, const GenContext &genContext)
+                                             const GenContext &genContext)
     {
-        hasReturn = false;
-        mlir::Value value;
-
         if (thisValue)
         {
             operands.insert(operands.begin(), thisValue);
@@ -8088,15 +8086,15 @@ class MLIRGenImpl
             if (calledFuncType.getResults().size() > 0)
             {
                 auto callValue = callIndirectOp.getResult(0);
-                hasReturn = callValue.getType() != getVoidType();
+                auto hasReturn = callValue.getType() != getVoidType();
                 if (hasReturn)
                 {
-                    value = callValue;
+                    return callValue;
                 }
             }
         }
 
-        return value;
+        return mlir::success();
     }
 
     mlir::LogicalResult mlirGenCallOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
@@ -8337,8 +8335,7 @@ class MLIRGenImpl
             }
 
             EXIT_IF_FAILED_OR_NO_VALUE(propAccess)
-            bool hasReturn;
-            mlirGenCall(location, propAccess, operands, hasReturn, genContext);
+            return mlirGenCall(location, propAccess, operands, genContext);
         }
 
         return mlir::success();
