@@ -6989,6 +6989,7 @@ class MLIRGenImpl
         if (!value)
         {
             emitError(location, "Can't resolve property '") << name << "' of type " << objectValue.getType();
+            return mlir::failure();
         }
 
         return value;
