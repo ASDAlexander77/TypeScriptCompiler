@@ -580,8 +580,6 @@ class MLIRTypeHelper
             funcType = optType.getElementType();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef for " << funcType << "\n";);
-
         mlir::TypeSwitch<mlir::Type>(funcType)
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
@@ -592,6 +590,8 @@ class MLIRTypeHelper
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef is not implemented for " << type << "\n";);
                 llvm_unreachable("not implemented");
             });
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef for " << funcType << " = " << isVarArg << "\n";);
 
         return isVarArg;
     }
