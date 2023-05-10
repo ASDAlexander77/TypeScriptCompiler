@@ -213,6 +213,54 @@ class MLIRTypeHelper
         return elementType;
     }
 
+    mlir::Attribute convertAttrIntoType(mlir::Attribute attr, mlir::Type destType, mlir::OpBuilder &builder)
+    {
+        auto srcType = attr.getType();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! attr from type: " << srcType << " to: " << destType << "\n";);      
+
+        if (srcType == destType)
+        {
+            return attr;
+        }
+
+        if (destType.isa<mlir_ts::NumberType>())
+        {
+            if (srcType.isIntOrIndex())
+            {
+#ifdef NUMBER_F64
+                auto attrVal = builder.getF64FloatAttr(attr.cast<mlir::IntegerAttr>().getValue().signedRoundToDouble());
+                return attrVal;
+#else
+                auto attrVal = builder.getF32FloatAttr(static_cast<float>(attr.cast<mlir::IntegerAttr>().getValue().signedRoundToDouble()));
+                return attrVal;
+#endif                
+            }
+
+#ifdef NUMBER_F64
+            if (srcType.isF64())
+#else
+            if (srcType.isF32())
+#endif                
+            {
+                return attr;
+            }            
+
+            if (srcType.isIntOrIndexOrFloat())
+            {
+#ifdef NUMBER_F64
+                auto attrVal = builder.getF64FloatAttr(attr.cast<mlir::FloatAttr>().getValue().convertToDouble());
+                return attrVal;
+#else
+                auto attrVal = builder.getF32FloatAttr(attr.cast<mlir::FloatAttr>().getValue().convertToFloat());
+                return attrVal;
+#endif                   
+            }
+        }
+
+        llvm_unreachable("not implemented");
+    }
+
     mlir::Type wideStorageType(mlir::Type type)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! widing type: " << type << "\n";);        

@@ -6985,7 +6985,6 @@ class MLIRGenImpl
             }
         }
 
-        //if (!value && !genContext.allowPartialResolve)
         if (!value)
         {
             emitError(location, "Can't resolve property '") << name << "' of type " << objectValue.getType();
@@ -8976,6 +8975,7 @@ class MLIRGenImpl
         bool anySpreadElement;
         bool isConst;
         mlir::Type arrayElementType;
+        bool applyCast;
     };
 
     struct ArrayElement
@@ -9227,6 +9227,13 @@ class MLIRGenImpl
             arrayInfo.dataType = TypeData::Array;
         }
 
+        if (arrayInfo.dataType == TypeData::Tuple && !arrayInfo.accumulatedArrayElementType.isa<mlir_ts::UnionType>())
+        {
+            // seems we can convert tuple into array, for example [1.0, 2, 3] -> [1.0, 2.0, 3.0]
+            arrayInfo.dataType = TypeData::Array;
+            arrayInfo.applyCast = true;
+        }
+
         if (arrayInfo.dataType == TypeData::Array)
         {
             arrayInfo.arrayElementType = 
@@ -9245,7 +9252,14 @@ class MLIRGenImpl
         for (auto &itemValue : values)
         {
             auto constOp = itemValue.value.getDefiningOp<mlir_ts::ConstantOp>();
-            constValues.push_back(constOp.valueAttr()); 
+            if (arrayInfo.applyCast)
+            {
+                constValues.push_back(mth.convertAttrIntoType(constOp.valueAttr(), arrayInfo.arrayElementType, builder)); 
+            }
+            else
+            {
+                constValues.push_back(constOp.valueAttr()); 
+            }
         }
 
         SmallVector<mlir::Type> constTypes;
@@ -9285,7 +9299,7 @@ class MLIRGenImpl
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         for (auto val : values)
         {
-            fieldInfos.push_back({mlir::Attribute(), mth.wideStorageType(val.value.getType())});
+            fieldInfos.push_back({mlir::Attribute(), val.value.getType()});
             arrayValues.push_back(val.value);
         }
 
@@ -9297,7 +9311,13 @@ class MLIRGenImpl
         SmallVector<mlir::Value> arrayValues;
         for (auto val : values)
         {
-            arrayValues.push_back(val.value);
+            auto arrayValue = val.value;
+            if (arrayInfo.applyCast)
+            {
+                CAST(arrayValue, location, arrayInfo.arrayElementType, val.value, genContext)
+            }
+
+            arrayValues.push_back(arrayValue);
         }
 
         auto newArrayOp =
