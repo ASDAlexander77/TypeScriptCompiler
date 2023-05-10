@@ -396,8 +396,31 @@ class MLIRTypeHelper
         return mlir_ts::BoundFunctionType::get(context, funcArgTypes, funcType.getResults(), funcType.isVarArg());
     }
 
-
     // TODO: review all funcs and removed unsed
+    bool isAnyFunctionType(mlir::Type funcType)
+    {
+        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            funcType = optType.getElementType();
+        }
+
+        bool isFuncType = true;
+        mlir::TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto) {})
+            .Case<mlir_ts::HybridFunctionType>([&](auto) {})
+            .Case<mlir_ts::BoundFunctionType>([&](auto) {})
+            .Case<mlir_ts::ConstructFunctionType>([&](auto) {})
+            .Case<mlir_ts::ExtensionFunctionType>([&](auto) {})
+            .Default([&](auto type) {
+                isFuncType = false;
+            });
+
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! isAnyFunctionType for " << funcType << " = " << isFuncType << "\n";);
+
+        return isFuncType;
+    }
+
     mlir::Type getReturnTypeFromFuncRef(mlir::Type funcType)
     {
         auto types = getReturnsFromFuncRef(funcType);
@@ -427,6 +450,7 @@ class MLIRTypeHelper
             .Case<mlir_ts::ConstructFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getReturnTypeFromFuncRef is not implemented for " << type << "\n";);
+                llvm_unreachable("not implemented");
             });
 
         return returnTypes;
@@ -450,7 +474,7 @@ class MLIRTypeHelper
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = mlir::NoneType::get(context); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamFromFuncRef is not implemented for " << type << "\n";);
-                paramType = mlir::NoneType::get(context);;
+                llvm_unreachable("not implemented");
             });
 
         return paramType;
@@ -475,7 +499,7 @@ class MLIRTypeHelper
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = mlir::NoneType::get(context); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getFirstParamFromFuncRef is not implemented for " << type << "\n";);
-                paramType = mlir::NoneType::get(context);
+                llvm_unreachable("not implemented");
             });
 
         return paramType;
@@ -503,6 +527,7 @@ class MLIRTypeHelper
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = mlir::NoneType::get(context); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsFromFuncRef is not implemented for " << type << "\n";);
+                llvm_unreachable("not implemented");
             });
 
         return paramsType;
@@ -540,8 +565,7 @@ class MLIRTypeHelper
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsTupleTypeFromFuncRef is not implemented for " << type
                                         << "\n";);
-                //llvm_unreachable("not implemented");
-                paramsType = mlir::NoneType::get(context);
+                llvm_unreachable("not implemented");
             });
 
         return paramsType;
@@ -566,6 +590,7 @@ class MLIRTypeHelper
             .Case<mlir::NoneType>([&](auto calledFuncType) {})
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef is not implemented for " << type << "\n";);
+                llvm_unreachable("not implemented");
             });
 
         return isVarArg;
@@ -597,7 +622,9 @@ class MLIRTypeHelper
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = mlir::NoneType::get(context); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) { 
+                llvm_unreachable("not implemented"); 
+            });
 
         return paramsType;
     }

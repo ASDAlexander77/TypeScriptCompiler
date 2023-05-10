@@ -2463,7 +2463,7 @@ class MLIRGenImpl
         return varDecl->getType();
     }
 
-    bool processDeclarationArrayBindingPattern(mlir::Location location, ArrayBindingPattern arrayBindingPattern,
+    mlir::LogicalResult processDeclarationArrayBindingPattern(mlir::Location location, ArrayBindingPattern arrayBindingPattern,
                                                VariableClass varClass,
                                                std::function<std::pair<mlir::Type, mlir::Value>()> func,
                                                const GenContext &genContext)
@@ -2499,20 +2499,20 @@ class MLIRGenImpl
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
-            if (!processDeclaration(
+            if (mlir::failed(processDeclaration(
                     arrayBindingElement.as<BindingElement>(), varClass,
-                    [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext))
+                    [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext)))
             {
-                return false;
+                return mlir::failure();
             }
 
             index++;
         }
 
-        return true;
+        return mlir::success();
     }
 
-    bool processDeclarationObjectBindingPattern(mlir::Location location, ObjectBindingPattern objectBindingPattern,
+    mlir::LogicalResult processDeclarationObjectBindingPattern(mlir::Location location, ObjectBindingPattern objectBindingPattern,
                                                 VariableClass varClass,
                                                 std::function<std::pair<mlir::Type, mlir::Value>()> func,
                                                 const GenContext &genContext)
@@ -2536,10 +2536,7 @@ class MLIRGenImpl
             if (!isSpreadBinding)
             {
                 auto result = mlirGenPropertyAccessExpression(location, init, propertyName, false, genContext);
-                if (result.failed_or_no_value())
-                {
-                    return false;
-                }
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
 
                 if (objectBindingElement->initializer)
                 {
@@ -2609,18 +2606,18 @@ class MLIRGenImpl
                     [&]() { return std::make_pair(subInitType, subInit); }, genContext);
             }
 
-            if (!processDeclaration(
+            if (mlir::failed(processDeclaration(
                     objectBindingElement, varClass, [&]() { return std::make_pair(subInitType, subInit); },
-                    genContext))
+                    genContext)))
             {
-                return false;
+                return mlir::failure();
             }
         }
 
-        return true;
+        return mlir::success();;
     }
 
-    bool processDeclarationName(DeclarationName name, VariableClass varClass,
+    mlir::LogicalResult processDeclarationName(DeclarationName name, VariableClass varClass,
                             std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
         auto location = loc(name);
@@ -2628,17 +2625,17 @@ class MLIRGenImpl
         if (name == SyntaxKind::ArrayBindingPattern)
         {
             auto arrayBindingPattern = name.as<ArrayBindingPattern>();
-            if (!processDeclarationArrayBindingPattern(location, arrayBindingPattern, varClass, func, genContext))
+            if (mlir::failed(processDeclarationArrayBindingPattern(location, arrayBindingPattern, varClass, func, genContext)))
             {
-                return false;
+                return mlir::failure();
             }
         }
         else if (name == SyntaxKind::ObjectBindingPattern)
         {
             auto objectBindingPattern = name.as<ObjectBindingPattern>();
-            if (!processDeclarationObjectBindingPattern(location, objectBindingPattern, varClass, func, genContext))
+            if (mlir::failed(processDeclarationObjectBindingPattern(location, objectBindingPattern, varClass, func, genContext)))
             {
-                return false;
+                return mlir::failure();
             }
         }
         else
@@ -2647,13 +2644,13 @@ class MLIRGenImpl
             auto nameStr = MLIRHelper::getName(name);
 
             // register
-            return !!registerVariable(location, nameStr, false, varClass, func, genContext);
+            return !!registerVariable(location, nameStr, false, varClass, func, genContext) ? mlir::success() : mlir::failure();
         }
 
-        return true;       
+        return mlir::success();       
     }
 
-    bool processDeclaration(NamedDeclaration item, VariableClass varClass,
+    mlir::LogicalResult processDeclaration(NamedDeclaration item, VariableClass varClass,
                             std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
         return processDeclarationName(item->name, varClass, func, genContext);
@@ -2792,7 +2789,7 @@ class MLIRGenImpl
             valClassItem = VariableClass::ConstRef;
         }
 
-        if (!processDeclaration(item, valClassItem, initFunc, genContext))
+        if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext)))
         {
             return mlir::failure();
         }
@@ -4018,19 +4015,19 @@ class MLIRGenImpl
                 if (bindingPattern == SyntaxKind::ArrayBindingPattern)
                 {
                     auto arrayBindingPattern = bindingPattern.as<ArrayBindingPattern>();
-                    if (!processDeclarationArrayBindingPattern(location, arrayBindingPattern, VariableClass::Let,
-                                                               initFunc, genContext))
+                    if (mlir::failed(processDeclarationArrayBindingPattern(location, arrayBindingPattern, VariableClass::Let,
+                                                               initFunc, genContext)))
                     {
-                        continue;
+                        return mlir::failure();
                     }
                 }
                 else if (bindingPattern == SyntaxKind::ObjectBindingPattern)
                 {
                     auto objectBindingPattern = bindingPattern.as<ObjectBindingPattern>();
-                    if (!processDeclarationObjectBindingPattern(location, objectBindingPattern, VariableClass::Let,
-                                                                initFunc, genContext))
+                    if (mlir::failed(processDeclarationObjectBindingPattern(location, objectBindingPattern, VariableClass::Let,
+                                                                initFunc, genContext)))
                     {
-                        continue;
+                        return mlir::failure();
                     }
                 }
             }
@@ -4655,18 +4652,14 @@ class MLIRGenImpl
             castedValue = V(result);
         }
 
-        if (processDeclarationName(
+        return 
+            processDeclarationName(
                 expr.as<DeclarationName>(), VariableClass::Const,
                 [&]() -> std::pair<mlir::Type, mlir::Value>
                 {
                     return {safeType, castedValue};
                 },
-                genContext))
-        {
-            return mlir::success();
-        }
-
-        return mlir::failure();
+                genContext);
     }
 
     mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, const GenContext &genContext)
@@ -7608,6 +7601,11 @@ class MLIRGenImpl
         auto funcResult = V(result);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
+
+        if (!mth.isAnyFunctionType(funcResult.getType()))
+        {
+            return mlir::failure();
+        }
 
         auto noReceiverTypesForGenericCall = false;
         if (funcResult.getDefiningOp()->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
