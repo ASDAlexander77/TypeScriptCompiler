@@ -2497,11 +2497,6 @@ class MLIRGenImpl
                         location, mlir_ts::RefType::get(tupleType.getElementType()), init, constIndex);
                     subInit = builder.create<mlir_ts::LoadOp>(location, tupleType.getElementType(), elemRef);
                 })
-                .template Case<mlir_ts::OptionalType>([&](auto optionalType) {
-                    // TODO: not finished  ==> function drawText({ text = "", location: [x, y] = [0, 0], bold = false })
-                    // so write code to check if value if provided then use provided value or default value
-                    llvm_unreachable("optional parameters for array binding is not implemented");
-                })                
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
             if (!processDeclaration(
@@ -2548,8 +2543,6 @@ class MLIRGenImpl
 
                 if (objectBindingElement->initializer)
                 {
-                    // TODO: if object has initializer then you need to do the same what you did for OptionalParams
-                    //objectBindingElement->initializer
                     auto tupleType = type.cast<mlir_ts::TupleType>();
                     auto fieldName = MLIRHelper::TupleFieldName(propertyName, builder.getContext());
                     auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
