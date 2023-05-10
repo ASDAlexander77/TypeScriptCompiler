@@ -128,7 +128,7 @@ jobs:
       - name: Configure
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/tsc-release
-        run: cmake ../../tsc -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION=${{ steps.version.outputs.TAG_NAME }} -Wno-dev
+        run: cmake ../../tsc -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
         shell: pwsh
 
       - name: Build
@@ -281,7 +281,7 @@ jobs:
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/tsc-ninja-release
         shell: sh
-        run: cmake ../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION=${{ steps.version.outputs.TAG_NAME }} -Wno-dev
+        run: cmake ../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
 
       - name: Build
         continue-on-error: false
@@ -434,7 +434,7 @@ jobs:
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/tsc-ninja-release
         shell: sh
-        run: cmake ../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION=${{ steps.version.outputs.TAG_NAME }} -Wno-dev
+        run: cmake ../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
 
       - name: Build
         continue-on-error: false
