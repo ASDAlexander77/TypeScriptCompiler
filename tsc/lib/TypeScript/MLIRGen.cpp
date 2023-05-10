@@ -13277,7 +13277,14 @@ genContext);
                 // TODO: implement conditional
                 auto propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
                 EXIT_IF_FAILED_OR_NO_VALUE(propertyAccess)
-                values.push_back(propertyAccess);
+
+                auto value = V(propertyAccess);
+                if (value.getType() != fieldInfo.type)
+                {
+                    CAST(value, location, fieldInfo.type, value, genContext)
+                }
+
+                values.push_back(value);
             }
         }
 
