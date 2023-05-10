@@ -4267,8 +4267,11 @@ class MLIRGenImpl
             }
 
             auto result = mlirGen(expression, receiverTypeGenContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            EXIT_IF_FAILED(result)
+            
             auto expressionValue = V(result);
+            VALIDATE_LOGIC1(expressionValue, location)
+            
             return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
 
