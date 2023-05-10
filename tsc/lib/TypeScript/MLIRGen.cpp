@@ -8243,7 +8243,7 @@ class MLIRGenImpl
                 else
                 {
                     auto receiverType = 
-                        tupleTypeWithFuncArgs.size() < i 
+                        i < tupleTypeWithFuncArgs.size() 
                             ? tupleTypeWithFuncArgs.getFieldInfo(i).type 
                             : mlir::Type();
                     argGenContext.receiverFuncType = receiverType;
