@@ -19,9 +19,10 @@ function drawText({ text = "", location: [x, y] = [0, 0], bold = false }) {
 }
 */
 
-// TODO: optional binding is not finished - setting default value is not finished
 function drawText2({ text = "", bold = true }) {
-    print(<string>text, <boolean>bold);
+    print(text, bold);
+    assert(text == "someText");
+    assert(bold);
 }
 
 function main() {

@@ -181,6 +181,48 @@ struct ParamOpLowering : public TsPattern<mlir_ts::ParamOp>
     }
 };
 
+struct OptionalValueOrDefaultOpLowering : public TsPattern<mlir_ts::OptionalValueOrDefaultOp>
+{
+    using TsPattern<mlir_ts::OptionalValueOrDefaultOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::OptionalValueOrDefaultOp optionalValueOrDefaultOp, PatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+
+        auto location = optionalValueOrDefaultOp.getLoc();
+
+        auto dataTypeIn = optionalValueOrDefaultOp.argValue().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto resultType = optionalValueOrDefaultOp.getType();
+
+        // ts.if
+        auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), optionalValueOrDefaultOp.argValue());
+        auto ifOp = rewriter.create<mlir_ts::IfOp>(location, resultType, hasValue, true);
+
+        // then block
+        auto &thenRegion = ifOp.thenRegion();
+
+        rewriter.setInsertionPointToStart(&thenRegion.back());
+
+        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, resultType, optionalValueOrDefaultOp.argValue());
+        rewriter.create<mlir_ts::ResultOp>(location, value);
+
+        // else block
+        auto &elseRegion = ifOp.elseRegion();
+
+        rewriter.setInsertionPointToStart(&elseRegion.back());
+
+        rewriter.inlineRegionBefore(optionalValueOrDefaultOp.defaultValueRegion(), &ifOp.elseRegion().back());
+        // TODO: do I need next line?
+        rewriter.eraseBlock(&ifOp.elseRegion().back());
+
+        rewriter.setInsertionPointAfter(ifOp);
+
+        rewriter.replaceOp(optionalValueOrDefaultOp, ifOp.results().front());
+
+        return success();
+    }
+};
+
 struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
 {
     using TsPattern<mlir_ts::ParamOptionalOp>::TsPattern;
@@ -1707,8 +1749,8 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
     // the set of patterns that will lower the TypeScript operations.
 
     patterns.insert<EntryOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, ParamOpLowering,
-                    ParamOptionalOpLowering, ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering,
-                    IfOpLowering, /*ResultOpLowering,*/
+                    ParamOptionalOpLowering, ParamDefaultValueOpLowering, OptionalValueOrDefaultOpLowering, PrefixUnaryOpLowering, 
+                    PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/
                     DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering,
                     SwitchOpLowering, AccessorOpLowering, ThisAccessorOpLowering, LabelOpLowering, CallOpLowering,
                     CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, CatchOpLowering, StateLabelOpLowering,

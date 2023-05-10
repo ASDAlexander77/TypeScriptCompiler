@@ -948,6 +948,36 @@ def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
   );
 }
 
+def TypeScript_OptionalValueOrDefaultOp : TypeScript_Op<"OptValueOrDefault", [SingleBlockImplicitTerminator<"typescript::ResultOp">]> {
+  let summary = [{
+  }];
+
+  let description = [{
+
+    ```mlir
+    %0 = ts.opt_value_or_default : !ts.optional<f32>
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyOptional:$argValue
+  );
+
+  let results = (outs
+    AnyType:$value
+  );
+
+  let regions = (region AnyRegion:$defaultValueRegion);
+
+  let extraClassDeclaration = [{
+    OpBuilder getDefaultValueBuilder(OpBuilder::Listener *listener = nullptr) {
+      Block* body = getBody(0);
+      return OpBuilder::atBlockEnd(body, listener);
+    }
+  }];
+
+}
+
 def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitTerminator<"typescript::ParamDefaultValueOp">]> {
   let summary = [{
     Allocate an parameter object in memory.
@@ -1621,7 +1651,7 @@ def TypeScript_IfOp : TypeScript_Op<"If",
 }
 
 def TypeScript_ResultOp : TypeScript_Op<"Result", [NoSideEffect, ReturnLike, Terminator,
-                               ParentOneOf<["IfOp",  "DoWhileOp", "WhileOp", "ForOp", "TryOp"]>]> {
+                               ParentOneOf<["IfOp",  "DoWhileOp", "WhileOp", "ForOp", "TryOp", "OptionalValueOrDefaultOp"]>]> {
   let summary = "loop yield and termination operation";
 
   let arguments = (ins Variadic<AnyType>:$results);

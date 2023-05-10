@@ -2546,8 +2546,22 @@ class MLIRGenImpl
                     return false;
                 }
 
-                subInit = V(result);
-                subInitType = subInit.getType();
+                if (objectBindingElement->initializer)
+                {
+                    // TODO: if object has initializer then you need to do the same what you did for OptionalParams
+                    //objectBindingElement->initializer
+                    auto tupleType = type.cast<mlir_ts::TupleType>();
+                    auto fieldName = MLIRHelper::TupleFieldName(propertyName, builder.getContext());
+                    auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
+                    auto res = optionalValueOrDefault(location, subType, V(result), objectBindingElement->initializer, genContext);
+                    subInit = V(res);
+                    subInitType = subInit.getType();                    
+                }
+                else
+                {
+                    subInit = V(result);
+                    subInitType = subInit.getType();
+                }
             }
             else
             {
@@ -3871,6 +3885,35 @@ class MLIRGenImpl
 
         return mlir::success();
     }
+
+    ValueOrLogicalResult optionalValueOrDefault(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
+    {
+        auto optionalValueOrDefaultOp = builder.create<mlir_ts::OptionalValueOrDefaultOp>(
+            location, dataType, value);
+
+        /*auto *defValueBlock =*/builder.createBlock(&optionalValueOrDefaultOp.defaultValueRegion());
+
+        mlir::Value defaultValue;
+        if (defaultExpr)
+        {
+            defaultValue = mlirGen(defaultExpr, genContext);
+        }
+        else
+        {
+            llvm_unreachable("unknown statement");
+        }
+
+        if (defaultValue.getType() != dataType)
+        {
+            CAST(defaultValue, location, dataType, defaultValue, genContext);
+        }
+
+        builder.create<mlir_ts::ResultOp>(location, defaultValue);
+
+        builder.setInsertionPointAfter(optionalValueOrDefaultOp);
+
+        return V(optionalValueOrDefaultOp);
+    } 
 
     ValueOrLogicalResult processOptionalParam(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
     {
