@@ -2497,6 +2497,11 @@ class MLIRGenImpl
                         location, mlir_ts::RefType::get(tupleType.getElementType()), init, constIndex);
                     subInit = builder.create<mlir_ts::LoadOp>(location, tupleType.getElementType(), elemRef);
                 })
+                .template Case<mlir_ts::OptionalType>([&](auto optionalType) {
+                    // TODO: not finished  ==> function drawText({ text = "", location: [x, y] = [0, 0], bold = false })
+                    // so write code to check if value if provided then use provided value or default value
+                    llvm_unreachable("optional parameters for array binding is not implemented");
+                })                
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
             if (!processDeclaration(
@@ -2528,7 +2533,7 @@ class MLIRGenImpl
                 propertyName = MLIRHelper::getName(objectBindingElement->name);
             }
 
-            LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern: [" << init << "] prop: " << propertyName << "\n");
+            LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern:\n\t" << init << "\n\tprop: " << propertyName << "\n");
 
             mlir::Value subInit;
             mlir::Type subInitType;
@@ -2917,6 +2922,12 @@ class MLIRGenImpl
                     {
                         auto evalType = evaluate(objectBindingElement->initializer, genContext);
                         auto widenType = mth.wideStorageType(evalType);
+
+                        // if it has initializer - it should have optional type to support default values
+                        widenType = getOptionalType(widenType);
+
+                        LLVM_DEBUG(dbgs() << "\n!! property " << propertyName << " mapped to type " << widenType << "");
+
                         fieldInfos.push_back({MLIRHelper::TupleFieldName(propertyName, builder.getContext()), widenType});
                     }
                     else
@@ -3861,6 +3872,35 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    ValueOrLogicalResult processOptionalParam(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
+    {
+        auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
+            location, mlir_ts::RefType::get(dataType), value, builder.getBoolAttr(false));
+
+        /*auto *defValueBlock =*/builder.createBlock(&paramOptionalOp.defaultValueRegion());
+
+        mlir::Value defaultValue;
+        if (defaultExpr)
+        {
+            defaultValue = mlirGen(defaultExpr, genContext);
+        }
+        else
+        {
+            llvm_unreachable("unknown statement");
+        }
+
+        if (defaultValue.getType() != dataType)
+        {
+            CAST(defaultValue, location, dataType, defaultValue, genContext);
+        }
+
+        builder.create<mlir_ts::ParamDefaultValueOp>(location, defaultValue);
+
+        builder.setInsertionPointAfter(paramOptionalOp);
+
+        return V(paramOptionalOp);
+    }    
+
     mlir::LogicalResult mlirGenFunctionParams(int firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
                                               mlir::Block::BlockArgListType arguments, const GenContext &genContext)
     {
@@ -3877,33 +3917,9 @@ class MLIRGenImpl
             // process optional parameters
             if (param->hasInitValue())
             {
-                auto dataType = param->getType();
-                auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
-                    location, mlir_ts::RefType::get(dataType), arguments[index], builder.getBoolAttr(false));
-
-                paramValue = paramOptionalOp;
-
-                /*auto *defValueBlock =*/builder.createBlock(&paramOptionalOp.defaultValueRegion());
-
-                mlir::Value defaultValue;
-                auto initExpression = param->getInitValue();
-                if (initExpression)
-                {
-                    defaultValue = mlirGen(initExpression, genContext);
-                }
-                else
-                {
-                    llvm_unreachable("unknown statement");
-                }
-
-                if (defaultValue.getType() != dataType)
-                {
-                    CAST(defaultValue, location, dataType, defaultValue, genContext);
-                }
-
-                builder.create<mlir_ts::ParamDefaultValueOp>(location, defaultValue);
-
-                builder.setInsertionPointAfter(paramOptionalOp);
+                auto result = processOptionalParam(location, param->getType(), arguments[index], param->getInitValue(), genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                paramValue = V(result);
             }
             else if (param->getIsOptional() && !param->getType().isa<mlir_ts::OptionalType>())
             {

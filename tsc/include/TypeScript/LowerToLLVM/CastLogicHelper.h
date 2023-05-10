@@ -327,18 +327,19 @@ class CastLogicHelper
             if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
             {
                 // TODO: use cond switch
-                auto v1 = rewriter.create<mlir_ts::HasValueOp>(loc, boolType, in);
+                auto hasValue = rewriter.create<mlir_ts::HasValueOp>(loc, boolType, in);
                 auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
                 auto llvmBoolType = tch.convertType(boolType);
                 auto valAsBool = cast(val, val.getType(), tch.convertType(val.getType()), boolType, llvmBoolType);
                 if (valAsBool)
                 {
-                    mlir::Value v1AsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, v1);
-                    return rewriter.create<LLVM::AndOp>(loc, llvmBoolType, v1AsLLVMType, valAsBool);
+                    mlir::Value hasValueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, hasValue);
+                    mlir::Value valAsBoolAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, valAsBool);
+                    return rewriter.create<LLVM::AndOp>(loc, llvmBoolType, hasValueAsLLVMType, valAsBoolAsLLVMType);
                 }
                 else
                 {
-                    return v1;
+                    return hasValue;
                 }
             }
 
