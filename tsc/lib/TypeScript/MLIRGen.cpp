@@ -8242,10 +8242,14 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    argGenContext.receiverFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+                    auto receiverType = 
+                        tupleTypeWithFuncArgs.size() < i 
+                            ? tupleTypeWithFuncArgs.getFieldInfo(i).type 
+                            : mlir::Type();
+                    argGenContext.receiverFuncType = receiverType;
                     if (!noReceiverTypesForGenericCall)
                     {
-                        argGenContext.receiverType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+                        argGenContext.receiverType = receiverType;
                     }                    
                 }
             }
@@ -10398,7 +10402,7 @@ class MLIRGenImpl
         if (MLIRCustomMethods::isInternalFunctionName(name))
         {
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
-                location, builder.getNoneType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+                location, getFunctionType({}, {}, false), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
             symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
             return V(symbOp);
         }
