@@ -7602,8 +7602,10 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
-        if (!mth.isAnyFunctionType(funcResult.getType()))
-        {
+        // TODO: rewrite code for calling "5.ToString()"
+        //if (!mth.isAnyFunctionType(funcResult.getType()))
+        if (funcResult.getDefiningOp<mlir_ts::NamespaceRefOp>())
+        {           
             return mlir::failure();
         }
 

@@ -202,6 +202,24 @@ unsigned mlir_ts::ConstructFunctionType::getNumResults() const
 }
 
 //===----------------------------------------------------------------------===//
+/// ExtensionFunctionType
+//===----------------------------------------------------------------------===//
+bool mlir_ts::ExtensionFunctionType::isVarArg() const
+{
+    return getIsVarArg();
+}
+
+unsigned mlir_ts::ExtensionFunctionType::getNumInputs() const
+{
+    return getInputs().size();
+}
+
+unsigned mlir_ts::ExtensionFunctionType::getNumResults() const
+{
+    return getResults().size();
+}
+
+//===----------------------------------------------------------------------===//
 /// ClassStorageType
 //===----------------------------------------------------------------------===//
 
