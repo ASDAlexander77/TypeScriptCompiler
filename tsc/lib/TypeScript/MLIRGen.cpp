@@ -3303,7 +3303,8 @@ class MLIRGenImpl
                 exitNamespace();
 
                 auto &passResult = genContextWithPassResult.passResult;
-                if (!passResult->functionReturnType && passResult->functionReturnTypeShouldBeProvided)
+                if (passResult->functionReturnTypeShouldBeProvided 
+                    && isNoneType(passResult->functionReturnType))
                 {
                     // has return value but type is not provided yet
                     genContextWithPassResult.clean();
@@ -4501,7 +4502,7 @@ class MLIRGenImpl
             type = mth.stripLiteralType(type);
 
             // if return type is not detected, take first and exit
-            if (!genContext.passResult->functionReturnType)
+            if (!genContext.passResult->functionReturnType && !isNoneType(type))
             {
                 genContext.passResult->functionReturnType = type;
                 return mlir::success();
@@ -4509,6 +4510,12 @@ class MLIRGenImpl
 
             auto undefType = getUndefinedType();
             auto nullType = getNullType();
+
+            // filter out types, such as: undefined, objects with undefined values etc
+            if (type == undefType || type == nullType)
+            {
+                return mlir::failure();
+            }
 
             std::function<bool(mlir::Type)> testType;
             testType = [&](mlir::Type type) {
@@ -4525,27 +4532,24 @@ class MLIRGenImpl
                 return true;
             };
 
-            // filter out types, such as: undefined, objects with undefined values etc
-            if (type == undefType || type == nullType)
-            {
-                return mlir::failure();
-            }
-
             if (mth.hasUndefines(type))
             {
                 return mlir::failure();
             }
 
-            if (mth.hasUndefines(genContext.passResult->functionReturnType))
+            if (genContext.passResult->functionReturnType)
             {
-                if (!mth.canCastFromTo(genContext.passResult->functionReturnType, type))
+                if (mth.hasUndefines(genContext.passResult->functionReturnType))
+                {
+                    if (!mth.canCastFromTo(genContext.passResult->functionReturnType, type))
+                    {
+                        return mlir::failure();
+                    }
+                }
+                else if (!mth.canCastFromTo(type, genContext.passResult->functionReturnType))
                 {
                     return mlir::failure();
                 }
-            }
-            else if (!mth.canCastFromTo(type, genContext.passResult->functionReturnType))
-            {
-                return mlir::failure();
             }
 
             // TODO: use "mth.findBaseType(leftExpressionValue.getType(), resultWhenFalseType);" to find base type for
