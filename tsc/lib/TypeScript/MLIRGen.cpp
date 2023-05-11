@@ -417,6 +417,7 @@ class MLIRGenImpl
 
     bool registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false)
     {
+        namePtr = StringRef(namePtr).copy(stringAllocator);
         auto fullNamePtr = getFullNamespaceName(namePtr);
         auto &namespacesMap = getNamespaceMap();
         auto it = namespacesMap.find(namePtr);
@@ -3700,6 +3701,25 @@ class MLIRGenImpl
             assert(funcGenContext.capturedVars == nullptr);
         }
 
+        // register function to be able to call it if used in recursive call
+        auto name = funcProto->getNameWithoutNamespace();
+        if (!getFunctionMap().count(name))
+        {
+            getFunctionMap().insert({name, funcOp});
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " full name: " << funcProto->getName()
+                                    << " num inputs:" << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs()
+                                    << "\n";);
+        }
+        else
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getFunctionType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " num inputs:"
+                                    << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
+        }
+
+        // generate body
         auto resultFromBody = mlir::failure();
         {
             MLIRNamespaceGuard nsGuard(currentNamespace);
@@ -3731,23 +3751,6 @@ class MLIRGenImpl
         if (!genContext.dummyRun)
         {
             theModule.push_back(funcOp);
-        }
-
-        auto name = funcProto->getNameWithoutNamespace();
-        if (!getFunctionMap().count(name))
-        {
-            getFunctionMap().insert({name, funcOp});
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << "\n";);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " full name: " << funcProto->getName()
-                                    << " num inputs:" << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs()
-                                    << "\n";);
-        }
-        else
-        {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getFunctionType() << "\n";);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " num inputs:"
-                                    << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
         }
 
         if (isGenericFunction)
@@ -4869,13 +4872,15 @@ class MLIRGenImpl
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
             checkSafeCast(ifStatementAST->expression, genContext);
-            mlirGen(ifStatementAST->thenStatement, genContext);
+            auto result = mlirGen(ifStatementAST->thenStatement, genContext);
+            EXIT_IF_FAILED(result)
         }
 
         if (hasElse)
         {
             builder.setInsertionPointToStart(&ifOp.elseRegion().front());
-            mlirGen(ifStatementAST->elseStatement, genContext);
+            auto result = mlirGen(ifStatementAST->elseStatement, genContext);
+            EXIT_IF_FAILED(result)
         }
 
         builder.setInsertionPointAfter(ifOp);
