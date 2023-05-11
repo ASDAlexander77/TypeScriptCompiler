@@ -3738,6 +3738,9 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getFunctionType() << "\n";);
             LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " num inputs:"
                                     << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
+
+            // TODO: here if function body is generated you can skip it
+            //theModule.lookupSymbol(funcOp->getName());
         }
 
         // generate body
@@ -9064,8 +9067,10 @@ class MLIRGenImpl
         arrayInfo.anySpreadElement = true;
         arrayInfo.isConst = false;
 
-        auto type = itemValue.getType();
         auto location = itemValue.getLoc();
+        auto type = itemValue.getType();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, src type: " << type << "\n";);
 
         if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
         {
@@ -9087,6 +9092,53 @@ class MLIRGenImpl
             return mlir::success();
         }
         
+        if (auto array = type.dyn_cast<mlir_ts::ArrayType>())
+        {
+            // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
+            values.push_back({itemValue, true, true});
+
+            auto arrayElementType = mth.wideStorageType(array.getElementType());
+            accumulateArrayItemType(arrayElementType, arrayInfo);
+
+            return mlir::success();
+        }
+
+        auto nextPropertyType = evaluateProperty(itemValue, "next", genContext);
+        if (nextPropertyType)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
+
+            auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
+            if (returnType)
+            {
+                // as tuple or const_tuple
+                ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
+                TypeSwitch<mlir::Type>(returnType)
+                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
+                    .template Case<mlir_ts::ConstTupleType>(
+                        [&](auto constTupleType) { fields = constTupleType.getFields(); })
+                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+                auto propValue = mlir::StringAttr::get(builder.getContext(), "value");
+                if (std::any_of(fields.begin(), fields.end(), [&] (auto field) { return field.id == propValue; }))
+                {
+                    arrayInfo.isConst = false;
+
+                    values.push_back({itemValue, true, true});
+
+                    auto arrayElementType = mth.wideStorageType(fields.front().type);
+                    accumulateArrayItemType(arrayElementType, arrayInfo);
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+
+                return mlir::success();    
+            }
+        }                                        
+
+        // DO NOT PUT before xxx.next() property otherwise ""..."" for Iterator will not work
         if (auto constTuple = type.dyn_cast<mlir_ts::ConstTupleType>())
         {
             // because it is tuple it may not have the same types
@@ -9105,9 +9157,9 @@ class MLIRGenImpl
 
                     accumulateArrayItemType(constTuple.getFieldInfo(index).type, arrayInfo);
                 }
-
-                return mlir::success();                
             }
+
+            return mlir::success();                
         }       
         
         if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
@@ -9120,55 +9172,6 @@ class MLIRGenImpl
 
             return mlir::success();
         }                           
-        
-        if (auto array = type.dyn_cast<mlir_ts::ArrayType>())
-        {
-            // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
-            values.push_back({itemValue, true, true});
-
-            auto arrayElementType = mth.wideStorageType(array.getElementType());
-            accumulateArrayItemType(arrayElementType, arrayInfo);
-
-            return mlir::success();
-        }
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, src type: " << type << "\n";);
-
-        auto nextPropertyType = evaluateProperty(itemValue, "next", genContext);
-        if (nextPropertyType)
-        {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
-
-            auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
-            if (returnType)
-            {
-                // as tuple or const_tuple
-                ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
-                TypeSwitch<mlir::Type>(returnType)
-                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
-                    .template Case<mlir_ts::ConstTupleType>(
-                        [&](auto constTupleType) { fields = constTupleType.getFields(); })
-                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
-
-                if (fields.begin() != fields.end() && fields.front().id == mlir::StringAttr::get(builder.getContext(), "value"))
-                {
-                    arrayInfo.isConst = false;
-
-                    values.push_back({itemValue, true, true});
-
-                    auto arrayElementType = mth.wideStorageType(fields.front().type);
-                    accumulateArrayItemType(arrayElementType, arrayInfo);
-                }
-                else
-                {
-                    llvm_unreachable("not implemented");
-                }
-            }
-        }                                        
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! spread element type: " << type << "\n";);
 
