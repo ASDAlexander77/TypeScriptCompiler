@@ -10781,17 +10781,23 @@ class MLIRGenImpl
 
         auto location = loc(classDeclarationAST);
 
-        newClassPtr->processingStorageClass = true;
-        newClassPtr->enteredProcessingStorageClass = true;
-
         if (mlir::succeeded(mlirGenClassType(newClassPtr, genContext)))
         {
             newClassPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
         }
 
+        // if this is generic specialized class then do not generate code for it
+        if (mth.isGenericType(newClassPtr->classType))
+        {
+            return {mlir::success(), newClassPtr->classType.getName().getValue()};
+        }
+
         // init this type (needed to use in property evaluations)
         GenContext classGenContext(genContext);
         classGenContext.thisType = newClassPtr->classType;
+
+        newClassPtr->processingStorageClass = true;
+        newClassPtr->enteredProcessingStorageClass = true;
 
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
