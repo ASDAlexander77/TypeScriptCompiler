@@ -1623,7 +1623,7 @@ class MLIRTypeHelper
             return std::find_if(types.begin(), types.end(), pred) != types.end();
         }
 
-        if (isFuncType(srcType) && isFuncType(extendType))
+        if (isAnyFunctionType(srcType) && isAnyFunctionType(extendType))
         {
             return extendsTypeFuncTypes(srcType, extendType, typeParamsWithArgs);
         }
@@ -1658,19 +1658,6 @@ class MLIRTypeHelper
         LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [FLASE]\n";);
         return false;
     }
-
-    bool isFuncType(mlir::Type funcType)
-    {
-        auto ret = false;
-        mlir::TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { ret = true; })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { ret = true; })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { ret = true; })
-            .Default([&](auto type) {
-            });
-
-        return ret;
-    }    
 
     mlir::Type getFirstNonNullUnionType(mlir_ts::UnionType unionType)
     {
@@ -1945,14 +1932,20 @@ class MLIRTypeHelper
 
     bool isGenericType(mlir::Type type)
     {
-        MLIRTypeIteratorLogic iter{};
-        return iter.some(type, [](mlir::Type type) { return type.isa<mlir_ts::NamedGenericType>(); });
+        MLIRTypeIteratorLogic iter(
+            getClassInfoByFullName, getGenericClassInfoByFullName, 
+            getInterfaceInfoByFullName, getGenericInterfaceInfoByFullName
+        );
+        return iter.some(type, [](mlir::Type type) { return type && type.isa<mlir_ts::NamedGenericType>(); });
     }
 
     bool hasInferType(mlir::Type type)
     {
-        MLIRTypeIteratorLogic iter{};
-        return iter.some(type, [](mlir::Type type) { return type.isa<mlir_ts::InferType>(); });
+        MLIRTypeIteratorLogic iter(
+            getClassInfoByFullName, getGenericClassInfoByFullName, 
+            getInterfaceInfoByFullName, getGenericInterfaceInfoByFullName
+        );
+        return iter.some(type, [](mlir::Type type) { return type && type.isa<mlir_ts::InferType>(); });
     }    
     
     void mergeTypes(mlir::ArrayRef<mlir::Type> types, mlir::SmallVector<mlir::Type> &mergedTypes)

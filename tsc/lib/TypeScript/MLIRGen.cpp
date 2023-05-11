@@ -232,7 +232,7 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
 
-        if (mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)) &&
+        if (/*mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)) &&*/
             mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
         {
             return theModule;
@@ -6388,7 +6388,7 @@ class MLIRGenImpl
         auto rightExprGenContext = GenContext(genContext);
         rightExprGenContext.clearReceiverTypes();
 
-        if (mth.isFuncType(leftExpressionValue.getType()))
+        if (mth.isAnyFunctionType(leftExpressionValue.getType()))
         {
             rightExprGenContext.receiverFuncType = leftExpressionValue.getType();
         }

@@ -4539,7 +4539,7 @@ struct UnrealizedConversionCastOpLowering : public ConvertOpToLLVMPattern<Unreal
 };
 
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m,
-                                                 mlir::SetVector<mlir::Type> &stack)
+                                                 mlir::SmallPtrSet<mlir::Type, 32> &usedTypes)
 {
     converter.addConversion(
         [&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)); });
@@ -4723,9 +4723,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion([&](mlir_ts::ObjectStorageType type) {
         auto identStruct = LLVM::LLVMStructType::getIdentified(type.getContext(), type.getName().getValue());
-        if (!stack.contains(identStruct))
+        if (!usedTypes.contains(identStruct))
         {
-            stack.insert(identStruct);
+            usedTypes.insert(identStruct);
             SmallVector<mlir::Type> convertedTypes;
             for (auto subType : type.getFields())
             {
@@ -4748,9 +4748,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion([&](mlir_ts::ClassStorageType type) {
         auto identStruct = LLVM::LLVMStructType::getIdentified(type.getContext(), type.getName().getValue());
-        if (!stack.contains(identStruct))
+        if (!usedTypes.contains(identStruct))
         {
-            stack.insert(identStruct);
+            usedTypes.insert(identStruct);
             SmallVector<mlir::Type> convertedTypes;
             for (auto subType : type.getFields())
             {
@@ -5142,8 +5142,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         GCMakeDescriptorOpLowering, GCNewExplicitlyTypedOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 #endif        
 
-    mlir::SetVector<mlir::Type> stack;
-    populateTypeScriptConversionPatterns(typeConverter, m, stack);
+    mlir::SmallPtrSet<mlir::Type, 32> usedTypes;
+    populateTypeScriptConversionPatterns(typeConverter, m, usedTypes);
 
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.
