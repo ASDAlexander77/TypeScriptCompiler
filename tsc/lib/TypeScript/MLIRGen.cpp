@@ -417,7 +417,18 @@ class MLIRGenImpl
 
     bool registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false)
     {
-        namePtr = StringRef(namePtr).copy(stringAllocator);
+        if (isFunctionNamespace)
+        {
+            std::string res;
+            res += ".f_";
+            res += namePtr;
+            namePtr = StringRef(res).copy(stringAllocator);
+        }
+        else
+        {
+            namePtr = StringRef(namePtr).copy(stringAllocator);
+        }
+
         auto fullNamePtr = getFullNamespaceName(namePtr);
         auto &namespacesMap = getNamespaceMap();
         auto it = namespacesMap.find(namePtr);
@@ -3173,7 +3184,9 @@ class MLIRGenImpl
                 else if (genContext.receiverFuncType)
                 {
                     auto &argTypeDestFuncType = genContext.receiverFuncType;
-                    auto retTypeFromReceiver = mth.getReturnTypeFromFuncRef(argTypeDestFuncType);
+                    auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
+                        ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
+                        : mlir::Type();
                     if (retTypeFromReceiver && !isNoneType(retTypeFromReceiver))
                     {
                         funcProto->setReturnType(retTypeFromReceiver);
@@ -7602,16 +7615,24 @@ class MLIRGenImpl
         auto callExpr = callExpression->expression.as<Expression>();
 
         auto result = mlirGen(callExpr, genContext);
+        // in case of detecting value for recursive calls we need to ignore failed calls
+        if (result.failed_or_no_value() && genContext.allowPartialResolve)
+        {
+            // we need to return success to continue code traversing
+            return V(builder.create<mlir_ts::UndefOp>(location, builder.getNoneType()));
+        }
+
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto funcResult = V(result);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
-        // TODO: rewrite code for calling "5.ToString()"
-        //if (!mth.isAnyFunctionType(funcResult.getType()))
-        if (funcResult.getDefiningOp<mlir_ts::NamespaceRefOp>())
+        if (!mth.isAnyFunctionType(funcResult.getType()))
         {           
-            return mlir::failure();
+            // TODO: rewrite code for calling "5.ToString()"
+            // TODO: recursive functions are usually return "failure" as can't be found
+            //return mlir::failure();
+            return funcResult;
         }
 
         auto noReceiverTypesForGenericCall = false;
@@ -15566,7 +15587,7 @@ genContext);
 
     bool isNoneType(mlir::Type type)
     {
-        return !type || type == mlir::NoneType::get(builder.getContext());
+        return !type || type == builder.getNoneType();
     }
 
     bool isNotNoneType(mlir::Type type)
