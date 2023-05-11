@@ -1922,7 +1922,8 @@ class MLIRGenImpl
     std::pair<mlir::LogicalResult, mlir::Type> instantiateSpecializedClassType(mlir::Location location,
                                                                                mlir_ts::ClassType genericClassType,
                                                                                NodeArray<TypeNode> typeArguments,
-                                                                               const GenContext &genContext)
+                                                                               const GenContext &genContext,
+                                                                               bool allowNamedGenerics = false)
     {
         auto fullNameGenericClassTypeName = genericClassType.getName().getValue();
         auto genericClassInfo = getGenericClassInfoByFullName(fullNameGenericClassTypeName);
@@ -1935,7 +1936,7 @@ class MLIRGenImpl
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
-            if (mlir::failed(result) || hasAnyNamedGenericType)
+            if (mlir::failed(result) || (hasAnyNamedGenericType && !allowNamedGenerics))
             {
                 return {mlir::failure(), mlir::Type()};
             }
@@ -1970,7 +1971,7 @@ class MLIRGenImpl
 
     std::pair<mlir::LogicalResult, mlir::Type> instantiateSpecializedInterfaceType(
         mlir::Location location, mlir_ts::InterfaceType genericInterfaceType, NodeArray<TypeNode> typeArguments,
-        const GenContext &genContext)
+        const GenContext &genContext, bool allowNamedGenerics = false)
     {
         auto fullNameGenericInterfaceTypeName = genericInterfaceType.getName().getValue();
         auto genericInterfaceInfo = getGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName);
@@ -1983,7 +1984,7 @@ class MLIRGenImpl
             auto typeParams = genericInterfaceInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
-            if (mlir::failed(result) || hasAnyNamedGenericType)
+            if (mlir::failed(result) || (hasAnyNamedGenericType && !allowNamedGenerics))
             {
                 return {mlir::failure(), mlir::Type()};
             }
@@ -14379,7 +14380,7 @@ genContext);
         {
             auto classType = genericClassTypeInfo->classType;
             auto [result, specType] = instantiateSpecializedClassType(loc(typeReferenceAST), classType,
-                                                                      typeReferenceAST->typeArguments, genContext);
+                                                                      typeReferenceAST->typeArguments, genContext, true);
             if (mlir::succeeded(result))
             {
                 return specType;
@@ -14393,7 +14394,7 @@ genContext);
         {
             auto interfaceType = genericInterfaceTypeInfo->interfaceType;
             auto [result, specType] = instantiateSpecializedInterfaceType(loc(typeReferenceAST), interfaceType,
-                                                                          typeReferenceAST->typeArguments, genContext);
+                                                                          typeReferenceAST->typeArguments, genContext, true);
             if (mlir::succeeded(result))
             {
                 return specType;
