@@ -7631,7 +7631,14 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
-        if (!mth.isAnyFunctionType(funcResult.getType()) && !mth.isVirtualFunctionType(funcResult))
+        auto funcType = funcResult.getType();
+        if (!mth.isAnyFunctionType(funcType) 
+            && !mth.isVirtualFunctionType(funcResult)
+            // TODO: do I need to use ConstructFunction instead?
+            // to support constructor calls
+            && !funcType.isa<mlir_ts::ClassType>()
+            // to support super.constructor calls
+            && !funcType.isa<mlir_ts::ClassStorageType>())
         {           
             // TODO: rewrite code for calling "5.ToString()"
             // TODO: recursive functions are usually return "failure" as can't be found
