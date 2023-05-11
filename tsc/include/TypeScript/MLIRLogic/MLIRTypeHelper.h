@@ -396,7 +396,21 @@ class MLIRTypeHelper
         return mlir_ts::BoundFunctionType::get(context, funcArgTypes, funcType.getResults(), funcType.isVarArg());
     }
 
-    // TODO: review all funcs and removed unsed
+    // TODO: review virtual calls
+    bool isNoneType(mlir::Type type)
+    {
+        return !type || type == mlir::NoneType::get(context);
+    }
+
+    bool isVirtualFunctionType(mlir::Value actualFuncRefValue) 
+    {
+        auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
+        auto virtAttrName = StringRef(VIRTUALFUNC_ATTR_NAME);
+        auto definingOp = actualFuncRefValue.getDefiningOp();
+        return (isNoneType(actualFuncRefValue.getType()) || definingOp->hasAttrOfType<mlir::BoolAttr>(virtAttrName)) 
+            && definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
+    }
+
     bool isAnyFunctionType(mlir::Type funcType)
     {
         if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())

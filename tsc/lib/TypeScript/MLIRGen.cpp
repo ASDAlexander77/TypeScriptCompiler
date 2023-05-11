@@ -7631,7 +7631,7 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
-        if (!mth.isAnyFunctionType(funcResult.getType()))
+        if (!mth.isAnyFunctionType(funcResult.getType()) && !mth.isVirtualFunctionType(funcResult))
         {           
             // TODO: rewrite code for calling "5.ToString()"
             // TODO: recursive functions are usually return "failure" as can't be found
@@ -7964,14 +7964,10 @@ class MLIRGenImpl
         EXIT_IF_FAILED(result)
         auto actualFuncRefValue = V(result);
 
-        auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
-        auto virtAttrName = StringRef(VIRTUALFUNC_ATTR_NAME);
-        auto definingOp = actualFuncRefValue.getDefiningOp();
-        if ((isNoneType(actualFuncRefValue.getType()) || definingOp->hasAttrOfType<mlir::BoolAttr>(virtAttrName)) &&
-            definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
+        if (mth.isVirtualFunctionType(actualFuncRefValue))
         {
             // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
-            auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
+            auto calleeName = actualFuncRefValue.getDefiningOp()->getAttrOfType<mlir::FlatSymbolRefAttr>(StringRef(IDENTIFIER_ATTR_NAME));
             auto functionName = calleeName.getValue();
 
             if (auto thisSymbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
@@ -10434,7 +10430,7 @@ class MLIRGenImpl
         if (MLIRCustomMethods::isInternalFunctionName(name))
         {
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
-                location, getFunctionType({}, {}, false), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+                location, builder.getNoneType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
             symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
             return V(symbOp);
         }
