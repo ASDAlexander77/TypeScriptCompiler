@@ -1270,26 +1270,29 @@ class MLIRGenImpl
         }
 
         // lambda -> lambda
-        auto tempfuncType = mth.getParamsFromFuncRef(currentTemplateType);
-        if (tempfuncType.size() > 0)
+        if (mth.isAnyFunctionType(currentTemplateType) && mth.isAnyFunctionType(concreteType))
         {
-            auto funcType = mth.getParamsFromFuncRef(concreteType);
-            if (funcType.size() > 0)
+            auto tempfuncType = mth.getParamsFromFuncRef(currentTemplateType);
+            if (tempfuncType.size() > 0)
             {
-                inferTypeFuncType(location, tempfuncType, funcType, results, genContext);
-
-                // lambda(return) -> lambda(return)
-                auto tempfuncRetType = mth.getReturnsFromFuncRef(currentTemplateType);
-                if (tempfuncRetType.size() > 0)
+                auto funcType = mth.getParamsFromFuncRef(concreteType);
+                if (funcType.size() > 0)
                 {
-                    auto funcRetType = mth.getReturnsFromFuncRef(concreteType);
-                    if (funcRetType.size() > 0)
-                    {
-                        inferTypeFuncType(location, tempfuncRetType, funcRetType, results, genContext);
-                    }
-                }
+                    inferTypeFuncType(location, tempfuncType, funcType, results, genContext);
 
-                return;
+                    // lambda(return) -> lambda(return)
+                    auto tempfuncRetType = mth.getReturnsFromFuncRef(currentTemplateType);
+                    if (tempfuncRetType.size() > 0)
+                    {
+                        auto funcRetType = mth.getReturnsFromFuncRef(concreteType);
+                        if (funcRetType.size() > 0)
+                        {
+                            inferTypeFuncType(location, tempfuncRetType, funcRetType, results, genContext);
+                        }
+                    }
+
+                    return;
+                }
             }
         }
 
