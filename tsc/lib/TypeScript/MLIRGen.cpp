@@ -232,7 +232,7 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
 
-        if (/*mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)) &&*/
+        if (mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)) &&
             mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
         {
             return theModule;
