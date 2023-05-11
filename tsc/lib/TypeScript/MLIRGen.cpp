@@ -2236,8 +2236,13 @@ class MLIRGenImpl
         if (!isGlobal)
         {
             auto [type, init] = func();
-            if (!type && genContext.allowPartialResolve)
+            if (!type)
             {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location) << "Can't resolve variable '" << name << "' type";
+                }
+
                 return varType;
             }
 
