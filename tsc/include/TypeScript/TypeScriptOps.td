@@ -1018,7 +1018,19 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [NoSideEffect
   let assemblyFormat = "$results attr-dict `:` type($results)";
 }
 
-def TypeScript_CreateOptionalOp : TypeScript_Op<"CreateOptional", 
+def TypeScript_OptionalOp : TypeScript_Op<"Optional", 
+    [TypesMatchWith<"type of 'value' matches element type of 'optional'",
+                     "res", "in",
+                     "$_self.cast<OptionalType>().getElementType()">]> {
+  let description = [{
+    Example:
+      ts.optional %v, %f : i32, bool to ts.optional<i32>
+  }];
+  let arguments = (ins AnyType:$in, TypeScript_Boolean:$flag);
+  let results = (outs TypeScript_AnyOptional:$res);
+}
+
+def TypeScript_ValueOptionalOp : TypeScript_Op<"ValueOptional", 
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",
                      "$_self.cast<OptionalType>().getElementType()">]> {

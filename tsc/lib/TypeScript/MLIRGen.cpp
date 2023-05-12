@@ -6893,6 +6893,7 @@ class MLIRGenImpl
     {
         if (isConditional)
         {
+            // TODO: replace with one op "Optional <has_value>, <value>"
             CAST_A(condValue, location, getBooleanType(), objectValue, genContext);
 
             auto propType = evaluateProperty(objectValue, cl.getName().str(), genContext);
@@ -6910,7 +6911,7 @@ class MLIRGenImpl
             auto result = mlirGenPropertyAccessExpressionBaseLogic(location, objectValue, cl, genContext);
             auto value = V(result);
             auto optValue =
-                builder.create<mlir_ts::CreateOptionalOp>(location, getOptionalType(value.getType()), value);
+                builder.create<mlir_ts::ValueOptionalOp>(location, getOptionalType(value.getType()), value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
             // else
@@ -8055,7 +8056,7 @@ class MLIRGenImpl
             if (value)
             {
                 auto optValue =
-                    builder.create<mlir_ts::CreateOptionalOp>(location, getOptionalType(value.getType()), value);
+                    builder.create<mlir_ts::ValueOptionalOp>(location, getOptionalType(value.getType()), value);
                 builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
                 // else
@@ -8249,6 +8250,79 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult processSpreadElement(mlir::Location location, mlir::Value source, int count, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    {
+        auto nextPropertyType = evaluateProperty(source, "next", genContext);
+        if (nextPropertyType)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
+
+            auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
+            if (returnType)
+            {
+                // as tuple or const_tuple
+                ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
+                TypeSwitch<mlir::Type>(returnType)
+                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
+                    .template Case<mlir_ts::ConstTupleType>(
+                        [&](auto constTupleType) { fields = constTupleType.getFields(); })
+                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+                auto propValue = mlir::StringAttr::get(builder.getContext(), "value");
+                if (std::any_of(fields.begin(), fields.end(), [&] (auto field) { return field.id == propValue; }))
+                {
+                    // treat it as <???>.next().value structure
+                    // property
+                    auto nextProperty = mlirGenPropertyAccessExpression(location, source, "next", false, genContext);
+
+                    for (auto spreadIndex = 0;  spreadIndex < count; spreadIndex++)
+                    {
+                        // call nextProperty
+                        SmallVector<mlir::Value, 4> callOperands;
+                        auto callResult = mlirGenCall(location, nextProperty, callOperands, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(callResult)
+
+                        // load property "value"
+                        auto doneProperty = mlirGenPropertyAccessExpression(location, callResult, "done", false, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(doneProperty)
+
+                        auto valueProperty = mlirGenPropertyAccessExpression(location, callResult, "value", false, genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(valueProperty)
+
+                        // conditional expr:  done ? undefined : value
+                        auto doneInvValue =  V(builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(),
+                            builder.getI32IntegerAttr((int)SyntaxKind::ExclamationToken), doneProperty));
+
+                        auto valuePropType = V(valueProperty).getType();
+                        auto condValue = builder.create<mlir_ts::OptionalOp>(location, getOptionalType(valuePropType), valueProperty, doneInvValue);
+
+                        operands.push_back(condValue);
+                    }
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+
+                return mlir::success();    
+            }
+        }                                        
+
+        // treat it as <???>[index] structure
+        for (auto spreadIndex = 0;  spreadIndex < count; spreadIndex++)
+        {
+            auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
+                                                mth.getStructIndexAttrValue(spreadIndex));
+
+            auto spreadValue = mlirGenElementAccess(location, source, indexVal, false, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(spreadValue)
+
+            operands.push_back(spreadValue);
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
                                         mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false)
     {
@@ -8306,16 +8380,9 @@ class MLIRGenImpl
             if (expression == SyntaxKind::SpreadElement)
             {
                 auto location = loc(expression);
-                for (auto spreadIndex = 0;  spreadIndex <= lastArgIndex - i; spreadIndex++)
+                if (mlir::failed(processSpreadElement(location, value, lastArgIndex - i + 1, operands, genContext)))
                 {
-                    auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
-                                                        mth.getStructIndexAttrValue(spreadIndex));
-
-                    auto spreadValue = mlirGenElementAccess(location, value, indexVal, false, genContext);
-
-                    operands.push_back(spreadValue);
-
-                    // must be last expression
+                    return mlir::failure();
                 }
 
                 continue;
@@ -13670,7 +13737,7 @@ genContext);
             else
             {
                 CAST_A(valueCasted, location, optType.getElementType(), value, genContext);
-                return V(builder.create<mlir_ts::CreateOptionalOp>(location, optType, valueCasted));
+                return V(builder.create<mlir_ts::ValueOptionalOp>(location, optType, valueCasted));
             }
         }
 

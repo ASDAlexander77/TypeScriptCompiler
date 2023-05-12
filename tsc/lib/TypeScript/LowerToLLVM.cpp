@@ -2495,7 +2495,7 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
 
             auto createOptionalFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
                 auto dataValue = loadedValueFunc(builder, location);
-                mlir::Value val = rewriter.create<mlir_ts::CreateOptionalOp>(loc, resultType, dataValue);
+                mlir::Value val = rewriter.create<mlir_ts::ValueOptionalOp>(loc, resultType, dataValue);
                 mlir::Value valAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, resultTypeLlvm, val);
                 return valAsLLVMType;
             };
@@ -2789,11 +2789,66 @@ struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfC
     }
 };
 
-struct CreateOptionalOpLowering : public TsLlvmPattern<mlir_ts::CreateOptionalOp>
+struct OptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalOp>
 {
-    using TsLlvmPattern<mlir_ts::CreateOptionalOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::OptionalOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::CreateOptionalOp createOptionalOp, Adaptor transformed,
+    LogicalResult matchAndRewrite(mlir_ts::OptionalOp optionalOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        
+
+        auto loc = optionalOp->getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        CodeLogicHelper clh(optionalOp, rewriter);
+
+        auto boxedType = optionalOp.res().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto llvmBoxedType = tch.convertType(boxedType);
+        auto llvmOptType = tch.convertType(optionalOp.res().getType());
+
+        auto valueOrigType = optionalOp.in().getType();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Optional : " << optionalOp.in() << " flag: " << optionalOp.flag() << "\n";);
+
+        auto value = transformed.in();
+        auto valueLLVMType = value.getType();
+
+        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmOptType);
+
+        // TODO: it should be tested by OP that value is equal to value in optional type
+        if (valueLLVMType != llvmBoxedType)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Optional value types : " << valueLLVMType
+                                    << " optional type: " << llvmBoxedType << "\n";);
+
+            // cast value to box
+            CastLogicHelper castLogic(optionalOp, rewriter, tch);
+            value = castLogic.cast(value, valueOrigType, valueLLVMType, boxedType, llvmBoxedType);
+            if (!value)
+            {
+                return failure();
+            }
+
+            value = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmBoxedType, value);
+        }
+
+        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmOptType, structValue, value,
+                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_VALUE_INDEX)));
+
+        rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(optionalOp, llvmOptType, structValue2, transformed.flag(),
+                                                         rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_HASVALUE_INDEX)));
+
+        return success();
+    }
+};
+
+struct ValueOptionalOpLowering : public TsLlvmPattern<mlir_ts::ValueOptionalOp>
+{
+    using TsLlvmPattern<mlir_ts::ValueOptionalOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ValueOptionalOp createOptionalOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         
@@ -2835,11 +2890,11 @@ struct CreateOptionalOpLowering : public TsLlvmPattern<mlir_ts::CreateOptionalOp
         }
 
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmOptType, structValue, value,
-                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_VALUE_INDEX)));
 
         auto trueValue = clh.createI1ConstantOf(true);
         rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(createOptionalOp, llvmOptType, structValue2, trueValue,
-                                                         rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+                                                         rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_HASVALUE_INDEX)));
 
         return success();
     }
@@ -2888,12 +2943,12 @@ struct UndefOptionalOpLowering : public TsLlvmPattern<mlir_ts::UndefOptionalOp>
         if (defaultValue)
         {
             structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmOptType, structValue, defaultValue,
-                                                                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+                                                                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_VALUE_INDEX)));
         }
 
         auto falseValue = clh.createI1ConstantOf(false);
         rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(undefOptionalOp, llvmOptType, structValue2, falseValue,
-                                                         rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+                                                         rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_HASVALUE_INDEX)));
 
         return success();
     }
@@ -2913,7 +2968,7 @@ struct HasValueOpLowering : public TsLlvmPattern<mlir_ts::HasValueOp>
         TypeHelper th(rewriter);
 
         rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(hasValueOp, th.getLLVMBoolType(), transformed.in(),
-                                                          rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+                                                          rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_HASVALUE_INDEX)));
 
         return success();
     }
@@ -2936,7 +2991,7 @@ struct ValueOpLowering : public TsLlvmPattern<mlir_ts::ValueOp>
         auto llvmValueType = tch.convertType(valueType);
 
         rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(valueOp, llvmValueType, transformed.in(),
-                                                          rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+                                                          rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_VALUE_INDEX)));
 
         return success();
     }
@@ -5109,7 +5164,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     TsLlvmContext tsLlvmContext{};
     patterns.insert<
         AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-        AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
+        AssertOpLowering, CastOpLowering, ConstantOpLowering, OptionalOpLowering, ValueOptionalOpLowering, UndefOptionalOpLowering,
         HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,
         FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,

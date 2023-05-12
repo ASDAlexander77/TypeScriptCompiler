@@ -379,7 +379,7 @@ class CastLogicHelper
             }
 
             auto valCasted = cast(in, inType, inLLVMType, optType.getElementType(), tch.convertType(optType.getElementType()));
-            return rewriter.create<mlir_ts::CreateOptionalOp>(loc, resType, valCasted);
+            return rewriter.create<mlir_ts::ValueOptionalOp>(loc, resType, valCasted);
         }
 
         if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())

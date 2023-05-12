@@ -1734,7 +1734,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp,
         mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp, mlir_ts::BoxOp, mlir_ts::UnboxOp,
         mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp, mlir_ts::GetTypeInfoFromUnionOp,
-        mlir_ts::CreateOptionalOp, mlir_ts::UndefOptionalOp>();
+        mlir_ts::OptionalOp, mlir_ts::ValueOptionalOp, mlir_ts::UndefOptionalOp>();
 #ifdef ENABLE_TYPED_GC
     target.addLegalOp<
         mlir_ts::GCMakeDescriptorOp, GCNewExplicitlyTypedOp>();
