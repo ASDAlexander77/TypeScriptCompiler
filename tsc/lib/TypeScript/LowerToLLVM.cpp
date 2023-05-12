@@ -839,7 +839,7 @@ class UndefOpLowering : public TsLlvmPattern<mlir_ts::UndefOp>
 
         if (op.getType().isa<mlir_ts::OptionalType>())
         {
-            rewriter.replaceOpWithNewOp<mlir_ts::UndefOptionalOp>(op, op.getType());
+            rewriter.replaceOpWithNewOp<mlir_ts::OptionalUndefOp>(op, op.getType());
             return success();
         }
 
@@ -2488,14 +2488,14 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             auto resultTypeLlvm = tch.convertType(resultType);
 
             auto undefOptionalFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
-                mlir::Value val = rewriter.create<mlir_ts::UndefOptionalOp>(loc, resultType);
+                mlir::Value val = rewriter.create<mlir_ts::OptionalUndefOp>(loc, resultType);
                 mlir::Value valAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, resultTypeLlvm, val);
                 return valAsLLVMType;
             };
 
             auto createOptionalFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
                 auto dataValue = loadedValueFunc(builder, location);
-                mlir::Value val = rewriter.create<mlir_ts::ValueOptionalOp>(loc, resultType, dataValue);
+                mlir::Value val = rewriter.create<mlir_ts::OptionalValueOp>(loc, resultType, dataValue);
                 mlir::Value valAsLLVMType = builder.create<mlir_ts::DialectCastOp>(loc, resultTypeLlvm, val);
                 return valAsLLVMType;
             };
@@ -2844,11 +2844,11 @@ struct OptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalOp>
     }
 };
 
-struct ValueOptionalOpLowering : public TsLlvmPattern<mlir_ts::ValueOptionalOp>
+struct ValueOptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalValueOp>
 {
-    using TsLlvmPattern<mlir_ts::ValueOptionalOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::OptionalValueOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ValueOptionalOp createOptionalOp, Adaptor transformed,
+    LogicalResult matchAndRewrite(mlir_ts::OptionalValueOp createOptionalOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         
@@ -2900,11 +2900,11 @@ struct ValueOptionalOpLowering : public TsLlvmPattern<mlir_ts::ValueOptionalOp>
     }
 };
 
-struct UndefOptionalOpLowering : public TsLlvmPattern<mlir_ts::UndefOptionalOp>
+struct UndefOptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalUndefOp>
 {
-    using TsLlvmPattern<mlir_ts::UndefOptionalOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::OptionalUndefOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::UndefOptionalOp undefOptionalOp, Adaptor transformed,
+    LogicalResult matchAndRewrite(mlir_ts::OptionalUndefOp undefOptionalOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         
@@ -2980,11 +2980,11 @@ struct ValueOpLowering : public TsLlvmPattern<mlir_ts::ValueOp>
     }
 };
 
-struct SafeValueOpLowering : public TsLlvmPattern<mlir_ts::SafeValueOp>
+struct SafeValueOpLowering : public TsLlvmPattern<mlir_ts::ValueOrDefaultOp>
 {
-    using TsLlvmPattern<mlir_ts::SafeValueOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::ValueOrDefaultOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::SafeValueOp safeValueOp, Adaptor transformed,
+    LogicalResult matchAndRewrite(mlir_ts::ValueOrDefaultOp safeValueOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         auto loc = safeValueOp->getLoc();

@@ -375,16 +375,16 @@ class CastLogicHelper
         {
             if (inType.isa<mlir_ts::UndefinedType>())
             {
-                return rewriter.create<mlir_ts::UndefOptionalOp>(loc, resType);
+                return rewriter.create<mlir_ts::OptionalUndefOp>(loc, resType);
             }
 
             auto valCasted = cast(in, inType, inLLVMType, optType.getElementType(), tch.convertType(optType.getElementType()));
-            return rewriter.create<mlir_ts::ValueOptionalOp>(loc, resType, valCasted);
+            return rewriter.create<mlir_ts::OptionalValueOp>(loc, resType, valCasted);
         }
 
         if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
         {
-            auto val = rewriter.create<mlir_ts::SafeValueOp>(loc, optType.getElementType(), in);
+            auto val = rewriter.create<mlir_ts::ValueOrDefaultOp>(loc, optType.getElementType(), in);
             return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
         }
 

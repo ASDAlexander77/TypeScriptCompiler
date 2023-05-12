@@ -1030,22 +1030,22 @@ def TypeScript_OptionalOp : TypeScript_Op<"Optional",
   let results = (outs TypeScript_AnyOptional:$res);
 }
 
-def TypeScript_ValueOptionalOp : TypeScript_Op<"ValueOptional", 
+def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue", 
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",
                      "$_self.cast<OptionalType>().getElementType()">]> {
   let description = [{
     Example:
-      ts.create_optional %v : i32 to ts.optional<i32>
+      ts.optional_value %v : i32 to ts.optional<i32>
   }];
   let arguments = (ins AnyType:$in);
   let results = (outs TypeScript_AnyOptional:$res);
 }
 
-def TypeScript_UndefOptionalOp : TypeScript_Op<"UndefOptional"> {
+def TypeScript_OptionalUndefOp : TypeScript_Op<"OptionalUndef"> {
   let description = [{
     Example:
-      ts.undef_optional : ts.optional<i32>
+      ts.optional_undef : ts.optional<i32>
   }];
   let arguments = (ins );
   let results = (outs TypeScript_AnyOptional:$res);
@@ -1072,13 +1072,13 @@ def TypeScript_ValueOp : TypeScript_Op<"Value",
   let results = (outs AnyType:$res);
 }
 
-def TypeScript_SafeValueOp : TypeScript_Op<"SafeValue", 
+def TypeScript_ValueOrDefaultOp : TypeScript_Op<"ValueOrDefault", 
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "in", "res",
                      "$_self.cast<OptionalType>().getElementType()">]> {
   let description = [{
     Example:
-      ts.safe_value %v : ts.optional<i32> to i32
+      ts.value_of_default %v : ts.optional<i32> to i32
   }];
   let arguments = (ins TypeScript_AnyOptional:$in);
   let results = (outs AnyType:$res);

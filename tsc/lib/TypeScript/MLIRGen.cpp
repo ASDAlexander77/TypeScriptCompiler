@@ -6549,13 +6549,13 @@ class MLIRGenImpl
                 if (auto leftOptType = leftExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
                 {
                     leftExpressionValue =
-                        builder.create<mlir_ts::SafeValueOp>(leftLoc, leftOptType.getElementType(), leftExpressionValue);
+                        builder.create<mlir_ts::ValueOrDefaultOp>(leftLoc, leftOptType.getElementType(), leftExpressionValue);
                 }
 
                 if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
                 {
                     rightExpressionValue =
-                        builder.create<mlir_ts::SafeValueOp>(rightLoc, rightOptType.getElementType(), rightExpressionValue);
+                        builder.create<mlir_ts::ValueOrDefaultOp>(rightLoc, rightOptType.getElementType(), rightExpressionValue);
                 }
             }
         }
@@ -6568,9 +6568,9 @@ class MLIRGenImpl
                 if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
                 {
                     leftExpressionValue =
-                        builder.create<mlir_ts::SafeValueOp>(leftLoc, leftOptType.getElementType(), leftExpressionValue);
+                        builder.create<mlir_ts::ValueOrDefaultOp>(leftLoc, leftOptType.getElementType(), leftExpressionValue);
                     rightExpressionValue =
-                        builder.create<mlir_ts::SafeValueOp>(rightLoc, rightOptType.getElementType(), rightExpressionValue);
+                        builder.create<mlir_ts::ValueOrDefaultOp>(rightLoc, rightOptType.getElementType(), rightExpressionValue);
                 }
             }
         }
@@ -6913,13 +6913,13 @@ class MLIRGenImpl
             auto result = mlirGenPropertyAccessExpressionBaseLogic(location, objectValue, cl, genContext);
             auto value = V(result);
             auto optValue =
-                builder.create<mlir_ts::ValueOptionalOp>(location, getOptionalType(value.getType()), value);
+                builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
             // else
             builder.setInsertionPointToStart(&ifOp.elseRegion().front());
 
-            auto optUndefValue = builder.create<mlir_ts::UndefOptionalOp>(location, getOptionalType(value.getType()));
+            auto optUndefValue = builder.create<mlir_ts::OptionalUndefOp>(location, getOptionalType(value.getType()));
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optUndefValue});
 
             builder.setInsertionPointAfter(ifOp);
@@ -8059,13 +8059,13 @@ class MLIRGenImpl
             if (value)
             {
                 auto optValue =
-                    builder.create<mlir_ts::ValueOptionalOp>(location, getOptionalType(value.getType()), value);
+                    builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
                 builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
                 // else
                 builder.setInsertionPointToStart(&ifOp.elseRegion().front());
 
-                auto optUndefValue = builder.create<mlir_ts::UndefOptionalOp>(location, getOptionalType(resultType));
+                auto optUndefValue = builder.create<mlir_ts::OptionalUndefOp>(location, getOptionalType(resultType));
                 builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optUndefValue});
             }
 
@@ -13462,7 +13462,7 @@ genContext);
                     if (fieldInfo.type.isa<mlir_ts::OptionalType>())
                     {
                         // add undefined value
-                        auto undefVal = builder.create<mlir_ts::UndefOptionalOp>(location, fieldInfo.type);
+                        auto undefVal = builder.create<mlir_ts::OptionalUndefOp>(location, fieldInfo.type);
                         values.push_back(undefVal);
                         continue;
                     }
@@ -13735,12 +13735,12 @@ genContext);
         {
             if (value.getType() == getUndefinedType())
             {
-                return V(builder.create<mlir_ts::UndefOptionalOp>(location, optType));
+                return V(builder.create<mlir_ts::OptionalUndefOp>(location, optType));
             }
             else
             {
                 CAST_A(valueCasted, location, optType.getElementType(), value, genContext);
-                return V(builder.create<mlir_ts::ValueOptionalOp>(location, optType, valueCasted));
+                return V(builder.create<mlir_ts::OptionalValueOp>(location, optType, valueCasted));
             }
         }
 
