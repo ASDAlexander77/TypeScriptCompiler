@@ -118,6 +118,14 @@ class CastLogicHelper
             return castFromAny(in, resType);
         }
 
+        if (auto numberType = resType.dyn_cast<mlir_ts::NumberType>())
+        {
+            if (auto boolType = inType.dyn_cast<mlir_ts::BooleanType>())
+            {
+                return castBoolToNumber(in);
+            }
+        }
+
         if (auto obj = resType.dyn_cast<mlir_ts::ObjectType>())
         {
             if (obj.getStorageType().isa<mlir_ts::AnyType>())
@@ -770,6 +778,19 @@ class CastLogicHelper
         return rewriter.create<LLVM::SelectOp>(loc, valueAsLLVMType, ch.getOrCreateGlobalString("__true__", std::string("true")),
                                                ch.getOrCreateGlobalString("__false__", std::string("false")));
     }
+
+    mlir::Value castBoolToNumber(mlir::Value in)
+    {
+        mlir::Value valueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(in.getType()), in);
+
+#ifdef NUMBER_F64
+        return rewriter.create<LLVM::SelectOp>(loc, valueAsLLVMType, clh.createF64ConstantOf(1),
+                                               clh.createF64ConstantOf(0));
+#else
+        return rewriter.create<LLVM::SelectOp>(loc, valueAsLLVMType, clh.createF32ConstantOf(1),
+                                               clh.createF32ConstantOf(0));
+#endif
+    }    
 
     mlir::Value castI32ToString(mlir::Value in)
     {

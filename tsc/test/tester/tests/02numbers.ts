@@ -215,12 +215,12 @@ function testNaN() {
     assert(isnan(mydiv(0, 0)));
     assert(isnan(0 / 0));
     //assert(isnan(parseFloat("foobar")))
-    //assert(isnan(NaN))
+    assert(isnan(NaN))
     assert(!isnan(0));
-    //assert(!isnan(Infinity))
-    //let inf = Infinity
-    //assert(1 / Infinity == 0)
-    //assert(1 / inf == 0)
+    assert(!isnan(Infinity))
+    let inf = Infinity
+    assert(1 / Infinity == 0)
+    assert(1 / inf == 0)
 }
 
 function testUnaryPlus() {
@@ -237,15 +237,15 @@ function testUnaryPlus() {
     testOne(1);
     testOne("1");
     testOne(" 1 ");
-    //testOne(true)
+    testOne(true)
     testZero(0);
     testZero(" 0");
     testZero("0");
-    //testZero(null)
-    //testZero(false)
+    testZero(null)
+    testZero(false)
     test35(3.5);
     test35("3.5");
-    //let qq: any = undefined
+    let qq: any = undefined
     //assert(isNaN(+qq))
 }
 
