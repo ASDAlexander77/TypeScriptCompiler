@@ -384,7 +384,7 @@ class CastLogicHelper
 
         if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
         {
-            auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
+            auto val = rewriter.create<mlir_ts::SafeValueOp>(loc, optType.getElementType(), in);
             return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
         }
 

@@ -2989,6 +2989,8 @@ struct SafeValueOpLowering : public TsLlvmPattern<mlir_ts::SafeValueOp>
     {
         auto loc = safeValueOp->getLoc();
 
+        safeValueOp->emitWarning("casting from optional (undefined) value");
+
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         DefaultLogic dl(safeValueOp, rewriter, tch, loc);
@@ -5177,7 +5179,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     patterns.insert<
         AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
         AssertOpLowering, CastOpLowering, ConstantOpLowering, OptionalOpLowering, ValueOptionalOpLowering, UndefOptionalOpLowering,
-        HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,
+        HasValueOpLowering, ValueOpLowering, SafeValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,
         FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering,

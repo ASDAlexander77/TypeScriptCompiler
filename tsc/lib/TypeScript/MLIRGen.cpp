@@ -6544,31 +6544,33 @@ class MLIRGenImpl
 
             if (!MLIRLogicHelper::isLogicOp(opCode))
             {
+                // TODO: review it
                 // cast from optional<T> type
                 if (auto leftOptType = leftExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
                 {
                     leftExpressionValue =
-                        builder.create<mlir_ts::ValueOp>(leftLoc, leftOptType.getElementType(), leftExpressionValue);
+                        builder.create<mlir_ts::SafeValueOp>(leftLoc, leftOptType.getElementType(), leftExpressionValue);
                 }
 
                 if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
                 {
                     rightExpressionValue =
-                        builder.create<mlir_ts::ValueOp>(rightLoc, rightOptType.getElementType(), rightExpressionValue);
+                        builder.create<mlir_ts::SafeValueOp>(rightLoc, rightOptType.getElementType(), rightExpressionValue);
                 }
             }
         }
         else if (!MLIRLogicHelper::isLogicOp(opCode))
         {
+            // TODO: review it
             // special case both are optionals
             if (auto leftOptType = leftExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
             {
                 if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
                 {
                     leftExpressionValue =
-                        builder.create<mlir_ts::ValueOp>(leftLoc, leftOptType.getElementType(), leftExpressionValue);
+                        builder.create<mlir_ts::SafeValueOp>(leftLoc, leftOptType.getElementType(), leftExpressionValue);
                     rightExpressionValue =
-                        builder.create<mlir_ts::ValueOp>(rightLoc, rightOptType.getElementType(), rightExpressionValue);
+                        builder.create<mlir_ts::SafeValueOp>(rightLoc, rightOptType.getElementType(), rightExpressionValue);
                 }
             }
         }
@@ -6981,9 +6983,10 @@ class MLIRGenImpl
                                          genContext);
             })
             .Case<mlir_ts::OptionalType>([&](auto optionalType) {
+                // this is needed for conditional access to properties
                 auto elementType = optionalType.getElementType();
                 auto loadedValue = builder.create<mlir_ts::ValueOp>(location, elementType, objectValue);
-                value = mlirGenPropertyAccessExpression(location, loadedValue, name, false, genContext);
+                value = mlirGenPropertyAccessExpression(location, loadedValue, name, false, genContext);                
             })
             .Case<mlir_ts::UnionType>([&](auto unionType) {
                 // all union types must have the same property
