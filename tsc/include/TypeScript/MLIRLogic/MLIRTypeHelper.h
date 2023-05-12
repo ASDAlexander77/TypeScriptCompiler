@@ -841,7 +841,7 @@ class MLIRTypeHelper
         if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(value.getDefiningOp()))
         {
             // this LoadOp will be removed later as unused
-            auto refValue = loadOp.reference();
+            auto refValue = loadOp.getReference();
             return refValue;
         }
 
