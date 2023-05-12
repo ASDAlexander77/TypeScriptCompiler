@@ -1,6 +1,7 @@
 declare function sqrt(v: number): number;
 declare function floor(v: number): number;
 declare function pow(v: number, s: number): number;
+declare function fabs(v: number): number;
 
 class Math {
     static sqrt(v: number): number {
@@ -13,6 +14,16 @@ class Math {
 
     static pow(v: number, s: number): number {
         return pow(v, s);
+    }
+
+    static abs(v: number): number {
+        return fabs(v);
+    }
+
+    static sign(v: number): number {
+	if (v > 0) return 1;
+	if (v < 0) return -1;
+	return 0;
     }
 }
 

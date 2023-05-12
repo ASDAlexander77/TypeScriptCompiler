@@ -1,3 +1,32 @@
+declare function sqrt(v: number): number;
+declare function floor(v: number): number;
+declare function pow(v: number, s: number): number;
+declare function fabs(v: number): number;
+
+class Math {
+    static sqrt(v: number): number {
+        return sqrt(v);
+    }
+
+    static floor(v: number): number {
+        return floor(v);
+    }
+
+    static pow(v: number, s: number): number {
+        return pow(v, s);
+    }
+
+    static abs(v: number): number {
+        return fabs(v);
+    }
+
+    static sign(v: number): number {
+	if (v > 0) return 1;
+	if (v < 0) return -1;
+	return 0;
+    }
+}
+
 let glb1: number;
 
 function testIf(): void {
@@ -62,9 +91,9 @@ function testNums(): void {
     incrBy_2();
     print("nums#1");
     assert(glb1 == 9, "glb2");
-    //assert(Math.abs(-42) == 42, "abs");
-    //assert(Math.abs(42) == 42, "abs");
-    //assert(Math.sign(42) == 1, "abs");
+    assert(Math.abs(-42) == 42, "abs");
+    assert(Math.abs(42) == 42, "abs");
+    assert(Math.sign(42) == 1, "abs");
     print("nums#3");
     testIf();
 
