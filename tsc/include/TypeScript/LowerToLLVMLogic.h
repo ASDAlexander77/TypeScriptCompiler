@@ -18,6 +18,7 @@
 #include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCLinux.h"
 #endif
 #include "TypeScript/LowerToLLVM/AssertLogic.h"
+#include "TypeScript/LowerToLLVM/DefaultLogic.h"
 #include "TypeScript/LowerToLLVM/ConvertLogic.h"
 #include "TypeScript/LowerToLLVM/CastLogicHelper.h"
 #include "TypeScript/LowerToLLVM/OptionalLogicHelper.h"

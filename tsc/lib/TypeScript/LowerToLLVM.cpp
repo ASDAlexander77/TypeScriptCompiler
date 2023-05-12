@@ -2914,6 +2914,7 @@ struct UndefOptionalOpLowering : public TsLlvmPattern<mlir_ts::UndefOptionalOp>
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(undefOptionalOp, rewriter);
+        DefaultLogic dl(undefOptionalOp, rewriter, tch, loc);
 
         auto boxedType = undefOptionalOp.res().getType().cast<mlir_ts::OptionalType>().getElementType();
         auto llvmBoxedType = tch.convertType(boxedType);
@@ -2923,23 +2924,7 @@ struct UndefOptionalOpLowering : public TsLlvmPattern<mlir_ts::UndefOptionalOp>
         auto structValue2 = structValue;
 
         // default value
-        mlir::Value defaultValue;
-
-        if (llvmBoxedType.isa<LLVM::LLVMPointerType>())
-        {
-            defaultValue = rewriter.create<LLVM::NullOp>(loc, llvmBoxedType);
-        }
-        else if (llvmBoxedType.isa<mlir::IntegerType>())
-        {
-            llvmBoxedType.cast<mlir::IntegerType>().getWidth();
-            defaultValue = clh.createIConstantOf(llvmBoxedType.cast<mlir::IntegerType>().getWidth(), 0);
-        }
-        else if (llvmBoxedType.isa<mlir::FloatType>())
-        {
-            llvmBoxedType.cast<mlir::FloatType>().getWidth();
-            defaultValue = clh.createFConstantOf(llvmBoxedType.cast<mlir::FloatType>().getWidth(), 0.0);
-        }
-
+        mlir::Value defaultValue = dl.getDefaultValueForOrUndef(llvmBoxedType);
         if (defaultValue)
         {
             structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmOptType, structValue, defaultValue,
@@ -2981,8 +2966,6 @@ struct ValueOpLowering : public TsLlvmPattern<mlir_ts::ValueOp>
     LogicalResult matchAndRewrite(mlir_ts::ValueOp valueOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto loc = valueOp->getLoc();
 
         TypeConverterHelper tch(getTypeConverter());
@@ -2992,6 +2975,35 @@ struct ValueOpLowering : public TsLlvmPattern<mlir_ts::ValueOp>
 
         rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(valueOp, llvmValueType, transformed.in(),
                                                           rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_VALUE_INDEX)));
+
+        return success();
+    }
+};
+
+struct SafeValueOpLowering : public TsLlvmPattern<mlir_ts::SafeValueOp>
+{
+    using TsLlvmPattern<mlir_ts::SafeValueOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SafeValueOp safeValueOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = safeValueOp->getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        DefaultLogic dl(safeValueOp, rewriter, tch, loc);
+
+        auto valueType = safeValueOp.res().getType();
+        auto llvmValueType = tch.convertType(valueType);
+
+        auto hasValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getLLVMBoolType(), transformed.in(),
+                                                          rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_HASVALUE_INDEX)));
+        auto value = rewriter.create<LLVM::ExtractValueOp>(loc, llvmValueType, transformed.in(),
+                                                          rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(OPTIONAL_VALUE_INDEX)));
+
+        mlir::Value defaultValue = dl.getDefaultValueForOrUndef(llvmValueType);
+
+        rewriter.replaceOpWithNewOp<LLVM::SelectOp>(safeValueOp, hasValue, value, defaultValue);
 
         return success();
     }

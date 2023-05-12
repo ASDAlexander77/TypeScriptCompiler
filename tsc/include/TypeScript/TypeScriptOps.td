@@ -1072,6 +1072,18 @@ def TypeScript_ValueOp : TypeScript_Op<"Value",
   let results = (outs AnyType:$res);
 }
 
+def TypeScript_SafeValueOp : TypeScript_Op<"SafeValue", 
+    [TypesMatchWith<"type of 'value' matches element type of 'optional'",
+                     "in", "res",
+                     "$_self.cast<OptionalType>().getElementType()">]> {
+  let description = [{
+    Example:
+      ts.safe_value %v : ts.optional<i32> to i32
+  }];
+  let arguments = (ins TypeScript_AnyOptional:$in);
+  let results = (outs AnyType:$res);
+}
+
 def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   let summary = [{
     Allocate an object in stack or heap memory.
