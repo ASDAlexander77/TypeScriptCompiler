@@ -215,7 +215,20 @@ class MLIRTypeHelper
 
     mlir::Attribute convertAttrIntoType(mlir::Attribute attr, mlir::Type destType, mlir::OpBuilder &builder)
     {
-        auto srcType = attr.getType();
+        mlir::Type srcType;
+        if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>())
+        {
+            srcType = intAttr.getType();
+        }
+        else if (auto floatAttr = attr.dyn_cast<mlir::FloatAttr>())
+        {
+            srcType = floatAttr.getType();
+        }
+        else
+        {
+            llvm_unreachable("not implmeneted");
+        }
+
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! attr from type: " << srcType << " to: " << destType << "\n";);      
 

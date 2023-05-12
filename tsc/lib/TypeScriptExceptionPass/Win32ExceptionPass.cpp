@@ -267,7 +267,7 @@ struct Win32ExceptionPassCode
             {
                 assert(catchRegion.isCleanup());
 
-                catchRegion.cleanupPad = CleanupPadInst::Create(ConstantTokenNone::get(Ctx), None, "cleanuppad", LPI);
+                catchRegion.cleanupPad = CleanupPadInst::Create(ConstantTokenNone::get(Ctx), std::nullopt, "cleanuppad", LPI);
             }
 
             auto opBundle = getCallBundleFromCatchRegion(catchRegion);
@@ -669,7 +669,7 @@ struct Win32ExceptionPassCode
         {
             any = false;
             SmallPtrSet<BasicBlock *, 16> workSet;
-            for (auto &regionBlock : F.getBasicBlockList())
+            for (auto &regionBlock : F)
             {
 
                 if (regionBlock.isEntryBlock())
@@ -699,7 +699,7 @@ struct Win32ExceptionPassCode
     BasicBlock *findUnreachableBlock(Function &F)
     {
         SmallPtrSet<BasicBlock *, 16> workSet;
-        for (auto &regionBlock : F.getBasicBlockList())
+        for (auto &regionBlock : F)
         {
             auto count = std::distance(regionBlock.begin(), regionBlock.end());
             if (count == 1 && isa<UnreachableInst>(regionBlock.begin()))

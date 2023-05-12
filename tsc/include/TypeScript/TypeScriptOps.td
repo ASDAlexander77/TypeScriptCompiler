@@ -23,7 +23,7 @@ include "mlir/Interfaces/CastInterfaces.td"
 //===----------------------------------------------------------------------===//
 
 def ConstantOp : TypeScript_Op<"Constant",
-    [ConstantLike, NoSideEffect]> {
+    [ConstantLike, Pure]> {
   let summary = "constant";
   let description = [{
     The `constant` operation produces an SSA value equal to some constant
@@ -33,29 +33,17 @@ def ConstantOp : TypeScript_Op<"Constant",
   let arguments = (ins AnyAttr:$value);
   let results = (outs AnyType:$constValue);
 
-  let builders = [
-    OpBuilder<(ins "Attribute":$value),
-    [{ build($_builder, $_state, value.getType(), value); }]>];
-
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("value"); }
-  }];
-
   let hasFolder = 1;
 
   let assemblyFormat = "attr-dict `:` type($constValue)";
 }
 
 def SymbolRefOp : TypeScript_Op<"SymbolRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference as constant";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
   let results = (outs AnyType:$value);
-
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("identifier"); }
-  }];
 
   let hasCanonicalizer = 1;
 
@@ -63,15 +51,11 @@ def SymbolRefOp : TypeScript_Op<"SymbolRef",
 }
 
 def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference as to this member";
 
   let arguments = (ins TypeScript_AnyRefLike:$thisVal, FlatSymbolRefAttr:$identifier);
   let results = (outs TypeScript_AnyRefOrCallableOrNone:$value);
-
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("identifier"); }
-  }];
 
   let hasCanonicalizer = 1;
 
@@ -79,21 +63,17 @@ def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef",
 }
 
 def VTableOffsetRefOp : TypeScript_Op<"VTableOffsetRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "gets reference in vtable";
 
   let arguments = (ins TypeScript_AnyRefLike:$vtable, I32Attr:$index);
   let results = (outs TypeScript_AnyRefLike:$value);
 
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("identifier"); }
-  }];
-
   let assemblyFormat = "`(` $vtable `[` $index `]` `)` attr-dict `:` type($vtable) `->` type($value)";
 }
 
 def VirtualSymbolRefOp : TypeScript_Op<"VirtualSymbolRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference as to virtual static member";
 
   let arguments = (ins TypeScript_AnyRefLike:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
@@ -103,29 +83,17 @@ def VirtualSymbolRefOp : TypeScript_Op<"VirtualSymbolRef",
     OpBuilder<(ins "Value":$vtable, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
     [{ build($_builder, $_state, identifier.getType(), vtable, index, identifier); }]>];
 
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("identifier"); }
-  }];
-
   let hasCanonicalizer = 1;
 
   let assemblyFormat = "`(` $vtable `[` $index `]` `)` attr-dict `:`  `:`  type($vtable) `->` type($value)";
 }
 
 def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference as to virtual this member";
 
   let arguments = (ins TypeScript_AnyRefLike:$thisVal, TypeScript_AnyRefLike:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
   let results = (outs TypeScript_AnyRefOrCallable:$value);
-
-  let builders = [
-    OpBuilder<(ins "Value":$thisVal, "Value":$vtable, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), thisVal, vtable, index, identifier); }]>];
-
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("identifier"); }
-  }];
 
   let hasCanonicalizer = 1;
 
@@ -133,15 +101,11 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
 }
 
 def AccessorOp : TypeScript_Op<"Accessor", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference as to static accessor";
 
   let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
   let results = (outs AnyType:$value);
-
-  let builders = [
-    OpBuilder<(ins "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),
-    [{ build($_builder, $_state, getAccessor.getType(), getAccessor, setAccessor); }]>];
 
   let hasCanonicalizer = 1;
 
@@ -149,15 +113,11 @@ def AccessorOp : TypeScript_Op<"Accessor",
 }
 
 def ThisAccessorOp : TypeScript_Op<"ThisAccessor", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "accessor of class";
 
   let arguments = (ins AnyType:$thisVal, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
   let results = (outs AnyType:$value);
-
-  let builders = [
-    OpBuilder<(ins "Value":$thisVal, "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),
-    [{ build($_builder, $_state, getAccessor.getType(), thisVal, getAccessor, setAccessor); }]>];
 
   let hasCanonicalizer = 1;
 
@@ -165,19 +125,11 @@ def ThisAccessorOp : TypeScript_Op<"ThisAccessor",
 }
 
 def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference as to interface member";
 
   let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, StrAttr:$identifier, OptionalAttr<BoolAttr>:$optional);
   let results = (outs TypeScript_AnyRefOrCallable:$funcOrFieldReference);
-
-  let builders = [
-    OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "StringAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), interfaceVal, index, identifier, $_builder.getBoolAttr(false)); }]>];
-
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("identifier"); }
-  }];
 
   let hasCanonicalizer = 1;
 
@@ -185,7 +137,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
 }
 
 def TypeRefOp : TypeScript_Op<"TypeRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference to type";
 
   let results = (outs AnyType:$value);
@@ -196,15 +148,11 @@ def TypeRefOp : TypeScript_Op<"TypeRef",
 }
 
 def NamespaceRefOp : TypeScript_Op<"NamespaceRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference to namespace";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
   let results = (outs AnyType:$value);
-
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("identifier"); }
-  }];
 
   let hasCanonicalizer = 1;
 
@@ -212,15 +160,11 @@ def NamespaceRefOp : TypeScript_Op<"NamespaceRef",
 }
 
 def ClassRefOp : TypeScript_Op<"ClassRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference to class";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
   let results = (outs TypeScript_Class:$value);
-
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("identifier"); }
-  }];
 
   let hasCanonicalizer = 1;
 
@@ -228,15 +172,11 @@ def ClassRefOp : TypeScript_Op<"ClassRef",
 }
 
 def InterfaceRefOp : TypeScript_Op<"InterfaceRef", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "symbol reference to interface";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
   let results = (outs TypeScript_Interface:$value);
-
-  let extraClassDeclaration = [{
-    Attribute getValue() { return (*this)->getAttr("identifier"); }
-  }];
 
   let hasCanonicalizer = 1;
 
@@ -279,13 +219,13 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
                          ArrayRef<NamedAttribute> attrs,
                          ArrayRef<DictionaryAttr> argAttrs);
 
-    FunctionType getFunctionType() {
+    FunctionType getTypeAsFunctionType() {
         auto attr = getFunctionTypeAttr();
         return attr.getValue().cast<FunctionType>();
     }
 
     bool isVarArg() {
-     return getFunctionType().isVarArg();
+        return getTypeAsFunctionType().isVarArg();
     }
 
     /// Create a deep copy of this function and all of its blocks, remapping any
@@ -295,14 +235,14 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
     /// included in the new function. Replaces references to cloned sub-values
     /// with the corresponding value that is copied, and adds those mappings to
     /// the mapper.
-    FuncOp clone(BlockAndValueMapping &mapper);
+    FuncOp clone(IRMapping &mapper);
     FuncOp clone();
 
     /// Clone the internal blocks and attributes from this function into dest.
     /// Any cloned blocks are appended to the back of dest. This function
     /// asserts that the attributes of the current function and dest are
     /// compatible.
-    void cloneInto(FuncOp dest, BlockAndValueMapping &mapper);
+    void cloneInto(FuncOp dest, IRMapping &mapper);
 
     //===------------------------------------------------------------------===//
     // CallableOpInterface
@@ -315,7 +255,7 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
 
     /// Returns the results types that the callable region produces when
     /// executed.
-    ArrayRef<Type> getCallableResults() { return getFunctionType().getResults(); }
+    ArrayRef<Type> getCallableResults() { return getTypeAsFunctionType().getResults(); }
 
     //===------------------------------------------------------------------===//
     // SymbolOpInterface Methods
@@ -325,24 +265,24 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
 
     /// Returns the number of arguments. This is a hook for
     /// OpTrait::FunctionLike.
-    unsigned getNumFuncArguments() { return getFunctionType().getInputs().size(); }
+    unsigned getNumFuncArguments() { return getTypeAsFunctionType().getInputs().size(); }
 
     /// Returns the number of results. This is a hook for OpTrait::FunctionLike.
-    unsigned getNumFuncResults() { return getFunctionType().getResults().size(); }
+    unsigned getNumFuncResults() { return getTypeAsFunctionType().getResults().size(); }
 
     //===------------------------------------------------------------------===//
     // FunctionOpInterface Methods
     //===------------------------------------------------------------------===//
 
     /// Returns the argument types of this function.
-    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+    ArrayRef<Type> getArgumentTypes() { return getTypeAsFunctionType().getInputs(); }
 
     /// Returns the result types of this function.
-    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
+    ArrayRef<Type> getResultTypes() { return getTypeAsFunctionType().getResults(); }
   }];
 
   let assemblyFormat =
-      [{ $sym_name $function_type attr-dict $body }];
+      [{ $sym_name $function_type $body attr-dict }];
 }
 
 def TypeScript_NullOp : TypeScript_Op<"Null", []> {
@@ -532,7 +472,7 @@ def TypeScript_NewInterfaceOp : TypeScript_Op<"NewInterface"> {
 }
 
 def ExtractInterfaceThisOp : TypeScript_Op<"ExtractInterfaceThis", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "extract interface this  ref.";
 
   let arguments = (ins TypeScript_Interface:$interfaceVal);
@@ -542,7 +482,7 @@ def ExtractInterfaceThisOp : TypeScript_Op<"ExtractInterfaceThis",
 }
 
 def ExtractInterfaceVTableOp : TypeScript_Op<"ExtractInterfaceVTable", 
-    [NoSideEffect]> {
+    [Pure]> {
   let summary = "extract interface vtable";
 
   let arguments = (ins TypeScript_Interface:$interfaceVal);
@@ -638,35 +578,32 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
     ```
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands);
   let results = (outs Variadic<AnyType>);
 
   let builders = [
-    OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
-      $_state.addOperands(operands);
+    OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
+      $_state.addOperands(callOperands);
       $_state.addAttribute("callee", SymbolRefAttr::get(callee));
-      $_state.addTypes(callee.getFunctionType().getResults());
+      $_state.addTypes(callee.getTypeAsFunctionType().getResults());
     }]>,
     OpBuilder<(ins "SymbolRefAttr":$callee, "TypeRange":$results,
-      CArg<"ValueRange", "{}">:$operands), [{
-      $_state.addOperands(operands);
+      CArg<"ValueRange", "{}">:$callOperands), [{
+      $_state.addOperands(callOperands);
       $_state.addAttribute("callee", callee);
       $_state.addTypes(results);
     }]>,
     OpBuilder<(ins "StringAttr":$callee, "TypeRange":$results,
-      CArg<"ValueRange", "{}">:$operands), [{
-      build($_builder, $_state, SymbolRefAttr::get(callee), results, operands);
+      CArg<"ValueRange", "{}">:$callOperands), [{
+      build($_builder, $_state, SymbolRefAttr::get(callee), results, callOperands);
     }]>,
     OpBuilder<(ins "StringRef":$callee, "TypeRange":$results,
-      CArg<"ValueRange", "{}">:$operands), [{
+      CArg<"ValueRange", "{}">:$callOperands), [{
       build($_builder, $_state, SymbolRefAttr::get($_builder.getContext(), callee), results,
-            operands);
+            callOperands);
     }]>];
 
   let extraClassDeclaration = [{
-    StringRef getCallee() { return callee(); }
-    FunctionType getCalleeType();
-
     /// Get the argument operands to the called function.
     operand_range getArgOperands() 
     {
@@ -677,14 +614,11 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
     operand_iterator arg_operand_end() { return operand_end(); }
 
     /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() 
-    {
-      return (*this)->getAttrOfType<SymbolRefAttr>("callee");
-    }
+    CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
   }];
 
   let assemblyFormat = [{
-    $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+    $callee `(` $callOperands `)` attr-dict `:` functional-type($callOperands, results)
   }];
 }
 
@@ -692,7 +626,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       CallOpInterface,
       DeclareOpInterfaceMethods<SymbolUserOpInterface>,
       TypesMatchWith<"callee input types match argument types",
-                     "callee", "operands",
+                     "callee", "callOperands",
                      "($_self.isa<HybridFunctionType>() ? $_self.cast<HybridFunctionType>().getInputs() : $_self.cast<FunctionType>().getInputs())">,
       TypesMatchWith<"callee result types match result types",
                      "callee", "results",
@@ -706,13 +640,13 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     types of the call must match the specified function type.
   }];
 
-  let arguments = (ins TypeScript_Callable:$callee, Variadic<AnyType>:$operands);
+  let arguments = (ins TypeScript_Callable:$callee, Variadic<AnyType>:$callOperands);
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
-    OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$operands), [{
+    OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
       $_state.operands.push_back(callee);
-      $_state.addOperands(operands);
+      $_state.addOperands(callOperands);
       if (auto funcType = callee.getType().dyn_cast<FunctionType>())
       {
         $_state.addTypes(funcType.getResults());
@@ -728,8 +662,6 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     }]>];
 
   let extraClassDeclaration = [{
-    Value getCallee() { return getOperand(0); }
-
     /// Get the argument operands to the called function.
     operand_range getArgOperands() {
       return {arg_operand_begin(), arg_operand_end()};
@@ -739,12 +671,12 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     operand_iterator arg_operand_end() { return operand_end(); }
 
     /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() { return getCallee(); }
+    CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
   }];
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` type($callee)";
+  let assemblyFormat = "$callee `(` $callOperands `)` attr-dict `:` type($callee)";
 }
 
 def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [
@@ -752,7 +684,7 @@ def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [
                       DeclareOpInterfaceMethods<BranchOpInterface>,
                       Terminator]> {
   let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$callee,
-                   Variadic<AnyType>:$operands,
+                   Variadic<AnyType>:$callOperands,
                    Variadic<AnyType>:$normalDestOperands,
                    Variadic<AnyType>:$unwindDestOperands);
   let results = (outs Variadic<AnyType>);
@@ -781,7 +713,7 @@ def TypeScript_InvokeHybridOp : TypeScript_Op<"InvokeHybrid", [
                       DeclareOpInterfaceMethods<BranchOpInterface>,
                       Terminator]> {
   let arguments = (ins TypeScript_HybridFunction:$callee,
-                   Variadic<AnyType>:$operands,
+                   Variadic<AnyType>:$callOperands,
                    Variadic<AnyType>:$normalDestOperands,
                    Variadic<AnyType>:$unwindDestOperands);
   let results = (outs Variadic<AnyType>);
@@ -795,31 +727,28 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
   let description = [{
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands);
   let results = (outs Variadic<AnyType>);
 
   let builders = [
-    OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
-      $_state.addOperands(operands);
+    OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
+      $_state.addOperands(callOperands);
       $_state.addAttribute("callee", SymbolRefAttr::get(callee));
-      $_state.addTypes(callee.getFunctionType().getResults());
+      $_state.addTypes(callee.getTypeAsFunctionType().getResults());
     }]>,
     OpBuilder<(ins "SymbolRefAttr":$callee, "TypeRange":$results,
-      CArg<"ValueRange", "{}">:$operands), [{
-      $_state.addOperands(operands);
+      CArg<"ValueRange", "{}">:$callOperands), [{
+      $_state.addOperands(callOperands);
       $_state.addAttribute("callee", callee);
       $_state.addTypes(results);
     }]>,
     OpBuilder<(ins "StringRef":$callee, "TypeRange":$results,
-      CArg<"ValueRange", "{}">:$operands), [{
+      CArg<"ValueRange", "{}">:$callOperands), [{
       build($_builder, $_state, SymbolRefAttr::get($_builder.getContext(), callee), results,
             operands);
     }]>];
 
   let extraClassDeclaration = [{
-    StringRef getCallee() { return callee(); }
-    FunctionType getCalleeType();
-
     /// Get the argument operands to the called function.
     operand_range getArgOperands() 
     {
@@ -830,14 +759,11 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
     operand_iterator arg_operand_end() { return operand_end(); }
 
     /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() 
-    {
-      return (*this)->getAttrOfType<SymbolRefAttr>("callee");
-    }
+    CallInterfaceCallable getCallableForCallee() {return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
   }];
 
   let assemblyFormat = [{
-    $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+    $callee `(` $callOperands `)` attr-dict `:` functional-type($callOperands, results)
   }];
 }
 
@@ -847,34 +773,32 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
   let description = [{
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
+  let arguments = (ins Variadic<AnyType>:$callOperands);
   let results = (outs Variadic<AnyType>);
   
   let builders = [
-    OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$operands), [{
+    OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
       $_state.operands.push_back(callee);
-      $_state.addOperands(operands);
+      $_state.addOperands(callOperands);
       $_state.addTypes(callee.getType().cast<FunctionType>().getResults());
     }]>];
 
   let extraClassDeclaration = [{
-    Value getCallee() { return getOperand(0); }
-
     /// Get the argument operands to the called function.
     operand_range getArgOperands() 
     {
       return {arg_operand_begin(), arg_operand_end()};
     }
 
-    operand_iterator arg_operand_begin() { return operand_begin(); }
+    operand_iterator arg_operand_begin() { return operand_begin() + 1; }
     operand_iterator arg_operand_end() { return operand_end(); }
 
     /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() { return getCallee(); }
+    CallInterfaceCallable getCallableForCallee() { (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
   }];
 
   let assemblyFormat = [{
-      `(` $operands `)` attr-dict `:` functional-type($operands, results)
+      `(` $callOperands `)` attr-dict `:` functional-type($callOperands, results)
   }];
 }
 
@@ -885,13 +809,10 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_HybridFunction:$callee, Variadic<AnyType>:$operands);
+  let arguments = (ins TypeScript_HybridFunction:$callee, Variadic<AnyType>:$callOperands);
   let results = (outs Variadic<AnyType>);
 
   let extraClassDeclaration = [{
-    StringRef getCallee() { return ""; }
-    FunctionType getCalleeType();
-
     /// Get the argument operands to the called function.
     operand_range getArgOperands() 
     {
@@ -902,14 +823,11 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
     operand_iterator arg_operand_end() { return operand_end(); }
 
     /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() 
-    {
-      return (*this)->getAttrOfType<SymbolRefAttr>("callee");
-    }
+    CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
   }];
 
   let assemblyFormat = [{
-    $callee `(` $operands `)` attr-dict `:` type($callee) `+` functional-type($operands, results)
+    $callee `(` $callOperands `)` attr-dict `:` type($callee) `+` functional-type($callOperands, results)
   }];
 }
 
@@ -1009,7 +927,7 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitT
 
 }
 
-def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [NoSideEffect, ReturnLike, Terminator,
+def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [Pure, ReturnLike, Terminator,
                                ParentOneOf<["ParamOptionalOp"]>]> {
   let arguments = (ins Variadic<AnyType>:$results);
 
@@ -1452,7 +1370,7 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
   let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
 }
 
-def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpInterface>, NoSideEffect]> {
+def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpInterface>, Pure]> {
   let description = [{
     Example:
       ts.cast %v : i32 to f16
@@ -1465,7 +1383,7 @@ def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpI
   let hasVerifier = 1;
 }
 
-def TypeScript_BoxOp : TypeScript_Op<"Box", [NoSideEffect]> {
+def TypeScript_BoxOp : TypeScript_Op<"Box", [Pure]> {
   let description = [{
     Example:
       %ti = ts.typeof %1
@@ -1476,7 +1394,7 @@ def TypeScript_BoxOp : TypeScript_Op<"Box", [NoSideEffect]> {
   let assemblyFormat = "$in `,` $typeInfo attr-dict `:` type($in) `,` type($typeInfo) `to` type($res)";
 }
 
-def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [NoSideEffect]> {
+def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [Pure]> {
   let description = [{
     Example:
       ts.unbox %v : ts.any to i32
@@ -1486,7 +1404,7 @@ def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [NoSideEffect]> {
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
-def TypeScript_CreateUnionInstanceOp : TypeScript_Op<"CreateUnionInstance", [NoSideEffect]> {
+def TypeScript_CreateUnionInstanceOp : TypeScript_Op<"CreateUnionInstance", [Pure]> {
   let description = [{
     Example:
       %ti = ts.typeof %1
@@ -1497,7 +1415,7 @@ def TypeScript_CreateUnionInstanceOp : TypeScript_Op<"CreateUnionInstance", [NoS
   let assemblyFormat = "$in `,` $typeInfo attr-dict `:` type($in) `,` type($typeInfo) `to` type($res)";
 }
 
-def TypeScript_GetValueFromUnionOp : TypeScript_Op<"GetValueFromUnionOp", [NoSideEffect]> {
+def TypeScript_GetValueFromUnionOp : TypeScript_Op<"GetValueFromUnionOp", [Pure]> {
   let description = [{
     Example:
       %1 = ts.getvalue_from_union %v : ts.union to i32
@@ -1507,7 +1425,7 @@ def TypeScript_GetValueFromUnionOp : TypeScript_Op<"GetValueFromUnionOp", [NoSid
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
-def TypeScript_GetTypeInfoFromUnionOp : TypeScript_Op<"GetTypeInfoFromUnionOp", [NoSideEffect]> {
+def TypeScript_GetTypeInfoFromUnionOp : TypeScript_Op<"GetTypeInfoFromUnionOp", [Pure]> {
   let description = [{
     Example:
       %1 = ts.gettype_from_union %v : ts.union to i32
@@ -1517,7 +1435,7 @@ def TypeScript_GetTypeInfoFromUnionOp : TypeScript_Op<"GetTypeInfoFromUnionOp", 
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
-def TypeScript_DialectCastOp : TypeScript_Op<"DialectCast", [DeclareOpInterfaceMethods<CastOpInterface>, NoSideEffect]> {
+def TypeScript_DialectCastOp : TypeScript_Op<"DialectCast", [DeclareOpInterfaceMethods<CastOpInterface>, Pure]> {
   let description = [{
     Example:
       ts.dialect_cast %v : ts.number to f64
@@ -1601,7 +1519,7 @@ def TypeScript_YieldReturnValOp : TypeScript_Op<"YieldReturnVal"> {
   );
 }
 
-def TypeScript_ExitOp : TypeScript_Op<"Exit", [NoSideEffect, ReturnLike, Terminator]> {
+def TypeScript_ExitOp : TypeScript_Op<"Exit", [Pure, ReturnLike, Terminator]> {
   let description = [{
     To prepare exit data for return
 
@@ -1617,24 +1535,24 @@ def TypeScript_ExitOp : TypeScript_Op<"Exit", [NoSideEffect, ReturnLike, Termina
   );
 }
 
-def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [NoSideEffect, HasParent<"FuncOp">,
+def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [Pure, HasParent<"FuncOp">,
                                 ReturnLike, Terminator]> {
   let summary = "return 'internal' operation";
   let description = [{
   }];
 
-  let arguments = (ins Variadic<AnyType>:$operands);
+  let arguments = (ins Variadic<AnyType>:$retOperands);
 
   let builders = [
     OpBuilder<(ins),
     [{ build($_builder, $_state, llvm::None); }]>];
 
-  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+  let assemblyFormat = "attr-dict ($retOperands^ `:` type($retOperands))?";
 }
 
 def TypeScript_IfOp : TypeScript_Op<"If",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>, SingleBlockImplicitTerminator<"typescript::ResultOp">, 
-      RecursiveSideEffects, NoRegionArguments]> {
+      RecursiveMemoryEffects, NoRegionArguments]> {
   let summary = "if-then-else operation";
 
   let arguments = (ins TypeScript_Boolean:$condition);
@@ -1661,12 +1579,12 @@ def TypeScript_IfOp : TypeScript_Op<"If",
   let extraClassDeclaration = [{
     OpBuilder getThenBodyBuilder(OpBuilder::Listener *listener = nullptr) {
       Block* body = getBody(0);
-      return results().empty() ? OpBuilder::atBlockTerminator(body, listener)
+      return getResults().empty() ? OpBuilder::atBlockTerminator(body, listener)
                                : OpBuilder::atBlockEnd(body, listener);
     }
     OpBuilder getElseBodyBuilder(OpBuilder::Listener *listener = nullptr) {
       Block* body = getBody(1);
-      return results().empty() ? OpBuilder::atBlockTerminator(body, listener)
+      return getResults().empty() ? OpBuilder::atBlockTerminator(body, listener)
                                : OpBuilder::atBlockEnd(body, listener);
     }
   }];
@@ -1674,7 +1592,7 @@ def TypeScript_IfOp : TypeScript_Op<"If",
   let hasCanonicalizer = 1;
 }
 
-def TypeScript_ResultOp : TypeScript_Op<"Result", [NoSideEffect, ReturnLike, Terminator,
+def TypeScript_ResultOp : TypeScript_Op<"Result", [Pure, ReturnLike, Terminator,
                                ParentOneOf<["IfOp",  "DoWhileOp", "WhileOp", "ForOp", "TryOp", "OptionalValueOrDefaultOp"]>]> {
   let summary = "loop yield and termination operation";
 
@@ -1683,7 +1601,7 @@ def TypeScript_ResultOp : TypeScript_Op<"Result", [NoSideEffect, ReturnLike, Ter
 }
 
 def TypeScript_WhileOp : TypeScript_Op<"While",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveMemoryEffects]> {
   let summary = "a generic 'while' loop";
   let description = [{
     This operation represents a generic "while" loop that keeps
@@ -1719,7 +1637,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
 }
 
 def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveMemoryEffects]> {
   let summary = "a generic 'do-while' loop";
   let description = [{
     This operation represents a generic "do-while" loop.
@@ -1738,7 +1656,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
 }
 
 def TypeScript_ForOp : TypeScript_Op<"For",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveMemoryEffects]> {
   let summary = "a generic 'for' loop";
 
   let arguments = (ins Variadic<AnyType>:$inits);
@@ -1754,7 +1672,7 @@ def TypeScript_ForOp : TypeScript_Op<"For",
 }
 
 def TypeScript_ConditionOp : TypeScript_Op<"Condition",
-                         [HasParent<"DoWhileOp, WhileOp, ForOp">, NoSideEffect, Terminator]> {
+                         [HasParent<"DoWhileOp, WhileOp, ForOp">, Pure, Terminator]> {
   let summary = "loop continuation condition";
   let description = [{
     This operation accepts the continuation (i.e., inverse of exit) condition
@@ -1798,7 +1716,7 @@ def TypeScript_BreakOp : TypeScript_Op<"Break"> {
 }
 
 def TypeScript_LabelOp : TypeScript_Op<"Label",
-      [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects,
+      [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveMemoryEffects,
        NoRegionArguments]> {
   let summary = "label operation";
 
@@ -1845,7 +1763,7 @@ def TypeScript_StateLabelOp : TypeScript_Op<"StateLabel",
 
 def TypeScript_SwitchOp : TypeScript_Op<"Switch",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-       RecursiveSideEffects, NoRegionArguments]> {
+       RecursiveMemoryEffects, NoRegionArguments]> {
   let summary = "switch operation";
 
   let arguments = (ins AnyType:$value);
@@ -1864,7 +1782,7 @@ def TypeScript_SwitchOp : TypeScript_Op<"Switch",
   }];
 }
 
-def TypeScript_MergeOp : TypeScript_Op<"Merge", [NoSideEffect, HasParent<"SwitchOp, LabelOp">, Terminator]> {
+def TypeScript_MergeOp : TypeScript_Op<"Merge", [Pure, HasParent<"SwitchOp, LabelOp">, Terminator]> {
   let summary = "A special terminator for merging a switch or label.";
 
   let arguments = (ins);
@@ -1874,7 +1792,7 @@ def TypeScript_MergeOp : TypeScript_Op<"Merge", [NoSideEffect, HasParent<"Switch
 
 def TypeScript_TryOp : TypeScript_Op<"Try",
     [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-     RecursiveSideEffects]> {
+     RecursiveMemoryEffects]> {
   let summary = "a generic 'try' clause";
   let description = [{
     This operation represents a generic "try" clause.
@@ -1888,7 +1806,7 @@ def TypeScript_TryOp : TypeScript_Op<"Try",
     OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
   }];
 
-  let assemblyFormat = "attr-dict $body $catches $finallyBlock";
+  let assemblyFormat = "$body $catches $finallyBlock attr-dict";
 }
 
 def TypeScript_CatchOp : TypeScript_Op<"Catch",
@@ -1993,7 +1911,7 @@ def TypeScript_AddressOfOp : TypeScript_Op<"AddressOf"> {
     OpBuilder<(ins "GlobalOp":$global,
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
     [{
-      build($_builder, $_state, RefType::get(global.getType()), global.sym_name(), mlir::IntegerAttr());
+      build($_builder, $_state, RefType::get(global.getType()), global.getSymName(), mlir::IntegerAttr());
       $_state.addAttributes(attrs);
     }]>,
     OpBuilder<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
@@ -2042,14 +1960,6 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
   ];
 
   let extraClassDeclaration = [{
-    /// Return the LLVM type of the global.
-    Type getType() {
-      return type();
-    }
-    /// Return the initializer attribute if it exists, or a null attribute.
-    Attribute value_or() {
-      return value().value_or(Attribute());
-    }
     /// Return the initializer region. This may be empty, but if it is not it
     /// terminates in an `llvm.return` op with the initializer value.
     Region &getInitializerRegion() {
@@ -2065,7 +1975,7 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
   }];
 }
 
-def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [NoSideEffect, ReturnLike, Terminator,
+def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [Pure, ReturnLike, Terminator,
                                ParentOneOf<["GlobalOp"]>]> {
   let summary = "global init yield and termination operation";
 
@@ -2116,7 +2026,7 @@ def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",
   }];      
 }
 
-def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [NoSideEffect, ReturnLike, Terminator,
+def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [Pure, ReturnLike, Terminator,
                                ParentOneOf<["typescript::BodyInternalOp"]>]> {
   let summary = "termination operation";
 
