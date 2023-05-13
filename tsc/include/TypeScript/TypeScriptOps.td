@@ -839,13 +839,6 @@ def TypeScript_CaptureOp : TypeScript_Op<"Capture", []> {
   let results = (outs AnyType);
 }
 
-def TypeScript_TrampolineOp : TypeScript_Op<"Trampoline", []> {
-  let summary = "trampoline logic";
-
-  let arguments = (ins TypeScript_Function:$callee, AnyType:$data_reference, OptionalAttr<BoolAttr>:$allocInHeap);
-  let results = (outs TypeScript_Function:$newCallee);
-}
-
 def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
   let summary = [{
     Allocate an parameter object in memory.
@@ -1228,7 +1221,7 @@ def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {
   }];
 
   let arguments = (ins
-    TypeScript_AnyRefLike:$thisVal, TypeScript_Function:$func
+    TypeScript_AnyRefLike:$thisVal, TypeScript_Callable:$func
   );
 
   let results = (outs

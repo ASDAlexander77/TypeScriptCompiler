@@ -3530,88 +3530,6 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
 };
 
 #endif
-struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
-{
-    using TsLlvmPattern<mlir_ts::TrampolineOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::TrampolineOp trampolineOp, Adaptor transformed,
-                                  ConversionPatternRewriter &rewriter) const final
-    {
-        
-
-        // TODO: missing attribute "nest" on parameter
-        auto location = trampolineOp->getLoc();
-
-        TypeHelper th(rewriter);
-        TypeConverterHelper tch(getTypeConverter());
-        CodeLogicHelper clh(trampolineOp, rewriter);
-        LLVMCodeHelper ch(trampolineOp, rewriter, getTypeConverter());
-        CastLogicHelper castLogic(trampolineOp, rewriter, tch);
-
-        auto i8PtrTy = th.getI8PtrType();
-
-        auto initTrampolineFuncOp = ch.getOrInsertFunction(
-            "llvm.init.trampoline", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, i8PtrTy}));
-        auto adjustTrampolineFuncOp =
-            ch.getOrInsertFunction("llvm.adjust.trampoline", th.getFunctionType(i8PtrTy, {i8PtrTy}));
-        // Win32 specifics
-        auto enableExecuteStackFuncOp =
-            ch.getOrInsertFunction("__enable_execute_stack", th.getFunctionType(th.getVoidType(), {i8PtrTy}));
-
-        // allocate temp trampoline
-        auto bufferType = th.getPointerType(th.getI8Array(TRAMPOLINE_SIZE));
-
-#ifdef ALLOC_TRAMPOLINE_IN_HEAP
-        auto allocInHeap = true;
-#else
-        auto allocInHeap = trampolineOp.getAllocInHeap().has_value() && trampolineOp.getAllocInHeap().value();
-#endif
-
-        mlir::Value trampolinePtr;
-        if (allocInHeap)
-        {
-            trampolinePtr = ch.MemoryAlloc(bufferType);
-        }
-        else
-        {
-            mlir::Value trampoline;
-            {
-                // we can't reallocate alloc for trampolines
-                /*
-                // put all allocs at 'func' top
-                auto parentFuncOp = trampolineOp->getParentOfType<LLVM::LLVMFuncOp>();
-                assert(parentFuncOp);
-                mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
-                */
-
-                trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
-            }
-
-            auto const0 = clh.createI32ConstantOf(0);
-            trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, trampoline, ValueRange{const0, const0});
-        }
-
-        // init trampoline
-        rewriter.create<LLVM::CallOp>(location, initTrampolineFuncOp,
-                                      ValueRange{trampolinePtr, clh.castToI8Ptr(transformed.getCallee()),
-                                                 clh.castToI8Ptr(transformed.getDataReference())});
-
-        auto callAdjustedTrampoline =
-            rewriter.create<LLVM::CallOp>(location, adjustTrampolineFuncOp, ValueRange{trampolinePtr});
-        auto adjustedTrampolinePtr = callAdjustedTrampoline.getResult();
-
-        rewriter.create<LLVM::CallOp>(location, enableExecuteStackFuncOp, ValueRange{adjustedTrampolinePtr});
-
-        // mlir::Value castFunc = rewriter.create<mlir_ts::CastOp>(location, trampolineOp.getType(),
-        // adjustedTrampolinePtr); replacement
-        auto castFunc = castLogic.cast(adjustedTrampolinePtr, adjustedTrampolinePtr.getType(), trampolineOp.getType());
-
-        rewriter.replaceOp(trampolineOp, castFunc);
-
-        return success();
-    }
-};
 
 struct VTableOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::VTableOffsetRefOp>
 {
@@ -5182,7 +5100,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering,
         StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering,
         StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering,
-        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering,
+        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering,
         AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
         ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
         LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
