@@ -430,7 +430,7 @@ class LengthOfOpLowering : public TsLlvmPattern<mlir_ts::LengthOfOp>
         auto loc = op->getLoc();
 
         rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(op, th.getI32Type(), transformed.getOp(),
-                                                                MLIRHelper::getStructIndex(1));
+                                                                MLIRHelper::getStructIndex(rewriter, 1));
 
         return success();
     }
@@ -1469,8 +1469,8 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
             // create tagged union
             auto udefVal = rewriter.create<LLVM::UndefOp>(loc, unionPartialType);
             auto val0 =
-                rewriter.create<LLVM::InsertValueOp>(loc, udefVal, transformed.getTypeInfo(), MLIRHelper::getStructIndex(0));
-            auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, in, MLIRHelper::getStructIndex(1));
+                rewriter.create<LLVM::InsertValueOp>(loc, udefVal, transformed.getTypeInfo(), MLIRHelper::getStructIndex(rewriter, 0));
+            auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, in, MLIRHelper::getStructIndex(rewriter, 1));
 
             auto casted = castLogic.castLLVMTypes(val1, unionPartialType, op.getType(), resType);
             if (!casted)
@@ -1522,7 +1522,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
                 return mlir::failure();
             }
 
-            auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, valueType, casted, MLIRHelper::getStructIndex(1));
+            auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, valueType, casted, MLIRHelper::getStructIndex(rewriter, 1));
 
             rewriter.replaceOp(op, ValueRange{val0});
         }
@@ -1555,7 +1555,7 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
         if (needTag)
         {
             auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.getIn(),
-                                                              MLIRHelper::getStructIndex(0));
+                                                              MLIRHelper::getStructIndex(rewriter, 0));
 
             rewriter.replaceOp(op, ValueRange{val0});
         }
@@ -1835,7 +1835,7 @@ struct DeconstructTupleOpLowering : public TsLlvmPattern<mlir_ts::DeconstructTup
         {
             auto llvmValueType = item;
             auto value =
-                rewriter.create<LLVM::ExtractValueOp>(loc, llvmValueType, tupleVar, MLIRHelper::getStructIndex(index));
+                rewriter.create<LLVM::ExtractValueOp>(loc, llvmValueType, tupleVar, MLIRHelper::getStructIndex(rewriter, index));
 
             results.push_back(value);
 
@@ -1916,11 +1916,11 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         auto llvmRtArrayStructType = tch.convertType(arrayType);
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
-                                                                 MLIRHelper::getStructIndex(0));
+                                                                 MLIRHelper::getStructIndex(rewriter, 0));
 
         auto newCountAsI32Type = clh.createI32ConstantOf(createArrayOp.getItems().size());
         auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2,
-                                                                 newCountAsI32Type, MLIRHelper::getStructIndex(1));
+                                                                 newCountAsI32Type, MLIRHelper::getStructIndex(rewriter, 1));
 
         rewriter.replaceOp(createArrayOp, ValueRange{structValue3});
         return success();
@@ -1961,11 +1961,11 @@ struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
         auto llvmRtArrayStructType = tch.convertType(arrayType);
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
-                                                                 MLIRHelper::getStructIndex(0));
+                                                                 MLIRHelper::getStructIndex(rewriter, 0));
 
         auto size0 = clh.createI32ConstantOf(0);
         auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, size0,
-                                                                 MLIRHelper::getStructIndex(1));
+                                                                 MLIRHelper::getStructIndex(rewriter, 1));
 
         rewriter.replaceOp(newEmptyArrOp, ValueRange{structValue3});
         return success();
@@ -2011,10 +2011,10 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         auto llvmRtArrayStructType = tch.convertType(arrayType);
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
-                                                                 MLIRHelper::getStructIndex(0));
+                                                                 MLIRHelper::getStructIndex(rewriter, 0));
 
         auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2,
-                                                                 transformed.getCount(), MLIRHelper::getStructIndex(1));
+                                                                 transformed.getCount(), MLIRHelper::getStructIndex(rewriter, 1));
 
         rewriter.replaceOp(newArrOp, ValueRange{structValue3});
         return success();
@@ -2833,10 +2833,10 @@ struct OptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalOp>
         }
 
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmOptType, structValue, value,
-                                                                 MLIRHelper::getStructIndex(OPTIONAL_VALUE_INDEX));
+                                                                 MLIRHelper::getStructIndex(rewriter, OPTIONAL_VALUE_INDEX));
 
         rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(optionalOp, llvmOptType, structValue2, transformed.getFlag(),
-                                                         MLIRHelper::getStructIndex(OPTIONAL_HASVALUE_INDEX));
+                                                         MLIRHelper::getStructIndex(rewriter, OPTIONAL_HASVALUE_INDEX));
 
         return success();
     }
@@ -2888,11 +2888,11 @@ struct ValueOptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalValueOp>
         }
 
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmOptType, structValue, value,
-                                                                 MLIRHelper::getStructIndex(OPTIONAL_VALUE_INDEX));
+                                                                 MLIRHelper::getStructIndex(rewriter, OPTIONAL_VALUE_INDEX));
 
         auto trueValue = clh.createI1ConstantOf(true);
         rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(createOptionalOp, llvmOptType, structValue2, trueValue,
-                                                         MLIRHelper::getStructIndex(OPTIONAL_HASVALUE_INDEX));
+                                                         MLIRHelper::getStructIndex(rewriter, OPTIONAL_HASVALUE_INDEX));
 
         return success();
     }
@@ -2926,12 +2926,12 @@ struct UndefOptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalUndefOp>
         if (defaultValue)
         {
             structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmOptType, structValue, defaultValue,
-                                                                MLIRHelper::getStructIndex(OPTIONAL_VALUE_INDEX));
+                                                                MLIRHelper::getStructIndex(rewriter, OPTIONAL_VALUE_INDEX));
         }
 
         auto falseValue = clh.createI1ConstantOf(false);
         rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(undefOptionalOp, llvmOptType, structValue2, falseValue,
-                                                         MLIRHelper::getStructIndex(OPTIONAL_HASVALUE_INDEX));
+                                                         MLIRHelper::getStructIndex(rewriter, OPTIONAL_HASVALUE_INDEX));
 
         return success();
     }
@@ -2951,7 +2951,7 @@ struct HasValueOpLowering : public TsLlvmPattern<mlir_ts::HasValueOp>
         TypeHelper th(rewriter);
 
         rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(hasValueOp, th.getLLVMBoolType(), transformed.getIn(),
-                                                          MLIRHelper::getStructIndex(OPTIONAL_HASVALUE_INDEX));
+                                                          MLIRHelper::getStructIndex(rewriter, OPTIONAL_HASVALUE_INDEX));
 
         return success();
     }
@@ -2972,7 +2972,7 @@ struct ValueOpLowering : public TsLlvmPattern<mlir_ts::ValueOp>
         auto llvmValueType = tch.convertType(valueType);
 
         rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(valueOp, llvmValueType, transformed.getIn(),
-                                                          MLIRHelper::getStructIndex(OPTIONAL_VALUE_INDEX));
+                                                          MLIRHelper::getStructIndex(rewriter, OPTIONAL_VALUE_INDEX));
 
         return success();
     }
@@ -2997,9 +2997,9 @@ struct SafeValueOpLowering : public TsLlvmPattern<mlir_ts::ValueOrDefaultOp>
         auto llvmValueType = tch.convertType(valueType);
 
         auto hasValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getLLVMBoolType(), transformed.getIn(),
-                                                          MLIRHelper::getStructIndex(OPTIONAL_HASVALUE_INDEX));
+                                                          MLIRHelper::getStructIndex(rewriter, OPTIONAL_HASVALUE_INDEX));
         auto value = rewriter.create<LLVM::ExtractValueOp>(loc, llvmValueType, transformed.getIn(),
-                                                          MLIRHelper::getStructIndex(OPTIONAL_VALUE_INDEX));
+                                                          MLIRHelper::getStructIndex(rewriter, OPTIONAL_VALUE_INDEX));
 
         mlir::Value defaultValue = dl.getDefaultValueForOrUndef(llvmValueType);
 
@@ -3214,7 +3214,7 @@ struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
 
         // catches:extract
         auto loadedI8PtrValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getLandingPad(),
-                                                                      MLIRHelper::getStructIndex(0));
+                                                                      MLIRHelper::getStructIndex(rewriter, 0));
 
         auto beginCatchFuncName = "__cxa_begin_catch";
         auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
@@ -3383,7 +3383,7 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
         auto i8PtrTy = th.getI8PtrType();
 
         auto loadedI32Value = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), transformed.getLandingPad(),
-                                                                    MLIRHelper::getStructIndex(1));
+                                                                    MLIRHelper::getStructIndex(rewriter, 1));
 
         auto typeIdFuncName = "llvm.eh.typeid.for";
         auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
@@ -3419,7 +3419,7 @@ struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
 
         // catches:extract
         auto loadedI8PtrValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getLandingPad(),
-                                                                      MLIRHelper::getStructIndex(0));
+                                                                      MLIRHelper::getStructIndex(rewriter, 0));
 
         auto beginCatchFuncName = "__cxa_begin_catch";
         auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
@@ -3656,9 +3656,9 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         auto isOptional = interfaceSymbolRefOp.getOptional().has_value() && interfaceSymbolRefOp.getOptional().value();
 
         auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getInterfaceVal(),
-                                                            MLIRHelper::getStructIndex(DATA_VALUE_INDEX));
+                                                            MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
         auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getInterfaceVal(),
-                                                             MLIRHelper::getStructIndex(THIS_VALUE_INDEX));
+                                                             MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         auto methodOrFieldPtr =
             rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), vtable, interfaceSymbolRefOp.getIndex());
@@ -3740,9 +3740,9 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
 
         auto structVal = rewriter.create<LLVM::UndefOp>(loc, llvmInterfaceType);
         auto structVal2 = rewriter.create<LLVM::InsertValueOp>(
-            loc, structVal, clh.castToI8Ptr(transformed.getInterfaceVTable()), MLIRHelper::getStructIndex(DATA_VALUE_INDEX));
+            loc, structVal, clh.castToI8Ptr(transformed.getInterfaceVTable()), MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(transformed.getThisVal()),
-                                                               MLIRHelper::getStructIndex(THIS_VALUE_INDEX));
+                                                               MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
 
@@ -3769,7 +3769,7 @@ struct ExtractInterfaceThisOpLowering : public TsLlvmPattern<mlir_ts::ExtractInt
         LLVM_DEBUG(llvm::dbgs() << "\n!! ExtractInterfaceThis from: " << extractInterfaceThisOp.getInterfaceVal() << "\n");
 
         auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getInterfaceVal(),
-                                                            MLIRHelper::getStructIndex(THIS_VALUE_INDEX));
+                                                            MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         rewriter.replaceOp(extractInterfaceThisOp, ValueRange{vtable});
 
@@ -3797,7 +3797,7 @@ struct ExtractInterfaceVTableOpLowering : public TsLlvmPattern<mlir_ts::ExtractI
                                 << "\n");
 
         auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getInterfaceVal(),
-                                                            MLIRHelper::getStructIndex(DATA_VALUE_INDEX));
+                                                            MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
 
         rewriter.replaceOp(extractInterfaceVTableOp, ValueRange{vtable});
 
@@ -3826,9 +3826,9 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
         auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
 
         auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getReference(),
-                                                             MLIRHelper::getStructIndex(THIS_VALUE_INDEX));
+                                                             MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
         auto valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, transformed.getReference(),
-                                                                 MLIRHelper::getStructIndex(DATA_VALUE_INDEX));
+                                                                 MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
 
         mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, valueRefVal);
 
@@ -3872,7 +3872,7 @@ struct StoreBoundRefOpLowering : public TsLlvmPattern<mlir_ts::StoreBoundRefOp>
         auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
 
         auto valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, transformed.getReference(),
-                                                                 MLIRHelper::getStructIndex(DATA_VALUE_INDEX));
+                                                                 MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
 
         rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeBoundRefOp, transformed.getValue(), valueRefVal);
         return success();
@@ -3898,9 +3898,9 @@ struct CreateBoundRefOpLowering : public TsLlvmPattern<mlir_ts::CreateBoundRefOp
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundRefType);
         auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, transformed.getValueRef(),
-                                                               MLIRHelper::getStructIndex(DATA_VALUE_INDEX));
+                                                               MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(transformed.getThisVal()),
-                                                               MLIRHelper::getStructIndex(THIS_VALUE_INDEX));
+                                                               MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         rewriter.replaceOp(createBoundRefOp, ValueRange{structVal3});
 
@@ -3937,9 +3937,9 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundFunctionType);
         auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, transformed.getFunc(),
-                                                               MLIRHelper::getStructIndex(DATA_VALUE_INDEX));
+                                                               MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.getThisVal(),
-                                                               MLIRHelper::getStructIndex(THIS_VALUE_INDEX));
+                                                               MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         rewriter.replaceOp(createBoundFunctionOp, ValueRange{structVal3});
 
@@ -3965,7 +3965,7 @@ struct GetThisOpLowering : public TsLlvmPattern<mlir_ts::GetThisOp>
         auto llvmThisType = tch.convertType(getThisOp.getType());
 
         mlir::Value thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getBoundFunc(),
-                                                                    MLIRHelper::getStructIndex(THIS_VALUE_INDEX));
+                                                                    MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         auto thisValCasted = rewriter.create<LLVM::BitcastOp>(loc, llvmThisType, thisVal);
 
@@ -4020,7 +4020,7 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
         }
 
         mlir::Value methodVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmMethodType, transformed.getBoundFunc(),
-                                                                      MLIRHelper::getStructIndex(DATA_VALUE_INDEX));
+                                                                      MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
 
         if (methodVal.getType() != getMethodOp.getType())
         {

@@ -315,7 +315,7 @@ class MLIRRTTIHelperVCWin32
     {
         auto tpl = tupleValue.getType();
         assert(tpl.isa<mlir_ts::TupleType>() || tpl.isa<mlir_ts::ConstTupleType>() || tpl.isa<mlir_ts::ConstArrayValueType>());
-        tupleValue = rewriter.create<mlir_ts::InsertPropertyOp>(loc, tpl, value, tupleValue, MLIRHelper::getStructIndex(index));
+        tupleValue = rewriter.create<mlir_ts::InsertPropertyOp>(loc, tpl, value, tupleValue, MLIRHelper::getStructIndex(rewriter, index));
         return mlir::success();
     }
 
@@ -549,7 +549,7 @@ class MLIRRTTIHelperVCWin32
             // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
             auto itemValue = rewriter.create<mlir_ts::ConstantOp>(loc, fieldType, item);
             structVal =
-                rewriter.create<mlir_ts::InsertPropertyOp>(loc, tupleType, itemValue, structVal, MLIRHelper::getStructIndex(position++));
+                rewriter.create<mlir_ts::InsertPropertyOp>(loc, tupleType, itemValue, structVal, MLIRHelper::getStructIndex(rewriter, position++));
         }
 
         return structVal;

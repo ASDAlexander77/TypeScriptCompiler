@@ -400,7 +400,7 @@ class MLIRRTTIHelperVCLinux
     {
         auto tpl = tupleValue.getType();
         assert(tpl.isa<mlir_ts::TupleType>() || tpl.isa<mlir_ts::ConstTupleType>() || tpl.isa<mlir_ts::ConstArrayValueType>());
-        tupleValue = rewriter.create<mlir_ts::InsertPropertyOp>(loc, tpl, value, tupleValue, MLIRHelper::getStructIndex(index));
+        tupleValue = rewriter.create<mlir_ts::InsertPropertyOp>(loc, tpl, value, tupleValue, MLIRHelper::getStructIndex(rewriter, index));
         return mlir::success();
     }
 

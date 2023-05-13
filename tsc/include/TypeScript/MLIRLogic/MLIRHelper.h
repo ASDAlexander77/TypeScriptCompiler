@@ -127,9 +127,9 @@ class MLIRHelper
         return ssName.str();
     }
 
-    static mlir::ArrayRef<int64_t> getStructIndex(int64_t index)
+    static mlir::ArrayRef<int64_t> getStructIndex(mlir::OpBuilder &builder, int64_t index)
     {
-        return mlir::ArrayRef<int64_t>(index);
+        return builder.getDenseI64ArrayAttr(index);
     }
 
     static bool matchLabelOrNotSet(mlir::StringAttr loopLabel, mlir::StringAttr opLabel)

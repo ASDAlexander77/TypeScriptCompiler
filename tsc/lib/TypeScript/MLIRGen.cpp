@@ -12129,7 +12129,7 @@ genContext);
                             // insert &(null)->field
                             vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                                 location, virtTuple, fieldRef, vtableValue,
-                                MLIRHelper::getStructIndex(fieldIndex));
+                                MLIRHelper::getStructIndex(builder, fieldIndex));
                         }
                         else
                         {
@@ -12141,7 +12141,7 @@ genContext);
                                                    negative1, genContext);
                             vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                                 location, virtTuple, castedNull, vtableValue,
-                                MLIRHelper::getStructIndex(fieldIndex));
+                                MLIRHelper::getStructIndex(builder, fieldIndex));
                         }
                     }
                     else
@@ -12155,7 +12155,7 @@ genContext);
 
                         vtableValue =
                             builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, methodConstName, vtableValue,
-                                                                      MLIRHelper::getStructIndex(fieldIndex));
+                                                                      MLIRHelper::getStructIndex(rewriter, fieldIndex));
                         */
                     }
 
@@ -12280,7 +12280,7 @@ genContext);
                         // insert &(null)->field
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                             location, virtTuple, fieldRef, vtableValue,
-                            MLIRHelper::getStructIndex(fieldIndex));
+                            MLIRHelper::getStructIndex(builder, fieldIndex));
                     }
                     else
                     {
@@ -12291,7 +12291,7 @@ genContext);
 
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                             location, virtTuple, methodConstName, vtableValue,
-                            MLIRHelper::getStructIndex(fieldIndex));
+                            MLIRHelper::getStructIndex(builder, fieldIndex));
                     }
 
                     fieldIndex++;
@@ -12554,7 +12554,7 @@ genContext);
 
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                             location, virtTuple, interfaceVTableValueAsAny, vtableValue,
-                            MLIRHelper::getStructIndex(fieldIndex++));
+                            MLIRHelper::getStructIndex(builder, fieldIndex++));
                     }
                     else
                     {
@@ -12582,7 +12582,7 @@ genContext);
 
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                             location, virtTuple, methodOrFieldNameRef, vtableValue,
-                            MLIRHelper::getStructIndex(fieldIndex++));
+                            MLIRHelper::getStructIndex(builder, fieldIndex++));
                     }
                 }
 

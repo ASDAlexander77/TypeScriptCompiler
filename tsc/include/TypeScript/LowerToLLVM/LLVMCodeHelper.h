@@ -281,10 +281,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                                                            rewriter.getIntegerAttr(rewriter.getI32Type(), arrayValue.size()));
 
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue, itemValArrayPtr,
-                                                                 MLIRHelper::getStructIndex(0));
+                                                                 MLIRHelper::getStructIndex(rewriter, 0));
 
         auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue2, sizeValue,
-                                                                 MLIRHelper::getStructIndex(1));
+                                                                 MLIRHelper::getStructIndex(rewriter, 1));
 
         return structValue3;
     }
@@ -356,7 +356,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                     auto strValue = item.cast<StringAttr>().getValue().str();
                     auto itemVal = getOrCreateGlobalString(strValue);
 
-                    arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(position++));
+                    arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
                 }
 
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
@@ -381,7 +381,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                     auto arrayValue = item.cast<ArrayAttr>();
                     auto itemVal = getReadOnlyRTArray(loc, originalArrayType, llvmElementType.cast<LLVM::LLVMStructType>(), arrayValue);
 
-                    arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(position++));
+                    arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
                 }
 
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
@@ -410,7 +410,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 {
                     auto tupleVal = getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(tupleType).cast<mlir_ts::ConstTupleType>(), llvmElementType.cast<LLVM::LLVMStructType>(),
                                                           item.dyn_cast<ArrayAttr>());
-                    arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, MLIRHelper::getStructIndex(position++));
+                    arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, MLIRHelper::getStructIndex(rewriter, position++));
                 }
 
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
@@ -458,7 +458,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
     mlir::LogicalResult setStructValue(mlir::Location loc, mlir::Value &structVal, mlir::Value itemValue, unsigned index)
     {
-        structVal = rewriter.create<LLVM::InsertValueOp>(loc, structVal, itemValue, MLIRHelper::getStructIndex(index));
+        structVal = rewriter.create<LLVM::InsertValueOp>(loc, structVal, itemValue, MLIRHelper::getStructIndex(rewriter, index));
         return mlir::success();
     }
 
@@ -475,7 +475,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
             auto itemValue = rewriter.create<mlir::arith::ConstantOp>(loc, llvmType, item);
-            structVal = rewriter.create<LLVM::InsertValueOp>(loc, structVal, itemValue, MLIRHelper::getStructIndex(position++));
+            structVal = rewriter.create<LLVM::InsertValueOp>(loc, structVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
         }
 
         return structVal;
@@ -499,7 +499,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 LLVM_DEBUG(llvm::dbgs() << "!! Unit Attr is type of '" << llvmType << "'\n");
 
                 auto itemValue = rewriter.create<mlir_ts::UndefOp>(loc, llvmType);
-                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(position++));
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
             }
             else if (auto stringAttr = item.dyn_cast<StringAttr>())
             {
@@ -508,7 +508,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 auto strValue = stringAttr.getValue().str();
                 auto itemVal = getOrCreateGlobalString(strValue);
 
-                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(position++));
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
             else if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
             {
@@ -525,7 +525,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 auto itemVal =
                     getReadOnlyRTArray(loc, arrayType.cast<mlir_ts::ArrayType>(), llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
-                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(position++));
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
                 */
             }
             else if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
@@ -535,7 +535,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 OpBuilder::InsertionGuard guard(rewriter);
 
                 auto itemVal = getReadOnlyRTArray(loc, arrayType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
-                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(position++));
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
             else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
             {
@@ -545,7 +545,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 auto subTupleVal = getTupleFromArrayAttr(loc, constTupleType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
 
-                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(position++));
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
             else if (auto constTupleType = type.dyn_cast<mlir_ts::TupleType>())
             {
@@ -559,18 +559,18 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                     getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(constTupleType).cast<mlir_ts::ConstTupleType>(),
                                           llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
 
-                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(position++));
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
             else if (auto flatSymbRef = item.dyn_cast<mlir::FlatSymbolRefAttr>())
             {
                 auto itemValue = rewriter.create<LLVM::AddressOfOp>(loc, llvmType, flatSymbRef);                
-                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(position++));
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
             }
             else
             {
                 // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
                 auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, llvmType, item);
-                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(position++));
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
             }
         }
 
@@ -633,7 +633,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         {
             // extract pointer from struct
             dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTuple,
-                                                            MLIRHelper::getStructIndex(ARRAY_DATA_INDEX));
+                                                            MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
         }
 
         auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
