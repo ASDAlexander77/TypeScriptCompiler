@@ -1060,8 +1060,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             auto arrTy = mth.getConstArrayValueType(mth.getOpaqueType(), 1);
             undefArrayValue = rewriter.create<mlir_ts::UndefOp>(loc, arrTy);
             auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+            // TODO: InsertPropertyOp review using ArrayAttr (should it be I64Array?)
             undefArrayValue = rewriter.create<mlir_ts::InsertPropertyOp>(loc, undefArrayValue.getType(), nullVal,
-                                                                         undefArrayValue, builder.getArrayAttr(mth.getStructIndexAttrValue(0)));
+                                                                         undefArrayValue, rewriter.getArrayAttr(mth.getStructIndexAttrValue(0)));
         }
 
         rewriter.setInsertionPointToEnd(bodyRegionLast);

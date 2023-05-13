@@ -697,7 +697,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         auto elementType = type.template cast<T>().getElementType();
         auto llvmElementType = tch.convertType(elementType);
-        auto arrayAttr = constantOp.value().template dyn_cast_or_null<ArrayAttr>();
+        auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>();
 
         auto arrayFirstElementAddrCst =
             ch.getOrCreateGlobalArray(elementType, llvmElementType, arrayAttr.size(), arrayAttr);
@@ -713,7 +713,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
         TypeConverterHelper tch(getTypeConverter());
 
-        auto arrayAttr = constantOp.value().template dyn_cast_or_null<ArrayAttr>();
+        auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>();
 
         auto convertedTupleType = tch.convertType(type);
         /*
