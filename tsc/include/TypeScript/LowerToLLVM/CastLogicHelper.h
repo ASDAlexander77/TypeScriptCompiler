@@ -977,12 +977,12 @@ class CastLogicHelper
         if (external)
         {
             auto results = rewriter.create<mlir_ts::CallIndirectOp>(loc, value, ValueRange(objTypeCasted));
-            return results.getResult();
+            return results.getResult(0);
         }
 
         auto results = rewriter.create<mlir_ts::CallInternalOp>(loc, mlir_ts::StringType::get(rewriter.getContext()),
                                                                 ValueRange{value, objTypeCasted});
-        return results.getResult();
+        return results.getResult(0);
     }
 
     mlir::Value castBoundRefToRef(mlir::Value in, mlir_ts::BoundRefType boundRefTypeIn, mlir_ts::RefType refTypeOut)

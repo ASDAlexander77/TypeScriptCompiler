@@ -5036,7 +5036,7 @@ class MLIRGenImpl
             auto groupType = mlir::async::GroupType::get(builder.getContext());
             auto blockSize = builder.create<mlir_ts::ConstantOp>(location, builder.getIndexAttr(0));
             auto asyncGroupOp = builder.create<mlir::async::CreateGroupOp>(location, groupType, blockSize);
-            asyncGroupResult = asyncGroupOp.result();
+            asyncGroupResult = asyncGroupOp.getResult();
             // operands.push_back(asyncGroupOp);
             // types.push_back(groupType);
         }
@@ -5672,7 +5672,7 @@ class MLIRGenImpl
             }
         }
 
-        const_cast<GenContext &>(genContext).funcOp.personalityAttr(builder.getBoolAttr(true));
+        const_cast<GenContext &>(genContext).funcOp.setPersonalityAttr(builder.getBoolAttr(true));
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
         /*
@@ -5936,7 +5936,7 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(ifOp);
 
-        return ifOp.getResult();
+        return ifOp.getResult(0);
     }
 
     ValueOrLogicalResult mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext,
@@ -6218,7 +6218,7 @@ class MLIRGenImpl
                         auto callResult = builder.create<mlir_ts::CallIndirectOp>(
                             location, funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
 
-                        return callResult.getResult();
+                        return callResult.getResult(0);
                     },
                     [&](mlir::OpBuilder &builder, mlir::Location location) { // default false value
                                                                              // compare typeOfValue
@@ -6337,7 +6337,7 @@ class MLIRGenImpl
             }
 
             auto callRes =
-                builder.create<mlir_ts::CallOp>(location, accessorOp.getSetAccessor().getValue(),
+                builder.create<mlir_ts::CallOp>(location, accessorOp.getSetAccessor().value(),
                                                 mlir::TypeRange{}, mlir::ValueRange{savingValue});
         }
         else if (auto thisAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorOp>())
@@ -6348,7 +6348,7 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorOp.getSetAccessor().getValue(),
+            auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorOp.getSetAccessor().value(),
                                                            mlir::TypeRange{},
                                                            mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
         }
@@ -7283,7 +7283,7 @@ class MLIRGenImpl
                 auto funcType = getFuncOp.getFunctionType().dyn_cast<mlir_ts::FunctionType>();
                 if (funcType.getNumResults() > 0)
                 {
-                    effectiveFuncType = funcType.getResult();
+                    effectiveFuncType = funcType.getResult(0);
                 }
             }
 
@@ -7577,7 +7577,7 @@ class MLIRGenImpl
         {
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                auto attr = fieldName.value();
+                auto attr = fieldName.getValue();
                 return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
             }
 
@@ -7588,7 +7588,7 @@ class MLIRGenImpl
             // seems we are calling "super"
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                auto attr = fieldName.value();
+                auto attr = fieldName.getValue();
                 return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
             }
 
@@ -7598,7 +7598,7 @@ class MLIRGenImpl
         {
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                auto attr = fieldName.value();
+                auto attr = fieldName.getValue();
                 return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
             }
 
@@ -8631,7 +8631,7 @@ class MLIRGenImpl
 
                     auto callIndirectOp =
                         builder.create<mlir_ts::CallIndirectOp>(location, funcSymbolOp, mlir::ValueRange{});
-                    auto typeDescr = callIndirectOp.getResult();
+                    auto typeDescr = callIndirectOp.getResult(0);
 
                     // save value
                     builder.create<mlir_ts::StoreOp>(location, typeDescr, typeDescRef);
@@ -8639,7 +8639,7 @@ class MLIRGenImpl
                     builder.create<mlir_ts::ResultOp>(loc, mlir::ValueRange{typeDescr});
                 });
 
-            auto typeDescrValue = ifOp.getResult();
+            auto typeDescrValue = ifOp.getResult(0);
 
             assert(!stackAlloc);
             newOp = builder.create<mlir_ts::GCNewExplicitlyTypedOp>(location, classInfo->classType, typeDescrValue);
@@ -8959,7 +8959,7 @@ class MLIRGenImpl
 
         // call
         auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, callee, operands);
-        return callIndirectOp.getResult();
+        return callIndirectOp.getResult(0);
     }
 
     ValueOrLogicalResult mlirGen(NullLiteral nullLiteral, const GenContext &genContext)
@@ -9145,7 +9145,7 @@ class MLIRGenImpl
         if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
         {
             auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
-            auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
+            auto arrayAttr = constantOp.getValue().cast<mlir::ArrayAttr>();
             auto index = 0;
             // TODO: improve it with using array concat
             for (auto val : arrayAttr)
@@ -9216,7 +9216,7 @@ class MLIRGenImpl
 
             if (auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
+                auto arrayAttr = constantOp.getValue().cast<mlir::ArrayAttr>();
                 auto index = -1;
                 for (auto val : arrayAttr)
                 {
@@ -9646,7 +9646,7 @@ class MLIRGenImpl
             }
             else if (auto symRefOp = itemValue.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
-                value = symRefOp.identifierAttr();
+                value = symRefOp.getIdentifierAttr()();
                 type = symRefOp.getType();
             }
             else if (auto undefOp = itemValue.getDefiningOp<mlir_ts::UndefOp>())

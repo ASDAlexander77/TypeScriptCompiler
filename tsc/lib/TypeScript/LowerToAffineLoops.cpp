@@ -1533,7 +1533,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
         }
 
         // mlir::Value newFunc = rewriter.create<mlir_ts::TrampolineOp>(location, captureOp.getType(),
-        // captureOp.callee(), allocTempStorage); rewriter.replaceOp(captureOp, newFunc);
+        // captureOp.getCallee(), allocTempStorage); rewriter.replaceOp(captureOp, newFunc);
 
         rewriter.replaceOp(captureOp, allocTempStorage);
 
