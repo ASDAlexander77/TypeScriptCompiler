@@ -10132,15 +10132,15 @@ class MLIRGenImpl
                 // set var as captures
                 if (auto varOp = refValue.getDefiningOp<mlir_ts::VariableOp>())
                 {
-                    varOp.capturedAttr(builder.getBoolAttr(true));
+                    varOp.setCapturedAttr(builder.getBoolAttr(true));
                 }
                 else if (auto paramOp = refValue.getDefiningOp<mlir_ts::ParamOp>())
                 {
-                    paramOp.capturedAttr(builder.getBoolAttr(true));
+                    paramOp.setCapturedAttr(builder.getBoolAttr(true));
                 }
                 else if (auto paramOptOp = refValue.getDefiningOp<mlir_ts::ParamOptionalOp>())
                 {
-                    paramOptOp.capturedAttr(builder.getBoolAttr(true));
+                    paramOptOp.setCapturedAttr(builder.getBoolAttr(true));
                 }
                 else
                 {

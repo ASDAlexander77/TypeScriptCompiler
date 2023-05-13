@@ -127,6 +127,11 @@ class MLIRHelper
         return ssName.str();
     }
 
+    static mlir::ArrayRef<int64_t> getStructIndex(int64_t index)
+    {
+        return mlir::ArrayRef<int64_t>(index);
+    }
+
     static bool matchLabelOrNotSet(mlir::StringAttr loopLabel, mlir::StringAttr opLabel)
     {
         auto loopHasValue = loopLabel && loopLabel.getValue().size() > 0;

@@ -32,11 +32,6 @@ class CodeLogicHelper
     {
     }
 
-    ArrayAttr getStructIndexAttr(int index)
-    {
-        return rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(index));
-    }
-
     mlir::Value createIConstantOf(unsigned width, unsigned value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(width),
@@ -241,7 +236,7 @@ class CodeLogicHelper
 
     template <typename OpTy> void saveResult(OpTy &op, mlir::Value result)
     {
-        auto defOp = op.operand1().getDefiningOp();
+        auto defOp = op.getOperand1().getDefiningOp();
         // TODO: finish it for field access
         if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(defOp))
         {

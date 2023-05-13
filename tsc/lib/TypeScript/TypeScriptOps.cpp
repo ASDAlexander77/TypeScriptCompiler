@@ -573,9 +573,9 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
                 if (chainCast.getIn().getType() == res.getType())
                 {
                     // we need to 
-                    auto newCastOp = rewriter.create<mlir_ts::CastOp>(loc, chainCast.res().getType(), in);
+                    auto newCastOp = rewriter.create<mlir_ts::CastOp>(loc, chainCast.getRes().getType(), in);
                     rewriter.replaceOp(chainCast, ValueRange{newCastOp});
-                    if (castOp.res().use_empty())
+                    if (castOp.getRes().use_empty())
                     {
                         rewriter.eraseOp(castOp);
                     }
@@ -1419,7 +1419,7 @@ struct RemoveUnusedResults : public OpRewritePattern<mlir_ts::IfOp>
         SmallVector<Value, 4> repResults(op.getNumResults());
         for (auto en : llvm::enumerate(usedResults))
         {
-            repResults[en.value().getResultNumber()] = newOp.getResult(en.index());
+            repResults[en.value().getResultNumber()] = newOp.getResult(en.getIndex());
         }
 
         rewriter.replaceOp(op, repResults);
