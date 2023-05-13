@@ -197,9 +197,12 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
   }];
 
   let arguments = (ins SymbolNameAttr:$sym_name,
-                       TypeAttrOf<TypeScript_Callable>:$function_type,
+                       TypeAttrOf<TypeScript_Function>:$function_type,
                        OptionalAttr<StrAttr>:$sym_visibility,
-                       OptionalAttr<BoolAttr>:$personality);
+                       OptionalAttr<BoolAttr>:$personality,
+                       OptionalAttr<DictArrayAttr>:$arg_attrs,
+                       OptionalAttr<DictArrayAttr>:$res_attrs
+  );
   let regions = (region AnyRegion:$body);
 
   let builders = [OpBuilder<(ins
@@ -219,13 +222,8 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
                          ArrayRef<NamedAttribute> attrs,
                          ArrayRef<DictionaryAttr> argAttrs);
 
-    FunctionType getTypeAsFunctionType() {
-        auto attr = getFunctionTypeAttr();
-        return attr.getValue().cast<FunctionType>();
-    }
-
     bool isVarArg() {
-        return getTypeAsFunctionType().isVarArg();
+        return getFunctionType().isVarArg();
     }
 
     /// Create a deep copy of this function and all of its blocks, remapping any
@@ -255,7 +253,7 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
 
     /// Returns the results types that the callable region produces when
     /// executed.
-    ArrayRef<Type> getCallableResults() { return getTypeAsFunctionType().getResults(); }
+    ArrayRef<Type> getCallableResults() { return getFunctionType().getResults(); }
 
     //===------------------------------------------------------------------===//
     // SymbolOpInterface Methods
@@ -265,20 +263,20 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
 
     /// Returns the number of arguments. This is a hook for
     /// OpTrait::FunctionLike.
-    unsigned getNumFuncArguments() { return getTypeAsFunctionType().getInputs().size(); }
+    unsigned getNumFuncArguments() { return getFunctionType().getInputs().size(); }
 
     /// Returns the number of results. This is a hook for OpTrait::FunctionLike.
-    unsigned getNumFuncResults() { return getTypeAsFunctionType().getResults().size(); }
+    unsigned getNumFuncResults() { return getFunctionType().getResults().size(); }
 
     //===------------------------------------------------------------------===//
     // FunctionOpInterface Methods
     //===------------------------------------------------------------------===//
 
     /// Returns the argument types of this function.
-    ArrayRef<Type> getArgumentTypes() { return getTypeAsFunctionType().getInputs(); }
+    ArrayRef<Type> getArgumentTypes() { return getFunctionType().getInputs(); }
 
     /// Returns the result types of this function.
-    ArrayRef<Type> getResultTypes() { return getTypeAsFunctionType().getResults(); }
+    ArrayRef<Type> getResultTypes() { return getFunctionType().getResults(); }
   }];
 
   let assemblyFormat =
@@ -585,7 +583,7 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
     OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
       $_state.addOperands(callOperands);
       $_state.addAttribute("callee", SymbolRefAttr::get(callee));
-      $_state.addTypes(callee.getTypeAsFunctionType().getResults());
+      $_state.addTypes(callee.getFunctionType().getResults());
     }]>,
     OpBuilder<(ins "SymbolRefAttr":$callee, "TypeRange":$results,
       CArg<"ValueRange", "{}">:$callOperands), [{

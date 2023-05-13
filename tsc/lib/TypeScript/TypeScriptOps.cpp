@@ -8,10 +8,12 @@
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/FunctionImplementation.h"
-#include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
 
@@ -231,8 +233,9 @@ size_t mlir_ts::ClassStorageType::size() const
 //===----------------------------------------------------------------------===//
 // ConstantOp
 //===----------------------------------------------------------------------===//
-OpFoldResult mlir_ts::ConstantOp::fold(ArrayRef<Attribute> operands)
+OpFoldResult mlir_ts::ConstantOp::fold(FoldAdaptor adaptor)
 {
+    ArrayRef<Attribute> operands = adaptor.getOperands();
     assert(operands.empty() && "constant has no operands");
     return getValue();
 }
@@ -444,8 +447,8 @@ void mlir_ts::UndefOp::getCanonicalizationPatterns(RewritePatternSet &results, M
 
 LogicalResult mlir_ts::CastOp::verify()
 {
-    auto inType = in().getType();
-    auto resType = res().getType();
+    auto inType = getIn().getType();
+    auto resType = getRes().getType();
 
     // funcType -> funcType
     auto inFuncType = inType.dyn_cast<mlir_ts::FunctionType>();
@@ -549,8 +552,8 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
     LogicalResult matchAndRewrite(mlir_ts::CastOp castOp, PatternRewriter &rewriter) const override
     {
         // TODO: finish it
-        auto in = castOp.in();
-        auto res = castOp.res();
+        auto in = castOp.getIn();
+        auto res = castOp.getRes();
 
         if (in.getType() == res.getType())
         {
@@ -704,7 +707,7 @@ void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef
                             ArrayRef<DictionaryAttr> argAttrs)
 {
     state.addAttribute(SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
-    state.addAttribute(getTypeAttrName(), TypeAttr::get(type));
+    state.addAttribute(getFunctionTypeAttrName(state.name), TypeAttr::get(type));
     state.attributes.append(attrs.begin(), attrs.end());
     state.addRegion();
 
@@ -714,12 +717,14 @@ void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef
     }
 
     assert(type.getNumInputs() == argAttrs.size());
-    function_interface_impl::addArgAndResultAttrs(builder, state, argAttrs, /*resultAttrs=*/llvm::None);
+    function_interface_impl::addArgAndResultAttrs(builder, state, argAttrs, /*resultAttrs=*/std::nullopt,
+        getArgAttrsAttrName(state.name), getResAttrsAttrName(state.name)
+    );
 }
 
 /// Clone the internal blocks from this function into dest and all attributes
 /// from this function to dest.
-void mlir_ts::FuncOp::cloneInto(FuncOp dest, mlir::BlockAndValueMapping &mapper)
+void mlir_ts::FuncOp::cloneInto(FuncOp dest, IRMapping &mapper)
 {
     // Add the attributes of this function to dest.
     llvm::MapVector<StringAttr, Attribute> newAttrMap;
@@ -742,7 +747,7 @@ void mlir_ts::FuncOp::cloneInto(FuncOp dest, mlir::BlockAndValueMapping &mapper)
 /// provided (leaving them alone if no entry is present). Replaces references
 /// to cloned sub-values with the corresponding value that is copied, and adds
 /// those mappings to the mapper.
-mlir_ts::FuncOp mlir_ts::FuncOp::clone(mlir::BlockAndValueMapping &mapper)
+mlir_ts::FuncOp mlir_ts::FuncOp::clone(IRMapping &mapper)
 {
     // Create the new function.
     FuncOp newFunc = cast<FuncOp>(getOperation()->cloneWithoutRegions());
@@ -786,7 +791,7 @@ mlir_ts::FuncOp mlir_ts::FuncOp::clone(mlir::BlockAndValueMapping &mapper)
 
 mlir_ts::FuncOp mlir_ts::FuncOp::clone()
 {
-    mlir::BlockAndValueMapping mapper;
+    IRMapping mapper;
     return clone(mapper);
 }
 
