@@ -57,7 +57,7 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
         auto anyResult = op.getNumResults() > 0;
         if (anyResult)
         {
-            auto result = op.getResult();
+            auto result = op.getResult(0);
             returnType = result.getType();
             allocValue =
                 rewriter.create<mlir_ts::VariableOp>(location, returnType, mlir::Value(), rewriter.getBoolAttr(false));
@@ -147,7 +147,7 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
         auto retBlock = tsContext->returnBlock;
 
         // save value into return
-        rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.operand(), op.reference());
+        rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.getOperand(), op.getReference());
         if (auto unwind = tsContext->unwind[op])
         {
             rewriter.create<mlir_ts::EndCatchOp>(loc);
@@ -175,8 +175,8 @@ struct ParamOpLowering : public TsPattern<mlir_ts::ParamOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue(),
-                                                         paramOp.capturedAttr());
+        rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.getArgValue(),
+                                                         paramOp.getCapturedAttr());
         return success();
     }
 };
@@ -191,33 +191,33 @@ struct OptionalValueOrDefaultOpLowering : public TsPattern<mlir_ts::OptionalValu
 
         auto location = optionalValueOrDefaultOp.getLoc();
 
-        auto dataTypeIn = optionalValueOrDefaultOp.argValue().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto dataTypeIn = optionalValueOrDefaultOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
         auto resultType = optionalValueOrDefaultOp.getType();
 
         // ts.if
-        auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), optionalValueOrDefaultOp.argValue());
+        auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), optionalValueOrDefaultOp.getArgValue());
         auto ifOp = rewriter.create<mlir_ts::IfOp>(location, resultType, hasValue, true);
 
         // then block
-        auto &thenRegion = ifOp.thenRegion();
+        auto &thenRegion = ifOp.getThenRegion();
 
         rewriter.setInsertionPointToStart(&thenRegion.back());
 
-        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, resultType, optionalValueOrDefaultOp.argValue());
+        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, resultType, optionalValueOrDefaultOp.getArgValue());
         rewriter.create<mlir_ts::ResultOp>(location, value);
 
         // else block
-        auto &elseRegion = ifOp.elseRegion();
+        auto &elseRegion = ifOp.getElseRegion();
 
         rewriter.setInsertionPointToStart(&elseRegion.back());
 
-        rewriter.inlineRegionBefore(optionalValueOrDefaultOp.defaultValueRegion(), &ifOp.elseRegion().back());
+        rewriter.inlineRegionBefore(optionalValueOrDefaultOp.getDefaultValueRegion(), &ifOp.getElseRegion().back());
         // TODO: do I need next line?
-        rewriter.eraseBlock(&ifOp.elseRegion().back());
+        rewriter.eraseBlock(&ifOp.getElseRegion().back());
 
         rewriter.setInsertionPointAfter(ifOp);
 
-        rewriter.replaceOp(optionalValueOrDefaultOp, ifOp.results().front());
+        rewriter.replaceOp(optionalValueOrDefaultOp, ifOp.getResults().front());
 
         return success();
     }
@@ -233,34 +233,34 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
 
         auto location = paramOp.getLoc();
 
-        auto dataTypeIn = paramOp.argValue().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto dataTypeIn = paramOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
         auto storeType = paramOp.getType().cast<mlir_ts::RefType>().getElementType();
 
         // ts.if
-        auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.argValue());
+        auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.getArgValue());
         auto ifOp = rewriter.create<mlir_ts::IfOp>(location, storeType, hasValue, true);
 
         // then block
-        auto &thenRegion = ifOp.thenRegion();
+        auto &thenRegion = ifOp.getThenRegion();
 
         rewriter.setInsertionPointToStart(&thenRegion.back());
 
-        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, storeType, paramOp.argValue());
+        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, storeType, paramOp.getArgValue());
         rewriter.create<mlir_ts::ResultOp>(location, value);
 
         // else block
-        auto &elseRegion = ifOp.elseRegion();
+        auto &elseRegion = ifOp.getElseRegion();
 
         rewriter.setInsertionPointToStart(&elseRegion.back());
 
-        rewriter.inlineRegionBefore(paramOp.defaultValueRegion(), &ifOp.elseRegion().back());
+        rewriter.inlineRegionBefore(paramOp.getDefaultValueRegion(), &ifOp.getElseRegion().back());
         // TODO: do I need next line?
-        rewriter.eraseBlock(&ifOp.elseRegion().back());
+        rewriter.eraseBlock(&ifOp.getElseRegion().back());
 
         rewriter.setInsertionPointAfter(ifOp);
 
-        mlir::Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.results().front(),
-                                                                    paramOp.capturedAttr());
+        mlir::Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.getResults().front(),
+                                                                    paramOp.getCapturedAttr());
 
         rewriter.replaceOp(paramOp, variable);
 
@@ -274,7 +274,7 @@ struct ParamDefaultValueOpLowering : public TsPattern<mlir_ts::ParamDefaultValue
 
     LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<mlir_ts::ResultOp>(op, op.results());
+        rewriter.replaceOpWithNewOp<mlir_ts::ResultOp>(op, op.getResults());
         return success();
     }
 };
@@ -289,7 +289,7 @@ struct PrefixUnaryOpLowering : public TsPattern<mlir_ts::PrefixUnaryOp>
         mlir::Value cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
 
         SyntaxKind opCode = SyntaxKind::Unknown;
-        switch ((SyntaxKind)op.opCode())
+        switch ((SyntaxKind)op.getOpCode())
         {
         case SyntaxKind::PlusPlusToken:
             opCode = SyntaxKind::PlusToken;
@@ -299,7 +299,7 @@ struct PrefixUnaryOpLowering : public TsPattern<mlir_ts::PrefixUnaryOp>
             break;
         }
 
-        auto value = op.operand1();
+        auto value = op.getOperand1();
         auto effectiveType = op.getType();
         bool castBack = false;
         if (auto optType = effectiveType.dyn_cast<mlir_ts::OptionalType>())
@@ -340,7 +340,7 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
         mlir::Value cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
 
         SyntaxKind opCode = SyntaxKind::Unknown;
-        switch ((SyntaxKind)op.opCode())
+        switch ((SyntaxKind)op.getOpCode())
         {
         case SyntaxKind::PlusPlusToken:
             opCode = SyntaxKind::PlusToken;
@@ -350,7 +350,7 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
             break;
         }
 
-        auto value = op.operand1();
+        auto value = op.getOperand1();
         auto effectiveType = op.getType();
         bool castBack = false;
         if (auto optType = effectiveType.dyn_cast<mlir_ts::OptionalType>())
@@ -374,7 +374,7 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
 
         clh.saveResult(op, result);
 
-        rewriter.replaceOp(op, op.operand1());
+        rewriter.replaceOp(op, op.getOperand1());
 
         return success();
     }
@@ -409,7 +409,7 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
 
         // Move blocks from the "then" region to the region containing 'ts.if',
         // place it before the continuation block, and branch to it.
-        auto &thenRegion = ifOp.thenRegion();
+        auto &thenRegion = ifOp.getThenRegion();
         auto *thenBlock = &thenRegion.front();
         Operation *thenTerminator = thenRegion.back().getTerminator();
         ValueRange thenTerminatorOperands = thenTerminator->getOperands();
@@ -422,7 +422,7 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
         // 'ts.if', place it before the continuation block and branch to it.  It
         // will be placed after the "then" regions.
         auto *elseBlock = continueBlock;
-        auto &elseRegion = ifOp.elseRegion();
+        auto &elseRegion = ifOp.getElseRegion();
         if (!elseRegion.empty())
         {
             elseBlock = &elseRegion.front();
@@ -435,7 +435,7 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
         }
 
         rewriter.setInsertionPointToEnd(condBlock);
-        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), ifOp.condition());
+        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), ifOp.getCondition());
         rewriter.create<mlir::cf::CondBranchOp>(loc, castToI1, thenBlock,
                                       /*trueArgs=*/ArrayRef<mlir::Value>(), elseBlock,
                                       /*falseArgs=*/ArrayRef<mlir::Value>());
@@ -475,54 +475,54 @@ struct WhileOpLowering : public TsPattern<mlir_ts::WhileOp>
         auto *currentBlock = rewriter.getInsertionBlock();
         auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-        auto *body = &whileOp.body().front();
-        auto *bodyLast = &whileOp.body().back();
-        auto *cond = &whileOp.cond().front();
-        auto *condLast = &whileOp.cond().back();
+        auto *body = &whileOp.getBody().front();
+        auto *bodyLast = &whileOp.getBody().back();
+        auto *cond = &whileOp.getCond().front();
+        auto *condLast = &whileOp.getCond().back();
 
         // logic to support continue/break
 
         auto visitorBreakContinue = [&](Operation *op) {
             if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op))
             {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.labelAttr());
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.getLabelAttr());
                 if (set)
                     tsContext->jumps[op] = continuation;
             }
             else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op))
             {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.labelAttr());
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.getLabelAttr());
                 if (set)
                     tsContext->jumps[op] = cond;
             }
         };
 
-        whileOp.body().walk(visitorBreakContinue);
+        whileOp.getBody().walk(visitorBreakContinue);
 
         // end of logic for break/continue
 
-        rewriter.inlineRegionBefore(whileOp.body(), continuation);
-        rewriter.inlineRegionBefore(whileOp.cond(), body);
+        rewriter.inlineRegionBefore(whileOp.getBody(), continuation);
+        rewriter.inlineRegionBefore(whileOp.getCond(), body);
 
         // Branch to the "before" region.
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<mlir::cf::BranchOp>(loc, cond, whileOp.inits());
+        rewriter.create<mlir::cf::BranchOp>(loc, cond, whileOp.getInits());
 
         // Replace terminators with branches. Assuming bodies are SESE, which holds
         // given only the patterns from this file, we only need to look at the last
         // block. This should be reconsidered if we allow break/continue.
         rewriter.setInsertionPointToEnd(condLast);
         auto condOp = cast<mlir_ts::ConditionOp>(condLast->getTerminator());
-        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-        rewriter.replaceOpWithNewOp<mlir::cf::CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
+        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.getCondition());
+        rewriter.replaceOpWithNewOp<mlir::cf::CondBranchOp>(condOp, castToI1, body, condOp.getArgs(), continuation, ValueRange());
 
         rewriter.setInsertionPointToEnd(bodyLast);
         auto yieldOp = cast<mlir_ts::ResultOp>(bodyLast->getTerminator());
-        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOp, cond, yieldOp.results());
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOp, cond, yieldOp.getResults());
 
         // Replace the op with values "yielded" from the "before" region, which are
         // visible by dominance.
-        rewriter.replaceOp(whileOp, condOp.args());
+        rewriter.replaceOp(whileOp, condOp.getArgs());
 
         return success();
     }
@@ -548,52 +548,52 @@ struct DoWhileOpLowering : public TsPattern<mlir_ts::DoWhileOp>
         mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
         // Only the "before" region should be inlined.
-        auto *body = &doWhileOp.body().front();
-        auto *bodyLast = &doWhileOp.body().back();
-        auto *cond = &doWhileOp.cond().front();
-        auto *condLast = &doWhileOp.cond().back();
+        auto *body = &doWhileOp.getBody().front();
+        auto *bodyLast = &doWhileOp.getBody().back();
+        auto *cond = &doWhileOp.getCond().front();
+        auto *condLast = &doWhileOp.getCond().back();
 
         // logic to support continue/break
 
         auto visitorBreakContinue = [&](Operation *op) {
             if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op))
             {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.labelAttr());
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.getLabelAttr());
                 if (set)
                     tsContext->jumps[op] = continuation;
             }
             else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op))
             {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.labelAttr());
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.getLabelAttr());
                 if (set)
                     tsContext->jumps[op] = cond;
             }
         };
 
-        doWhileOp.body().walk(visitorBreakContinue);
+        doWhileOp.getBody().walk(visitorBreakContinue);
 
         // end of logic for break/continue
 
-        rewriter.inlineRegionBefore(doWhileOp.cond(), continuation);
-        rewriter.inlineRegionBefore(doWhileOp.body(), cond);
+        rewriter.inlineRegionBefore(doWhileOp.getCond(), continuation);
+        rewriter.inlineRegionBefore(doWhileOp.getBody(), cond);
 
         // Branch to the "before" region.
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<mlir::cf::BranchOp>(doWhileOp.getLoc(), body, doWhileOp.inits());
+        rewriter.create<mlir::cf::BranchOp>(doWhileOp.getLoc(), body, doWhileOp.getInits());
 
         rewriter.setInsertionPointToEnd(bodyLast);
         auto yieldOp = cast<mlir_ts::ResultOp>(bodyLast->getTerminator());
-        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOp, cond, yieldOp.results());
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOp, cond, yieldOp.getResults());
 
         // Loop around the "before" region based on condition.
         rewriter.setInsertionPointToEnd(condLast);
         auto condOp = cast<mlir_ts::ConditionOp>(condLast->getTerminator());
-        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-        rewriter.replaceOpWithNewOp<mlir::cf::CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
+        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.getCondition());
+        rewriter.replaceOpWithNewOp<mlir::cf::CondBranchOp>(condOp, castToI1, body, condOp.getArgs(), continuation, ValueRange());
 
         // Replace the op with values "yielded" from the "before" region, which are
         // visible by dominance.
-        rewriter.replaceOp(doWhileOp, condOp.args());
+        rewriter.replaceOp(doWhileOp, condOp.getArgs());
 
         return success();
     }
@@ -614,41 +614,41 @@ struct ForOpLowering : public TsPattern<mlir_ts::ForOp>
         auto *currentBlock = rewriter.getInsertionBlock();
         auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-        auto *incr = &forOp.incr().front();
-        auto *incrLast = &forOp.incr().back();
-        auto *body = &forOp.body().front();
-        auto *bodyLast = &forOp.body().back();
-        auto *cond = &forOp.cond().front();
-        auto *condLast = &forOp.cond().back();
+        auto *incr = &forOp.getIncr().front();
+        auto *incrLast = &forOp.getIncr().back();
+        auto *body = &forOp.getBody().front();
+        auto *bodyLast = &forOp.getBody().back();
+        auto *cond = &forOp.getCond().front();
+        auto *condLast = &forOp.getCond().back();
 
         // logic to support continue/break
 
         auto visitorBreakContinue = [&](Operation *op) {
             if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op))
             {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.labelAttr());
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.getLabelAttr());
                 if (set)
                     tsContext->jumps[op] = continuation;
             }
             else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op))
             {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.labelAttr());
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.getLabelAttr());
                 if (set)
                     tsContext->jumps[op] = incr;
             }
         };
 
-        forOp.body().walk(visitorBreakContinue);
+        forOp.getBody().walk(visitorBreakContinue);
 
         // end of logic for break/continue
 
-        rewriter.inlineRegionBefore(forOp.incr(), continuation);
-        rewriter.inlineRegionBefore(forOp.body(), incr);
-        rewriter.inlineRegionBefore(forOp.cond(), body);
+        rewriter.inlineRegionBefore(forOp.getIncr(), continuation);
+        rewriter.inlineRegionBefore(forOp.getBody(), incr);
+        rewriter.inlineRegionBefore(forOp.getCond(), body);
 
         // Branch to the "before" region.
         rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<mlir::cf::BranchOp>(loc, cond, forOp.inits());
+        rewriter.create<mlir::cf::BranchOp>(loc, cond, forOp.getInits());
 
         // Replace terminators with branches. Assuming bodies are SESE, which holds
         // given only the patterns from this file, we only need to look at the last
@@ -657,26 +657,26 @@ struct ForOpLowering : public TsPattern<mlir_ts::ForOp>
         ValueRange args;
         if (auto condOp = dyn_cast_or_null<mlir_ts::ConditionOp>(condLast->getTerminator()))
         {
-            args = condOp.args();
-            auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-            rewriter.replaceOpWithNewOp<mlir::cf::CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation,
+            args = condOp.getArgs();
+            auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.getCondition());
+            rewriter.replaceOpWithNewOp<mlir::cf::CondBranchOp>(condOp, castToI1, body, condOp.getArgs(), continuation,
                                                       ValueRange());
         }
         else
         {
             auto noCondOp = cast<mlir_ts::NoConditionOp>(condLast->getTerminator());
-            rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(noCondOp, body, noCondOp.args());
+            rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(noCondOp, body, noCondOp.getArgs());
         }
 
         rewriter.setInsertionPointToEnd(bodyLast);
 
         auto yieldOpBody = cast<mlir_ts::ResultOp>(bodyLast->getTerminator());
-        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpBody, incr, yieldOpBody.results());
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpBody, incr, yieldOpBody.getResults());
 
         rewriter.setInsertionPointToEnd(incrLast);
 
         auto yieldOpIncr = cast<mlir_ts::ResultOp>(incrLast->getTerminator());
-        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpIncr, cond, yieldOpIncr.results());
+        rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpIncr, cond, yieldOpIncr.getResults());
 
         // Replace the op with values "yielded" from the "before" region, which are
         // visible by dominance.
@@ -699,35 +699,35 @@ struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
         mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-        auto *begin = &labelOp.labelRegion().front();
+        auto *begin = &labelOp.getLabelRegion().front();
 
-        auto labelAttr = labelOp.labelAttr();
+        auto labelAttr = labelOp.getLabelAttr();
 
         // logic to support continue/break
 
         auto visitorBreakContinue = [&](Operation *op) {
             if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op))
             {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.labelAttr());
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.getLabelAttr());
                 if (set)
                     tsContext->jumps[op] = continuation;
             }
             else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op))
             {
-                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.labelAttr());
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.getLabelAttr());
                 if (set)
                     tsContext->jumps[op] = begin;
             }
         };
 
-        labelOp.labelRegion().walk(visitorBreakContinue);
+        labelOp.getLabelRegion().walk(visitorBreakContinue);
 
         // end of logic for break/continue
 
-        auto *labelRegion = &labelOp.labelRegion().front();
+        auto *labelRegion = &labelOp.getLabelRegion().front();
 
-        auto *labelRegionWithMerge = &labelOp.labelRegion().back();
-        for (auto &block : labelOp.labelRegion())
+        auto *labelRegionWithMerge = &labelOp.getLabelRegion().back();
+        for (auto &block : labelOp.getLabelRegion())
         {
             if (isa<mlir_ts::MergeOp>(block.getTerminator()))
             {
@@ -739,7 +739,7 @@ struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
         rewriter.setInsertionPointToEnd(currentBlock);
         rewriter.create<mlir::cf::BranchOp>(loc, labelRegion, ValueRange{});
 
-        rewriter.inlineRegionBefore(labelOp.labelRegion(), continuation);
+        rewriter.inlineRegionBefore(labelOp.getLabelRegion(), continuation);
 
         // replace merge with br
         assert(labelRegionWithMerge);
@@ -815,10 +815,10 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
         mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-        auto *casesRegion = &switchOp.casesRegion().front();
+        auto *casesRegion = &switchOp.getCasesRegion().front();
 
-        auto *casesRegionWithMerge = &switchOp.casesRegion().back();
-        for (auto &block : switchOp.casesRegion())
+        auto *casesRegionWithMerge = &switchOp.getCasesRegion().back();
+        for (auto &block : switchOp.getCasesRegion())
         {
             if (isa<mlir_ts::MergeOp>(block.getTerminator()))
             {
@@ -830,7 +830,7 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
         rewriter.setInsertionPointToEnd(currentBlock);
         rewriter.create<mlir::cf::BranchOp>(loc, casesRegion, ValueRange{});
 
-        rewriter.inlineRegionBefore(switchOp.casesRegion(), continuation);
+        rewriter.inlineRegionBefore(switchOp.getCasesRegion(), continuation);
 
         // replace merge with br
         assert(casesRegionWithMerge);
@@ -859,7 +859,7 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
     {
         Location loc = accessorOp.getLoc();
 
-        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getAccessor().getValue(),
+        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getGetAccessor().getValue(),
                                                         TypeRange{accessorOp.getType()}, ValueRange{});
 
         rewriter.replaceOp(accessorOp, callRes.getResult());
@@ -876,8 +876,8 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
         Location loc = thisAccessorOp.getLoc();
 
         auto callRes =
-            rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getAccessor().getValue(),
-                                             TypeRange{thisAccessorOp.getType()}, ValueRange{thisAccessorOp.thisVal()});
+            rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getGetAccessor().getValue(),
+                                             TypeRange{thisAccessorOp.getType()}, ValueRange{thisAccessorOp.getThisVal()});
 
         rewriter.replaceOp(thisAccessorOp, callRes.getResult());
 
@@ -927,17 +927,17 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 tsContext->parentTryOp[op] = tryOp.getOperation();
             }
         };
-        tryOp.body().walk(visitorTryOps);
-        tryOp.catches().walk(visitorTryOps);
-        tryOp.finallyBlock().walk(visitorTryOps);
+        tryOp.getBody().walk(visitorTryOps);
+        tryOp.getCatches().walk(visitorTryOps);
+        tryOp.getFinallyBlock().walk(visitorTryOps);
 
         // inline structure
         OpBuilder::InsertionGuard guard(rewriter);
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
         mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-        auto *bodyRegion = &tryOp.body().front();
-        auto *bodyRegionLast = &tryOp.body().back();
+        auto *bodyRegion = &tryOp.getBody().front();
+        auto *bodyRegionLast = &tryOp.getBody().back();
         auto *catchesRegion = &tryOp.catches().front();
         auto *catchesRegionLast = &tryOp.catches().back();
         auto *finallyBlockRegion = &tryOp.finallyBlock().front();
@@ -966,7 +966,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         rewriter.create<mlir::cf::BranchOp>(loc, bodyRegion, ValueRange{});
 
         auto beforeBodyBlock = continuation->getPrevNode();
-        rewriter.inlineRegionBefore(tryOp.body(), continuation);
+        rewriter.inlineRegionBefore(tryOp.getBody(), continuation);
         auto bodyBlock = beforeBodyBlock->getNextNode();
         auto bodyBlockLast = continuation->getPrevNode();
 
@@ -1028,7 +1028,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     tsContext->unwind[op] = landingBlock;
                 }
             };
-            // tryOp.body().walk(visitorCallOpContinue);
+            // tryOp.getBody().walk(visitorCallOpContinue);
             auto it = bodyBlock;
             do
             {
@@ -1221,7 +1221,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             rewriter.setInsertionPointToEnd(finallyBlockRegionLast);
 
             auto yieldOpFinallyBlock = cast<mlir_ts::ResultOp>(finallyBlockRegionLast->getTerminator());
-            rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
+            rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.getResults());
         }
 
         rewriter.replaceOp(tryOp, continuation->getArguments());

@@ -498,7 +498,7 @@ class MLIRGenImpl
 
         auto moduleOp = builder.create<mlir::ModuleOp>(location, StringRef(moduleName));
 
-        builder.setInsertionPointToStart(&moduleOp.body().front());
+        builder.setInsertionPointToStart(&moduleOp.getBody().front());
 
         // save module theModule
         auto parentModule = theModule;
@@ -524,7 +524,7 @@ class MLIRGenImpl
 
         auto constantOp = modulePathValue.getDefiningOp<mlir_ts::ConstantOp>();
         assert(constantOp);
-        auto valueAttr = constantOp.valueAttr().cast<mlir::StringAttr>();
+        auto valueAttr = constantOp.getValueAttr().cast<mlir::StringAttr>();
 
         auto stringVal = valueAttr.getValue();
 
@@ -1372,7 +1372,7 @@ class MLIRGenImpl
         auto currValue = arrowFunctionRefValue;
         if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
-            currValue = createBoundFunctionOp.func();
+            currValue = createBoundFunctionOp.getFunc();
         }
 
         if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
@@ -1390,7 +1390,7 @@ class MLIRGenImpl
         auto currValue = functionRefValue;
         if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
-            currValue = createBoundFunctionOp.func();
+            currValue = createBoundFunctionOp.getFunc();
         }
 
         if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
@@ -1442,7 +1442,7 @@ class MLIRGenImpl
         auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
         if (createBoundFunctionOp)
         {
-            currValue = createBoundFunctionOp.func();
+            currValue = createBoundFunctionOp.getFunc();
         }
 
         auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>();
@@ -2030,10 +2030,10 @@ class MLIRGenImpl
         // in case of this.generic_func<T>();
         if (auto extensFuncRef = currValue.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>())
         {
-            currValue = extensFuncRef.func();
+            currValue = extensFuncRef.getFunc();
 
             SmallVector<mlir::Value, 4> operands;
-            operands.push_back(extensFuncRef.thisVal());
+            operands.push_back(extensFuncRef.getThisVal());
             operands.append(genContext.callOperands.begin(), genContext.callOperands.end());
 
             GenContext specGenContext(genContext);
@@ -2046,7 +2046,7 @@ class MLIRGenImpl
 
                 // special case to work with interfaces
                 // TODO: finish it, bug
-                auto thisRef = extensFuncRef.thisVal();
+                auto thisRef = extensFuncRef.getThisVal();
                 auto funcType = newFuncRefValue.getType().cast<mlir_ts::FunctionType>();
 
                 mlir::Value newExtensionFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
@@ -2074,13 +2074,13 @@ class MLIRGenImpl
             StringRef funcName;
             if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
-                funcName = symbolOp.identifierAttr().getValue();
+                funcName = symbolOp.getIdentifierAttr().getValue();
             }
             else if (auto thisSymbolOp = currValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
             {
-                funcName = thisSymbolOp.identifierAttr().getValue();
+                funcName = thisSymbolOp.getIdentifierAttr().getValue();
                 skipThisParam = true;
-                thisValue = thisSymbolOp.thisVal();
+                thisValue = thisSymbolOp.getThisVal();
                 initSpecGenContext.thisType = thisValue.getType();
             }
             else
@@ -4480,7 +4480,7 @@ class MLIRGenImpl
 
         if (resultType)
         {
-            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.results().back());
+            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getResults().back());
             return asyncAwaitOp.getResult();
         }
         else
@@ -4771,7 +4771,7 @@ class MLIRGenImpl
             {
                 auto constantOp = constVal.getDefiningOp<mlir_ts::ConstantOp>();
                 assert(constantOp);
-                auto valueAttr = constantOp.valueAttr();
+                auto valueAttr = constantOp.getValueAttr();
 
                 MLIRCodeLogic mcl(builder);
                 auto fieldNameAttr = TupleFieldName(name, genContext);
@@ -4893,7 +4893,7 @@ class MLIRGenImpl
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, condValue, hasElse);
 
-        builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
         {
             // check if we do safe-cast here
@@ -4905,7 +4905,7 @@ class MLIRGenImpl
 
         if (hasElse)
         {
-            builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
             auto result = mlirGen(ifStatementAST->elseStatement, genContext);
             EXIT_IF_FAILED(result)
         }
@@ -4931,16 +4931,16 @@ class MLIRGenImpl
             label = "";
         }
 
-        /*auto *cond =*/builder.createBlock(&doWhileOp.cond(), {}, types);
-        /*auto *body =*/builder.createBlock(&doWhileOp.body(), {}, types);
+        /*auto *cond =*/builder.createBlock(&doWhileOp.getCond(), {}, types);
+        /*auto *body =*/builder.createBlock(&doWhileOp.getBody(), {}, types);
 
         // body in condition
-        builder.setInsertionPointToStart(&doWhileOp.body().front());
+        builder.setInsertionPointToStart(&doWhileOp.getBody().front());
         mlirGen(doStatementAST->statement, genContext);
         // just simple return, as body in cond
         builder.create<mlir_ts::ResultOp>(location);
 
-        builder.setInsertionPointToStart(&doWhileOp.cond().front());
+        builder.setInsertionPointToStart(&doWhileOp.getCond().front());
         auto result = mlirGen(doStatementAST->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto conditionValue = V(result);
@@ -4972,11 +4972,11 @@ class MLIRGenImpl
             label = "";
         }
 
-        /*auto *cond =*/builder.createBlock(&whileOp.cond(), {}, types);
-        /*auto *body =*/builder.createBlock(&whileOp.body(), {}, types);
+        /*auto *cond =*/builder.createBlock(&whileOp.getCond(), {}, types);
+        /*auto *body =*/builder.createBlock(&whileOp.getBody(), {}, types);
 
         // condition
-        builder.setInsertionPointToStart(&whileOp.cond().front());
+        builder.setInsertionPointToStart(&whileOp.getCond().front());
         auto result = mlirGen(whileStatementAST->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto conditionValue = V(result);
@@ -4989,7 +4989,7 @@ class MLIRGenImpl
         builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
         // body
-        builder.setInsertionPointToStart(&whileOp.body().front());
+        builder.setInsertionPointToStart(&whileOp.getBody().front());
         mlirGen(whileStatementAST->statement, genContext);
         builder.create<mlir_ts::ResultOp>(location);
 
@@ -5048,11 +5048,11 @@ class MLIRGenImpl
             label = "";
         }
 
-        /*auto *cond =*/builder.createBlock(&forOp.cond(), {}, types);
-        /*auto *body =*/builder.createBlock(&forOp.body(), {}, types);
-        /*auto *incr =*/builder.createBlock(&forOp.incr(), {}, types);
+        /*auto *cond =*/builder.createBlock(&forOp.getCond(), {}, types);
+        /*auto *body =*/builder.createBlock(&forOp.getBody(), {}, types);
+        /*auto *incr =*/builder.createBlock(&forOp.getIncr(), {}, types);
 
-        builder.setInsertionPointToStart(&forOp.cond().front());
+        builder.setInsertionPointToStart(&forOp.getCond().front());
         auto result = mlirGen(forStatementAST->condition, genContext);
         EXIT_IF_FAILED(result)
         auto conditionValue = V(result);
@@ -5066,7 +5066,7 @@ class MLIRGenImpl
         }
 
         // body
-        builder.setInsertionPointToStart(&forOp.body().front());
+        builder.setInsertionPointToStart(&forOp.getBody().front());
         if (hasAwait)
         {
             if (forStatementAST->statement == SyntaxKind::Block)
@@ -5102,7 +5102,7 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location);
 
         // increment
-        builder.setInsertionPointToStart(&forOp.incr().front());
+        builder.setInsertionPointToStart(&forOp.getIncr().front());
         mlirGen(forStatementAST->incrementor, genContext);
         builder.create<mlir_ts::ResultOp>(location);
 
@@ -5691,12 +5691,12 @@ class MLIRGenImpl
 
         SmallVector<mlir::Type, 0> types;
 
-        /*auto *body =*/builder.createBlock(&tryOp.body(), {}, types);
+        /*auto *body =*/builder.createBlock(&tryOp.getBody(), {}, types);
         /*auto *catches =*/builder.createBlock(&tryOp.catches(), {}, types);
         /*auto *finallyBlock =*/builder.createBlock(&tryOp.finallyBlock(), {}, types);
 
         // body
-        builder.setInsertionPointToStart(&tryOp.body().front());
+        builder.setInsertionPointToStart(&tryOp.getBody().front());
         auto result = mlirGen(tryStatementAST->tryBlock, tryGenContext);
         EXIT_IF_FAILED(result)
         if (mlir::failed(result))
@@ -5772,7 +5772,7 @@ class MLIRGenImpl
                                                       const GenContext &genContext)
     {
         mlir::Value value;
-        auto valueAttr = constantOp.valueAttr();
+        auto valueAttr = constantOp.getValueAttr();
         mlir::TypeSwitch<mlir::Attribute>(valueAttr)
             .Case<mlir::IntegerAttr>([&](auto intAttr) {
                 value = builder.create<mlir_ts::ConstantOp>(
@@ -5909,7 +5909,7 @@ class MLIRGenImpl
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
 
-        builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
         auto whenTrueExpression = conditionalExpressionAST->whenTrue;
 
         mlir::Value resultTrue;
@@ -5925,7 +5925,7 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location,
                                           mlir::ValueRange{cast(location, resultType, resultTrue, genContext)});
 
-        builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
         auto result2 = mlirGen(whenFalseExpression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
@@ -5959,7 +5959,7 @@ class MLIRGenImpl
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
 
-        builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
         mlir::Value resultTrue;
         if (andOp)
         {
@@ -5985,7 +5985,7 @@ class MLIRGenImpl
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
-        builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         mlir::Value resultFalse;
         if (andOp)
         {
@@ -6013,7 +6013,7 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(ifOp);
 
-        auto resultFirst = ifOp.results().front();
+        auto resultFirst = ifOp.getResults().front();
         if (saveResult)
         {
             return mlirGenSaveLogicOneItem(location, leftExpressionValue, resultFirst, genContext);
@@ -6070,7 +6070,7 @@ class MLIRGenImpl
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, ifCond, true);
 
-        builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
         auto result2 = mlirGen(rightExpression, genContext);
         auto resultTrue = V(result2);
 
@@ -6082,7 +6082,7 @@ class MLIRGenImpl
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
-        builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         auto resultFalse = leftExpressionValue;
 
         // sync right part
@@ -6095,7 +6095,7 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(ifOp);
 
-        auto ifResult = ifOp.results().front();
+        auto ifResult = ifOp.getResults().front();
         if (saveResult)
         {
             return mlirGenSaveLogicOneItem(location, leftExpressionValue, ifResult, genContext);
@@ -6242,8 +6242,8 @@ class MLIRGenImpl
     mlir::Value evaluateBinaryOp(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp leftConstOp,
                                  mlir_ts::ConstantOp rightConstOp, const GenContext &genContext)
     {
-        auto leftInt = leftConstOp.valueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
-        auto rightInt = rightConstOp.valueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
+        auto leftInt = leftConstOp.getValueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
+        auto rightInt = rightConstOp.getValueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
         auto resultType = leftConstOp.getType();
 
         int64_t result = 0;
@@ -6337,7 +6337,7 @@ class MLIRGenImpl
             }
 
             auto callRes =
-                builder.create<mlir_ts::CallOp>(location, accessorOp.setAccessor().getValue(),
+                builder.create<mlir_ts::CallOp>(location, accessorOp.getSetAccessor().getValue(),
                                                 mlir::TypeRange{}, mlir::ValueRange{savingValue});
         }
         else if (auto thisAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorOp>())
@@ -6348,16 +6348,16 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorOp.setAccessor().getValue(),
+            auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorOp.getSetAccessor().getValue(),
                                                            mlir::TypeRange{},
-                                                           mlir::ValueRange{thisAccessorOp.thisVal(), savingValue});
+                                                           mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
         }
         /*
         else if (auto createBoundFunction =
         leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
             // TODO: i should not allow to change interface
-            return mlirGenSaveLogicOneItem(location, createBoundFunction.func(), rightExpressionValue, genContext);
+            return mlirGenSaveLogicOneItem(location, createBoundFunction.getFunc(), rightExpressionValue, genContext);
         }
         */
         else
@@ -6907,7 +6907,7 @@ class MLIRGenImpl
 
             auto ifOp = builder.create<mlir_ts::IfOp>(location, getOptionalType(propType), condValue, true);
 
-            builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
             // value if true
             auto result = mlirGenPropertyAccessExpressionBaseLogic(location, objectValue, cl, genContext);
@@ -6917,14 +6917,14 @@ class MLIRGenImpl
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
             // else
-            builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+            builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
 
             auto optUndefValue = builder.create<mlir_ts::OptionalUndefOp>(location, getOptionalType(value.getType()));
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optUndefValue});
 
             builder.setInsertionPointAfter(ifOp);
 
-            return ifOp.results().front();
+            return ifOp.getResults().front();
         }
         else
         {
@@ -7994,7 +7994,7 @@ class MLIRGenImpl
             if (auto thisSymbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
             {
                 // do not remove it, it is needed for custom methods to be called correctly
-                operands.insert(operands.begin(), thisSymbolRefOp.thisVal());
+                operands.insert(operands.begin(), thisSymbolRefOp.getThisVal());
             }
 
             // temp hack
@@ -8047,7 +8047,7 @@ class MLIRGenImpl
                             ? builder.create<mlir_ts::IfOp>(location, getOptionalType(resultType), condValue, true)
                             : builder.create<mlir_ts::IfOp>(location, condValue, false);
 
-            builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+            builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
             // value if true
 
@@ -8063,7 +8063,7 @@ class MLIRGenImpl
                 builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
                 // else
-                builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+                builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
 
                 auto optUndefValue = builder.create<mlir_ts::OptionalUndefOp>(location, getOptionalType(resultType));
                 builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optUndefValue});
@@ -8073,7 +8073,7 @@ class MLIRGenImpl
 
             if (hasReturn)
             {
-                return ifOp.results().front();
+                return ifOp.getResults().front();
             }
 
             return mlir::success();
@@ -8104,8 +8104,8 @@ class MLIRGenImpl
                 auto calledFuncType =
                     getFunctionType(calledExtentFuncType.getInputs(), calledExtentFuncType.getResults());
                 auto createExtensionFunctionOp = funcRefValue.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>();
-                auto thisValue = createExtensionFunctionOp.thisVal();
-                auto funcRefValue = createExtensionFunctionOp.func();
+                auto thisValue = createExtensionFunctionOp.getThisVal();
+                auto funcRefValue = createExtensionFunctionOp.getFunc();
                 value = mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, operands, genContext);
 
                 // cleanup
@@ -9371,11 +9371,11 @@ class MLIRGenImpl
             auto constOp = itemValue.value.getDefiningOp<mlir_ts::ConstantOp>();
             if (arrayInfo.applyCast)
             {
-                constValues.push_back(mth.convertAttrIntoType(constOp.valueAttr(), arrayInfo.arrayElementType, builder)); 
+                constValues.push_back(mth.convertAttrIntoType(constOp.getValueAttr(), arrayInfo.arrayElementType, builder)); 
             }
             else
             {
-                constValues.push_back(constOp.valueAttr()); 
+                constValues.push_back(constOp.getValueAttr()); 
             }
         }
 
@@ -9641,7 +9641,7 @@ class MLIRGenImpl
             auto isConstValue = true;
             if (auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                value = constOp.valueAttr();
+                value = constOp.getValueAttr();
                 type = constOp.getType();
             }
             else if (auto symRefOp = itemValue.getDefiningOp<mlir_ts::SymbolRefOp>())
@@ -9806,7 +9806,7 @@ class MLIRGenImpl
                     auto res = builder.create<mlir_ts::DeconstructTupleOp>(loc(spreadAssignment), types, tupleValue);
 
                     // read all fields
-                    for (auto pair : llvm::zip(fields, res.results()))
+                    for (auto pair : llvm::zip(fields, res.getResults()))
                     {
                         addFieldInfo(
                             std::get<0>(pair).id, 
@@ -10695,7 +10695,7 @@ class MLIRGenImpl
 
                 if (auto constOp = dyn_cast<mlir_ts::ConstantOp>(enumValue.getDefiningOp()))
                 {
-                    enumValueAttr = constOp.valueAttr();
+                    enumValueAttr = constOp.getValueAttr();
                     if (auto intAttr = enumValueAttr.dyn_cast<mlir::IntegerAttr>())
                     {
                         index = intAttr.getInt();
@@ -15959,7 +15959,7 @@ genContext);
                 auto constantOp = literalValue.getDefiningOp<mlir_ts::ConstantOp>();
 
                 assert(constantOp);
-                attrVal = constantOp.valueAttr();
+                attrVal = constantOp.getValueAttr();
 
                 if (arrayMode)
                 {
@@ -16590,7 +16590,7 @@ genContext);
         auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>();
         if (constantOp)
         {
-            auto valueAttr = value.getDefiningOp<mlir_ts::ConstantOp>().valueAttr();
+            auto valueAttr = value.getDefiningOp<mlir_ts::ConstantOp>().getValueAttr();
             auto literalType = mlir_ts::LiteralType::get(valueAttr, type);
             return literalType;
         }

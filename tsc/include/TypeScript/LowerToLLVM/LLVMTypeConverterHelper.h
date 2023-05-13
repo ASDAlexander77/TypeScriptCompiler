@@ -1,6 +1,10 @@
 #ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMTYPECONVERTERHELPER_H_
 #define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMTYPECONVERTERHELPER_H_
 
+#ifndef DEBUG_TYPE
+#define DEBUG_TYPE "llvm"
+#endif
+
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/Passes.h"

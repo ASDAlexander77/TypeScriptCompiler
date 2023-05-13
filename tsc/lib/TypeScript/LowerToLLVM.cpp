@@ -2687,7 +2687,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         {
             // TODO: create function and call GlobalConstructor
             lch.createUndefGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()),
-                                          globalOp.valueAttr(), globalOp.constant(), linkage);
+                                          globalOp.getValueAttr(), globalOp.constant(), linkage);
 
             auto name = globalOp.sym_name().str();
             name.append("__cctor");
@@ -2697,7 +2697,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         else
         {
             lch.createGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()),
-                                     globalOp.valueAttr(), globalOp.constant(), globalOp.getInitializerRegion(),
+                                     globalOp.getValueAttr(), globalOp.constant(), globalOp.getInitializerRegion(),
                                      linkage);
         }
 
@@ -2715,7 +2715,7 @@ struct GlobalResultOpLowering : public TsLlvmPattern<mlir_ts::GlobalResultOp>
     {
         
 
-        rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(globalResultOp, transformed.results());
+        rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(globalResultOp, transformed.getResults());
         return success();
     }
 };
@@ -3701,7 +3701,7 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
         if (auto boundFunc = thisVirtualSymbolRefOp.getType().dyn_cast<mlir_ts::BoundFunctionType>())
         {
             auto thisOpaque = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()),
-                                                               transformed.thisVal());
+                                                               transformed.getThisVal());
             auto methodTyped = rewriter.create<mlir_ts::CastOp>(
                 loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()),
                 methodPtr);
@@ -3825,7 +3825,7 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
         auto structVal = rewriter.create<LLVM::UndefOp>(loc, llvmInterfaceType);
         auto structVal2 = rewriter.create<LLVM::InsertValueOp>(
             loc, structVal, clh.castToI8Ptr(transformed.interfaceVTable()), clh.getStructIndexAttr(DATA_VALUE_INDEX));
-        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(transformed.thisVal()),
+        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(transformed.getThisVal()),
                                                                clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
         rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
@@ -3983,7 +3983,7 @@ struct CreateBoundRefOpLowering : public TsLlvmPattern<mlir_ts::CreateBoundRefOp
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundRefType);
         auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, transformed.valueRef(),
                                                                clh.getStructIndexAttr(DATA_VALUE_INDEX));
-        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(transformed.thisVal()),
+        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(transformed.getThisVal()),
                                                                clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
         rewriter.replaceOp(createBoundRefOp, ValueRange{structVal3});
@@ -4015,14 +4015,14 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! CreateBoundFunction: LLVM Type :" << llvmBoundFunctionType << "\n";);
         LLVM_DEBUG(llvm::dbgs() << "\n!! CreateBoundFunction: Func Type :"
-                                << tch.convertType(createBoundFunctionOp.func().getType()) << "\n";);
-        LLVM_DEBUG(llvm::dbgs() << "\n!! CreateBoundFunction: This Type :" << createBoundFunctionOp.thisVal().getType()
+                                << tch.convertType(createBoundFunctionOp.getFunc().getType()) << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! CreateBoundFunction: This Type :" << createBoundFunctionOp.getThisVal().getType()
                                 << "\n";);
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundFunctionType);
-        auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, transformed.func(),
+        auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, transformed.getFunc(),
                                                                clh.getStructIndexAttr(DATA_VALUE_INDEX));
-        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.thisVal(),
+        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.getThisVal(),
                                                                clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
         rewriter.replaceOp(createBoundFunctionOp, ValueRange{structVal3});
@@ -4478,16 +4478,16 @@ struct BodyInternalOpLowering : public TsLlvmPattern<mlir_ts::BodyInternalOp>
         auto opPosition = rewriter.getInsertionPoint();
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
-        mlir::Block *beforeBody = &bodyInternalOp.body().front();
-        mlir::Block *afterBody = &bodyInternalOp.body().back();
-        rewriter.inlineRegionBefore(bodyInternalOp.body(), continuationBlock);
+        mlir::Block *beforeBody = &bodyInternalOp.getBody().front();
+        mlir::Block *afterBody = &bodyInternalOp.getBody().back();
+        rewriter.inlineRegionBefore(bodyInternalOp.getBody(), continuationBlock);
 
         rewriter.setInsertionPointToEnd(opBlock);
         rewriter.create<LLVM::BrOp>(location, ValueRange(), beforeBody);
 
         rewriter.setInsertionPointToEnd(afterBody);
         auto bodyResultInternalOp = cast<mlir_ts::BodyResultInternalOp>(afterBody->getTerminator());
-        auto branchOp = rewriter.replaceOpWithNewOp<LLVM::BrOp>(bodyResultInternalOp, bodyResultInternalOp.results(),
+        auto branchOp = rewriter.replaceOpWithNewOp<LLVM::BrOp>(bodyResultInternalOp, bodyResultInternalOp.getResults(),
                                                                 continuationBlock);
 
         rewriter.setInsertionPoint(branchOp);
@@ -4505,7 +4505,7 @@ struct BodyResultInternalOpLowering : public TsLlvmPattern<mlir_ts::BodyResultIn
     LogicalResult matchAndRewrite(mlir_ts::BodyResultInternalOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        rewriter.replaceOp(op, op.results());
+        rewriter.replaceOp(op, op.getResults());
         return success();
     }
 };
