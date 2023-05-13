@@ -4529,8 +4529,6 @@ class GCMakeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::GCMakeDescripto
     LogicalResult matchAndRewrite(mlir_ts::GCMakeDescriptorOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
 
