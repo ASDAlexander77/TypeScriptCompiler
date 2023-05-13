@@ -15335,14 +15335,14 @@ genContext);
             return getStringType();
         }
 
-        if (attr.isa<mlir::IntegerAttr>())
-        {
-            return attr.getType();
-        }
-
         if (attr.isa<mlir::FloatAttr>())
         {
             return getNumberType();
+        }
+
+        if (auto typedAttr = attr.dyn_cast<mlir::TypedAttr>())
+        {
+            return typedAttr.getType();
         }
 
         llvm_unreachable("not implemented");
