@@ -60,7 +60,6 @@
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
             "args": [
                 "-emit=mlir-affine",
-                "-opt",
                 "-debug-only=mlir,affine",
                 "-mlir-disable-threading",
                 "C:/temp/1.ts"

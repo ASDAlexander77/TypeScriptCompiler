@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
-    branches: [ main ]
   schedule:
     # 8:30 and 18:30 UTC:
 #    - cron:  '30 8,18 * * *'
@@ -14,6 +13,8 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
+  CACHE_VERSION: v6
+  LLVM_VERSION: 16
 
 jobs:
   build:
@@ -35,21 +36,21 @@ jobs:
       uses: actions/cache@v2
       with:
         path: __build/llvm-ninja
-        key: ${{ runner.os }}-build-llvm-15-v5
+        key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
     - name: Cache 3rd Party binaries
       id: cache-3rd-party-binary
       uses: actions/cache@v2
       with:
         path: 3rdParty
-        key: ${{ runner.os }}-3rd-party-15-v5
+        key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
-    - name: Cache 3rd Party binaries - LLVM 15 Release
-      id: cache-3rd-party-binary-llvm-15-release
+    - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
+      id: cache-3rd-party-binary-llvm-release
       uses: actions/cache@v2
       with:
-        path: llvm_15_release.tgz
-        key: ${{ runner.os }}-3rd-party-llvm-15-release-v5
+        path: llvm_${{ env.LLVM_VERSION }}_release.tgz
+        key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
 
     - name: Delete __Build TS folders
       continue-on-error: true
@@ -63,15 +64,15 @@ jobs:
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: sh
-      if: hashFiles('llvm_15_release.tgz') == ''
-      run: curl -L https://www.dropbox.com/s/y4wa5r3ms84keb9/llvm_15_release.tgz?dl=1 --output llvm_15_release.tgz
+      if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.tgz') == ''
+      run: curl -L https://www.dropbox.com/s/q5hpkp5hasj6cvc/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release.tgz
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
       shell: sh
-      if: hashFiles('llvm_15_release.tgz') != ''
-      run: file llvm_15_release.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_15_release.tgz -C ./3rdParty/llvm-ninja/
-      #run: file llvm_15_release.tgz; unzip llvm_15_release.tgz -d ./3rdParty/llvm-ninja/
+      if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.tgz') != ''
+      run: file llvm_${{ env.LLVM_VERSION }}_release.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_${{ env.LLVM_VERSION }}_release.tgz -C ./3rdParty/llvm-ninja/
+      #run: file llvm_${{ env.LLVM_VERSION }}_release.tgz; unzip llvm_${{ env.LLVM_VERSION }}_release.tgz -d ./3rdParty/llvm-ninja/
 
     - name: Download 3rd party source - GC
       continue-on-error: true
