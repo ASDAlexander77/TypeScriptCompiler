@@ -31,12 +31,13 @@ def ConstantOp : TypeScript_Op<"Constant",
     specified by an attribute.
   }];
 
-  let arguments = (ins TypedAttrInterface:$value);
+  let arguments = (ins AnyAttr:$value);
   let results = (outs AnyType:$constValue);
 
   let builders = [
-    OpBuilder<(ins "TypedAttr":$value),
-    [{ build($_builder, $_state, value.getType(), value); }]>,
+    OpBuilder<(ins "TypedAttr":$value), [{
+      build($_builder, $_state, value.getType(), value);
+    }]>
   ];
 
   let hasFolder = 1;
