@@ -570,7 +570,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             auto any = false;
             if (auto chainCast = dyn_cast_or_null<mlir_ts::CastOp>(user))
             {
-                if (chainCast.in().getType() == res.getType())
+                if (chainCast.getIn().getType() == res.getType())
                 {
                     // we need to 
                     auto newCastOp = rewriter.create<mlir_ts::CastOp>(loc, chainCast.res().getType(), in);

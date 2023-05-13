@@ -859,10 +859,10 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
     {
         Location loc = accessorOp.getLoc();
 
-        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getGetAccessor().getValue(),
+        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getGetAccessor().value(),
                                                         TypeRange{accessorOp.getType()}, ValueRange{});
 
-        rewriter.replaceOp(accessorOp, callRes.getResult());
+        rewriter.replaceOp(accessorOp, callRes.getResult(0));
         return success();
     }
 };
@@ -876,10 +876,10 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
         Location loc = thisAccessorOp.getLoc();
 
         auto callRes =
-            rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getGetAccessor().getValue(),
+            rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getGetAccessor().value(),
                                              TypeRange{thisAccessorOp.getType()}, ValueRange{thisAccessorOp.getThisVal()});
 
-        rewriter.replaceOp(thisAccessorOp, callRes.getResult());
+        rewriter.replaceOp(thisAccessorOp, callRes.getResult(0));
 
         return success();
     }
@@ -913,12 +913,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto visitorCatchContinue = [&](Operation *op) {
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
             {
-                rttih.setType(catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType());
+                rttih.setType(catchOp.getCatchArg().getType().cast<mlir_ts::RefType>().getElementType());
                 assert(!catchOpPtr);
                 catchOpPtr = op;
             }
         };
-        tryOp.catches().walk(visitorCatchContinue);
+        tryOp.getCatches().walk(visitorCatchContinue);
 
         // set TryOp -> child TryOp
         auto visitorTryOps = [&](Operation *op) {
@@ -938,15 +938,15 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         auto *bodyRegion = &tryOp.getBody().front();
         auto *bodyRegionLast = &tryOp.getBody().back();
-        auto *catchesRegion = &tryOp.catches().front();
-        auto *catchesRegionLast = &tryOp.catches().back();
-        auto *finallyBlockRegion = &tryOp.finallyBlock().front();
-        auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
+        auto *catchesRegion = &tryOp.getCatches().front();
+        auto *catchesRegionLast = &tryOp.getCatches().back();
+        auto *finallyBlockRegion = &tryOp.getFinallyBlock().front();
+        auto *finallyBlockRegionLast = &tryOp.getFinallyBlock().back();
 
         auto catchHasOps =
-            llvm::any_of(tryOp.catches(), [](auto &block) { return &block.front() != block.getTerminator(); });
+            llvm::any_of(tryOp.getCatches(), [](auto &block) { return &block.front() != block.getTerminator(); });
         auto finallyHasOps =
-            llvm::any_of(tryOp.finallyBlock(), [](auto &block) { return &block.front() != block.getTerminator(); });
+            llvm::any_of(tryOp.getFinallyBlock(), [](auto &block) { return &block.front() != block.getTerminator(); });
 
         // logic to set Invoke attribute CallOp
         auto visitorReturnOpContinue = [&](Operation *op) {
@@ -959,7 +959,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 tsContext->unwind[op] = catchesRegion;
             }
         };
-        tryOp.catches().walk(visitorReturnOpContinue);
+        tryOp.getCatches().walk(visitorReturnOpContinue);
 
         // Branch to the "body" region.
         rewriter.setInsertionPointToEnd(currentBlock);
@@ -973,13 +973,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // in case of WIN32 we do not need catch logic if we have only finally
         if (catchHasOps)
         {
-            rewriter.inlineRegionBefore(tryOp.catches(), continuation);
+            rewriter.inlineRegionBefore(tryOp.getCatches(), continuation);
         }
         else
         {
-            while (!tryOp.catches().empty())
+            while (!tryOp.getCatches().empty())
             {
-                rewriter.eraseBlock(&tryOp.catches().front());
+                rewriter.eraseBlock(&tryOp.getCatches().front());
             }
         }
 
@@ -990,21 +990,21 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
             auto beforeFinallyBlockForCleanup = continuation->getPrevNode();
-            rewriter.cloneRegionBefore(tryOp.finallyBlock(), continuation);
+            rewriter.cloneRegionBefore(tryOp.getFinallyBlock(), continuation);
             finallyBlockForCleanup = beforeFinallyBlockForCleanup->getNextNode();
             finallyBlockForCleanupLast = continuation->getPrevNode();
 
             LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER CLONE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
-            rewriter.inlineRegionBefore(tryOp.finallyBlock(), continuation);
+            rewriter.inlineRegionBefore(tryOp.getFinallyBlock(), continuation);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
         }
         else
         {
-            while (!tryOp.finallyBlock().empty())
+            while (!tryOp.getFinallyBlock().empty())
             {
-                rewriter.eraseBlock(&tryOp.finallyBlock().front());
+                rewriter.eraseBlock(&tryOp.getFinallyBlock().front());
             }
         }
 
@@ -1123,7 +1123,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     tsContext->unwind[op] = finallyBlockForCleanup;
                 }
             };
-            // tryOp.catches().walk(visitorCallOpContinueCleanup);
+            // tryOp.getCatches().walk(visitorCallOpContinueCleanup);
             auto it = catchesRegion;
             do
             {
@@ -1245,7 +1245,7 @@ struct CatchOpLowering : public TsPattern<mlir_ts::CatchOp>
         auto catchDataValue = tsContext->catchOpData[catchOp];
         if (catchDataValue)
         {
-            rewriter.create<mlir_ts::SaveCatchVarOp>(loc, catchDataValue, catchOp.catchArg());
+            rewriter.create<mlir_ts::SaveCatchVarOp>(loc, catchDataValue, catchOp.getCatchArg());
         }
         else
         {
@@ -1271,12 +1271,12 @@ struct CallOpLowering : public TsPattern<mlir_ts::CallOp>
                 CodeLogicHelper clh(op, rewriter);
                 auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
-                LLVM_DEBUG(llvm::dbgs() << "!! ...call -> invoke: " << op.calleeAttr() << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "!! ...call -> invoke: " << op.getCalleeAttr() << "\n";);
                 LLVM_DEBUG(for (auto opit
                                 : op.getOperands()) llvm::dbgs()
                                << "!! ...call -> invoke operands: " << opit << "\n";);
 
-                rewriter.replaceOpWithNewOp<mlir_ts::InvokeOp>(op, op.getResultTypes(), op.calleeAttr(),
+                rewriter.replaceOpWithNewOp<mlir_ts::InvokeOp>(op, op.getResultTypes(), op.getCalleeAttr(),
                                                                op.getArgOperands(), continuationBlock, ValueRange{},
                                                                unwind, ValueRange{});
                 return success();
@@ -1287,7 +1287,7 @@ struct CallOpLowering : public TsPattern<mlir_ts::CallOp>
         }
 
         // just replace
-        rewriter.replaceOpWithNewOp<mlir_ts::SymbolCallInternalOp>(op, op.getResultTypes(), op.calleeAttr(),
+        rewriter.replaceOpWithNewOp<mlir_ts::SymbolCallInternalOp>(op, op.getResultTypes(), op.getCalleeAttr(),
                                                                    op.getArgOperands());
         return success();
     }
@@ -1338,11 +1338,11 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
 
         if (auto unwind = tsContext->unwind[throwOp])
         {
-            rewriter.replaceOpWithNewOp<mlir_ts::ThrowUnwindOp>(throwOp, throwOp.exception(), unwind);
+            rewriter.replaceOpWithNewOp<mlir_ts::ThrowUnwindOp>(throwOp, throwOp.getException(), unwind);
         }
         else
         {
-            rewriter.replaceOpWithNewOp<mlir_ts::ThrowCallOp>(throwOp, throwOp.exception());
+            rewriter.replaceOpWithNewOp<mlir_ts::ThrowCallOp>(throwOp, throwOp.getException());
         }
 
         clh.CutBlock();
@@ -1427,10 +1427,10 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
         }
 
         // insert 0 state label
-        caseDestinations.insert(caseDestinations.begin(), switchStateOp.defaultDest());
+        caseDestinations.insert(caseDestinations.begin(), switchStateOp.getDefaultDest());
 
         rewriter.replaceOpWithNewOp<mlir_ts::SwitchStateInternalOp>(
-            switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : switchStateOp.defaultDest(),
+            switchStateOp, switchStateOp.getState(), defaultBlock ? defaultBlock : switchStateOp.getDefaultDest(),
             caseDestinations);
 
         return success();
@@ -1451,8 +1451,8 @@ struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
 
         auto retBlock = tsContext->returnBlock;
 
-        rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(yieldReturnValOp, yieldReturnValOp.operand(),
-                                                      yieldReturnValOp.reference());
+        rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(yieldReturnValOp, yieldReturnValOp.getOperand(),
+                                                      yieldReturnValOp.getReference());
 
         rewriter.setInsertionPointAfter(yieldReturnValOp);
         clh.JumpTo(yieldReturnValOp.getLoc(), retBlock);
@@ -1468,7 +1468,7 @@ struct TypeOfOpLowering : public TsPattern<mlir_ts::TypeOfOp>
     LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, PatternRewriter &rewriter) const final
     {
         TypeOfOpHelper toh(rewriter);
-        auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), typeOfOp.value(), typeOfOp.value().getType());
+        auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), typeOfOp.getValue(), typeOfOp.getValue().getType());
 
         rewriter.replaceOp(typeOfOp, ValueRange{typeOfValue});
         return success();
@@ -1504,7 +1504,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
                                                                             rewriter.getBoolAttr(inHeapMemory));
 
         auto index = 0;
-        for (auto val : captureOp.captured())
+        for (auto val : captureOp.getCaptured())
         {
             auto thisStoreFieldType = captureStoreType.getType(index);
             auto thisStoreFieldTypeRef = mlir_ts::RefType::get(thisStoreFieldType);
@@ -1559,7 +1559,7 @@ struct TypeScriptToAffineLoweringTSFuncPass : public PassWrapper<TypeScriptToAff
 
     void getDependentDialects(DialectRegistry &registry) const override
     {
-        registry.insert<arith::ArithmeticDialect>();
+        registry.insert<arith::ArithDialect>();
         registry.insert<cf::ControlFlowDialect>();
         registry.insert<func::FuncDialect>();
     }
@@ -1578,7 +1578,7 @@ struct TypeScriptToAffineLoweringFuncPass : public PassWrapper<TypeScriptToAffin
 
     void getDependentDialects(DialectRegistry &registry) const override
     {
-        registry.insert<arith::ArithmeticDialect>();
+        registry.insert<arith::ArithDialect>();
         registry.insert<cf::ControlFlowDialect>();
         registry.insert<func::FuncDialect>();
     }
@@ -1597,7 +1597,7 @@ struct TypeScriptToAffineLoweringModulePass : public PassWrapper<TypeScriptToAff
 
     void getDependentDialects(DialectRegistry &registry) const override
     {
-        registry.insert<arith::ArithmeticDialect>();
+        registry.insert<arith::ArithDialect>();
         registry.insert<cf::ControlFlowDialect>();
         registry.insert<func::FuncDialect>();
     }
@@ -1659,8 +1659,8 @@ void finishSwitchState(mlir_ts::FuncOp f, TSFunctionContext &tsFuncContext)
 
     mlir::SmallVector<mlir::Block *> stateLabels(tsFuncContext.stateLabels);
 
-    rewriter.replaceOpWithNewOp<mlir_ts::SwitchStateInternalOp>(switchStateOp, switchStateOp.state(),
-                                                                switchStateOp.defaultDest(), stateLabels);
+    rewriter.replaceOpWithNewOp<mlir_ts::SwitchStateInternalOp>(switchStateOp, switchStateOp.getState(),
+                                                                switchStateOp.getDefaultDest(), stateLabels);
 }
 
 void cleanupEmptyBlocksWithoutPredecessors(mlir_ts::FuncOp f)
@@ -1705,7 +1705,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
     // We define the specific operations, or dialects, that are legal targets for
     // this lowering. In our case, we are lowering to a combination of the
     // `Affine` and `Standard` dialects.
-    target.addLegalDialect<arith::ArithmeticDialect>();
+    target.addLegalDialect<arith::ArithDialect>();
     target.addLegalDialect<cf::ControlFlowDialect>();
     target.addLegalDialect<func::FuncDialect>();
 

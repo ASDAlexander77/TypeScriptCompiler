@@ -1395,7 +1395,7 @@ class MLIRGenImpl
 
         if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
         {
-            auto functionName = symbolOp.identifier();
+            auto functionName = symbolOp.getIdentifier();
 
             // it is not generic arrow function
             auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(functionName);
@@ -1447,7 +1447,7 @@ class MLIRGenImpl
 
         auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>();
         assert(symbolOp);
-        auto arrowFunctionName = symbolOp.identifier();
+        auto arrowFunctionName = symbolOp.getIdentifier();
 
         // it is not generic arrow function
         auto arrowFunctionGenericTypeInfo = getGenericFunctionInfoByFullName(arrowFunctionName);
@@ -2380,7 +2380,7 @@ class MLIRGenImpl
                         assert(type);
                         varType = type;
 
-                        globalOp.typeAttr(mlir::TypeAttr::get(type));
+                        globalOp.setTypeAttr(mlir::TypeAttr::get(type));
 
                         if (!init)
                         {
@@ -2401,7 +2401,7 @@ class MLIRGenImpl
                         assert(type);
                         varType = type;
 
-                        globalOp.typeAttr(mlir::TypeAttr::get(type));
+                        globalOp.setTypeAttr(mlir::TypeAttr::get(type));
                     }
                 }
             }
@@ -2419,7 +2419,7 @@ class MLIRGenImpl
                 assert(type);
                 varType = type;
 
-                globalOp.typeAttr(mlir::TypeAttr::get(type));
+                globalOp.setTypeAttr(mlir::TypeAttr::get(type));
 
                 if (!isExternal)
                 {
@@ -3027,7 +3027,7 @@ class MLIRGenImpl
         }
         else if (genContext.funcOp)
         {
-            auto funcName = const_cast<GenContext &>(genContext).funcOp.sym_name().str();
+            auto funcName = const_cast<GenContext &>(genContext).funcOp.getSymName().str();
             objectOwnerName = funcName;
         }
 
@@ -3135,7 +3135,7 @@ class MLIRGenImpl
             auto cachedFuncType = funcIt->second.getFunctionType();
             if (cachedFuncType.getNumResults() > 0)
             {
-                auto returnType = cachedFuncType.getResult();
+                auto returnType = cachedFuncType.getResult(0);
                 funcProto->setReturnType(returnType);
             }
 
@@ -3803,7 +3803,7 @@ class MLIRGenImpl
             auto entryOp = builder.create<mlir_ts::EntryOp>(location, mlir_ts::RefType::get(retType));
             auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
             varDecl->setReadWriteAccess();
-            declare(varDecl, entryOp.reference(), genContext);
+            declare(varDecl, entryOp.getReference(), genContext);
         }
         else
         {
@@ -3908,7 +3908,7 @@ class MLIRGenImpl
         auto optionalValueOrDefaultOp = builder.create<mlir_ts::OptionalValueOrDefaultOp>(
             location, dataType, value);
 
-        /*auto *defValueBlock =*/builder.createBlock(&optionalValueOrDefaultOp.defaultValueRegion());
+        /*auto *defValueBlock =*/builder.createBlock(&optionalValueOrDefaultOp.getDefaultValueRegion());
 
         mlir::Value defaultValue;
         if (defaultExpr)
@@ -3937,7 +3937,7 @@ class MLIRGenImpl
         auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
             location, mlir_ts::RefType::get(dataType), value, builder.getBoolAttr(false));
 
-        /*auto *defValueBlock =*/builder.createBlock(&paramOptionalOp.defaultValueRegion());
+        /*auto *defValueBlock =*/builder.createBlock(&paramOptionalOp.getDefaultValueRegion());
 
         mlir::Value defaultValue;
         if (defaultExpr)
@@ -4485,7 +4485,7 @@ class MLIRGenImpl
         }
         else
         {
-            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.token());
+            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.getToken());
         }
 
         return mlir::success();
@@ -5090,7 +5090,7 @@ class MLIRGenImpl
             // add to group
             auto rankType = mlir::IndexType::get(builder.getContext());
             // TODO: should i replace with value from arg0?
-            builder.create<mlir::async::AddToGroupOp>(location, rankType, asyncExecOp.token(), asyncGroupResult);
+            builder.create<mlir::async::AddToGroupOp>(location, rankType, asyncExecOp.getToken(), asyncGroupResult);
         }
         else
         {
@@ -5692,8 +5692,8 @@ class MLIRGenImpl
         SmallVector<mlir::Type, 0> types;
 
         /*auto *body =*/builder.createBlock(&tryOp.getBody(), {}, types);
-        /*auto *catches =*/builder.createBlock(&tryOp.catches(), {}, types);
-        /*auto *finallyBlock =*/builder.createBlock(&tryOp.finallyBlock(), {}, types);
+        /*auto *catches =*/builder.createBlock(&tryOp.getCatches(), {}, types);
+        /*auto *finallyBlock =*/builder.createBlock(&tryOp.getFinallyBlock(), {}, types);
 
         // body
         builder.setInsertionPointToStart(&tryOp.getBody().front());
@@ -5708,7 +5708,7 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location);
 
         // catches
-        builder.setInsertionPointToStart(&tryOp.catches().front());
+        builder.setInsertionPointToStart(&tryOp.getCatches().front());
         if (catchClause && catchClause->block)
         {
             if (!varName.empty())
@@ -5741,7 +5741,7 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location);
 
         // finally
-        builder.setInsertionPointToStart(&tryOp.finallyBlock().front());
+        builder.setInsertionPointToStart(&tryOp.getFinallyBlock().front());
         if (tryStatementAST->finallyBlock)
         {
             result = mlirGen(tryStatementAST->finallyBlock, tryGenContext);
@@ -6310,7 +6310,7 @@ class MLIRGenImpl
         if (auto loadOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LoadOp>())
         {
             mlir::Type destType;
-            TypeSwitch<mlir::Type>(loadOp.reference().getType())
+            TypeSwitch<mlir::Type>(loadOp.getReference().getType())
                 .Case<mlir_ts::RefType>([&](auto refType) { destType = refType.getElementType(); })
                 .Case<mlir_ts::BoundRefType>([&](auto boundRefType) { destType = boundRefType.getElementType(); });
 
@@ -6326,7 +6326,7 @@ class MLIRGenImpl
 
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have
             // writable array
-            builder.create<mlir_ts::StoreOp>(location, savingValue, loadOp.reference());
+            builder.create<mlir_ts::StoreOp>(location, savingValue, loadOp.getReference());
         }
         else if (auto accessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorOp>())
         {
@@ -10644,12 +10644,12 @@ class MLIRGenImpl
             auto value = V(result);
             if (auto namespaceOp = value.getDefiningOp<mlir_ts::NamespaceRefOp>())
             {
-                getImportEqualsMap().insert({name, namespaceOp.identifier()});
+                getImportEqualsMap().insert({name, namespaceOp.getIdentifier()});
                 return mlir::success();
             }
             else if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>())
             {
-                getImportEqualsMap().insert({name, classRefOp.identifier()});
+                getImportEqualsMap().insert({name, classRefOp.getIdentifier()});
                 return mlir::success();
             }
         }
@@ -12151,7 +12151,7 @@ genContext);
                         auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
                             location, methodOrField.methodInfo.funcOp.getType(),
                             mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                        methodOrField.methodInfo.funcOp.sym_name()));
+                        methodOrField.methodInfo.funcOp.getSymName()));
 
                         vtableValue =
                             builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, methodConstName, vtableValue,
@@ -12287,7 +12287,7 @@ genContext);
                         auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
                             location, methodOrField.methodInfo.funcOp.getFunctionType(),
                             mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                                         methodOrField.methodInfo.funcOp.sym_name()));
+                                                         methodOrField.methodInfo.funcOp.getSymName()));
 
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                             location, virtTuple, methodConstName, vtableValue,
@@ -12570,7 +12570,7 @@ genContext);
                             methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
                                 location, vtRecord.methodInfo.funcOp.getFunctionType(),
                                 mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                                             vtRecord.methodInfo.funcOp.sym_name()));
+                                                             vtRecord.methodInfo.funcOp.getSymName()));
                         }
                         else
                         {

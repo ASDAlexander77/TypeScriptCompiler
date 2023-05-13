@@ -245,7 +245,7 @@ class CodeLogicHelper
         // TODO: finish it for field access
         if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(defOp))
         {
-            rewriter.create<mlir_ts::StoreOp>(loc, result, loadOp.reference());
+            rewriter.create<mlir_ts::StoreOp>(loc, result, loadOp.getReference());
         }
         else
         {
@@ -277,9 +277,9 @@ class CodeLogicHelper
             {
                 if (createReturnBlock)
                 {
-                    if (returnInternalOp.operands().size() > 0)
+                    if (returnInternalOp.getOperands().size() > 0)
                     {
-                        auto argOp = returnInternalOp.operands().front().getDefiningOp();
+                        auto argOp = returnInternalOp.getOperands().front().getDefiningOp();
                         if (argOp == &block.front())
                         {
                             // no need to create what already created
