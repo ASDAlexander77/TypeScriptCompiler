@@ -1077,7 +1077,7 @@ def TypeScript_ExtractPropertyOp : TypeScript_Op<"ExtractProperty"> {
 
   let arguments = (ins
     TypeScript_AnyStructLike:$object,
-    ArrayAttr:$position
+    DenseI64ArrayAttr:$position
   );
 
   let results = (outs
@@ -1097,7 +1097,7 @@ def TypeScript_InsertPropertyOp : TypeScript_Op<"InsertProperty"> {
   let arguments = (ins
     AnyType:$value,
     TypeScript_AnyStructLike:$object,
-    ArrayAttr:$position
+    DenseI64ArrayAttr:$position
   );
 
   let results = (outs 
