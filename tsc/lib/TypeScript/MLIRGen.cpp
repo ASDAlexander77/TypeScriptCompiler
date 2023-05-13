@@ -9646,7 +9646,7 @@ class MLIRGenImpl
             }
             else if (auto symRefOp = itemValue.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
-                value = symRefOp.getIdentifierAttr()();
+                value = symRefOp.getIdentifierAttr();
                 type = symRefOp.getType();
             }
             else if (auto undefOp = itemValue.getDefiningOp<mlir_ts::UndefOp>())
@@ -16061,7 +16061,7 @@ genContext);
             {
                 if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 && mth.isNumericType(funcType.getInput(0)))
                 {
-                    auto arrayType = getArrayType(funcType.getResult());
+                    auto arrayType = getArrayType(funcType.getResult(0));
                     LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
                     return arrayType;
                 }

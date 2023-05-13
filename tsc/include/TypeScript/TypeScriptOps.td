@@ -12,6 +12,7 @@ include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/CastInterfaces.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
 
 
 //===----------------------------------------------------------------------===//
@@ -30,8 +31,13 @@ def ConstantOp : TypeScript_Op<"Constant",
     specified by an attribute.
   }];
 
-  let arguments = (ins AnyAttr:$value);
+  let arguments = (ins TypedAttrInterface:$value);
   let results = (outs AnyType:$constValue);
+
+  let builders = [
+    OpBuilder<(ins "TypedAttr":$value),
+    [{ build($_builder, $_state, value.getType(), value); }]>,
+  ];
 
   let hasFolder = 1;
 
