@@ -523,7 +523,7 @@ class MLIRPropertyAccessCodeLogic
         }
 
         return builder.create<mlir_ts::ExtractPropertyOp>(
-            location, elementTypeForRef, expression, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
+            location, elementTypeForRef, expression, MLIRHelper::getStructIndex(fieldIndex));
     }
 
     template <typename T> mlir::Value TupleNoError(T tupleType, bool indexAccess = false)
@@ -564,7 +564,7 @@ class MLIRPropertyAccessCodeLogic
         }
 
         return builder.create<mlir_ts::ExtractPropertyOp>(
-            location, elementTypeForRef, expression, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
+            location, elementTypeForRef, expression, MLIRHelper::getStructIndex(fieldIndex));
     }
 
     mlir::Value Bool(mlir_ts::BooleanType intType)

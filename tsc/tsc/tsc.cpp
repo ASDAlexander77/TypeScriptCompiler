@@ -631,7 +631,7 @@ int main(int argc, char **argv)
     mlir::MLIRContext context;
     // Load our Dialect in this MLIR Context.
     context.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
-    context.getOrLoadDialect<mlir::arith::ArithmeticDialect>();
+    context.getOrLoadDialect<mlir::arith::ArithDialect>();
     context.getOrLoadDialect<mlir::math::MathDialect>();
     context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
     context.getOrLoadDialect<mlir::func::FuncDialect>();
