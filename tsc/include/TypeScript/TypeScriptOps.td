@@ -672,7 +672,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     operand_iterator arg_operand_end() { return operand_end(); }
 
     /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
+    CallInterfaceCallable getCallableForCallee() { return getCallee(); }
   }];
 
   let hasCanonicalizer = 1;
@@ -760,7 +760,7 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
     operand_iterator arg_operand_end() { return operand_end(); }
 
     /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() {return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
+    CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
   }];
 
   let assemblyFormat = [{
@@ -824,7 +824,7 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
     operand_iterator arg_operand_end() { return operand_end(); }
 
     /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
+    CallInterfaceCallable getCallableForCallee() { return getCallee(); }
   }];
 
   let assemblyFormat = [{

@@ -80,6 +80,7 @@
                 "-emit=mlir-affine",
                 "-debug-only=affine",
                 "-mlir-disable-threading",
+                "--opt",
                 "/mnt/c/temp/1.ts"
             ],
             "stopAtEntry": false,
