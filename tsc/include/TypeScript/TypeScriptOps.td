@@ -794,7 +794,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
     operand_iterator arg_operand_end() { return operand_end(); }
 
     /// Return the callee of this operation.
-    CallInterfaceCallable getCallableForCallee() { (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
+    CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
   }];
 
   let assemblyFormat = [{
