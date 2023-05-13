@@ -807,7 +807,7 @@ struct SymbolRefOpLowering : public TsLlvmPattern<mlir_ts::SymbolRefOp>
     {
         TypeConverterHelper tch(getTypeConverter());
         rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()),
-                                                      symbolRefOp.getIdentifierAttr()());
+                                                      symbolRefOp.getIdentifierAttr());
         return success();
     }
 };
