@@ -79,10 +79,6 @@ def VirtualSymbolRefOp : TypeScript_Op<"VirtualSymbolRef",
   let arguments = (ins TypeScript_AnyRefLike:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
   let results = (outs TypeScript_AnyRefOrCallable:$value);
 
-  let builders = [
-    OpBuilder<(ins "Value":$vtable, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), vtable, index, identifier); }]>];
-
   let hasCanonicalizer = 1;
 
   let assemblyFormat = "`(` $vtable `[` $index `]` `)` attr-dict `:`  `:`  type($vtable) `->` type($value)";
@@ -743,7 +739,7 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
     OpBuilder<(ins "StringRef":$callee, "TypeRange":$results,
       CArg<"ValueRange", "{}">:$callOperands), [{
       build($_builder, $_state, SymbolRefAttr::get($_builder.getContext(), callee), results,
-            operands);
+            callOperands);
     }]>];
 
   let extraClassDeclaration = [{

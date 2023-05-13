@@ -282,11 +282,11 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
         return true;
     }
 
-    bool isLegalToInline(Region *dest, Region *src, bool wouldBeCloned, BlockAndValueMapping &valueMapping) const final
+    bool isLegalToInline(Region *dest, Region *src, bool wouldBeCloned, IRMapping &valueMapping) const final
     {
         if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(dest->getParentOp()))
         {
-            auto condition = !(funcOp.personality().hasValue() && funcOp.personality().getValue());
+            auto condition = !(funcOp.getPersonality().has_value() && funcOp.getPersonality().value());
             LLVM_DEBUG(llvm::dbgs() << "!! is Legal To Inline (region): " << (condition ? "TRUE" : "FALSE") << " " << funcOp << " = "
                                     << "\n";);
             return condition;
@@ -297,7 +297,7 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
 
     /// here if we return false for any of op, then whole funcOp will not be inlined
     /// needed to decided if to allow inlining or not
-    bool isLegalToInline(mlir::Operation *op, mlir::Region *region, bool, mlir::BlockAndValueMapping &) const final
+    bool isLegalToInline(mlir::Operation *op, mlir::Region *region, bool, IRMapping &) const final
     {
         // auto condition = true;
         // ignore all functions until you find out how to resolve issue with recursive calls

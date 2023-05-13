@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "llvm"
-
 #include "TypeScript/TypeScriptDialectTranslation.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptDialect.h"
@@ -11,6 +9,8 @@
 
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "llvm"
 
 using namespace mlir;
 using namespace mlir::LLVM;

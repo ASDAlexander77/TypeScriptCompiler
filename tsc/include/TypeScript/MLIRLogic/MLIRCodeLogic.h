@@ -46,7 +46,7 @@ class MLIRCodeLogic
         auto constOp = dyn_cast<mlir_ts::ConstantOp>(value.getDefiningOp());
         if (constOp)
         {
-            auto val = constOp.valueAttr();
+            auto val = constOp.getValueAttr();
             return val;
         }
 
@@ -59,7 +59,7 @@ class MLIRCodeLogic
         if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(value.getDefiningOp()))
         {
             // this LoadOp will be removed later as unused
-            auto refValue = loadOp.reference();
+            auto refValue = loadOp.getReference();
             return refValue;
         }
 
@@ -273,7 +273,7 @@ class MLIRCustomMethods
                 auto constantOp = dyn_cast<mlir_ts::ConstantOp>(param2.getDefiningOp());
                 if (constantOp && constantOp.getType().isa<mlir_ts::StringType>())
                 {
-                    msg = constantOp.value().cast<mlir::StringAttr>().getValue();
+                    msg = constantOp.getValue().cast<mlir::StringAttr>().getValue();
                 }
 
                 param2.getDefiningOp()->erase();
@@ -478,8 +478,7 @@ class MLIRPropertyAccessCodeLogic
                 [&](auto boolAttr) { typeFromAttr = mlir_ts::BooleanType::get(builder.getContext()); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << propName << " value attr: " << valueAttr
-                                << " value type: " << valueAttr.getType() << "\n");
+        LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << propName << " value attr: " << valueAttr << "\n");
 
         // return builder.create<mlir_ts::ConstantOp>(location, enumType.getElementType(), valueAttr);
         auto literalType = mlir_ts::LiteralType::get(valueAttr, typeFromAttr);
@@ -924,7 +923,7 @@ class MLIRCodeLogicHelper
         auto ifOp = builder.create<mlir_ts::IfOp>(location, type, condition, true);
 
         // then block
-        auto &thenRegion = ifOp.thenRegion();
+        auto &thenRegion = ifOp.getThenRegion();
 
         builder.setInsertionPointToStart(&thenRegion.back());
 
@@ -932,7 +931,7 @@ class MLIRCodeLogicHelper
         builder.create<mlir_ts::ResultOp>(location, value);
 
         // else block
-        auto &elseRegion = ifOp.elseRegion();
+        auto &elseRegion = ifOp.getElseRegion();
 
         builder.setInsertionPointToStart(&elseRegion.back());
 
@@ -941,7 +940,7 @@ class MLIRCodeLogicHelper
 
         builder.setInsertionPointAfter(ifOp);
 
-        return ifOp.results().front();
+        return ifOp.getResults().front();
     }
 
     void seekLast(mlir::Block *block)

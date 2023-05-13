@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "llvm"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Defines.h"
@@ -34,6 +32,8 @@
 #include "TypeScript/LowerToLLVMLogic.h"
 
 #include "scanner_enums.h"
+
+#define DEBUG_TYPE "llvm"
 
 #define DISABLE_SWITCH_STATE_PASS 1
 #define ENABLE_MLIR_INIT

@@ -4,7 +4,7 @@
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
