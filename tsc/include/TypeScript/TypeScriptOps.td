@@ -1539,7 +1539,7 @@ def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [Pure, HasPare
 
   let builders = [
     OpBuilder<(ins),
-    [{ build($_builder, $_state, llvm::None); }]>];
+    [{ build($_builder, $_state, std::nullopt); }]>];
 
   let assemblyFormat = "attr-dict ($retOperands^ `:` type($retOperands))?";
 }

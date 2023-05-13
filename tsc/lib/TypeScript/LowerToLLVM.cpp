@@ -3443,7 +3443,7 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
 
         TypeHelper th(rewriter);
 
-        auto catchRefType = saveCatchVarOp.getGetVarStore().getType().cast<mlir_ts::RefType>();
+        auto catchRefType = saveCatchVarOp.getVarStore().getType().cast<mlir_ts::RefType>();
         auto catchType = catchRefType.getElementType();
         auto llvmCatchType = getTypeConverter()->convertType(catchType);
 
@@ -3459,7 +3459,7 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
             catchVal = rewriter.create<LLVM::BitcastOp>(loc, llvmCatchType, transformed.getExceptionInfo());
         }
 
-        rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(saveCatchVarOp, catchVal, transformed.getGetVarStore());
+        rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(saveCatchVarOp, catchVal, transformed.getVarStore());
 
         return success();
     }
@@ -4811,7 +4811,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addSourceMaterialization(
         [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {
             if (inputs.size() != 1)
-                return llvm::None;
+                return std::nullopt;
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Materialization (Source): " << loc << " result type: " << resultType; for (auto inputType : inputs) llvm::dbgs() << "\n <- input: " << inputType;);
 
@@ -4822,7 +4822,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addTargetMaterialization(
         [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {
             if (inputs.size() != 1)
-                return llvm::None;
+                return std::nullopt;
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Materialization (Target): " << loc << " result type: " << resultType; for (auto inputType : inputs) llvm::dbgs() << "\n <- input: " << inputType;);
 

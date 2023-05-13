@@ -3210,7 +3210,7 @@ class MLIRGenImpl
                 else
                 {
                     // no return type
-                    funcType = getFunctionType(argTypes, llvm::None, funcProto->isMultiArgs());
+                    funcType = getFunctionType(argTypes, std::nullopt, funcProto->isMultiArgs());
                 }
             }
             else
@@ -3276,7 +3276,7 @@ class MLIRGenImpl
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
-        auto partialDeclFuncType = getFunctionType(argTypes, llvm::None);
+        auto partialDeclFuncType = getFunctionType(argTypes, std::nullopt);
         auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionLikeDeclarationBaseAST), name, partialDeclFuncType);
 
         {
@@ -13411,7 +13411,7 @@ genContext);
     {
         auto location = exprValue.getLoc();
         // we need to add temporary block
-        auto tempFuncType = mlir::FunctionType::get(builder.getContext(), llvm::None, llvm::None);
+        auto tempFuncType = mlir::FunctionType::get(builder.getContext(), std::nullopt, std::nullopt);
         auto tempFuncOp = mlir::func::FuncOp::create(location, ".tempfunc", tempFuncType);
         auto &entryBlock = *tempFuncOp.addEntryBlock();
 

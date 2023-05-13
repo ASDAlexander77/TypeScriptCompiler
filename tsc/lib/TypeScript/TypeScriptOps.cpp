@@ -1138,7 +1138,7 @@ LogicalResult mlir_ts::CallHybridInternalOp::verifySymbolUses(SymbolTableCollect
 
 void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond, bool withElseRegion)
 {
-    build(builder, result, /*resultTypes=*/llvm::None, cond, withElseRegion);
+    build(builder, result, /*resultTypes=*/std::nullopt, cond, withElseRegion);
 }
 
 void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resultTypes, Value cond, bool withElseRegion)

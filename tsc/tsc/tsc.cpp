@@ -345,7 +345,7 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
     case 3:
         return llvm::OptimizationLevel::O3;
     }
-    return llvm::None;
+    return std::nullopt;
 }
 
 std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(llvm::Optional<unsigned> mbOptLevel,
