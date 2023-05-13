@@ -732,7 +732,7 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
     OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
       $_state.addOperands(callOperands);
       $_state.addAttribute("callee", SymbolRefAttr::get(callee));
-      $_state.addTypes(callee.getTypeAsFunctionType().getResults());
+      $_state.addTypes(callee.getFunctionType().getResults());
     }]>,
     OpBuilder<(ins "SymbolRefAttr":$callee, "TypeRange":$results,
       CArg<"ValueRange", "{}">:$callOperands), [{

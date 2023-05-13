@@ -826,7 +826,7 @@ LogicalResult mlir_ts::InvokeOp::verify()
         return emitOpError("must have 0 or 1 result");
     }
 
-    Block *unwindDestBlock = unwindDest();
+    Block *unwindDestBlock = getUnwindDest();
     if (unwindDestBlock->empty())
     {
         return emitError("must have at least one operation in unwind destination");
@@ -848,8 +848,8 @@ SuccessorOperands mlir_ts::InvokeOp::getSuccessorOperands(unsigned index)
 {
     assert(index <= 1 && "invalid successor index");
     if (index == 1)
-        return SuccessorOperands(normalDestOperandsMutable());
-    return SuccessorOperands(unwindDestOperandsMutable());
+        return SuccessorOperands(getNormalDestOperandsMutable());
+    return SuccessorOperands(getUnwindDestOperandsMutable());
 }
 
 //===----------------------------------------------------------------------===//
@@ -860,8 +860,8 @@ SuccessorOperands mlir_ts::InvokeHybridOp::getSuccessorOperands(unsigned index)
 {
     assert(index <= 1 && "invalid successor index");
     if (index == 1)
-        return SuccessorOperands(normalDestOperandsMutable());
-    return SuccessorOperands(unwindDestOperandsMutable());
+        return SuccessorOperands(getNormalDestOperandsMutable());
+    return SuccessorOperands(getUnwindDestOperandsMutable());
 }
 
 //===----------------------------------------------------------------------===//
@@ -877,7 +877,7 @@ struct EraseRedundantAssertions : public OpRewritePattern<mlir_ts::AssertOp>
     LogicalResult matchAndRewrite(mlir_ts::AssertOp op, PatternRewriter &rewriter) const override
     {
         // Erase assertion if argument is constant true.
-        if (matchPattern(op.arg(), m_One()))
+        if (matchPattern(op.getArg(), m_One()))
         {
             rewriter.eraseOp(op);
             return success();
@@ -936,13 +936,6 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
     return success();
 }
 
-mlir_ts::FunctionType mlir_ts::CallOp::getCalleeType()
-{
-    SmallVector<mlir::Type> oper(getOperandTypes());
-    SmallVector<mlir::Type> res(getResultTypes());
-    return mlir_ts::FunctionType::get(getContext(), oper, res);
-}
-
 //===----------------------------------------------------------------------===//
 // CallIndirectOp
 //===----------------------------------------------------------------------===//
@@ -998,7 +991,7 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
         if (auto symbolRefOp = indirectCall.getCallee().getDefiningOp<mlir_ts::SymbolRefOp>())
         {
             // Replace with a direct call.
-            rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
+            rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.getIdentifierAttr(), indirectCall.getResultTypes(),
                                                          indirectCall.getArgOperands());
             return success();
         }
@@ -1006,11 +999,11 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
         if (auto thisSymbolRefOp = indirectCall.getCallee().getDefiningOp<mlir_ts::ThisSymbolRefOp>())
         {
             SmallVector<mlir::Value> args;
-            args.push_back(thisSymbolRefOp.thisVal());
+            args.push_back(thisSymbolRefOp.getThisVal());
             args.append(indirectCall.getArgOperands().begin(), indirectCall.getArgOperands().end());
 
             // Replace with a direct call.
-            rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
+            rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRefOp.getIdentifierAttr(), indirectCall.getResultTypes(),
                                                          args);
             return success();
         }
@@ -1018,16 +1011,16 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
         // supporting trumpoline
         if (auto getMethodOp = indirectCall.getCallee().getDefiningOp<mlir_ts::GetMethodOp>())
         {
-            if (auto createBoundFunctionOp = getMethodOp.boundFunc().getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+            if (auto createBoundFunctionOp = getMethodOp.getBoundFunc().getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
             {
-                if (auto symbolRefOp = createBoundFunctionOp.func().getDefiningOp<mlir_ts::SymbolRefOp>())
+                if (auto symbolRefOp = createBoundFunctionOp.getFunc().getDefiningOp<mlir_ts::SymbolRefOp>())
                 {
                     auto getThisVal = indirectCall.getArgOperands().front().getDefiningOp<mlir_ts::GetThisOp>();
 
-                    auto thisVal = createBoundFunctionOp.thisVal();
+                    auto thisVal = createBoundFunctionOp.getThisVal();
                     if (auto castOp = thisVal.getDefiningOp<mlir_ts::CastOp>())
                     {
-                        thisVal = castOp.in();
+                        thisVal = castOp.getIn();
                     }
 
                     auto hasThis = !isa<mlir_ts::NullOp>(thisVal.getDefiningOp());
@@ -1040,7 +1033,7 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                     }
 
                     args.append(indirectCall.getArgOperands().begin() + (hasThis ? 1 : 0), indirectCall.getArgOperands().end());
-                    rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
+                    rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.getIdentifierAttr(), indirectCall.getResultTypes(),
                                                                  args);
 
                     LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
@@ -1071,17 +1064,17 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                     return success();
                 }
             }
-            else if (auto thisSymbolRef = getMethodOp.boundFunc().getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+            else if (auto thisSymbolRef = getMethodOp.getBoundFunc().getDefiningOp<mlir_ts::ThisSymbolRefOp>())
             {
                 auto getThisVal = indirectCall.getArgOperands().front().getDefiningOp<mlir_ts::GetThisOp>();
 
-                auto thisVal = thisSymbolRef.thisVal();
+                auto thisVal = thisSymbolRef.getThisVal();
 
                 // Replace with a direct call.
                 SmallVector<mlir::Value> args;
                 args.push_back(thisVal);
                 args.append(indirectCall.getArgOperands().begin() + 1, indirectCall.getArgOperands().end());
-                rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRef.identifierAttr(), indirectCall.getResultTypes(),
+                rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRef.getIdentifierAttr(), indirectCall.getResultTypes(),
                                                              args);
 
                 LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
@@ -1215,7 +1208,7 @@ void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attri
     }
 
     // Don't consider the else region if it is empty.
-    Region *elseRegion = &this->elseRegion();
+    Region *elseRegion = &this->getElseRegion();
     if (elseRegion->empty())
     {
         elseRegion = nullptr;
@@ -1230,13 +1223,13 @@ void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attri
     else
     {
         // If the condition isn't constant, both regions may be executed.
-        regions.push_back(RegionSuccessor(&thenRegion()));
+        regions.push_back(RegionSuccessor(&getThenRegion()));
         regions.push_back(RegionSuccessor(elseRegion));
         return;
     }
 
     // Add the successor regions using the condition.
-    regions.push_back(RegionSuccessor(condition ? &thenRegion() : elseRegion));
+    regions.push_back(RegionSuccessor(condition ? &getThenRegion() : elseRegion));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1247,7 +1240,7 @@ OperandRange mlir_ts::WhileOp::getSuccessorEntryOperands(Optional<unsigned int> 
 {
     assert((!index || *index == 0) && "WhileOp is expected to branch only to the first region");
 
-    return inits();
+    return getInits();
 }
 
 void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
@@ -1257,19 +1250,19 @@ void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<At
 
     if (!index)
     {
-        regions.emplace_back(&cond(), cond().getArguments());
+        regions.emplace_back(&getCond(), getCond().getArguments());
         return;
     }
 
     assert(*index < 2 && "there are only two regions in a WhileOp");
     if (*index == 0)
     {
-        regions.emplace_back(&body(), body().getArguments());
+        regions.emplace_back(&getBody(), getBody().getArguments());
         regions.emplace_back(getResults());
         return;
     }
 
-    regions.emplace_back(&cond(), cond().getArguments());
+    regions.emplace_back(&getCond(), getCond().getArguments());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1281,7 +1274,7 @@ OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(Optional<unsigned int
     // TODO: review it
     assert((!index || *index == 1) && "DoWhileOp is expected to branch only to the first region");
 
-    return inits();
+    return getInits();
 }
 
 void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
@@ -1291,7 +1284,7 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<
 
     if (!index)
     {
-        regions.emplace_back(&cond(), cond().getArguments());
+        regions.emplace_back(&getCond(), getCond().getArguments());
         return;
     }
 
@@ -1299,12 +1292,12 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<
     assert(*index < 2 && "there are only two regions in a DoWhileOp");
     if (*index == 1)
     {
-        regions.emplace_back(&body(), body().getArguments());
+        regions.emplace_back(&getBody(), getBody().getArguments());
         regions.emplace_back(getResults());
         return;
     }
 
-    regions.emplace_back(&cond(), cond().getArguments());
+    regions.emplace_back(&getCond(), getCond().getArguments());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1315,7 +1308,7 @@ OperandRange mlir_ts::ForOp::getSuccessorEntryOperands(Optional<unsigned int> in
 {
     assert((!index || *index == 0) && "ForOp is expected to branch only to the first region");
 
-    return inits();
+    return getInits();
 }
 
 void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
@@ -1324,7 +1317,7 @@ void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attr
 
     if (!index)
     {
-        regions.emplace_back(&cond(), cond().getArguments());
+        regions.emplace_back(&getCond(), getCond().getArguments());
         return;
     }
 
@@ -1332,13 +1325,13 @@ void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attr
     //assert(*index < 2 && "there are only two regions in a ForOp");
     if (*index == 0)
     {
-        regions.emplace_back(&incr(), incr().getArguments());
-        regions.emplace_back(&body(), body().getArguments());
+        regions.emplace_back(&getIncr(), getIncr().getArguments());
+        regions.emplace_back(&getBody(), getBody().getArguments());
         regions.emplace_back(getResults());
         return;
     }
 
-    regions.emplace_back(&cond(), cond().getArguments());
+    regions.emplace_back(&getCond(), getCond().getArguments());
 }
 
 //===----------------------------------------------------------------------===//
@@ -1348,28 +1341,28 @@ void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attr
 void mlir_ts::SwitchOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
                                             SmallVectorImpl<RegionSuccessor> &regions)
 {
-    regions.push_back(RegionSuccessor(&casesRegion()));
+    regions.push_back(RegionSuccessor(&getCasesRegion()));
 }
 
 mlir::Block *mlir_ts::SwitchOp::getHeaderBlock()
 {
-    assert(!casesRegion().empty() && "op region should not be empty!");
+    assert(!getCasesRegion().empty() && "op region should not be empty!");
     // The first block is the loop header block.
-    return &casesRegion().front();
+    return &getCasesRegion().front();
 }
 
 mlir::Block *mlir_ts::SwitchOp::getMergeBlock()
 {
-    assert(!casesRegion().empty() && "op region should not be empty!");
+    assert(!getCasesRegion().empty() && "op region should not be empty!");
     // The last block is the loop merge block.
-    return &casesRegion().back();
+    return &getCasesRegion().back();
 }
 
 void mlir_ts::SwitchOp::addMergeBlock()
 {
-    assert(casesRegion().empty() && "entry and merge block already exist");
+    assert(getCasesRegion().empty() && "entry and merge block already exist");
     auto *mergeBlock = new Block();
-    casesRegion().push_back(mergeBlock);
+    getCasesRegion().push_back(mergeBlock);
     OpBuilder builder = OpBuilder::atBlockEnd(mergeBlock);
 
     // Add a ts.merge op into the merge block.
@@ -1441,7 +1434,7 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
 
     LogicalResult matchAndRewrite(mlir_ts::IfOp op, PatternRewriter &rewriter) const override
     {
-        auto constant = op.condition().getDefiningOp<mlir_ts::ConstantOp>();
+        auto constant = op.getCondition().getDefiningOp<mlir_ts::ConstantOp>();
         if (!constant)
         {
             return failure();
@@ -1449,11 +1442,11 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
 
         if (constant.getValue().cast<BoolAttr>().getValue())
         {
-            replaceOpWithRegion(rewriter, op, op.thenRegion());
+            replaceOpWithRegion(rewriter, op, op.getThenRegion());
         }
-        else if (!op.elseRegion().empty())
+        else if (!op.getElseRegion().empty())
         {
-            replaceOpWithRegion(rewriter, op, op.elseRegion());
+            replaceOpWithRegion(rewriter, op, op.getElseRegion());
         }
         else
         {
@@ -1502,8 +1495,8 @@ OperandRange mlir_ts::TryOp::getSuccessorEntryOperands(Optional<unsigned int> in
 
 void mlir_ts::TryOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
 {
-    regions.push_back(RegionSuccessor(&catches()));
-    regions.push_back(RegionSuccessor(&finallyBlock()));
+    regions.push_back(RegionSuccessor(&getCatches()));
+    regions.push_back(RegionSuccessor(&getFinallyBlock()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1513,21 +1506,21 @@ void mlir_ts::TryOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attr
 void mlir_ts::LabelOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
                                            SmallVectorImpl<RegionSuccessor> &regions)
 {
-    regions.push_back(RegionSuccessor(&labelRegion()));
+    regions.push_back(RegionSuccessor(&getLabelRegion()));
 }
 
 mlir::Block *mlir_ts::LabelOp::getMergeBlock()
 {
-    assert(!labelRegion().empty() && "op region should not be empty!");
+    assert(!getLabelRegion().empty() && "op region should not be empty!");
     // The last block is the loop merge block.
-    return &labelRegion().back();
+    return &getLabelRegion().back();
 }
 
 void mlir_ts::LabelOp::addMergeBlock()
 {
-    assert(labelRegion().empty() && "entry and merge block already exist");
+    assert(getLabelRegion().empty() && "entry and merge block already exist");
     auto *mergeBlock = new Block();
-    labelRegion().push_back(mergeBlock);
+    getLabelRegion().push_back(mergeBlock);
     OpBuilder builder = OpBuilder::atBlockEnd(mergeBlock);
 
     // Add a ts.merge op into the merge block.
@@ -1548,5 +1541,5 @@ OperandRange mlir_ts::BodyInternalOp::getSuccessorEntryOperands(Optional<unsigne
 void mlir_ts::BodyInternalOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
                                                   SmallVectorImpl<RegionSuccessor> &regions)
 {
-    regions.push_back(RegionSuccessor(&body()));
+    regions.push_back(RegionSuccessor(&getBody()));
 }
