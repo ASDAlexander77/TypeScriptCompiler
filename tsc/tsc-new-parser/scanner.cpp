@@ -1710,7 +1710,7 @@ auto Scanner::scanNumber() -> ScanResult
         checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
         return {
             SyntaxKind::NumericLiteral,
-            to_string_val(+to_float(result)) // if value is not an integer, it can be safely coerced to a number
+            to_string_val(+to_float_val(result)) // if value is not an integer, it can be safely coerced to a number
         };
     }
     else

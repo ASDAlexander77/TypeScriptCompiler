@@ -76,12 +76,12 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 
             if (auto callOp = dyn_cast_or_null<LLVM::CallOp>(op))
             {
-                if (!callOp.getCallee().hasValue())
+                if (!callOp.getCallee().has_value())
                 {
                     return;
                 }
 
-                auto name = callOp.getCallee().getValue();
+                auto name = callOp.getCallee().value();
                 if (name == "memset")
                 {
                     removeRedundantMemSet(callOp);
@@ -164,16 +164,16 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         LLVM_DEBUG(llvm::dbgs() << "DBG: " << memSetCallOp.getOperand(0) << "\n";);
         if (auto probMemAllocCall = dyn_cast_or_null<LLVM::CallOp>(memSetCallOp.getOperand(0).getDefiningOp()))
         {
-            if (!probMemAllocCall.getCallee().hasValue())
+            if (!probMemAllocCall.getCallee().has_value())
             {
                 return;
             }
 
-            auto name = probMemAllocCall.getCallee().getValue();
+            auto name = probMemAllocCall.getCallee().value();
             if (name == "GC_malloc")
             {
                 ConversionPatternRewriter rewriter(memSetCallOp.getContext());
-                rewriter.replaceOp(memSetCallOp, ValueRange{probMemAllocCall.getResult(0)});
+                rewriter.replaceOp(memSetCallOp, ValueRange{probMemAllocCall.getResult()});
             }
         }
     }

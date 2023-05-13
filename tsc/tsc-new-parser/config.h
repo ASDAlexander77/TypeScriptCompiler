@@ -27,10 +27,8 @@ using smatch = std::wsmatch;
 #define to_number_base(x, y) std::stoi(x, nullptr, y)
 #define S(x) L##x
 #define to_string_val(x) std::to_wstring(x)
-#define to_number(x) std::stoi(x)
-#define to_integer(x) std::stoi(x)
 #define to_unsigned_integer(x) std::stoul(x)
-#define to_float(x) std::stod(x)
+#define to_float_val(x) std::stod(x)
 #define to_bignumber_base(x, y) std::stoull(x, nullptr, y)
 #define to_bignumber(x) std::stoull(x)
 

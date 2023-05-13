@@ -257,7 +257,7 @@ class LLVMCodeHelperBase
         }
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectiveSize});
-        auto ptr = callResults.getResult(0);
+        auto ptr = callResults.getResult();
 
         if (zero == MemoryAllocSet::Zero)
         {
@@ -293,7 +293,7 @@ class LLVMCodeHelperBase
         }
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectivePtrValue, effectiveSize});
-        return callResults.getResult(0);
+        return callResults.getResult();
     }
 
     template <typename T> mlir::LogicalResult _MemoryFree(mlir::Value ptrValue)

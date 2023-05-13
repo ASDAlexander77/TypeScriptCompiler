@@ -18,7 +18,7 @@
 #include "TypeScript/LowerToLLVM/AnyLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -977,12 +977,12 @@ class CastLogicHelper
         if (external)
         {
             auto results = rewriter.create<mlir_ts::CallIndirectOp>(loc, value, ValueRange(objTypeCasted));
-            return results.getResult(0);
+            return results.getResult();
         }
 
         auto results = rewriter.create<mlir_ts::CallInternalOp>(loc, mlir_ts::StringType::get(rewriter.getContext()),
                                                                 ValueRange{value, objTypeCasted});
-        return results.getResult(0);
+        return results.getResult();
     }
 
     mlir::Value castBoundRefToRef(mlir::Value in, mlir_ts::BoundRefType boundRefTypeIn, mlir_ts::RefType refTypeOut)

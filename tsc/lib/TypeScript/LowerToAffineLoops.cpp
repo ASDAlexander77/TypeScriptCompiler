@@ -17,7 +17,7 @@
 #include "TypeScript/LowerToLLVMLogic.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -57,7 +57,7 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
         auto anyResult = op.getNumResults() > 0;
         if (anyResult)
         {
-            auto result = op.getResult(0);
+            auto result = op.getResult();
             returnType = result.getType();
             allocValue =
                 rewriter.create<mlir_ts::VariableOp>(location, returnType, mlir::Value(), rewriter.getBoolAttr(false));
@@ -862,7 +862,7 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
         auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getAccessor().getValue(),
                                                         TypeRange{accessorOp.getType()}, ValueRange{});
 
-        rewriter.replaceOp(accessorOp, callRes.getResult(0));
+        rewriter.replaceOp(accessorOp, callRes.getResult());
         return success();
     }
 };
@@ -879,7 +879,7 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
             rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getAccessor().getValue(),
                                              TypeRange{thisAccessorOp.getType()}, ValueRange{thisAccessorOp.thisVal()});
 
-        rewriter.replaceOp(thisAccessorOp, callRes.getResult(0));
+        rewriter.replaceOp(thisAccessorOp, callRes.getResult());
 
         return success();
     }

@@ -66,7 +66,7 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
 
                 LLVM_DEBUG(llvm::dbgs() << "\nconst to insert: \n" << constantOp << "\n";);
 
-                auto newOp = rewriter.create<mlir_ts::ConstantOp>(constantOp->getLoc(), constantOp.getType(), constantOp.value());
+                auto newOp = rewriter.create<mlir_ts::ConstantOp>(constantOp->getLoc(), constantOp.getType(), constantOp.getValue());
                 constantOp->replaceAllUsesWith(newOp);
 
                 constantOp->erase();

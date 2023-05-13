@@ -54,7 +54,7 @@ class ConvertLogic
         auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
         auto base = clh.createI32ConstantOf(10);
 
-        return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{value, newStringValue, base}).getResult(0);
+        return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{value, newStringValue, base}).getResult();
     }
 
     mlir::Value i64toa(mlir::Value value)
@@ -70,7 +70,7 @@ class ConvertLogic
         auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
         auto base = clh.createI32ConstantOf(10);
 
-        return rewriter.create<LLVM::CallOp>(loc, _i64toaFuncOp, ValueRange{value, newStringValue, base}).getResult(0);
+        return rewriter.create<LLVM::CallOp>(loc, _i64toaFuncOp, ValueRange{value, newStringValue, base}).getResult();
     }
 
     mlir::Value gcvt(mlir::Value in)
@@ -87,7 +87,7 @@ class ConvertLogic
         auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), in);
         auto precision = clh.createI32ConstantOf(16);
 
-        return rewriter.create<LLVM::CallOp>(loc, _gcvtFuncOp, ValueRange{doubleValue, precision, newStringValue}).getResult(0);
+        return rewriter.create<LLVM::CallOp>(loc, _gcvtFuncOp, ValueRange{doubleValue, precision, newStringValue}).getResult();
     }
 
     mlir::Value sprintf(int buffSize, std::string format, mlir::Value value)

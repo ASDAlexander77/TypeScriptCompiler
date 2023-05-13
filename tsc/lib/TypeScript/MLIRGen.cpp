@@ -1,8 +1,8 @@
+#define DEBUG_TYPE "mlir"
+
 #ifdef GC_ENABLE
 #define ADD_GC_ATTRIBUTE true
 #endif
-
-#define DEBUG_TYPE "mlir"
 
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/Config.h"
@@ -3135,7 +3135,7 @@ class MLIRGenImpl
             auto cachedFuncType = funcIt->second.getFunctionType();
             if (cachedFuncType.getNumResults() > 0)
             {
-                auto returnType = cachedFuncType.getResult(0);
+                auto returnType = cachedFuncType.getResult();
                 funcProto->setReturnType(returnType);
             }
 
@@ -4481,7 +4481,7 @@ class MLIRGenImpl
         if (resultType)
         {
             auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.results().back());
-            return asyncAwaitOp.getResult(0);
+            return asyncAwaitOp.getResult();
         }
         else
         {
@@ -5936,7 +5936,7 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(ifOp);
 
-        return ifOp.getResult(0);
+        return ifOp.getResult();
     }
 
     ValueOrLogicalResult mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext,
@@ -6218,7 +6218,7 @@ class MLIRGenImpl
                         auto callResult = builder.create<mlir_ts::CallIndirectOp>(
                             location, funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
 
-                        return callResult.getResult(0);
+                        return callResult.getResult();
                     },
                     [&](mlir::OpBuilder &builder, mlir::Location location) { // default false value
                                                                              // compare typeOfValue
@@ -7283,7 +7283,7 @@ class MLIRGenImpl
                 auto funcType = getFuncOp.getFunctionType().dyn_cast<mlir_ts::FunctionType>();
                 if (funcType.getNumResults() > 0)
                 {
-                    effectiveFuncType = funcType.getResult(0);
+                    effectiveFuncType = funcType.getResult();
                 }
             }
 
@@ -7509,7 +7509,7 @@ class MLIRGenImpl
         if (auto indexConstOp = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
         {
             // this is property access
-            MLIRPropertyAccessCodeLogic cl(builder, location, expression, indexConstOp.value());
+            MLIRPropertyAccessCodeLogic cl(builder, location, expression, indexConstOp.getValue());
             return cl.Tuple(tupleType, true);
         }
         else
@@ -8205,7 +8205,7 @@ class MLIRGenImpl
 
             if (calledFuncType.getResults().size() > 0)
             {
-                auto callValue = callIndirectOp.getResult(0);
+                auto callValue = callIndirectOp.getResult();
                 auto hasReturn = callValue.getType() != getVoidType();
                 if (hasReturn)
                 {
@@ -8631,7 +8631,7 @@ class MLIRGenImpl
 
                     auto callIndirectOp =
                         builder.create<mlir_ts::CallIndirectOp>(location, funcSymbolOp, mlir::ValueRange{});
-                    auto typeDescr = callIndirectOp.getResult(0);
+                    auto typeDescr = callIndirectOp.getResult();
 
                     // save value
                     builder.create<mlir_ts::StoreOp>(location, typeDescr, typeDescRef);
@@ -8639,7 +8639,7 @@ class MLIRGenImpl
                     builder.create<mlir_ts::ResultOp>(loc, mlir::ValueRange{typeDescr});
                 });
 
-            auto typeDescrValue = ifOp.getResult(0);
+            auto typeDescrValue = ifOp.getResult();
 
             assert(!stackAlloc);
             newOp = builder.create<mlir_ts::GCNewExplicitlyTypedOp>(location, classInfo->classType, typeDescrValue);
@@ -8959,7 +8959,7 @@ class MLIRGenImpl
 
         // call
         auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, callee, operands);
-        return callIndirectOp.getResult(0);
+        return callIndirectOp.getResult();
     }
 
     ValueOrLogicalResult mlirGen(NullLiteral nullLiteral, const GenContext &genContext)
@@ -9000,11 +9000,11 @@ class MLIRGenImpl
         }
 
 #ifdef NUMBER_F64
-        auto attrVal = builder.getF64FloatAttr(to_float(numericLiteral->text));
+        auto attrVal = builder.getF64FloatAttr(to_float_val(numericLiteral->text));
         auto literalType = mlir_ts::LiteralType::get(attrVal, getNumberType());
         return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
 #else
-        auto attrVal = builder.getF32FloatAttr(to_float(numericLiteral->text));
+        auto attrVal = builder.getF32FloatAttr(to_float_val(numericLiteral->text));
         auto literalType = mlir_ts::LiteralType::get(attrVal, getNumberType());
         return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
 #endif
@@ -16061,7 +16061,7 @@ genContext);
             {
                 if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 && mth.isNumericType(funcType.getInput(0)))
                 {
-                    auto arrayType = getArrayType(funcType.getResult(0));
+                    auto arrayType = getArrayType(funcType.getResult());
                     LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
                     return arrayType;
                 }

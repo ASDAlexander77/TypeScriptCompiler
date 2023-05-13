@@ -1,3 +1,5 @@
+#define DEBUG_TYPE "llvm"
+
 #include "TypeScript/Config.h"
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Defines.h"
@@ -32,8 +34,6 @@
 #include "TypeScript/LowerToLLVMLogic.h"
 
 #include "scanner_enums.h"
-
-#define DEBUG_TYPE "llvm"
 
 #define DISABLE_SWITCH_STATE_PASS 1
 #define ENABLE_MLIR_INIT
@@ -343,7 +343,7 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
         auto funcCall = rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseFloatFuncOp, ValueRange{transformed.arg()});
 #else
         auto funcCall = rewriter.create<LLVM::CallOp>(loc, parseFloatFuncOp, ValueRange{transformed.arg()});
-        rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, rewriter.getF32Type(), funcCall.getResult(0));
+        rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, rewriter.getF32Type(), funcCall.getResult());
 #endif
 
         return success();
@@ -458,7 +458,7 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
 
         // calc size
         auto size = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, transformed.op());
-        rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, th.getI32Type(), size.getResult(0));
+        rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, th.getI32Type(), size.getResult());
 
         return success();
     }
@@ -493,10 +493,10 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         for (auto oper : transformed.ops())
         {
             auto size1 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, oper);
-            size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, size1.getResult(0)});
+            size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, size1.getResult()});
         }
 
-        auto allocInStack = op.allocInStack().hasValue() && op.allocInStack().getValue();
+        auto allocInStack = op.allocInStack().has_value() && op.allocInStack().value();
 
         mlir::Value newStringValue = allocInStack ? rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, size, true)
                                                   : ch.MemoryAllocBitcast(i8PtrTy, size);
@@ -509,12 +509,12 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
             if (concat)
             {
                 auto callResult = rewriter.create<LLVM::CallOp>(loc, strcatFuncOp, ValueRange{result, oper});
-                result = callResult.getResult(0);
+                result = callResult.getResult();
             }
             else
             {
                 auto callResult = rewriter.create<LLVM::CallOp>(loc, strcpyFuncOp, ValueRange{result, oper});
-                result = callResult.getResult(0);
+                result = callResult.getResult();
             }
 
             concat = true;
@@ -576,28 +576,28 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
                 case SyntaxKind::EqualsEqualsToken:
                 case SyntaxKind::EqualsEqualsEqualsToken:
                     bodyCmpResult =
-                        rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, compareResult.getResult(0), const0);
+                        rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, compareResult.getResult(), const0);
                     break;
                 case SyntaxKind::ExclamationEqualsToken:
                 case SyntaxKind::ExclamationEqualsEqualsToken:
                     bodyCmpResult =
-                        rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, compareResult.getResult(0), const0);
+                        rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, compareResult.getResult(), const0);
                     break;
                 case SyntaxKind::GreaterThanToken:
                     bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt,
-                                                                  compareResult.getResult(0), const0);
+                                                                  compareResult.getResult(), const0);
                     break;
                 case SyntaxKind::GreaterThanEqualsToken:
                     bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge,
-                                                                  compareResult.getResult(0), const0);
+                                                                  compareResult.getResult(), const0);
                     break;
                 case SyntaxKind::LessThanToken:
                     bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt,
-                                                                  compareResult.getResult(0), const0);
+                                                                  compareResult.getResult(), const0);
                     break;
                 case SyntaxKind::LessThanEqualsToken:
                     bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle,
-                                                                  compareResult.getResult(0), const0);
+                                                                  compareResult.getResult(), const0);
                     break;
                 default:
                     llvm_unreachable("not implemented");
@@ -922,7 +922,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         SmallVector<mlir::Attribute> funcAttrs;
 
-        if (funcOp.personality().hasValue() && funcOp.personality().getValue())
+        if (funcOp.personality().has_value() && funcOp.personality().value())
         {
 #if WIN_EXCEPTION
             LLVMRTTIHelperVCWin32 rttih(funcOp, rewriter, typeConverter);
@@ -1175,7 +1175,7 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
 
-        if (!op.callee().hasValue())
+        if (!op.callee().has_value())
         {
             // special case for HybridFunctionType
             LLVM_DEBUG(llvm::dbgs() << "\n!! InvokeOp - arg #0:" << op.getOperand(0) << "\n");
@@ -1594,7 +1594,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 #ifdef ALLOC_ALL_VARS_IN_HEAP
         auto isCaptured = true;
 #elif ALLOC_CAPTURED_VARS_IN_HEAP
-        auto isCaptured = varOp.captured().hasValue() && varOp.captured().getValue();
+        auto isCaptured = varOp.captured().has_value() && varOp.captured().value();
 #else
         auto isCaptured = false;
 #endif
@@ -1731,7 +1731,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         auto resultType = tch.convertType(newOp.getType());
 
         mlir::Value value;
-        if (newOp.stackAlloc().hasValue() && newOp.stackAlloc().getValue())
+        if (newOp.stackAlloc().has_value() && newOp.stackAlloc().value())
         {
             value = rewriter.create<LLVM::AllocaOp>(loc, resultType, clh.createI32ConstantOf(1));
         }
@@ -3392,7 +3392,7 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
 
         auto callInfo =
             rewriter.create<LLVM::CallOp>(loc, typeIdFunc, ValueRange{clh.castToI8Ptr(transformed.throwTypeInfo())});
-        auto typeIdValue = callInfo.getResult(0);
+        auto typeIdValue = callInfo.getResult();
 
         // icmp
         auto cmpValue = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, loadedI32Value, typeIdValue);
@@ -3566,7 +3566,7 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
 #ifdef ALLOC_TRAMPOLINE_IN_HEAP
         auto allocInHeap = true;
 #else
-        auto allocInHeap = trampolineOp.allocInHeap().hasValue() && trampolineOp.allocInHeap().getValue();
+        auto allocInHeap = trampolineOp.allocInHeap().has_value() && trampolineOp.allocInHeap().value();
 #endif
 
         mlir::Value trampolinePtr;
@@ -3601,7 +3601,7 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
 
         auto callAdjustedTrampoline =
             rewriter.create<LLVM::CallOp>(location, adjustTrampolineFuncOp, ValueRange{trampolinePtr});
-        auto adjustedTrampolinePtr = callAdjustedTrampoline.getResult(0);
+        auto adjustedTrampolinePtr = callAdjustedTrampoline.getResult();
 
         rewriter.create<LLVM::CallOp>(location, enableExecuteStackFuncOp, ValueRange{adjustedTrampolinePtr});
 
@@ -3737,7 +3737,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 
         auto fieldLLVMTypeRef = tch.convertType(interfaceSymbolRefOp.getType());
 
-        auto isOptional = interfaceSymbolRefOp.optional().hasValue() && interfaceSymbolRefOp.optional().getValue();
+        auto isOptional = interfaceSymbolRefOp.optional().has_value() && interfaceSymbolRefOp.optional().value();
 
         auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.interfaceVal(),
                                                             clh.getStructIndexAttr(DATA_VALUE_INDEX));
@@ -4573,7 +4573,7 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
         auto gcMallocExplicitlyTypedFunc = ch.getOrInsertFunction("GC_malloc_explicitly_typed", th.getFunctionType(i8PtrTy, {rewriter.getI64Type(), rewriter.getI64Type()}));
         auto value = rewriter.create<LLVM::CallOp>(loc, gcMallocExplicitlyTypedFunc, ValueRange{sizeOfTypeValue, transformed.typeDescr()});
 
-        rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, resultType, value.getResult(0));
+        rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, resultType, value.getResult());
 
         return success();
     }
@@ -5095,7 +5095,7 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
         LLVM_DEBUG(llvm::dbgs() << "\nUnrealizedConversionCastOp to analyze: \n" << unrealizedConversionCastOp << "\n";);
 
         auto hasAnyUse = false;
-        for (auto user : unrealizedConversionCastOp.getResult(0).getUsers())
+        for (auto user : unrealizedConversionCastOp.getResult().getUsers())
         {
             hasAnyUse = true;
             auto nextUnrealizedConversionCastOp = dyn_cast_or_null<UnrealizedConversionCastOp>(user);
@@ -5105,14 +5105,14 @@ static LogicalResult cleanupUnrealizedConversionCast(mlir::ModuleOp &module)
                     << "\n -> Next UnrealizedConversionCastOp: \n" 
                     << nextUnrealizedConversionCastOp 
                     << " <- result type: " 
-                    << nextUnrealizedConversionCastOp.getResult(0).getType() 
+                    << nextUnrealizedConversionCastOp.getResult().getType() 
                     << " -> input: " << unrealizedConversionCastOp.getOperand(0).getType() 
                     << "\n";);
 
-                if (nextUnrealizedConversionCastOp.getResult(0).getType() == unrealizedConversionCastOp.getOperand(0).getType())
+                if (nextUnrealizedConversionCastOp.getResult().getType() == unrealizedConversionCastOp.getOperand(0).getType())
                 {
                     // remove both
-                    nextUnrealizedConversionCastOp->getResult(0).replaceAllUsesWith(unrealizedConversionCastOp.getOperand(0));
+                    nextUnrealizedConversionCastOp->getResult().replaceAllUsesWith(unrealizedConversionCastOp.getOperand(0));
                     
                     removed.insert(nextUnrealizedConversionCastOp);
                     if (removed.find(unrealizedConversionCastOp) == removed.end())

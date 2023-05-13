@@ -149,7 +149,7 @@ class ThrowLogic
         auto callInfo = rewriter.create<LLVM::CallOp>(
             loc, TypeRange{i8PtrTy}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), allocExceptFuncName), ValueRange{size});
 
-        auto value = callInfo.getResult(0);
+        auto value = callInfo.getResult();
 
         // save value
         auto refValue = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::RefType::get(exceptionType), value);
