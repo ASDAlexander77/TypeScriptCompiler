@@ -64,6 +64,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/WithColor.h"
 
 // for custom pass
 #include "llvm/IR/PassManager.h"
@@ -159,7 +160,7 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &modu
         auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
         if (std::error_code ec = fileOrErr.getError())
         {
-            llvm::errs() << "Could not open input file: " << ec.message() << "\n";
+            llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << ec.message() << "\n";
             return -1;
         }
 
@@ -173,7 +174,7 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &modu
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
     if (std::error_code EC = fileOrErr.getError())
     {
-        llvm::errs() << "Could not open input file: " << EC.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << EC.message() << "\n";
         return -1;
     }
 
@@ -183,7 +184,7 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &modu
     module = mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
     if (!module)
     {
-        llvm::errs() << "Error can't load file " << inputFilename << "\n";
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Error can't load file " << inputFilename << "\n";
         return 3;
     }
 
@@ -291,14 +292,14 @@ int dumpAST()
 {
     if (inputType == InputType::MLIR && !llvm::StringRef(inputFilename).endswith(".mlir"))
     {
-        llvm::errs() << "Can't dump a TypeScript AST when the input is MLIR\n";
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't dump a TypeScript AST when the input is MLIR\n";
         return 5;
     }
 
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
     if (std::error_code ec = fileOrErr.getError())
     {
-        llvm::errs() << "Could not open input file: " << ec.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << ec.message() << "\n";
         return 0;
     }
 
@@ -424,7 +425,7 @@ int dumpLLVMIR(mlir::ModuleOp module)
     auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
     if (!llvmModule)
     {
-        llvm::errs() << "Failed to emit LLVM IR\n";
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to emit LLVM IR\n";
         return -1;
     }
 
@@ -436,11 +437,11 @@ int dumpLLVMIR(mlir::ModuleOp module)
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
     if (auto err = optPipeline(llvmModule.get()))
     {
-        llvm::errs() << "Failed to optimize LLVM IR " << err << "\n";
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to optimize LLVM IR " << err << "\n";
         return -1;
     }
 
-    llvm::errs() << *llvmModule << "\n";
+    llvm::WithColor::error(llvm::errs(), "tsc") << *llvmModule << "\n";
     return 0;
 }
 
@@ -491,7 +492,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
 
         if (errMsg.size() > 0)
         {
-            llvm::errs() << "Loading error lib: " << errMsg << "\n";
+            llvm::WithColor::error(llvm::errs(), "tsc") << "Loading error lib: " << errMsg << "\n";
             return -1;
         }
 
@@ -567,7 +568,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
 #define LIB_NAME "lib"
 #define LIB_EXT "so"
 #endif
-        llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
+        llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
                         "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
         return -1;
     }
@@ -577,7 +578,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
         auto expectedFPtr = engine->lookup(mainFuncName);
         if (!expectedFPtr)
         {
-            llvm::errs() << expectedFPtr.takeError();
+            llvm::WithColor::error(llvm::errs(), "tsc") << expectedFPtr.takeError();
             return -1;
         }
 
@@ -590,7 +591,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
         auto gctorsResult = engine->invokePacked("__mlir_gctors");
         if (gctorsResult)
         {
-            llvm::errs() << "JIT calling global constructors failed, error: " << gctorsResult << "\n";
+            llvm::WithColor::error(llvm::errs(), "tsc") << "JIT calling global constructors failed, error: " << gctorsResult << "\n";
             return -1;
         }
     }
@@ -603,7 +604,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
 
     if (invocationResult)
     {
-        llvm::errs() << "JIT invocation failed, error: " << invocationResult << "\n";
+        llvm::WithColor::error(llvm::errs(), "tsc") << "JIT invocation failed, error: " << invocationResult << "\n";
         return -1;
     }
 
@@ -679,6 +680,6 @@ int main(int argc, char **argv)
         return runJit(argc, argv, *module);
     }
 
-    llvm::errs() << "No action specified (parsing only?), use -emit=<action>\n";
+    llvm::WithColor::error(llvm::errs(), "tsc") << "No action specified (parsing only?), use -emit=<action>\n";
     return -1;
 }

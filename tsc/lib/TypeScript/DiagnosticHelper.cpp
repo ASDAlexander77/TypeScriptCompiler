@@ -1,5 +1,7 @@
 #include "TypeScript/DiagnosticHelper.h"
 
+#include "llvm/Support/WithColor.h"
+
 bool compareDiagnostic(const mlir::Diagnostic& left, const mlir::Diagnostic& right)
 {
     if (left.getLocation() != right.getLocation())
@@ -17,7 +19,7 @@ bool compareDiagnostic(const mlir::Diagnostic& left, const mlir::Diagnostic& rig
 
 void publishDiagnostic(mlir::Diagnostic &diag)
 {
-    auto printMsg = [](llvm::raw_fd_ostream &os, mlir::Diagnostic &diag, const char *msg) {
+    auto printMsg = [](llvm::raw_ostream &os, mlir::Diagnostic &diag, const char *msg) {
         if (!diag.getLocation().isa<mlir::UnknownLoc>())
             os << diag.getLocation() << ": ";
         os << msg;
@@ -30,21 +32,21 @@ void publishDiagnostic(mlir::Diagnostic &diag)
     switch (diag.getSeverity())
     {
     case mlir::DiagnosticSeverity::Note:
-        printMsg(llvm::outs(), diag, "note: ");
+        printMsg(llvm::WithColor::note(llvm::outs()), diag, "note: ");
         for (auto &note : diag.getNotes())
         {
-            printMsg(llvm::outs(), note, "note: ");
+            printMsg(llvm::WithColor::note(llvm::outs()), note, "note: ");
         }
 
         break;
     case mlir::DiagnosticSeverity::Warning:
-        printMsg(llvm::outs(), diag, "warning: ");
+        printMsg(llvm::WithColor::warning(llvm::outs()), diag, "warning: ");
         break;
     case mlir::DiagnosticSeverity::Error:
-        printMsg(llvm::errs(), diag, "error: ");
+        printMsg(llvm::WithColor::error(llvm::errs()), diag, "error: ");
         break;
     case mlir::DiagnosticSeverity::Remark:
-        printMsg(llvm::outs(), diag, "information: ");
+        printMsg(llvm::WithColor::note(llvm::outs()), diag, "information: ");
         break;
     }
 }
