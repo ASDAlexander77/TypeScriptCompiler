@@ -51,7 +51,7 @@ namespace fs = std::experimental::filesystem;
 #define LIBS "-frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo"
 //#define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm -lz -ltinfo -lxml2"
 #define RT_LIB "-lclang_rt.builtins-x86_64"
-#define TYPESCRIPT_ASYNC_LIB "-lTypeScriptAsyncRuntime -lLLVMSupport"
+#define TYPESCRIPT_ASYNC_LIB "-lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle"
 
 //#define LINUX_ASYNC_ENABLED 1
 
