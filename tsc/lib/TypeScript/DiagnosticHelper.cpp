@@ -32,21 +32,21 @@ void publishDiagnostic(mlir::Diagnostic &diag)
     switch (diag.getSeverity())
     {
     case mlir::DiagnosticSeverity::Note:
-        printMsg(llvm::WithColor::note(llvm::outs()), diag, "note: ");
+        printMsg(llvm::WithColor::note(llvm::outs()), diag, "");
         for (auto &note : diag.getNotes())
         {
-            printMsg(llvm::WithColor::note(llvm::outs()), note, "note: ");
+            printMsg(llvm::WithColor::note(llvm::outs()), note, "");
         }
 
         break;
     case mlir::DiagnosticSeverity::Warning:
-        printMsg(llvm::WithColor::warning(llvm::outs()), diag, "warning: ");
+        printMsg(llvm::WithColor::warning(llvm::outs()), diag, "");
         break;
     case mlir::DiagnosticSeverity::Error:
-        printMsg(llvm::WithColor::error(llvm::errs()), diag, "error: ");
+        printMsg(llvm::WithColor::error(llvm::errs()), diag, "");
         break;
     case mlir::DiagnosticSeverity::Remark:
-        printMsg(llvm::WithColor::note(llvm::outs()), diag, "information: ");
+        printMsg(llvm::WithColor::remark(llvm::outs()), diag, "");
         break;
     }
 }
