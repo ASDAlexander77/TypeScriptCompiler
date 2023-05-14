@@ -228,6 +228,7 @@ Hello World!
 ### On Windows
 File ``tsc-compile-wasm.bat``
 ```cmd
+echo "check if your LLC support WebAssembly by running command: llc.exe --version --triple"
 rem set %LLVM% and %TSCBIN%
 set LLVMPATH=%LLVM%\llvm\release\bin
 set TSCPATH=%TSCBIN%\tsc\bin
@@ -295,7 +296,7 @@ config_tsc_debug.bat
 build_tsc_debug.bat
 ```
 
-### On Linux (Ubuntu 20.04)
+### On Linux (Ubuntu 20.04 and 22.04)
 
 First, precompile dependencies
 

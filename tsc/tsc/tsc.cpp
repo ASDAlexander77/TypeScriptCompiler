@@ -62,6 +62,8 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/PrettyStackTrace.h"
+#include "llvm/Support/Signals.h"
 
 // for custom pass
 #include "llvm/IR/PassManager.h"
@@ -85,7 +87,10 @@
 using namespace typescript;
 namespace cl = llvm::cl;
 
-static cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript file>"), cl::init("-"), cl::value_desc("filename"));
+cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
+cl::OptionCategory TypeScriptCompilerDebugCategory("Debug Options");
+
+static cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript file>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
 
 namespace
 {
@@ -97,8 +102,9 @@ enum InputType
 } // namespace
 
 static cl::opt<enum InputType> inputType("x", cl::init(TypeScript), cl::desc("Decided the kind of output desired"),
-                                         cl::values(clEnumValN(TypeScript, "TypeScript", "load the input file as a TypeScript source.")),
-                                         cl::values(clEnumValN(MLIR, "mlir", "load the input file as an MLIR file")));
+                                         cl::values(clEnumValN(TypeScript, "TypeScript", "load the input file as a TypeScript (.ts) source.")),
+                                         cl::values(clEnumValN(MLIR, "mlir", "load the input file as an MLIR (.mlir) file")), 
+                                         cl::cat(TypeScriptCompilerCategory));
 
 namespace
 {
@@ -120,29 +126,28 @@ static cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of outp
                                        cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine", "output the MLIR dump after affine lowering")),
                                        cl::values(clEnumValN(DumpMLIRLLVM, "mlir-llvm", "output the MLIR dump after llvm lowering")),
                                        cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")),
-                                       cl::values(clEnumValN(RunJIT, "jit", "JIT the code and run it by invoking the main function")));
+                                       cl::values(clEnumValN(RunJIT, "jit", "JIT the code and run it by invoking the main function")), 
+                                       cl::cat(TypeScriptCompilerCategory));
 
-static cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations"), cl::init(false)};
+static cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations"), cl::init(false), cl::cat(TypeScriptCompilerCategory), cl::cat(TypeScriptCompilerCategory)};
 
-static cl::opt<int> optLevel{"opt_level", cl::desc("Optimization level"), cl::ZeroOrMore, cl::value_desc("0-3"), cl::init(3)};
-static cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::ZeroOrMore, cl::value_desc("value"), cl::init(0)};
+static cl::opt<int> optLevel{"opt_level", cl::desc("Optimization level"), cl::ZeroOrMore, cl::value_desc("0-3"), cl::init(3), cl::cat(TypeScriptCompilerCategory)};
+static cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::ZeroOrMore, cl::value_desc("value"), cl::init(0), cl::cat(TypeScriptCompilerCategory)};
 
 // dump obj
-cl::OptionCategory clOptionsCategory{"linking options"};
 cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dynamically"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
-                                   cl::cat(clOptionsCategory)};
+                                   cl::cat(TypeScriptCompilerCategory)};
 
-static cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called"), cl::value_desc("function name"), cl::init("main")};
+static cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
 
 static cl::opt<bool> dumpObjectFile{"dump-object-file", cl::desc("Dump JITted-compiled object to file specified with "
-                                                                 "-object-filename (<input file>.o by default).")};
+                                                                 "-object-filename (<input file>.o by default)."), cl::cat(TypeScriptCompilerDebugCategory)};
 
-static cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JITted-compiled object to file <input file>.o")};
+static cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
 
 // static cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
-cl::OptionCategory clTsCompilingOptionsCategory{"TypeScript compiling options"};
-static cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(clTsCompilingOptionsCategory));
+static cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(TypeScriptCompilerCategory));
 
 int loadMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &module)
 {
@@ -439,8 +444,14 @@ int dumpLLVMIR(mlir::ModuleOp module)
     return 0;
 }
 
-int runJit(mlir::ModuleOp module)
+int runJit(int argc, char **argv, mlir::ModuleOp module)
 {
+    // Print a stack trace if we signal out.
+    llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+    llvm::PrettyStackTraceProgram X(argc, argv);
+
+    llvm::llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
+
     initDialects(module);
 
     // Initialize LLVM targets.
@@ -619,6 +630,8 @@ int main(int argc, char **argv)
     mlir::registerDefaultTimingManagerCLOptions();
     mlir::DebugCounter::registerCLOptions();
 
+    cl::HideUnrelatedOptions({&TypeScriptCompilerCategory, &TypeScriptCompilerDebugCategory});
+
     cl::ParseCommandLineOptions(argc, argv, "TypeScript native compiler\n");
 
     if (emitAction == Action::DumpAST)
@@ -663,7 +676,7 @@ int main(int argc, char **argv)
     // Otherwise, we must be running the jit.
     if (emitAction == Action::RunJIT)
     {
-        return runJit(*module);
+        return runJit(argc, argv, *module);
     }
 
     llvm::errs() << "No action specified (parsing only?), use -emit=<action>\n";
