@@ -50,7 +50,6 @@ namespace fs = std::experimental::filesystem;
 #endif
 #define LIBS "-frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo"
 //#define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm -lz -ltinfo -lxml2"
-#define RT_LIB "-lclang_rt.builtins-x86_64"
 #define TYPESCRIPT_ASYNC_LIB "-lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle"
 
 //#define LINUX_ASYNC_ENABLED 1
@@ -88,11 +87,6 @@ namespace fs = std::experimental::filesystem;
 #ifndef TEST_TSC_LIBPATH
 //#define TEST_TSC_LIBPATH "C:/dev/TypeScriptCompiler/__build/tsc/lib"
 #error TEST_TSC_LIBPATH must be provided
-#endif
-
-#ifndef TEST_CLANGLIBPATH
-//#define TEST_CLANGLIBPATH "C:/dev/TypeScriptCompiler/3rdParty/llvm/debug/lib/clang/13.0.0/lib/windows"
-#error TEST_CLANGLIBPATH must be provided
 #endif
 
 #ifndef TEST_GCPATH
@@ -271,7 +265,6 @@ void createCompileBatchFileWithAsyncRT()
     batFile << "set LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
-    batFile << "set CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 2> %FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
@@ -531,10 +524,9 @@ void createCompileBatchFileGCWithAsyncRT()
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "$2 2>$FILENAME.il" << std::endl;
     batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -o $FILENAME -L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH -L$CLANGLIBPATH $FILENAME.o " << GC_LIB
+    batFile << "gcc -o $FILENAME -L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o " << GC_LIB
             << " " TYPESCRIPT_ASYNC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
