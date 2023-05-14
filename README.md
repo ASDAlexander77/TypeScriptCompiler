@@ -117,15 +117,18 @@ Hello World!
 ### On Windows
 File ``tsc-compile.bat``
 ```cmd
-rem set %LLVM% and %TSCBIN%
 set FILENAME=%1
-set LLVMPATH=C:\TypeScriptCompiler\3rdParty\llvm\release\bin
-set TSCPATH=C:\TypeScriptCompiler\__build\tsc\bin
-set LIBPATH="C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.29.30037\lib\x64"
-set SDKPATH="C:\Program Files (x86)\Windows Kits\10\Lib\10.0.18362.0\um\x64"
-set UCRTPATH="C:\Program Files (x86)\Windows Kits\10\Lib\10.0.18362.0\ucrt\x64"
-%TSCPATH%\tsc.exe --emit=jit -nogc -dump-object-file -object-filename=%FILENAME%.o %FILENAME%.ts
-%LLVMPATH%\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /defaultlib:libcmt.lib libvcruntime.lib
+set LLVMEXEPATH=C:/dev/TypeScriptCompiler/3rdParty/llvm/release/bin
+set LLVMLIBPATH=C:/dev/TypeScriptCompiler/3rdParty/llvm/release/lib
+set TSCLIBPATH=C:/dev/TypeScriptCompiler/__build/tsc-release/lib
+set TSCEXEPATH=C:/dev/TypeScriptCompiler/__build/tsc-release/bin
+set GCLIBPATH=C:/dev/TypeScriptCompiler/3rdParty/gc/Release
+set LIBPATH="C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.35.32215/lib/x64"
+set SDKPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/um/x64"
+set UCRTPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/ucrt/x64"
+%TSCEXEPATH%\tsc.exe --opt --emit=llvm C:\temp\%FILENAME%.ts 2>%FILENAME%.ll
+%LLVMEXEPATH%\llc.exe -O3 --filetype=obj -o=%FILENAME%.o %FILENAME%.ll
+%LLVMEXEPATH%\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%LLVMLIBPATH% /libpath:%GCLIBPATH% /libpath:%TSCLIBPATH% msvcrt.lib ucrt.lib kernel32.lib user32.lib gcmt-lib.lib TypeScriptAsyncRuntime.lib LLVMSupport.lib
 ```
 Compile 
 ```cmd
@@ -142,11 +145,18 @@ Result
 Hello World!
 ```
 
-### On Linux (Ubuntu 20.04)
+### On Linux (Ubuntu 20.04 and 22.04)
 File ``tsc-compile.sh``
 ```cmd
-./tsc --emit=jit -nogc -dump-object-file -object-filename=$1.o $1.ts
-gcc -o $1 $1.o
+FILENAME=$1
+TSCEXEPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/bin
+TSCLIBPATH=/home/alex/TypeScriptCompiler/__build/tsc-ninja-release/lib
+LLVMEXEPATH=/home/alex/TypeScriptCompiler/3rdParty/llvm-ninja/release/bin
+LLVMLIBPATH=/home/alex/TypeScriptCompiler/3rdParty/llvm-ninja/release/lib
+GCLIBPATH=/home/alex/TypeScriptCompiler/3rdParty/gc/release
+$TSCEXEPATH/tsc --emit=llvm --opt $FILENAME.ts 2>$FILENAME.il
+$LLVMEXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il
+gcc -o $FILENAME -L$LLVMLIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o -lgcmt-lib -lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle -frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo -ldl
 ```
 Compile 
 ```cmd
