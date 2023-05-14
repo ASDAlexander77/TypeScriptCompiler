@@ -86,7 +86,7 @@ function main() {
 
 Run
 ```cmd
-tsc --emit=jit example.ts
+tsc --emit=jit --opt --shared-libs=TypeScriptRuntime.dll example.ts
 ```
 
 Result
@@ -95,11 +95,18 @@ Department name: Accounting and Auditing
 The Accounting Department meets each Monday at 10am.
 ```
 
-## Compile as JIT
+## Run as JIT
 
+- with Garbage collection
 ```cmd
-tsc --emit=jit hello.ts
+tsc --emit=jit --emit=jit --opt --shared-libs=TypeScriptRuntime.dll hello.ts
 ```
+
+- without Garbage collection
+```cmd
+tsc --emit=jit --emit=jit --nogc hello.ts
+```
+
 File ``hello.ts``
 
 ```TypeScript
@@ -115,7 +122,9 @@ Hello World!
 ## Compile as Binary Executable
 
 ### On Windows
-File ``tsc-compile.bat``
+- with Garbage collection
+
+File ``tsc-compile-gc.bat``
 ```cmd
 set FILENAME=%1
 set LLVMEXEPATH=C:/dev/TypeScriptCompiler/3rdParty/llvm/release/bin
@@ -132,8 +141,30 @@ set UCRTPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/ucrt/x64"
 ```
 Compile 
 ```cmd
-tsc-compile.bat hello
+tsc-compile-gc.bat hello
 ```
+
+- without Garbage collection
+
+File ``tsc-compile-nogc.bat``
+```cmd
+set FILENAME=%1
+set LLVMEXEPATH=C:/dev/TypeScriptCompiler/3rdParty/llvm/release/bin
+set LLVMLIBPATH=C:/dev/TypeScriptCompiler/3rdParty/llvm/release/lib
+set TSCLIBPATH=C:/dev/TypeScriptCompiler/__build/tsc-release/lib
+set TSCEXEPATH=C:/dev/TypeScriptCompiler/__build/tsc-release/bin
+set LIBPATH="C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.35.32215/lib/x64"
+set SDKPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/um/x64"
+set UCRTPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/ucrt/x64"
+%TSCEXEPATH%\tsc.exe --opt -nogc --emit=llvm C:\temp\%FILENAME%.ts 2>%FILENAME%.ll
+%LLVMEXEPATH%\llc.exe -O3 --filetype=obj -o=%FILENAME%.o %FILENAME%.ll
+%LLVMEXEPATH%\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH% msvcrt.lib ucrt.lib kernel32.lib user32.lib TypeScriptAsyncRuntime.lib LLVMSupport.lib
+```
+Compile 
+```cmd
+tsc-compile-gc.bat hello
+```
+
 
 Run
 ```
@@ -146,7 +177,9 @@ Hello World!
 ```
 
 ### On Linux (Ubuntu 20.04 and 22.04)
-File ``tsc-compile.sh``
+- with Garbage collection
+
+File ``tsc-compile-gc.sh``
 ```cmd
 FILENAME=$1
 TSCEXEPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/bin
@@ -160,7 +193,25 @@ gcc -o $FILENAME -L$LLVMLIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o -lgcmt-li
 ```
 Compile 
 ```cmd
-sh -f tsc-compile.sh hello
+sh -f tsc-compile-gc.sh hello
+```
+
+- without Garbage collection
+
+File ``tsc-compile-nogc.sh``
+```cmd
+FILENAME=$1
+TSCEXEPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/bin
+TSCLIBPATH=/home/alex/TypeScriptCompiler/__build/tsc-ninja-release/lib
+LLVMEXEPATH=/home/alex/TypeScriptCompiler/3rdParty/llvm-ninja/release/bin
+LLVMLIBPATH=/home/alex/TypeScriptCompiler/3rdParty/llvm-ninja/release/lib
+$TSCEXEPATH/tsc --emit=llvm --opt -nogc $FILENAME.ts 2>$FILENAME.il
+$LLVMEXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il
+gcc -o $FILENAME -L$LLVMLIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o -lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle -frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo -ldl
+```
+Compile 
+```cmd
+sh -f tsc-compile-nogc.sh hello
 ```
 
 Run
