@@ -48,7 +48,8 @@ namespace fs = std::experimental::filesystem;
 #else
 #define GC_LIB "-lgcmt-lib"
 #endif
-#define LIBS "-frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo"
+// for Ubuntu 20.04 add -rdynamic
+#define LIBS "-frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo -rdynamic"
 //#define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm -lz -ltinfo -lxml2"
 #define TYPESCRIPT_ASYNC_LIB "-lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle"
 
