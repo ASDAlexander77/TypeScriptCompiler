@@ -162,7 +162,7 @@ set UCRTPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/ucrt/x64"
 ```
 Compile 
 ```cmd
-tsc-compile-gc.bat hello
+tsc-compile-nogc.bat hello
 ```
 
 
