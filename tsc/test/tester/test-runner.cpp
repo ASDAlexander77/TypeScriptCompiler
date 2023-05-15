@@ -417,7 +417,7 @@ void createLLVMBatchFile()
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "echo on" << std::endl;
     batFile
-        << "%TSCEXEPATH%\\tsc.exe --emit=llvm -o=- %2 1> %FILENAME%.txt 2> %FILENAME%.err"
+        << "%TSCEXEPATH%\\tsc.exe --emit=llvm -opt -o=- %2 1> %FILENAME%.txt 2> %FILENAME%.err"
         << std::endl;
     batFile.close();    
 }
@@ -618,7 +618,7 @@ void createLLVMBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm -o=- " _OPT_ " $2 1> $FILENAME.txt 2> $FILENAME.err"
+    batFile << "$TSCEXEPATH/tsc --emit=llvm -opt -o=- " _OPT_ " $2 1> $FILENAME.txt 2> $FILENAME.err"
             << std::endl;
     batFile.close();
 }
