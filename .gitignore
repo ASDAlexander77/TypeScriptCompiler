@@ -6,9 +6,8 @@ build
 .antlr
 tsc/out
 tsc/Testing
+tsc/Testing/Temporary/*
 package-lock.json
 node_modules
 gc-*
 libatomic_ops-*
-CTestCostData.txt
-LastTest.log
