@@ -12009,63 +12009,12 @@ genContext);
         return concat(newInterfacePtr->fullName, ss.str().c_str(), VTABLE_NAME);
     }
 
-    mlir::LogicalResult canCastTupleToInterface(mlir_ts::TupleType tupleStorageType,
-                                                InterfaceInfo::TypePtr newInterfacePtr)
-    {
-        SmallVector<VirtualMethodOrFieldInfo> virtualTable;
-        auto location = loc(TextRange());
-        return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, true);
-    }
-
     mlir::LogicalResult getInterfaceVirtualTableForObject(mlir::Location location, mlir_ts::TupleType tupleStorageType,
                                                           InterfaceInfo::TypePtr newInterfacePtr,
                                                           SmallVector<VirtualMethodOrFieldInfo> &virtualTable,
                                                           bool suppressErrors = false)
     {
-
-        MethodInfo emptyMethod;
-        mlir_ts::FieldInfo emptyFieldInfo;
-        mlir_ts::FieldInfo missingFieldInfo;
-
-        auto result = newInterfacePtr->getVirtualTable(
-            virtualTable,
-            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> mlir_ts::FieldInfo {
-                auto foundIndex = tupleStorageType.getIndex(id);
-                if (foundIndex >= 0)
-                {
-                    auto foundField = tupleStorageType.getFieldInfo(foundIndex);
-                    auto test = foundField.type.isa<mlir_ts::FunctionType>() && fieldType.isa<mlir_ts::FunctionType>()
-                                    ? mth.TestFunctionTypesMatchWithObjectMethods(foundField.type, fieldType).result ==
-                                          MatchResultType::Match
-                                    : fieldType == foundField.type;
-                    if (!test)
-                    {
-                        if (!suppressErrors)
-                        {
-                            emitError(location) << "field " << id << " not matching type: " << fieldType << " and "
-                                                << foundField.type << " in interface '" << newInterfacePtr->fullName
-                                                << "' for object '" << tupleStorageType << "'";
-                        }
-
-                        return emptyFieldInfo;
-                    }
-
-                    return foundField;
-                }
-
-                if (!isConditional)
-                {
-                    emitError(location) << "field can't be found " << id << " for interface '"
-                                        << newInterfacePtr->fullName << "' in object '" << tupleStorageType << "'";
-                }
-
-                return emptyFieldInfo;
-            },
-            [&](std::string, mlir_ts::FunctionType, bool, int) -> MethodInfo & {
-                llvm_unreachable("not implemented yet");
-            });
-
-        return result;
+        return mth.getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, suppressErrors);
     }
 
     mlir::LogicalResult mlirGenObjectVirtualTableDefinitionForInterface(mlir::Location location,
@@ -13646,11 +13595,8 @@ genContext);
                 emitError(location) << "type: " << classType << " missing interface: " << interfaceType;
                 return mlir::failure();
             }
-        }
 
-        // tuple to interface
-        if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
-        {
+            // tuple to interface
             if (auto constTupleType = value.getType().dyn_cast<mlir_ts::ConstTupleType>())
             {
                 return castTupleToInterface(location, value, constTupleType, interfaceType, genContext);
@@ -13758,9 +13704,13 @@ genContext);
                         if (mth.canCastFromTo(value.getType(), subType))
                         {
                             CAST(value, location, subType, value, genContext);
-                            break;
+                            return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
                         }
                     }
+                }
+                else
+                {
+                    return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
                 }
             }
         }
@@ -13850,9 +13800,8 @@ genContext);
 
         auto inEffective = in;
 
-        if (mlir::failed(canCastTupleToInterface(tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
+        if (mlir::failed(mth.canCastTupleToInterface(tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
         {
-
             SmallVector<mlir_ts::FieldInfo> fields;
             if (mlir::succeeded(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
             {

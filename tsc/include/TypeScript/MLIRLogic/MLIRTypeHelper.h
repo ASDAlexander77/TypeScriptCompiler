@@ -902,6 +902,72 @@ class MLIRTypeHelper
         return true;
     }
 
+    mlir::LogicalResult canCastTupleToInterface(mlir_ts::TupleType tupleStorageType,
+                                                InterfaceInfo::TypePtr newInterfacePtr)
+    {
+        SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        auto location = mlir::UnknownLoc::get(context);
+        return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, true);
+    }
+
+    mlir::LogicalResult getInterfaceVirtualTableForObject(mlir::Location location, mlir_ts::TupleType tupleStorageType,
+                                                          InterfaceInfo::TypePtr newInterfacePtr,
+                                                          SmallVector<VirtualMethodOrFieldInfo> &virtualTable,
+                                                          bool suppressErrors = false)
+    {
+
+        MethodInfo emptyMethod;
+        mlir_ts::FieldInfo emptyFieldInfo;
+        mlir_ts::FieldInfo missingFieldInfo;
+
+        auto result = newInterfacePtr->getVirtualTable(
+            virtualTable,
+            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> mlir_ts::FieldInfo {
+                auto foundIndex = tupleStorageType.getIndex(id);
+                if (foundIndex >= 0)
+                {
+                    auto foundField = tupleStorageType.getFieldInfo(foundIndex);
+                    auto test = foundField.type.isa<mlir_ts::FunctionType>() && fieldType.isa<mlir_ts::FunctionType>()
+                                    ? TestFunctionTypesMatchWithObjectMethods(foundField.type, fieldType).result ==
+                                          MatchResultType::Match
+                                    : fieldType == foundField.type;
+                    if (!test)
+                    {
+                        LLVM_DEBUG(llvm::dbgs() << "field " << id << " not matching type: " << fieldType << " and "
+                                            << foundField.type << " in interface '" << newInterfacePtr->fullName
+                                            << "' for object '" << tupleStorageType << "'";);                                    
+
+                        if (!suppressErrors)
+                        {
+                            emitError(location) << "field " << id << " not matching type: " << fieldType << " and "
+                                                << foundField.type << " in interface '" << newInterfacePtr->fullName
+                                                << "' for object '" << tupleStorageType << "'";
+                        }
+
+                        return emptyFieldInfo;
+                    }
+
+                    return foundField;
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "field can't be found " << id << " for interface '"
+                                    << newInterfacePtr->fullName << "' in object '" << tupleStorageType << "'";);
+
+                if (!isConditional)
+                {
+                    emitError(location) << "field can't be found " << id << " for interface '"
+                                        << newInterfacePtr->fullName << "' in object '" << tupleStorageType << "'";
+                }
+
+                return emptyFieldInfo;
+            },
+            [&](std::string, mlir_ts::FunctionType, bool, int) -> MethodInfo & {
+                llvm_unreachable("not implemented yet");
+            });
+
+        return result;
+    }
+
     bool canCastFromTo(mlir::Type srcType, mlir::Type destType)
     {
         if (canWideTypeWithoutDataLoss(srcType, destType))
@@ -921,12 +987,25 @@ class MLIRTypeHelper
                 return canCastFromToLogic(constTuple, matchTuple);
             }
 
-            /*
-            // TODO: finish it
             if (auto ifaceType = destType.dyn_cast<mlir_ts::InterfaceType>())
             {
+                if (getInterfaceInfoByFullName)
+                {
+                    if (auto ifaceTypeInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue()))
+                    {
+                        return mlir::succeeded(canCastTupleToInterface(convertConstTupleTypeToTupleType(constTuple), ifaceTypeInfo));
+                    }
+                    else
+                    {
+                        assert(false);                    
+                    }
+                }                
+                else
+                {
+                    // TODO: we have Cast verification which does not have connected getInterfaceInfoByFullName
+                    return false;
+                }
             }
-            */
         }
 
         if (auto tuple = srcType.dyn_cast<mlir_ts::TupleType>())
@@ -934,6 +1013,26 @@ class MLIRTypeHelper
             if (auto matchTuple = destType.dyn_cast<mlir_ts::TupleType>())
             {
                 return canCastFromToLogic(tuple, matchTuple);
+            }
+
+            if (auto ifaceType = destType.dyn_cast<mlir_ts::InterfaceType>())
+            {
+                if (getInterfaceInfoByFullName)
+                {
+                    if (auto ifaceTypeInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue()))
+                    {
+                        return mlir::succeeded(canCastTupleToInterface(tuple, ifaceTypeInfo));
+                    }
+                    else
+                    {
+                        assert(false);                    
+                    }
+                }
+                else
+                {
+                    // TODO: we have Cast verification which does not have connected getInterfaceInfoByFullName
+                    return false;
+                }
             }
         }
 
