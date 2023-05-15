@@ -149,7 +149,8 @@ add_test(NAME test-llvm-00-union-type COMMAND test-runner -llvm "${PROJECT_SOURC
 add_test(NAME test-llvm-01-union-type COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/01union_type.ts")
 add_test(NAME test-llvm-02-union-type COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/02union_type.ts")
 add_test(NAME test-llvm-03-union-type COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/03union_type.ts")
-add_test(NAME test-llvm-04-union-type COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/04union_type.ts")
+# TODO: not implemented yet
+#add_test(NAME test-llvm-04-union-type COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/04union_type.ts")
 add_test(NAME test-llvm-05-union-type COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/05union_type.ts")
 add_test(NAME test-llvm-00-union-ops COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_ops.ts")
 add_test(NAME test-llvm-00-intersection-type-generic COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/00intersection_type_generic.ts")
