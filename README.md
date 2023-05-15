@@ -99,12 +99,12 @@ The Accounting Department meets each Monday at 10am.
 
 - with Garbage collection
 ```cmd
-tsc --emit=jit --emit=jit --opt --shared-libs=TypeScriptRuntime.dll hello.ts
+tsc --emit=jit --opt --shared-libs=TypeScriptRuntime.dll hello.ts
 ```
 
 - without Garbage collection
 ```cmd
-tsc --emit=jit --emit=jit --nogc hello.ts
+tsc --emit=jit --nogc hello.ts
 ```
 
 File ``hello.ts``
