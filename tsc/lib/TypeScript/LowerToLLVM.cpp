@@ -3793,7 +3793,7 @@ struct ExtractInterfaceVTableOpLowering : public TsLlvmPattern<mlir_ts::ExtractI
         TypeHelper th(rewriter);
         CodeLogicHelper clh(extractInterfaceVTableOp, rewriter);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! ExtractInterfaceVTable from: " << extractInterfaceVTableOp.getInterfaceVal()
+        LLVM_DEBUG(llvm::dbgs() << "\n!! ExtractInterfaceVTable from: " << transformed.getInterfaceVal()
                                 << "\n");
 
         auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getInterfaceVal(),

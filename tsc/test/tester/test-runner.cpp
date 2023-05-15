@@ -116,6 +116,7 @@ bool isJitCompile = false;
 bool enableBuiltins = false;
 bool noGC = false;
 bool asyncRuntime = false;
+bool llvmGenerate = false;
 
 bool hasEnding(std::string const &fullString, std::string const &ending)
 {
@@ -400,6 +401,27 @@ void createJitCompileBatchFileGC()
     batFile.close();
 }
 
+void createLLVMBatchFile()
+{
+#ifndef NEW_BAT
+    if (exists("llvm.bat"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("llvm.bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LLVMPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile
+        << "%TSCEXEPATH%\\tsc.exe --emit=llvm -o=- %2 1> %FILENAME%.txt 2> %FILENAME%.err"
+        << std::endl;
+    batFile.close();    
+}
+
 void createJitBatchFile()
 {
 #ifndef NEW_BAT
@@ -583,6 +605,24 @@ void createJitCompileBatchFileGC()
     batFile.close();
 }
 
+void createLLVMBatchFile()
+{
+#ifndef NEW_BAT
+    if (exists("llvm.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("llvm.sh");
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "LLVMPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm -o=- " _OPT_ " $2 1> $FILENAME.txt 2> $FILENAME.err"
+            << std::endl;
+    batFile.close();
+}
+
 void createJitBatchFile()
 {
 #ifndef NEW_BAT
@@ -689,7 +729,7 @@ void testFile(const char *file)
             return errStr;
         }
 
-        if (!anyDoneMsg)
+        if (!anyDoneMsg && !llvmGenerate)
         {
             return std::string("no 'done.' msg.");
         }
@@ -707,7 +747,11 @@ void testFile(const char *file)
 #define BAT_NAME ".sh "
 #endif
 
-    if (isJit)
+    if (llvmGenerate)
+    {
+        ss << RUN_CMD << "llvm" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+    }
+    else if (isJit)
     {
         if (noGC)
         {
@@ -811,13 +855,21 @@ int main(int argc, char **argv)
             {
                 asyncRuntime = true;
             }
+            else if (std::string(argv[index]) == "-llvm")
+            {
+                llvmGenerate = true;
+            }
             else
             {
                 filePath = argv[index];
             }
         }
 
-        if (isJit)
+        if (llvmGenerate)
+        {
+            createLLVMBatchFile();
+        }
+        else if (isJit)
         {
             if (noGC)
             {
