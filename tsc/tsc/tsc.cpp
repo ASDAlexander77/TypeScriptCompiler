@@ -35,9 +35,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
 
-#include "llvm/Support/CommandLine.h"
 #include "mlir/Support/DebugCounter.h"
-//#include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/Timing.h"
 //#include "mlir/Support/ToolUtilities.h"
 //#include "llvm/Support/CommandLine.h"
@@ -45,7 +43,10 @@
 //#include "llvm/Support/Regex.h"
 //#include "llvm/Support/SourceMgr.h"
 //#include "llvm/Support/StringSaver.h"
-//#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/TargetParser/Host.h"
 
 #ifdef ENABLE_ASYNC
 #include "mlir/Conversion/AsyncToLLVM/AsyncToLLVM.h"
@@ -91,7 +92,8 @@ namespace cl = llvm::cl;
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
 cl::OptionCategory TypeScriptCompilerDebugCategory("Debug Options");
 
-static cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript file>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
+static cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
+static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
 
 namespace
 {
@@ -416,6 +418,61 @@ std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int op
     return optPipeline;
 }
 
+static std::unique_ptr<llvm::ToolOutputFile> GetOutputStream()
+{
+    // If we don't yet have an output filename, make one.
+    if (outputFilename.empty())
+    {
+        if (inputFilename == "-")
+            outputFilename = "-";
+        else
+        {
+            // If InputFilename ends in .bc or .ll, remove it.
+            llvm::StringRef IFN = inputFilename;
+            if (IFN.endswith(".ts"))
+                outputFilename = std::string(IFN.drop_back(3));
+            else if (IFN.endswith(".mlir"))
+                outputFilename = std::string(IFN.drop_back(5));
+            else
+                outputFilename = std::string(IFN);
+
+            switch (emitAction)
+            {
+                case None:
+                    outputFilename = "-";
+                    break;
+                case DumpAST:
+                    outputFilename += ".txt";
+                    break;
+                case DumpMLIR:
+                case DumpMLIRAffine:
+                case DumpMLIRLLVM:
+                    outputFilename += ".mlir";
+                    break;
+                case DumpLLVMIR:
+                    outputFilename += ".ll";
+                    break;
+                case RunJIT:
+                    outputFilename = "-";
+                    break;
+            }
+        }
+    }
+
+    // Open the file.
+    std::error_code EC;
+    llvm::sys::fs::OpenFlags openFlags = llvm::sys::fs::OF_None;
+    openFlags |= llvm::sys::fs::OF_TextWithCRLF;
+    auto FDOut = std::make_unique<llvm::ToolOutputFile>(outputFilename, EC, openFlags);
+    if (EC)
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << EC.message() << "\n";
+        return nullptr;
+    }
+
+    return FDOut;
+}
+
 int dumpLLVMIR(mlir::ModuleOp module)
 {
     initDialects(module);
@@ -442,7 +499,16 @@ int dumpLLVMIR(mlir::ModuleOp module)
     }
 
     // TODO: add output into file as well 
-    llvm::errs() << *llvmModule << "\n";
+    auto FDOut = GetOutputStream();
+    if (FDOut)
+    {
+        FDOut->os() << *llvmModule << "\n";
+    }
+    else
+    {
+        llvm::errs() << *llvmModule << "\n";
+    }
+
     return 0;
 }
 
@@ -555,6 +621,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
     // the module.
     mlir::ExecutionEngineOptions engineOptions;
     engineOptions.transformer = optPipeline;
+    engineOptions.enableObjectDump = dumpObjectFile;
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
     assert(maybeEngine && "failed to construct an execution engine");
     auto &engine = maybeEngine.get();
@@ -583,7 +650,17 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
             return -1;
         }
 
-        engine->dumpToObjectFile(objectFilename.empty() ? inputFilename + ".o" : objectFilename);
+        llvm::Triple theTriple;
+        theTriple.setTriple(llvm::sys::getDefaultTargetTriple());
+
+        engine->dumpToObjectFile(
+            objectFilename.empty() 
+                ? inputFilename + (
+                    (theTriple.getOS() == llvm::Triple::Win32) 
+                        ? ".obj" 
+                        : ".o") 
+                : objectFilename);
+
         return 0;
     }
 
