@@ -130,6 +130,7 @@
                 "-mlir-disable-threading",
                 "-debug-only=llvm",
                 "-opt",
+                "-o=1.ll",
                 "C:/temp/1.ts"
             ],
             "stopAtEntry": false,

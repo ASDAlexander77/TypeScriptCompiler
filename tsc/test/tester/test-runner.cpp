@@ -235,7 +235,7 @@ void createCompileBatchFile()
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
     batFile << "set LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 2> %FILENAME%.il" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
                "/defaultlib:libcmt" _D_ ".lib libvcruntime" _D_ ".lib"
@@ -266,7 +266,7 @@ void createCompileBatchFileWithAsyncRT()
     batFile << "set LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 2> %FILENAME%.il" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
                "/libpath:%LLVM_LIBPATH% /libpath:%TSCLIBPATH% /defaultlib:libcmt" _D_ ".lib libvcruntime" _D_
@@ -297,7 +297,7 @@ void createCompileBatchFileGC()
     batFile << "set LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 2> %FILENAME%.il" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
                "/libpath:%GCLIBPATH% msvcrt" _D_ ".lib ucrt" _D_ ".lib kernel32.lib user32.lib "
@@ -329,7 +329,7 @@ void createCompileBatchFileGCWithAsyncRT()
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 2> %FILENAME%.il" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
                "/libpath:%GCLIBPATH% /libpath:%LLVM_LIBPATH% /libpath:%TSCLIBPATH% "
@@ -453,7 +453,7 @@ void createCompileBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 2>$FILENAME.il" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 -o=$FILENAME.il" << std::endl;
     batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o -lm -frtti -fexceptions -lstdc++" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
@@ -477,7 +477,7 @@ void createCompileBatchFileWithAsyncRT()
     batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 2>$FILENAME.il" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 -o=$FILENAME.il" << std::endl;
     batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o -L$LLVM_LIBPATH -L$TSCLIBPATH " << TYPESCRIPT_ASYNC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
@@ -500,7 +500,7 @@ void createCompileBatchFileGC()
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "$2 2>$FILENAME.il" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "$2 -o=$FILENAME.il" << std::endl;
     batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o " << GC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
@@ -525,7 +525,7 @@ void createCompileBatchFileGCWithAsyncRT()
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "$2 2>$FILENAME.il" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "$2 -o=$FILENAME.il" << std::endl;
     batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME -L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o " << GC_LIB
             << " " TYPESCRIPT_ASYNC_LIB << " " << LIBS << std::endl;

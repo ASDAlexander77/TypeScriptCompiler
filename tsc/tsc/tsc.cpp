@@ -503,6 +503,7 @@ int dumpLLVMIR(mlir::ModuleOp module)
     if (FDOut)
     {
         FDOut->os() << *llvmModule << "\n";
+        FDOut->keep();
     }
     else
     {
