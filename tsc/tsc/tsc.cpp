@@ -441,7 +441,8 @@ int dumpLLVMIR(mlir::ModuleOp module)
         return -1;
     }
 
-    llvm::WithColor::error(llvm::errs(), "tsc") << *llvmModule << "\n";
+    // TODO: add output into file as well 
+    llvm::errs() << *llvmModule << "\n";
     return 0;
 }
 
