@@ -1645,13 +1645,20 @@ class MLIRGenImpl
                         continue;
                     }
 
+                    auto paramType = paramInfo->getType();
+
                     if (callOpsCount <= paramIndex)
                     {
                         // there is no more ops
+                        if (paramInfo->getIsOptional() || paramType.isa<mlir_ts::OptionalType>())
+                        {
+                            processed++;
+                            continue;
+                        }
+
                         break;
                     }
 
-                    auto paramType = paramInfo->getType();
                     auto argOp = genContext.callOperands[paramIndex];
 
                     LLVM_DEBUG(llvm::dbgs()
