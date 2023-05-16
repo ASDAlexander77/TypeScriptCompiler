@@ -10910,23 +10910,33 @@ class MLIRGenImpl
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
-        mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, classGenContext);
+        if (!newClassPtr->isStatic)
+        {
+            mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, classGenContext);
+        }
 
 #ifdef ENABLE_RTTI
-        // INFO: .instanceOf must be first element in VTable for Cast Any
-        mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, classGenContext);
+        if (!newClassPtr->isStatic)
+        {
+            // INFO: .instanceOf must be first element in VTable for Cast Any
+            mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, classGenContext);
+        }
 #endif
 
 #if ENABLE_TYPED_GC
         auto enabledGC = !compileOptions.disableGC;
-        if (enabledGC)
+        if (enabledGC && !newClassPtr->isStatic)
         {
             mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
             mlirGenClassTypeDescriptorField(location, newClassPtr, classGenContext);
         }
 #endif
 
-        mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
+        if (!newClassPtr->isStatic)
+        {
+            mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
+        }
+
         mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, classGenContext);
 
         /*
@@ -10960,9 +10970,12 @@ class MLIRGenImpl
 
         mlirGenClassMembersPost(location, classDeclarationAST, newClassPtr, classGenContext);
 
-        if (mlir::failed(mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext)))
+        if (!newClassPtr->isStatic)
         {
-            return {mlir::failure(), ""};
+            if (mlir::failed(mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext)))
+            {
+                return {mlir::failure(), ""};
+            }
         }
 
         // here we need to process New method;
@@ -11075,6 +11088,7 @@ class MLIRGenImpl
             newClassPtr->isAbstract = hasModifier(classDeclarationAST, SyntaxKind::AbstractKeyword);
             newClassPtr->isDeclaration =
                 declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
+            newClassPtr->isStatic = hasModifier(classDeclarationAST, SyntaxKind::StaticKeyword);
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             getClassesMap().insert({namePtr, newClassPtr});
@@ -11171,8 +11185,11 @@ class MLIRGenImpl
         }
 
 #if ENABLE_RTTI
-        newClassPtr->hasVirtualTable = true;
-        mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, genContext);
+        if (!newClassPtr->isStatic)
+        {
+            newClassPtr->hasVirtualTable = true;
+            mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, genContext);
+        }
 #endif
 
         // non-static first

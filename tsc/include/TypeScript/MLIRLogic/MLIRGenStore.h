@@ -417,6 +417,7 @@ struct ClassInfo
     bool hasStaticConstructor;
     bool hasStaticInitializers;
     bool hasVirtualTable;
+    bool isStatic;
     bool isAbstract;
     bool hasRTTI;
     bool fullyProcessedAtEvaluation;
@@ -471,6 +472,11 @@ struct ClassInfo
 
     auto getHasVirtualTableVariable() -> bool
     {
+        if (isStatic)
+        {
+            return false;
+        }
+
         for (auto &base : baseClasses)
         {
             if (base->hasVirtualTable)
@@ -489,6 +495,12 @@ struct ClassInfo
 
     void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &vtable)
     {
+        // in static class I don't want to have virtual table
+        if (isStatic)
+        {
+            return;
+        }
+
         auto processMethod = [] (auto &method, auto &vtable) {
             auto index =
                 std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableMethod) {
