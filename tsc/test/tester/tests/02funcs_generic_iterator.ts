@@ -6,4 +6,5 @@ function ForEach<T>(this: Array<T>, callbackfn: (value: T, index?: number, array
 
 function main() {
     [1, 2, 3].ForEach((x, y?, z?) => { print(x); });
+    print("done.");
 }
