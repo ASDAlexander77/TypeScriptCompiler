@@ -183,10 +183,10 @@ File ``tsc-compile-gc.sh``
 ```cmd
 FILENAME=$1
 TSCEXEPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/bin
-TSCLIBPATH=/home/alex/TypeScriptCompiler/__build/tsc-ninja-release/lib
-LLVMEXEPATH=/home/alex/TypeScriptCompiler/3rdParty/llvm-ninja/release/bin
-LLVMLIBPATH=/home/alex/TypeScriptCompiler/3rdParty/llvm-ninja/release/lib
-GCLIBPATH=/home/alex/TypeScriptCompiler/3rdParty/gc/release
+TSCLIBPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/lib
+LLVMEXEPATH=/home/dev/TypeScriptCompiler/3rdParty/llvm-ninja/release/bin
+LLVMLIBPATH=/home/dev/TypeScriptCompiler/3rdParty/llvm-ninja/release/lib
+GCLIBPATH=/home/dev/TypeScriptCompiler/3rdParty/gc/release
 $TSCEXEPATH/tsc --emit=llvm --opt $FILENAME.ts -o=$FILENAME.il
 $LLVMEXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il
 gcc -o $FILENAME -L$LLVMLIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o -lgcmt-lib -lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle -frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo -ldl
