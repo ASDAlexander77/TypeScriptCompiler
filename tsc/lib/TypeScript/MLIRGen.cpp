@@ -13359,6 +13359,10 @@ genContext);
 
     mlir::Type evaluateProperty(mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
     {
+        // we need to ignore errors;
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+        });
+
         auto location = exprValue.getLoc();
         // we need to add temporary block
         auto tempFuncType = mlir::FunctionType::get(builder.getContext(), std::nullopt, std::nullopt);
