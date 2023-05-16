@@ -6,6 +6,11 @@ function fib<T>(n: T) {
     return n <= 2 ? n : fib(n - 1) + fib(n - 2);
 }
 
+function toString<T>(this: T)
+{
+    return `${this}`;
+}
+
 function main() {
     print(test<number>(11), test<string>("Hello1"));
 

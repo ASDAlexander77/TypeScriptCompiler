@@ -11,6 +11,11 @@ function toLength3<T, V>(this: T[], v: V) {
     return this.length;
 }
 
+function toString<T>(this: T)
+{
+    return `${this}`;
+}
+
 function main() {
     let arr = ["asd", "asd2"];
     print(arr.toLength());
@@ -35,6 +40,10 @@ function main() {
 
     print(arrInt.toLength3<TypeOf<1>, TypeOf<1>>(10));
     assert(arrInt.toLength3<TypeOf<1>, TypeOf<1>>(10) == 2);
+
+    const n = (5).toString();
+    print(n);
+    assert (n == "5");
 
     print("done.");
 }
