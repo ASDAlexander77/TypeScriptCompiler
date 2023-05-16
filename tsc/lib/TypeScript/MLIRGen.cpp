@@ -14448,6 +14448,12 @@ genContext);
             return interfaceType;
         }
 
+        auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext);
+        if (type)
+        {
+            return type;
+        }
+
         auto typeArgumentsSize = typeReferenceAST->typeArguments->size();
         if (typeArgumentsSize == 0)
         {
@@ -14476,7 +14482,7 @@ genContext);
             }
         }
 
-        return getTypeByTypeName(typeReferenceAST->typeName, genContext);
+        return mlir::Type();
     }
 
     mlir::Type getEmbeddedType(mlir::StringRef name)
