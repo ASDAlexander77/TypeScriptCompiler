@@ -33,8 +33,25 @@ function main2() {
     }
 }
 
+function main3()
+{
+    let callbackfn: ((value: number) => void) | ((value: number, index?: number) => void);
+    
+    callbackfn = (x:number) => { print("1 param: ",  x); assert(x === 10); };
+
+    let cb1: (value: number) => void = callbackfn;
+    cb1(10);
+
+    callbackfn = (x:number, y?: number) => { print("2 params: ", x, y); assert(x == 20); assert (y == 1 || y == 2); };
+
+    let cb2: (value: number, index?: number) => void = callbackfn;
+    cb2(20, 1);
+    cb2(20, 2);
+}
+
 function main() {
     main1();
     main2();
+    main3();
     print("done.")
 }

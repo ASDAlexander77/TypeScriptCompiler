@@ -666,17 +666,24 @@ class MLIRTypeHelper
         return paramsType;
     }
 
-    MatchResult TestFunctionTypesMatch(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType, unsigned startParam = 0)
+    MatchResult TestFunctionTypesMatch(
+        mlir::ArrayRef<mlir::Type> inInputs, 
+        mlir::ArrayRef<mlir::Type> resInputs, 
+        mlir::ArrayRef<mlir::Type> inResults, 
+        mlir::ArrayRef<mlir::Type> resResults, 
+        bool inVarArgs, 
+        bool resVarArgs, 
+        unsigned startParam = 0)
     {
         // TODO: make 1 common function
-        if (inFuncType.getInputs().size() != resFuncType.getInputs().size())
+        if (inInputs.size() != resInputs.size())
         {
             return {MatchResultType::NotMatchArgCount, 0};
         }
 
-        for (unsigned i = startParam, e = inFuncType.getInputs().size(); i != e; ++i)
+        for (unsigned i = startParam, e = inInputs.size(); i != e; ++i)
         {
-            if (inFuncType.getInput(i) != resFuncType.getInput(i))
+            if (inInputs[i] != resInputs[i])
             {
                 /*
                 if (i == 0 && (inFuncType.getInput(i).isa<mlir_ts::OpaqueType>() || resFuncType.getInput(i).isa<mlir_ts::OpaqueType>()))
@@ -690,13 +697,13 @@ class MLIRTypeHelper
             }
         }
 
-        auto inRetCount = inFuncType.getResults().size();
-        auto resRetCount = resFuncType.getResults().size();
+        auto inRetCount = inResults.size();
+        auto resRetCount = resResults.size();
 
         auto noneType = mlir::NoneType::get(context);
         auto voidType = mlir_ts::VoidType::get(context);
 
-        for (auto retType : inFuncType.getResults())
+        for (auto retType : inResults)
         {
             auto isVoid = !retType || retType == noneType || retType == voidType;
             if (isVoid)
@@ -705,7 +712,7 @@ class MLIRTypeHelper
             }
         }
 
-        for (auto retType : resFuncType.getResults())
+        for (auto retType : resResults)
         {
             auto isVoid = !retType || retType == noneType || retType == voidType;
             if (isVoid)
@@ -721,8 +728,8 @@ class MLIRTypeHelper
 
         for (unsigned i = 0, e = inRetCount; i != e; ++i)
         {
-            auto inRetType = inFuncType.getResult(i);
-            auto resRetType = resFuncType.getResult(i);
+            auto inRetType = inResults[i];
+            auto resRetType = resResults[i];
 
             auto isInVoid = !inRetType || inRetType == noneType || inRetType == voidType;
             auto isResVoid = !resRetType || resRetType == noneType || resRetType == voidType;
@@ -732,7 +739,19 @@ class MLIRTypeHelper
             }
         }
 
-        return {MatchResultType::Match, 0};
+        return {MatchResultType::Match, 0};        
+    }    
+
+    MatchResult TestFunctionTypesMatch(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType, unsigned startParam = 0)
+    {
+        return TestFunctionTypesMatch(
+            inFuncType.getInputs(), 
+            resFuncType.getInputs(), 
+            inFuncType.getResults(), 
+            resFuncType.getResults(), 
+            inFuncType.isVarArg(),
+            resFuncType.isVarArg(),
+            startParam);
     }
 
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
@@ -970,6 +989,11 @@ class MLIRTypeHelper
 
     bool canCastFromTo(mlir::Type srcType, mlir::Type destType)
     {
+        if (srcType == destType)
+        {
+            return true;
+        }
+        
         if (canWideTypeWithoutDataLoss(srcType, destType))
         {
             return true;
@@ -1034,6 +1058,17 @@ class MLIRTypeHelper
                     return false;
                 }
             }
+        }
+
+        if (isAnyFunctionType(srcType) && isAnyFunctionType(destType))
+        {
+            auto srcInputs = getParamsFromFuncRef(srcType);
+            auto destInputs = getParamsFromFuncRef(destType);
+            auto srcResults = getReturnsFromFuncRef(srcType);
+            auto destResults = getReturnsFromFuncRef(destType);
+            auto srcIsVarArg = getVarArgFromFuncRef(srcType);
+            auto destIsVarArg = getVarArgFromFuncRef(destType);
+            return TestFunctionTypesMatch(srcInputs, destInputs, srcResults, destResults, srcIsVarArg, destIsVarArg).result == MatchResultType::Match;
         }
 
         if (auto unionType = destType.dyn_cast<mlir_ts::UnionType>())
