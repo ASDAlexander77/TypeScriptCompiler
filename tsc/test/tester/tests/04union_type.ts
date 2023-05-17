@@ -21,7 +21,7 @@ function main() {
     }
 
     if (animal.type == "dog") {
-        test = true;
+        test = animal.canBark;
         print("this is dog, can bark? ", animal.canBark);
     }
 
