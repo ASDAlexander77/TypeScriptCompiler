@@ -16121,19 +16121,46 @@ genContext);
     {
         mlir::SmallVector<mlir_ts::FieldInfo> types;
         getTupleFieldInfo(typeLiteral, types, genContext);
+
+        // == TODO: remove the following hack
+        // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
         if (types.size() == 1)
         {
-            // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
-            if (auto funcType = types.front().type.dyn_cast<mlir_ts::FunctionType>())
+            if (auto elementTypeOfIndexSignature = mth.getIndexSignatureElementType(types.front().type))
             {
-                if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 && mth.isNumericType(funcType.getInput(0)))
+                auto arrayType = getArrayType(elementTypeOfIndexSignature);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
+                return arrayType;
+            }
+        }
+
+        // == TODO: remove the following hack
+        // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
+        if (types.size() == 2)
+        {
+            mlir::Type indexSignatureType;
+            auto lengthName = MLIRHelper::TupleFieldName("length", builder.getContext());
+            if (types.front().id == lengthName)
+            {
+                indexSignatureType = types.back().type;
+            }
+
+            if (types.back().id == lengthName)
+            {
+                indexSignatureType = types.front().type;
+            }            
+
+            if (indexSignatureType)
+            {
+                // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
+                if (auto elementTypeOfIndexSignature = mth.getIndexSignatureElementType(indexSignatureType))
                 {
-                    auto arrayType = getArrayType(funcType.getResult(0));
+                    auto arrayType = getArrayType(elementTypeOfIndexSignature);
                     LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
                     return arrayType;
                 }
             }
-        }
+        }        
 
         return getTupleType(types);
     }

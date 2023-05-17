@@ -437,6 +437,19 @@ class MLIRTypeHelper
             && definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
     }
 
+    mlir::Type getIndexSignatureElementType(mlir::Type indexSignatureType)
+    {
+        if (auto funcType = indexSignatureType.dyn_cast<mlir_ts::FunctionType>())
+        {
+            if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 && isNumericType(funcType.getInput(0)))
+            {
+                return funcType.getResult(0);
+            }
+        }
+
+        return mlir::Type();
+    }
+
     bool isAnyFunctionType(mlir::Type funcType)
     {
         if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
