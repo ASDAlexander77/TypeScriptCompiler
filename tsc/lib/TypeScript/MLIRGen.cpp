@@ -4806,6 +4806,30 @@ class MLIRGenImpl
                             }
                         }
                     }
+
+                    if (auto interfaceType = unionSubType.dyn_cast<mlir_ts::InterfaceType>())
+                    {
+                        if (auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue()))
+                        {
+                            int totalOffset = -1;
+                            auto fieldInfo = interfaceInfo->findField(fieldNameAttr, totalOffset);
+                            if (auto literalType = fieldInfo->type.dyn_cast<mlir_ts::LiteralType>())
+                            {
+                                if (literalType.getValue() == valueAttr)
+                                {
+                                    // enable safe cast found
+                                    auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_");
+                                    auto typeAliasName = ConvertUTF8toWide(typeAliasNameUTF8);
+                                    const_cast<GenContext &>(genContext)
+                                        .typeAliasMap.insert({typeAliasNameUTF8, interfaceType});
+
+                                    NodeFactory nf(NodeFactoryFlags::None);
+                                    auto typeRef = nf.createTypeReferenceNode(nf.createIdentifier(typeAliasName));
+                                    return addSafeCastStatement(objAccessExpression, typeRef, genContext);
+                                }
+                            }
+                        }
+                    }                    
                 }
             }
         }
