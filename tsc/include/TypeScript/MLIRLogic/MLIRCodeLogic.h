@@ -618,7 +618,7 @@ class MLIRPropertyAccessCodeLogic
     mlir::Value String(mlir_ts::StringType stringType)
     {
         auto propName = getName();
-        if (propName == "length")
+        if (propName == LENGTH_FIELD_NAME)
         {
             return builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);
         }
@@ -661,7 +661,7 @@ class MLIRPropertyAccessCodeLogic
         // customAttrs.push_back({MLIR_IDENT("__virtual"), MLIR_ATTR("true")});
 
         auto propName = getName();
-        if (propName == "length")
+        if (propName == LENGTH_FIELD_NAME)
         {
             if (expression.getType().isa<mlir_ts::ConstArrayType>())
             {

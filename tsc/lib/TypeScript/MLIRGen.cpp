@@ -5186,7 +5186,7 @@ class MLIRGenImpl
         // auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken),
         // nf.createCallExpression(nf.createIdentifier(S("#_last_field")), undefined, NodeArray<Expression>(_a)));
         auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken),
-                                              nf.createPropertyAccessExpression(_a, nf.createIdentifier(S("length"))));
+                                              nf.createPropertyAccessExpression(_a, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
 
         // incr
         auto incr = nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::PlusPlusToken), _i);
@@ -5235,7 +5235,7 @@ class MLIRGenImpl
 
         // condition
         auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken),
-                                              nf.createPropertyAccessExpression(_a, nf.createIdentifier(S("length"))));
+                                              nf.createPropertyAccessExpression(_a, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
 
         // incr
         auto incr = nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::PlusPlusToken), _i);
@@ -6146,7 +6146,7 @@ class MLIRGenImpl
         // condition
         auto cond = nf.createBinaryExpression(
             binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken),
-            nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S("length"))));
+            nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
 
         return mlirGen(cond, genContext);
     }
@@ -12016,7 +12016,7 @@ genContext);
                 auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
 
                 auto cmpRttiToParam = nf.createBinaryExpression(
-                     nf.createIdentifier(LINSTANCEOF_PARAM_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
+                     nf.createIdentifier(S(INSTANCEOF_PARAM_NAME)), nf.createToken(SyntaxKind::EqualsEqualsToken),
                      nf.createIdentifier(ConvertUTF8toWide(std::string(fullClassStaticFieldName))));
 
                 auto cmpLogic = cmpRttiToParam;
@@ -13255,7 +13255,8 @@ genContext);
                 fieldInfos.push_back({fieldId, type, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
             }
         }
-        else if (kind == SyntaxKind::MethodSignature || kind == SyntaxKind::ConstructSignature)
+        else if (kind == SyntaxKind::MethodSignature || kind == SyntaxKind::ConstructSignature 
+                || kind == SyntaxKind::IndexSignature || kind == SyntaxKind::CallSignature)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
             auto isConditional = !!methodSignature->questionToken;
@@ -13310,18 +13311,6 @@ genContext);
                     {methodName, funcType, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
             }
         }
-        else if (kind == SyntaxKind::IndexSignature)
-        {
-            // TODO: nothing to do here yet
-            //[k: string]: string
-            emitWarning(location, "") << "Index signature ignored.";
-        }
-        else if (kind == SyntaxKind::CallSignature)
-        {
-            // TODO: nothing to do here yet
-            //(k: string) => string
-            emitWarning(location, "") << "Call signature ignored.";
-        }        
         else
         {
             llvm_unreachable("not implemented");
@@ -13366,6 +13355,14 @@ genContext);
         else if (kind == SyntaxKind::ConstructSignature)
         {
             methodName = std::string(NEW_CTOR_METHOD_NAME);
+        }
+        else if (kind == SyntaxKind::IndexSignature)
+        {
+            methodName = std::string(INDEX_ACCESS_FIELD_NAME);
+        }
+        else if (kind == SyntaxKind::CallSignature)
+        {
+            methodName = std::string(CALL_FIELD_NAME);
         }
         else if (kind == SyntaxKind::GetAccessor)
         {
@@ -16078,12 +16075,23 @@ genContext);
                 assert(type);
                 types.push_back({TupleFieldName(methodSignature->name, genContext), type});
             }
-            else
+            else if (typeItem == SyntaxKind::IndexSignature)
             {
                 auto type = getType(typeItem, genContext);
 
                 assert(type);
-                types.push_back({mlir::Attribute(), type});
+                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, builder.getContext()), type});
+            }
+            else if (typeItem == SyntaxKind::CallSignature)
+            {
+                auto type = getType(typeItem, genContext);
+
+                assert(type);
+                types.push_back({MLIRHelper::TupleFieldName(CALL_FIELD_NAME, builder.getContext()), type});
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
             }
         }
     }
@@ -16126,11 +16134,15 @@ genContext);
         // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
         if (types.size() == 1)
         {
-            if (auto elementTypeOfIndexSignature = mth.getIndexSignatureElementType(types.front().type))
+            auto indexAccessName = MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, builder.getContext());
+            if (types.front().id == indexAccessName)
             {
-                auto arrayType = getArrayType(elementTypeOfIndexSignature);
-                LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
-                return arrayType;
+                if (auto elementTypeOfIndexSignature = mth.getIndexSignatureElementType(types.front().type))
+                {
+                    auto arrayType = getArrayType(elementTypeOfIndexSignature);
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
+                    return arrayType;
+                }
             }
         }
 
@@ -16139,16 +16151,17 @@ genContext);
         if (types.size() == 2)
         {
             mlir::Type indexSignatureType;
-            auto lengthName = MLIRHelper::TupleFieldName("length", builder.getContext());
-            if (types.front().id == lengthName)
+            auto lengthName = MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, builder.getContext());
+            auto indexAccessName = MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, builder.getContext());
+            if (types.front().id == lengthName && types.back().id == indexAccessName)
             {
                 indexSignatureType = types.back().type;
             }
-
-            if (types.back().id == lengthName)
+            
+            if (types.back().id == lengthName && types.front().id == indexAccessName)
             {
                 indexSignatureType = types.front().type;
-            }            
+            }
 
             if (indexSignatureType)
             {

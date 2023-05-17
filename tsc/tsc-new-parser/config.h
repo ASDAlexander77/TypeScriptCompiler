@@ -25,7 +25,8 @@ using smatch = std::wsmatch;
 #define regex_replace std::regex_replace
 
 #define to_number_base(x, y) std::stoi(x, nullptr, y)
-#define S(x) L##x
+#define _S(x) (L##x)
+#define S(x) _S(x)
 #define to_string_val(x) std::to_wstring(x)
 #define to_unsigned_integer(x) std::stoul(x)
 #define to_float_val(x) std::stod(x)

@@ -437,6 +437,7 @@ class MLIRTypeHelper
             && definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
     }
 
+    // TODO: how about multi-index?
     mlir::Type getIndexSignatureElementType(mlir::Type indexSignatureType)
     {
         if (auto funcType = indexSignatureType.dyn_cast<mlir_ts::FunctionType>())
@@ -448,6 +449,16 @@ class MLIRTypeHelper
         }
 
         return mlir::Type();
+    }
+
+    mlir::Type getIndexSignatureType(mlir::Type elementType)
+    {
+        if (!elementType)
+        {
+            return mlir::Type();
+        }
+
+        return mlir_ts::FunctionType::get(context, {mlir_ts::NumberType::get(context)}, {elementType}, false);
     }
 
     bool isAnyFunctionType(mlir::Type funcType)
@@ -1448,6 +1459,8 @@ class MLIRTypeHelper
 
     mlir::Type getFieldTypeByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
     {
+        LLVM_DEBUG(llvm::dbgs() << "!! get type of field '" << fieldName << "' of '" << srcType << "'\n";);
+
         if (auto constTupleType = srcType.dyn_cast<mlir_ts::ConstTupleType>())
         {
             auto index = constTupleType.getIndex(fieldName);
@@ -1529,9 +1542,14 @@ class MLIRTypeHelper
         // TODO: read fields info from class Array
         if (auto arrayType = srcType.dyn_cast<mlir_ts::ArrayType>())
         {
-            if (fieldName == MLIRHelper::TupleFieldName("length", context))
+            if (fieldName == MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context))
             {
                 return mlir_ts::NumberType::get(context);
+            }
+
+            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context))
+            {
+                return  getIndexSignatureType(arrayType.getElementType());
             }
 
             llvm_unreachable("not implemented");
@@ -1540,9 +1558,14 @@ class MLIRTypeHelper
         // TODO: read fields info from class Array
         if (auto constArrayType = srcType.dyn_cast<mlir_ts::ConstArrayType>())
         {
-            if (fieldName == MLIRHelper::TupleFieldName("length", context))
+            if (fieldName == MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context))
             {
                 return mlir_ts::NumberType::get(context);
+            }
+
+            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context))
+            {
+                return  getIndexSignatureType(constArrayType.getElementType());
             }
 
             llvm_unreachable("not implemented");
@@ -1551,9 +1574,14 @@ class MLIRTypeHelper
         // TODO: read data from String class
         if (auto stringType = srcType.dyn_cast<mlir_ts::StringType>())
         {
-            if (fieldName == MLIRHelper::TupleFieldName("length", context))
+            if (fieldName == MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context))
             {
                 return mlir_ts::NumberType::get(context);
+            }
+
+            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context))
+            {
+                return  getIndexSignatureType(mlir_ts::CharType::get(context));
             }
 
             llvm_unreachable("not implemented");
