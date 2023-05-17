@@ -9594,6 +9594,7 @@ class MLIRGenImpl
         return V(loadedVarArray2);
     }
 
+    // TODO: replace usage of this method with getFields method
     mlir::Type getTypeByFieldNameFromReceiverType(mlir::Attribute fieldName, mlir::Type receiverType)
     {
         if (auto tupleType = receiverType.dyn_cast<mlir_ts::TupleType>())
@@ -9812,6 +9813,26 @@ class MLIRGenImpl
                 auto result = mlirGen(propertyAssignment->initializer, receiverTypeGenContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 itemValue = V(result);
+
+                // in case of Union type
+                if (receiverType && !receiverElementType)
+                {
+                    if (auto unionType = receiverType.dyn_cast<mlir_ts::UnionType>())
+                    {
+                        for (auto subType : unionType.getTypes())
+                        {
+                            auto possibleType = getTypeByFieldNameFromReceiverType(fieldId, subType);
+                            if (possibleType == itemValue.getType())
+                            {
+                                LLVM_DEBUG(llvm::dbgs() << "\n!! we picked type from union: " << subType << "\n";);
+
+                                receiverElementType = possibleType;
+                                receiverType = subType;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
