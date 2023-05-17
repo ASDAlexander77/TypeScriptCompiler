@@ -1513,6 +1513,39 @@ class MLIRTypeHelper
             return mlir::Type();
         }
 
+        // TODO: read fields info from class Array
+        if (auto arrayType = srcType.dyn_cast<mlir_ts::ArrayType>())
+        {
+            if (fieldName == MLIRHelper::TupleFieldName("length", context))
+            {
+                return mlir_ts::NumberType::get(context);
+            }
+
+            llvm_unreachable("not implemented");
+        }        
+
+        // TODO: read fields info from class Array
+        if (auto constArrayType = srcType.dyn_cast<mlir_ts::ConstArrayType>())
+        {
+            if (fieldName == MLIRHelper::TupleFieldName("length", context))
+            {
+                return mlir_ts::NumberType::get(context);
+            }
+
+            llvm_unreachable("not implemented");
+        }        
+
+        // TODO: read data from String class
+        if (auto stringType = srcType.dyn_cast<mlir_ts::StringType>())
+        {
+            if (fieldName == MLIRHelper::TupleFieldName("length", context))
+            {
+                return mlir_ts::NumberType::get(context);
+            }
+
+            llvm_unreachable("not implemented");
+        }        
+
         if (auto unionType = srcType.dyn_cast<mlir_ts::UnionType>())
         {
             llvm::SmallVector<mlir::Type> types;
@@ -1644,8 +1677,16 @@ class MLIRTypeHelper
         if (auto tupleType = extendType.dyn_cast<mlir_ts::TupleType>())
         {
             auto pred = [&](auto &item) { 
-                auto fieldType = getFieldTypeByFieldName(srcType, item.id);
-                return extendsType(fieldType, item.type, typeParamsWithArgs); 
+                if (item.id)
+                {
+                    auto fieldType = getFieldTypeByFieldName(srcType, item.id);
+                    return extendsType(fieldType, item.type, typeParamsWithArgs); 
+                }
+                else
+                {
+                    // TODO: get it by function
+                    llvm_unreachable("not implemented");
+                }
             };
             return std::all_of(tupleType.getFields().begin(), tupleType.getFields().end(), pred);
         }
@@ -1653,8 +1694,16 @@ class MLIRTypeHelper
         if (auto constTupleType = extendType.dyn_cast<mlir_ts::ConstTupleType>())
         {
             auto pred = [&](auto &item) { 
-                auto fieldType = getFieldTypeByFieldName(srcType, item.id);
-                return extendsType(fieldType, item.type, typeParamsWithArgs); 
+                if (item.id)
+                {
+                    auto fieldType = getFieldTypeByFieldName(srcType, item.id);
+                    return extendsType(fieldType, item.type, typeParamsWithArgs); 
+                }
+                else
+                {
+                    // TODO: get it by function
+                    llvm_unreachable("not implemented");
+                }
             };
             return std::all_of(constTupleType.getFields().begin(), constTupleType.getFields().end(), pred);
         }
