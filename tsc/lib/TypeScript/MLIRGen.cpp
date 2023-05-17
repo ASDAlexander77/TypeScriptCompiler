@@ -7031,57 +7031,95 @@ class MLIRGenImpl
         return value;
     }
 
+    mlir::Value extensionFunctionLogic(mlir::Location location, mlir::Value funcRef, mlir::Value thisValue, StringRef name,
+                                  const GenContext &genContext)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "!! found extension by name for type: " << thisValue.getType()
+                                << " function: " << name << ", value: " << funcRef << "\n";);
+
+        auto thisTypeFromFunc = mth.getFirstParamFromFuncRef(funcRef.getType());
+
+        LLVM_DEBUG(llvm::dbgs() << "!! this type of function is : " << thisTypeFromFunc << "\n";);
+
+        if (auto symbolOp = funcRef.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            // if (!symbolOp.getType().isa<mlir_ts::GenericType>())
+            if (!symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
+            {
+                auto funcType = funcRef.getType().cast<mlir_ts::FunctionType>();
+                if (thisTypeFromFunc == thisValue.getType())
+                {
+                    // return funcRef;
+                    auto thisRef = thisValue;
+                    auto extensFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
+                        location, getExtensionFunctionType(funcType), thisRef, funcRef);
+                    return extensFuncVal;
+                }
+            }
+            else
+            {
+                // TODO: finish it
+                // it is generic function
+                StringMap<mlir::Type> inferredTypes;
+                inferType(location, thisTypeFromFunc, thisValue.getType(), inferredTypes, genContext);
+                if (inferredTypes.size() > 0)
+                {
+                    // we found needed function
+                    // return funcRef;
+                    auto thisRef = thisValue;
+
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! recreate ExtensionFunctionOp (generic interface): '" << name << "'\n this ref: '" << thisRef << "'\n func ref: '" << funcRef
+                    << "'\n";);
+
+                    auto funcType = funcRef.getType().cast<mlir_ts::FunctionType>();
+                    auto extensFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
+                        location, getExtensionFunctionType(funcType), thisRef, funcRef);
+                    return extensFuncVal;                        
+                }
+            }
+        }
+
+        return mlir::Value();
+    }
+
     mlir::Value extensionFunction(mlir::Location location, mlir::Value thisValue, StringRef name,
                                   const GenContext &genContext)
     {
         auto funcRef = resolveIdentifier(location, name, genContext);
         if (funcRef)
         {
-            LLVM_DEBUG(llvm::dbgs() << "!! found extension by name for type: " << thisValue.getType()
-                                    << " function: " << name << ", value: " << funcRef << "\n";);
-
-            auto thisTypeFromFunc = mth.getFirstParamFromFuncRef(funcRef.getType());
-
-            LLVM_DEBUG(llvm::dbgs() << "!! this type of function is : " << thisTypeFromFunc << "\n";);
-
-            if (auto symbolOp = funcRef.getDefiningOp<mlir_ts::SymbolRefOp>())
+            auto result = extensionFunctionLogic(location, funcRef, thisValue, name, genContext);
+            if (result)
             {
-                // if (!symbolOp.getType().isa<mlir_ts::GenericType>())
-                if (!symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
-                {
-                    auto funcType = funcRef.getType().cast<mlir_ts::FunctionType>();
-                    if (thisTypeFromFunc == thisValue.getType())
-                    {
-                        // return funcRef;
-                        auto thisRef = thisValue;
-                        auto extensFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
-                            location, getExtensionFunctionType(funcType), thisRef, funcRef);
-                        return extensFuncVal;
-                    }
-                }
-                else
-                {
-                    // TODO: finish it
-                    // it is generic function
-                    StringMap<mlir::Type> inferredTypes;
-                    inferType(location, thisTypeFromFunc, thisValue.getType(), inferredTypes, genContext);
-                    if (inferredTypes.size() > 0)
-                    {
-                        // we found needed function
-                        // return funcRef;
-                        auto thisRef = thisValue;
+                return result;
+            }
+        }
 
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! recreate ExtensionFunctionOp (generic interface): '" << name << "'\n this ref: '" << thisRef << "'\n func ref: '" << funcRef
-                        << "'\n";);
+        // look into all namespaces from current one
+        {
+            MLIRNamespaceGuard ng(currentNamespace);
 
-                        auto funcType = funcRef.getType().cast<mlir_ts::FunctionType>();
-                        auto extensFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
-                            location, getExtensionFunctionType(funcType), thisRef, funcRef);
-                        return extensFuncVal;                        
+            // search in outer namespaces
+            while (currentNamespace->isFunctionNamespace)
+            {
+                currentNamespace = currentNamespace->parentNamespace;
+            }
+
+            auto &currentNamespacesMap = currentNamespace->namespacesMap;
+            for (auto &selectedNamespace : currentNamespacesMap)
+            {
+                currentNamespace = selectedNamespace.getValue();
+                auto funcRef = resolveIdentifierInNamespace(location, name, genContext);
+                if (funcRef)
+                {
+                    auto result = extensionFunctionLogic(location, funcRef, thisValue, name, genContext);
+                    if (result)
+                    {
+                        return result;
                     }
                 }
             }
-        }
+        }        
 
         return mlir::Value();
     }
