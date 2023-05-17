@@ -16,12 +16,9 @@ function toString<T>(this: T)
     return `${this}`;
 }
 
-namespace number
+function toString1(this: number)
 {
-	function toString1(this: number)
-	{
-		return `number ${this}`;
-	}
+    return `number ${this}`;
 }
 
 namespace string
