@@ -284,11 +284,24 @@ class MLIRTypeHelper
             // we do not need to do it for UnionTypes to be able to validate which values it can have
             //actualType = mergeUnionType(actualType);
             actualType = stripLiteralType(actualType);
-            actualType = convertConstArrayTypeToArrayType(actualType);
-            actualType = convertConstTupleTypeToTupleType(actualType);
+            actualType = removeConstType(actualType);
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! wide type: " << actualType << "\n";);        
+
+        return actualType;
+    }    
+
+    mlir::Type removeConstType(mlir::Type type)
+    {
+        auto actualType = type;
+        if (actualType)
+        {
+            // we do not need to do it for UnionTypes to be able to validate which values it can have
+            //actualType = mergeUnionType(actualType);
+            actualType = convertConstArrayTypeToArrayType(actualType);
+            actualType = convertConstTupleTypeToTupleType(actualType);
+        }
 
         return actualType;
     }    
