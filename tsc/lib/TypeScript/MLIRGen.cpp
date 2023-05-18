@@ -13612,6 +13612,10 @@ genContext);
             return;
         }
 
+        // we need to ignore errors;
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+        });
+        
         auto location = loc(expr);
 
         // module
