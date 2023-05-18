@@ -314,6 +314,7 @@ add_test(NAME test-llvm-ArrayFakeFlatNoCrashInferenceDeclarations COMMAND test-r
 add_test(NAME test-llvm-noPropertyAccessFromIndexSignature1 COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/noPropertyAccessFromIndexSignature1.ts")
 add_test(NAME test-llvm-asyncMethodWithSuper_es2017 COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/asyncMethodWithSuper_es2017.ts")
 add_test(NAME test-llvm-assignmentTypeNarrowing COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/assignmentTypeNarrowing.ts")
+add_test(NAME test-llvm-additionOperatorWithNumberAndEnum COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/additionOperatorWithNumberAndEnum.ts")
 
 add_test(NAME test-compile-00-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -539,6 +540,7 @@ add_test(NAME test-compile-ArrayFakeFlatNoCrashInferenceDeclarations COMMAND tes
 add_test(NAME test-compile-noPropertyAccessFromIndexSignature1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/noPropertyAccessFromIndexSignature1.ts")
 add_test(NAME test-compile-asyncMethodWithSuper_es2017 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/asyncMethodWithSuper_es2017.ts")
 add_test(NAME test-compile-assignmentTypeNarrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assignmentTypeNarrowing.ts")
+add_test(NAME test-compile-additionOperatorWithNumberAndEnum COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/additionOperatorWithNumberAndEnum.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -773,3 +775,4 @@ add_test(NAME test-jit-ArrayFakeFlatNoCrashInferenceDeclarations COMMAND test-ru
 add_test(NAME test-jit-noPropertyAccessFromIndexSignature1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/noPropertyAccessFromIndexSignature1.ts")
 add_test(NAME test-jit-asyncMethodWithSuper_es2017 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/asyncMethodWithSuper_es2017.ts")
 add_test(NAME test-jit-assignmentTypeNarrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/assignmentTypeNarrowing.ts")
+add_test(NAME test-jit-additionOperatorWithNumberAndEnum COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/additionOperatorWithNumberAndEnum.ts")

@@ -7834,6 +7834,16 @@ class MLIRGenImpl
 
             llvm_unreachable("not implemented (ElementAccessExpression)");
         }        
+        else if (auto enumType = arrayType.dyn_cast<mlir_ts::EnumType>())
+        {
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto attr = fieldName.getValue();
+                return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+            }
+
+            llvm_unreachable("not implemented (ElementAccessExpression)");
+        }            
         else
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: " << arrayType
@@ -13615,7 +13625,7 @@ genContext);
         // we need to ignore errors;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
         });
-        
+
         auto location = loc(expr);
 
         // module
