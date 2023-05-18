@@ -617,9 +617,23 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value String(mlir_ts::StringType stringType)
     {
+        LLVM_DEBUG(dbgs() << "\n!! string prop access for : " << expression << "\n");
+
         auto propName = getName();
         if (propName == LENGTH_FIELD_NAME)
         {
+            auto effectiveVal = expression;
+            if (auto castOp = expression.getDefiningOp<mlir_ts::CastOp>())
+            {
+                effectiveVal = castOp.getIn();
+            }
+
+            if (auto constOp = effectiveVal.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto length = constOp.getValueAttr().cast<mlir::StringAttr>().getValue().size();
+                return V(builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(length)));
+            }
+
             return builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);
         }
 

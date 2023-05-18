@@ -23,8 +23,13 @@ enum T1 {
     c = "1" + "2" + "3"
 }
 
+enum EComp2 {
+    A = 'foo'.length, B = 'foo'.length, C = 'foo'.length
+}
+
 function main()
 {
 	assert(T1.c === "123");
+	assert(EComp2.C === 3);
 	print("done.");
 }
