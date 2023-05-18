@@ -313,6 +313,7 @@ add_test(NAME test-llvm-Dependencies COMMAND test-runner -llvm "${PROJECT_SOURCE
 add_test(NAME test-llvm-ArrayFakeFlatNoCrashInferenceDeclarations COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/arrayFakeFlatNoCrashInferenceDeclarations.ts")
 add_test(NAME test-llvm-noPropertyAccessFromIndexSignature1 COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/noPropertyAccessFromIndexSignature1.ts")
 add_test(NAME test-llvm-asyncMethodWithSuper_es2017 COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/asyncMethodWithSuper_es2017.ts")
+add_test(NAME test-llvm-assignmentTypeNarrowing COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/assignmentTypeNarrowing.ts")
 
 add_test(NAME test-compile-00-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -537,6 +538,7 @@ add_test(NAME test-compile-Dependencies COMMAND test-runner "${PROJECT_SOURCE_DI
 add_test(NAME test-compile-ArrayFakeFlatNoCrashInferenceDeclarations COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/arrayFakeFlatNoCrashInferenceDeclarations.ts")
 add_test(NAME test-compile-noPropertyAccessFromIndexSignature1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/noPropertyAccessFromIndexSignature1.ts")
 add_test(NAME test-compile-asyncMethodWithSuper_es2017 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/asyncMethodWithSuper_es2017.ts")
+add_test(NAME test-compile-assignmentTypeNarrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assignmentTypeNarrowing.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -770,3 +772,4 @@ add_test(NAME test-jit-Dependencies COMMAND test-runner -jit "${PROJECT_SOURCE_D
 add_test(NAME test-jit-ArrayFakeFlatNoCrashInferenceDeclarations COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/arrayFakeFlatNoCrashInferenceDeclarations.ts")
 add_test(NAME test-jit-noPropertyAccessFromIndexSignature1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/noPropertyAccessFromIndexSignature1.ts")
 add_test(NAME test-jit-asyncMethodWithSuper_es2017 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/asyncMethodWithSuper_es2017.ts")
+add_test(NAME test-jit-assignmentTypeNarrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/assignmentTypeNarrowing.ts")

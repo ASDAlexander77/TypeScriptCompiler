@@ -13,8 +13,7 @@ const enum E {
     f = a << 2 >> 1,
     g = a << 2 >>> 1,
     h = a | b,
-    // TODO: finish it
-    //i = E.a
+    i = E.a
 }
 
 enum T1 {
@@ -29,6 +28,7 @@ enum EComp2 {
 
 function main()
 {
+	assert(E.a === E.i);
 	assert(T1.c === "123");
 	assert(EComp2.C === 3);
 	print("done.");

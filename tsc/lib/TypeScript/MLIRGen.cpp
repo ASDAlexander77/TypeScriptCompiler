@@ -5262,14 +5262,28 @@ class MLIRGenImpl
         varOfConstDeclarations.push_back(nf.createVariableDeclaration(_ci, undefined, undefined, _i));
         auto varsOfConst = nf.createVariableDeclarationList(varOfConstDeclarations, NodeFlags::Const);
 
-        auto varDeclList = forOfStatementAST->initializer.as<VariableDeclarationList>();
-        varDeclList->declarations.front()->initializer = nf.createElementAccessExpression(_a, _ci);
-
         auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let /*varDeclList->flags*/);
 
         // in async exec, we will put first statement outside fo async.exec, to convert ref<int> into <int>
         statements.push_back(nf.createVariableStatement(undefined, varsOfConst));
-        statements.push_back(nf.createVariableStatement(undefined, varDeclList));
+
+        if (forOfStatementAST->initializer == SyntaxKind::VariableDeclarationList)
+        {
+            auto varDeclList = forOfStatementAST->initializer.as<VariableDeclarationList>();
+            if (!varDeclList->declarations.empty())
+            {
+                varDeclList->declarations.front()->initializer = nf.createElementAccessExpression(_a, _ci);
+                statements.push_back(nf.createVariableStatement(undefined, varDeclList));
+            }
+        }
+        else if (forOfStatementAST->initializer == SyntaxKind::Identifier)
+        {
+            // set value
+            statements.push_back(nf.createExpressionStatement(
+                nf.createBinaryExpression(forOfStatementAST->initializer, nf.createToken(SyntaxKind::EqualsToken), nf.createElementAccessExpression(_a, _ci))
+            ));
+        }
+
         statements.push_back(forOfStatementAST->statement);
         auto block = nf.createBlock(statements);
 
@@ -5280,7 +5294,7 @@ class MLIRGenImpl
             forStatNode->internalFlags |= InternalFlags::ForAwait;
         }
 
-        // LLVM_DEBUG(printDebug(forStatNode););
+        LLVM_DEBUG(printDebug(forStatNode););
 
         return mlirGen(forStatNode, genContext);
     }
@@ -6369,6 +6383,9 @@ class MLIRGenImpl
             case SyntaxKind::MinusToken:
                 result = leftInt - rightInt;
                 break;
+            case SyntaxKind::AsteriskToken:
+                result = leftInt * rightInt;
+                break;
             case SyntaxKind::LessThanLessThanToken:
                 result = leftInt << rightInt;
                 break;
@@ -6406,6 +6423,9 @@ class MLIRGenImpl
                 break;
             case SyntaxKind::MinusToken:
                 result = leftFloat - rightFloat;
+                break;
+            case SyntaxKind::AsteriskToken:
+                result = leftFloat * rightFloat;
                 break;
             case SyntaxKind::LessThanLessThanToken:
                 result = (int64_t)leftFloat << (int64_t)rightFloat;
@@ -10893,6 +10913,14 @@ class MLIRGenImpl
 
         SymbolTableScopeT varScope(symbolTable);
 
+        getEnumsMap().insert(
+        {
+            namePtr, 
+            std::make_pair(
+                getEnumType().getElementType(), mlir::DictionaryAttr::get(builder.getContext(), 
+                {}))
+        });
+
         SmallVector<mlir::Type> enumLiteralTypes;
         SmallVector<mlir::NamedAttribute> enumValues;
         int64_t index = 0;
@@ -10943,6 +10971,7 @@ class MLIRGenImpl
                 
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(memberNamePtr, enumValue.getType(), location);
                 declare(varDecl, enumValue, genContext);
+
             }
             else
             {
@@ -10961,6 +10990,10 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " value attr: " << enumValueAttr << "\n");
 
             enumValues.push_back({getStringAttr(memberNamePtr.str()), enumValueAttr});
+
+            // update enum to support req. access
+            getEnumsMap()[namePtr].second = mlir::DictionaryAttr::get(builder.getContext(), enumValues /*adjustedEnumValues*/);
+
             index++;
 
             // to make it available in enum context
@@ -10971,9 +11004,8 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " storage type: " << storeType << "\n");
 
-        getEnumsMap().insert({namePtr, std::make_pair(/*enumIntType*/ storeType,
-                                                      mlir::DictionaryAttr::get(builder.getContext(),
-                                                                                enumValues /*adjustedEnumValues*/))});
+        // update enum to support req. access
+        getEnumsMap()[namePtr].first = storeType;
 
         return mlir::success();
     }
