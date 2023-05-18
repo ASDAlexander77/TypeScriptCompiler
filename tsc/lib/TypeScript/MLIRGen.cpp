@@ -5814,20 +5814,62 @@ class MLIRGenImpl
         return mlirGen(leftHandSideExpressionAST.as<Expression>(), genContext);
     }
 
-    ValueOrLogicalResult mlirGenPrefixUnaryExpression(mlir::Location location, mlir_ts::ConstantOp constantOp,
+    ValueOrLogicalResult mlirGenPrefixUnaryExpression(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp constantOp,
                                                       const GenContext &genContext)
     {
         mlir::Value value;
         auto valueAttr = constantOp.getValueAttr();
-        mlir::TypeSwitch<mlir::Attribute>(valueAttr)
-            .Case<mlir::IntegerAttr>([&](auto intAttr) {
-                value = builder.create<mlir_ts::ConstantOp>(
-                    location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), -intAttr.getValue()));
-            })
-            .Case<mlir::FloatAttr>([&](auto floatAttr) {
-                value = builder.create<mlir_ts::ConstantOp>(
-                    location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), -floatAttr.getValue()));
-            });
+
+        switch (opCode)
+        {
+            case SyntaxKind::PlusToken:
+                mlir::TypeSwitch<mlir::Attribute>(valueAttr)
+                    .Case<mlir::IntegerAttr>([&](auto intAttr) {
+                        value = builder.create<mlir_ts::ConstantOp>(
+                            location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), intAttr.getValue()));
+                    })
+                    .Case<mlir::FloatAttr>([&](auto floatAttr) {
+                        value = builder.create<mlir_ts::ConstantOp>(
+                            location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), floatAttr.getValue()));
+                    });
+                break;
+            case SyntaxKind::MinusToken:
+                mlir::TypeSwitch<mlir::Attribute>(valueAttr)
+                    .Case<mlir::IntegerAttr>([&](auto intAttr) {
+                        value = builder.create<mlir_ts::ConstantOp>(
+                            location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), -intAttr.getValue()));
+                    })
+                    .Case<mlir::FloatAttr>([&](auto floatAttr) {
+                        value = builder.create<mlir_ts::ConstantOp>(
+                            location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), -floatAttr.getValue()));
+                    })
+                    .Default([](auto) {
+                        llvm_unreachable("not implemented");
+                    });
+                break;
+            case SyntaxKind::TildeToken:
+                mlir::TypeSwitch<mlir::Attribute>(valueAttr)
+                    .Case<mlir::IntegerAttr>([&](auto intAttr) {
+                        value = builder.create<mlir_ts::ConstantOp>(
+                            location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), ~intAttr.getValue()));
+                    })
+                    .Default([](auto) {
+                        llvm_unreachable("not implemented");
+                    });
+                break;
+            case SyntaxKind::ExclamationToken:
+                mlir::TypeSwitch<mlir::Attribute>(valueAttr)
+                    .Case<mlir::IntegerAttr>([&](auto intAttr) {
+                        value = builder.create<mlir_ts::ConstantOp>(
+                            location, getBooleanType(), builder.getBoolAttr(!(intAttr.getValue())));
+                    })
+                    .Default([](auto) {
+                        llvm_unreachable("not implemented");
+                    });
+                break;
+            default:
+                llvm_unreachable("not implemented");
+        }
 
         return value;
     }
@@ -5844,11 +5886,11 @@ class MLIRGenImpl
         auto expressionValue = V(result);
 
         // special case "-" for literal value
-        if (opCode == SyntaxKind::MinusToken)
+        if (opCode == SyntaxKind::PlusToken || opCode == SyntaxKind::MinusToken || opCode == SyntaxKind::TildeToken || opCode == SyntaxKind::ExclamationToken)
         {
             if (auto constantOp = expressionValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                auto res = mlirGenPrefixUnaryExpression(location, constantOp, genContext);
+                auto res = mlirGenPrefixUnaryExpression(location, opCode, constantOp, genContext);
                 if (res)
                 {
                     return res;
@@ -6295,14 +6337,20 @@ class MLIRGenImpl
         int64_t result = 0;
         switch (opCode)
         {
-        case SyntaxKind::PlusEqualsToken:
+        case SyntaxKind::PlusToken:
             result = leftInt + rightInt;
+            break;
+        case SyntaxKind::MinusToken:
+            result = leftInt - rightInt;
             break;
         case SyntaxKind::LessThanLessThanToken:
             result = leftInt << rightInt;
             break;
         case SyntaxKind::GreaterThanGreaterThanToken:
             result = leftInt >> rightInt;
+            break;
+        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+            result = (uint64_t)leftInt >> rightInt;
             break;
         case SyntaxKind::AmpersandToken:
             result = leftInt & rightInt;
@@ -6314,9 +6362,6 @@ class MLIRGenImpl
             llvm_unreachable("not implemented");
             break;
         }
-
-        leftConstOp.erase();
-        rightConstOp.erase();
 
         return builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getI64IntegerAttr(result));
     }
@@ -6838,6 +6883,8 @@ class MLIRGenImpl
         // check if const expr.
         if (genContext.allowConstEval)
         {
+            LLVM_DEBUG(llvm::dbgs() << "Evaluate const: '" << leftExpressionValue << "' and '" << rightExpressionValue << "'\n";);
+
             auto leftConstOp = dyn_cast<mlir_ts::ConstantOp>(leftExpressionValue.getDefiningOp());
             auto rightConstOp = dyn_cast<mlir_ts::ConstantOp>(rightExpressionValue.getDefiningOp());
             if (leftConstOp && rightConstOp)
@@ -10530,22 +10577,6 @@ class MLIRGenImpl
 
     mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
     {
-        // built in types
-        if (name == UNDEFINED_NAME)
-        {
-            return getUndefined(location);
-        }
-
-        if (name == INFINITY_NAME)
-        {
-            return getInfinity(location);
-        }
-
-        if (name == NAN_NAME)
-        {
-            return getNaN(location);
-        }
-
         auto value = resolveIdentifierAsVariable(location, name, genContext);
         if (value)
         {
@@ -10601,6 +10632,24 @@ class MLIRGenImpl
 
             return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
         }
+
+        // built-in types
+        if (name == UNDEFINED_NAME)
+        {
+            return getUndefined(location);
+        }
+
+        if (name == INFINITY_NAME)
+        {
+            return getInfinity(location);
+        }
+
+        if (name == NAN_NAME)
+        {
+            return getNaN(location);
+        }
+
+        // end of built-in types
 
         value = resolveFullNameIdentifier(location, name, false, genContext);
         if (value)
@@ -10775,12 +10824,16 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        SymbolTableScopeT varScope(symbolTable);
+
         SmallVector<mlir::Type> enumLiteralTypes;
         SmallVector<mlir::NamedAttribute> enumValues;
         int64_t index = 0;
         auto activeBits = 32;
         for (auto enumMember : enumDeclarationAST->members)
         {
+            auto location = loc(enumMember);
+
             auto memberNamePtr = MLIRHelper::getName(enumMember->name, stringAllocator);
             if (memberNamePtr.empty())
             {
@@ -10794,6 +10847,7 @@ class MLIRGenImpl
                 GenContext enumValueGenContext(genContext);
                 enumValueGenContext.allowConstEval = true;
                 auto result = mlirGen(enumMember->initializer, enumValueGenContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto enumValue = V(result);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: [ " << memberNamePtr << " ] = [ " << enumValue << " ]\n");
@@ -10819,6 +10873,9 @@ class MLIRGenImpl
                 }
 
                 enumLiteralTypes.push_back(enumValue.getType());
+                
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(memberNamePtr, enumValue.getType(), location);
+                declare(varDecl, enumValue, genContext);
             }
             else
             {
@@ -10828,12 +10885,19 @@ class MLIRGenImpl
                 enumLiteralTypes.push_back(indexType);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: " << memberNamePtr << " <- " << indexType << "\n");
+
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(memberNamePtr, indexType, location);
+                auto enumVal = builder.create<mlir_ts::ConstantOp>(location, indexType, enumValueAttr);
+                declare(varDecl, enumVal, genContext);
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " value attr: " << enumValueAttr << "\n");
 
             enumValues.push_back({getStringAttr(memberNamePtr.str()), enumValueAttr});
             index++;
+
+            // to make it available in enum context
+            auto enumVal = enumValues.back();
         }
 
         auto storeType = mth.getUnionTypeWithMerge(enumLiteralTypes);
