@@ -14239,7 +14239,11 @@ genContext);
 
         if (!noExtendTest && typeParam->hasConstraint())
         {
-            auto constraintType = getType(typeParam->getConstraint(), genContext);
+            // we need to add current type into context to be able to use it in resolving "extends" constraints
+            GenContext constaintGenContext(genContext);
+            constaintGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
+
+            auto constraintType = getType(typeParam->getConstraint(), constaintGenContext);
             if (!constraintType)
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
