@@ -1343,6 +1343,15 @@ class MLIRGenImpl
             }
         }
 
+        // conditional type
+        if (auto templateCondType = currentTemplateType.dyn_cast<mlir_ts::ConditionalType>())
+        {
+            currentTemplateType = templateCondType.getTrueType();
+            inferType(location, currentTemplateType, currentType, results, genContext);
+            currentTemplateType = templateCondType.getFalseType();
+            inferType(location, currentTemplateType, currentType, results, genContext);
+        }
+
         // typeref -> type
         if (auto tempTypeRefType = currentTemplateType.dyn_cast<mlir_ts::TypeReferenceType>())
         {
@@ -1510,7 +1519,12 @@ class MLIRGenImpl
                                       [&](auto &paramItem) { return paramItem->getName() == typeParamName; });
             if (found == typeParams.end())
             {
-                return mlir::failure();
+                LLVM_DEBUG(llvm::dbgs() << "\n!! can't find : " << typeParamName << " in type params: " << "\n";);
+                LLVM_DEBUG(for (auto typeParam : typeParams) llvm::dbgs() << "\t!! type param: " << typeParam->getName() << "\n";);
+
+                //return mlir::failure();
+                // just ignore it
+                continue;
             }
 
             auto typeParam = (*found);
@@ -1663,7 +1677,7 @@ class MLIRGenImpl
 
                     LLVM_DEBUG(llvm::dbgs()
                         << "\n!! resolving param for generic function: '"
-                        << functionGenericTypeInfo->name << "'\n\t parameter #" << paramIndex << " type: [ " << paramType << " ] \n\t argument type: [ " << argOp << " ]\n";);
+                        << functionGenericTypeInfo->name << "'\n\t parameter #" << paramIndex << " type: [ " << paramType << " ] \n\t argument type: [ " << argOp.getType() << " ]\n";);
 
                     if (!paramInfo->getIsMultiArgsParam())
                     {
