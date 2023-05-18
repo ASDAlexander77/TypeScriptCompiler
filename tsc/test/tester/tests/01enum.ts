@@ -17,7 +17,14 @@ const enum E {
     //i = E.a
 }
 
+enum T1 {
+    a = "1",
+    b = "1" + "2",
+    c = "1" + "2" + "3"
+}
+
 function main()
 {
+	assert(T1.c === "123");
 	print("done.");
 }

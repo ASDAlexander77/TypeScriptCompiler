@@ -6327,43 +6327,110 @@ class MLIRGenImpl
             builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type)));
     }
 
-    mlir::Value evaluateBinaryOp(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp leftConstOp,
+    ValueOrLogicalResult evaluateBinaryOp(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp leftConstOp,
                                  mlir_ts::ConstantOp rightConstOp, const GenContext &genContext)
     {
-        auto leftInt = leftConstOp.getValueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
-        auto rightInt = rightConstOp.getValueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
-        auto resultType = leftConstOp.getType();
-
-        int64_t result = 0;
-        switch (opCode)
+        // todo string concat
+        auto leftStrAttr = leftConstOp.getValueAttr().dyn_cast_or_null<mlir::StringAttr>();
+        auto rightStrAttr = rightConstOp.getValueAttr().dyn_cast_or_null<mlir::StringAttr>();        
+        if (leftStrAttr && rightStrAttr)
         {
-        case SyntaxKind::PlusToken:
-            result = leftInt + rightInt;
-            break;
-        case SyntaxKind::MinusToken:
-            result = leftInt - rightInt;
-            break;
-        case SyntaxKind::LessThanLessThanToken:
-            result = leftInt << rightInt;
-            break;
-        case SyntaxKind::GreaterThanGreaterThanToken:
-            result = leftInt >> rightInt;
-            break;
-        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-            result = (uint64_t)leftInt >> rightInt;
-            break;
-        case SyntaxKind::AmpersandToken:
-            result = leftInt & rightInt;
-            break;
-        case SyntaxKind::BarToken:
-            result = leftInt | rightInt;
-            break;
-        default:
-            llvm_unreachable("not implemented");
-            break;
+            auto leftStr = leftStrAttr.getValue();
+            auto rightStr = rightStrAttr.getValue();
+
+            std::string result;
+            switch (opCode)
+            {
+                case SyntaxKind::PlusToken:
+                    result = leftStr;
+                    result += rightStr;
+                    break;
+                default:
+                    emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
+                    return mlir::failure();
+            }
+
+            return V(builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr(result)));
         }
 
-        return builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getI64IntegerAttr(result));
+        auto leftIntAttr = leftConstOp.getValueAttr().dyn_cast_or_null<mlir::IntegerAttr>();
+        auto rightIntAttr = rightConstOp.getValueAttr().dyn_cast_or_null<mlir::IntegerAttr>();
+        auto resultType = leftConstOp.getType();
+        if (leftIntAttr && rightIntAttr)
+        {
+            auto leftInt = leftIntAttr.getInt();
+            auto rightInt = rightIntAttr.getInt();            
+            int64_t result = 0;
+            switch (opCode)
+            {
+            case SyntaxKind::PlusToken:
+                result = leftInt + rightInt;
+                break;
+            case SyntaxKind::MinusToken:
+                result = leftInt - rightInt;
+                break;
+            case SyntaxKind::LessThanLessThanToken:
+                result = leftInt << rightInt;
+                break;
+            case SyntaxKind::GreaterThanGreaterThanToken:
+                result = leftInt >> rightInt;
+                break;
+            case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+                result = (uint64_t)leftInt >> rightInt;
+                break;
+            case SyntaxKind::AmpersandToken:
+                result = leftInt & rightInt;
+                break;
+            case SyntaxKind::BarToken:
+                result = leftInt | rightInt;
+                break;
+            default:
+                emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
+                return mlir::failure();
+            }
+
+            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getI64IntegerAttr(result)));
+        }
+
+        auto leftFloatAttr = leftConstOp.getValueAttr().dyn_cast_or_null<mlir::FloatAttr>();
+        auto rightFloatAttr = rightConstOp.getValueAttr().dyn_cast_or_null<mlir::FloatAttr>();
+        if (leftFloatAttr && rightFloatAttr)
+        {
+            auto leftFloat = leftFloatAttr.getValueAsDouble();
+            auto rightFloat = rightFloatAttr.getValueAsDouble();
+            double result = 0;
+            switch (opCode)
+            {
+            case SyntaxKind::PlusToken:
+                result = leftFloat + rightFloat;
+                break;
+            case SyntaxKind::MinusToken:
+                result = leftFloat - rightFloat;
+                break;
+            case SyntaxKind::LessThanLessThanToken:
+                result = (int64_t)leftFloat << (int64_t)rightFloat;
+                break;
+            case SyntaxKind::GreaterThanGreaterThanToken:
+                result = (int64_t)leftFloat >> (int64_t)rightFloat;
+                break;
+            case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+                result = (uint64_t)leftFloat >> (int64_t)rightFloat;
+                break;
+            case SyntaxKind::AmpersandToken:
+                result = (int64_t)leftFloat & (int64_t)rightFloat;
+                break;
+            case SyntaxKind::BarToken:
+                result = (int64_t)leftFloat | (int64_t)rightFloat;
+                break;
+            default:
+                emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
+                return mlir::failure();
+            }
+
+            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getFloatAttr(leftFloatAttr.getType(), result)));
+        }    
+
+        return mlir::failure();    
     }
 
     ValueOrLogicalResult mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
