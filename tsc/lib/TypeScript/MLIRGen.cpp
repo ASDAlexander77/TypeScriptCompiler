@@ -2268,6 +2268,12 @@ class MLIRGenImpl
                 return varType;
             }
 
+            if (type.isa<mlir_ts::VoidType>())
+            {
+                emitError(location) << "variable '" << name << "' can't be void type";
+                return mlir::Type();
+            }
+
             assert(type);
             varType = type;
 
@@ -2436,6 +2442,12 @@ class MLIRGenImpl
                 if (!type && genContext.allowPartialResolve)
                 {
                     return varType;
+                }
+
+                if (type.isa<mlir_ts::VoidType>())
+                {
+                    emitError(location) << "variable '" << name << "' can't be void type";
+                    return mlir::Type();
                 }
 
                 assert(type);

@@ -43,7 +43,7 @@ void UnaryOp(UnaryOpTy &unaryOp, mlir::Value oper, PatternRewriter &builder)
 }
 
 template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy, typename UnsignedStdIOpTy = StdIOpTy>
-void BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, PatternRewriter &builder)
+LogicalResult BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, PatternRewriter &builder)
 {
     auto loc = binOp->getLoc();
 
@@ -71,9 +71,11 @@ void BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, PatternRewriter 
     }
     else
     {
-        emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << leftType << "'";
-        llvm_unreachable("not implemented");
+        emitError(binOp.getLoc(), "Binary operation is not supported for type: ") << leftType;
+        return failure();
     }
+
+    return success();
 }
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>

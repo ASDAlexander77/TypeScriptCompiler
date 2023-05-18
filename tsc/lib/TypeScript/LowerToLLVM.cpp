@@ -2293,69 +2293,55 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
                 rewriter.replaceOpWithNewOp<mlir_ts::StringConcatOp>(
                     arithmeticBinaryOp, mlir_ts::StringType::get(rewriter.getContext()),
                     ValueRange{transformed.getOperand1(), transformed.getOperand2()});
-            }
-            else
-            {
-                BinOp<mlir_ts::ArithmeticBinaryOp, arith::AddIOp, arith::AddFOp>(arithmeticBinaryOp, transformed.getOperand1(),
-                                                                   transformed.getOperand2(), rewriter);
+                return success();
             }
 
-            return success();
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::AddIOp, arith::AddFOp>(arithmeticBinaryOp, transformed.getOperand1(),
+                                                                transformed.getOperand2(), rewriter);
 
         case SyntaxKind::MinusToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::SubIOp, arith::SubFOp>(arithmeticBinaryOp, transformed.getOperand1(),
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::SubIOp, arith::SubFOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                                transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::AsteriskToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::MulIOp, arith::MulFOp>(arithmeticBinaryOp, transformed.getOperand1(),
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::MulIOp, arith::MulFOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                                transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::SlashToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::DivSIOp, arith::DivFOp, arith::DivUIOp>(arithmeticBinaryOp, transformed.getOperand1(),
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::DivSIOp, arith::DivFOp, arith::DivUIOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                                transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::GreaterThanGreaterThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRSIOp, arith::ShRSIOp, arith::ShRUIOp>(
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRSIOp, arith::ShRSIOp, arith::ShRUIOp>(
                 arithmeticBinaryOp, transformed.getOperand1(), transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRUIOp, arith::ShRUIOp>(
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShRUIOp, arith::ShRUIOp>(
                 arithmeticBinaryOp, transformed.getOperand1(), transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::LessThanLessThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShLIOp, arith::ShLIOp>(arithmeticBinaryOp, transformed.getOperand1(),
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::ShLIOp, arith::ShLIOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                                          transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::AmpersandToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::AndIOp, arith::AndIOp>(arithmeticBinaryOp, transformed.getOperand1(),
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::AndIOp, arith::AndIOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                              transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::BarToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::OrIOp, arith::OrIOp>(arithmeticBinaryOp, transformed.getOperand1(),
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::OrIOp, arith::OrIOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                            transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::CaretToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::XOrIOp, arith::XOrIOp>(arithmeticBinaryOp, transformed.getOperand1(),
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::XOrIOp, arith::XOrIOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                              transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::PercentToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, arith::RemSIOp, arith::RemFOp, arith::RemUIOp>(arithmeticBinaryOp, transformed.getOperand1(),
+            return BinOp<mlir_ts::ArithmeticBinaryOp, arith::RemSIOp, arith::RemFOp, arith::RemUIOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                                transformed.getOperand2(), rewriter);
-            return success();
 
         case SyntaxKind::AsteriskAsteriskToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, math::PowFOp, math::PowFOp>(arithmeticBinaryOp, transformed.getOperand1(),
+            return BinOp<mlir_ts::ArithmeticBinaryOp, math::PowFOp, math::PowFOp>(arithmeticBinaryOp, transformed.getOperand1(),
                                                                            transformed.getOperand2(), rewriter);
-            return success();
 
         default:
             llvm_unreachable("not implemented");
