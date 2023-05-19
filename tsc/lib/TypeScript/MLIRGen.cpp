@@ -6048,8 +6048,8 @@ class MLIRGenImpl
             resultTrue = V(result);
         }
 
-        builder.create<mlir_ts::ResultOp>(location,
-                                          mlir::ValueRange{cast(location, resultType, resultTrue, genContext)});
+        CAST_A(trueRes, location, resultType, resultTrue, genContext);
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{trueRes});
 
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
@@ -6057,8 +6057,8 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto resultFalse = V(result2);
 
-        builder.create<mlir_ts::ResultOp>(location,
-                                          mlir::ValueRange{cast(location, resultType, resultFalse, genContext)});
+        CAST_A(falseRes, location, resultType, resultFalse, genContext)
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{falseRes});
 
         builder.setInsertionPointAfter(ifOp);
 
@@ -6874,8 +6874,7 @@ class MLIRGenImpl
 
                         if (rightExpressionValue.getType() != builder.getI32Type())
                         {
-                            rightExpressionValue =
-                                cast(rightLoc, builder.getI32Type(), rightExpressionValue, genContext);
+                            CAST(rightExpressionValue, rightLoc, builder.getI32Type(), rightExpressionValue, genContext);
                         }
                     }
                 }

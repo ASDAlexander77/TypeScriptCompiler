@@ -19,13 +19,13 @@ function main() {
     let r9 = E['a'] + F['c'];
 
     // TODO: finish it, union for enums
-/*
+    /*
     let r10 = a + c;
     let r11 = c + a;
     let r12 = b + c;
     let r13 = c + b;
     let r14 = c + c;
-*/
+    */
 
     print("done.");
 }
