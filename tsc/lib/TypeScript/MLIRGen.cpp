@@ -5288,7 +5288,7 @@ class MLIRGenImpl
                 statements.push_back(nf.createVariableStatement(undefined, varDeclList));
             }
         }
-        else if (forOfStatementAST->initializer == SyntaxKind::Identifier)
+        else
         {
             // set value
             statements.push_back(nf.createExpressionStatement(
@@ -5354,15 +5354,27 @@ class MLIRGenImpl
         // block
         NodeArray<ts::Statement> statements;
 
-        auto varDeclList = forOfStatementAST->initializer.as<VariableDeclarationList>();
-        varDeclList->declarations.front()->initializer = nf.createPropertyAccessExpression(_c, _value);
+        if (forOfStatementAST->initializer == SyntaxKind::VariableDeclarationList)
+        {
+            auto varDeclList = forOfStatementAST->initializer.as<VariableDeclarationList>();
+            if (!varDeclList->declarations.empty())
+            {
+                varDeclList->declarations.front()->initializer = nf.createPropertyAccessExpression(_c, _value);
+                statements.push_back(nf.createVariableStatement(undefined, varDeclList));
+            }
+        }
+        else
+        {
+            // set value
+            statements.push_back(nf.createExpressionStatement(
+                nf.createBinaryExpression(forOfStatementAST->initializer, nf.createToken(SyntaxKind::EqualsToken), nf.createPropertyAccessExpression(_c, _value))
+            ));            
+        }
 
-        auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let /*varDeclList->flags*/);
-
-        statements.push_back(nf.createVariableStatement(undefined, varDeclList));
         statements.push_back(forOfStatementAST->statement);
         auto block = nf.createBlock(statements);
 
+        auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let /*varDeclList->flags*/);
         // final For statement
         auto forStatNode = nf.createForStatement(initVars, cond, incr, block);
         if (forOfStatementAST->awaitModifier)
