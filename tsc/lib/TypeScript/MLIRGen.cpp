@@ -8607,7 +8607,21 @@ class MLIRGenImpl
             isVarArg = mth.getVarArgFromFuncRef(funcType);
             if (isVarArg)
             {
-                varArgType = tupleTypeWithFuncArgs.getFields().back().type.cast<mlir_ts::ArrayType>().getElementType();
+                auto varArgType = tupleTypeWithFuncArgs.getFields().back().type;
+                if (auto arrayType = varArgType.dyn_cast<mlir_ts::ArrayType>())
+                {
+                    varArgType = arrayType.getElementType();
+                }
+                else if (auto genericType = varArgType.dyn_cast<mlir_ts::NamedGenericType>())
+                {
+                    // do nothing in case of generic, types will be adjusted later
+                    varArgType = mlir::Type();
+                }
+                else
+                {
+                    // in case of ...any 
+                    varArgType = varArgType;
+                }
             }
         }
 
