@@ -13724,28 +13724,27 @@ genContext);
         });
 
         auto location = exprValue.getLoc();
-        // we need to add temporary block
-        auto tempFuncType = mlir::FunctionType::get(builder.getContext(), std::nullopt, std::nullopt);
-        auto tempFuncOp = mlir::func::FuncOp::create(location, ".tempfunc", tempFuncType);
-        auto &entryBlock = *tempFuncOp.addEntryBlock();
-
-        auto insertPoint = builder.saveInsertionPoint();
-        builder.setInsertionPointToStart(&entryBlock);
 
         mlir::Type resultType;
-        GenContext evalGenContext(genContext);
-        evalGenContext.allowPartialResolve = true;
-        auto result = mlirGenPropertyAccessExpression(location, exprValue, propertyName, evalGenContext);
-        auto initValue = V(result);
-        if (initValue)
+
+        // module
+        auto savedModule = theModule;
+
         {
-            resultType = initValue.getType();
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+            builder.setInsertionPointToStart(prepareTempModule());
+
+            GenContext evalGenContext(genContext);
+            evalGenContext.allowPartialResolve = true;
+            auto result = mlirGenPropertyAccessExpression(location, exprValue, propertyName, evalGenContext);
+            auto initValue = V(result);
+            if (initValue)
+            {
+                resultType = initValue.getType();
+            }
         }
 
-        // remove temp block
-        builder.restoreInsertionPoint(insertPoint);
-        entryBlock.erase();
-        tempFuncOp.erase();
+        theModule = savedModule;
 
         return resultType;
     }
