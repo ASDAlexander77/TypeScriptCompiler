@@ -2230,6 +2230,28 @@ class MLIRTypeHelper
         }
     }
 
+    mlir::Type arrayMergeType(mlir::Type existType, mlir::Type currentType, bool& merged)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: " << existType << " with " << currentType << "\n";);
+
+        if (existType == currentType)
+        {
+            merged = true;
+            return existType;
+        }
+
+        // in case of array
+        auto currentTypeArray = currentType.dyn_cast_or_null<mlir_ts::ArrayType>();
+        auto existTypeArray = existType.dyn_cast_or_null<mlir_ts::ArrayType>();
+        if (currentTypeArray && existTypeArray)
+        {
+            auto arrayElementMerged = mergeType(existTypeArray.getElementType(), currentTypeArray.getElementType(), merged);   
+            return mlir_ts::ArrayType::get(arrayElementMerged);
+        }
+
+        return mergeType(existType, currentType, merged);
+    }
+
     mlir::Type mergeType(mlir::Type existType, mlir::Type currentType, bool& merged)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: " << existType << " with " << currentType << "\n";);

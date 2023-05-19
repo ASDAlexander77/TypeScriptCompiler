@@ -1512,7 +1512,8 @@ class MLIRGenImpl
     mlir::LogicalResult appendInferredTypes(mlir::Location location,
                                             llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams,
                                             StringMap<mlir::Type> &inferredTypes, bool &anyNamedGenericType,
-                                            GenContext &genericTypeGenContext)
+                                            GenContext &genericTypeGenContext,
+                                            bool arrayMerge = false)
     {
         for (auto &pair : inferredTypes)
         {
@@ -1535,7 +1536,7 @@ class MLIRGenImpl
 
             auto [result, hasAnyNamedGenericType] =
                 zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam,
-                                             inferredType, false, genericTypeGenContext, true);
+                                             inferredType, false, genericTypeGenContext, true, arrayMerge);
             if (mlir::failed(result))
             {
                 return mlir::failure();
@@ -1699,28 +1700,24 @@ class MLIRGenImpl
                     }
                     else
                     {
-                        if (auto arrayType = paramType.dyn_cast<mlir_ts::ArrayType>())
-                        {
-                            paramType = arrayType.getElementType();
-                        }
-
                         auto anyFailed = false;
+                        struct ArrayInfo arrayInfo{};
                         for (auto varArgIndex = paramIndex; varArgIndex < callOpsCount; varArgIndex++)
                         {
                             auto argOp = genContext.callOperands[varArgIndex];
 
-                            auto [result, cont] = resolveGenericParamFromFunctionCall(
-                                location, paramType, argOp, paramIndex/*this should be paramIndex*/, functionGenericTypeInfo, anyNamedGenericType, 
-                                    genericTypeGenContext, genContext);
-                            if (mlir::failed(result))
-                            {
-                                anyFailed = true;
-                                if (!cont)
-                                {
-                                    return mlir::failure();
-                                }                            
-                            }
+                            accumulateArrayItemType(argOp.getType(), arrayInfo);                            
                         }
+
+                        mlir::Type arrayType = getArrayType(arrayInfo.accumulatedArrayElementType);
+
+                        StringMap<mlir::Type> inferredTypes;
+                        inferType(location, paramType, arrayType, inferredTypes, genContext);
+                        if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
+                                                                genericTypeGenContext, true)))
+                        {
+                            return mlir::failure();
+                        }                        
 
                         if (!anyFailed)
                         {
@@ -9385,6 +9382,15 @@ class MLIRGenImpl
     {
         auto elementType = arrayInfo.accumulatedArrayElementType;
 
+        // TODO: special case (should we use [] = as const_array<undefined, 0> instead of const_array<any, 0>?)
+        if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
+        {
+            if (constArray.getSize() == 0)
+            {
+                return mlir::success();
+            }
+        }
+
         // if we have receiver type we do not need to "adopt it"
         auto wideType = arrayInfo.receiverElementType ? type : mth.wideStorageType(type);
 
@@ -14511,7 +14517,7 @@ genContext);
     std::pair<mlir::LogicalResult, bool> zipTypeParameterWithArgument(
         mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
         const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, bool noExtendTest,
-        const GenContext &genContext, bool mergeTypes = false)
+        const GenContext &genContext, bool mergeTypes = false, bool arrayMerge = false)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! assigning generic type: " << typeParam->getName() << " type: " << type
                                 << "\n";);
@@ -14575,7 +14581,15 @@ genContext);
                 if (!existType.second.isa<mlir_ts::NamedGenericType>() && mergeTypes)
                 {
                     auto merged = false;
-                    type = mth.mergeType(existType.second, type, merged);
+                    if (arrayMerge)
+                    {
+                        type = mth.arrayMergeType(existType.second, type, merged);
+                    }
+                    else
+                    {
+                        type = mth.mergeType(existType.second, type, merged);
+                    }
+
                     LLVM_DEBUG(llvm::dbgs() << "\n!! result (after merge) type: " << type << "\n";);
                 }
 
