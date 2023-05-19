@@ -9555,7 +9555,10 @@ class MLIRGenImpl
             receiverTupleTypeIndex++;
             if (receiverTupleType)
             {
-                arrayInfo.receiverElementType = receiverTupleType.getFieldInfo(receiverTupleTypeIndex).type;
+                arrayInfo.receiverElementType =
+                    receiverTupleType.size() > receiverTupleTypeIndex
+                    ? receiverTupleType.getFieldInfo(receiverTupleTypeIndex).type 
+                    : mlir::Type();
             }
 
             GenContext noReceiverGenContext(genContext);
