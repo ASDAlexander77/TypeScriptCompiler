@@ -3022,8 +3022,6 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
     LogicalResult matchAndRewrite(mlir_ts::MemoryCopyOp memoryCopyOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto loc = memoryCopyOp->getLoc();
 
         TypeHelper th(rewriter);
