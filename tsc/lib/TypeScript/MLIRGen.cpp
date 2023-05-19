@@ -13642,9 +13642,10 @@ genContext);
             return;
         }
 
+        // TODO: sometimes we need errors, sometimes, not,
         // we need to ignore errors;
-        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
-        });
+        //mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+        //});
 
         auto location = loc(expr);
 
@@ -14772,12 +14773,6 @@ genContext);
             return interfaceType;
         }
 
-        auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext);
-        if (type)
-        {
-            return type;
-        }
-
         auto typeArgumentsSize = typeReferenceAST->typeArguments->size();
         if (typeArgumentsSize == 0)
         {
@@ -14806,6 +14801,12 @@ genContext);
             }
         }
 
+        auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext);
+        if (type)
+        {
+            return type;
+        }
+
         return mlir::Type();
     }
 
@@ -14826,6 +14827,11 @@ genContext);
         {
             return getNumberType();
         }       
+
+        if (name == "Object")
+        {
+            return getObjectType(getAnyType());
+        }           
 
         if (name == "String")
         {

@@ -316,6 +316,7 @@ add_test(NAME test-llvm-asyncMethodWithSuper_es2017 COMMAND test-runner -llvm "$
 add_test(NAME test-llvm-assignmentTypeNarrowing COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/assignmentTypeNarrowing.ts")
 add_test(NAME test-llvm-additionOperatorWithNumberAndEnum COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/additionOperatorWithNumberAndEnum.ts")
 add_test(NAME test-llvm-arithmeticOperatorWithEnum COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithEnum.ts")
+add_test(NAME test-llvm-arithmeticOperatorWithTypeParameter COMMAND test-runner -llvm "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithTypeParameter.ts")
 
 add_test(NAME test-compile-00-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -543,6 +544,7 @@ add_test(NAME test-compile-asyncMethodWithSuper_es2017 COMMAND test-runner "${PR
 add_test(NAME test-compile-assignmentTypeNarrowing COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/assignmentTypeNarrowing.ts")
 add_test(NAME test-compile-additionOperatorWithNumberAndEnum COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/additionOperatorWithNumberAndEnum.ts")
 add_test(NAME test-compile-arithmeticOperatorWithEnum COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithEnum.ts")
+add_test(NAME test-compile-arithmeticOperatorWithTypeParameter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithTypeParameter.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -779,3 +781,4 @@ add_test(NAME test-jit-asyncMethodWithSuper_es2017 COMMAND test-runner -jit "${P
 add_test(NAME test-jit-assignmentTypeNarrowing COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/assignmentTypeNarrowing.ts")
 add_test(NAME test-jit-additionOperatorWithNumberAndEnum COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/additionOperatorWithNumberAndEnum.ts")
 add_test(NAME test-jit-arithmeticOperatorWithEnum COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithEnum.ts")
+add_test(NAME test-jit-arithmeticOperatorWithTypeParameter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithTypeParameter.ts")
