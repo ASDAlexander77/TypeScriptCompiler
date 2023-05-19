@@ -13629,8 +13629,11 @@ genContext);
     {
         // we need to add temporary block
         mlir::Type result;
-        evaluate(
-            expr, [&](mlir::Value val) { result = val.getType(); }, genContext);
+        if (expr)
+        {
+            evaluate(
+                expr, [&](mlir::Value val) { result = val.getType(); }, genContext);
+        }
 
         return result;
     }
@@ -14409,15 +14412,36 @@ genContext);
         if (node == SyntaxKind::QualifiedName)
         {
             auto result = mlirGen(node.as<QualifiedName>(), genContext);
-            if (result.failed())
+            if (result.failed_or_no_value())
             {
                 return mlir::Type();
             }
 
-            auto value = V(result);
-            assert(value);
-            type = value.getType();
+            auto val = V(result);
+            type = val.getType();
+
+            if (val.use_empty())
+            {
+                val.getDefiningOp()->erase();
+            }
         }
+        // TODO: uncomment it, to find out there the issue with outer ops, test file C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00iterator.ts
+        // else if (node == SyntaxKind::Identifier)
+        // {
+        //     auto result = mlirGen(node.as<Identifier>(), genContext);
+        //     if (result.failed_or_no_value())
+        //     {
+        //         return mlir::Type();
+        //     }
+
+        //     auto val = V(result);
+        //     type = val.getType();
+
+        //     if (val.use_empty())
+        //     {
+        //         val.getDefiningOp()->erase();
+        //     }
+        // }        
         else
         {
             type = evaluate(node.as<Expression>(), genContext);
@@ -14773,12 +14797,19 @@ genContext);
             return interfaceType;
         }
 
+        auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext);
+        if (type)
+        {
+            return type;
+        }
+
         auto typeArgumentsSize = typeReferenceAST->typeArguments->size();
         if (typeArgumentsSize == 0)
         {
             auto type = getEmbeddedType(name);
             if (type)
             {
+                
                 return type;
             }
         }
@@ -14801,12 +14832,6 @@ genContext);
             }
         }
 
-        auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext);
-        if (type)
-        {
-            return type;
-        }
-
         return mlir::Type();
     }
 
@@ -14823,6 +14848,7 @@ genContext);
             return getConstType();
         }        
 
+#ifdef ENABLE_JS_BUILTIN_TYPES
         if (name == "Number")
         {
             return getNumberType();
@@ -14842,6 +14868,7 @@ genContext);
         {
             return getBooleanType();
         }       
+#endif
 
         if (name == "Int8Array")
         {
@@ -15034,6 +15061,7 @@ genContext);
             return elementType;
         }
 
+#ifdef ENABLE_JS_BUILTIN_TYPES
         if (name == "Awaited")
         {
             auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
@@ -15045,6 +15073,7 @@ genContext);
             auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
             return elemnentType;
         }
+#endif        
 
         // string types
         if (name == "Uppercase")
