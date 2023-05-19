@@ -6425,6 +6425,9 @@ class MLIRGenImpl
             case SyntaxKind::BarToken:
                 result = leftInt | rightInt;
                 break;
+            case SyntaxKind::CaretToken:
+                result = leftInt ^ rightInt;
+                break;
             default:
                 emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
                 return mlir::failure();
@@ -6465,6 +6468,9 @@ class MLIRGenImpl
                 break;
             case SyntaxKind::BarToken:
                 result = (int64_t)leftFloat | (int64_t)rightFloat;
+                break;
+            case SyntaxKind::CaretToken:
+                result = (int64_t)leftFloat ^ (int64_t)rightFloat;
                 break;
             default:
                 emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
@@ -6801,6 +6807,9 @@ class MLIRGenImpl
         case SyntaxKind::LessThanLessThanToken:
         case SyntaxKind::GreaterThanGreaterThanToken:
         case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+        case SyntaxKind::AmpersandToken:
+        case SyntaxKind::BarToken:
+        case SyntaxKind::CaretToken:
             // cast to int
             if (leftExpressionValue.getType() != builder.getI32Type())
             {
