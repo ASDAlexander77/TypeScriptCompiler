@@ -3314,7 +3314,7 @@ class MLIRGenImpl
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
-        auto partialDeclFuncType = getFunctionType(argTypes, std::nullopt);
+        auto partialDeclFuncType = getFunctionType(argTypes, std::nullopt, false);
         auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionLikeDeclarationBaseAST), name, partialDeclFuncType);
 
         {
@@ -8359,14 +8359,14 @@ class MLIRGenImpl
             })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
                 auto calledFuncType =
-                    getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults());
+                    getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults(), calledBoundFuncType.isVarArg());
                 auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
                 auto unboundFuncRefValue = builder.create<mlir_ts::GetMethodOp>(location, calledFuncType, funcRefValue);
                 value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, operands, genContext);
             })
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledExtentFuncType) {
                 auto calledFuncType =
-                    getFunctionType(calledExtentFuncType.getInputs(), calledExtentFuncType.getResults());
+                    getFunctionType(calledExtentFuncType.getInputs(), calledExtentFuncType.getResults(), calledExtentFuncType.isVarArg());
                 auto createExtensionFunctionOp = funcRefValue.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>();
                 auto thisValue = createExtensionFunctionOp.getThisVal();
                 auto funcRefValue = createExtensionFunctionOp.getFunc();
@@ -8887,7 +8887,7 @@ class MLIRGenImpl
                     // call typr bitmap
                     auto fullClassStaticFieldName = getTypeBitmapMethodName(classInfo);
 
-                    auto funcType = getFunctionType({}, {typeDescrType});
+                    auto funcType = getFunctionType({}, {typeDescrType}, false);
 
                     auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
                         location, funcType,
@@ -11879,10 +11879,8 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        SmallVector<mlir::Type> inputs;
-        SmallVector<mlir::Type> results{newClassPtr->classType};
         mlir_ts::FuncOp dummyFuncOp;
-        newClassPtr->methods.push_back({funcName, getFunctionType(inputs, results), dummyFuncOp, isStatic,
+        newClassPtr->methods.push_back({funcName, funcType, dummyFuncOp, isStatic,
                                         isVirtual || isAbstract, isAbstract, -1});
         return mlir::success();
     }
@@ -13461,7 +13459,7 @@ genContext);
             if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
             {
 
-                auto funcType = getFunctionType(hybridFuncType.getInputs(), hybridFuncType.getResults());
+                auto funcType = getFunctionType(hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
                 type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
             }
             else if (auto funcType = type.dyn_cast<mlir_ts::FunctionType>())
@@ -16493,7 +16491,7 @@ genContext);
     }
 
     mlir_ts::FunctionType getFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results,
-                                          bool isVarArg = false)
+                                          bool isVarArg)
     {
         return mlir_ts::FunctionType::get(builder.getContext(), inputs, results, isVarArg);
     }
