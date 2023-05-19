@@ -99,7 +99,8 @@ class MLIRGenImpl
             std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getGenericInterfaceInfoByFullName, this, std::placeholders::_1)),
           compileOptions(compileOptions), 
-          declarationMode(false)
+          declarationMode(false),
+          tempEntryBlock(nullptr)
     {
         fileName = "<unknown>";
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
@@ -114,7 +115,8 @@ class MLIRGenImpl
             std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getGenericInterfaceInfoByFullName, this, std::placeholders::_1)),
           compileOptions(compileOptions), 
-          declarationMode(false)
+          declarationMode(false),
+          tempEntryBlock(nullptr)
     {
         fileName = fileNameParam;
         path = pathParam;
@@ -397,6 +399,8 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }
+
+        clearTempModule();
 
         // Verify the module after we have finished constructing it, this will check
         // the structural properties of the IR and invoke any specific verifiers we
@@ -13625,6 +13629,44 @@ genContext);
         }
     }
 
+    mlir::Block* prepareTempModule()
+    {
+        if (tempEntryBlock)
+        {
+            theModule = tempModule;
+            return tempEntryBlock;
+        }
+
+        auto location = loc(TextRange());
+
+        theModule = tempModule = mlir::ModuleOp::create(location, mlir::StringRef("temp_module"));
+
+        // we need to add temporary block
+        auto tempFuncType =
+            mlir::FunctionType::get(builder.getContext(), ArrayRef<mlir::Type>(), ArrayRef<mlir::Type>());
+        tempFuncOp = mlir::func::FuncOp::create(location, ".tempfunc", tempFuncType);
+
+        tempEntryBlock = tempFuncOp.addEntryBlock();
+
+        return tempEntryBlock;
+    }
+
+    void clearTempModule()
+    {
+        if (tempEntryBlock)
+        {
+            tempEntryBlock->dropAllDefinedValueUses();
+            tempEntryBlock->dropAllUses();
+            tempEntryBlock->dropAllReferences();
+            tempEntryBlock->erase();
+
+            tempFuncOp.erase();
+            tempModule.erase();
+
+            tempEntryBlock = nullptr;
+        }
+    }
+
     mlir::Type evaluate(Expression expr, const GenContext &genContext)
     {
         // we need to add temporary block
@@ -13654,17 +13696,13 @@ genContext);
 
         // module
         auto savedModule = theModule;
-        theModule = mlir::ModuleOp::create(location, mlir::StringRef("temp_module"));
-
-        // we need to add temporary block
-        auto tempFuncType =
-            mlir::FunctionType::get(builder.getContext(), ArrayRef<mlir::Type>(), ArrayRef<mlir::Type>());
-        auto tempFuncOp = mlir::func::FuncOp::create(location, ".tempfunc", tempFuncType);
-        auto &entryBlock = *tempFuncOp.addEntryBlock();
 
         {
             mlir::OpBuilder::InsertionGuard insertGuard(builder);
-            builder.setInsertionPointToStart(&entryBlock);
+
+            SymbolTableScopeT varScope(symbolTable);
+
+            builder.setInsertionPointToStart(prepareTempModule());
 
             GenContext evalGenContext(genContext);
             evalGenContext.allowPartialResolve = true;
@@ -13675,15 +13713,6 @@ genContext);
                 func(initValue);
             }
         }
-
-        entryBlock.dropAllDefinedValueUses();
-        entryBlock.dropAllUses();
-        entryBlock.dropAllReferences();
-        entryBlock.erase();
-
-        tempFuncOp.erase();
-
-        theModule.erase();
 
         theModule = savedModule;
     }
@@ -17495,6 +17524,11 @@ genContext);
     std::string label;
 
     bool declarationMode;
+
+private:
+    mlir::Block* tempEntryBlock;
+    mlir::ModuleOp tempModule;
+    mlir::func::FuncOp tempFuncOp;
 };
 } // namespace
 
