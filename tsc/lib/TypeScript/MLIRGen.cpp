@@ -14223,7 +14223,13 @@ genContext);
         // TODO: finish it
         // convert Tuple to Object
         auto objType = mlir_ts::ObjectType::get(tupleType);
+        auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
+        builder.create<mlir_ts::StoreOp>(location, inEffective, valueAddr);
+        auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
 
+        return castObjectToInterface(location, inCasted, objType, interfaceInfo, genContext);
+
+        /*
         auto valueAddr =
             builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
         builder.create<mlir_ts::StoreOp>(location, inEffective, valueAddr);
@@ -14240,9 +14246,35 @@ genContext);
 
             return newInterface;
         }
+        */
 
         return mlir::Value();
     }
+
+    mlir::Value castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
+                                    mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
+    {
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+        return castObjectToInterface(location, in, objType, interfaceInfo, genContext);
+    }
+
+    mlir::Value castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
+                                    InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext)
+    {
+        if (auto createdInterfaceVTableForObject =
+                mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext))
+        {
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!!"
+                                    << "@ created interface:" << createdInterfaceVTableForObject << "\n";);
+            auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceInfo->interfaceType},
+                                                                        in, createdInterfaceVTableForObject);
+
+            return newInterface;
+        }    
+
+        return mlir::Value();    
+    }    
 
     mlir::Type getType(Node typeReferenceAST, const GenContext &genContext)
     {
