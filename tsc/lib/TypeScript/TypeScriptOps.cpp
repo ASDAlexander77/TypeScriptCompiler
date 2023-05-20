@@ -770,7 +770,7 @@ mlir_ts::FuncOp mlir_ts::FuncOp::clone(IRMapping &mapper)
         /// necessary argument attributes.
         if (newInputs.size() != oldNumArgs)
         {
-            newFunc.setType(FunctionType::get(oldType.getContext(), newInputs, oldType.getResults()));
+            newFunc.setType(FunctionType::get(oldType.getContext(), newInputs, oldType.getResults(), oldType.isVarArg()));
 
             if (ArrayAttr argAttrs = getAllArgAttrs())
             {

@@ -244,7 +244,7 @@ class CastLogicHelper
             {
                 // null this
                 auto thisNullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
-                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), resHybridFunc.getInputs(), resHybridFunc.getResults());
+                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), resHybridFunc.getInputs(), resHybridFunc.getResults(), resHybridFunc.isVarArg());
                 auto castFuncNullVal = cast(in, inType, funcType);
                 auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, resHybridFunc, thisNullVal, castFuncNullVal);
                 return boundFuncVal;
@@ -310,7 +310,7 @@ class CastLogicHelper
 
             if (auto hybridFuncType = inType.dyn_cast<mlir_ts::HybridFunctionType>())
             {
-                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
+                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
                 auto inLLVMType = tch.convertType(ptrValue.getType());
                 auto llvmBoolType = tch.convertType(boolType);
@@ -319,7 +319,7 @@ class CastLogicHelper
 
             if (auto boundFuncType = inType.dyn_cast<mlir_ts::BoundFunctionType>())
             {
-                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults());
+                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
                 auto inLLVMType = tch.convertType(ptrValue.getType());
                 auto llvmBoolType = tch.convertType(boolType);
@@ -428,7 +428,7 @@ class CastLogicHelper
 
             if (auto hybridFuncType = inType.dyn_cast<mlir_ts::HybridFunctionType>())
             {
-                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
+                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
                 auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(opaqueType), ptrValue);
                 return bitcast;
@@ -436,7 +436,7 @@ class CastLogicHelper
 
             if (auto boundFuncType = inType.dyn_cast<mlir_ts::BoundFunctionType>())
             {
-                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults());
+                auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
                 auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(opaqueType), ptrValue);
                 return bitcast;

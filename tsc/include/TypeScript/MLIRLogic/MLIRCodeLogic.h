@@ -71,7 +71,7 @@ class MLIRCodeLogic
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
         if (auto boundFuncType = elementType.dyn_cast<mlir_ts::BoundFunctionType>())
         {
-            return mlir_ts::FunctionType::get(context, boundFuncType.getInputs(), boundFuncType.getResults());
+            return mlir_ts::FunctionType::get(context, boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
         }
 #endif
 

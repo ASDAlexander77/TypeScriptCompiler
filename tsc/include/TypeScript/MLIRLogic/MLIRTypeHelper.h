@@ -375,7 +375,7 @@ class MLIRTypeHelper
         auto offset = replace || funcType.getNumInputs() > 0 && funcType.getInput(0) == mlir_ts::OpaqueType::get(context) ? 1 : 0;
         auto sliced = funcType.getInputs().slice(offset);
         args.append(sliced.begin(), sliced.end());
-        auto newFuncType = mlir_ts::FunctionType::get(context, args, funcType.getResults());
+        auto newFuncType = mlir_ts::FunctionType::get(context, args, funcType.getResults(), funcType.isVarArg());
         return newFuncType;
     }
 
@@ -388,7 +388,7 @@ class MLIRTypeHelper
     {
         mlir::SmallVector<mlir::Type> funcArgTypes(funcType.getInputs().begin(), funcType.getInputs().end());
         funcArgTypes.insert(funcArgTypes.begin(), firstArgType);
-        return mlir_ts::FunctionType::get(context, funcArgTypes, funcType.getResults());
+        return mlir_ts::FunctionType::get(context, funcArgTypes, funcType.getResults(), funcType.isVarArg());
     }
 
     mlir_ts::FunctionType getFunctionTypeReplaceOpaqueWithThisType(mlir_ts::FunctionType funcType, mlir::Type opaqueReplacementType)
@@ -403,7 +403,7 @@ class MLIRTypeHelper
             }
         }
 
-        return mlir_ts::FunctionType::get(context, funcArgTypes, funcType.getResults());
+        return mlir_ts::FunctionType::get(context, funcArgTypes, funcType.getResults(), funcType.isVarArg());
     }
 
     mlir_ts::BoundFunctionType getBoundFunctionTypeReplaceOpaqueWithThisType(mlir_ts::BoundFunctionType funcType,
@@ -686,7 +686,7 @@ class MLIRTypeHelper
                 newInputTypes.append(calledFuncType.getInputs().begin() + 1, calledFuncType.getInputs().end());
             }
 
-            auto newType = t::get(context, newInputTypes, calledFuncType.getResults());
+            auto newType = t::get(context, newInputTypes, calledFuncType.getResults(), calledFuncType.isVarArg());
             return newType;
         };
 

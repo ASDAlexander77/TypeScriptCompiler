@@ -16526,7 +16526,7 @@ genContext);
     }
 
     mlir_ts::BoundFunctionType getBoundFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results,
-                                                    bool isVarArg = false)
+                                                    bool isVarArg)
     {
         return mlir_ts::BoundFunctionType::get(builder.getContext(), inputs, results, isVarArg);
     }

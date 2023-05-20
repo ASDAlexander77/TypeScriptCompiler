@@ -781,7 +781,7 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
   let assemblyFormat = "`<` params `>`";
 
   let builders = [
-     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
+     TypeBuilder<(ins "ArrayRef<Type>":$inputs, "ArrayRef<Type>":$results, "bool":$isVarArg), [{
        return Base::get($_ctxt, inputs, results, isVarArg);
      }]>,
      TypeBuilder<(ins "FunctionType":$funcType), [{
@@ -815,7 +815,7 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
   let assemblyFormat = "`<` params `>`";
 
   let builders = [
-     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
+     TypeBuilder<(ins "ArrayRef<Type>":$inputs, "ArrayRef<Type>":$results, "bool":$isVarArg), [{
        return Base::get($_ctxt, inputs, results, isVarArg);
      }]>,
      TypeBuilder<(ins "FunctionType":$funcType), [{
@@ -849,7 +849,7 @@ def TypeScript_ExtensionFunction : TypeScript_Type<"ExtensionFunction"> {
   let assemblyFormat = "`<` params `>`";
 
   let builders = [
-     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
+     TypeBuilder<(ins "ArrayRef<Type>":$inputs, "ArrayRef<Type>":$results, "bool":$isVarArg), [{
        return Base::get($_ctxt, inputs, results, isVarArg);
      }]>,
      TypeBuilder<(ins "FunctionType":$funcType), [{
