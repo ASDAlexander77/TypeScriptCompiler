@@ -8459,6 +8459,9 @@ class MLIRGenImpl
                 auto array =
                     builder.create<mlir_ts::CreateArrayOp>(location, calledFuncType.getInputs().back(), varArgOperands);
                 operands.push_back(array);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! isVarArg type (array), type: " << calledFuncType.getInputs().back() << "\n";);
+                LLVM_DEBUG(for (auto& ops : varArgOperands) llvm::dbgs() << "\t value = " << ops << "\n";);
             }
 
             // default call by name
@@ -8492,6 +8495,8 @@ class MLIRGenImpl
 
         if (funcArgsCount > opArgsCount)
         {
+            auto lastArgIndex = argFuncTypes.size() - 1;
+
             // -1 to exclude count params
             for (auto i = (size_t)opArgsCount; i < funcArgsCount; i++)
             {
@@ -8505,6 +8510,11 @@ class MLIRGenImpl
                             return mlir::failure();
                         }
                     }
+                }
+
+                if (isVarArg && i >= lastArgIndex)
+                {
+                    break;
                 }
 
                 operands.push_back(builder.create<mlir_ts::UndefOp>(location, argFuncTypes[i]));
