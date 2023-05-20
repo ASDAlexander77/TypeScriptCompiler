@@ -32,11 +32,9 @@ function main() {
 
     let z: number[] = [1];
     let obj: X = {
-	foo: function (x: number, y: number, ...z: string[]): X {
-        // TODO: this -> interface
-		//return this;
-		return null;
-	}
+        foo: function (x: number, y: number, ...z: string[]): X {
+            return this;
+        }
     };
     let xa: X[] = [obj, obj];
 
@@ -48,17 +46,17 @@ function main() {
     obj.foo(1, 2, ...a);
     obj.foo(1, 2, ...a, "abc");
 
-    //obj.foo(1, 2, ...a).foo(1, 2, "abc");
-    //obj.foo(1, 2, ...a).foo(1, 2, ...a);
-    //obj.foo(1, 2, ...a).foo(1, 2, ...a, "abc");
+    obj.foo(1, 2, ...a).foo(1, 2, "abc");
+    obj.foo(1, 2, ...a).foo(1, 2, ...a);
+    obj.foo(1, 2, ...a).foo(1, 2, ...a, "abc");
 
     (obj.foo)(1, 2, "abc");
     (obj.foo)(1, 2, ...a);
     (obj.foo)(1, 2, ...a, "abc");
 
-    //((obj.foo)(1, 2, ...a).foo)(1, 2, "abc");
-    //((obj.foo)(1, 2, ...a).foo)(1, 2, ...a);
-    //((obj.foo)(1, 2, ...a).foo)(1, 2, ...a, "abc");
+    ((obj.foo)(1, 2, ...a).foo)(1, 2, "abc");
+    ((obj.foo)(1, 2, ...a).foo)(1, 2, ...a);
+    ((obj.foo)(1, 2, ...a).foo)(1, 2, ...a, "abc");
 
     xa[1].foo(1, 2, "abc");
     xa[1].foo(1, 2, ...a);

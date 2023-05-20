@@ -12391,6 +12391,13 @@ genContext);
         MLIRCodeLogic mcl(builder);
 
         auto storeType = objectType.getStorageType();
+
+        // TODO: should object accept only ObjectStorageType?
+        if (auto objectStoreType = storeType.dyn_cast<mlir_ts::ObjectStorageType>())
+        {
+            storeType = mlir_ts::TupleType::get(builder.getContext(), objectStoreType.getFields());
+        }
+
         auto tupleStorageType = mth.convertConstTupleTypeToTupleType(storeType).cast<mlir_ts::TupleType>();
 
         SmallVector<VirtualMethodOrFieldInfo> virtualTable;
@@ -13931,13 +13938,15 @@ genContext);
             return value;
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! cast [" << value.getType() << "] -> [" << type << "]"
+        auto valueType = value.getType();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! cast [" << valueType << "] -> [" << type << "]"
                                 << "\n";);
 
         // class to string
         if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
         {
-            if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
+            if (auto classType = valueType.dyn_cast<mlir_ts::ClassType>())
             {
                 auto res = mlirGenCallThisMethod(location, value, "get_toStringTag", undefined, undefined, genContext);
                 if (!res.failed_or_no_value())
@@ -13949,10 +13958,10 @@ genContext);
             }
         }
 
-        // class to interface
+        // <???> to interface
         if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
         {
-            if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
+            if (auto classType = valueType.dyn_cast<mlir_ts::ClassType>())
             {
                 auto result = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
                 auto vtableAccess = V(result);
@@ -13995,19 +14004,25 @@ genContext);
             }
 
             // tuple to interface
-            if (auto constTupleType = value.getType().dyn_cast<mlir_ts::ConstTupleType>())
+            if (auto constTupleType = valueType.dyn_cast<mlir_ts::ConstTupleType>())
             {
                 return castTupleToInterface(location, value, constTupleType, interfaceType, genContext);
             }
 
-            if (auto tupleType = value.getType().dyn_cast<mlir_ts::TupleType>())
+            if (auto tupleType = valueType.dyn_cast<mlir_ts::TupleType>())
             {
                 return castTupleToInterface(location, value, tupleType, interfaceType, genContext);
+            }
+
+            // object to interface
+            if (auto objectType = valueType.dyn_cast<mlir_ts::ObjectType>())
+            {
+                return castObjectToInterface(location, value, objectType, interfaceType, genContext);
             }
         }
 
         // const tuple to object
-        if (auto srcConstTupleType = value.getType().dyn_cast<mlir_ts::ConstTupleType>())
+        if (auto srcConstTupleType = valueType.dyn_cast<mlir_ts::ConstTupleType>())
         {
             ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
@@ -14023,7 +14038,7 @@ genContext);
         }
 
         // tuple to object
-        if (auto srcTupleType = value.getType().dyn_cast<mlir_ts::TupleType>())
+        if (auto srcTupleType = valueType.dyn_cast<mlir_ts::TupleType>())
         {
             ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
@@ -14039,7 +14054,7 @@ genContext);
         }
 
         // class to object
-        if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
+        if (auto classType = valueType.dyn_cast<mlir_ts::ClassType>())
         {
             ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
@@ -14055,7 +14070,7 @@ genContext);
         }
 
         // interface to object
-        if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
+        if (auto interfaceType = valueType.dyn_cast<mlir_ts::InterfaceType>())
         {
             ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
@@ -14077,7 +14092,7 @@ genContext);
         // %6 = ts.Cast %4 : !ts.const_tuple<{"key",!ts.string},{"prev",!ts.undefined},{"typename",!ts.undefined}> to !ts.optional<!ts.iface<@Path>>
         if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
         {
-            if (value.getType() == getUndefinedType())
+            if (valueType == getUndefinedType())
             {
                 return V(builder.create<mlir_ts::OptionalUndefOp>(location, optType));
             }
@@ -14094,12 +14109,12 @@ genContext);
             if (mth.isUnionTypeNeedsTag(unionType, baseType))
             {
                 auto types = unionType.getTypes();
-                if (std::find(types.begin(), types.end(), value.getType()) == types.end())
+                if (std::find(types.begin(), types.end(), valueType) == types.end())
                 {
                     // find which type we can cast to
                     for (auto subType : types)
                     {
-                        if (mth.canCastFromTo(value.getType(), subType))
+                        if (mth.canCastFromTo(valueType, subType))
                         {
                             CAST(value, location, subType, value, genContext);
                             return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
@@ -14117,7 +14132,7 @@ genContext);
         {
             // TODO: we can't convert array to const array
 
-            auto currType = value.getType();
+            auto currType = valueType;
             if (auto refType = currType.dyn_cast<mlir_ts::RefType>())
             {
                 type = refType.getElementType();        
@@ -14133,7 +14148,7 @@ genContext);
         }
 
         // unboxing
-        if (auto anyType = value.getType().dyn_cast<mlir_ts::AnyType>())
+        if (auto anyType = valueType.dyn_cast<mlir_ts::AnyType>())
         {
             if (type.isa<mlir_ts::NumberType>() 
                 || type.isa<mlir_ts::BooleanType>()
@@ -14201,26 +14216,17 @@ genContext);
         if (mlir::failed(mth.canCastTupleToInterface(tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
         {
             SmallVector<mlir_ts::FieldInfo> fields;
-            if (mlir::succeeded(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
-            {
-                auto newInterfaceTupleType = getTupleType(fields);
-                CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
-                if (inEffective)
-                {
-                    tupleType = newInterfaceTupleType;
-                }
-                else
-                {
-                    return mlir::Value();
-                }
-            }
-            else
+            if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
             {
                 return mlir::Value();
             }
+
+            auto newInterfaceTupleType = getTupleType(fields);
+            CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
+            tupleType = newInterfaceTupleType;
         }
 
-        // TODO: finish it
+        // TODO: finish it, what to finish it? maybe optimization not to create extra object?
         // convert Tuple to Object
         auto objType = mlir_ts::ObjectType::get(tupleType);
         auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
@@ -14228,27 +14234,6 @@ genContext);
         auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
 
         return castObjectToInterface(location, inCasted, objType, interfaceInfo, genContext);
-
-        /*
-        auto valueAddr =
-            builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
-        builder.create<mlir_ts::StoreOp>(location, inEffective, valueAddr);
-        auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
-
-        if (auto createdInterfaceVTableForObject =
-                mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext))
-        {
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!!"
-                                    << "@ created interface:" << createdInterfaceVTableForObject << "\n";);
-            auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType},
-                                                                        inCasted, createdInterfaceVTableForObject);
-
-            return newInterface;
-        }
-        */
-
-        return mlir::Value();
     }
 
     mlir::Value castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
