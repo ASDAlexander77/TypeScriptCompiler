@@ -3179,6 +3179,11 @@ class MLIRGenImpl
         else if (auto typeParameter = signatureDeclarationBaseAST->type)
         {
             auto returnType = getType(typeParameter, genContext);
+            if (!returnType)
+            {
+                return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
+            }
+
             funcProto->setReturnType(returnType);
 
             funcType = getFunctionType(argTypes, returnType, isMultiArgs);
