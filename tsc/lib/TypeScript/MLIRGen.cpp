@@ -7239,6 +7239,11 @@ class MLIRGenImpl
     mlir::Value extensionFunctionLogic(mlir::Location location, mlir::Value funcRef, mlir::Value thisValue, StringRef name,
                                   const GenContext &genContext)
     {
+        if (!mth.isAnyFunctionType(funcRef.getType()))
+        {
+            return mlir::Value();
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "!! found extension by name for type: " << thisValue.getType()
                                 << " function: " << name << ", value: " << funcRef << "\n";);
 
@@ -7290,8 +7295,7 @@ class MLIRGenImpl
     mlir::Value extensionFunction(mlir::Location location, mlir::Value thisValue, StringRef name,
                                   const GenContext &genContext)
     {
-        auto funcRef = resolveIdentifier(location, name, genContext);
-        if (funcRef)
+        if (auto funcRef = resolveIdentifier(location, name, genContext))
         {
             auto result = extensionFunctionLogic(location, funcRef, thisValue, name, genContext);
             if (result)
@@ -7314,8 +7318,7 @@ class MLIRGenImpl
             for (auto &selectedNamespace : currentNamespacesMap)
             {
                 currentNamespace = selectedNamespace.getValue();
-                auto funcRef = resolveIdentifierInNamespace(location, name, genContext);
-                if (funcRef)
+                if (auto funcRef = resolveIdentifierInNamespace(location, name, genContext))
                 {
                     auto result = extensionFunctionLogic(location, funcRef, thisValue, name, genContext);
                     if (result)
