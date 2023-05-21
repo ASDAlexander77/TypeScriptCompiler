@@ -8998,18 +8998,22 @@ class MLIRGenImpl
 
         auto location = loc(newExpression);
 
-        auto newArray = [&](auto type, auto count) {
+        auto newArray = [&](auto type, auto count) -> ValueOrLogicalResult {
             if (count.getType() != builder.getI32Type())
             {
                 // TODO: test cast result
                 count = cast(location, builder.getI32Type(), count, genContext);
             }
 
-            assert(type);
+            if (!type)
+            {
+                return mlir::failure();
+            }
+
             type = mth.convertConstTupleTypeToTupleType(type);
 
             auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(type), count);
-            return newArrOp;
+            return V(newArrOp);
         };
 
         // 3 cases, name, index access, method call
@@ -9044,6 +9048,7 @@ class MLIRGenImpl
                         }
 
                         auto newArrOp = newArray(arrayType.getElementType(), count);
+                        EXIT_IF_FAILED_OR_NO_VALUE(newArrOp)
                         return V(newArrOp);                     
                     }
                 }
@@ -9074,6 +9079,7 @@ class MLIRGenImpl
             auto count = V(result);
 
             auto newArrOp = newArray(type, count);
+            EXIT_IF_FAILED_OR_NO_VALUE(newArrOp)
             return V(newArrOp);
         }
     }
@@ -16336,7 +16342,8 @@ genContext);
         MLIRCodeLogic mcl(builder);
         for (auto typeItem : typeLiteral->members)
         {
-            if (typeItem == SyntaxKind::PropertySignature)
+            SyntaxKind kind = typeItem;
+            if (kind == SyntaxKind::PropertySignature)
             {
                 auto propertySignature = typeItem.as<PropertySignature>();
 
@@ -16346,7 +16353,7 @@ genContext);
                 assert(type);
                 types.push_back({TupleFieldName(propertySignature->name, genContext), type});
             }
-            else if (typeItem == SyntaxKind::MethodSignature)
+            else if (kind == SyntaxKind::MethodSignature)
             {
                 auto methodSignature = typeItem.as<MethodSignature>();
 
@@ -16355,14 +16362,21 @@ genContext);
                 assert(type);
                 types.push_back({TupleFieldName(methodSignature->name, genContext), type});
             }
-            else if (typeItem == SyntaxKind::IndexSignature)
+            else if (kind == SyntaxKind::ConstructSignature)
+            {
+                auto type = getType(typeItem, genContext);
+
+                assert(type);
+                types.push_back({MLIRHelper::TupleFieldName(NEW_CTOR_METHOD_NAME, builder.getContext()), type});
+            }            
+            else if (kind == SyntaxKind::IndexSignature)
             {
                 auto type = getType(typeItem, genContext);
 
                 assert(type);
                 types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, builder.getContext()), type});
             }
-            else if (typeItem == SyntaxKind::CallSignature)
+            else if (kind == SyntaxKind::CallSignature)
             {
                 auto type = getType(typeItem, genContext);
 
