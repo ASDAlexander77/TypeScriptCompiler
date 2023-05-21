@@ -8976,7 +8976,7 @@ class MLIRGenImpl
         return NewClassInstanceLogicAsOp(location, classInfo, false, genContext);
     }
 
-    ValueOrLogicalResult NewClassInstanceFromInterface(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
+    ValueOrLogicalResult NewClassInstanceByCallingNewCtor(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
             const GenContext &genContext)
     {
         auto result = mlirGenPropertyAccessExpression(location, value, NEW_CTOR_METHOD_NAME, genContext);
@@ -9059,7 +9059,16 @@ class MLIRGenImpl
 
             if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
             {
-                return NewClassInstanceFromInterface(location, value, newExpression->arguments, genContext);
+                return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, genContext);
+            }
+
+            if (auto tupleType = value.getType().dyn_cast<mlir_ts::TupleType>())
+            {
+                auto newCtorMethod = evaluateProperty(value, NEW_CTOR_METHOD_NAME, genContext);
+                if (newCtorMethod)
+                {
+                    return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, genContext);
+                }
             }
 
             // default - class instance
