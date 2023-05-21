@@ -230,7 +230,7 @@ struct Node : TextRange
     /* @internal */ PTR(Node) original;            // The original node if this is an updated node.
     /* @internal */ PTR(Symbol) symbol;            // Symbol declared by node (initialized by binding)
     /* @internal */ SymbolTable locals;            // Locals associated with node (initialized by binding)
-    /* @internal */ PTR(Node) nextContainer;       // Next container in declaration order (initialized by binding)
+    /* @internal */ //PTR(Node) nextContainer;       // Next container in declaration order (initialized by binding)
     /* @internal */ PTR(Symbol) localSymbol;       // Local symbol declared by node (initialized by binding only for exported nodes)
     ///* @internal */ PTR(FlowNode) flowNode;                  // Associated FlowNode (initialized by binding)
     ///* @internal */ PTR(EmitNode) emitNode;                  // Associated EmitNode (initialized by transforms)
@@ -285,7 +285,7 @@ struct ClassElement : JSDocContainer
 struct TypeNode : ClassElement
 {
     // kind: TypeNodeSyntaxKind;
-    any _typeNodeBrand;
+    //any _typeNodeBrand;
 };
 
 struct Expression : TypeNode
@@ -299,39 +299,39 @@ struct OmittedExpression : Expression
 
 struct UnaryExpression : Expression
 {
-    any _unaryExpressionBrand;
+    //any _unaryExpressionBrand;
     PTR(Expression) expression;
 };
 
 /** Deprecated, please use UpdateExpression */
 struct UpdateExpression : UnaryExpression
 {
-    any _updateExpressionBrand;
+    //any _updateExpressionBrand;
 };
 
 struct LeftHandSideExpression : UpdateExpression
 {
-    any _leftHandSideExpressionBrand;
+    //any _leftHandSideExpressionBrand;
 };
 
 struct MemberExpression : LeftHandSideExpression
 {
-    any _memberExpressionBrand;
+    //any _memberExpressionBrand;
 };
 
 struct PrimaryExpression : MemberExpression
 {
-    any _primaryExpressionBrand;
+    //any _primaryExpressionBrand;
 };
 
 struct Statement : PrimaryExpression
 {
-    any _statementBrand;
+    //any _statementBrand;
 };
 
 struct Declaration : Statement
 {
-    any _declarationBrand;
+    //any _declarationBrand;
 };
 
 struct DeclarationStatement : Statement
@@ -345,7 +345,7 @@ struct NamedDeclaration : Declaration
 
 struct TypeElement : NamedDeclaration
 {
-    any _typeElementBrand;
+    //any _typeElementBrand;
     PTR(QuestionToken) questionToken;
 };
 
@@ -400,7 +400,7 @@ struct TypeParameterDeclaration : NamedDeclaration
     PTR(TypeNode) _default;
 
     // For error recovery purposes.
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct SignatureDeclarationBase : TypeElement
@@ -434,7 +434,7 @@ struct VariableDeclaration : NamedDeclaration
 /* @internal */
 struct InitializedVariableDeclaration : VariableDeclaration
 {
-    PTR(Expression) initializer;
+    //PTR(Expression) initializer;
 };
 
 struct VariableDeclarationList : Node
@@ -463,7 +463,7 @@ struct BindingElement : NamedDeclaration
 struct PropertySignature : TypeElement
 {
     // kind: SyntaxKind::PropertySignature;
-    PTR(QuestionToken) questionToken; // Present on optional property
+    //PTR(QuestionToken) questionToken; // Present on optional property
     PTR(TypeNode) type;               // Optional type annotation
     PTR(Expression) initializer;      // Present for use with reporting a grammar error
 };
@@ -485,7 +485,7 @@ struct PrivateIdentifierPropertyDeclaration : PropertyDeclaration
 /* @internal */
 struct InitializedPropertyDeclaration : PropertyDeclaration
 {
-    PTR(Expression) initializer;
+    //PTR(Expression) initializer;
 };
 
 struct ObjectLiteralElement : NamedDeclaration
@@ -512,7 +512,7 @@ struct ShorthandPropertyAssignment : PropertyAssignment
 struct SpreadAssignment : ObjectLiteralElement
 {
     // kind: SyntaxKind::SpreadAssignment;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct PropertyLikeDeclaration : NamedDeclaration
@@ -541,10 +541,10 @@ struct ArrayBindingPattern : Node
  */
 struct FunctionLikeDeclarationBase : SignatureDeclarationBase
 {
-    any _functionLikeDeclarationBrand;
+    //any _functionLikeDeclarationBrand;
 
     PTR(AsteriskToken) asteriskToken;
-    PTR(QuestionToken) questionToken;
+    //PTR(QuestionToken) questionToken;
     PTR(ExclamationToken) exclamationToken;
     PTR(Node) /**Block | Expression*/ body;
     ///* @internal */ PTR(FlowNode) endFlowNode;
@@ -579,8 +579,7 @@ struct MethodDeclaration : FunctionLikeDeclarationBase /*, ObjectLiteralElement*
 struct ConstructorDeclaration : FunctionLikeDeclarationBase
 {
     // kind: SyntaxKind::Constructor;
-    /* @internal */ NodeArray<PTR(TypeParameterDeclaration)>
-        typeParameters;                 // Present for use with reporting a grammar error
+    /* @internal */ //NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
     /* @internal */ PTR(TypeNode) type; // Present for use with reporting a grammar error
 };
 
@@ -594,8 +593,7 @@ struct AccessorDeclaration
     : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/ // ClassElement and ObjectLiteralElement contains all
                                                              // fields in FunctionLikeDeclarationBase
 {
-    /* @internal */ NodeArray<PTR(TypeParameterDeclaration)>
-        typeParameters; // Present for use with reporting a grammar error
+    /* @internal */ //NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
 };
 
 // See the comment on MethodDeclaration for the intuition behind GetAccessorDeclaration being a
@@ -839,7 +837,7 @@ struct PostfixUnaryExpression : UpdateExpression
 struct PartiallyEmittedExpression : LeftHandSideExpression
 {
     // kind: SyntaxKind::PartiallyEmittedExpression;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 // The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a
@@ -859,7 +857,7 @@ struct LiteralLikeNode : PrimaryExpression
 // 1, 1.00, and 1e0 are all stored as just "1".
 struct LiteralExpression : LiteralLikeNode
 {
-    any _literalExpressionBrand;
+    //any _literalExpressionBrand;
 };
 
 template <SyntaxKind TKind> struct LiteralToken : LiteralLikeNode
@@ -1174,7 +1172,7 @@ struct TemplateSpan : Node
 struct ParenthesizedExpression : PrimaryExpression
 {
     // kind: SyntaxKind::ParenthesizedExpression;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct ArrayLiteralExpression : PrimaryExpression
@@ -1225,7 +1223,7 @@ struct PrivateIdentifierPropertyAccessExpression : PropertyAccessExpression
 
 struct PropertyAccessChain : PropertyAccessExpression
 {
-    any _optionalChainBrand;
+    //any _optionalChainBrand;
 };
 
 /* @internal */
@@ -1243,7 +1241,7 @@ struct SuperPropertyAccessExpression : PropertyAccessExpression
  * dots. */
 struct PropertyAccessEntityNameExpression : PropertyAccessExpression
 {
-    any _propertyAccessExpressionLikeQualifiedNameBrand;
+    //any _propertyAccessExpressionLikeQualifiedNameBrand;
     PTR(EntityNameExpression) expression;
 };
 
@@ -1263,7 +1261,7 @@ struct LateBoundElementAccessExpression : ElementAccessExpression
 
 struct ElementAccessChain : ElementAccessExpression
 {
-    any _optionalChainBrand;
+    //any _optionalChainBrand;
 };
 
 /* @internal */
@@ -1288,7 +1286,7 @@ struct CallExpression : LeftHandSideExpression
 
 struct CallChain : CallExpression
 {
-    any _optionalChainBrand;
+    //any _optionalChainBrand;
 };
 
 /* @internal */
@@ -1386,7 +1384,7 @@ struct NonNullExpression : LeftHandSideExpression
 
 struct NonNullChain : NonNullExpression
 {
-    any _optionalChainBrand;
+    //any _optionalChainBrand;
 };
 
 // NOTE: MetaProperty is really a MemberExpression, but we consider it a PrimaryExpression
@@ -1472,7 +1470,7 @@ struct JsxAttribute : ObjectLiteralElement
 struct JsxSpreadAttribute : ObjectLiteralElement
 {
     // kind: SyntaxKind::JsxSpreadAttribute;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct JsxClosingElement : Node
@@ -1567,7 +1565,7 @@ struct VariableStatement : Statement
 struct ExpressionStatement : Statement
 {
     // kind: SyntaxKind::ExpressionStatement;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 /* @internal */
@@ -1579,7 +1577,7 @@ struct PrologueDirective : ExpressionStatement
 struct IfStatement : Statement
 {
     // kind: SyntaxKind::IfStatement;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
     PTR(Statement) thenStatement;
     PTR(Statement) elseStatement;
 };
@@ -1592,13 +1590,13 @@ struct IterationStatement : Statement
 struct DoStatement : IterationStatement
 {
     // kind: SyntaxKind::DoStatement;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct WhileStatement : IterationStatement
 {
     // kind: SyntaxKind::WhileStatement;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct ForStatement : IterationStatement
@@ -1613,7 +1611,7 @@ struct ForInStatement : IterationStatement
 {
     // kind: SyntaxKind::ForInStatement;
     PTR(ForInitializer) initializer;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct ForOfStatement : IterationStatement
@@ -1621,7 +1619,7 @@ struct ForOfStatement : IterationStatement
     // kind: SyntaxKind::ForOfStatement;
     PTR(AwaitKeywordToken) awaitModifier;
     PTR(ForInitializer) initializer;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct BreakOrContinueStatement : Statement
@@ -1643,20 +1641,20 @@ struct ContinueStatement : BreakOrContinueStatement
 struct ReturnStatement : Statement
 {
     // kind: SyntaxKind::ReturnStatement;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct WithStatement : Statement
 {
     // kind: SyntaxKind::WithStatement;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
     PTR(Statement) statement;
 };
 
 struct SwitchStatement : Statement
 {
     // kind: SyntaxKind::SwitchStatement;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
     PTR(CaseBlock) caseBlock;
     boolean possiblyExhaustive; // initialized by binding
 };
@@ -1693,7 +1691,7 @@ struct LabeledStatement : Statement
 struct ThrowStatement : Statement
 {
     // kind: SyntaxKind::ThrowStatement;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct TryStatement : Statement
@@ -1912,7 +1910,7 @@ struct ExportAssignment : DeclarationStatement
 {
     // kind: SyntaxKind::ExportAssignment;
     boolean isExportEquals;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct FileReference : TextRange
@@ -1974,7 +1972,7 @@ struct JSDocNameReference : Node
 
 struct JSDocType : TypeNode
 {
-    any _jsDocTypeBrand;
+    //any _jsDocTypeBrand;
 };
 
 struct JSDocAllType : JSDocType

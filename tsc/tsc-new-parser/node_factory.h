@@ -264,7 +264,7 @@ class NodeFactory
         node->symbol = undefined;        // initialized by binder
         node->localSymbol = undefined;   // initialized by binder
         node->locals.clear();            // initialized by binder
-        node->nextContainer = undefined; // initialized by binder
+        //node->nextContainer = undefined; // initialized by binder
         return node;
     }
 
