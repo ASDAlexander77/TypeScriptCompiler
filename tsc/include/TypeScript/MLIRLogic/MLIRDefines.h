@@ -18,7 +18,7 @@
         return mlir::failure();                                                                                                            \
     }
 
-#define VALIDATE1(value, loc)                                                                                                              \
+#define VALIDATE(value, loc)                                                                                                               \
     if (!value)                                                                                                                            \
     {                                                                                                                                      \
         if (!genContext.allowPartialResolve)                                                                                               \
@@ -26,23 +26,6 @@
             emitError(loc, "expression has no result");                                                                                    \
         }                                                                                                                                  \
                                                                                                                                            \
-        return mlir::Value();                                                                                                              \
-    }
-
-#define VALIDATE_LOGIC1(value, loc)                                                                                                        \
-    if (!value)                                                                                                                            \
-    {                                                                                                                                      \
-        if (!genContext.allowPartialResolve)                                                                                               \
-        {                                                                                                                                  \
-            emitError(loc, "expression has no result");                                                                                    \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        return mlir::failure();                                                                                                            \
-    }
-
-#define TEST_LOGIC1(value)                                                                                                                 \
-    if (!value)                                                                                                                            \
-    {                                                                                                                                      \
         return mlir::failure();                                                                                                            \
     }
 

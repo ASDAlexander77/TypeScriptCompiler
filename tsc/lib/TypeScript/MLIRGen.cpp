@@ -4370,7 +4370,7 @@ class MLIRGenImpl
             EXIT_IF_FAILED(result)
             
             auto expressionValue = V(result);
-            VALIDATE_LOGIC1(expressionValue, location)
+            VALIDATE(expressionValue, location)
             
             return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
@@ -6106,7 +6106,7 @@ class MLIRGenImpl
 
         if (andOp)
         {
-            VALIDATE1(resultTrue, location)
+            VALIDATE(resultTrue, location)
         }
 
         // sync left part
@@ -6132,7 +6132,7 @@ class MLIRGenImpl
 
         if (!andOp)
         {
-            VALIDATE1(resultFalse, location)
+            VALIDATE(resultFalse, location)
         }
 
         // sync right part
@@ -8446,7 +8446,7 @@ class MLIRGenImpl
         {
             for (auto &oper : operands)
             {
-                VALIDATE1(oper, location)
+                VALIDATE(oper, location)
             }
 
             // if last is vararg
@@ -8723,7 +8723,7 @@ class MLIRGenImpl
                 argTypeDestFuncType = argFuncTypes[i];
             }
 
-            VALIDATE_LOGIC1(value, value.getLoc())
+            VALIDATE(value, value.getLoc())
 
             if (value.getType() != argTypeDestFuncType)
             {
@@ -10358,12 +10358,12 @@ class MLIRGenImpl
                                                             builder.getBoolAttr(false));
         for (auto fieldToSet : fieldsToSet)
         {
+            VALIDATE(fieldToSet.second, location)
+
             auto location = fieldToSet.second.getLoc();
             auto result = mlirGenPropertyAccessExpression(location, tupleVar, fieldToSet.first, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto getField = V(result);
-
-            VALIDATE1(fieldToSet.second, location)
 
             auto result2 = mlirGenSaveLogicOneItem(location, getField, fieldToSet.second, genContext);
             EXIT_IF_FAILED(result2)
