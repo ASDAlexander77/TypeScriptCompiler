@@ -10389,6 +10389,8 @@ class MLIRGenImpl
         auto value = symbolTable.lookup(name);
         if (value.second && value.first)
         {
+            LLVM_DEBUG(dbgs() << "\n!! resolveIdentifierAsVariable: " << name << " value: " << value.first;);
+
             // begin of logic: outer vars
             auto valueRegion = value.first.getParentRegion();
             auto isOuterVar = false;
@@ -14494,7 +14496,8 @@ genContext);
     mlir::Type getTypeByTypeName(Node node, const GenContext &genContext)
     {
         mlir::Type type;
-        if (node == SyntaxKind::QualifiedName)
+        SyntaxKind kind = node;
+        if (kind == SyntaxKind::QualifiedName)
         {
             auto result = mlirGen(node.as<QualifiedName>(), genContext);
             if (result.failed_or_no_value())
@@ -14504,29 +14507,24 @@ genContext);
 
             auto val = V(result);
             type = val.getType();
+        }
+        // TODO: uncomment it, to find out there the issue with outer ops, test file test-compile-00-class-expression
+        else if (kind == SyntaxKind::Identifier)
+        {
+            auto result = mlirGen(node.as<Identifier>(), genContext);
+            if (result.failed_or_no_value())
+            {
+                return mlir::Type();
+            }
 
-            if (val.use_empty())
+            auto val = V(result);
+            type = val.getType();
+
+            if (val.getDefiningOp<mlir_ts::LoadOp>() && val.use_empty())
             {
                 val.getDefiningOp()->erase();
             }
-        }
-        // TODO: uncomment it, to find out there the issue with outer ops, test file C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00iterator.ts
-        // else if (node == SyntaxKind::Identifier)
-        // {
-        //     auto result = mlirGen(node.as<Identifier>(), genContext);
-        //     if (result.failed_or_no_value())
-        //     {
-        //         return mlir::Type();
-        //     }
-
-        //     auto val = V(result);
-        //     type = val.getType();
-
-        //     if (val.use_empty())
-        //     {
-        //         val.getDefiningOp()->erase();
-        //     }
-        // }        
+        }        
         else
         {
             type = evaluate(node.as<Expression>(), genContext);
