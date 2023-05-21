@@ -10869,7 +10869,8 @@ class MLIRGenImpl
             return V(symbOp);
         }
 
-        emitError(location, "can't resolve name: ") << name;
+        if (!isEmbededType(name))
+            emitError(location, "can't resolve name: ") << name;
 
         return mlir::failure();
     }
@@ -14861,8 +14862,7 @@ genContext);
             return getType(typeNode, genericTypeGenContext);
         }
 
-        auto genericClassTypeInfo = lookupGenericClassesMap(name);
-        if (genericClassTypeInfo)
+        if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
         {
             auto classType = genericClassTypeInfo->classType;
             auto [result, specType] = instantiateSpecializedClassType(loc(typeReferenceAST), classType,
@@ -14875,8 +14875,7 @@ genContext);
             return classType;
         }
 
-        auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name);
-        if (genericInterfaceTypeInfo)
+        if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
         {
             auto interfaceType = genericInterfaceTypeInfo->interfaceType;
             auto [result, specType] = instantiateSpecializedInterfaceType(loc(typeReferenceAST), interfaceType,
@@ -14889,27 +14888,33 @@ genContext);
             return interfaceType;
         }
 
-        auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext);
-        if (type)
+        if (auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext))
         {
             return type;
         }
 
+        if (auto embedType = findEmbeddedType(name, typeReferenceAST, genContext))
+        {
+            return embedType;
+        }
+
+        return mlir::Type();
+    }
+
+    mlir::Type findEmbeddedType(std::string name, TypeReferenceNode typeReferenceAST, const GenContext &genContext)
+    {
         auto typeArgumentsSize = typeReferenceAST->typeArguments->size();
         if (typeArgumentsSize == 0)
         {
-            auto type = getEmbeddedType(name);
-            if (type)
+            if (auto type = getEmbeddedType(name))
             {
-                
                 return type;
             }
         }
 
         if (typeArgumentsSize == 1)
         {
-            auto type = getEmbeddedTypeWithParam(name, typeReferenceAST, genContext);
-            if (type)
+            if (auto type = getEmbeddedTypeWithParam(name, typeReferenceAST, genContext))
             {
                 return type;
             }
@@ -14917,8 +14922,7 @@ genContext);
 
         if (typeArgumentsSize > 1)
         {
-            auto type = getEmbeddedTypeWithManyParams(name, typeReferenceAST, genContext);
-            if (type)
+            if (auto type = getEmbeddedTypeWithManyParams(name, typeReferenceAST, genContext))
             {
                 return type;
             }
@@ -14926,314 +14930,238 @@ genContext);
 
         return mlir::Type();
     }
+    
+    bool isEmbededType(mlir::StringRef name)
+    {
+        static llvm::StringMap<bool> embeddedTypes {
+            {"TemplateStringsArray", true },
+            {"const", true },
+#ifdef ENABLE_JS_BUILTIN_TYPES
+            {"Number", true },
+            {"Object", true },
+            {"String", true },
+            {"Boolean", true },
+#endif
+            {"Int8Array", true },
+            {"Uint8Array", true },
+            {"Int16Array", true },
+            {"Uint16Array", true },
+            {"Int32Array", true },
+            {"Uint32Array", true },
+            {"BigInt64Array", true },
+            {"BigUint64Array", true },
+            {"Float16Array", true },
+            {"Float32Array", true },
+            {"Float64Array", true },
+            {"Float128Array", true},
+
+            {"TypeOf", true },
+            {"Readonly", true },
+            {"Partial", true },
+            {"Required", true },
+            {"ThisType", true },
+#ifdef ENABLE_JS_BUILTIN_TYPES
+            {"Awaited", true },
+            {"Promise", true },
+#endif            
+            {"NonNullable", true },
+            {"Array", true },
+            {"ReadonlyArray", true },
+            {"ReturnType", true },
+            {"Parameters", true },
+            {"ConstructorParameters", true },
+            {"ThisParameterType", true },
+            {"OmitThisParameter", true },
+            {"Uppercase", true },
+            {"Lowercase", true },
+            {"Capitalize", true },
+            {"Uncapitalize", true },
+            {"Exclude",  true },
+            {"Extract", true },
+            {"Pick", true },
+            {"Omit",  true },
+            {"Record", true },
+        };
+
+        auto type = embeddedTypes[name];
+        return type;
+    }
 
     mlir::Type getEmbeddedType(mlir::StringRef name)
     {
-        if (name == "TemplateStringsArray")
-        {
-            // equals ReadonlyArray<string>
-            return getArrayType(getStringType());
-        }
-
-        if (name == "const")
-        {
-            return getConstType();
-        }        
-
+        static llvm::StringMap<mlir::Type> embeddedTypes {
+            {"TemplateStringsArray", getArrayType(getStringType()) },
+            {"const",getConstType() },
 #ifdef ENABLE_JS_BUILTIN_TYPES
-        if (name == "Number")
-        {
-            return getNumberType();
-        }       
-
-        if (name == "Object")
-        {
-            return getObjectType(getAnyType());
-        }           
-
-        if (name == "String")
-        {
-            return getStringType();
-        }       
-
-        if (name == "Boolean")
-        {
-            return getBooleanType();
-        }       
+            {"Number", getNumberType() },
+            {"Object", getObjectType(getAnyType()) },
+            {"String", getStringType()},
+            {"Boolean", getBooleanType()},
 #endif
+            {"Int8Array", getArrayType(builder.getIntegerType(8, true)) },
+            {"Uint8Array", getArrayType(builder.getIntegerType(8, false))},
+            {"Int16Array", getArrayType(builder.getIntegerType(16, true)) },
+            {"Uint16Array", getArrayType(builder.getIntegerType(16, false))},
+            {"Int32Array", getArrayType(builder.getIntegerType(32, true)) },
+            {"Uint32Array", getArrayType(builder.getIntegerType(32, false))},
+            {"BigInt64Array", getArrayType(builder.getIntegerType(64, true)) },
+            {"BigUint64Array", getArrayType(builder.getIntegerType(64, false))},
+            {"Float16Array", getArrayType(builder.getF16Type())},
+            {"Float32Array", getArrayType(builder.getF32Type())},
+            {"Float64Array", getArrayType(builder.getF64Type())},
+            {"Float128Array", getArrayType(builder.getF128Type())},
+        };
 
-        if (name == "Int8Array")
-        {
-            return getArrayType(builder.getIntegerType(8, true));
-        }
-
-        if (name == "Uint8Array")
-        {
-            return getArrayType(builder.getIntegerType(8, false));
-        }
-
-        if (name == "Int16Array")
-        {
-            return getArrayType(builder.getIntegerType(16, true));
-        }
-
-        if (name == "Uint16Array")
-        {
-            return getArrayType(builder.getIntegerType(16, false));
-        }        
-
-        if (name == "Int32Array")
-        {
-            return getArrayType(builder.getIntegerType(32, true));
-        }
-
-        if (name == "Uint32Array")
-        {
-            return getArrayType(builder.getIntegerType(32, false));
-        }      
-
-        if (name == "Float16Array")
-        {
-            return getArrayType(builder.getF16Type());
-        }          
-
-        if (name == "Float32Array")
-        {
-            return getArrayType(builder.getF32Type());
-        }          
-
-        if (name == "Float64Array")
-        {
-            return getArrayType(builder.getF64Type());
-        }          
-
-        if (name == "Float128Array")
-        {
-            return getArrayType(builder.getF128Type());
-        }          
-
-        if (name == "BigInt64Array")
-        {
-            return getArrayType(builder.getIntegerType(64, true));
-        }
-
-        if (name == "BigUint64Array")
-        {
-            return getArrayType(builder.getIntegerType(64, false));
-        }  
-
-        return mlir::Type();
+        auto type = embeddedTypes[name];
+        return type;
     }
 
     mlir::Type getEmbeddedTypeWithParam(mlir::StringRef name, TypeReferenceNode typeReferenceAST,
                                         const GenContext &genContext)
     {
-        // can be utility type
-        if (name == "TypeOf")
-        {
-            auto type = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            type = mth.wideStorageType(type);
-            return type;
-        }
-
-        if (name == "Readonly")
-        {
-            // TODO: ???
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return elemnentType;
-        }
-
-        if (name == "Partial")
-        {
-            // TODO: ???
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return elemnentType;
-        }
-
-        if (name == "Required")
-        {
-            // TODO: ???
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return elemnentType;
-        }
-
-        if (name == "NonNullable")
-        {
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return NonNullableTypes(elemnentType);
-        }
-
-        if (name == "Array")
-        {
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return getArrayType(elemnentType);
-        }
-
-        if (name == "ReadonlyArray")
-        {
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return getArrayType(elemnentType);
-        }
-
-        if (name == "ReturnType")
-        {
-            auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            if (genContext.allowPartialResolve && !elementType)
-            {
-                return mlir::Type();
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! ReturnType Of: " << elementType;);
-            auto retType = mth.getReturnTypeFromFuncRef(elementType);
-            LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
-            return retType;
-        }
-
-        if (name == "Parameters")
-        {
-            auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            if (genContext.allowPartialResolve && !elementType)
-            {
-                return mlir::Type();
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-            auto retType = mth.getParamsTupleTypeFromFuncRef(elementType);
-            LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
-            return retType;
-        }
-
-        if (name == "ConstructorParameters")
-        {
-            auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            if (genContext.allowPartialResolve && !elementType)
-            {
-                return mlir::Type();
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-            auto retType = mth.getParamsTupleTypeFromFuncRef(elementType);
-            LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
-            return retType;
-        }
-
-        // TODO: add flag to FunctionType to see if type has this parameter (the same way as VarArg)
-        if (name == "ThisParameterType")
-        {
-            auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            if (genContext.allowPartialResolve && !elementType)
-            {
-                return mlir::Type();
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-            auto retType = mth.getFirstParamFromFuncRef(elementType);
-            LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
-            return retType;
-        }
-
-        if (name == "OmitThisParameter")
-        {
-            auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            if (genContext.allowPartialResolve && !elementType)
-            {
-                return mlir::Type();
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
-            auto retType = mth.getOmitThisFunctionTypeFromFuncRef(elementType);
-            LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
-            return retType;
-        }
-
-        // ThisType is dummy type
-        if (name == "ThisType")
-        {
-            auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return elementType;
-        }
-
+        auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
+            .Case("TypeOf", [&] (auto typeArguments, auto genContext) {
+                auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                type = mth.wideStorageType(type);
+                return type;
+            })
+            .Case("Readonly", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
+            .Case("Partial", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
+            .Case("Required", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
+            .Case("ThisType", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
 #ifdef ENABLE_JS_BUILTIN_TYPES
-        if (name == "Awaited")
-        {
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return elemnentType;
-        }
+            .Case("Awaited", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
+            .Case("Promise", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
+#endif            
+            .Case("NonNullable", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return NonNullableTypes(elemnentType);
+            })
+            .Case("Array", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return getArrayType(elemnentType);
+            })
+            .Case("ReadonlyArray", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return getArrayType(elemnentType);
+            })
+            .Case("ReturnType", [&] (auto typeArguments, auto genContext) {
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
 
-        if (name == "Promise")
-        {
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return elemnentType;
-        }
-#endif        
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ReturnType Of: " << elementType;);
+                auto retType = mth.getReturnTypeFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
+            })
+            .Case("Parameters", [&] (auto typeArguments, auto genContext) {
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
 
-        // string types
-        if (name == "Uppercase")
-        {
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return UppercaseType(elemnentType);
-        }
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
+                auto retType = mth.getParamsTupleTypeFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
+            })
+            .Case("ConstructorParameters", [&] (auto typeArguments, auto genContext) {
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
 
-        if (name == "Lowercase")
-        {
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return LowercaseType(elemnentType);
-        }
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
+                auto retType = mth.getParamsTupleTypeFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
+            })
+            .Case("ThisParameterType", [&] (auto typeArguments, auto genContext) {
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
 
-        if (name == "Capitalize")
-        {
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return CapitalizeType(elemnentType);
-        }
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
+                auto retType = mth.getFirstParamFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
+            })
+            .Case("OmitThisParameter", [&] (auto typeArguments, auto genContext) {
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
 
-        if (name == "Uncapitalize")
-        {
-            auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return UncapitalizeType(elemnentType);
-        }
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
+                auto retType = mth.getOmitThisFunctionTypeFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
+            })
+            .Case("Uppercase", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return UppercaseType(elemnentType);
+            })
+            .Case("Lowercase", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return LowercaseType(elemnentType);
+            })
+            .Case("Capitalize", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return CapitalizeType(elemnentType);
+            })
+            .Case("Uncapitalize", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return UncapitalizeType(elemnentType);
+            })
+            .Default([] (auto, auto) {
+                return mlir::Type();
+            });
 
-        return mlir::Type();
+        return translate(typeReferenceAST->typeArguments, genContext);
     }
 
     mlir::Type getEmbeddedTypeWithManyParams(mlir::StringRef name, TypeReferenceNode typeReferenceAST,
                                              const GenContext &genContext)
     {
-        if (name == "Exclude")
-        {
-            auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return ExcludeTypes(firstType, secondType);
-        }
+        auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
+            .Case("Exclude", [&] (auto typeArguments, auto genContext) {
+                auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return ExcludeTypes(firstType, secondType);
+            })
+            .Case("Extract", [&] (auto typeArguments, auto genContext) {
+                auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return ExtractTypes(firstType, secondType);
+            })
+            .Case("Pick", [&] (auto typeArguments, auto genContext) {
+                auto sourceType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto keysType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return PickTypes(sourceType, keysType);
+            })
+            .Case("Omit", [&] (auto typeArguments, auto genContext) {
+                auto sourceType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto keysType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return OmitTypes(sourceType, keysType);
+            })
+            .Case("Record", [&] (auto typeArguments, auto genContext) {
+                auto keysType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto sourceType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return RecordType(keysType, sourceType);
+            })
+            .Default([] (auto, auto) {
+                return mlir::Type();
+            });
 
-        if (name == "Extract")
-        {
-            auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return ExtractTypes(firstType, secondType);
-        }
-
-        if (name == "Pick")
-        {
-            auto sourceType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            auto keysType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return PickTypes(sourceType, keysType);
-        }
-
-        if (name == "Omit")
-        {
-            auto sourceType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            auto keysType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return OmitTypes(sourceType, keysType);
-        }
-
-        if (name == "Record")
-        {
-            auto keysType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            auto sourceType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-            return RecordType(keysType, sourceType);
-        }
-
-        return mlir::Type();
+        return translate(typeReferenceAST->typeArguments, genContext);
     }
 
     mlir::Type StringLiteralTypeFunc(mlir::Type type, std::function<std::string(StringRef)> f)
