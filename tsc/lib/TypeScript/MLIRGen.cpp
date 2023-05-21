@@ -12642,12 +12642,19 @@ genContext);
     MethodInfo *generateSynthMethodToCallNewCtor(mlir::Location location, ClassInfo::TypePtr newClassPtr, InterfaceInfo::TypePtr newInterfacePtr, 
                                             mlir_ts::FunctionType funcType, int interfacePosIndex, const GenContext &genContext)
     {
-        auto fullClassStaticName = concat(newClassPtr->fullName, newInterfacePtr->fullName, NEW_CTOR_METHOD_NAME, interfacePosIndex);
+        auto fullClassStaticName = generateSynthMethodToCallNewCtor(location, newClassPtr, newInterfacePtr->fullName, interfacePosIndex, funcType, 1, genContext);
+        return newClassPtr->findMethod(fullClassStaticName);
+    }    
+
+    std::string generateSynthMethodToCallNewCtor(mlir::Location location, ClassInfo::TypePtr newClassPtr, StringRef sourceOwnerName, int posIndex, 
+                                            mlir_ts::FunctionType funcType, int skipFuncParams, const GenContext &genContext)
+    {
+        auto fullClassStaticName = concat(newClassPtr->fullName, sourceOwnerName, NEW_CTOR_METHOD_NAME, posIndex);
 
         auto retType = mth.getReturnTypeFromFuncRef(funcType);
         if (!retType)
         {
-            return nullptr;
+            return "";
         }
 
         {
@@ -12656,7 +12663,7 @@ genContext);
 
             GenContext funcGenContext(genContext);
             funcGenContext.clearScopeVars();
-            //funcGenContext.thisType = newClassPtr->classType;
+            funcGenContext.thisType = newClassPtr->classType;
 
             auto result = mlirGenFunctionBody(
                 location, fullClassStaticName, funcType,
@@ -12698,11 +12705,11 @@ genContext);
 
                     return mlir::success();
                 },
-                funcGenContext, 1/*to skip This*/);        
+                funcGenContext, skipFuncParams/*to skip This*/);        
 
             if (mlir::failed(result))
             {
-                return nullptr;
+                return "";
             }
         }
 
@@ -12716,7 +12723,7 @@ genContext);
                 {fullClassStaticName.str(), funcType, funcOp, true, false, false, -1});
         }        
 
-        return newClassPtr->findMethod(fullClassStaticName);
+        return fullClassStaticName.str();
     }
 
     mlir::LogicalResult mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr,
@@ -13865,19 +13872,58 @@ genContext);
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
     }    
 
+    ValueOrLogicalResult generatingStaticNewCtorForClass(mlir::Location location, ClassInfo::TypePtr classInfo, int posIndex, const GenContext &genContext)
+    {
+        if (auto classConstrMethodInfo = classInfo->findMethod(CONSTRUCTOR_NAME))
+        {
+            auto funcWithReturnClass = getFunctionType(
+                classConstrMethodInfo->funcType.getInputs().slice(1) /*to remove this*/, 
+                {classInfo->classType}, 
+                classConstrMethodInfo->funcType.isVarArg());
+            auto foundNewCtoreStaticMethodFullName = generateSynthMethodToCallNewCtor(location, classInfo, classInfo->fullName, posIndex, funcWithReturnClass, 0, genContext);
+            if (foundNewCtoreStaticMethodFullName.empty())
+            {
+                return mlir::failure();
+            }
+
+            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
+                location, funcWithReturnClass,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), foundNewCtoreStaticMethodFullName));
+        
+            return V(symbOp);
+        }
+        else
+        {
+            emitError(location) << "constructor can't be found";
+            return mlir::failure();
+        }
+    }
+
     ValueOrLogicalResult castClassToTuple(mlir::Location location, mlir::Value value, mlir_ts::ClassType classType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext)
     {
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
         assert(classInfo);            
 
+        auto newCtorAttr = MLIRHelper::TupleFieldName(NEW_CTOR_METHOD_NAME, builder.getContext());
         SmallVector<mlir::Value> values;
+        auto posIndex = -1;
         for (auto fieldInfo : fields)
         {
+            posIndex++;
             auto foundField = false;                                        
             auto classFieldInfo = classInfo->findField(fieldInfo.id, foundField);
             if (!foundField)
             {
+                // TODO: generate method wrapper for calling new/ctor method
+                if (fieldInfo.id == newCtorAttr)
+                {
+                    auto newCtorSymbOp = generatingStaticNewCtorForClass(location, classInfo, posIndex, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(newCtorSymbOp)
+                    values.push_back(newCtorSymbOp);
+                    continue;
+                }
+
                 emitError(location)
                     << "field " << fieldInfo.id << " can't be found in class '" << classInfo->fullName << "'";
                 return mlir::failure();
