@@ -1,4 +1,4 @@
-#define DEBUG_TYPE "pass"
+//#define DEBUG_TYPE "pass"
 
 #include "mlir/Pass/Pass.h"
 
