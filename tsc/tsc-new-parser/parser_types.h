@@ -57,6 +57,10 @@ struct TextRange
     TextRange() = default;
     TextRange(pos_type pos, number _end) : pos(pos), _end(_end){};
 
+    auto isTextRangeEmpty() -> bool {
+        return !(pos.pos > 0 || pos.textPos > 0 || _end > 0);
+    }
+
     pos_type pos;
     number _end;
 };
@@ -77,7 +81,7 @@ template <typename T /*extends Node*/> struct NodeArray : ReadonlyArray<T>, Text
     using std::vector<T>::size;
 
     NodeArray()
-        : ReadonlyArray<T>(), TextRange(), isUndefined(false), hasTrailingComma(false), isMissingList(false),
+        : ReadonlyArray<T>(), TextRange(), isUndefined(true), hasTrailingComma(false), isMissingList(false),
           transformFlags(TransformFlags::None)
     {
     }

@@ -9019,78 +9019,73 @@ class MLIRGenImpl
         // 3 cases, name, index access, method call
         mlir::Type type;
         auto typeExpression = newExpression->expression;
-        if (typeExpression != SyntaxKind::ElementAccessExpression)
+        ////auto isNewArray = typeExpression == SyntaxKind::ElementAccessExpression && newExpression->arguments.isTextRangeEmpty();
+        auto result = mlirGen(typeExpression, newExpression->typeArguments, genContext);
+        if (result.failed())
         {
-            auto result = mlirGen(typeExpression, newExpression->typeArguments, genContext);
-            if (result.failed())
+            if (typeExpression == SyntaxKind::Identifier)
             {
-                if (typeExpression == SyntaxKind::Identifier)
+                auto name = MLIRHelper::getName(typeExpression.as<Identifier>());
+                type = findEmbeddedType(name, newExpression->typeArguments, genContext);
+
+                mlir::Type elementType;
+                if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
                 {
-                    auto name = MLIRHelper::getName(typeExpression.as<Identifier>());
-                    type = getEmbeddedType(name);
-                    if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
+                    elementType = arrayType.getElementType();
+                }
+                else if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+                {
+                    elementType = constArrayType.getElementType();
+                }
+
+                if (elementType)
+                {
+                    mlir::Value count;
+
+                    if (newExpression->arguments.size() == 0)
                     {
-                        mlir::Value count;
-
-                        if (newExpression->arguments.size() == 0)
-                        {
-                            count = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerType(32, false), builder.getUI32IntegerAttr(0));
-                        }
-                        else if (newExpression->arguments.size() == 1)
-                        {
-                            auto result = mlirGen(newExpression->arguments.front(), genContext);
-                            EXIT_IF_FAILED_OR_NO_VALUE(result)
-                            count = V(result);           
-                        }
-                        else
-                        {
-                            llvm_unreachable("not implemented");
-                        }
-
-                        auto newArrOp = newArray(arrayType.getElementType(), count);
-                        EXIT_IF_FAILED_OR_NO_VALUE(newArrOp)
-                        return V(newArrOp);                     
+                        count = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerType(32, false), builder.getUI32IntegerAttr(0));
                     }
+                    else if (newExpression->arguments.size() == 1)
+                    {
+                        auto result = mlirGen(newExpression->arguments.front(), genContext);
+                        EXIT_IF_FAILED_OR_NO_VALUE(result)
+                        count = V(result);           
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+
+                    auto newArrOp = newArray(elementType, count);
+                    EXIT_IF_FAILED_OR_NO_VALUE(newArrOp)
+                    return V(newArrOp);                     
                 }
             }
+        }
 
-            EXIT_IF_FAILED_OR_NO_VALUE(result)
-            auto value = V(result);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto value = V(result);
 
-            if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
+        if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
+        {
+            return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, genContext);
+        }
+
+        if (auto tupleType = value.getType().dyn_cast<mlir_ts::TupleType>())
+        {
+            auto newCtorMethod = evaluateProperty(value, NEW_CTOR_METHOD_NAME, genContext);
+            if (newCtorMethod)
             {
                 return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, genContext);
             }
-
-            if (auto tupleType = value.getType().dyn_cast<mlir_ts::TupleType>())
-            {
-                auto newCtorMethod = evaluateProperty(value, NEW_CTOR_METHOD_NAME, genContext);
-                if (newCtorMethod)
-                {
-                    return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, genContext);
-                }
-            }
-
-            // default - class instance
-            auto suppressConstructorCall = (newExpression->internalFlags & InternalFlags::SuppressConstructorCall) ==
-                                           InternalFlags::SuppressConstructorCall;
-
-            return NewClassInstance(location, value, newExpression->arguments, suppressConstructorCall, genContext);
         }
-        else
-        {
-            auto elementAccessExpression = typeExpression.as<ElementAccessExpression>();
-            typeExpression = elementAccessExpression->expression;
-            type = getTypeByTypeName(typeExpression, genContext);
 
-            auto result = mlirGen(elementAccessExpression->argumentExpression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(result)
-            auto count = V(result);
+        // default - class instance
+        auto suppressConstructorCall = (newExpression->internalFlags & InternalFlags::SuppressConstructorCall) ==
+                                        InternalFlags::SuppressConstructorCall;
 
-            auto newArrOp = newArray(type, count);
-            EXIT_IF_FAILED_OR_NO_VALUE(newArrOp)
-            return V(newArrOp);
-        }
+        return NewClassInstance(location, value, newExpression->arguments, suppressConstructorCall, genContext);
     }
 
     mlir::LogicalResult mlirGen(DeleteExpression deleteExpression, const GenContext &genContext)
@@ -14892,6 +14887,8 @@ genContext);
 
     mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
+        auto location = loc(typeReferenceAST);
+
         // check utility types
         auto name = MLIRHelper::getName(typeReferenceAST->typeName);
 
@@ -14905,7 +14902,7 @@ genContext);
             auto typeNode = std::get<1>(genericTypeAliasInfo);
 
             auto [result, hasAnyNamedGenericType] =
-                zipTypeParametersWithArguments(loc(typeReferenceAST), typeParams, typeReferenceAST->typeArguments,
+                zipTypeParametersWithArguments(location, typeParams, typeReferenceAST->typeArguments,
                                                genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
 
             if (mlir::failed(result))
@@ -14924,7 +14921,7 @@ genContext);
         if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
         {
             auto classType = genericClassTypeInfo->classType;
-            auto [result, specType] = instantiateSpecializedClassType(loc(typeReferenceAST), classType,
+            auto [result, specType] = instantiateSpecializedClassType(location, classType,
                                                                       typeReferenceAST->typeArguments, genContext, true);
             if (mlir::succeeded(result))
             {
@@ -14937,7 +14934,7 @@ genContext);
         if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
         {
             auto interfaceType = genericInterfaceTypeInfo->interfaceType;
-            auto [result, specType] = instantiateSpecializedInterfaceType(loc(typeReferenceAST), interfaceType,
+            auto [result, specType] = instantiateSpecializedInterfaceType(location, interfaceType,
                                                                           typeReferenceAST->typeArguments, genContext, true);
             if (mlir::succeeded(result))
             {
@@ -14952,7 +14949,7 @@ genContext);
             return type;
         }
 
-        if (auto embedType = findEmbeddedType(name, typeReferenceAST, genContext))
+        if (auto embedType = findEmbeddedType(name, typeReferenceAST->typeArguments, genContext))
         {
             return embedType;
         }
@@ -14960,9 +14957,9 @@ genContext);
         return mlir::Type();
     }
 
-    mlir::Type findEmbeddedType(std::string name, TypeReferenceNode typeReferenceAST, const GenContext &genContext)
+    mlir::Type findEmbeddedType(std::string name, NodeArray<TypeNode> &typeArguments, const GenContext &genContext)
     {
-        auto typeArgumentsSize = typeReferenceAST->typeArguments->size();
+        auto typeArgumentsSize = typeArguments->size();
         if (typeArgumentsSize == 0)
         {
             if (auto type = getEmbeddedType(name))
@@ -14973,7 +14970,7 @@ genContext);
 
         if (typeArgumentsSize == 1)
         {
-            if (auto type = getEmbeddedTypeWithParam(name, typeReferenceAST, genContext))
+            if (auto type = getEmbeddedTypeWithParam(name, typeArguments, genContext))
             {
                 return type;
             }
@@ -14981,7 +14978,7 @@ genContext);
 
         if (typeArgumentsSize > 1)
         {
-            if (auto type = getEmbeddedTypeWithManyParams(name, typeReferenceAST, genContext))
+            if (auto type = getEmbeddedTypeWithManyParams(name, typeArguments, genContext))
             {
                 return type;
             }
@@ -15075,7 +15072,7 @@ genContext);
         return type;
     }
 
-    mlir::Type getEmbeddedTypeWithParam(mlir::StringRef name, TypeReferenceNode typeReferenceAST,
+    mlir::Type getEmbeddedTypeWithParam(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
                                         const GenContext &genContext)
     {
         auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
@@ -15184,43 +15181,43 @@ genContext);
                 return mlir::Type();
             });
 
-        return translate(typeReferenceAST->typeArguments, genContext);
+        return translate(typeArguments, genContext);
     }
 
-    mlir::Type getEmbeddedTypeWithManyParams(mlir::StringRef name, TypeReferenceNode typeReferenceAST,
+    mlir::Type getEmbeddedTypeWithManyParams(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
                                              const GenContext &genContext)
     {
         auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
             .Case("Exclude", [&] (auto typeArguments, auto genContext) {
-                auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-                auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto firstType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                auto secondType = getSecondTypeFromTypeArguments(typeArguments, genContext);
                 return ExcludeTypes(firstType, secondType);
             })
             .Case("Extract", [&] (auto typeArguments, auto genContext) {
-                auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-                auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto firstType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                auto secondType = getSecondTypeFromTypeArguments(typeArguments, genContext);
                 return ExtractTypes(firstType, secondType);
             })
             .Case("Pick", [&] (auto typeArguments, auto genContext) {
-                auto sourceType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-                auto keysType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto sourceType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                auto keysType = getSecondTypeFromTypeArguments(typeArguments, genContext);
                 return PickTypes(sourceType, keysType);
             })
             .Case("Omit", [&] (auto typeArguments, auto genContext) {
-                auto sourceType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-                auto keysType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto sourceType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                auto keysType = getSecondTypeFromTypeArguments(typeArguments, genContext);
                 return OmitTypes(sourceType, keysType);
             })
             .Case("Record", [&] (auto typeArguments, auto genContext) {
-                auto keysType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-                auto sourceType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto keysType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                auto sourceType = getSecondTypeFromTypeArguments(typeArguments, genContext);
                 return RecordType(keysType, sourceType);
             })
             .Default([] (auto, auto) {
                 return mlir::Type();
             });
 
-        return translate(typeReferenceAST->typeArguments, genContext);
+        return translate(typeArguments, genContext);
     }
 
     mlir::Type StringLiteralTypeFunc(mlir::Type type, std::function<std::string(StringRef)> f)
