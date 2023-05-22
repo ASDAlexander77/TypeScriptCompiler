@@ -24,5 +24,26 @@ function main() {
     print(r4);
     assert(r4 === 9);
 
+    main2();
+
     print("done.");
+}
+
+// main 2
+let a: string[] = ["1"];
+
+function foo(x: number, y: number) {
+	print("foo: ", "x:", x, "\ty:", y);
+	assert(x == 1);
+}
+
+function* gen()
+{
+	yield "1";
+}
+
+function main2() {
+
+    foo(...a);
+    foo(...gen());
 }

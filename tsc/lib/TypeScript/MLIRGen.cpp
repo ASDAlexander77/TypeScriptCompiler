@@ -3943,6 +3943,36 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    ValueOrLogicalResult optionalValueOrUndefined(mlir::Location location, mlir::Type dataType, mlir::Value condValue, Expression expression, const GenContext &genContext)
+    {
+        return optionalValueOrUndefined(location, dataType, condValue, [&](auto genContext) { return mlirGen(expression, genContext); }, genContext);
+    }
+
+    ValueOrLogicalResult optionalValueOrUndefined(mlir::Location location, mlir::Type dataType, mlir::Value condValue, std::function<ValueOrLogicalResult(const GenContext &)> exprFunc, const GenContext &genContext)
+    {
+        auto resultOptionalType = getOptionalType(dataType);
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, resultOptionalType, condValue, true);
+
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+
+        // value if true
+        auto result = exprFunc(genContext);
+        auto value = V(result);
+        auto optValue =
+            builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
+
+        // else
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+
+        auto optUndefValue = builder.create<mlir_ts::OptionalUndefOp>(location, getOptionalType(value.getType()));
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optUndefValue});
+
+        builder.setInsertionPointAfter(ifOp);
+
+        return ifOp.getResults().front();        
+    }
+
     ValueOrLogicalResult optionalValueOrDefault(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
     {
         auto optionalValueOrDefaultOp = builder.create<mlir_ts::OptionalValueOrDefaultOp>(
@@ -8571,12 +8601,27 @@ class MLIRGenImpl
                         auto valueProperty = mlirGenPropertyAccessExpression(location, callResult, "value", false, genContext);
                         EXIT_IF_FAILED_OR_NO_VALUE(valueProperty)
 
+                        auto valueProp = V(valueProperty);
+
+                        auto receiverType = genContext.receiverType;
+                        if (receiverType)
+                        {
+                            if (auto optReceiverType = receiverType.dyn_cast<mlir_ts::OptionalType>())
+                            {
+                                receiverType = optReceiverType.getElementType();
+                            }
+                            
+                            if (receiverType != valueProp.getType())
+                            {
+                                CAST(valueProp, location, receiverType, valueProp, genContext);
+                            }
+                        }                        
+
                         // conditional expr:  done ? undefined : value
                         auto doneInvValue =  V(builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(),
                             builder.getI32IntegerAttr((int)SyntaxKind::ExclamationToken), doneProperty));
 
-                        auto valuePropType = V(valueProperty).getType();
-                        auto condValue = builder.create<mlir_ts::OptionalOp>(location, getOptionalType(valuePropType), valueProperty, doneInvValue);
+                        auto condValue = builder.create<mlir_ts::OptionalOp>(location, getOptionalType(valueProp.getType()), valueProp, doneInvValue);
 
                         operands.push_back(condValue);
                     }
@@ -8591,12 +8636,40 @@ class MLIRGenImpl
         }                                        
 
         // treat it as <???>[index] structure
+        auto lengthProperty = mlirGenPropertyAccessExpression(location, source, "length", false, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(lengthProperty)
+
+        auto elementType = evaluateElementAccess(location, source, false, genContext);
+        if (genContext.receiverType && genContext.receiverType != elementType)
+        {
+            elementType = genContext.receiverType;
+        }
+
         for (auto spreadIndex = 0;  spreadIndex < count; spreadIndex++)
         {
             auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
                                                 mth.getStructIndexAttrValue(spreadIndex));
 
-            auto spreadValue = mlirGenElementAccess(location, source, indexVal, false, genContext);
+            // conditional expr:  length > "spreadIndex" ? value[index] : undefined
+            auto inBoundsValue =  V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanToken), 
+                lengthProperty,
+                indexVal));
+
+            auto spreadValue = optionalValueOrUndefined(location, elementType, inBoundsValue, 
+                [&](auto genContext) { 
+                    auto result = mlirGenElementAccess(location, source, indexVal, false, genContext); 
+                    EXIT_IF_FAILED_OR_NO_VALUE(result)
+                    auto value = V(result);
+
+                    auto receiverType = genContext.receiverType;
+                    if (receiverType && receiverType != value.getType())
+                    {
+                        CAST(value, location, receiverType, value, genContext);
+                    }
+
+                    return ValueOrLogicalResult(value);
+                }, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(spreadValue)
 
             operands.push_back(spreadValue);
@@ -8676,7 +8749,7 @@ class MLIRGenImpl
             if (expression == SyntaxKind::SpreadElement)
             {
                 auto location = loc(expression);
-                if (mlir::failed(processSpreadElement(location, value, lastArgIndex - i + 1, operands, genContext)))
+                if (mlir::failed(processSpreadElement(location, value, lastArgIndex - i + 1, operands, argGenContext)))
                 {
                     return mlir::failure();
                 }
@@ -13814,6 +13887,38 @@ genContext);
 
         return resultType;
     }
+
+    mlir::Type evaluateElementAccess(mlir::Location location, mlir::Value expression, bool isConditionalAccess, const GenContext &genContext)
+    {
+        // we need to ignore errors;
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+        });
+
+        mlir::Type resultType;
+
+        // module
+        auto savedModule = theModule;
+
+        {
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+            builder.setInsertionPointToStart(prepareTempModule());
+
+            GenContext evalGenContext(genContext);
+            evalGenContext.allowPartialResolve = true;
+            auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
+                                    mth.getStructIndexAttrValue(0));
+            auto result = mlirGenElementAccess(location, expression, indexVal, isConditionalAccess, evalGenContext);
+            auto initValue = V(result);
+            if (initValue)
+            {
+                resultType = initValue.getType();
+            }
+        }
+
+        theModule = savedModule;
+
+        return resultType;
+    }    
 
     ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext)
