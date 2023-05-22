@@ -8609,7 +8609,7 @@ class MLIRGenImpl
                                         mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false)
     {
         mlir_ts::TupleType tupleTypeWithFuncArgs;
-        auto lastArgIndex = operands.size() - 1;
+        int lastArgIndex = operands.size() - 1;
         auto isVarArg = false;
         mlir::Type varArgType;
         auto hasType = false;
