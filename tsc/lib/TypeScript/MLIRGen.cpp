@@ -8605,8 +8605,102 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult processSpreadElement(mlir::Location location, mlir::Value source, int count, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    struct OperandsProcessingInfo
     {
+        OperandsProcessingInfo(mlir::Type funcType, SmallVector<mlir::Value, 4> &operands, int offsetArgs, bool noReceiverTypesForGenericCall, MLIRTypeHelper &mth) 
+            : operands{operands}, isVarArg{false}, hasType{false}, currentParameter{offsetArgs}, noReceiverTypesForGenericCall{noReceiverTypesForGenericCall}, mth{mth}
+        {
+            lastArgIndex = operands.size() - 1;
+            detectVarArgTypeInfo(funcType);
+        }
+
+        void detectVarArgTypeInfo(mlir::Type funcType)
+        {
+            auto tupleParamsType = mth.getParamsTupleTypeFromFuncRef(funcType);
+            if (!tupleParamsType || tupleParamsType.isa<mlir::NoneType>())
+            {
+                return;
+            }
+
+            isVarArg = mth.getVarArgFromFuncRef(funcType);
+
+            hasType = true;
+            parameters = tupleParamsType.cast<mlir_ts::TupleType>().getFields();
+            lastArgIndex = parameters.size() - 1;
+            if (isVarArg)
+            {
+                varArgType = parameters.back().type;
+                if (auto arrayType = varArgType.dyn_cast<mlir_ts::ArrayType>())
+                {
+                    varArgType = arrayType.getElementType();
+                }
+                else if (auto genericType = varArgType.dyn_cast<mlir_ts::NamedGenericType>())
+                {
+                    // do nothing in case of generic, types will be adjusted later
+                    varArgType = mlir::Type();
+                }
+            }
+        }
+
+        void setReceiverTypeTo(GenContext &argGenContext)
+        {
+            if (!hasType)
+            {
+                return;
+            }
+
+            if (isVarArg && currentParameter >= lastArgIndex)
+            {
+                argGenContext.receiverFuncType = varArgType;
+                if (!noReceiverTypesForGenericCall)
+                {
+                    argGenContext.receiverType = varArgType;
+                }
+            }
+            else
+            {
+                auto receiverType = 
+                    currentParameter < parameters.size() 
+                        ? parameters[currentParameter].type 
+                        : mlir::Type();
+                argGenContext.receiverFuncType = receiverType;
+                if (!noReceiverTypesForGenericCall)
+                {
+                    argGenContext.receiverType = receiverType;
+                }                    
+            }
+        }
+
+        void nextParameter()
+        {
+            currentParameter++;
+        }
+
+        auto restCount()
+        {
+            return lastArgIndex - currentParameter + 1;
+        }
+
+        void addOperand(mlir::Value value)
+        {
+            operands.push_back(value);
+        }
+
+        SmallVector<mlir::Value, 4> &operands;
+        int currentParameter;
+        llvm::ArrayRef<mlir::typescript::FieldInfo> parameters;
+        int lastArgIndex;
+        bool isVarArg;
+        mlir::Type varArgType;
+        bool hasType;
+        bool noReceiverTypesForGenericCall;
+        MLIRTypeHelper &mth;
+    };
+
+    mlir::LogicalResult processSpreadElement(mlir::Location location, mlir::Value source, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext)
+    {
+        auto count = operandsProcessingInfo.restCount();
+
         auto nextPropertyType = evaluateProperty(source, "next", genContext);
         if (nextPropertyType)
         {
@@ -8675,7 +8769,7 @@ class MLIRGenImpl
                             condValue = builder.create<mlir_ts::OptionalOp>(location, getOptionalType(valueProp.getType()), valueProp, doneInvValue);
                         // }
 
-                        operands.push_back(condValue);
+                        operandsProcessingInfo.addOperand(condValue);
                     }
                 }
                 else
@@ -8732,7 +8826,7 @@ class MLIRGenImpl
                     }, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(spreadValue)
 
-                operands.push_back(spreadValue);
+                operandsProcessingInfo.addOperand(spreadValue);
             }
 
             return mlir::success();
@@ -8749,7 +8843,7 @@ class MLIRGenImpl
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto value = V(result);
 
-            operands.push_back(value);
+            operandsProcessingInfo.addOperand(value);
         }
 
         return mlir::success();        
@@ -8759,66 +8853,13 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
                                         mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false)
     {
-        mlir_ts::TupleType tupleTypeWithFuncArgs;
-        int lastArgIndex = operands.size() - 1;
-        auto isVarArg = false;
-        mlir::Type varArgType;
-        auto hasType = false;
-        auto tupleParamsType = mth.getParamsTupleTypeFromFuncRef(funcType);
-        if (!isNoneType(tupleParamsType))
-        {
-            hasType = true;
-            tupleTypeWithFuncArgs = tupleParamsType.cast<mlir_ts::TupleType>();
-            lastArgIndex = tupleTypeWithFuncArgs.getFields().size() - 1;
-            isVarArg = mth.getVarArgFromFuncRef(funcType);
-            if (isVarArg)
-            {
-                auto varArgType = tupleTypeWithFuncArgs.getFields().back().type;
-                if (auto arrayType = varArgType.dyn_cast<mlir_ts::ArrayType>())
-                {
-                    varArgType = arrayType.getElementType();
-                }
-                else if (auto genericType = varArgType.dyn_cast<mlir_ts::NamedGenericType>())
-                {
-                    // do nothing in case of generic, types will be adjusted later
-                    varArgType = mlir::Type();
-                }
-                else
-                {
-                    // in case of ...any 
-                    varArgType = varArgType;
-                }
-            }
-        }
+        OperandsProcessingInfo operandsProcessingInfo(funcType, operands, offsetArgs, noReceiverTypesForGenericCall, mth);
 
-        auto i = offsetArgs;
         for (auto expression : arguments)
         {
             GenContext argGenContext(genContext);
             argGenContext.clearReceiverTypes();
-            if (hasType)
-            {
-                if (isVarArg && i >= lastArgIndex)
-                {
-                    argGenContext.receiverFuncType = varArgType;
-                    if (!noReceiverTypesForGenericCall)
-                    {
-                        argGenContext.receiverType = varArgType;
-                    }
-                }
-                else
-                {
-                    auto receiverType = 
-                        i < tupleTypeWithFuncArgs.size() 
-                            ? tupleTypeWithFuncArgs.getFieldInfo(i).type 
-                            : mlir::Type();
-                    argGenContext.receiverFuncType = receiverType;
-                    if (!noReceiverTypesForGenericCall)
-                    {
-                        argGenContext.receiverType = receiverType;
-                    }                    
-                }
-            }
+            operandsProcessingInfo.setReceiverTypeTo(argGenContext);
 
             auto result = mlirGen(expression, argGenContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
@@ -8827,7 +8868,7 @@ class MLIRGenImpl
             if (expression == SyntaxKind::SpreadElement)
             {
                 auto location = loc(expression);
-                if (mlir::failed(processSpreadElement(location, value, lastArgIndex - i + 1, operands, argGenContext)))
+                if (mlir::failed(processSpreadElement(location, value, operandsProcessingInfo, argGenContext)))
                 {
                     return mlir::failure();
                 }
@@ -8837,7 +8878,7 @@ class MLIRGenImpl
 
             operands.push_back(value);
 
-            i++;
+            operandsProcessingInfo.nextParameter();
         }
 
         return mlir::success();
