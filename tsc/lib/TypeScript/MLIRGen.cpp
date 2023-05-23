@@ -8744,8 +8744,7 @@ class MLIRGenImpl
 
                         auto valueProp = V(valueProperty);
 
-                        // TODO: finish code to calculate receiver type correctly
-                        auto receiverType = genContext.receiverType;
+                        auto receiverType = operandsProcessingInfo.getReceiverType();
                         if (receiverType)
                         {
                             if (auto optReceiverType = receiverType.dyn_cast<mlir_ts::OptionalType>())
@@ -8774,6 +8773,7 @@ class MLIRGenImpl
                         // }
 
                         operandsProcessingInfo.addOperand(condValue);
+                        operandsProcessingInfo.nextParameter();
                     }
                 }
                 else
@@ -8819,8 +8819,7 @@ class MLIRGenImpl
                         EXIT_IF_FAILED_OR_NO_VALUE(result)
                         auto value = V(result);
 
-                        // TODO: finish code to calculate receiver type correctly
-                        auto receiverType = genContext.receiverType;
+                        auto receiverType = operandsProcessingInfo.getReceiverType();
                         if (receiverType && receiverType != value.getType())
                         {
                             CAST(value, location, receiverType, value, genContext);
@@ -8831,6 +8830,7 @@ class MLIRGenImpl
                 EXIT_IF_FAILED_OR_NO_VALUE(spreadValue)
 
                 operandsProcessingInfo.addOperand(spreadValue);
+                operandsProcessingInfo.nextParameter();
             }
 
             return mlir::success();
@@ -8848,6 +8848,7 @@ class MLIRGenImpl
             auto value = V(result);
 
             operandsProcessingInfo.addOperand(value);
+            operandsProcessingInfo.nextParameter();
         }
 
         return mlir::success();        
@@ -8880,8 +8881,7 @@ class MLIRGenImpl
                 continue;
             }
 
-            operands.push_back(value);
-
+            operandsProcessingInfo.addOperand(value);
             operandsProcessingInfo.nextParameter();
         }
 
