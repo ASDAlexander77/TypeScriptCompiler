@@ -8646,6 +8646,7 @@ class MLIRGenImpl
 
                         auto valueProp = V(valueProperty);
 
+                        // TODO: finish code to calculate receiver type correctly
                         auto receiverType = genContext.receiverType;
                         if (receiverType)
                         {
@@ -8720,6 +8721,7 @@ class MLIRGenImpl
                         EXIT_IF_FAILED_OR_NO_VALUE(result)
                         auto value = V(result);
 
+                        // TODO: finish code to calculate receiver type correctly
                         auto receiverType = genContext.receiverType;
                         if (receiverType && receiverType != value.getType())
                         {
@@ -8753,6 +8755,7 @@ class MLIRGenImpl
         return mlir::success();        
     }
 
+    // TODO: rewrite code (do as clean as ArrayLiteral)
     mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
                                         mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false)
     {
