@@ -8642,6 +8642,25 @@ class MLIRGenImpl
             }
         }
 
+        mlir::Type getReceiverType()
+        {
+            if (!hasType)
+            {
+                return mlir::Type();
+            }
+
+            if (isVarArg && currentParameter >= lastArgIndex)
+            {
+                return varArgType;
+            }
+
+            auto receiverType = 
+                currentParameter < parameters.size() 
+                    ? parameters[currentParameter].type 
+                    : mlir::Type();
+            return receiverType;
+        }
+
         void setReceiverTypeTo(GenContext &argGenContext)
         {
             if (!hasType)
@@ -8649,26 +8668,11 @@ class MLIRGenImpl
                 return;
             }
 
-            if (isVarArg && currentParameter >= lastArgIndex)
-            {
-                argGenContext.receiverFuncType = varArgType;
-                if (!noReceiverTypesForGenericCall)
-                {
-                    argGenContext.receiverType = varArgType;
-                }
-            }
-            else
-            {
-                auto receiverType = 
-                    currentParameter < parameters.size() 
-                        ? parameters[currentParameter].type 
-                        : mlir::Type();
-                argGenContext.receiverFuncType = receiverType;
-                if (!noReceiverTypesForGenericCall)
-                {
-                    argGenContext.receiverType = receiverType;
-                }                    
-            }
+            argGenContext.receiverFuncType = getReceiverType();
+            argGenContext.receiverType = 
+                !noReceiverTypesForGenericCall 
+                    ? argGenContext.receiverFuncType 
+                    : mlir::Type();
         }
 
         void nextParameter()
