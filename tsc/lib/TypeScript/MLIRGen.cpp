@@ -8865,6 +8865,31 @@ class MLIRGenImpl
         return mlir::success();        
     }
 
+    mlir::LogicalResult mlirGenOperand(Expression expression, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext)
+    {
+        GenContext argGenContext(genContext);
+        argGenContext.clearReceiverTypes();
+        operandsProcessingInfo.setReceiverTo(argGenContext);
+
+        auto result = mlirGen(expression, argGenContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto value = V(result);
+
+        if (expression == SyntaxKind::SpreadElement)
+        {
+            auto location = loc(expression);
+            if (mlir::failed(processOperandSpreadElement(location, value, operandsProcessingInfo, argGenContext)))
+            {
+                return mlir::failure();
+            }
+
+            return mlir::success();
+        }
+
+        operandsProcessingInfo.addOperandAndMoveToNextParameter(value);
+        return mlir::success();
+    }
+
     // TODO: rewrite code (do as clean as ArrayLiteral)
     mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
                                         mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false)
@@ -8873,26 +8898,10 @@ class MLIRGenImpl
 
         for (auto expression : arguments)
         {
-            GenContext argGenContext(genContext);
-            argGenContext.clearReceiverTypes();
-            operandsProcessingInfo.setReceiverTo(argGenContext);
-
-            auto result = mlirGen(expression, argGenContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(result)
-            auto value = V(result);
-
-            if (expression == SyntaxKind::SpreadElement)
+            if (mlir::failed(mlirGenOperand(expression, operandsProcessingInfo, genContext)))
             {
-                auto location = loc(expression);
-                if (mlir::failed(processOperandSpreadElement(location, value, operandsProcessingInfo, argGenContext)))
-                {
-                    return mlir::failure();
-                }
-
-                continue;
+                return mlir::failure();
             }
-
-            operandsProcessingInfo.addOperandAndMoveToNextParameter(value);
         }
 
         return mlir::success();
