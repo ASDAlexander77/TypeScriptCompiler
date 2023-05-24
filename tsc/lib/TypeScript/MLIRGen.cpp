@@ -8525,24 +8525,32 @@ class MLIRGenImpl
             // if last is vararg
             if (calledFuncType.isVarArg())
             {
-                SmallVector<mlir::Value, 4> varArgOperands;
-
+                auto varArgsType = calledFuncType.getInputs().back();
                 auto fromIndex = calledFuncType.getInputs().size() - 1;
                 auto toIndex = operands.size();
-                for (auto i = fromIndex; i < toIndex; i++)
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! isVarArg type (array), type: " << varArgsType << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\t last value = " << operands.back() << "\n";);
+
+                // check if vararg is prepared earlier
+                auto isVarArgPreparedAlready = (toIndex - fromIndex) == 1 && operands.back().getType() == varArgsType;
+                if (!isVarArgPreparedAlready)
                 {
-                    varArgOperands.push_back(operands[i]);
+                    SmallVector<mlir::Value, 4> varArgOperands;
+                    for (auto i = fromIndex; i < toIndex; i++)
+                    {
+                        varArgOperands.push_back(operands[i]);
+                    }
+
+                    operands.pop_back_n(toIndex - fromIndex);
+
+                    // create array
+                    auto array =
+                        builder.create<mlir_ts::CreateArrayOp>(location, varArgsType, varArgOperands);
+                    operands.push_back(array);
+
+                    LLVM_DEBUG(for (auto& ops : varArgOperands) llvm::dbgs() << "\t value = " << ops << "\n";);
                 }
-
-                operands.pop_back_n(toIndex - fromIndex);
-
-                // create array
-                auto array =
-                    builder.create<mlir_ts::CreateArrayOp>(location, calledFuncType.getInputs().back(), varArgOperands);
-                operands.push_back(array);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! isVarArg type (array), type: " << calledFuncType.getInputs().back() << "\n";);
-                LLVM_DEBUG(for (auto& ops : varArgOperands) llvm::dbgs() << "\t value = " << ops << "\n";);
             }
 
             // default call by name
@@ -8622,12 +8630,10 @@ class MLIRGenImpl
                 return;
             }
 
-            isVarArg = mth.getVarArgFromFuncRef(funcType);
-
             hasType = true;
             parameters = tupleParamsType.cast<mlir_ts::TupleType>().getFields();
             lastArgIndex = parameters.size() - 1;
-            if (isVarArg)
+            if (mth.getVarArgFromFuncRef(funcType))
             {
                 varArgType = parameters.back().type;
                 if (auto arrayType = varArgType.dyn_cast<mlir_ts::ArrayType>())
@@ -8695,7 +8701,7 @@ class MLIRGenImpl
 
         void nextParameter()
         {
-            currentParameter++;
+            isVarArg = ++currentParameter == lastArgIndex && varArgType;
         }
 
         auto restCount()
@@ -8890,15 +8896,51 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGenOperandVarArgs(mlir::Location location, int processedArgs, NodeArray<Expression> arguments, 
+        OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext)
+    {
+        // calculate array context
+        SmallVector<ArrayElement> values;
+        struct ArrayInfo arrayInfo{};
+
+        // set receiver type
+        auto receiverType = mlir_ts::ArrayType::get(operandsProcessingInfo.getReceiverType());
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! varargs - receiver type: " << receiverType << "\n";);
+        // TODO: isGenericType is applied as hack here, find out the issue
+        arrayInfo.setReceiver(receiverType, mth.isGenericType(receiverType));
+
+        for (auto it = arguments.begin() + processedArgs; it != arguments.end(); ++it)
+        {
+            if (mlir::failed(processArrayElementForValues(*it, values, arrayInfo, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        arrayInfo.adjustArrayType(getAnyType());
+
+        auto varArgOperandValue = createArrayFromArrayInfo(location, values, arrayInfo, genContext);
+        operandsProcessingInfo.addOperand(varArgOperandValue);
+
+        return mlir::success();
+    }
+
     // TODO: rewrite code (do as clean as ArrayLiteral)
     mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
                                         mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false)
     {
         OperandsProcessingInfo operandsProcessingInfo(funcType, operands, offsetArgs, noReceiverTypesForGenericCall, mth);
 
-        for (auto expression : arguments)
+        for (auto it = arguments.begin(); it != arguments.end(); ++it)
         {
-            if (mlir::failed(mlirGenOperand(expression, operandsProcessingInfo, genContext)))
+            if (operandsProcessingInfo.isVarArg)
+            {
+                auto proccessedArgs = std::distance(arguments.begin(), it);
+                return mlirGenOperandVarArgs(loc(arguments), proccessedArgs, arguments, operandsProcessingInfo, genContext);
+            }            
+
+            if (mlir::failed(mlirGenOperand(*it, operandsProcessingInfo, genContext)))
             {
                 return mlir::failure();
             }
@@ -8921,6 +8963,8 @@ class MLIRGenImpl
 
         for (auto value : operands)
         {
+            VALIDATE(value, value.getLoc())
+
             mlir::Type argTypeDestFuncType;
             if (i >= argFuncTypes.size() && !isVarArg)
             {
@@ -8932,13 +8976,20 @@ class MLIRGenImpl
             if (isVarArg && i >= lastArgIndex)
             {
                 argTypeDestFuncType = varArgType;
+
+                // if we have processed VarArg - do nothing
+                if (i == lastArgIndex 
+                    && lastArgIndex == operands.size() - 1
+                    && value.getType() == getArrayType(varArgType))
+                {
+                    // nothing todo 
+                    break;
+                }
             }
             else
             {
                 argTypeDestFuncType = argFuncTypes[i];
             }
-
-            VALIDATE(value, value.getLoc())
 
             if (value.getType() != argTypeDestFuncType)
             {
