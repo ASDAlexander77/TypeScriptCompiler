@@ -9597,6 +9597,18 @@ class MLIRGenImpl
             receiverTupleType = tupleType;
         }
 
+        void setReceiverTo(GenContext &noReceiverGenContext)
+        {        
+            noReceiverGenContext.receiverType = (receiverElementType) ? receiverElementType : mlir::Type();
+        }
+
+        mlir::Type isCastNeeded(mlir::Type type)
+        {
+            return receiverElementType && type != receiverElementType 
+                ? receiverElementType 
+                : mlir::Type();
+        }
+
         void nextTupleField()
         {
             if (!receiverTupleType)
@@ -9623,14 +9635,6 @@ class MLIRGenImpl
             anySpreadElement{false},
             applyCast{false}
         {
-        }
-
-        void setType(mlir::Type type)
-        {
-            TypeSwitch<mlir::Type>(type)
-                .template Case<mlir_ts::ArrayType>([&](auto) { dataType = TypeData::Array; })
-                .template Case<mlir_ts::TupleType>([&](auto) { dataType = TypeData::Tuple; })
-                .Default([&](auto type) {});
         }
 
         void set(mlir_ts::ArrayType arrayType)
@@ -9661,11 +9665,11 @@ class MLIRGenImpl
             recevierContext.set(tupleType);
         }        
 
-        void setReceiver(mlir::Type type)
+        void setReceiver(mlir::Type type, bool isGenericType)
         {
             TypeSwitch<mlir::Type>(type)
-                .template Case<mlir_ts::ArrayType>([&](auto a) { setReceiver(a); })
-                .template Case<mlir_ts::TupleType>([&](auto t) { setReceiver(t); })
+                .template Case<mlir_ts::ArrayType>([&](auto a) { isGenericType ? set(a) : setReceiver(a); })
+                .template Case<mlir_ts::TupleType>([&](auto t) { isGenericType ? set(t) : setReceiver(t); })
                 .Default([&](auto type) {});
         }        
 
@@ -9874,13 +9878,8 @@ class MLIRGenImpl
         if (genContext.receiverType)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! array/tuple - receiver type: " << genContext.receiverType << "\n";);
-
-            arrayInfo.setType(genContext.receiverType);
-            // TODO: this is hack, remove it to find out the issue
-            if (!mth.isGenericType(genContext.receiverType))
-            {
-                arrayInfo.setReceiver(genContext.receiverType);
-            }
+            // TODO: isGenericType is applied as hack here, find out the issue
+            arrayInfo.setReceiver(genContext.receiverType, mth.isGenericType(genContext.receiverType));
         }
 
         for (auto &item : arrayElements)
@@ -9889,10 +9888,7 @@ class MLIRGenImpl
 
             GenContext noReceiverGenContext(genContext);
             noReceiverGenContext.clearReceiverTypes();
-            if (recevierContext.receiverElementType)
-            {
-                noReceiverGenContext.receiverType = recevierContext.receiverElementType;
-            }
+            recevierContext.setReceiverTo(noReceiverGenContext);
 
             auto result = mlirGen(item, noReceiverGenContext);
             EXIT_IF_FAILED(result)
@@ -9914,10 +9910,9 @@ class MLIRGenImpl
             }
             else
             {
-                if (recevierContext.receiverElementType && type != recevierContext.receiverElementType)
+                if (auto castType = recevierContext.isCastNeeded(type))
                 {
-                    auto location = loc(item);
-                    CAST(itemValue, location, recevierContext.receiverElementType, itemValue, genContext);
+                    CAST(itemValue, loc(item), castType, itemValue, genContext);
                     type = itemValue.getType();
                 }
 
