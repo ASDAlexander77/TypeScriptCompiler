@@ -9587,6 +9587,29 @@ class MLIRGenImpl
     {
         RecevierContext() : receiverTupleTypeIndex{-1} {}
 
+        void set(mlir_ts::ArrayType arrayType)
+        {
+            receiverElementType = arrayType.getElementType();
+        }
+
+        void set(mlir_ts::TupleType tupleType)
+        {
+            receiverTupleType = tupleType;
+        }
+
+        void nextTupleField()
+        {
+            if (!receiverTupleType)
+            {
+                return;
+            }
+
+            receiverElementType =
+                receiverTupleType.size() > ++receiverTupleTypeIndex
+                ? receiverTupleType.getFieldInfo(receiverTupleTypeIndex).type 
+                : mlir::Type();
+        }
+
         mlir::Type receiverElementType;
         mlir_ts::TupleType receiverTupleType;
         int receiverTupleTypeIndex;
@@ -9601,6 +9624,50 @@ class MLIRGenImpl
             applyCast{false}
         {
         }
+
+        void setType(mlir::Type type)
+        {
+            TypeSwitch<mlir::Type>(type)
+                .template Case<mlir_ts::ArrayType>([&](auto) { dataType = TypeData::Array; })
+                .template Case<mlir_ts::TupleType>([&](auto) { dataType = TypeData::Tuple; })
+                .Default([&](auto type) {});
+        }
+
+        void set(mlir_ts::ArrayType arrayType)
+        {
+            dataType = TypeData::Array;
+            arrayElementType =
+                accumulatedArrayElementType = 
+                    arrayType.getElementType();
+        }        
+
+        void setReceiver(mlir_ts::ArrayType arrayType)
+        {        
+            set(arrayType);
+            recevierContext.set(arrayType);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! array elements - receiver type: " << recevierContext.receiverElementType << "\n";);
+        }
+
+        void set(mlir_ts::TupleType tupleType)
+        {
+            dataType = TypeData::Tuple;
+            arrayElementType = tupleType;
+        }
+
+        void setReceiver(mlir_ts::TupleType tupleType)
+        {  
+            set(tupleType);
+            recevierContext.set(tupleType);
+        }        
+
+        void setReceiver(mlir::Type type)
+        {
+            TypeSwitch<mlir::Type>(type)
+                .template Case<mlir_ts::ArrayType>([&](auto a) { setReceiver(a); })
+                .template Case<mlir_ts::TupleType>([&](auto t) { setReceiver(t); })
+                .Default([&](auto type) {});
+        }        
 
         TypeData dataType;
         mlir::Type accumulatedArrayElementType;
@@ -9808,38 +9875,17 @@ class MLIRGenImpl
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! array/tuple - receiver type: " << genContext.receiverType << "\n";);
 
-            if (auto arrayType = genContext.receiverType.dyn_cast<mlir_ts::ArrayType>())
+            arrayInfo.setType(genContext.receiverType);
+            // TODO: this is hack, remove it to find out the issue
+            if (!mth.isGenericType(genContext.receiverType))
             {
-                // TODO: remove it "if" to find out the issue with types
-                if (!mth.isGenericType(arrayType.getElementType()))
-                {
-                    arrayInfo.arrayElementType =
-                        arrayInfo.accumulatedArrayElementType = 
-                            arrayInfo.recevierContext.receiverElementType = arrayType.getElementType();
-
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! array elements - receiver type: " << arrayInfo.recevierContext.receiverElementType << "\n";);
-                }
-
-                arrayInfo.dataType = TypeData::Array;
-            }
-            else if (auto tupleType = genContext.receiverType.dyn_cast<mlir_ts::TupleType>())
-            {
-                recevierContext.receiverTupleType = tupleType;
-                arrayInfo.dataType = TypeData::Tuple;
-                arrayInfo.arrayElementType = recevierContext.receiverTupleType;
+                arrayInfo.setReceiver(genContext.receiverType);
             }
         }
 
         for (auto &item : arrayElements)
         {
-            recevierContext.receiverTupleTypeIndex++;
-            if (recevierContext.receiverTupleType)
-            {
-                recevierContext.receiverElementType =
-                    recevierContext.receiverTupleType.size() > recevierContext.receiverTupleTypeIndex
-                    ? recevierContext.receiverTupleType.getFieldInfo(recevierContext.receiverTupleTypeIndex).type 
-                    : mlir::Type();
-            }
+            recevierContext.nextTupleField();
 
             GenContext noReceiverGenContext(genContext);
             noReceiverGenContext.clearReceiverTypes();
