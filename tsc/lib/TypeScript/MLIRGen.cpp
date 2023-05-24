@@ -8701,7 +8701,7 @@ class MLIRGenImpl
         MLIRTypeHelper &mth;
     };
 
-    mlir::LogicalResult processSpreadElement(mlir::Location location, mlir::Value source, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext)
+    mlir::LogicalResult processOperandSpreadElement(mlir::Location location, mlir::Value source, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext)
     {
         auto count = operandsProcessingInfo.restCount();
 
@@ -8873,7 +8873,7 @@ class MLIRGenImpl
             if (expression == SyntaxKind::SpreadElement)
             {
                 auto location = loc(expression);
-                if (mlir::failed(processSpreadElement(location, value, operandsProcessingInfo, argGenContext)))
+                if (mlir::failed(processOperandSpreadElement(location, value, operandsProcessingInfo, argGenContext)))
                 {
                     return mlir::failure();
                 }
@@ -9756,12 +9756,35 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult processArrayValues(ts::ArrayLiteralExpression arrayLiteral, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
+    void adjustArrayType(struct ArrayInfo &arrayInfo)
+    {
+        // post processing values
+        if (arrayInfo.anySpreadElement || arrayInfo.dataType == TypeData::NotSet)
+        {
+            // this is array
+            arrayInfo.dataType = TypeData::Array;
+        }
+
+        if (arrayInfo.dataType == TypeData::Tuple && !arrayInfo.accumulatedArrayElementType.isa<mlir_ts::UnionType>())
+        {
+            // seems we can convert tuple into array, for example [1.0, 2, 3] -> [1.0, 2.0, 3.0]
+            arrayInfo.dataType = TypeData::Array;
+            arrayInfo.applyCast = true;
+        }
+
+        if (arrayInfo.dataType == TypeData::Array)
+        {
+            arrayInfo.arrayElementType = 
+                arrayInfo.accumulatedArrayElementType 
+                    ? arrayInfo.accumulatedArrayElementType 
+                    : getAnyType();
+        }
+    }
+
+    mlir::LogicalResult processArrayValues(NodeArray<Expression> arrayElements, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
     {
         mlir_ts::TupleType receiverTupleType;
         auto receiverTupleTypeIndex = -1;
-
-        auto location = loc(arrayLiteral);
 
         arrayInfo.dataType = TypeData::NotSet;
         arrayInfo.anySpreadElement = false;
@@ -9794,7 +9817,7 @@ class MLIRGenImpl
             }
         }
 
-        for (auto &item : arrayLiteral->elements)
+        for (auto &item : arrayElements)
         {
             receiverTupleTypeIndex++;
             if (receiverTupleType)
@@ -9834,6 +9857,7 @@ class MLIRGenImpl
             {
                 if (arrayInfo.receiverElementType && type != arrayInfo.receiverElementType)
                 {
+                    auto location = loc(item);
                     CAST(itemValue, location, arrayInfo.receiverElementType, itemValue, genContext);
                     type = itemValue.getType();
                 }
@@ -9848,27 +9872,7 @@ class MLIRGenImpl
             }
         }
 
-        // post processing values
-        if (arrayInfo.anySpreadElement || arrayInfo.dataType == TypeData::NotSet)
-        {
-            // this is array
-            arrayInfo.dataType = TypeData::Array;
-        }
-
-        if (arrayInfo.dataType == TypeData::Tuple && !arrayInfo.accumulatedArrayElementType.isa<mlir_ts::UnionType>())
-        {
-            // seems we can convert tuple into array, for example [1.0, 2, 3] -> [1.0, 2.0, 3.0]
-            arrayInfo.dataType = TypeData::Array;
-            arrayInfo.applyCast = true;
-        }
-
-        if (arrayInfo.dataType == TypeData::Array)
-        {
-            arrayInfo.arrayElementType = 
-                arrayInfo.accumulatedArrayElementType 
-                    ? arrayInfo.accumulatedArrayElementType 
-                    : getAnyType();
-        }
+        adjustArrayType(arrayInfo);
 
         return mlir::success();
     }
@@ -9959,7 +9963,7 @@ class MLIRGenImpl
 
         SmallVector<ArrayElement> values;
         struct ArrayInfo arrayInfo{};
-        if (mlir::failed(processArrayValues(arrayLiteral, values, arrayInfo, genContext)))
+        if (mlir::failed(processArrayValues(arrayLiteral->elements, values, arrayInfo, genContext)))
         {
             return mlir::failure();
         }
