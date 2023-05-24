@@ -8010,7 +8010,7 @@ class MLIRGenImpl
         }
 
         SmallVector<mlir::Value, 4> operands;
-        auto offsetArgs = funcResult.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>() ? 1 : 0;
+        auto offsetArgs = funcType.isa<mlir_ts::BoundFunctionType>() || funcType.isa<mlir_ts::ExtensionFunctionType>() ? 1 : 0;
         if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs, noReceiverTypesForGenericCall)))
         {
             return mlir::failure();
@@ -8510,7 +8510,7 @@ class MLIRGenImpl
             operands.insert(operands.begin(), thisValue);
         }
 
-        if (mlir::failed(mlirGenCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(),
+        if (mlir::failed(mlirGenPrepareCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(),
                                              genContext)))
         {
             return mlir::failure();
@@ -8570,7 +8570,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenCallOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
+    mlir::LogicalResult mlirGenPrepareCallOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
                                             mlir::ArrayRef<mlir::Type> argFuncTypes, bool isVarArg,
                                             const GenContext &genContext)
     {
