@@ -9957,32 +9957,8 @@ class MLIRGenImpl
         return V(newArrayOp);
     }
 
-    ValueOrLogicalResult mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
+    ValueOrLogicalResult createDynamicArrayFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
     {
-        auto location = loc(arrayLiteral);
-
-        SmallVector<ArrayElement> values;
-        struct ArrayInfo arrayInfo{};
-        if (mlir::failed(processArrayValues(arrayLiteral->elements, values, arrayInfo, genContext)))
-        {
-            return mlir::failure();
-        }
-
-        if (arrayInfo.isConst)
-        {
-            return createConstArrayOrTuple(location, values, arrayInfo, genContext);
-        }
-
-        if (arrayInfo.dataType == TypeData::Tuple)
-        {
-            return createTupleFromArrayLiteral(location, values, arrayInfo, genContext);
-        }
-
-        if (!arrayInfo.anySpreadElement)
-        {
-            return createArrayFromArrayLiteral(location, values, arrayInfo, genContext);
-        }
-
         MLIRCustomMethods cm(builder, location);
         SmallVector<mlir::Value> emptyArrayValues;
         auto arrType = getArrayType(arrayInfo.arrayElementType);
@@ -10061,6 +10037,40 @@ class MLIRGenImpl
 
         auto loadedVarArray2 = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
         return V(loadedVarArray2);
+    }
+
+    ValueOrLogicalResult createArrayFromArrayInfo(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
+    {
+        if (arrayInfo.isConst)
+        {
+            return createConstArrayOrTuple(location, values, arrayInfo, genContext);
+        }
+
+        if (arrayInfo.dataType == TypeData::Tuple)
+        {
+            return createTupleFromArrayLiteral(location, values, arrayInfo, genContext);
+        }
+
+        if (!arrayInfo.anySpreadElement)
+        {
+            return createArrayFromArrayLiteral(location, values, arrayInfo, genContext);
+        }
+
+        return createDynamicArrayFromArrayLiteral(location, values, arrayInfo, genContext);
+    }
+
+    ValueOrLogicalResult mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
+    {
+        auto location = loc(arrayLiteral);
+
+        SmallVector<ArrayElement> values;
+        struct ArrayInfo arrayInfo{};
+        if (mlir::failed(processArrayValues(arrayLiteral->elements, values, arrayInfo, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        return createArrayFromArrayInfo(location, values, arrayInfo, genContext);
     }
 
     // TODO: replace usage of this method with getFields method
