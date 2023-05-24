@@ -9673,6 +9673,31 @@ class MLIRGenImpl
                 .Default([&](auto type) {});
         }        
 
+        void adjustArrayType(mlir::Type defaultElementType)
+        {
+            // post processing values
+            if (anySpreadElement || dataType == TypeData::NotSet)
+            {
+                // this is array
+                dataType = TypeData::Array;
+            }
+
+            if (dataType == TypeData::Tuple && !accumulatedArrayElementType.isa<mlir_ts::UnionType>())
+            {
+                // seems we can convert tuple into array, for example [1.0, 2, 3] -> [1.0, 2.0, 3.0]
+                dataType = TypeData::Array;
+                applyCast = true;
+            }
+
+            if (dataType == TypeData::Array)
+            {
+                arrayElementType = 
+                    accumulatedArrayElementType 
+                        ? accumulatedArrayElementType 
+                        : defaultElementType;
+            }
+        }
+
         TypeData dataType;
         mlir::Type accumulatedArrayElementType;
         mlir::Type arrayElementType;
@@ -9844,36 +9869,57 @@ class MLIRGenImpl
 
         return mlir::success();
     }
-
-    void adjustArrayType(struct ArrayInfo &arrayInfo)
+    
+    mlir::LogicalResult processArrayElementForValues(Expression item, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
     {
-        // post processing values
-        if (arrayInfo.anySpreadElement || arrayInfo.dataType == TypeData::NotSet)
+        auto &recevierContext = arrayInfo.recevierContext;
+
+        recevierContext.nextTupleField();
+
+        GenContext noReceiverGenContext(genContext);
+        noReceiverGenContext.clearReceiverTypes();
+        recevierContext.setReceiverTo(noReceiverGenContext);
+
+        auto result = mlirGen(item, noReceiverGenContext);
+        EXIT_IF_FAILED(result)
+        auto itemValue = V(result);
+        if (!itemValue)
         {
-            // this is array
-            arrayInfo.dataType = TypeData::Array;
+            // omitted expression
+            return mlir::success();
         }
 
-        if (arrayInfo.dataType == TypeData::Tuple && !arrayInfo.accumulatedArrayElementType.isa<mlir_ts::UnionType>())
+        auto type = itemValue.getType();
+
+        if (item == SyntaxKind::SpreadElement)
         {
-            // seems we can convert tuple into array, for example [1.0, 2, 3] -> [1.0, 2.0, 3.0]
-            arrayInfo.dataType = TypeData::Array;
-            arrayInfo.applyCast = true;
+            if (mlir::failed(processArrayValuesSpreadElement(itemValue, values, arrayInfo, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+        else
+        {
+            if (auto castType = recevierContext.isCastNeeded(type))
+            {
+                CAST(itemValue, loc(item), castType, itemValue, genContext);
+                type = itemValue.getType();
+            }
+
+            if (!itemValue.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                arrayInfo.isConst = false;
+            }                
+
+            values.push_back({itemValue, false, false});
+            accumulateArrayItemType(type, arrayInfo);
         }
 
-        if (arrayInfo.dataType == TypeData::Array)
-        {
-            arrayInfo.arrayElementType = 
-                arrayInfo.accumulatedArrayElementType 
-                    ? arrayInfo.accumulatedArrayElementType 
-                    : getAnyType();
-        }
+        return mlir::success();
     }
 
     mlir::LogicalResult processArrayValues(NodeArray<Expression> arrayElements, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
     {
-        auto &recevierContext = arrayInfo.recevierContext;
-
         // check receiverType
         if (genContext.receiverType)
         {
@@ -9884,49 +9930,13 @@ class MLIRGenImpl
 
         for (auto &item : arrayElements)
         {
-            recevierContext.nextTupleField();
-
-            GenContext noReceiverGenContext(genContext);
-            noReceiverGenContext.clearReceiverTypes();
-            recevierContext.setReceiverTo(noReceiverGenContext);
-
-            auto result = mlirGen(item, noReceiverGenContext);
-            EXIT_IF_FAILED(result)
-            auto itemValue = V(result);
-            if (!itemValue)
+            if (mlir::failed(processArrayElementForValues(item, values, arrayInfo, genContext)))
             {
-                // omitted expression
-                continue;
-            }
-
-            auto type = itemValue.getType();
-
-            if (item == SyntaxKind::SpreadElement)
-            {
-                if (mlir::failed(processArrayValuesSpreadElement(itemValue, values, arrayInfo, genContext)))
-                {
-                    return mlir::failure();
-                }
-            }
-            else
-            {
-                if (auto castType = recevierContext.isCastNeeded(type))
-                {
-                    CAST(itemValue, loc(item), castType, itemValue, genContext);
-                    type = itemValue.getType();
-                }
-
-                if (!itemValue.getDefiningOp<mlir_ts::ConstantOp>())
-                {
-                    arrayInfo.isConst = false;
-                }                
-
-                values.push_back({itemValue, false, false});
-                accumulateArrayItemType(type, arrayInfo);
+                return mlir::failure();
             }
         }
 
-        adjustArrayType(arrayInfo);
+        arrayInfo.adjustArrayType(getAnyType());
 
         return mlir::success();
     }
