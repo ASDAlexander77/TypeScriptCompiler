@@ -9765,6 +9765,12 @@ class MLIRGenImpl
                     accumulatedArrayElementType 
                         ? accumulatedArrayElementType 
                         : defaultElementType;
+
+                if (recevierContext.receiverElementType && recevierContext.receiverElementType != arrayElementType)
+                {
+                    arrayElementType = recevierContext.receiverElementType;
+                    applyCast = true;
+                }
             }
         }
 
