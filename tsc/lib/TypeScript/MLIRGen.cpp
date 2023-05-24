@@ -8661,7 +8661,7 @@ class MLIRGenImpl
             return receiverType;
         }
 
-        void setReceiverTypeTo(GenContext &argGenContext)
+        void setReceiverTo(GenContext &argGenContext)
         {
             if (!hasType)
             {
@@ -8673,6 +8673,24 @@ class MLIRGenImpl
                 !noReceiverTypesForGenericCall 
                     ? argGenContext.receiverFuncType 
                     : mlir::Type();
+        }
+
+        mlir::Type isCastNeededWithOptionalUnwrap(mlir::Type type)
+        {
+            return isCastNeeded(type, true);
+        }
+
+        mlir::Type isCastNeeded(mlir::Type type, bool isOptionalUnwrap = false)
+        {
+            auto receiverType = getReceiverType();
+            if (isOptionalUnwrap) if (auto optReceiverType = receiverType.dyn_cast<mlir_ts::OptionalType>())
+            {
+                receiverType = optReceiverType.getElementType();
+            }
+
+            return receiverType && type != receiverType 
+                ? receiverType 
+                : mlir::Type();
         }
 
         void nextParameter()
@@ -8688,6 +8706,12 @@ class MLIRGenImpl
         void addOperand(mlir::Value value)
         {
             operands.push_back(value);
+        }
+
+        void addOperandAndMoveToNextParameter(mlir::Value value)
+        {
+            addOperand(value);
+            nextParameter();
         }
 
         SmallVector<mlir::Value, 4> &operands;
@@ -8744,18 +8768,9 @@ class MLIRGenImpl
 
                         auto valueProp = V(valueProperty);
 
-                        auto receiverType = operandsProcessingInfo.getReceiverType();
-                        if (receiverType)
+                        if (auto receiverType = operandsProcessingInfo.isCastNeededWithOptionalUnwrap(valueProp.getType()))
                         {
-                            if (auto optReceiverType = receiverType.dyn_cast<mlir_ts::OptionalType>())
-                            {
-                                receiverType = optReceiverType.getElementType();
-                            }
-                            
-                            if (receiverType != valueProp.getType())
-                            {
-                                CAST(valueProp, location, receiverType, valueProp, genContext);
-                            }
+                            CAST(valueProp, location, receiverType, valueProp, genContext);
                         }                        
 
                         // conditional expr:  done ? undefined : value
@@ -8772,8 +8787,7 @@ class MLIRGenImpl
                             condValue = builder.create<mlir_ts::OptionalOp>(location, getOptionalType(valueProp.getType()), valueProp, doneInvValue);
                         // }
 
-                        operandsProcessingInfo.addOperand(condValue);
-                        operandsProcessingInfo.nextParameter();
+                        operandsProcessingInfo.addOperandAndMoveToNextParameter(condValue);
                     }
                 }
                 else
@@ -8819,8 +8833,7 @@ class MLIRGenImpl
                         EXIT_IF_FAILED_OR_NO_VALUE(result)
                         auto value = V(result);
 
-                        auto receiverType = operandsProcessingInfo.getReceiverType();
-                        if (receiverType && receiverType != value.getType())
+                        if (auto receiverType = operandsProcessingInfo.isCastNeeded(value.getType()))
                         {
                             CAST(value, location, receiverType, value, genContext);
                         }
@@ -8829,8 +8842,7 @@ class MLIRGenImpl
                     }, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(spreadValue)
 
-                operandsProcessingInfo.addOperand(spreadValue);
-                operandsProcessingInfo.nextParameter();
+                operandsProcessingInfo.addOperandAndMoveToNextParameter(spreadValue);
             }
 
             return mlir::success();
@@ -8847,8 +8859,7 @@ class MLIRGenImpl
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto value = V(result);
 
-            operandsProcessingInfo.addOperand(value);
-            operandsProcessingInfo.nextParameter();
+            operandsProcessingInfo.addOperandAndMoveToNextParameter(value);
         }
 
         return mlir::success();        
@@ -8864,7 +8875,7 @@ class MLIRGenImpl
         {
             GenContext argGenContext(genContext);
             argGenContext.clearReceiverTypes();
-            operandsProcessingInfo.setReceiverTypeTo(argGenContext);
+            operandsProcessingInfo.setReceiverTo(argGenContext);
 
             auto result = mlirGen(expression, argGenContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
@@ -8881,8 +8892,7 @@ class MLIRGenImpl
                 continue;
             }
 
-            operandsProcessingInfo.addOperand(value);
-            operandsProcessingInfo.nextParameter();
+            operandsProcessingInfo.addOperandAndMoveToNextParameter(value);
         }
 
         return mlir::success();
@@ -10002,7 +10012,7 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
     }    
 
-    ValueOrLogicalResult createArrayFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
+    ValueOrLogicalResult createFixedSizeArrayFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
     {
         SmallVector<mlir::Value> arrayValues;
         for (auto val : values)
@@ -10117,7 +10127,7 @@ class MLIRGenImpl
 
         if (!arrayInfo.anySpreadElement)
         {
-            return createArrayFromArrayLiteral(location, values, arrayInfo, genContext);
+            return createFixedSizeArrayFromArrayLiteral(location, values, arrayInfo, genContext);
         }
 
         return createDynamicArrayFromArrayLiteral(location, values, arrayInfo, genContext);
