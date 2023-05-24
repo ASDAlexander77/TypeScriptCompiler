@@ -229,7 +229,6 @@ class MLIRTypeHelper
             llvm_unreachable("not implmeneted");
         }
 
-
         LLVM_DEBUG(llvm::dbgs() << "\n!! attr from type: " << srcType << " to: " << destType << "\n";);      
 
         if (srcType == destType)
