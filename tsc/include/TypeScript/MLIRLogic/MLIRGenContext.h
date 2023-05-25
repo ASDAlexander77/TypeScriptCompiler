@@ -159,6 +159,7 @@ struct GenContext
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
     ArrayRef<mlir::Value> callOperands;
     int *state;
+    bool disableSpreadParams;
 };
 
 struct ValueOrLogicalResult 

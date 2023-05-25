@@ -8615,14 +8615,13 @@ class MLIRGenImpl
 
     struct OperandsProcessingInfo
     {
-        OperandsProcessingInfo(mlir::Type funcType, SmallVector<mlir::Value, 4> &operands, int offsetArgs, bool noReceiverTypesForGenericCall, MLIRTypeHelper &mth) 
-            : operands{operands}, isVarArg{false}, hasType{false}, currentParameter{offsetArgs}, noReceiverTypesForGenericCall{noReceiverTypesForGenericCall}, mth{mth}
+        OperandsProcessingInfo(mlir::Type funcType, SmallVector<mlir::Value, 4> &operands, int offsetArgs, bool noReceiverTypesForGenericCall, MLIRTypeHelper &mth, bool disableSpreadParam) 
+            : operands{operands}, lastArgIndex{-1}, isVarArg{false}, hasType{false}, currentParameter{offsetArgs}, noReceiverTypesForGenericCall{noReceiverTypesForGenericCall}, mth{mth}
         {
-            lastArgIndex = operands.size() - 1;
-            detectVarArgTypeInfo(funcType);
+            detectVarArgTypeInfo(funcType, disableSpreadParam);
         }
 
-        void detectVarArgTypeInfo(mlir::Type funcType)
+        void detectVarArgTypeInfo(mlir::Type funcType, bool disableSpreadParam)
         {
             auto tupleParamsType = mth.getParamsTupleTypeFromFuncRef(funcType);
             if (!tupleParamsType || tupleParamsType.isa<mlir::NoneType>())
@@ -8633,7 +8632,7 @@ class MLIRGenImpl
             hasType = true;
             parameters = tupleParamsType.cast<mlir_ts::TupleType>().getFields();
             lastArgIndex = parameters.size() - 1;
-            if (mth.getVarArgFromFuncRef(funcType))
+            if (!disableSpreadParam && mth.getVarArgFromFuncRef(funcType))
             {
                 varArgType = parameters.back().type;
                 if (auto arrayType = varArgType.dyn_cast<mlir_ts::ArrayType>())
@@ -8930,7 +8929,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
                                         mlir::Type funcType, const GenContext &genContext, int offsetArgs = 0, bool noReceiverTypesForGenericCall = false)
     {
-        OperandsProcessingInfo operandsProcessingInfo(funcType, operands, offsetArgs, noReceiverTypesForGenericCall, mth);
+        OperandsProcessingInfo operandsProcessingInfo(funcType, operands, offsetArgs, noReceiverTypesForGenericCall, mth, genContext.disableSpreadParams);
 
         for (auto it = arguments.begin(); it != arguments.end(); ++it)
         {
@@ -9125,20 +9124,11 @@ class MLIRGenImpl
             {
                 // evaluate constructor
                 mlir::Type tupleParamsType;
-                auto funcRefValue = evaluatePropertyValue(newOp, CONSTRUCTOR_NAME, genContext);
-                if (funcRefValue)
+                auto funcValueRef = evaluateProperty(newOp, CONSTRUCTOR_NAME, genContext);
+                if (funcValueRef)
                 {
-                    auto funcValueRef = funcRefValue.getType();
-
-                    auto noReceiverTypesForGenericCall = false;
-                    if (funcRefValue.getDefiningOp()->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
-                    {
-                        // so if method is generic and you need to infer types you can cast to generic types
-                        noReceiverTypesForGenericCall = typeArguments.size() == 0;
-                    }
-
                     SmallVector<mlir::Value, 4> operands;
-                    if (mlir::failed(mlirGenOperands(arguments, operands, funcValueRef, genContext, 1/*this params shift*/, noReceiverTypesForGenericCall)))
+                    if (mlir::failed(mlirGenOperands(arguments, operands, funcValueRef, genContext, 1/*this params shift*/)))
                     {
                         emitError(location) << "Call constructor: can't resolve values of all parameters";
                         return mlir::failure();
@@ -13031,6 +13021,7 @@ genContext);
             GenContext funcGenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.thisType = newClassPtr->classType;
+            funcGenContext.disableSpreadParams = true;
 
             auto result = mlirGenFunctionBody(
                 location, fullClassStaticName, funcType,
@@ -13038,7 +13029,8 @@ genContext);
                     NodeFactory nf(NodeFactoryFlags::None);
 
                     NodeArray<Expression> argumentsArray;
-                    auto skip = 1;
+                    //auto skip = 1;
+                    auto skip = skipFuncParams;
                     auto index = 0;
                     for (auto &paramType : funcType.getInputs())
                     {
