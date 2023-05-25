@@ -8,7 +8,7 @@ interface A {
 
 // TODO: fix code which is commented 
 class B {
-    constructor(x: number, y: number, ...z: string[]) { print("constr", x, y); for (const v of z) print("z[...]: ", v); count++; }
+    constructor(x: number, y: number, ...z: string[]) { print("constr", x, y); print("z length:", z.length); for (const v of z) print("z[...]: ", v); count++; }
 }
 
 interface C {
@@ -21,13 +21,16 @@ interface D {
 
 function main() {
 
-    let weakB : {
+    let a: string[] = [];
+
+    let weakB: {
         new(x: number, y: number, ...z: string[]): B;
     } = B;
 
-    const b = new weakB(1, 2);
+    const b = new weakB(1, 2, "string");
+    const b1 = new weakB(1, 2, ...a);
+    const b2 = new weakB(1, 2, ...a, "string");
 
-    let a: string[] = [];
     let b: A = { f: B };
     let c: C;
     let d: A[] = [b, b];
@@ -70,7 +73,7 @@ function main() {
 
     print(count);
 
-    assert(count == 22);
+    assert(count == 24);
 
     print("done.");
 }
