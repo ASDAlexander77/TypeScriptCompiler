@@ -236,7 +236,6 @@ add_test(NAME test-compile-00-spread-assignment COMMAND test-runner "${PROJECT_S
 add_test(NAME test-compile-01-spread-assignment COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread_assignment.ts")
 add_test(NAME test-compile-00-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00spread.ts")
 add_test(NAME test-compile-01-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread.ts")
-add_test(NAME test-compile-02-spread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02spread.ts")
 add_test(NAME test-compile-00-types-unknown1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 add_test(NAME test-compile-00-types-indexed-access-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
 add_test(NAME test-compile-00-types-mapped-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
@@ -322,6 +321,7 @@ add_test(NAME test-compile-additionOperatorWithNumberAndEnum COMMAND test-runner
 add_test(NAME test-compile-arithmeticOperatorWithEnum COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithEnum.ts")
 add_test(NAME test-compile-arithmeticOperatorWithTypeParameter COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithTypeParameter.ts")
 add_test(NAME test-compile-comparisonOperatorWithIdenticalObjects COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/comparisonOperatorWithIdenticalObjects.ts")
+add_test(NAME test-compile-callWithSpread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/callWithSpread.ts")
 add_test(NAME test-compile-newWithSpread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/newWithSpread.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
@@ -476,7 +476,6 @@ add_test(NAME test-jit-00-spread-assignment COMMAND test-runner -jit "${PROJECT_
 add_test(NAME test-jit-01-spread-assignment COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread_assignment.ts")
 add_test(NAME test-jit-00-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00spread.ts")
 add_test(NAME test-jit-01-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01spread.ts")
-add_test(NAME test-jit-02-spread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02spread.ts")
 add_test(NAME test-jit-00-types-unknown1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_unknown1.ts")
 add_test(NAME test-jit-00-types-indexed-access-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_indexedaccesstype.ts")
 add_test(NAME test-jit-00-types-mapped-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00types_mappedtype.ts")
@@ -565,5 +564,6 @@ add_test(NAME test-jit-additionOperatorWithNumberAndEnum COMMAND test-runner -ji
 add_test(NAME test-jit-arithmeticOperatorWithEnum COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithEnum.ts")
 add_test(NAME test-jit-arithmeticOperatorWithTypeParameter COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/arithmeticOperatorWithTypeParameter.ts")
 add_test(NAME test-jit-comparisonOperatorWithIdenticalObjects COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/comparisonOperatorWithIdenticalObjects.ts")
+add_test(NAME test-jit-callWithSpread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/callWithSpread.ts")
 add_test(NAME test-jit-newWithSpread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/newWithSpread.ts")
 

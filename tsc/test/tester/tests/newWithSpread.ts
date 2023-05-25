@@ -8,7 +8,7 @@ interface A {
 
 // TODO: fix code which is commented 
 class B {
-    constructor(x: number, y: number, ...z: string[]) { print("constr", x, y); /*if (z.length > 0) print(z[0]);*/ count++; }
+    constructor(x: number, y: number, ...z: string[]) { print("constr", x, y); for (const v of z) print("z[...]: ", v); count++; }
 }
 
 interface C {
