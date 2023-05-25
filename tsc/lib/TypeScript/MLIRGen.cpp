@@ -9091,7 +9091,8 @@ class MLIRGenImpl
     }
 
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
-                                          bool suppressConstructorCall, const GenContext &genContext)
+                                          NodeArray<TypeNode> typeArguments, bool suppressConstructorCall, 
+                                          const GenContext &genContext)
     {
 
         auto type = value.getType();
@@ -9124,18 +9125,29 @@ class MLIRGenImpl
             {
                 // evaluate constructor
                 mlir::Type tupleParamsType;
-                auto funcValueRef = evaluateProperty(newOp, CONSTRUCTOR_NAME, genContext);
-
-                SmallVector<mlir::Value, 4> operands;
-                if (mlir::failed(mlirGenOperands(arguments, operands, funcValueRef, genContext)))
+                auto funcRefValue = evaluatePropertyValue(newOp, CONSTRUCTOR_NAME, genContext);
+                if (funcRefValue)
                 {
-                    emitError(location) << "Call constructor: can't resolve values of all parameters";
-                    return mlir::failure();
-                }
+                    auto funcValueRef = funcRefValue.getType();
 
-                assert(newOp);
-                auto result  = mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
-                EXIT_IF_FAILED(result)
+                    auto noReceiverTypesForGenericCall = false;
+                    if (funcRefValue.getDefiningOp()->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
+                    {
+                        // so if method is generic and you need to infer types you can cast to generic types
+                        noReceiverTypesForGenericCall = typeArguments.size() == 0;
+                    }
+
+                    SmallVector<mlir::Value, 4> operands;
+                    if (mlir::failed(mlirGenOperands(arguments, operands, funcValueRef, genContext, 1/*this params shift*/, noReceiverTypesForGenericCall)))
+                    {
+                        emitError(location) << "Call constructor: can't resolve values of all parameters";
+                        return mlir::failure();
+                    }
+
+                    assert(newOp);
+                    auto result  = mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
+                    EXIT_IF_FAILED(result)
+                }
             }
 
             return newOp;
@@ -9243,7 +9255,7 @@ class MLIRGenImpl
     }
 
     ValueOrLogicalResult NewClassInstanceByCallingNewCtor(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
-            const GenContext &genContext)
+            NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
         auto result = mlirGenPropertyAccessExpression(location, value, NEW_CTOR_METHOD_NAME, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
@@ -9256,7 +9268,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        return mlirGenCallExpression(location, newCtorMethod, {}, operands, genContext);        
+        return mlirGenCallExpression(location, newCtorMethod, typeArguments, operands, genContext);        
     }
 
     ValueOrLogicalResult mlirGen(NewExpression newExpression, const GenContext &genContext)
@@ -9335,7 +9347,7 @@ class MLIRGenImpl
 
         if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
         {
-            return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, genContext);
+            return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, newExpression->typeArguments, genContext);
         }
 
         if (auto tupleType = value.getType().dyn_cast<mlir_ts::TupleType>())
@@ -9343,7 +9355,7 @@ class MLIRGenImpl
             auto newCtorMethod = evaluateProperty(value, NEW_CTOR_METHOD_NAME, genContext);
             if (newCtorMethod)
             {
-                return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, genContext);
+                return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, newExpression->typeArguments, genContext);
             }
         }
 
@@ -9351,7 +9363,7 @@ class MLIRGenImpl
         auto suppressConstructorCall = (newExpression->internalFlags & InternalFlags::SuppressConstructorCall) ==
                                         InternalFlags::SuppressConstructorCall;
 
-        return NewClassInstance(location, value, newExpression->arguments, suppressConstructorCall, genContext);
+        return NewClassInstance(location, value, newExpression->arguments, newExpression->typeArguments, suppressConstructorCall, genContext);
     }
 
     mlir::LogicalResult mlirGen(DeleteExpression deleteExpression, const GenContext &genContext)
@@ -11540,7 +11552,8 @@ class MLIRGenImpl
                     location, classInfo->classType,
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
 
-                return NewClassInstance(location, classValue, undefined, false, genContext);
+                // TODO: find out if you need to pass generics info, typeParams + typeArgs
+                return NewClassInstance(location, classValue, undefined, undefined, false, genContext);
             }
         }
 
@@ -14133,7 +14146,7 @@ genContext);
         theModule = savedModule;
     }
 
-    mlir::Type evaluateProperty(mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
+    mlir::Value evaluatePropertyValue(mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
     {
         // we need to ignore errors;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
@@ -14141,7 +14154,7 @@ genContext);
 
         auto location = exprValue.getLoc();
 
-        mlir::Type resultType;
+        mlir::Value initValue;
 
         // module
         auto savedModule = theModule;
@@ -14153,16 +14166,18 @@ genContext);
             GenContext evalGenContext(genContext);
             evalGenContext.allowPartialResolve = true;
             auto result = mlirGenPropertyAccessExpression(location, exprValue, propertyName, evalGenContext);
-            auto initValue = V(result);
-            if (initValue)
-            {
-                resultType = initValue.getType();
-            }
+            initValue = V(result);
         }
 
         theModule = savedModule;
 
-        return resultType;
+        return initValue;
+    }    
+
+    mlir::Type evaluateProperty(mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
+    {
+        auto value = evaluatePropertyValue(exprValue, propertyName, genContext);
+        return value ? value.getType() : mlir::Type();
     }
 
     mlir::Type evaluateElementAccess(mlir::Location location, mlir::Value expression, bool isConditionalAccess, const GenContext &genContext)
