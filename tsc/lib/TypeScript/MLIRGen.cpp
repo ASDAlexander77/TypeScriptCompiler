@@ -7466,8 +7466,8 @@ class MLIRGenImpl
     {
         assert(classInfo);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! looking for member: " << name << " in class '" << classInfo->fullName
-                                << "'\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! looking for member: " << name << " in class '" << classInfo->fullName << "' this value: " << thisValue 
+                                << "\n";);
 
         auto staticFieldIndex = classInfo->getStaticFieldIndex(MLIRHelper::TupleFieldName(name, builder.getContext()));
         if (staticFieldIndex >= 0)
@@ -11172,6 +11172,15 @@ class MLIRGenImpl
             auto classInfo =
                 getClassInfoByFullName(genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue());
             auto baseClassInfo = classInfo->baseClasses.front();
+
+            // this is access to static base class
+            if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                return builder.create<mlir_ts::ClassRefOp>(
+                    location, baseClassInfo->classType,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(),
+                                                baseClassInfo->classType.getName().getValue()));                   
+            }
 
             return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
         }
