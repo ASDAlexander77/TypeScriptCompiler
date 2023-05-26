@@ -10714,6 +10714,7 @@ class MLIRGenImpl
                                                             builder.getBoolAttr(false));
         for (auto fieldToSet : fieldsToSet)
         {
+            VALIDATE(fieldToSet.first, location)
             VALIDATE(fieldToSet.second, location)
 
             auto location = fieldToSet.second.getLoc();
@@ -13618,7 +13619,12 @@ genContext);
         auto name = MLIRHelper::getName(declarationAST->name);
         if (name.empty())
         {
-            auto attr = getNameFromComputedPropertyName(declarationAST->name, genContext);
+            auto [attr, result] = getNameFromComputedPropertyName(declarationAST->name, genContext);
+            if (mlir::failed(result))
+            {
+                return nullptr;
+            }
+
             if (auto strAttr = attr.template dyn_cast_or_null<mlir::StringAttr>())
             {
                 name = strAttr.getValue();
@@ -13979,7 +13985,13 @@ genContext);
 
     std::string getNameForMethod(SignatureDeclarationBase methodSignature, const GenContext &genContext)
     {
-        if (auto attr = getNameFromComputedPropertyName(methodSignature->name, genContext))
+        auto [attr, result] = getNameFromComputedPropertyName(methodSignature->name, genContext);
+        if (mlir::failed(result))
+        {
+            return nullptr;
+        }
+
+        if (attr)
         {
             if (auto strAttr = attr.dyn_cast<mlir::StringAttr>())
             {
@@ -16684,7 +16696,7 @@ genContext);
 #endif
     }
 
-    mlir::Attribute getNameFromComputedPropertyName(Node name, const GenContext &genContext)
+    std::pair<mlir::Attribute, mlir::LogicalResult> getNameFromComputedPropertyName(Node name, const GenContext &genContext)
     {
         if (name == SyntaxKind::ComputedPropertyName)
         {
@@ -16698,10 +16710,10 @@ genContext);
                 emitError(loc(name), "not supported ComputedPropertyName expression");
             }
 
-            return attr;
+            return {attr, attr ? mlir::success() : mlir::failure()};
         }
 
-        return mlir::Attribute();
+        return {mlir::Attribute(), mlir::success()};
     }
 
     mlir::Attribute TupleFieldName(Node name, const GenContext &genContext)
@@ -16709,9 +16721,10 @@ genContext);
         auto namePtr = MLIRHelper::getName(name, stringAllocator);
         if (namePtr.empty())
         {
-            if (auto attr = getNameFromComputedPropertyName(name, genContext))
+            auto [attrComputed, attrResult] = getNameFromComputedPropertyName(name, genContext);
+            if (attrComputed || mlir::failed(attrResult))
             {
-                return attr;
+                return attrComputed;
             }
                         
             MLIRCodeLogic mcl(builder);
