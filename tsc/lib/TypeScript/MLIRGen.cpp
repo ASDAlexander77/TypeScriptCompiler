@@ -11161,6 +11161,11 @@ class MLIRGenImpl
 
         if (genContext.thisType && name == SUPER_NAME)
         {
+            if (!genContext.thisType.isa<mlir_ts::ClassType>() && !genContext.thisType.isa<mlir_ts::ClassStorageType>())
+            {
+                return mlir::Value();
+            }
+
             auto result = mlirGen(location, THIS_NAME, genContext);
             auto thisValue = V(result);
 
