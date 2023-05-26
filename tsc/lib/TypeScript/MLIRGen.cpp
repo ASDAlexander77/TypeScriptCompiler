@@ -887,6 +887,10 @@ class MLIRGenImpl
         {
             return mlirGen(statementAST.as<DebuggerStatement>(), genContext);
         }
+        if (kind == SyntaxKind::ArrowFunction)
+        {
+            return mlirGen(statementAST.as<ArrowFunction>(), genContext);
+        }
         else if (kind == SyntaxKind::EmptyStatement ||
                  kind == SyntaxKind::Unknown /*TODO: temp solution to treat null statements as empty*/)
         {
@@ -2950,7 +2954,7 @@ class MLIRGenImpl
                 }
             }
 
-            if (isNoneType(type) && genContext.receiverFuncType)
+            if (isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
             {
                 type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
 
