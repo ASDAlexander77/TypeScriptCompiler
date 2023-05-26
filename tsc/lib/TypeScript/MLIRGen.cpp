@@ -559,7 +559,7 @@ class MLIRGenImpl
             return mlirGen(body.as<ModuleBlock>(), genContext);
         }
 
-        if (body.is<Statement>())
+        if (body.is<Statement>() && !body.is<ArrowFunction>())
         {
             return mlirGen(body.as<Statement>(), genContext);
         }
@@ -886,10 +886,6 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::DebuggerStatement)
         {
             return mlirGen(statementAST.as<DebuggerStatement>(), genContext);
-        }
-        if (kind == SyntaxKind::ArrowFunction)
-        {
-            return mlirGen(statementAST.as<ArrowFunction>(), genContext);
         }
         else if (kind == SyntaxKind::EmptyStatement ||
                  kind == SyntaxKind::Unknown /*TODO: temp solution to treat null statements as empty*/)
