@@ -559,7 +559,7 @@ class MLIRGenImpl
             return mlirGen(body.as<ModuleBlock>(), genContext);
         }
 
-        if (body.is<Statement>() && !body.is<ArrowFunction>())
+        if (body.is<Statement>() && !body.is<ArrowFunction>() && !body.is<FunctionExpression>() && !body.is<ClassExpression>())
         {
             return mlirGen(body.as<Statement>(), genContext);
         }
