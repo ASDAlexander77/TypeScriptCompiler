@@ -3075,7 +3075,7 @@ class MLIRGenImpl
             }
             else
             {
-                name = "";
+                name = MLIRHelper::getAnonymousName(loc_check(signatureDeclarationBaseAST), ".md");
             }
         }
         // TODO: for new () interfaces
