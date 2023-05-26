@@ -64,6 +64,13 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
+        // special case
+        if (type.isa<mlir_ts::TypePredicateType>())
+        {
+            auto typeOfValue = strValue(loc, "boolean");
+            return typeOfValue;
+        }        
+
         if (type.isa<mlir_ts::NumberType>())
         {
             auto typeOfValue = strValue(loc, "number");

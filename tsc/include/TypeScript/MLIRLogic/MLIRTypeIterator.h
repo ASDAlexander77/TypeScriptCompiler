@@ -278,7 +278,13 @@ class MLIRTypeIterator
                               }
 
                               return true;
-                          })                          
+                          })               
+                          .Case<mlir_ts::TypePredicateType>([&](auto t) {
+                              if (!iterate(t.getElementType()))
+                                  return false;
+
+                              return true;
+                          })                                      
                           .Case<mlir_ts::ObjectType>([&](auto t) {
                               if (!iterate(t.getStorageType()))
                                   return false;
