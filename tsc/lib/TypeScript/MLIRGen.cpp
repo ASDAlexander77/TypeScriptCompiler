@@ -4762,27 +4762,23 @@ class MLIRGenImpl
 
     mlir::LogicalResult addSafeCastStatement(Expression expr, Node typeToken, const GenContext &genContext)
     {
-        /*
-        NodeFactory nf(NodeFactoryFlags::None);
+        auto safeType = getType(typeToken, genContext);
+        return addSafeCastStatement(expr, safeType, genContext);
+    }
 
-        // init
-        NodeArray<VariableDeclaration> declarations;
-        auto _safe_casted = expr;
-        declarations.push_back(
-            nf.createVariableDeclaration(_safe_casted, undefined, undefined, nf.createTypeAssertion(typeToken, expr)));
-
-        auto varDeclList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
-
-        auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
-
-        return mlirGen(expr_statement.as<Statement>(), genContext);
-        */
-
+    mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, const GenContext &genContext)
+    {
         auto location = loc(expr);
+        auto nameStr = MLIRHelper::getName(expr.as<DeclarationName>());
         auto result = mlirGen(expr, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
-        auto safeType = getType(typeToken, genContext);
+
+        return addSafeCastStatement(location, nameStr, exprValue, safeType, genContext);
+    }    
+
+    mlir::LogicalResult addSafeCastStatement(mlir::Location location, std::string parameterName, mlir::Value exprValue, mlir::Type safeType, const GenContext &genContext)
+    {
         mlir::Value castedValue;
         if (exprValue.getType().isa<mlir_ts::AnyType>())
         {
@@ -4795,14 +4791,14 @@ class MLIRGenImpl
         }
 
         return 
-            processDeclarationName(
-                expr.as<DeclarationName>(), VariableClass::Const,
+            !!registerVariable(
+                location, parameterName, false, VariableClass::Const,
                 [&]() -> std::pair<mlir::Type, mlir::Value>
                 {
                     return {safeType, castedValue};
                 },
-                genContext);
-    }
+                genContext) ? mlir::success() : mlir::failure();        
+    }    
 
     mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, const GenContext &genContext)
     {
@@ -4967,15 +4963,34 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    mlir::LogicalResult checkSafeCastTypePredicate(Expression expr, mlir_ts::TypePredicateType typePredicateType, const GenContext &genContext)
+    {
+        return addSafeCastStatement(expr, typePredicateType.getElementType(), genContext);
+    }
+
     mlir::LogicalResult checkSafeCast(Expression expr, const GenContext &genContext)
     {
-        if (expr != SyntaxKind::BinaryExpression)
+        if (expr == SyntaxKind::CallExpression)
         {
+            auto callExpr = expr.as<CallExpression>();
+            auto funcType = evaluate(callExpr->expression, genContext);
+            if (!funcType)
+            {
+                return mlir::success();
+            }
+
+            auto resultType = mth.getReturnTypeFromFuncRef(funcType);
+
+            if (auto typePredicateType = resultType.dyn_cast<mlir_ts::TypePredicateType>())
+            {
+                return checkSafeCastTypePredicate(callExpr->arguments.front(), typePredicateType, genContext);
+            }
+
             return mlir::success();
         }
-
-        if (auto binExpr = expr.as<BinaryExpression>())
+        else if (expr == SyntaxKind::BinaryExpression)
         {
+            auto binExpr = expr.as<BinaryExpression>();
             auto op = (SyntaxKind)binExpr->operatorToken;
             if (op == SyntaxKind::EqualsEqualsToken || op == SyntaxKind::EqualsEqualsEqualsToken)
             {
@@ -14853,9 +14868,8 @@ genContext);
         }
         else if (kind == SyntaxKind::TypePredicate)
         {
-            // TODO:
             // in runtime it is boolean (it is needed to track types)
-            return getBooleanType();
+            return getTypePredicateType(typeReferenceAST.as<TypePredicateNode>(), genContext);
         }
         else if (kind == SyntaxKind::ThisType)
         {
@@ -14864,8 +14878,7 @@ genContext);
         }
         else if (kind == SyntaxKind::Unknown)
         {
-            // in case type is not provided
-            return getAnyType();
+            return getUnknownType();
         }
         else if (kind == SyntaxKind::ConditionalType)
         {
@@ -15874,6 +15887,19 @@ genContext);
     mlir::Type getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext)
     {
         return getTypeByTypeName(typeQueryAST->exprName, genContext);
+    }
+
+    mlir::Type getTypePredicateType(TypePredicateNode typePredicateNode, const GenContext &genContext)
+    {
+        auto namePtr = MLIRHelper::getName(typePredicateNode->parameterName, stringAllocator);
+        auto type = getType(typePredicateNode->type, genContext);
+        if (!type)
+        {
+            return mlir::Type();
+        }
+
+        auto parametereNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), namePtr);
+        return mlir_ts::TypePredicateType::get(parametereNameSymbol, type, !!typePredicateNode->assertsModifier);
     }
 
     mlir::Type processConditionalForType(ConditionalTypeNode conditionalTypeNode, mlir::Type checkType, mlir::Type extendsType, mlir::Type inferType, const GenContext &genContext)

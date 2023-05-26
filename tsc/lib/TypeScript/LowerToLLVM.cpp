@@ -4541,6 +4541,11 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return th.getLLVMBoolType();
     });
 
+    converter.addConversion([&](mlir_ts::TypePredicateType type) {
+        TypeHelper th(m.getContext());
+        return th.getLLVMBoolType();
+    });
+
     converter.addConversion([&](mlir_ts::CharType type) {
         return mlir::IntegerType::get(m.getContext(), 8 /*, mlir::IntegerType::SignednessSemantics::Unsigned*/);
     });

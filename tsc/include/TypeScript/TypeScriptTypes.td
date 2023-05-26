@@ -1053,7 +1053,7 @@ def TypeScript_Conditional : TypeScript_Type<"Conditional"> {
     Examples:
 
     ```mlir
-    conditional<!Name, !Name, !Name, !Name>
+    conditional<!Type, !Type, !Type, !Type>
     ```
   }];
   let parameters = (ins "Type":$checkType, "Type":$extendsType, "Type":$trueType, "Type":$falseType);
@@ -1167,6 +1167,33 @@ def TypeScript_TypeReference : TypeScript_Type<"TypeReference"> {
   let parameters = (ins "FlatSymbolRefAttr":$name, ArrayRefParameter<"Type", "type">:$types);
 
   let assemblyFormat = "`<` params `>`";
+}
+
+def TypeScript_TypePredicate : TypeScript_Type<"TypePredicate"> {
+  let mnemonic = "Is";
+
+  let description = [{
+    Syntax:
+
+    ```
+    key-of-type ::= `Is<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    is<!Name>
+    ```
+  }];
+  let parameters = (ins "FlatSymbolRefAttr":$parameterName, "Type":$elementType, "bool":$asserts);
+
+  let assemblyFormat = "`<` params `>`";
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$parameterName, "Type":$elementType, CArg<"bool", "false">:$asserts), [{
+      return Base::get(elementType.getContext(), parameterName, elementType, asserts);
+    }]>
+  ];
 }
 
 def TypeScript_IsConstTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstTupleType>()">;
