@@ -4968,22 +4968,47 @@ class MLIRGenImpl
         return addSafeCastStatement(expr, typePredicateType.getElementType(), genContext);
     }
 
-    mlir::LogicalResult checkSafeCast(Expression expr, const GenContext &genContext)
+    Expression checkSafeCastFindParameter(NodeArray<Expression> arguments, mlir::FlatSymbolRefAttr parameterName)
+    {
+        // TODO: this is not working, as we do not know names of parameters of function
+        // for (auto expr : arguments)
+        // {
+        //     auto nameStr = MLIRHelper::getName(expr.as<DeclarationName>());
+        //     if (nameStr == parameterName.getValue())
+        //     {
+        //         return expr;
+        //     }
+        // }
+
+        // TODO: can't be implemented while we use parameter names in function type
+        // default
+        return arguments.front();
+    }
+
+    mlir::LogicalResult checkSafeCast(Expression expr, mlir::Value conditionValue, const GenContext &genContext)
     {
         if (expr == SyntaxKind::CallExpression)
         {
-            auto callExpr = expr.as<CallExpression>();
-            auto funcType = evaluate(callExpr->expression, genContext);
-            if (!funcType)
-            {
-                return mlir::success();
-            }
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCast: condition: " << conditionValue << "\n");
 
-            auto resultType = mth.getReturnTypeFromFuncRef(funcType);
-
-            if (auto typePredicateType = resultType.dyn_cast<mlir_ts::TypePredicateType>())
+            if (auto callInd = conditionValue.getDefiningOp<mlir_ts::CallIndirectOp>())
             {
-                return checkSafeCastTypePredicate(callExpr->arguments.front(), typePredicateType, genContext);
+                auto funcType = callInd.getCallee().getType();
+
+                auto resultType = mth.getReturnTypeFromFuncRef(funcType);
+
+                if (auto typePredicateType = resultType.dyn_cast<mlir_ts::TypePredicateType>())
+                {
+                    // TODO: you need to find argument by using parameter name
+                    auto callExpr = expr.as<CallExpression>();
+                    if (callExpr->arguments.size() > 0)
+                    {
+                        return checkSafeCastTypePredicate(
+                            checkSafeCastFindParameter(callExpr->arguments, typePredicateType.getParameterName()), 
+                            typePredicateType, 
+                            genContext);
+                    }
+                }
             }
 
             return mlir::success();
@@ -5049,7 +5074,7 @@ class MLIRGenImpl
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
-            checkSafeCast(ifStatementAST->expression, genContext);
+            checkSafeCast(ifStatementAST->expression, V(result), genContext);
             auto result = mlirGen(ifStatementAST->thenStatement, genContext);
             EXIT_IF_FAILED(result)
         }
@@ -6103,7 +6128,7 @@ class MLIRGenImpl
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
-            checkSafeCast(conditionalExpressionAST->condition, genContext);
+            checkSafeCast(conditionalExpressionAST->condition, V(result), genContext);
             resultWhenTrueType = evaluate(conditionalExpressionAST->whenTrue, genContext);
         }
 
@@ -6136,7 +6161,7 @@ class MLIRGenImpl
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
-            checkSafeCast(conditionalExpressionAST->condition, genContext);
+            checkSafeCast(conditionalExpressionAST->condition, V(result), genContext);
             auto result = mlirGen(whenTrueExpression, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             resultTrue = V(result);
@@ -15891,12 +15916,17 @@ genContext);
 
     mlir::Type getTypePredicateType(TypePredicateNode typePredicateNode, const GenContext &genContext)
     {
-        auto namePtr = MLIRHelper::getName(typePredicateNode->parameterName, stringAllocator);
+        auto namePtr = 
+            typePredicateNode->parameterName == SyntaxKind::ThisType
+            ? "this"
+            : MLIRHelper::getName(typePredicateNode->parameterName, stringAllocator);
         auto type = getType(typePredicateNode->type, genContext);
         if (!type)
         {
             return mlir::Type();
         }
+
+        assert(!namePtr.empty());
 
         auto parametereNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), namePtr);
         return mlir_ts::TypePredicateType::get(parametereNameSymbol, type, !!typePredicateNode->assertsModifier);
