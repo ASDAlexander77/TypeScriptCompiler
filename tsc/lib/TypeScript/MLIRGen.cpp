@@ -6406,7 +6406,7 @@ class MLIRGenImpl
                                                NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
                                                const GenContext &genContext)
     {
-        // to remove temp var .ctor after call
+        // to remove temp var after call
         SymbolTableScopeT varScope(symbolTable);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(THIS_TEMPVAR_NAME, thisValue.getType(), location);
@@ -6425,6 +6425,16 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
+
+        // check if we need to call hasInstance
+        if (auto hasInstanceType = evaluateProperty(binaryExpressionAST->right, SYMBOL_HAS_INSTANCE, genContext))
+        {
+            auto resultRight = mlirGen(binaryExpressionAST->right, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(resultRight)
+            auto resultRightValue = V(resultRight);
+            
+            return mlirGenCallThisMethod(location, resultRightValue, SYMBOL_HAS_INSTANCE, undefined, {binaryExpressionAST->left}, genContext);
+        }        
 
         auto result2 = mlirGen(binaryExpressionAST->left, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
@@ -14272,6 +14282,20 @@ genContext);
 
     mlir::Type evaluateProperty(mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
     {
+        auto value = evaluatePropertyValue(exprValue, propertyName, genContext);
+        return value ? value.getType() : mlir::Type();
+    }
+
+    mlir::Type evaluateProperty(Expression expression, const std::string &propertyName, const GenContext &genContext)
+    {
+        auto result = mlirGen(expression, genContext);
+        if (result.failed_or_no_value())
+        {
+            return mlir::Type();
+        }
+
+        auto exprValue = V(result);
+
         auto value = evaluatePropertyValue(exprValue, propertyName, genContext);
         return value ? value.getType() : mlir::Type();
     }
