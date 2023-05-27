@@ -518,6 +518,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
     // Print a stack trace if we signal out.
     llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
     llvm::PrettyStackTraceProgram X(argc, argv);
+    llvm::setBugReportMsg("PLEASE submit a bug report to https://github.com/ASDAlexander77/TypeScriptCompiler/issues and include the crash backtrace.");
 
     llvm::llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
 
