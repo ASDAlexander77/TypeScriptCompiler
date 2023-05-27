@@ -39,6 +39,7 @@
 #define TO_STRING "toString"
 #define SYMBOL_TO_STRING_TAG "toStringTag"
 #define SYMBOL_ITERATOR "iterator"
+#define SYMBOL_ASYNC_ITERATOR "asyncIterator"
 #define ITERATOR_NEXT "next"
 
 #if __LP64__

@@ -5542,9 +5542,10 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
-        if (auto iteratorType = evaluateProperty(exprValue, SYMBOL_ITERATOR, genContext))
+        auto iteratorIdent = (forOfStatementAST->awaitModifier) ? SYMBOL_ASYNC_ITERATOR : SYMBOL_ITERATOR;
+        if (auto iteratorType = evaluateProperty(exprValue, iteratorIdent, genContext))
         {
-            if (auto iteratorValue = mlirGenCallThisMethod(location, exprValue, SYMBOL_ITERATOR, undefined, undefined, genContext))
+            if (auto iteratorValue = mlirGenCallThisMethod(location, exprValue, iteratorIdent, undefined, undefined, genContext))
             {
                 exprValue = V(iteratorValue);
             }
