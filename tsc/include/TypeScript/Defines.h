@@ -36,6 +36,11 @@
 #define INDEX_ACCESS_FIELD_NAME ".index"
 #define CALL_FIELD_NAME ".call"
 
+#define TO_STRING "toString"
+#define SYMBOL_TO_STRING_TAG "toStringTag"
+#define SYMBOL_ITERATOR "iterator"
+#define ITERATOR_NEXT "next"
+
 #if __LP64__
 #define TRAMPOLINE_SIZE 48
 #else

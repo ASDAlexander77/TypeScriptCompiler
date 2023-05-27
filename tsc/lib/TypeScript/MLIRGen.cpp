@@ -3597,7 +3597,7 @@ class MLIRGenImpl
 
         // create method next in object
         auto nextMethodDecl =
-            nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S("next")), undefined,
+            nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S(ITERATOR_NEXT)), undefined,
                                        undefined, undefined, undefined, nextBody);
         nextMethodDecl->internalFlags |= InternalFlags::VarsInObjectContext;
 
@@ -5475,7 +5475,7 @@ class MLIRGenImpl
         // init
         NodeArray<VariableDeclaration> declarations;
         auto _b = nf.createIdentifier(S("_b_"));
-        auto _next = nf.createIdentifier(S("next"));
+        auto _next = nf.createIdentifier(S(ITERATOR_NEXT));
         auto _bVar = nf.createVariableDeclaration(_b, undefined, undefined, nf.createIdentifier(S(EXPR_TEMPVAR_NAME)));
         declarations.push_back(_bVar);
 
@@ -5542,7 +5542,15 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
-        auto propertyType = evaluateProperty(exprValue, "next", genContext);
+        if (auto iteratorType = evaluateProperty(exprValue, SYMBOL_ITERATOR, genContext))
+        {
+            if (auto iteratorValue = mlirGenCallThisMethod(location, exprValue, SYMBOL_ITERATOR, undefined, undefined, genContext))
+            {
+                exprValue = V(iteratorValue);
+            }
+        }
+
+        auto propertyType = evaluateProperty(exprValue, ITERATOR_NEXT, genContext);
         if (propertyType)
         {
             if (mlir::succeeded(mlirGenES2015(forOfStatementAST, exprValue, genContext)))
@@ -8803,7 +8811,7 @@ class MLIRGenImpl
     {
         auto count = operandsProcessingInfo.restCount();
 
-        auto nextPropertyType = evaluateProperty(source, "next", genContext);
+        auto nextPropertyType = evaluateProperty(source, ITERATOR_NEXT, genContext);
         if (nextPropertyType)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
@@ -8824,7 +8832,7 @@ class MLIRGenImpl
                 {
                     // treat it as <???>.next().value structure
                     // property
-                    auto nextProperty = mlirGenPropertyAccessExpression(location, source, "next", false, genContext);
+                    auto nextProperty = mlirGenPropertyAccessExpression(location, source, ITERATOR_NEXT, false, genContext);
 
                     for (auto spreadIndex = 0;  spreadIndex < count; spreadIndex++)
                     {
@@ -9942,7 +9950,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        auto nextPropertyType = evaluateProperty(itemValue, "next", genContext);
+        auto nextPropertyType = evaluateProperty(itemValue, ITERATOR_NEXT, genContext);
         if (nextPropertyType)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
@@ -14496,13 +14504,13 @@ genContext);
         {
             if (auto classType = valueType.dyn_cast<mlir_ts::ClassType>())
             {
-                auto res = mlirGenCallThisMethod(location, value, "get_toStringTag", undefined, undefined, genContext);
+                auto res = mlirGenCallThisMethod(location, value, "get_" SYMBOL_TO_STRING_TAG, undefined, undefined, genContext);
                 if (!res.failed_or_no_value())
                 {
                     return res;
                 }
                 
-                return mlirGenCallThisMethod(location, value, "toString", undefined, undefined, genContext);
+                return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
             }
         }
 

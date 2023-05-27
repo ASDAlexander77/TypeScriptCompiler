@@ -1,2 +1,2 @@
-git tag -a v0.0-pre-alpha31 -m "pre alpha v0.0-31"
+git tag -a v0.0-pre-alpha32 -m "pre alpha v0.0-32"
 git push origin --tags
