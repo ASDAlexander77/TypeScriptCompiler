@@ -3178,7 +3178,10 @@ class MLIRGenImpl
         }
         else if (auto typeParameter = signatureDeclarationBaseAST->type)
         {
-            auto returnType = getType(typeParameter, genContext);
+            GenContext paramsGenContext(genContext);
+            paramsGenContext.funcProto = funcProto;
+
+            auto returnType = getType(typeParameter, paramsGenContext);
             if (!returnType)
             {
                 return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
@@ -4968,23 +4971,6 @@ class MLIRGenImpl
         return addSafeCastStatement(expr, typePredicateType.getElementType(), genContext);
     }
 
-    Expression checkSafeCastFindParameter(NodeArray<Expression> arguments, mlir::FlatSymbolRefAttr parameterName)
-    {
-        // TODO: this is not working, as we do not know names of parameters of function
-        // for (auto expr : arguments)
-        // {
-        //     auto nameStr = MLIRHelper::getName(expr.as<DeclarationName>());
-        //     if (nameStr == parameterName.getValue())
-        //     {
-        //         return expr;
-        //     }
-        // }
-
-        // TODO: can't be implemented while we use parameter names in function type
-        // default
-        return arguments.front();
-    }
-
     mlir::LogicalResult checkSafeCast(Expression expr, mlir::Value conditionValue, const GenContext &genContext)
     {
         if (expr == SyntaxKind::CallExpression)
@@ -5001,10 +4987,22 @@ class MLIRGenImpl
                 {
                     // TODO: you need to find argument by using parameter name
                     auto callExpr = expr.as<CallExpression>();
-                    if (callExpr->arguments.size() > 0)
+                    if (typePredicateType.getParameterName().getValue() == THIS_NAME)
                     {
+                        if (callExpr->expression == SyntaxKind::PropertyAccessExpression)
+                        {
+                            // in case of "this"
+                            return checkSafeCastTypePredicate(
+                                callExpr->expression.as<PropertyAccessExpression>()->expression, 
+                                typePredicateType, 
+                                genContext);                            
+                        }
+                    }
+                    else if (typePredicateType.getParameterIndex() >= 0 && callExpr->arguments.size() > 0)
+                    {
+                        // in case of parameters
                         return checkSafeCastTypePredicate(
-                            checkSafeCastFindParameter(callExpr->arguments, typePredicateType.getParameterName()), 
+                            callExpr->arguments[typePredicateType.getParameterIndex()], 
                             typePredicateType, 
                             genContext);
                     }
@@ -15916,20 +15914,37 @@ genContext);
 
     mlir::Type getTypePredicateType(TypePredicateNode typePredicateNode, const GenContext &genContext)
     {
-        auto namePtr = 
-            typePredicateNode->parameterName == SyntaxKind::ThisType
-            ? "this"
-            : MLIRHelper::getName(typePredicateNode->parameterName, stringAllocator);
         auto type = getType(typePredicateNode->type, genContext);
         if (!type)
         {
             return mlir::Type();
         }
 
-        assert(!namePtr.empty());
+        auto namePtr = 
+            typePredicateNode->parameterName == SyntaxKind::ThisType
+            ? THIS_NAME
+            : MLIRHelper::getName(typePredicateNode->parameterName, stringAllocator);
+
+        // find index of parameter
+        auto hasThis = false;
+        auto foundParamIndex = -1;
+        if (genContext.funcProto)
+        {
+            auto index = -1;
+            for (auto param : genContext.funcProto->getParams())
+            {
+                index++;
+                if (param->getName() == namePtr)
+                {
+                    foundParamIndex = index;
+                }
+
+                hasThis |= param->getName() == THIS_NAME;
+            }
+        }
 
         auto parametereNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), namePtr);
-        return mlir_ts::TypePredicateType::get(parametereNameSymbol, type, !!typePredicateNode->assertsModifier);
+        return mlir_ts::TypePredicateType::get(parametereNameSymbol, type, !!typePredicateNode->assertsModifier, foundParamIndex - (hasThis ? 1 : 0));
     }
 
     mlir::Type processConditionalForType(ConditionalTypeNode conditionalTypeNode, mlir::Type checkType, mlir::Type extendsType, mlir::Type inferType, const GenContext &genContext)

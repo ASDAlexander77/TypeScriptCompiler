@@ -1176,22 +1176,22 @@ def TypeScript_TypePredicate : TypeScript_Type<"TypePredicate"> {
     Syntax:
 
     ```
-    key-of-type ::= `Is<` type `>`
+    type-predicate ::= `Is<` name `,` type `>`
     ```
 
     Examples:
 
     ```mlir
-    is<!Name>
+    is<!Name, !Type>
     ```
   }];
-  let parameters = (ins "FlatSymbolRefAttr":$parameterName, "Type":$elementType, "bool":$asserts);
+  let parameters = (ins "FlatSymbolRefAttr":$parameterName, "Type":$elementType, "bool":$asserts, "int":$parameterIndex);
 
   let assemblyFormat = "`<` params `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$parameterName, "Type":$elementType, CArg<"bool", "false">:$asserts), [{
-      return Base::get(elementType.getContext(), parameterName, elementType, asserts);
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$parameterName, "Type":$elementType, CArg<"bool", "false">:$asserts, CArg<"int", "-1">:$parameterIndex), [{
+      return Base::get(elementType.getContext(), parameterName, elementType, asserts, parameterIndex);
     }]>
   ];
 }

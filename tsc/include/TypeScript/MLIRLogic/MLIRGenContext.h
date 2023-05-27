@@ -147,6 +147,7 @@ struct GenContext
     bool insertIntoParentScope;
     mlir::Operation *currentOperation;
     mlir_ts::FuncOp funcOp;
+    FunctionPrototypeDOM::TypePtr funcProto;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
     mlir::Type thisType;
     mlir::Type receiverFuncType;
