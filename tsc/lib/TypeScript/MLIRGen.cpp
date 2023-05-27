@@ -5011,6 +5011,37 @@ class MLIRGenImpl
 
             return mlir::success();
         }
+        else if (expr == SyntaxKind::PropertyAccessExpression)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCast: condition: " << conditionValue << "\n");
+
+            mlir_ts::TypePredicateType propertyType;
+            if (auto loadOp = conditionValue.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                if (auto typePredicateType = loadOp.getType().dyn_cast<mlir_ts::TypePredicateType>())
+                {
+                    propertyType = typePredicateType;
+                }
+            }
+            else if (auto thisAccessor = conditionValue.getDefiningOp<mlir_ts::ThisAccessorOp>())
+            {
+                if (auto typePredicateType = thisAccessor.getType().dyn_cast<mlir_ts::TypePredicateType>())
+                {
+                    propertyType = typePredicateType;
+                }
+            }
+
+            if (propertyType && propertyType.getParameterName().getValue() == THIS_NAME)
+            {
+                // in case of "this"
+                return checkSafeCastTypePredicate(
+                    expr.as<PropertyAccessExpression>()->expression, 
+                    propertyType, 
+                    genContext);                            
+            }
+
+            return mlir::success();
+        }
         else if (expr == SyntaxKind::BinaryExpression)
         {
             auto binExpr = expr.as<BinaryExpression>();

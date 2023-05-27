@@ -326,6 +326,8 @@ add_test(NAME test-compile-arithmeticOperatorWithTypeParameter COMMAND test-runn
 add_test(NAME test-compile-comparisonOperatorWithIdenticalObjects COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/comparisonOperatorWithIdenticalObjects.ts")
 add_test(NAME test-compile-callWithSpread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/callWithSpread.ts")
 add_test(NAME test-compile-newWithSpread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/newWithSpread.ts")
+add_test(NAME test-compile-typeGuardOfFormThisMember COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormThisMember.ts")
+add_test(NAME test-compile-typeGuardOfFormTypeOfBoolean COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormTypeOfBoolean.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -572,4 +574,5 @@ add_test(NAME test-jit-arithmeticOperatorWithTypeParameter COMMAND test-runner -
 add_test(NAME test-jit-comparisonOperatorWithIdenticalObjects COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/comparisonOperatorWithIdenticalObjects.ts")
 add_test(NAME test-jit-callWithSpread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/callWithSpread.ts")
 add_test(NAME test-jit-newWithSpread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/newWithSpread.ts")
-
+add_test(NAME test-jit-typeGuardOfFormThisMember COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormThisMember.ts")
+add_test(NAME test-jit-typeGuardOfFormTypeOfBoolean COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormTypeOfBoolean.ts")
