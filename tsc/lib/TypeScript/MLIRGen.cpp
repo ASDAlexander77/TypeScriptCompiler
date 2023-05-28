@@ -6085,31 +6085,40 @@ class MLIRGenImpl
             if (auto constantOp = expressionValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto res = mlirGenPrefixUnaryExpression(location, opCode, constantOp, genContext);
-                if (res)
+                EXIT_IF_FAILED(res)
+                if (res.value)
                 {
-                    return res;
+                    return res.value;
                 }
             }
         }
 
-        auto boolValue = expressionValue;
-
         switch (opCode)
         {
         case SyntaxKind::ExclamationToken:
-
-            if (expressionValue.getType() != getBooleanType())
             {
-                CAST(boolValue, location, getBooleanType(), expressionValue, genContext);
-            }
+                auto boolValue = expressionValue;
+                if (expressionValue.getType() != getBooleanType())
+                {
+                    CAST(boolValue, location, getBooleanType(), expressionValue, genContext);
+                }
 
-            return V(builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(),
-                                                                builder.getI32IntegerAttr((int)opCode), boolValue));
+                return V(builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(),
+                                                                    builder.getI32IntegerAttr((int)opCode), boolValue));
+            }
         case SyntaxKind::TildeToken:
         case SyntaxKind::PlusToken:
         case SyntaxKind::MinusToken:
-            return V(builder.create<mlir_ts::ArithmeticUnaryOp>(
-                location, expressionValue.getType(), builder.getI32IntegerAttr((int)opCode), expressionValue));
+            {
+                auto numberValue = expressionValue;
+                if (expressionValue.getType() != getNumberType() && !expressionValue.getType().isIntOrIndexOrFloat())
+                {
+                    CAST(numberValue, location, getNumberType(), expressionValue, genContext);
+                }
+
+                return V(builder.create<mlir_ts::ArithmeticUnaryOp>(
+                    location, expressionValue.getType(), builder.getI32IntegerAttr((int)opCode), numberValue));
+            }
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
             return V(builder.create<mlir_ts::PrefixUnaryOp>(location, expressionValue.getType(),
