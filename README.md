@@ -10,6 +10,50 @@
 
 # What's new
 
+- Well-Known Symbols
+
+* ```toPrimitive```
+
+```TypeScript
+    const object1 = {
+
+        [Symbol.toPrimitive](hint: string) : string | number | boolean {
+            if (hint === "number") {
+                return 10;
+            }
+            if (hint === "string") {
+                return "hello";
+            }
+            return true;
+        }
+
+    };
+
+    print(+object1); // 10        hint is "number"
+    print(`${object1}`); // "hello"   hint is "string"
+    print(object1 + ""); // "true"    hint is "default"
+```    
+
+* ```interator```
+
+```TypeScript
+class StringIterator {
+    next() {
+        return {
+            done: true,
+            value: ""
+        };
+    }
+    [Symbol.iterator]() {
+        return this;
+    }
+}
+
+function main() {
+    for (const v of new StringIterator) { }
+}
+```
+
 - Generic methods
 ```TypeScript
 class Lib {
