@@ -6117,7 +6117,7 @@ class MLIRGenImpl
                 }
 
                 return V(builder.create<mlir_ts::ArithmeticUnaryOp>(
-                    location, expressionValue.getType(), builder.getI32IntegerAttr((int)opCode), numberValue));
+                    location, numberValue.getType(), builder.getI32IntegerAttr((int)opCode), numberValue));
             }
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::MinusMinusToken:
@@ -14761,7 +14761,6 @@ genContext);
             || type.isa<mlir_ts::SymbolType>() 
             || type.isa<mlir_ts::NullType>())
         {
-            // TODO: finish it
             // check if we need to call toPrimitive
             if (auto toPrimitiveType = evaluateProperty(value, SYMBOL_TO_PRIMITIVE, genContext))
             {
