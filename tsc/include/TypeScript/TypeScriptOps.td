@@ -456,7 +456,7 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
   }];
 
   let arguments = (ins OptionalAttr<BoolAttr>:$stackAlloc);
-  let results = (outs TypeScript_AnyClassOrValueRef:$instance);
+  let results = (outs Res<TypeScript_AnyClassOrValueRef, "", [MemAlloc]>:$instance);
 
   let assemblyFormat = "`{` $stackAlloc `}` attr-dict `:` type($instance)";
 }
@@ -526,7 +526,7 @@ def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray", [
   }];
 
   let arguments = (ins Variadic<AnyType>:$items);
-  let results = (outs TypeScript_Array:$instance);
+  let results = (outs Res<TypeScript_Array, "", [MemAlloc]>:$instance);
 
   let assemblyFormat = "`[` $items `]` attr-dict `:` type($items) `->` type($instance)";
 }
@@ -538,7 +538,7 @@ def TypeScript_NewEmptyArrayOp : TypeScript_Op<"NewEmptyArray"> {
   }];
 
   let arguments = (ins );
-  let results = (outs TypeScript_Array:$instance);
+  let results = (outs Res<TypeScript_Array, "", [MemAlloc]>:$instance);
 
   let assemblyFormat = "attr-dict `:` type($instance)";
 }
@@ -550,7 +550,7 @@ def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
   }];
 
   let arguments = (ins I32:$count);
-  let results = (outs TypeScript_Array:$instance);
+  let results = (outs Res<TypeScript_Array, "", [MemAlloc]>:$instance);
 
   let assemblyFormat = "`[` $count `]` attr-dict `:` type($instance)";
 }
