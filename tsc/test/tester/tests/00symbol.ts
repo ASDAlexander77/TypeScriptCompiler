@@ -39,7 +39,5 @@ function main() {
 
     assert("Validator" === <string>(new ValidatorClass()));
 
-    print([] instanceof Array1);
-
     print("done.");
 }

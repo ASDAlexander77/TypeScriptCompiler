@@ -14753,13 +14753,19 @@ genContext);
         }
 
         // toPrimitive
-        if (type.isa<mlir_ts::StringType>() 
+        if ((type.isa<mlir_ts::StringType>() 
             || type.isa<mlir_ts::NumberType>() 
             || type.isa<mlir_ts::BigIntType>() 
             || type.isa<mlir_ts::BooleanType>() 
             || type.isa<mlir_ts::UndefinedType>() 
             || type.isa<mlir_ts::SymbolType>() 
             || type.isa<mlir_ts::NullType>())
+            && (valueType.isa<mlir_ts::ClassType>()
+                || valueType.isa<mlir_ts::ClassStorageType>()
+                || valueType.isa<mlir_ts::ObjectType>()
+                || valueType.isa<mlir_ts::InterfaceType>()
+                || valueType.isa<mlir_ts::TupleType>()
+                || valueType.isa<mlir_ts::ConstTupleType>()))
         {
             // check if we need to call toPrimitive
             if (auto toPrimitiveType = evaluateProperty(value, SYMBOL_TO_PRIMITIVE, genContext))

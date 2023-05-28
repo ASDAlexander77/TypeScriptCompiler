@@ -43,8 +43,9 @@ class MLIRCodeLogic
 
     mlir::Attribute ExtractAttr(mlir::Value value)
     {
-        auto constOp = dyn_cast<mlir_ts::ConstantOp>(value.getDefiningOp());
-        if (constOp)
+        LLVM_DEBUG(dbgs() << "\n!! ExtractAttr fron : " << value << "\n");
+
+        if (auto constOp = value.getDefiningOp<mlir_ts::ConstantOp>())
         {
             auto val = constOp.getValueAttr();
             return val;
@@ -459,7 +460,13 @@ class MLIRPropertyAccessCodeLogic
     mlir::Value Enum(mlir_ts::EnumType enumType)
     {
         auto propName = getName();
-        auto dictionaryAttr = getExprConstAttr().cast<mlir::DictionaryAttr>();
+        auto attrVal = getExprConstAttr();
+        if (!attrVal)
+        {
+            return mlir::Value();
+        }
+
+        auto dictionaryAttr = attrVal.cast<mlir::DictionaryAttr>();
         auto valueAttr = dictionaryAttr.get(propName);
         if (!valueAttr)
         {
@@ -901,14 +908,7 @@ class MLIRPropertyAccessCodeLogic
     mlir::Attribute getExprConstAttr()
     {
         MLIRCodeLogic mcl(builder);
-
-        auto value = mcl.ExtractAttr(expression);
-        if (!value)
-        {
-            llvm_unreachable("not implemented");
-        }
-
-        return value;
+        return mcl.ExtractAttr(expression);
     }
 
     mlir::Value getExprLoadRefValue()
