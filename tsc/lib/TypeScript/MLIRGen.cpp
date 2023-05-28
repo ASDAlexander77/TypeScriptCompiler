@@ -4624,10 +4624,15 @@ class MLIRGenImpl
             auto type = expressionValue.getType();
             LLVM_DEBUG(dbgs() << "\n!! processing return type: " << type << "");
 
+            if (isNoneType(type))
+            {
+                return mlir::success();
+            }
+
             type = mth.stripLiteralType(type);
 
             // if return type is not detected, take first and exit
-            if (!genContext.passResult->functionReturnType && !isNoneType(type))
+            if (!genContext.passResult->functionReturnType)
             {
                 genContext.passResult->functionReturnType = type;
                 return mlir::success();
