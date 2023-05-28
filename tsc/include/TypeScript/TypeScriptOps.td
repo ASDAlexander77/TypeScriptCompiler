@@ -846,8 +846,8 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
 def TypeScript_CaptureOp : TypeScript_Op<"Capture", []> {
   let summary = "capture variables";
 
-  let arguments = (ins Variadic<AnyType>:$captured);
-  let results = (outs AnyType);
+  let arguments = (ins Arg<Variadic<AnyType>, "", [MemRead]>:$captured);
+  let results = (outs Res<AnyType, "", [MemAlloc, MemWrite]>);
 }
 
 def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
