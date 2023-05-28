@@ -13,6 +13,7 @@ include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/CopyOpInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
+include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 
 
@@ -1606,7 +1607,10 @@ def TypeScript_ResultOp : TypeScript_Op<"Result", [Pure, ReturnLike, Terminator,
 }
 
 def TypeScript_WhileOp : TypeScript_Op<"While",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
+    [
+        LoopLikeOpInterface,
+        DeclareOpInterfaceMethods<RegionBranchOpInterface>
+    ]> {
   let summary = "a generic 'while' loop";
   let description = [{
     This operation represents a generic "while" loop that keeps
@@ -1635,6 +1639,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
 
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
+    mlir::Region &getLoopBody() { return getBody(); }    
   }];
 
   let assemblyFormat =
@@ -1642,7 +1647,10 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
 }
 
 def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
+    [
+        LoopLikeOpInterface,
+        DeclareOpInterfaceMethods<RegionBranchOpInterface>
+    ]> {
   let summary = "a generic 'do-while' loop";
   let description = [{
     This operation represents a generic "do-while" loop.
@@ -1654,6 +1662,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
 
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
+    mlir::Region &getLoopBody() { return getBody(); }
   }];
 
   let assemblyFormat =
@@ -1661,7 +1670,10 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
 }
 
 def TypeScript_ForOp : TypeScript_Op<"For",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
+    [
+        LoopLikeOpInterface,
+        DeclareOpInterfaceMethods<RegionBranchOpInterface>
+    ]> {
   let summary = "a generic 'for' loop";
 
   let arguments = (ins Variadic<AnyType>:$inits);
@@ -1670,6 +1682,7 @@ def TypeScript_ForOp : TypeScript_Op<"For",
 
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
+    mlir::Region &getLoopBody() { return getBody(); }
   }];
 
   let assemblyFormat =
