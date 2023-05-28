@@ -15,6 +15,7 @@ include "mlir/Interfaces/CopyOpInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/RegionKindInterface.td"
 
 
 //===----------------------------------------------------------------------===//
@@ -190,7 +191,7 @@ def InterfaceRefOp : TypeScript_Op<"InterfaceRef",
 
 def TypeScript_FuncOp : TypeScript_Op<"Func", [
   AffineScope, AutomaticAllocationScope, CallableOpInterface, FunctionOpInterface,
-  IsolatedFromAbove, Symbol
+  IsolatedFromAbove, Symbol, RegionKindInterface
 ]> {
   let description = [{
     Example:
@@ -261,17 +262,17 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
     ArrayRef<Type> getCallableResults() { return getFunctionType().getResults(); }
 
     //===------------------------------------------------------------------===//
+    // RegionKindInterface Methods
+    //===------------------------------------------------------------------===//
+    static ::mlir::RegionKind getRegionKind(unsigned index) {
+      return ::mlir::RegionKind::SSACFG;
+    }
+
+    //===------------------------------------------------------------------===//
     // SymbolOpInterface Methods
     //===------------------------------------------------------------------===//
 
     bool isDeclaration() { return isExternal(); }
-
-    /// Returns the number of arguments. This is a hook for
-    /// OpTrait::FunctionLike.
-    unsigned getNumFuncArguments() { return getFunctionType().getInputs().size(); }
-
-    /// Returns the number of results. This is a hook for OpTrait::FunctionLike.
-    unsigned getNumFuncResults() { return getFunctionType().getResults().size(); }
 
     //===------------------------------------------------------------------===//
     // FunctionOpInterface Methods
@@ -288,7 +289,7 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
       [{ $sym_name $function_type $body attr-dict }];
 }
 
-def TypeScript_NullOp : TypeScript_Op<"Null", []> {
+def TypeScript_NullOp : TypeScript_Op<"Null", [Pure]> {
   let summary = "Make an intermediate object whose value is null.";
 
   let description = [{
@@ -314,7 +315,7 @@ def TypeScript_NullOp : TypeScript_Op<"Null", []> {
   let assemblyFormat = "attr-dict `:` type($result)";
 }
 
-def TypeScript_UndefOp : TypeScript_Op<"Undef", []> {
+def TypeScript_UndefOp : TypeScript_Op<"Undef", [Pure]> {
   let summary = "Make an intermediate object whose value is undefined.";
 
   let description = [{
@@ -2072,7 +2073,7 @@ def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {
 
 def TypeScript_StringConcatOp : TypeScript_Op<"StringConcat"> {
   let arguments = (ins Variadic<TypeScript_String>:$ops, OptionalAttr<BoolAttr>:$allocInStack);
-  let results = (outs TypeScript_String:$result);
+  let results = (outs Res<TypeScript_String, "", [MemAlloc]>:$result);
 }
 
 def TypeScript_StringCompareOp : TypeScript_Op<"StringCompare"> {
@@ -2113,7 +2114,7 @@ def TypeScript_UnreachableOp : TypeScript_Op<"unreachable", [Terminator]> {
   let summary = "unreachable";
 }
 
-def TypeScript_NoOp : TypeScript_Op<"noop"> {
+def TypeScript_NoOp : TypeScript_Op<"noop", [Pure]> {
   let summary = "no operation";
 }
 
@@ -2129,7 +2130,7 @@ def TypeScript_GCNewExplicitlyTypedOp : TypeScript_Op<"GCNewExplicitlyTyped"> {
   let summary = "GC new exmplicitly typed operation";
 
   let arguments = (ins I64:$typeDescr);
-  let results = (outs TypeScript_AnyClassOrValueRef:$instance);
+  let results = (outs Res<TypeScript_AnyClassOrValueRef, "", [MemAlloc]>:$instance);
 }
 
 #endif // TYPESCRIPT_OPS
