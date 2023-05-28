@@ -167,6 +167,18 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
+        if (type.isa<mlir_ts::ArrayType>())
+        {
+            auto typeOfValue = strValue(loc, "array");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::ConstArrayType>())
+        {
+            auto typeOfValue = strValue(loc, "array");
+            return typeOfValue;
+        }
+
         if (auto subType = type.dyn_cast<mlir_ts::RefType>())
         {
             return typeOfLogic(loc, subType.getElementType());
