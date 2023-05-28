@@ -1501,7 +1501,7 @@ def TypeScript_ReturnValOp : TypeScript_Op<"ReturnVal"> {
 
   let arguments = (ins
     AnyType:$operand,
-    TypeScript_Ref:$reference
+    Res<TypeScript_Ref, "", [MemWrite]>:$reference
   );
 }
 
@@ -1520,7 +1520,7 @@ def TypeScript_YieldReturnValOp : TypeScript_Op<"YieldReturnVal"> {
 
   let arguments = (ins
     AnyType:$operand,
-    TypeScript_Ref:$reference
+    Res<TypeScript_Ref, "", [MemWrite]>:$reference
   );
 }
 
@@ -1606,7 +1606,7 @@ def TypeScript_ResultOp : TypeScript_Op<"Result", [Pure, ReturnLike, Terminator,
 }
 
 def TypeScript_WhileOp : TypeScript_Op<"While",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveMemoryEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
   let summary = "a generic 'while' loop";
   let description = [{
     This operation represents a generic "while" loop that keeps
@@ -1642,7 +1642,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
 }
 
 def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveMemoryEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
   let summary = "a generic 'do-while' loop";
   let description = [{
     This operation represents a generic "do-while" loop.
@@ -1661,7 +1661,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
 }
 
 def TypeScript_ForOp : TypeScript_Op<"For",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveMemoryEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
   let summary = "a generic 'for' loop";
 
   let arguments = (ins Variadic<AnyType>:$inits);
@@ -1721,7 +1721,7 @@ def TypeScript_BreakOp : TypeScript_Op<"Break"> {
 }
 
 def TypeScript_LabelOp : TypeScript_Op<"Label",
-      [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveMemoryEffects,
+      [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
        NoRegionArguments]> {
   let summary = "label operation";
 
@@ -1767,8 +1767,7 @@ def TypeScript_StateLabelOp : TypeScript_Op<"StateLabel",
 }
 
 def TypeScript_SwitchOp : TypeScript_Op<"Switch",
-      [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-       RecursiveMemoryEffects, NoRegionArguments]> {
+      [DeclareOpInterfaceMethods<RegionBranchOpInterface>, NoRegionArguments]> {
   let summary = "switch operation";
 
   let arguments = (ins AnyType:$value);
@@ -1796,8 +1795,7 @@ def TypeScript_MergeOp : TypeScript_Op<"Merge", [Pure, HasParent<"SwitchOp, Labe
 }
 
 def TypeScript_TryOp : TypeScript_Op<"Try",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-     RecursiveMemoryEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
   let summary = "a generic 'try' clause";
   let description = [{
     This operation represents a generic "try" clause.
