@@ -14289,6 +14289,7 @@ genContext);
         return initValue;
     }    
 
+    // TODO: rewrite code to get rid of the following method, write method to calculate type of field, we have method mth.getFieldTypeByFieldName
     mlir::Type evaluateProperty(mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
     {
         auto value = evaluatePropertyValue(exprValue, propertyName, genContext);
