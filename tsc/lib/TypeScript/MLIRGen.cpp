@@ -4622,7 +4622,7 @@ class MLIRGenImpl
             }
 
             auto type = expressionValue.getType();
-            LLVM_DEBUG(dbgs() << "\n!! store return type: " << type << "");
+            LLVM_DEBUG(dbgs() << "\n!! processing return type: " << type << "");
 
             type = mth.stripLiteralType(type);
 
@@ -4642,47 +4642,17 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            std::function<bool(mlir::Type)> testType;
-            testType = [&](mlir::Type type) {
-                if (type == undefType || type == nullType)
-                {
-                    return false;
-                }
-
-                if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
-                {
-                    return testType(optType.getElementType());
-                }
-
-                return true;
-            };
-
             if (mth.hasUndefines(type))
             {
                 return mlir::failure();
             }
 
-            if (genContext.passResult->functionReturnType)
-            {
-                if (mth.hasUndefines(genContext.passResult->functionReturnType))
-                {
-                    if (!mth.canCastFromTo(genContext.passResult->functionReturnType, type))
-                    {
-                        return mlir::failure();
-                    }
-                }
-                else if (!mth.canCastFromTo(type, genContext.passResult->functionReturnType))
-                {
-                    return mlir::failure();
-                }
-            }
+            auto merged = false;
+            auto resultReturnType = mth.mergeType(genContext.passResult->functionReturnType, type, merged);            
 
-            // TODO: use "mth.findBaseType(leftExpressionValue.getType(), resultWhenFalseType);" to find base type for
-            // both types
-            // + auto defaultUnionType = getUnionType(resultWhenTrueType, resultWhenFalseType);
+            LLVM_DEBUG(dbgs() << "\n!! return type: " << resultReturnType << "");
 
-            // we can save result type after joining two types
-            genContext.passResult->functionReturnType = type;
+            genContext.passResult->functionReturnType = resultReturnType;
         }
 
         return mlir::success();
