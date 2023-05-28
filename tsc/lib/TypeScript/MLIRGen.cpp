@@ -14752,6 +14752,54 @@ genContext);
             }
         }
 
+        // toPrimitive
+        if (type.isa<mlir_ts::StringType>() 
+            || type.isa<mlir_ts::NumberType>() 
+            || type.isa<mlir_ts::BigIntType>() 
+            || type.isa<mlir_ts::BooleanType>() 
+            || type.isa<mlir_ts::UndefinedType>() 
+            || type.isa<mlir_ts::SymbolType>() 
+            || type.isa<mlir_ts::NullType>())
+        {
+            // TODO: finish it
+            // check if we need to call toPrimitive
+            if (auto toPrimitiveType = evaluateProperty(value, SYMBOL_TO_PRIMITIVE, genContext))
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+                Expression hint;
+
+                TypeSwitch<mlir::Type>(type)
+                    .template Case<mlir_ts::StringType>([&](auto) {
+                        hint = nf.createStringLiteral(S("string"));
+                    })
+                    .template Case<mlir_ts::NumberType>([&](auto) {
+                        hint = nf.createStringLiteral(S("number"));
+                    })
+                    .template Case<mlir_ts::BigIntType>([&](auto) {
+                        hint = nf.createStringLiteral(S("bigint"));
+                    })
+                    .template Case<mlir_ts::BooleanType>([&](auto) {
+                        hint = nf.createStringLiteral(S("boolean"));
+                    })
+                    .template Case<mlir_ts::UndefinedType>([&](auto) {
+                        hint = nf.createStringLiteral(S("undefined"));
+                    })
+                    .template Case<mlir_ts::SymbolType>([&](auto) {
+                        hint = nf.createStringLiteral(S("symbol"));
+                    })
+                    .template Case<mlir_ts::NullType>([&](auto) {
+                        hint = nf.createStringLiteral(S("null"));
+                    })
+                    .Default([&](auto type) {});
+
+                auto callResult = mlirGenCallThisMethod(location, value, SYMBOL_TO_PRIMITIVE, undefined, {hint}, genContext);
+                EXIT_IF_FAILED(callResult);
+                auto castValue = cast(location, type, V(callResult), genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(castValue);
+                return castValue;
+            }        
+        }
+
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 

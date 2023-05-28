@@ -42,6 +42,7 @@
 #define SYMBOL_ASYNC_ITERATOR "asyncIterator"
 #define ITERATOR_NEXT "next"
 #define SYMBOL_HAS_INSTANCE "hasInstance"
+#define SYMBOL_TO_PRIMITIVE "toPrimitive"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48
