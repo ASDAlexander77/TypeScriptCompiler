@@ -561,7 +561,7 @@ def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
     delete allocated in memory
   }];
 
-  let arguments = (ins TypeScript_AnyRefLike:$reference);
+  let arguments = (ins Arg<TypeScript_AnyRefLike, "", [MemFree]>:$reference);
   let results = (outs );
 
   let assemblyFormat = "`(` $reference `)` attr-dict `:` type($reference)";
@@ -867,7 +867,7 @@ def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
   );
 
   let results = (outs
-    TypeScript_AnyRefLike:$reference
+    Res<TypeScript_AnyRefLike, "", [MemAlloc]>:$reference
   );
 }
 
@@ -918,7 +918,7 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitT
   );
 
   let results = (outs
-    TypeScript_AnyRefLike:$reference
+    Res<TypeScript_AnyRefLike, "", [MemAlloc]>:$reference
   );
 
   let regions = (region AnyRegion:$defaultValueRegion);
@@ -1027,7 +1027,7 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   );
 
   let results = (outs
-    TypeScript_Ref:$reference
+    Res<TypeScript_AnyRefLike, "", [MemAlloc]>:$reference
   );
 
   let assemblyFormat = "`(` $initializer `)` `{` $captured `}` attr-dict `:` type($initializer) `->` type($reference)";
@@ -1043,7 +1043,7 @@ def TypeScript_AllocaOp : TypeScript_Op<"Alloca", []> {
   );
 
   let results = (outs
-    TypeScript_Ref:$reference
+    Res<TypeScript_AnyRefLike, "", [MemAlloc]>:$reference
   );
 
   let assemblyFormat = "`(` $count `)` attr-dict `:` type($reference)";
