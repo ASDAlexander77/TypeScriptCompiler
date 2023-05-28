@@ -11,6 +11,7 @@ include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/CopyOpInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 
@@ -516,7 +517,9 @@ def TypeScript_DeconstructTupleOp : TypeScript_Op<"DeconstructTuple"> {
   let assemblyFormat = "$instance attr-dict `:` type($instance) `->` `{` type($results) `}`";
 }
 
-def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray"> {
+def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray", [
+    AllTypesMatch<["items"]>    
+]> {
   let summary = "create array";
   let description = [{
     create array
@@ -565,7 +568,7 @@ def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
 }
 
 def TypeScript_CallOp : TypeScript_Op<"Call",
-    [CallOpInterface, MemRefsNormalizable,
+    [CallOpInterface,
      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "call operation";
   let description = [{
@@ -683,12 +686,13 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
 def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [
                       AttrSizedOperandSegments,
                       DeclareOpInterfaceMethods<BranchOpInterface>,
-                      Terminator]> {
+                      Terminator
+                      ]> {
   let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$callee,
                    Variadic<AnyType>:$callOperands,
                    Variadic<AnyType>:$normalDestOperands,
                    Variadic<AnyType>:$unwindDestOperands);
-  let results = (outs Variadic<AnyType>);
+  let results = (outs Variadic<AnyType>:$results);
   let successors = (successor AnySuccessor:$normalDest,
                               AnySuccessor:$unwindDest);
 
@@ -717,7 +721,7 @@ def TypeScript_InvokeHybridOp : TypeScript_Op<"InvokeHybrid", [
                    Variadic<AnyType>:$callOperands,
                    Variadic<AnyType>:$normalDestOperands,
                    Variadic<AnyType>:$unwindDestOperands);
-  let results = (outs Variadic<AnyType>);
+  let results = (outs Variadic<AnyType>:$results);
   let successors = (successor AnySuccessor:$normalDest,
                               AnySuccessor:$unwindDest);
 }
@@ -729,7 +733,7 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
   }];
 
   let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands);
-  let results = (outs Variadic<AnyType>);
+  let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
     OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
@@ -775,7 +779,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
   }];
 
   let arguments = (ins Variadic<AnyType>:$callOperands);
-  let results = (outs Variadic<AnyType>);
+  let results = (outs Variadic<AnyType>:$results);
   
   let builders = [
     OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
@@ -805,13 +809,20 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
 
 def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
     [CallOpInterface, MemRefsNormalizable,
-     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+     DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+     TypesMatchWith<"callee input types match argument types",
+                    "callee", "callOperands",
+                    "$_self.cast<mlir::typescript::HybridFunctionType>().getInputs()">,
+     TypesMatchWith<"callee result types match result types",
+                    "callee", "results",
+                    "$_self.cast<mlir::typescript::HybridFunctionType>().getResults()">
+    ]> {
   let summary = "call (hybrid) internal operation";
   let description = [{
   }];
 
   let arguments = (ins TypeScript_HybridFunction:$callee, Variadic<AnyType>:$callOperands);
-  let results = (outs Variadic<AnyType>);
+  let results = (outs Variadic<AnyType>:$results);
 
   let extraClassDeclaration = [{
     /// Get the argument operands to the called function.
@@ -1546,7 +1557,7 @@ def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [Pure, HasPare
 
 def TypeScript_IfOp : TypeScript_Op<"If",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>, SingleBlockImplicitTerminator<"typescript::ResultOp">, 
-      RecursiveMemoryEffects, NoRegionArguments]> {
+      NoRegionArguments]> {
   let summary = "if-then-else operation";
 
   let arguments = (ins TypeScript_Boolean:$condition);
@@ -2063,14 +2074,24 @@ def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
   let results = (outs TypeScript_String:$result);
 }
 
-def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy"> {
-  let arguments = (ins AnyType:$dst, AnyType:$src);
+def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface]> {
+  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
   let results = (outs );
+
+  let extraClassDeclaration = [{
+    Value getSource() { return getSrc(); }
+    Value getTarget() { return getDst(); }
+  }];
 }
 
-def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [AllTypesMatch<["dst", "src"]>]> {
-  let arguments = (ins AnyType:$dst, AnyType:$src);
+def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
   let results = (outs );
+
+  let extraClassDeclaration = [{
+    Value getSource() { return getSrc(); }
+    Value getTarget() { return getDst(); }
+  }];
 }
 
 def TypeScript_DebuggerOp : TypeScript_Op<"Debugger"> {
