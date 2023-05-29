@@ -2052,12 +2052,12 @@ def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [Pure,
 }
 
 def TypeScript_PushOp : TypeScript_Op<"Push"> {
-  let arguments = (ins TypeScript_AnyArrayRef:$op, Variadic<AnyType>:$items);
+  let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
   let results = (outs I64:$new_size);
 }
 
 def TypeScript_PopOp : TypeScript_Op<"Pop"> {
-  let arguments = (ins TypeScript_AnyArrayRef:$op);
+  let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemFree, MemRead]>:$op);
   let results = (outs AnyType:$item);
 }
 
