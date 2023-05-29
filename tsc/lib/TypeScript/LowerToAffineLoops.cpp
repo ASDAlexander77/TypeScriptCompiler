@@ -859,6 +859,12 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
     {
         Location loc = accessorOp.getLoc();
 
+        if (!accessorOp.getGetAccessor().has_value())
+        {
+            emitError(loc) << "property does not have get accessor";
+            return failure();
+        }
+
         auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getGetAccessor().value(),
                                                         TypeRange{accessorOp.getType()}, ValueRange{});
 
@@ -874,6 +880,12 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
     LogicalResult matchAndRewrite(mlir_ts::ThisAccessorOp thisAccessorOp, PatternRewriter &rewriter) const final
     {
         Location loc = thisAccessorOp.getLoc();
+
+        if (!thisAccessorOp.getGetAccessor().has_value())
+        {
+            emitError(loc) << "property does not have get accessor";
+            return failure();
+        }
 
         auto callRes =
             rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getGetAccessor().value(),
