@@ -1222,10 +1222,23 @@ class MLIRTypeHelper
             }
         }
 
+        if (auto dstEnumType = dstType.dyn_cast<mlir_ts::EnumType>())
+        {
+            if (dstEnumType.getElementType() == srcType)
+            {
+                return true;
+            }
+        }          
+
         if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())
         {
             return canWideTypeWithoutDataLoss(literalType.getElementType(), dstType);
         }
+
+        if (auto enumType = srcType.dyn_cast<mlir_ts::EnumType>())
+        {
+            return canWideTypeWithoutDataLoss(enumType.getElementType(), dstType);
+        }        
 
         // wide range type can't be stored into literal
         if (auto optionalType = dstType.dyn_cast<mlir_ts::OptionalType>())
