@@ -6695,6 +6695,12 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            if (!accessorOp.getSetAccessor().has_value())
+            {
+                emitError(location) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
             auto callRes =
                 builder.create<mlir_ts::CallOp>(location, accessorOp.getSetAccessor().value(),
                                                 mlir::TypeRange{}, mlir::ValueRange{savingValue});
@@ -6704,6 +6710,12 @@ class MLIRGenImpl
             syncSavingValue(thisAccessorOp.getType());
             if (!savingValue)
             {
+                return mlir::failure();
+            }
+
+            if (!thisAccessorOp.getSetAccessor().has_value())
+            {
+                emitError(location) << "property does not have set accessor";
                 return mlir::failure();
             }
 
