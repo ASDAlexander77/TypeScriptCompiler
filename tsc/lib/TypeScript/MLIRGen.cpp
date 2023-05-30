@@ -3621,19 +3621,39 @@ class MLIRGenImpl
         generatorStatements.push_back(retStat);
 
         auto body = nf.createBlock(generatorStatements, /*multiLine*/ false);
-        auto funcOp = nf.createFunctionDeclaration(
-            functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
-            functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
-            functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
-        // copy location info, to fix issue with names of anonymous functions
-        funcOp->pos = functionLikeDeclarationBaseAST->pos;
-        funcOp->_end = functionLikeDeclarationBaseAST->_end;        
+        if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        {
+            auto methodOp = nf.createMethodDeclaration(
+                functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
+                functionLikeDeclarationBaseAST->name, undefined, functionLikeDeclarationBaseAST->typeParameters,
+                functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
-        //LLVM_DEBUG(printDebug(funcOp););
+            // copy location info, to fix issue with names of anonymous functions
+            methodOp->pos = functionLikeDeclarationBaseAST->pos;
+            methodOp->_end = functionLikeDeclarationBaseAST->_end;        
 
-        auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
-        return genFuncOp;
+            //LLVM_DEBUG(printDebug(methodOp););
+
+            auto genMethodOp = mlirGenFunctionLikeDeclaration(methodOp, genContext);
+            return genMethodOp;            
+        }
+        else
+        {
+            auto funcOp = nf.createFunctionDeclaration(
+                functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
+                functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
+                functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
+
+            // copy location info, to fix issue with names of anonymous functions
+            funcOp->pos = functionLikeDeclarationBaseAST->pos;
+            funcOp->_end = functionLikeDeclarationBaseAST->_end;        
+
+            //LLVM_DEBUG(printDebug(funcOp););
+
+            auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
+            return genFuncOp;
+        }
     }
 
     std::pair<mlir::LogicalResult, std::string> registerGenericFunctionLike(
@@ -4535,12 +4555,22 @@ class MLIRGenImpl
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        // save return point - state
-        auto setStateExpr = nf.createBinaryExpression(
-            nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(S("step"))),
-            nf.createToken(SyntaxKind::EqualsToken), nf.createNumericLiteral(num.str(), TokenFlags::None));
-
-        mlirGen(setStateExpr, genContext);
+        if (evaluateProperty(nf.createToken(SyntaxKind::ThisKeyword), "step", genContext))
+        {
+            // save return point - state -> this.step = xxx
+            auto setStateExpr = nf.createBinaryExpression(
+                nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(S("step"))),
+                nf.createToken(SyntaxKind::EqualsToken), nf.createNumericLiteral(num.str(), TokenFlags::None));
+            mlirGen(setStateExpr, genContext);
+        }
+        else
+        {
+            // save return point - state -> step = xxx
+            auto setStateExpr = nf.createBinaryExpression(
+                nf.createIdentifier(S("step")),
+                nf.createToken(SyntaxKind::EqualsToken), nf.createNumericLiteral(num.str(), TokenFlags::None));
+            mlirGen(setStateExpr, genContext);
+        }
 
         // return value
         auto yieldRetValue = getYieldReturnObject(nf, location, yieldExpressionAST->expression, false);
