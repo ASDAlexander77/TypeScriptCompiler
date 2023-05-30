@@ -15067,7 +15067,6 @@ genContext);
         }
         else if (kind == SyntaxKind::ThisType)
         {
-            assert(genContext.thisType);
             return genContext.thisType;
         }
         else if (kind == SyntaxKind::Unknown)
