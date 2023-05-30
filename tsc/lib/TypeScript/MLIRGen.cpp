@@ -3538,6 +3538,7 @@ class MLIRGenImpl
     {
         auto location = loc(functionLikeDeclarationBaseAST);
 
+        auto fixThisReference = functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration;
         if (functionLikeDeclarationBaseAST->parameters.size() > 0)
         {
             auto nameNode = functionLikeDeclarationBaseAST->parameters.front()->name;
@@ -3546,8 +3547,7 @@ class MLIRGenImpl
                 auto ident = nameNode.as<Identifier>();
                 if (ident->escapedText == S(THIS_NAME))
                 {
-                    emitError(location) << "first parameter name must not be 'this', use 'thisArg' as alternative\n";
-                    return {mlir::failure(), mlir_ts::FuncOp(), "", false};
+                    fixThisReference = true;
                 }
             }
         }
@@ -3608,7 +3608,7 @@ class MLIRGenImpl
         nextMethodDecl->pos = functionLikeDeclarationBaseAST->pos;
         nextMethodDecl->_end = functionLikeDeclarationBaseAST->_end;
 
-        if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        if (fixThisReference)
         {
             FilterVisitorSkipFuncsAST<Node> visitor(SyntaxKind::ThisKeyword, [&](auto thisNode) {
                 thisNode->internalFlags |= InternalFlags::ThisArgAlias;
@@ -3632,7 +3632,7 @@ class MLIRGenImpl
         NodeArray<Statement> generatorStatements;
 
         // TODO: this is hack, adding this as thisArg alias
-        if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        if (fixThisReference)
         {
             // TODO: this is temp hack, add this alias as thisArg, 
             NodeArray<VariableDeclaration> _thisArgDeclarations;
