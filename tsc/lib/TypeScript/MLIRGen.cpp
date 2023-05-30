@@ -3497,6 +3497,7 @@ class MLIRGenImpl
             // provide name for it
             auto allowFuncGenContext = GenContext(genContext);
             allowFuncGenContext.clearScopeVars();
+            // if we set it to value we will not capture 'this' references
             allowFuncGenContext.thisType = nullptr;
             auto [result, funcOpRet, funcNameRet, isGenericRet] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
@@ -3978,8 +3979,11 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! this value: " << thisVal << "\n";);
 
-            mlir::Value propValue =
+            auto capturedNameResult =
                 mlirGenPropertyAccessExpression(loc, thisVal, MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(capturedNameResult)
+
+            mlir::Value propValue = V(capturedNameResult);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! this->.captured value: " << propValue << "\n";);
 
@@ -15067,7 +15071,13 @@ genContext);
         }
         else if (kind == SyntaxKind::ThisType)
         {
-            return genContext.thisType;
+            if (genContext.thisType)
+            {
+                return genContext.thisType;
+            }
+            
+            NodeFactory nf(NodeFactoryFlags::None);
+            return evaluate(nf.createToken(SyntaxKind::ThisKeyword), genContext);
         }
         else if (kind == SyntaxKind::Unknown)
         {
