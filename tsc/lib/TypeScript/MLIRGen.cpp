@@ -3616,6 +3616,18 @@ class MLIRGenImpl
         // generator body
         NodeArray<Statement> generatorStatements;
 
+        // TODO: this is hack, adding this as thisArg alias
+        if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        {
+            // TODO: this is temp hack, add this alias as thisArg, 
+            NodeArray<VariableDeclaration> _thisArgDeclarations;
+            auto _thisArg = nf.createIdentifier(S("thisArg"));
+            _thisArgDeclarations.push_back(nf.createVariableDeclaration(_thisArg, undefined, undefined, nf.createToken(SyntaxKind::ThisKeyword)));
+            auto _thisArgList = nf.createVariableDeclarationList(_thisArgDeclarations, NodeFlags::Const);
+
+            generatorStatements.push_back(nf.createVariableStatement(undefined, _thisArgList));
+        }
+
         // step 1, add return object
         auto retStat = nf.createReturnStatement(generatorObject);
         generatorStatements.push_back(retStat);
@@ -3633,7 +3645,7 @@ class MLIRGenImpl
             methodOp->pos = functionLikeDeclarationBaseAST->pos;
             methodOp->_end = functionLikeDeclarationBaseAST->_end;        
 
-            //LLVM_DEBUG(printDebug(methodOp););
+            LLVM_DEBUG(printDebug(methodOp););
 
             auto genMethodOp = mlirGenFunctionLikeDeclaration(methodOp, genContext);
             return genMethodOp;            
