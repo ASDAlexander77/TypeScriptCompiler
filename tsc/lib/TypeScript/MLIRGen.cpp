@@ -1021,6 +1021,11 @@ class MLIRGenImpl
         }
         else if (kind == SyntaxKind::ThisKeyword)
         {
+            if ((expressionAST->internalFlags & InternalFlags::ThisArgAlias) == InternalFlags::ThisArgAlias)
+            {
+                return mlirGen(loc(expressionAST), "thisArg", genContext);
+            }
+
             return mlirGen(loc(expressionAST), THIS_NAME, genContext);
         }
         else if (kind == SyntaxKind::SuperKeyword)
@@ -3565,10 +3570,8 @@ class MLIRGenImpl
         auto stepAccess = nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), stepIdent);
 
         // call stateswitch
-        NodeArray<Expression> args;
-        args.push_back(stepAccess);
         auto callStat = nf.createExpressionStatement(
-            nf.createCallExpression(nf.createIdentifier(S("switchstate")), undefined, args));
+            nf.createCallExpression(nf.createIdentifier(S("switchstate")), undefined, {stepAccess}));
 
         nextStatements.push_back(callStat);
 
@@ -3604,6 +3607,18 @@ class MLIRGenImpl
         // copy location info, to fix issue with names of anonymous functions
         nextMethodDecl->pos = functionLikeDeclarationBaseAST->pos;
         nextMethodDecl->_end = functionLikeDeclarationBaseAST->_end;
+
+        if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        {
+            FilterVisitorSkipFuncsAST<Node> visitor(SyntaxKind::ThisKeyword, [&](auto thisNode) {
+                thisNode->internalFlags |= InternalFlags::ThisArgAlias;
+            });
+
+            for (auto it = begin(nextStatements) + 1; it != end(nextStatements); ++it)
+            {
+                visitor.visit(*it);
+            }
+        }
 
         generatorObjectProperties.push_back(nextMethodDecl);
 
@@ -3645,7 +3660,7 @@ class MLIRGenImpl
             methodOp->pos = functionLikeDeclarationBaseAST->pos;
             methodOp->_end = functionLikeDeclarationBaseAST->_end;        
 
-            LLVM_DEBUG(printDebug(methodOp););
+            //LLVM_DEBUG(printDebug(methodOp););
 
             auto genMethodOp = mlirGenFunctionLikeDeclaration(methodOp, genContext);
             return genMethodOp;            

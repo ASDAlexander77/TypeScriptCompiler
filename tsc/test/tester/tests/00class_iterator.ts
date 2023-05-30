@@ -1,21 +1,14 @@
-class StringIterator {
-    next() {
-        print("next...");
+let glb1 = 0;
 
-        return {
-            done: true,
-            value: ""
-        };
-    }
-    [Symbol.iterator]() {
-        // TODO: finish it, should be called
-        print("iterator...");
-        return this;
+class C {
+    v = 10;
+    *iter() {
+        for (let i = 0; i < 10; i++) yield this.v + i;
     }
 }
 
 function main() {
-    for (const v of new StringIterator) { }
-
+    for (const v of new C().iter()) { glb1++; print(v) };
+    assert(glb1 == 10);
     print("done.");
 }

@@ -536,6 +536,7 @@ enum class InternalFlags : number
     VarsInObjectContext = 1 << 3,
     ForAwait = 1 << 4,
     SuppressConstructorCall = 1 << 5,
+    ThisArgAlias = 1 << 6
 };
 
 ENUM_OPS(InternalFlags)
