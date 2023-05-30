@@ -1787,6 +1787,19 @@ class MLIRTypeHelper
             }
         }
 
+        // Special case when we have string type (widen from Literal Type)
+        if (auto literalType = extendType.dyn_cast<mlir_ts::LiteralType>())
+        {
+            return extendsType(srcType, literalType.getElementType(), typeParamsWithArgs);
+        }        
+
+        if (auto unionType = srcType.dyn_cast<mlir_ts::UnionType>())
+        {
+            auto pred = [&](auto &item) { return extendsType(item, extendType, typeParamsWithArgs); };
+            auto types = unionType.getTypes();
+            return std::find_if(types.begin(), types.end(), pred) != types.end();
+        }
+
         // seems it is generic interface
         if (auto srcInterfaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
         {
@@ -1796,7 +1809,9 @@ class MLIRTypeHelper
                 {
                     if (auto extInterfaceInfo = getInterfaceInfoByFullName(extInterfaceType.getName().getValue()))
                     {
-                        if (srcInterfaceInfo->originInterfaceType == extInterfaceInfo->originInterfaceType)
+                        if (srcInterfaceInfo->originInterfaceType 
+                            && extInterfaceInfo->originInterfaceType 
+                            && srcInterfaceInfo->originInterfaceType == extInterfaceInfo->originInterfaceType)
                         {
                             LLVM_DEBUG(llvm::dbgs() << "\n!! origin type for interfaces '" << srcInterfaceInfo->originInterfaceType << "' & '" << extInterfaceInfo->originInterfaceType << "'\n";);
 
@@ -1838,7 +1853,9 @@ class MLIRTypeHelper
                 {
                     if (auto extClassInfo = getClassInfoByFullName(extClassType.getName().getValue()))
                     {
-                        if (srcClassInfo->originClassType == extClassInfo->originClassType)
+                        if (srcClassInfo->originClassType 
+                            && extClassInfo->originClassType
+                            && srcClassInfo->originClassType == extClassInfo->originClassType)
                         {
                             LLVM_DEBUG(llvm::dbgs() << "\n!! origin type for class '" << srcClassInfo->originClassType << "' & '" << extClassInfo->originClassType << "'\n";);
 
@@ -1872,19 +1889,6 @@ class MLIRTypeHelper
             }
         }
 
-        // Special case when we have string type (widen from Literal Type)
-        if (auto literalType = extendType.dyn_cast<mlir_ts::LiteralType>())
-        {
-            return extendsType(srcType, literalType.getElementType(), typeParamsWithArgs);
-        }        
-
-        if (auto unionType = srcType.dyn_cast<mlir_ts::UnionType>())
-        {
-            auto pred = [&](auto &item) { return extendsType(item, extendType, typeParamsWithArgs); };
-            auto types = unionType.getTypes();
-            return std::find_if(types.begin(), types.end(), pred) != types.end();
-        }
-
         if (isAnyFunctionType(srcType) && isAnyFunctionType(extendType))
         {
             return extendsTypeFuncTypes(srcType, extendType, typeParamsWithArgs);
@@ -1910,6 +1914,36 @@ class MLIRTypeHelper
                         {srcClassInfo->classType}, 
                         constrMethod->funcType.isVarArg());
                     return extendsTypeFuncTypes(constrWithRetType, extendType, typeParamsWithArgs, 1/*because of this param*/);
+                }
+            }
+
+            return false;
+        }
+
+        if (auto ifaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
+            assert(interfaceInfo);
+            for (auto extend : interfaceInfo->extends)
+            {
+                if (extendsType(extend.second->interfaceType, extendType, typeParamsWithArgs))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (auto classType = srcType.dyn_cast<mlir_ts::ClassType>())
+        {
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            assert(classInfo);
+            for (auto extend : classInfo->baseClasses)
+            {
+                if (extendsType(extend->classType, extendType, typeParamsWithArgs))
+                {
+                    return true;
                 }
             }
 

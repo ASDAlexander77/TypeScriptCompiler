@@ -16141,39 +16141,6 @@ genContext);
             return resType;
         }
 
-        TypeSwitch<mlir::Type>(checkType)
-            .template Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
-                auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
-                assert(interfaceInfo);
-                for (auto extend : interfaceInfo->extends)
-                {
-                    if (mth.extendsType(extend.second->interfaceType, extendsType, typeParamsWithArgs))
-                    {
-                        resType = getType(conditionalTypeNode->trueType, genContext);
-    
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [TRUE] (extends of interface) = " << resType << "\n";);
-
-                        break;
-                    }
-                }
-            })
-            .template Case<mlir_ts::ClassType>([&](auto classType) {
-                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-                assert(classInfo);
-                for (auto extend : classInfo->baseClasses)
-                {
-                    if (mth.extendsType(extend->classType, extendsType, typeParamsWithArgs))
-                    {
-                        resType = getType(conditionalTypeNode->trueType, genContext);
-
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [TRUE] (extends of class) = " << resType << "\n";);
-
-                        break;
-                    }
-                }
-            })
-            .Default([&](auto type) {});
-
         if (!resType)
         {
             if (inferType)
