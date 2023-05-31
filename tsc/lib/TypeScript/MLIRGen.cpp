@@ -2511,7 +2511,10 @@ class MLIRGenImpl
 
         if (!isGlobal)
         {
-            declare(varDecl, variableOp, genContext);
+            if (mlir::failed(declare(location, varDecl, variableOp, genContext)))
+            {
+                return mlir::Type();
+            }
         }
         else if (isFullName)
         {
@@ -3822,15 +3825,13 @@ class MLIRGenImpl
         {
             getFunctionMap().insert({name, funcOp});
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << "\n";);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " full name: " << funcProto->getName()
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << " function name: " << funcProto->getName()
                                     << " num inputs:" << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs()
                                     << "\n";);
         }
         else
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getFunctionType() << "\n";);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " num inputs:"
+            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getFunctionType() << " num inputs:"
                                     << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
 
             // TODO: here if function body is generated you can skip it
@@ -3897,7 +3898,7 @@ class MLIRGenImpl
             auto entryOp = builder.create<mlir_ts::EntryOp>(location, mlir_ts::RefType::get(retType));
             auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
             varDecl->setReadWriteAccess();
-            declare(varDecl, entryOp.getReference(), genContext);
+            DECLARE(varDecl, entryOp.getReference());
         }
         else
         {
@@ -3936,7 +3937,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenFunctionCapturedParam(mlir::Location loc, int &firstIndex,
+    mlir::LogicalResult mlirGenFunctionCapturedParam(mlir::Location location, int &firstIndex,
                                                      FunctionPrototypeDOM::TypePtr funcProto,
                                                      mlir::Block::BlockArgListType arguments,
                                                      const GenContext &genContext)
@@ -3957,14 +3958,14 @@ class MLIRGenImpl
         auto capturedParam = arguments[firstIndex];
         auto capturedRefType = capturedParam.getType();
 
-        auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, capturedRefType, loc);
+        auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, capturedRefType, location);
 
-        declare(capturedParamVar, capturedParam, genContext);
+        DECLARE(capturedParamVar, capturedParam);
 
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenFunctionCapturedParamIfObject(mlir::Location loc, int &firstIndex,
+    mlir::LogicalResult mlirGenFunctionCapturedParamIfObject(mlir::Location location, int &firstIndex,
                                                              FunctionPrototypeDOM::TypePtr funcProto,
                                                              mlir::Block::BlockArgListType arguments,
                                                              const GenContext &genContext)
@@ -3978,12 +3979,12 @@ class MLIRGenImpl
         if (isObjectType)
         {
 
-            auto thisVal = resolveIdentifier(loc, THIS_NAME, genContext);
+            auto thisVal = resolveIdentifier(location, THIS_NAME, genContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! this value: " << thisVal << "\n";);
 
             auto capturedNameResult =
-                mlirGenPropertyAccessExpression(loc, thisVal, MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), genContext);
+                mlirGenPropertyAccessExpression(location, thisVal, MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(capturedNameResult)
 
             mlir::Value propValue = V(capturedNameResult);
@@ -3993,8 +3994,8 @@ class MLIRGenImpl
             assert(propValue);
 
             // captured is in this->".captured"
-            auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, propValue.getType(), loc);
-            declare(capturedParamVar, propValue, genContext);
+            auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, propValue.getType(), location);
+            DECLARE(capturedParamVar, propValue);
         }
 
         return mlir::success();
@@ -4167,7 +4168,7 @@ class MLIRGenImpl
             {
                 // redefine variable
                 param->setReadWriteAccess();
-                declare(param, paramValue, genContext, true);
+                DECLARE(param, paramValue);
             }
         }
 
@@ -4188,9 +4189,9 @@ class MLIRGenImpl
                                                               arguments[index], builder.getBoolAttr(false));
             paramDecl->setReadWriteAccess();
             
-            declare(paramDecl, paramValue, genContext, true);
+            DECLARE(paramDecl, paramValue, genContext, true);
             */
-            declare(paramDecl, arguments[index], genContext, true);
+            DECLARE(paramDecl, arguments[index]);
         }
 
         return mlir::success();
@@ -4232,7 +4233,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenFunctionCaptures(FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
+    mlir::LogicalResult mlirGenFunctionCaptures(mlir::Location location, FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
     {
         if (genContext.capturedVars == nullptr)
         {
@@ -4270,7 +4271,7 @@ class MLIRGenImpl
             LLVM_DEBUG(dbgs() << "\n!! captured '\".captured\"->" << name << "' [ " << capturedVarValue
                               << " ] ref val type: [ " << variableRefType << " ]");
 
-            declare(capturedParam, capturedVarValue, genContext);
+            DECLARE(capturedParam, capturedVarValue);
         }
 
         return mlir::success();
@@ -4280,6 +4281,8 @@ class MLIRGenImpl
                                             mlir_ts::FuncOp funcOp, FunctionPrototypeDOM::TypePtr funcProto,
                                             const GenContext &genContext)
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION: '" << funcProto->getName() << "' ~~~ dummy run: " << genContext.dummyRun << " & allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
+
         if (!functionLikeDeclarationBaseAST->body || declarationMode && !genContext.dummyRun)
         {
             // it is just declaration
@@ -4291,18 +4294,6 @@ class MLIRGenImpl
 
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;
-
-        // process function params
-        // why do we need it?, what do we  do in mlirGenFunctionParams?
-        // for (auto paramPairs : llvm::zip(funcProto->getParams(), entryBlock.getArguments()))
-        // {
-        //     if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs), genContext)))
-        //     {
-        //         return mlir::failure();
-        //     }
-        // }
-
-        // allocate all params
 
         builder.setInsertionPointToStart(&entryBlock);
 
@@ -4337,7 +4328,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionCaptures(funcProto, genContext)))
+        if (failed(mlirGenFunctionCaptures(location, funcProto, genContext)))
         {
             return mlir::failure();
         }
@@ -4363,6 +4354,8 @@ class MLIRGenImpl
             genContext.cleanUps->push_back(blockPtr);
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ dummy run: " << genContext.dummyRun << " & allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
+
         return mlir::success();
     }
 
@@ -4375,6 +4368,8 @@ class MLIRGenImpl
         {
             return mlir::success();
         }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION: '" << fullFuncName << "' is dummy run: " << genContext.dummyRun << " << allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
 
         SymbolTableScopeT varScope(symbolTable);
 
@@ -4427,6 +4422,8 @@ class MLIRGenImpl
         }
 
         funcOp.setPrivate();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' is dummy run: " << genContext.dummyRun << " << allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
 
         return mlir::success();
     }
@@ -5430,7 +5427,7 @@ class MLIRGenImpl
         auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
         // somehow it is detected as external var, seems because it is contains external ref
         varDecl->setIgnoreCapturing();
-        declare(varDecl, exprValue, genContext);
+        DECLARE(varDecl, exprValue);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -5508,7 +5505,7 @@ class MLIRGenImpl
         auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
         // somehow it is detected as external var, seems because it is contains external ref
         varDecl->setIgnoreCapturing();
-        declare(varDecl, exprValue, genContext);
+        DECLARE(varDecl, exprValue);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -6459,7 +6456,7 @@ class MLIRGenImpl
         SymbolTableScopeT varScope(symbolTable);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(THIS_TEMPVAR_NAME, thisValue.getType(), location);
-        declare(varDecl, thisValue, genContext);
+        DECLARE(varDecl, thisValue);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -8183,10 +8180,10 @@ class MLIRGenImpl
 
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
-        declare(srcArrayVarDecl, arraySrc, genContext);
+        DECLARE(srcArrayVarDecl, arraySrc);
 
         auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
-        declare(funcVarDecl, funcSrc, genContext);
+        DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -8230,10 +8227,10 @@ class MLIRGenImpl
 
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
-        declare(srcArrayVarDecl, arraySrc, genContext);
+        DECLARE(srcArrayVarDecl, arraySrc);
 
         auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
-        declare(funcVarDecl, funcSrc, genContext);
+        DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -8283,10 +8280,10 @@ class MLIRGenImpl
 
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
-        declare(srcArrayVarDecl, arraySrc, genContext);
+        DECLARE(srcArrayVarDecl, arraySrc);
 
         auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
-        declare(funcVarDecl, funcSrc, genContext);
+        DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -8327,10 +8324,10 @@ class MLIRGenImpl
 
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
-        declare(srcArrayVarDecl, arraySrc, genContext);
+        DECLARE(srcArrayVarDecl, arraySrc);
 
         auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
-        declare(funcVarDecl, funcSrc, genContext);
+        DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -8385,10 +8382,10 @@ class MLIRGenImpl
 
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
-        declare(srcArrayVarDecl, arraySrc, genContext);
+        DECLARE(srcArrayVarDecl, arraySrc);
 
         auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
-        declare(funcVarDecl, funcSrc, genContext);
+        DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -9763,11 +9760,11 @@ class MLIRGenImpl
 
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
-        declare(srcArrayVarDecl, arraySrc, genContext);
+        DECLARE(srcArrayVarDecl, arraySrc);
 
         auto dstArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".dst_array", arrayDest.getType(), location);
         dstArrayVarDecl->setReadWriteAccess(true);
-        declare(dstArrayVarDecl, arrayDest, genContext);
+        DECLARE(dstArrayVarDecl, arrayDest);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -11586,7 +11583,7 @@ class MLIRGenImpl
                 enumLiteralTypes.push_back(enumValue.getType());
                 
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(memberNamePtr, enumValue.getType(), location);
-                declare(varDecl, enumValue, genContext);
+                DECLARE(varDecl, enumValue);
 
             }
             else
@@ -11600,7 +11597,7 @@ class MLIRGenImpl
 
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(memberNamePtr, indexType, location);
                 auto enumVal = builder.create<mlir_ts::ConstantOp>(location, indexType, enumValueAttr);
-                declare(varDecl, enumVal, genContext);
+                DECLARE(varDecl, enumVal);
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " value attr: " << enumValueAttr << "\n");
@@ -17749,16 +17746,17 @@ genContext);
         return mlir_ts::OpaqueType::get(builder.getContext());
     }
 
-    mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, const GenContext &genContext,
-                                bool redefineVar = false)
+    mlir::LogicalResult declare(mlir::Location location, VariableDeclarationDOM::TypePtr var, mlir::Value value, const GenContext &genContext)
     {
         const auto &name = var->getName();
-        /*
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
+
         if (symbolTable.count(name))
         {
-            return mlir::failure();
+            LLVM_DEBUG(llvm::dbgs() << "\n!! WARNING redeclaration: " << name << " = [" << value << "]\n";);
+            emitWarning(location, "") << "variable "<< name << " redeclared";
         }
-        */
 
         if (!genContext.insertIntoParentScope)
         {

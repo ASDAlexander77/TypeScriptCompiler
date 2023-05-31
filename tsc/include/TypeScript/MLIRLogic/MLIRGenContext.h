@@ -213,6 +213,12 @@ struct ValueOrLogicalResult
         res_cast = V(cast_result); \
     }
 
+#define DECLARE(varDesc, varValue) \
+    if (mlir::failed(declare(location, varDesc, varValue, genContext))) \
+    { \
+        return mlir::failure(); \
+    }
+
 } // namespace
 
 #endif // MLIR_TYPESCRIPT_MLIRGENCONTEXT_H_
