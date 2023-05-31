@@ -3229,16 +3229,16 @@ class MLIRGenImpl
 
         auto fullName = funcProto->getName();
 
-        auto isFunctionDiscovered = false;
+        mlir_ts::FunctionType functionDiscovered;
         auto funcTypeIt = getFunctionTypeMap().find(fullName);
         if (funcTypeIt != getFunctionTypeMap().end())
         {
-            isFunctionDiscovered = true;
+            functionDiscovered = (*funcTypeIt).second;
         }        
 
         // discover type & args
         // seems we need to discover it all the time due to captured vars
-        if (!funcType || genContext.forceDiscover || !isFunctionDiscovered)
+        if (!funcType || genContext.forceDiscover || !functionDiscovered)
         {
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
                                                                           argTypes, funcProto, genContext)))
@@ -3280,14 +3280,9 @@ class MLIRGenImpl
                 return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
             }
         }
-        else if (funcType)
+        else if (funcType && functionDiscovered)
         {
-            // we need to overwrite funcType in case of func with captured params
-            auto funcTypeIt = getFunctionTypeMap().find(fullName);
-            if (funcTypeIt != getFunctionTypeMap().end())
-            {
-                funcType = (*funcTypeIt).second;
-            }
+            funcType = functionDiscovered;
         }
 
         // we need it, when we run rediscovery second time
