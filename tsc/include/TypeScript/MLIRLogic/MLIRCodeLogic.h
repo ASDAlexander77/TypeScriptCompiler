@@ -158,7 +158,7 @@ class MLIRCustomMethods
 
     static bool isInternalFunctionName (StringRef functionName)
     {
-        static std::map<std::string, bool> m { {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {"switchstate", true}};
+        static std::map<std::string, bool> m { {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}};
         return m[functionName.str()];    
     }
 
@@ -199,7 +199,7 @@ class MLIRCustomMethods
         {
             return mlirGenArrayPop(location, operands);
         }
-        else if (functionName == "switchstate")
+        else if (functionName == GENERATOR_SWITCHSTATE)
         {
             // switchstate - internal command;
             return mlirGenSwitchState(location, operands, genContext);

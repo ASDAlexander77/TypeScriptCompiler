@@ -3572,7 +3572,7 @@ class MLIRGenImpl
 
         // call stateswitch
         auto callStat = nf.createExpressionStatement(
-            nf.createCallExpression(nf.createIdentifier(S("switchstate")), undefined, {stepAccess}));
+            nf.createCallExpression(nf.createIdentifier(S(GENERATOR_SWITCHSTATE)), undefined, {stepAccess}));
 
         nextStatements.push_back(callStat);
 

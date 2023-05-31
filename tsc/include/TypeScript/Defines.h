@@ -37,6 +37,7 @@
 #define CALL_FIELD_NAME ".call"
 #define THIS_ALIAS ".this"
 #define GENERATOR_STEP ".step"
+#define GENERATOR_SWITCHSTATE ".switchstate"
 
 #define TO_STRING "toString"
 #define SYMBOL_TO_STRING_TAG "toStringTag"
