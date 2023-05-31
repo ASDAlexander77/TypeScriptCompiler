@@ -4648,6 +4648,27 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return llvmPtrType;
     });
 
+    converter.addConversion([&](mlir_ts::ConstructFunctionType type) {
+        SmallVector<mlir::Type> convertedInputs;
+        for (auto subType : type.getInputs())
+        {
+            convertedInputs.push_back(converter.convertType(subType));
+        }
+
+        SmallVector<mlir::Type> convertedResults;
+        for (auto subType : type.getResults())
+        {
+            convertedResults.push_back(converter.convertType(subType));
+        }
+
+        auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
+
+        LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
+        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, result);
+        auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
+        return llvmPtrType;
+    });
+
     converter.addConversion([&](mlir_ts::BoundFunctionType type) {
         SmallVector<mlir::Type> convertedInputs;
         for (auto subType : type.getInputs())

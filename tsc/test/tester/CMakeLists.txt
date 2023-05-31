@@ -334,6 +334,7 @@ add_test(NAME test-compile-callWithSpread COMMAND test-runner "${PROJECT_SOURCE_
 add_test(NAME test-compile-newWithSpread COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/newWithSpread.ts")
 add_test(NAME test-compile-typeGuardOfFormThisMember COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormThisMember.ts")
 add_test(NAME test-compile-typeGuardOfFormTypeOfBoolean COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormTypeOfBoolean.ts")
+add_test(NAME test-compile-thisTypeInClasses COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/thisTypeInClasses.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -588,3 +589,4 @@ add_test(NAME test-jit-callWithSpread COMMAND test-runner -jit "${PROJECT_SOURCE
 add_test(NAME test-jit-newWithSpread COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/newWithSpread.ts")
 add_test(NAME test-jit-typeGuardOfFormThisMember COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormThisMember.ts")
 add_test(NAME test-jit-typeGuardOfFormTypeOfBoolean COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormTypeOfBoolean.ts")
+add_test(NAME test-jit-thisTypeInClasses COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/thisTypeInClasses.ts")
