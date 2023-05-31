@@ -1023,7 +1023,7 @@ class MLIRGenImpl
         {
             if ((expressionAST->internalFlags & InternalFlags::ThisArgAlias) == InternalFlags::ThisArgAlias)
             {
-                return mlirGen(loc(expressionAST), "thisArg", genContext);
+                return mlirGen(loc(expressionAST), THIS_ALIAS, genContext);
             }
 
             return mlirGen(loc(expressionAST), THIS_NAME, genContext);
@@ -3637,7 +3637,7 @@ class MLIRGenImpl
         {
             // TODO: this is temp hack, add this alias as thisArg, 
             NodeArray<VariableDeclaration> _thisArgDeclarations;
-            auto _thisArg = nf.createIdentifier(S("thisArg"));
+            auto _thisArg = nf.createIdentifier(S(THIS_ALIAS));
             _thisArgDeclarations.push_back(nf.createVariableDeclaration(_thisArg, undefined, undefined, nf.createToken(SyntaxKind::ThisKeyword)));
             auto _thisArgList = nf.createVariableDeclarationList(_thisArgDeclarations, NodeFlags::Const);
 
