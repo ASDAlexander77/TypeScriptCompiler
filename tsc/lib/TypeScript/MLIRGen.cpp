@@ -4537,7 +4537,7 @@ class MLIRGenImpl
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _v_ident = nf.createIdentifier(S(".v"));
 
         NodeArray<VariableDeclaration> declarations;
         declarations.push_back(nf.createVariableDeclaration(_v_ident));
@@ -5381,10 +5381,10 @@ class MLIRGenImpl
 
         // init
         NodeArray<VariableDeclaration> declarations;
-        auto _i = nf.createIdentifier(S("_i_"));
+        auto _i = nf.createIdentifier(S(".i"));
         declarations.push_back(nf.createVariableDeclaration(_i, undefined, undefined, nf.createNumericLiteral(S("0"))));
 
-        auto _a = nf.createIdentifier(S("_a_"));
+        auto _a = nf.createIdentifier(S(".a"));
         auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, forInStatementAST->expression);
         arrayVar->internalFlags |= InternalFlags::ForceConstRef;
         declarations.push_back(arrayVar);
@@ -5432,10 +5432,10 @@ class MLIRGenImpl
 
         // init
         NodeArray<VariableDeclaration> declarations;
-        auto _i = nf.createIdentifier(S("_i_"));
+        auto _i = nf.createIdentifier(S(".i"));
         declarations.push_back(nf.createVariableDeclaration(_i, undefined, undefined, nf.createNumericLiteral(S("0"))));
 
-        auto _a = nf.createIdentifier(S("_a_"));
+        auto _a = nf.createIdentifier(S(".a"));
         auto arrayVar =
             nf.createVariableDeclaration(_a, undefined, undefined, nf.createIdentifier(S(EXPR_TEMPVAR_NAME)));
         arrayVar->internalFlags |= InternalFlags::ForceConstRef;
@@ -5453,7 +5453,7 @@ class MLIRGenImpl
         NodeArray<ts::Statement> statements;
 
         NodeArray<VariableDeclaration> varOfConstDeclarations;
-        auto _ci = nf.createIdentifier(S("_ci_"));
+        auto _ci = nf.createIdentifier(S(".ci"));
         varOfConstDeclarations.push_back(nf.createVariableDeclaration(_ci, undefined, undefined, _i));
         auto varsOfConst = nf.createVariableDeclarationList(varOfConstDeclarations, NodeFlags::Const);
 
@@ -5510,14 +5510,14 @@ class MLIRGenImpl
 
         // init
         NodeArray<VariableDeclaration> declarations;
-        auto _b = nf.createIdentifier(S("_b_"));
+        auto _b = nf.createIdentifier(S(".b"));
         auto _next = nf.createIdentifier(S(ITERATOR_NEXT));
         auto _bVar = nf.createVariableDeclaration(_b, undefined, undefined, nf.createIdentifier(S(EXPR_TEMPVAR_NAME)));
         declarations.push_back(_bVar);
 
         NodeArray<Expression> nextArgs;
 
-        auto _c = nf.createIdentifier(S("_c_"));
+        auto _c = nf.createIdentifier(S(".c"));
         auto _done = nf.createIdentifier(S("done"));
         auto _value = nf.createIdentifier(S("value"));
         auto _cVar = nf.createVariableDeclaration(
@@ -8178,18 +8178,18 @@ class MLIRGenImpl
         auto funcSrc = operands[1];
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         declare(srcArrayVarDecl, arraySrc, genContext);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         declare(funcVarDecl, funcSrc, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
-        auto _func_ident = nf.createIdentifier(S("_func_"));
+        auto _src_array_ident = nf.createIdentifier(S(".src_array"));
+        auto _func_ident = nf.createIdentifier(S(".func"));
 
-        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _v_ident = nf.createIdentifier(S(".v"));
 
         NodeArray<VariableDeclaration> declarations;
         declarations.push_back(nf.createVariableDeclaration(_v_ident));
@@ -8212,7 +8212,7 @@ class MLIRGenImpl
     {
         SymbolTableScopeT varScope(symbolTable);
 
-        auto varName = "_ev_";
+        auto varName = ".ev";
         auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
         registerVariable(
             location, varName, false, VariableClass::Let,
@@ -8225,18 +8225,18 @@ class MLIRGenImpl
         auto funcSrc = operands[1];
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         declare(srcArrayVarDecl, arraySrc, genContext);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         declare(funcVarDecl, funcSrc, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
-        auto _func_ident = nf.createIdentifier(S("_func_"));
+        auto _src_array_ident = nf.createIdentifier(S(".src_array"));
+        auto _func_ident = nf.createIdentifier(S(".func"));
 
-        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _v_ident = nf.createIdentifier(S(".v"));
         auto _result_ident = nf.createIdentifier(stows(varName));
 
         NodeArray<VariableDeclaration> declarations;
@@ -8265,7 +8265,7 @@ class MLIRGenImpl
     {
         SymbolTableScopeT varScope(symbolTable);
 
-        auto varName = "_sm_";
+        auto varName = ".sm";
         auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
         registerVariable(
             location, varName, false, VariableClass::Let,
@@ -8278,18 +8278,18 @@ class MLIRGenImpl
         auto funcSrc = operands[1];
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         declare(srcArrayVarDecl, arraySrc, genContext);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         declare(funcVarDecl, funcSrc, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
-        auto _func_ident = nf.createIdentifier(S("_func_"));
+        auto _src_array_ident = nf.createIdentifier(S(".src_array"));
+        auto _func_ident = nf.createIdentifier(S(".func"));
 
-        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _v_ident = nf.createIdentifier(S(".v"));
         auto _result_ident = nf.createIdentifier(stows(varName));
 
         NodeArray<VariableDeclaration> declarations;
@@ -8322,18 +8322,18 @@ class MLIRGenImpl
         auto [pos, _end] = getPos(location);
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         declare(srcArrayVarDecl, arraySrc, genContext);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         declare(funcVarDecl, funcSrc, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
-        auto _func_ident = nf.createIdentifier(S("_func_"));
+        auto _src_array_ident = nf.createIdentifier(S(".src_array"));
+        auto _func_ident = nf.createIdentifier(S(".func"));
 
-        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _v_ident = nf.createIdentifier(S(".v"));
         
         NodeArray<VariableDeclaration> declarations;
         declarations.push_back(nf.createVariableDeclaration(_v_ident));
@@ -8352,7 +8352,7 @@ class MLIRGenImpl
                                     nf.createExpressionStatement(_yield_expr));
 
         // iterator
-        auto iterName = MLIRHelper::getAnonymousName(location, "_iter_");
+        auto iterName = MLIRHelper::getAnonymousName(location, ".iter");
 
         NodeArray<Statement> statements;
         statements.push_back(forOfStat);
@@ -8380,18 +8380,18 @@ class MLIRGenImpl
         auto funcSrc = operands[1];
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         declare(srcArrayVarDecl, arraySrc, genContext);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         declare(funcVarDecl, funcSrc, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
-        auto _func_ident = nf.createIdentifier(S("_func_"));
+        auto _src_array_ident = nf.createIdentifier(S(".src_array"));
+        auto _func_ident = nf.createIdentifier(S(".func"));
 
-        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _v_ident = nf.createIdentifier(S(".v"));
 
         NodeArray<VariableDeclaration> declarations;
         declarations.push_back(nf.createVariableDeclaration(_v_ident));
@@ -8413,7 +8413,7 @@ class MLIRGenImpl
                                  undefined));
 
         // iterator
-        auto iterName = MLIRHelper::getAnonymousName(location, "_iter_");
+        auto iterName = MLIRHelper::getAnonymousName(location, ".iter");
 
         NodeArray<Statement> statements;
         statements.push_back(forOfStat);
@@ -9758,21 +9758,21 @@ class MLIRGenImpl
         SymbolTableScopeT varScope(symbolTable);
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         declare(srcArrayVarDecl, arraySrc, genContext);
 
-        auto dstArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_dst_array_", arrayDest.getType(), location);
+        auto dstArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".dst_array", arrayDest.getType(), location);
         dstArrayVarDecl->setReadWriteAccess(true);
         declare(dstArrayVarDecl, arrayDest, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
-        auto _dst_array_ident = nf.createIdentifier(S("_dst_array_"));
+        auto _src_array_ident = nf.createIdentifier(S(".src_array"));
+        auto _dst_array_ident = nf.createIdentifier(S(".dst_array"));
 
         auto _push_ident = nf.createIdentifier(S("push"));
 
-        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _v_ident = nf.createIdentifier(S(".v"));
 
         NodeArray<VariableDeclaration> declarations;
         declarations.push_back(nf.createVariableDeclaration(_v_ident));
@@ -10927,7 +10927,7 @@ class MLIRGenImpl
                 // valueRegion->viewGraph();
                 // const_cast<GenContext &>(genContext).funcOpVarScope.getCallableRegion()->viewGraph();
 
-                // special case, to prevent capturing "_a_" because of reference to outer VaribleOp, whihc hack (review
+                // special case, to prevent capturing ".a" because of reference to outer VaribleOp, whihc hack (review
                 // solution for it)
                 genContext.passResult->outerVariables.insert({value.second->getName(), value.second});
             }
@@ -14887,13 +14887,13 @@ genContext);
 
         GenContext funcCallGenContext(genContext);
         // "_" added to name
-        funcCallGenContext.typeAliasMap.insert({"___TYPE_ALIAS__", type});
+        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS", type});
 
         SmallVector<mlir::Value, 4> operands;
         operands.push_back(value);
 
         NodeFactory nf(NodeFactoryFlags::None);
-        return mlirGenCallExpression(location, funcResult, { nf.createTypeReferenceNode(nf.createIdentifier(S("__TYPE_ALIAS__")).as<Node>()) }, operands, funcCallGenContext);
+        return mlirGenCallExpression(location, funcResult, { nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS")).as<Node>()) }, operands, funcCallGenContext);
     }
 
     mlir::Value castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,
