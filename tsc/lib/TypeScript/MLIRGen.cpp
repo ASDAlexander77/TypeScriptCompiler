@@ -3555,7 +3555,7 @@ class MLIRGenImpl
         
         NodeFactory nf(NodeFactoryFlags::None);
 
-        auto stepIdent = nf.createIdentifier(S("step"));
+        auto stepIdent = nf.createIdentifier(S(GENERATOR_STEP));
 
         // create return object
         NodeArray<ObjectLiteralElementLike> generatorObjectProperties;
@@ -4586,11 +4586,11 @@ class MLIRGenImpl
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        if (evaluateProperty(nf.createToken(SyntaxKind::ThisKeyword), "step", genContext))
+        if (evaluateProperty(nf.createToken(SyntaxKind::ThisKeyword), GENERATOR_STEP, genContext))
         {
             // save return point - state -> this.step = xxx
             auto setStateExpr = nf.createBinaryExpression(
-                nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(S("step"))),
+                nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(S(GENERATOR_STEP))),
                 nf.createToken(SyntaxKind::EqualsToken), nf.createNumericLiteral(num.str(), TokenFlags::None));
             mlirGen(setStateExpr, genContext);
         }
@@ -4598,7 +4598,7 @@ class MLIRGenImpl
         {
             // save return point - state -> step = xxx
             auto setStateExpr = nf.createBinaryExpression(
-                nf.createIdentifier(S("step")),
+                nf.createIdentifier(S(GENERATOR_STEP)),
                 nf.createToken(SyntaxKind::EqualsToken), nf.createNumericLiteral(num.str(), TokenFlags::None));
             mlirGen(setStateExpr, genContext);
         }

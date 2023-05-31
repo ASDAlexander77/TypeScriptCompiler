@@ -35,6 +35,7 @@
 #define LENGTH_FIELD_NAME "length"
 #define INDEX_ACCESS_FIELD_NAME ".index"
 #define CALL_FIELD_NAME ".call"
+#define GENERATOR_STEP ".step"
 
 #define TO_STRING "toString"
 #define SYMBOL_TO_STRING_TAG "toStringTag"
