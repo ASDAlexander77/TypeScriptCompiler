@@ -4812,6 +4812,11 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion([&](mlir_ts::LiteralType type) { return converter.convertType(type.getElementType()); });
 
+    converter.addConversion([&](mlir_ts::IntersectionType type) {
+        llvm_unreachable("type usage (IntersectionType) is not implemented");
+        return mlir::Type();
+    }); 
+
     /*
     converter.addSourceMaterialization(
         [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {
