@@ -2097,7 +2097,7 @@ class MLIRGenImpl
         {
             // create new function instance
             GenContext initSpecGenContext(genContext);
-            initSpecGenContext.rediscover = true;
+            initSpecGenContext.forceDiscover = true;
             initSpecGenContext.thisType = mlir::Type();
 
             auto skipThisParam = false;
@@ -3229,9 +3229,16 @@ class MLIRGenImpl
 
         auto fullName = funcProto->getName();
 
+        auto isFunctionDiscovered = false;
+        auto funcTypeIt = getFunctionTypeMap().find(fullName);
+        if (funcTypeIt != getFunctionTypeMap().end())
+        {
+            isFunctionDiscovered = true;
+        }        
+
         // discover type & args
-        // !genContext.allowPartialResolve -> in actual process we need actual data
-        if (!funcType || genContext.rediscover)
+        // seems we need to discover it all the time due to captured vars
+        if (!funcType || genContext.forceDiscover || !isFunctionDiscovered)
         {
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
                                                                           argTypes, funcProto, genContext)))
@@ -3271,6 +3278,15 @@ class MLIRGenImpl
             {
                 // false result
                 return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
+            }
+        }
+        else if (funcType)
+        {
+            // we need to overwrite funcType in case of func with captured params
+            auto funcTypeIt = getFunctionTypeMap().find(fullName);
+            if (funcTypeIt != getFunctionTypeMap().end())
+            {
+                funcType = (*funcTypeIt).second;
             }
         }
 

@@ -142,7 +142,7 @@ struct GenContext
     bool allocateVarsInContextThis;
     bool allocateVarsOutsideOfOperation;
     bool skipProcessed;
-    bool rediscover;
+    bool forceDiscover;
     bool discoverParamsOnly;
     bool insertIntoParentScope;
     mlir::Operation *currentOperation;
