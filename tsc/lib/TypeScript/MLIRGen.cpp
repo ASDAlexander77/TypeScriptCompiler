@@ -3123,6 +3123,7 @@ class MLIRGenImpl
         return std::make_tuple(fullName, name);
     }
 
+    // TODO: review it, seems doing work which mlirGenFunctionPrototype will overwrite anyway
     std::tuple<FunctionPrototypeDOM::TypePtr, mlir_ts::FunctionType, SmallVector<mlir::Type>>
     mlirGenFunctionSignaturePrototype(SignatureDeclarationBase signatureDeclarationBaseAST, bool defaultVoid,
                                       const GenContext &genContext)
@@ -3243,14 +3244,19 @@ class MLIRGenImpl
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
                                                                           argTypes, funcProto, genContext)))
             {
-                // rewrite ret type with actual value
-                if (auto typeParameter = functionLikeDeclarationBaseAST->type)
+                if (!genContext.forceDiscover && funcType && funcType.getNumResults() > 0)
                 {
+                    funcProto->setReturnType(funcType.getResult(0));
+                }
+                else if (auto typeParameter = functionLikeDeclarationBaseAST->type)
+                {
+                    // rewrite ret type with actual value in case of specialized generic
                     auto returnType = getType(typeParameter, genContext);
                     funcProto->setReturnType(returnType);
                 }
                 else if (genContext.receiverFuncType)
                 {
+                    // rewrite ret type with actual value
                     auto &argTypeDestFuncType = genContext.receiverFuncType;
                     auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
                         ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
@@ -3280,7 +3286,7 @@ class MLIRGenImpl
                 return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
             }
         }
-        else if (funcType && functionDiscovered)
+        else if (functionDiscovered)
         {
             funcType = functionDiscovered;
         }
