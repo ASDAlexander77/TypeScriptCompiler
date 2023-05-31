@@ -561,11 +561,14 @@ class MLIRGenImpl
 
         if (body.is<Statement>() && !body.is<ArrowFunction>() && !body.is<FunctionExpression>() && !body.is<ClassExpression>())
         {
+            SymbolTableScopeT varScope(symbolTable);
             return mlirGen(body.as<Statement>(), genContext);
         }
 
         if (body.is<Expression>())
         {
+            SymbolTableScopeT varScope(symbolTable);
+
             auto result = mlirGen(body.as<Expression>(), genContext);
             EXIT_IF_FAILED(result)
             auto resultValue = V(result);
@@ -4290,13 +4293,14 @@ class MLIRGenImpl
         auto &entryBlock = *blockPtr;
 
         // process function params
-        for (auto paramPairs : llvm::zip(funcProto->getParams(), entryBlock.getArguments()))
-        {
-            if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs), genContext)))
-            {
-                return mlir::failure();
-            }
-        }
+        // why do we need it?, what do we  do in mlirGenFunctionParams?
+        // for (auto paramPairs : llvm::zip(funcProto->getParams(), entryBlock.getArguments()))
+        // {
+        //     if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs), genContext)))
+        //     {
+        //         return mlir::failure();
+        //     }
+        // }
 
         // allocate all params
 
@@ -15077,7 +15081,9 @@ genContext);
             }
             
             NodeFactory nf(NodeFactoryFlags::None);
-            return evaluate(nf.createToken(SyntaxKind::ThisKeyword), genContext);
+            auto thisType = evaluate(nf.createToken(SyntaxKind::ThisKeyword), genContext);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! this type from variable: [" << thisType << "]\n";);
+            return thisType;
         }
         else if (kind == SyntaxKind::Unknown)
         {
