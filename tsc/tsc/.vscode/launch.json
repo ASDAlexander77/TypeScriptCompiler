@@ -140,6 +140,23 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
+            "name": "(Windows) tsc.exe - BC",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "args": [
+                "-emit=bc",
+                "-opt",
+                "-o=c:/temp/1.bc",
+                "C:/temp/1.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },        
+        {
             "name": "(Linux) ./tsc - LLVM",
             "type": "cppdbg",
             "request": "launch",

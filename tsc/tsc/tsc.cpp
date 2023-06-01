@@ -26,6 +26,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
+#include "llvm/IRPrinter/IRPrintingPasses.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/Parser/Parser.h"
@@ -34,6 +35,8 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
+
+#include "llvm/Bitcode/BitcodeWriterPass.h"
 
 #include "mlir/Support/DebugCounter.h"
 #include "mlir/Support/Timing.h"
@@ -106,17 +109,19 @@ enum Action
     DumpMLIRAffine,
     DumpMLIRLLVM,
     DumpLLVMIR,
+    DumpByteCode,
     RunJIT
 };
 } // namespace
 
 static cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desired"),
-                                       cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
-                                       cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
-                                       cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine", "output the MLIR dump after affine lowering")),
-                                       cl::values(clEnumValN(DumpMLIRLLVM, "mlir-llvm", "output the MLIR dump after llvm lowering")),
-                                       cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")),
-                                       cl::values(clEnumValN(RunJIT, "jit", "JIT the code and run it by invoking the main function")), 
+                                       cl::values(clEnumValN(DumpAST, "ast", "output AST dump")),
+                                       cl::values(clEnumValN(DumpMLIR, "mlir", "output MLIR dump")),
+                                       cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine", "output MLIR dump after affine lowering")),
+                                       cl::values(clEnumValN(DumpMLIRLLVM, "mlir-llvm", "output MLIR dump after llvm lowering")),
+                                       cl::values(clEnumValN(DumpLLVMIR, "llvm", "output LLVM IR dump")),
+                                       cl::values(clEnumValN(DumpByteCode, "bc", "output LLVM ByteCode dump")),
+                                       cl::values(clEnumValN(RunJIT, "jit", "JIT code and run it by invoking main function")), 
                                        cl::cat(TypeScriptCompilerCategory));
 
 static cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations"), cl::init(false), cl::cat(TypeScriptCompilerCategory), cl::cat(TypeScriptCompilerCategory)};
@@ -314,6 +319,69 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
     return std::nullopt;
 }
 
+
+static std::unique_ptr<llvm::ToolOutputFile> GetOutputStream()
+{
+    // If we don't yet have an output filename, make one.
+    if (outputFilename.empty())
+    {
+        if (inputFilename == "-")
+            outputFilename = "-";
+        else
+        {
+            // If InputFilename ends in .bc or .ll, remove it.
+            llvm::StringRef IFN = inputFilename;
+            if (IFN.endswith(".ts"))
+                outputFilename = std::string(IFN.drop_back(3));
+            else if (IFN.endswith(".mlir"))
+                outputFilename = std::string(IFN.drop_back(5));
+            else
+                outputFilename = std::string(IFN);
+
+            switch (emitAction)
+            {
+                case None:
+                    outputFilename = "-";
+                    break;
+                case DumpAST:
+                    outputFilename += ".txt";
+                    break;
+                case DumpMLIR:
+                case DumpMLIRAffine:
+                case DumpMLIRLLVM:
+                    outputFilename += ".mlir";
+                    break;
+                case DumpLLVMIR:
+                    outputFilename += ".ll";
+                    break;
+                case DumpByteCode:
+                    outputFilename += ".bc";
+                    break;
+                case RunJIT:
+                    outputFilename = "-";
+                    break;
+            }
+        }
+    }
+
+    // Open the file.
+    std::error_code EC;
+    llvm::sys::fs::OpenFlags openFlags = llvm::sys::fs::OF_None;
+    if (emitAction != DumpByteCode)
+    {
+        openFlags |= llvm::sys::fs::OF_TextWithCRLF;
+    }
+
+    auto FDOut = std::make_unique<llvm::ToolOutputFile>(outputFilename, EC, openFlags);
+    if (EC)
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << EC.message() << "\n";
+        return nullptr;
+    }
+
+    return FDOut;
+}
+
 std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(llvm::Optional<unsigned> mbOptLevel,
                                                                      llvm::TargetMachine *targetMachine)
 {
@@ -354,7 +422,27 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         else
             mpm.addPass(pb.buildPerModuleDefaultPipeline(*ol));
 
+
+        std::unique_ptr<llvm::ToolOutputFile> FDOut;
+        if (emitAction == Action::DumpLLVMIR)
+        {
+            FDOut = GetOutputStream();
+            mpm.addPass(llvm::PrintModulePass(FDOut ? FDOut->os() : llvm::errs()));
+        }
+
+        if (emitAction == Action::DumpByteCode)
+        {
+            FDOut = GetOutputStream();
+            mpm.addPass(llvm::BitcodeWriterPass(FDOut ? FDOut->os() : llvm::errs()));
+        }
+
         mpm.run(*m, mam);
+
+        if (FDOut)
+        {
+            FDOut->keep();
+        }
+
         return llvm::Error::success();
     };
 }
@@ -374,61 +462,6 @@ std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int op
 #endif
 
     return optPipeline;
-}
-
-static std::unique_ptr<llvm::ToolOutputFile> GetOutputStream()
-{
-    // If we don't yet have an output filename, make one.
-    if (outputFilename.empty())
-    {
-        if (inputFilename == "-")
-            outputFilename = "-";
-        else
-        {
-            // If InputFilename ends in .bc or .ll, remove it.
-            llvm::StringRef IFN = inputFilename;
-            if (IFN.endswith(".ts"))
-                outputFilename = std::string(IFN.drop_back(3));
-            else if (IFN.endswith(".mlir"))
-                outputFilename = std::string(IFN.drop_back(5));
-            else
-                outputFilename = std::string(IFN);
-
-            switch (emitAction)
-            {
-                case None:
-                    outputFilename = "-";
-                    break;
-                case DumpAST:
-                    outputFilename += ".txt";
-                    break;
-                case DumpMLIR:
-                case DumpMLIRAffine:
-                case DumpMLIRLLVM:
-                    outputFilename += ".mlir";
-                    break;
-                case DumpLLVMIR:
-                    outputFilename += ".ll";
-                    break;
-                case RunJIT:
-                    outputFilename = "-";
-                    break;
-            }
-        }
-    }
-
-    // Open the file.
-    std::error_code EC;
-    llvm::sys::fs::OpenFlags openFlags = llvm::sys::fs::OF_None;
-    openFlags |= llvm::sys::fs::OF_TextWithCRLF;
-    auto FDOut = std::make_unique<llvm::ToolOutputFile>(outputFilename, EC, openFlags);
-    if (EC)
-    {
-        llvm::WithColor::error(llvm::errs(), "tsc") << EC.message() << "\n";
-        return nullptr;
-    }
-
-    return FDOut;
 }
 
 int dumpLLVMIR(mlir::ModuleOp module)
@@ -454,18 +487,6 @@ int dumpLLVMIR(mlir::ModuleOp module)
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to optimize LLVM IR " << err << "\n";
         return -1;
-    }
-
-    // TODO: add output into file as well 
-    auto FDOut = GetOutputStream();
-    if (FDOut)
-    {
-        FDOut->os() << *llvmModule << "\n";
-        FDOut->keep();
-    }
-    else
-    {
-        llvm::errs() << *llvmModule << "\n";
     }
 
     return 0;
@@ -707,7 +728,7 @@ int main(int argc, char **argv)
     }
 
     // Check to see if we are compiling to LLVM IR.
-    if (emitAction == Action::DumpLLVMIR)
+    if (emitAction == Action::DumpLLVMIR || emitAction == Action::DumpByteCode)
     {
         return dumpLLVMIR(*module);
     }
