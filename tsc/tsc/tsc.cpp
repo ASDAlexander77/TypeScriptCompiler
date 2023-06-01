@@ -82,6 +82,7 @@
 
 #define DEBUG_TYPE "tsc"
 
+#define ENABLE_CUSTOM_PASSES 1
 #define ENABLE_OPT_PASSES 1
 // TODO: if you uncomment it you will have exception in test 00try_finally.ts error: empty block: expect at least a terminator
 //#define AFFINE_MODULE_PASS 1
@@ -403,7 +404,7 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
 
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int optLevel, int sizeLevel)
 {
-#ifdef ENABLE_EXCEPTIONS
+#ifdef ENABLE_CUSTOM_PASSES
     auto optPipeline = makeCustomPassesWithOptimizingTransformer(
         /*optLevel=*/enableOpt ? optLevel : 0, 
         /*targetMachine=*/nullptr);
