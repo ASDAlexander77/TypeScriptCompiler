@@ -98,20 +98,6 @@ static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"), cl:
 
 namespace
 {
-enum InputType
-{
-    TypeScript,
-    MLIR
-};
-} // namespace
-
-static cl::opt<enum InputType> inputType("x", cl::init(TypeScript), cl::desc("Decided the kind of output desired"),
-                                         cl::values(clEnumValN(TypeScript, "TypeScript", "load the input file as a TypeScript (.ts) source.")),
-                                         cl::values(clEnumValN(MLIR, "mlir", "load the input file as an MLIR (.mlir) file")), 
-                                         cl::cat(TypeScriptCompilerCategory));
-
-namespace
-{
 enum Action
 {
     None,
@@ -158,40 +144,17 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &modu
     auto fileName = llvm::StringRef(inputFilename);
 
     // Handle '.ts' input to the compiler.
-    if (inputType != InputType::MLIR && !fileName.endswith(".mlir"))
-    {
-        auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
-        if (std::error_code ec = fileOrErr.getError())
-        {
-            llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << ec.message() << "\n";
-            return -1;
-        }
-
-        CompileOptions compileOptions;
-        compileOptions.disableGC = disableGC;
-        module = mlirGenFromSource(context, fileName, fileOrErr.get()->getBuffer(), compileOptions);
-        return !module ? 1 : 0;
-    }
-
-    // Otherwise, the input is '.mlir'.
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
-    if (std::error_code EC = fileOrErr.getError())
+    if (std::error_code ec = fileOrErr.getError())
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << EC.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << ec.message() << "\n";
         return -1;
     }
 
-    // Parse the input mlir.
-    llvm::SourceMgr sourceMgr;
-    sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
-    module = mlir::parseSourceFile<mlir::ModuleOp>(sourceMgr, &context);
-    if (!module)
-    {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Error can't load file " << inputFilename << "\n";
-        return 3;
-    }
-
-    return 0;
+    CompileOptions compileOptions;
+    compileOptions.disableGC = disableGC;
+    module = mlirGenFromSource(context, fileName, fileOrErr.get()->getBuffer(), compileOptions);
+    return !module ? 1 : 0;
 }
 
 int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp>  &module)
@@ -293,12 +256,6 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::Modul
 
 int dumpAST()
 {
-    if (inputType == InputType::MLIR && !llvm::StringRef(inputFilename).endswith(".mlir"))
-    {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't dump a TypeScript AST when the input is MLIR\n";
-        return 5;
-    }
-
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
     if (std::error_code ec = fileOrErr.getError())
     {
