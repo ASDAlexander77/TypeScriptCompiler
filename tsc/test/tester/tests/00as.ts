@@ -16,7 +16,9 @@ function main() {
 
     let as = 43;
     let x2 = undefined as number;
-    let y = (null as string).length;
+    // TODO: null access
+    //let y = (null as string).length;
+    let y = (null as string)?.length;
 
     // Should parse as a union type, not a bitwise 'or' of (32 as number) and 'string'
     let j = 32 as number | string;
