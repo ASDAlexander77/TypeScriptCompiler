@@ -85,7 +85,6 @@
 #endif
 
 // for dump obj
-//#define ENABLE_PASSES_FOR_OBJ 1
 #include "llvm/ADT/Triple.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -95,10 +94,6 @@
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
-#ifdef ENABLE_PASSES_FOR_OBJ
-#include "llvm/InitializePasses.h"
-#include "llvm/Support/InitLLVM.h"
-#endif
 
 // end of dump obj
 
@@ -648,40 +643,6 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     //
     // generate Obj
     //
-#ifdef ENABLE_PASSES_FOR_OBJ    
-    llvm::InitLLVM X(argc, argv);
-
-    // Enable debug stream buffering.
-    llvm::EnableDebugBuffering = true;
-
-    llvm::InitializeAllTargets();
-    llvm::InitializeAllTargetMCs();
-    llvm::InitializeAllAsmPrinters();
-    llvm::InitializeAllAsmParsers();
-
-    // Initialize codegen and IR passes used by llc so that the -print-after,
-    // -print-before, and -stop-after options work.
-    llvm::PassRegistry *Registry = llvm::PassRegistry::getPassRegistry();
-    llvm::initializeCore(*Registry);
-    llvm::initializeCodeGen(*Registry);
-    llvm::initializeLoopStrengthReducePass(*Registry);
-    llvm::initializeLowerIntrinsicsPass(*Registry);
-    llvm::initializeUnreachableBlockElimLegacyPassPass(*Registry);
-    llvm::initializeConstantHoistingLegacyPassPass(*Registry);
-    llvm::initializeScalarOpts(*Registry);
-    llvm::initializeVectorization(*Registry);
-    llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(*Registry);
-    llvm::initializeExpandReductionsPass(*Registry);
-    llvm::initializeExpandVectorPredicationPass(*Registry);
-    llvm::initializeHardwareLoopsPass(*Registry);
-    llvm::initializeTransformUtils(*Registry);
-    llvm::initializeReplaceWithVeclibLegacyPass(*Registry);
-    llvm::initializeTLSVariableHoistLegacyPassPass(*Registry);
-
-    // Initialize debugging passes.
-    llvm::initializeScavengerTestPass(*Registry);
-#endif    
-
     cl::ParseCommandLineOptions(argc, argv, "tsc\n");
 
     llvm::LLVMContext Context;
@@ -772,15 +733,6 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     Target = std::unique_ptr<llvm::TargetMachine>(TheTarget->createTargetMachine(
           TheTriple.getTriple(), CPUStr, FeaturesStr, Options, RM, CM, OLvl));
     assert(Target && "Could not allocate target machine!");
-
-// #ifdef ENABLE_PASSES_FOR_OBJ
-//     // TODO: I have no idea why we need it
-//     std::optional<llvm::CodeModel::Model> CM_IR = llvmModule.get()->getCodeModel();
-//     if (CM_IR)
-//     {
-//         Target->setCodeModel(*CM_IR);
-//     }
-// #endif    
 
     assert(llvmModule.get() && "Should have exited if we didn't have a module!");
     if (llvm::codegen::getFloatABIForCalls() != llvm::FloatABI::Default)
