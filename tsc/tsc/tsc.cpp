@@ -94,6 +94,7 @@
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
+#include "llvm/MC/MCTargetOptionsCommandFlags.h"
 
 // end of dump obj
 
@@ -740,6 +741,15 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
         Options.FloatABIType = llvm::codegen::getFloatABIForCalls();
     }
 
+    auto FDOut = getOutputStream();
+    if (!FDOut)
+    {
+        return -1;
+    }
+
+    // Ensure the filename is passed down to CodeViewDebug.
+    Target->Options.ObjectFilenameForDebug = FDOut->outputFilename();
+
     // Build up all of the passes that we want to do to the module.
     llvm::legacy::PassManager PM;
 
@@ -760,16 +770,32 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     // Override function attributes based on CPUStr, FeaturesStr, and command line flags.
     llvm::codegen::setFunctionAttributes(CPUStr, FeaturesStr, *llvmModule.get());
 
+    auto fileFormat = emitAction == DumpObj ? llvm::CGFT_ObjectFile : emitAction == DumpAssembly ? llvm::CGFT_AssemblyFile : llvm::CGFT_Null;
+
+    if (llvm::mc::getExplicitRelaxAll() && /*llvm::codegen::getFileType()*/ fileFormat != llvm::CGFT_ObjectFile)
     {
-        auto FDOut = getOutputStream();
+        llvm::WithColor::warning(llvm::errs(), "tsc") << ": warning: ignoring -mc-relax-all because filetype != obj";
+    }
+
+    {
+        llvm::raw_pwrite_stream *OS = &FDOut->os();
+
+        // Manually do the buffering rather than using buffer_ostream,
+        // so we can memcmp the contents in CompileTwice mode
+        llvm::SmallVector<char, 0> Buffer;
+        std::unique_ptr<llvm::raw_svector_ostream> BOS;
+        if ((/*llvm::codegen::getFileType()*/ fileFormat != llvm::CGFT_AssemblyFile &&
+            !FDOut->os().supportsSeeking())) 
+        {
+            BOS = std::make_unique<llvm::raw_svector_ostream>(Buffer);
+            OS = BOS.get();
+        }
 
         auto &LLVMTM = static_cast<llvm::LLVMTargetMachine &>(*Target);
         auto *MMIWP = new llvm::MachineModuleInfoWrapperPass(&LLVMTM);
 
-        auto fileFormat = emitAction == DumpObj ? llvm::CGFT_ObjectFile : emitAction == DumpAssembly ? llvm::CGFT_AssemblyFile : llvm::CGFT_Null;
-
         if (Target->addPassesToEmitFile(
-                        PM, FDOut->os(), /*DwoOut ? &DwoOut->os() : */nullptr,
+                        PM, *OS, /*DwoOut ? &DwoOut->os() : */nullptr,
                         fileFormat /*llvm::codegen::getFileType()*/, true, MMIWP)) 
         {
             llvm::WithColor::error(llvm::errs(), "tsc") << "target does not support generation of this file type\n";
@@ -789,9 +815,14 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
             return 1;
         }
 
-        // Declare success.
-        FDOut->keep();
+        if (BOS) 
+        {
+            FDOut->os() << Buffer;
+        }
     }
+
+    // Declare success.
+    FDOut->keep();
 
     return 0;
 }
