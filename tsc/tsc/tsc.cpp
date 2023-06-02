@@ -113,7 +113,7 @@ namespace cl = llvm::cl;
 static llvm::codegen::RegisterCodeGenFlags CGF;
 
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
-cl::OptionCategory TypeScriptCompilerDebugCategory("Debug Options");
+cl::OptionCategory TypeScriptCompilerDebugCategory("JIT Debug Options");
 
 static cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
 static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
@@ -167,7 +167,7 @@ static cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JIT
 
 static cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(TypeScriptCompilerCategory));
 
-int loadMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &module)
+int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &module)
 {
     auto fileName = llvm::StringRef(inputFilename);
 
@@ -185,13 +185,8 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &modu
     return !module ? 1 : 0;
 }
 
-int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp>  &module)
+int runMLIRPasses(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp>  &module)
 {
-    if (int error = loadMLIR(context, module))
-    {
-        return error;
-    }
-
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
     mlir::ScopedDiagnosticHandler diagHandler(&context, [&](mlir::Diagnostic &diag) {
         postponedMessages.emplace_back(new mlir::Diagnostic(std::move(diag)));
@@ -1049,7 +1044,12 @@ int main(int argc, char **argv)
 #endif
 
     mlir::OwningOpRef<mlir::ModuleOp> module;
-    if (int error = loadAndProcessMLIR(context, module))
+    if (int error = compileTypeScriptFileIntoMLIR(context, module))
+    {
+        return error;
+    }
+
+    if (int error = runMLIRPasses(context, module))
     {
         return error;
     }
