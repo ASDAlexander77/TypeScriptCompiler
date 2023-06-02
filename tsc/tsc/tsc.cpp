@@ -417,7 +417,7 @@ static std::unique_ptr<llvm::ToolOutputFile> getOutputStream()
     // Open the file.
     std::error_code EC;
     llvm::sys::fs::OpenFlags openFlags = llvm::sys::fs::OF_None;
-    if (emitAction != DumpByteCode)
+    if (emitAction != DumpByteCode && emitAction != DumpObj)
     {
         openFlags |= llvm::sys::fs::OF_TextWithCRLF;
     }

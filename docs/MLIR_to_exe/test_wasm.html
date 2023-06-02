@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!-- add.html -->
+<html>
+  <head></head>
+  <body>
+    <script type="module">
+let buffer;
+
+const config = {
+    env: {
+        memory_base: 0,
+        table_base: 0,
+        memory : new WebAssembly.Memory({ initial: 256}),
+        table: new WebAssembly.Table({
+            initial: 0,
+            element: 'anyfunc',
+        }),
+        printf: index=> {
+            let s = "";
+            while(true){
+                if(buffer[index] !== 0){
+                    s += String.fromCharCode(buffer[index]);
+                    index++;
+                }else{
+                    console.log(s);
+                    return;
+                }
+            }
+        }
+    }
+};
+
+fetch("./out.wasm")
+    .then(response =>{
+        return response.arrayBuffer();
+    })
+    .then(bytes => {
+        return WebAssembly.instantiate(bytes, config); 
+    })
+    .then(results => { 
+       let { main } =  results.instance.exports;
+       buffer = new Uint8Array(results.instance.exports.memory.buffer);
+       main();
+    });    
+    </script>
+  </body>
+</html>
