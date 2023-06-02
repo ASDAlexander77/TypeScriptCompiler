@@ -6,6 +6,11 @@ set(LLVM_LINK_COMPONENTS
     nativecodegen
     native
     OrcJIT
+    #obj & asm: uncomment if ENABLE_PASSES_FOR_OBJ set
+    #AllTargetsAsmParsers
+    #AllTargetsCodeGens
+    #AllTargetsDescs
+    #AllTargetsInfos
     )
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)

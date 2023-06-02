@@ -85,6 +85,7 @@
 #endif
 
 // for dump obj
+//#define ENABLE_PASSES_FOR_OBJ 1
 #include "llvm/ADT/Triple.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
@@ -94,6 +95,10 @@
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/DiagnosticPrinter.h"
+#ifdef ENABLE_PASSES_FOR_OBJ
+#include "llvm/InitializePasses.h"
+#include "llvm/Support/InitLLVM.h"
+#endif
 
 // end of dump obj
 
@@ -129,6 +134,7 @@ enum Action
     DumpLLVMIR,
     DumpByteCode,
     DumpObj,
+    DumpAssembly,
     RunJIT
 };
 } // namespace
@@ -140,7 +146,8 @@ static cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of outp
                                        cl::values(clEnumValN(DumpMLIRLLVM, "mlir-llvm", "output MLIR dump after llvm lowering")),
                                        cl::values(clEnumValN(DumpLLVMIR, "llvm", "output LLVM IR dump")),
                                        cl::values(clEnumValN(DumpByteCode, "bc", "output LLVM ByteCode dump")),
-                                       cl::values(clEnumValN(DumpObj, "obj", "output .OBJ file")),
+                                       cl::values(clEnumValN(DumpObj, "obj", "output Object file")),
+                                       cl::values(clEnumValN(DumpAssembly, "asm", "output LLVM Assembly file")),
                                        cl::values(clEnumValN(RunJIT, "jit", "JIT code and run it by invoking main function")), 
                                        cl::cat(TypeScriptCompilerCategory));
 
@@ -394,6 +401,17 @@ static std::unique_ptr<llvm::ToolOutputFile> getOutputStream()
                 case DumpByteCode:
                     outputFilename += ".bc";
                     break;
+                case DumpObj:
+                    {
+                        llvm::Triple theTriple;
+                        theTriple.setTriple(llvm::sys::getDefaultTargetTriple());
+                        outputFilename += (theTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o";
+                    }
+
+                    break;
+                case DumpAssembly:
+                    outputFilename += ".asm";
+                    break;
                 case RunJIT:
                     outputFilename = "-";
                     break;
@@ -602,7 +620,7 @@ struct LLCDiagnosticHandler : public llvm::DiagnosticHandler {
   }
 };
 
-int dumpObj(mlir::ModuleOp module)
+int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
 {
     registerMLIRDialects(module);
 
@@ -630,6 +648,41 @@ int dumpObj(mlir::ModuleOp module)
     //
     // generate Obj
     //
+#ifdef ENABLE_PASSES_FOR_OBJ    
+    llvm::InitLLVM X(argc, argv);
+
+    // Enable debug stream buffering.
+    llvm::EnableDebugBuffering = true;
+
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmPrinters();
+    llvm::InitializeAllAsmParsers();
+
+    // Initialize codegen and IR passes used by llc so that the -print-after,
+    // -print-before, and -stop-after options work.
+    llvm::PassRegistry *Registry = llvm::PassRegistry::getPassRegistry();
+    llvm::initializeCore(*Registry);
+    llvm::initializeCodeGen(*Registry);
+    llvm::initializeLoopStrengthReducePass(*Registry);
+    llvm::initializeLowerIntrinsicsPass(*Registry);
+    llvm::initializeUnreachableBlockElimLegacyPassPass(*Registry);
+    llvm::initializeConstantHoistingLegacyPassPass(*Registry);
+    llvm::initializeScalarOpts(*Registry);
+    llvm::initializeVectorization(*Registry);
+    llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(*Registry);
+    llvm::initializeExpandReductionsPass(*Registry);
+    llvm::initializeExpandVectorPredicationPass(*Registry);
+    llvm::initializeHardwareLoopsPass(*Registry);
+    llvm::initializeTransformUtils(*Registry);
+    llvm::initializeReplaceWithVeclibLegacyPass(*Registry);
+    llvm::initializeTLSVariableHoistLegacyPassPass(*Registry);
+
+    // Initialize debugging passes.
+    llvm::initializeScavengerTestPass(*Registry);
+#endif    
+
+    cl::ParseCommandLineOptions(argc, argv, "tsc\n");
 
     llvm::LLVMContext Context;
     // set from command line opt
@@ -639,7 +692,7 @@ int dumpObj(mlir::ModuleOp module)
     bool HasError = false;
     Context.setDiagnosticHandler(std::make_unique<LLCDiagnosticHandler>(&HasError));
 
-
+    // set options
     llvm::TargetOptions Options;
     auto InitializeOptions = [&](const llvm::Triple &TheTriple) {
         Options = llvm::codegen::InitTargetOptionsFromCodeGenFlags(TheTriple);
@@ -720,6 +773,21 @@ int dumpObj(mlir::ModuleOp module)
           TheTriple.getTriple(), CPUStr, FeaturesStr, Options, RM, CM, OLvl));
     assert(Target && "Could not allocate target machine!");
 
+// #ifdef ENABLE_PASSES_FOR_OBJ
+//     // TODO: I have no idea why we need it
+//     std::optional<llvm::CodeModel::Model> CM_IR = llvmModule.get()->getCodeModel();
+//     if (CM_IR)
+//     {
+//         Target->setCodeModel(*CM_IR);
+//     }
+// #endif    
+
+    assert(llvmModule.get() && "Should have exited if we didn't have a module!");
+    if (llvm::codegen::getFloatABIForCalls() != llvm::FloatABI::Default)
+    {
+        Options.FloatABIType = llvm::codegen::getFloatABIForCalls();
+    }
+
     // Build up all of the passes that we want to do to the module.
     llvm::legacy::PassManager PM;
 
@@ -728,12 +796,14 @@ int dumpObj(mlir::ModuleOp module)
 
     PM.add(new llvm::TargetLibraryInfoWrapperPass(TLII));
 
+#ifndef NDEBUG
     // TODO: disable it in release
     if (llvm::verifyModule(*llvmModule.get(), &llvm::errs()))
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "input module cannot be verified\n";
         return -1;        
     }
+#endif    
 
     // Override function attributes based on CPUStr, FeaturesStr, and command line flags.
     llvm::codegen::setFunctionAttributes(CPUStr, FeaturesStr, *llvmModule.get());
@@ -744,9 +814,11 @@ int dumpObj(mlir::ModuleOp module)
         auto &LLVMTM = static_cast<llvm::LLVMTargetMachine &>(*Target);
         auto *MMIWP = new llvm::MachineModuleInfoWrapperPass(&LLVMTM);
 
+        auto fileFormat = emitAction == DumpObj ? llvm::CGFT_ObjectFile : emitAction == DumpAssembly ? llvm::CGFT_AssemblyFile : llvm::CGFT_Null;
+
         if (Target->addPassesToEmitFile(
                         PM, FDOut->os(), /*DwoOut ? &DwoOut->os() : */nullptr,
-                        llvm::CGFT_ObjectFile /*llvm::codegen::getFileType()*/, true, MMIWP)) 
+                        fileFormat /*llvm::codegen::getFileType()*/, true, MMIWP)) 
         {
             llvm::WithColor::error(llvm::errs(), "tsc") << "target does not support generation of this file type\n";
         }
@@ -767,8 +839,6 @@ int dumpObj(mlir::ModuleOp module)
 
         // Declare success.
         FDOut->keep();
-
-        return 0;
     }
 
     return 0;
@@ -1015,9 +1085,9 @@ int main(int argc, char **argv)
         return dumpLLVMIR(*module);
     }
 
-    if (emitAction == Action::DumpObj)
+    if (emitAction == Action::DumpObj || emitAction == Action::DumpAssembly)
     {
-        return dumpObj(*module);
+        return dumpObjOrAssembly(argc, argv, *module);
     }
 
     // Otherwise, we must be running the jit.

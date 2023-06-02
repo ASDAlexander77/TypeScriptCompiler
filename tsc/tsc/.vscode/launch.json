@@ -172,7 +172,24 @@
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },             
+        },      
+        {
+            "name": "(Windows) tsc.exe - ASM",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "args": [
+                "-emit=asm",
+                "-opt",
+                "-o=c:/temp/1.asm",
+                "C:/temp/1.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },                 
         {
             "name": "(Linux) ./tsc - LLVM",
             "type": "cppdbg",
