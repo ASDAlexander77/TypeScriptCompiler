@@ -37,6 +37,7 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/Bitcode/BitcodeWriterPass.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
 
 #include "mlir/Support/DebugCounter.h"
 #include "mlir/Support/Timing.h"
@@ -87,6 +88,7 @@
 
 #define ENABLE_CUSTOM_PASSES 1
 #define ENABLE_OPT_PASSES 1
+//#define SAVE_VIA_PASS 1
 // TODO: if you uncomment it you will have exception in test 00try_finally.ts error: empty block: expect at least a terminator
 //#define AFFINE_MODULE_PASS 1
 
@@ -382,15 +384,15 @@ static std::unique_ptr<llvm::ToolOutputFile> GetOutputStream()
     return FDOut;
 }
 
-std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(llvm::Optional<unsigned> mbOptLevel,
-                                                                     llvm::TargetMachine *targetMachine)
+std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(
+        llvm::Optional<unsigned> mbOptLevel, llvm::Optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine)
 {
-    return [mbOptLevel, targetMachine](llvm::Module *m) -> llvm::Error {
-        llvm::Optional<llvm::OptimizationLevel> ol = mapToLevel(optLevel, sizeLevel);
+    return [mbOptLevel, mbSizeLevel, targetMachine](llvm::Module *m) -> llvm::Error {
+        llvm::Optional<llvm::OptimizationLevel> ol = mapToLevel(mbOptLevel.value(), mbSizeLevel.value());
         if (!ol)
         {
             return llvm::make_error<llvm::StringError>(
-                llvm::formatv("invalid optimization/size level {0}/{1}", optLevel, sizeLevel).str(),
+                llvm::formatv("invalid optimization/size level {0}/{1}", mbOptLevel.value(), mbSizeLevel.value()).str(),
                 llvm::inconvertibleErrorCode());
         }
         
@@ -423,6 +425,7 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
             mpm.addPass(pb.buildPerModuleDefaultPipeline(*ol));
 
 
+#ifdef SAVE_VIA_PASS
         std::unique_ptr<llvm::ToolOutputFile> FDOut;
         if (emitAction == Action::DumpLLVMIR)
         {
@@ -435,13 +438,16 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
             FDOut = GetOutputStream();
             mpm.addPass(llvm::BitcodeWriterPass(FDOut ? FDOut->os() : llvm::errs()));
         }
+#endif        
 
         mpm.run(*m, mam);
 
+#ifdef SAVE_VIA_PASS
         if (FDOut)
         {
             FDOut->keep();
         }
+#endif        
 
         return llvm::Error::success();
     };
@@ -452,12 +458,13 @@ std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int op
 #ifdef ENABLE_CUSTOM_PASSES
     auto optPipeline = makeCustomPassesWithOptimizingTransformer(
         /*optLevel=*/enableOpt ? optLevel : 0, 
+        /*sizeLevel=*/enableOpt ? sizeLevel : 0,
         /*targetMachine=*/nullptr);
 #else
     // An optimization pipeline to use within the execution engine.
     auto optPipeline = mlir::makeOptimizingTransformer(
         /*optLevel=*/enableOpt ? optLevel : 0, 
-        /*sizeLevel=*/sizeLevel,
+        /*sizeLevel=*/enableOpt ? sizeLevel : 0,
         /*targetMachine=*/nullptr);
 #endif
 
@@ -488,6 +495,39 @@ int dumpLLVMIR(mlir::ModuleOp module)
         llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to optimize LLVM IR " << err << "\n";
         return -1;
     }
+
+#ifndef SAVE_VIA_PASS
+
+    if (emitAction == Action::DumpLLVMIR)
+    {
+        // TODO: add output into file as well 
+        auto FDOut = GetOutputStream();
+        if (FDOut)
+        {
+            FDOut->os() << *llvmModule << "\n";
+            FDOut->keep();
+        }
+        else
+        {
+            llvm::errs() << *llvmModule << "\n";
+        }
+    }
+
+    if (emitAction == Action::DumpByteCode)
+    {
+        auto FDOut = GetOutputStream();
+        if (FDOut)
+        {
+            llvm::WriteBitcodeToFile(*llvmModule, FDOut->os());
+            FDOut->keep();
+        }
+        else
+        {
+            llvm::WriteBitcodeToFile(*llvmModule, llvm::errs());
+        }
+    }
+
+#endif
 
     return 0;
 }

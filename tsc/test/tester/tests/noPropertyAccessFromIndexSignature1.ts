@@ -10,16 +10,15 @@ interface B {
 
 interface C {
     foo: string
-    [k: string]: string
+    //[k: string]: string
 }
 
-declare const a: A;
-declare const b: B;
-declare const c: C;
-declare const d: C | undefined;
-
-
 function main() {
+
+    const a: A = { foo: 'str' };
+    //const b: B = {};
+    const c: C = { foo: 'str' };
+    const d: C | undefined = c;
 
     // access property
     a.foo;
