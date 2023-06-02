@@ -746,7 +746,7 @@ int dumpObj(mlir::ModuleOp module)
 
         if (Target->addPassesToEmitFile(
                         PM, FDOut->os(), /*DwoOut ? &DwoOut->os() : */nullptr,
-                        llvm::codegen::getFileType(), true, MMIWP)) 
+                        llvm::CGFT_ObjectFile /*llvm::codegen::getFileType()*/, true, MMIWP)) 
         {
             llvm::WithColor::error(llvm::errs(), "tsc") << "target does not support generation of this file type\n";
         }
