@@ -159,6 +159,7 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     // Initialize LLVM targets.
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
+    mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());
 
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
     if (auto err = optPipeline(llvmModule.get()))

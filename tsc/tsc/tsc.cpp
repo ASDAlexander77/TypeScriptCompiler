@@ -12,6 +12,7 @@
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/WithColor.h"
+#include "llvm/CodeGen/CommandFlags.h"
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
