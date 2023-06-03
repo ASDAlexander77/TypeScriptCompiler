@@ -57,10 +57,10 @@ cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dy
 
 cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
 
-cl::opt<bool> dumpObjectFile{"dump-object-file", cl::desc("Dump JITted-compiled object to file specified with "
+cl::opt<bool> dumpObjectFile{"dump-object-file", cl::Hidden, cl::desc("Dump JITted-compiled object to file specified with "
                                                                  "-object-filename (<input file>.o by default)."), cl::cat(TypeScriptCompilerDebugCategory)};
 
-cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
+cl::opt<std::string> objectFilename{"object-filename", cl::Hidden, cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
 
 // cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
