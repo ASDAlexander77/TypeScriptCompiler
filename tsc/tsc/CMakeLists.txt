@@ -34,7 +34,7 @@ set(LIBS
     TypeScriptExceptionPass
     )
 
-add_llvm_executable(tsc tsc.cpp compile.cpp transform.cpp jit.cpp obj.cpp utils.cpp)
+add_llvm_executable(tsc tsc.cpp compile.cpp transform.cpp dump.cpp jit.cpp obj.cpp utils.cpp)
 
 llvm_update_compile_flags(tsc)
 target_link_libraries(tsc PRIVATE ${LIBS})
