@@ -1,58 +1,15 @@
-#include "TypeScript/Version.h"
-#include "TypeScript/Config.h"
-#include "TypeScript/Defines.h"
-#include "TypeScript/MLIRGen.h"
-#include "TypeScript/Passes.h"
-#include "TypeScript/DiagnosticHelper.h"
-#include "TypeScript/TypeScriptDialect.h"
-#include "TypeScript/TypeScriptOps.h"
-#include "TypeScript/TypeScriptDialectTranslation.h"
-#include "TypeScript/TypeScriptGC.h"
-#ifdef ENABLE_ASYNC
-#include "TypeScript/AsyncDialectTranslation.h"
-#endif
-#ifdef ENABLE_EXCEPTIONS
-#include "TypeScript/LandingPadFixPass.h"
-#ifdef WIN_EXCEPTION
-#include "TypeScript/Win32ExceptionPass.h"
-#endif
-#endif
-
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
-#include "mlir/ExecutionEngine/OptUtils.h"
-#include "mlir/IR/AsmState.h"
 #include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Verifier.h"
-#include "llvm/IRPrinter/IRPrintingPasses.h"
-#include "mlir/InitAllDialects.h"
-#include "mlir/InitAllPasses.h"
-#include "mlir/Parser/Parser.h"
-#include "mlir/Pass/Pass.h"
-#include "mlir/Pass/PassManager.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Export.h"
-#include "mlir/Transforms/Passes.h"
 
 #include "llvm/TargetParser/Host.h"
-#include "llvm/PassInfo.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/ErrorOr.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/WithColor.h"
 
 #define DEBUG_TYPE "tsc"
 
-using namespace typescript;
 namespace cl = llvm::cl;
 
 extern cl::opt<bool> enableOpt;
@@ -160,11 +117,6 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
             LLVM_DEBUG(llvm::dbgs() << "loading symbol: " << exportSymbol.getKey() << "\n";);
             symbolMap[interner(exportSymbol.getKey())] = llvm::JITEvaluatedSymbol::fromPointer(exportSymbol.getValue());
         }
-
-#ifdef ENABLE_STACK_EXEC
-        // adding my ref to __enable_execute_stack
-        symbolMap[interner("__enable_execute_stack")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__enable_execute_stack);
-#endif        
 
         if (!disableGC && symbolMap.count(interner("GC_init")) == 0)
         {

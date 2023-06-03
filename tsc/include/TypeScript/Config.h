@@ -47,8 +47,6 @@
 
 #define ENABLE_TYPED_GC true
 
-//#define ENABLE_STACK_EXEC 1
-
 #define ENABLE_JS_BUILTIN_TYPES true
 #define NO_DEFAULT_LIB true
 
