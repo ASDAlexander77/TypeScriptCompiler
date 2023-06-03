@@ -18,8 +18,6 @@
 #endif
 #endif
 
-#include "TypeScript/rt.h"
-
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/AsmState.h"
@@ -109,14 +107,16 @@
 using namespace typescript;
 namespace cl = llvm::cl;
 
+int runJit(int, char **, mlir::ModuleOp);
+
 // obj
 static llvm::codegen::RegisterCodeGenFlags CGF;
 
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
 cl::OptionCategory TypeScriptCompilerDebugCategory("JIT Debug Options");
 
-static cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
-static cl::opt<std::string> outputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<std::string> outputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
 
 namespace
 {
@@ -135,7 +135,7 @@ enum Action
 };
 } // namespace
 
-static cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desired"),
+cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desired"),
                                        cl::values(clEnumValN(DumpAST, "ast", "output AST dump")),
                                        cl::values(clEnumValN(DumpMLIR, "mlir", "output MLIR dump")),
                                        cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine", "output MLIR dump after affine lowering")),
@@ -147,25 +147,25 @@ static cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of outp
                                        cl::values(clEnumValN(RunJIT, "jit", "JIT code and run it by invoking main function")), 
                                        cl::cat(TypeScriptCompilerCategory));
 
-static cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations"), cl::init(false), cl::cat(TypeScriptCompilerCategory), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations"), cl::init(false), cl::cat(TypeScriptCompilerCategory), cl::cat(TypeScriptCompilerCategory)};
 
-static cl::opt<int> optLevel{"opt_level", cl::desc("Optimization level"), cl::ZeroOrMore, cl::value_desc("0-3"), cl::init(3), cl::cat(TypeScriptCompilerCategory)};
-static cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::ZeroOrMore, cl::value_desc("value"), cl::init(0), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<int> optLevel{"opt_level", cl::desc("Optimization level"), cl::ZeroOrMore, cl::value_desc("0-3"), cl::init(3), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::ZeroOrMore, cl::value_desc("value"), cl::init(0), cl::cat(TypeScriptCompilerCategory)};
 
 // dump obj
 cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dynamically"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
                                    cl::cat(TypeScriptCompilerCategory)};
 
-static cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
 
-static cl::opt<bool> dumpObjectFile{"dump-object-file", cl::desc("Dump JITted-compiled object to file specified with "
+cl::opt<bool> dumpObjectFile{"dump-object-file", cl::desc("Dump JITted-compiled object to file specified with "
                                                                  "-object-filename (<input file>.o by default)."), cl::cat(TypeScriptCompilerDebugCategory)};
 
-static cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
+cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
 
-// static cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
+// cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
-static cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(TypeScriptCompilerCategory));
 
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &module)
 {
@@ -818,184 +818,6 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
 
     // Declare success.
     FDOut->keep();
-
-    return 0;
-}
-
-int runJit(int argc, char **argv, mlir::ModuleOp module)
-{
-    // Print a stack trace if we signal out.
-    llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
-    llvm::PrettyStackTraceProgram X(argc, argv);
-    llvm::setBugReportMsg("PLEASE submit a bug report to https://github.com/ASDAlexander77/TypeScriptCompiler/issues and include the crash backtrace.");
-
-    llvm::llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
-
-    registerMLIRDialects(module);
-
-    // Initialize LLVM targets.
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-
-    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
-
-    // If shared library implements custom mlir-runner library init and destroy
-    // functions, we'll use them to register the library with the execution
-    // engine. Otherwise we'll pass library directly to the execution engine.
-    mlir::SmallVector<mlir::SmallString<256>, 4> libPaths;
-
-    // Use absolute library path so that gdb can find the symbol table.
-    transform(clSharedLibs, std::back_inserter(libPaths), [](std::string libPath) {
-        mlir::SmallString<256> absPath(libPath.begin(), libPath.end());
-        cantFail(llvm::errorCodeToError(llvm::sys::fs::make_absolute(absPath)));
-        return absPath;
-    });
-
-    // Libraries that we'll pass to the ExecutionEngine for loading.
-    mlir::SmallVector<mlir::StringRef, 4> executionEngineLibs;
-
-    using MlirRunnerInitFn = void (*)(llvm::StringMap<void *> &);
-    using MlirRunnerDestroyFn = void (*)();
-
-    llvm::StringMap<void *> exportSymbols;
-    mlir::SmallVector<MlirRunnerDestroyFn> destroyFns;
-
-    // Handle libraries that do support mlir-runner init/destroy callbacks.
-    for (auto &libPath : libPaths)
-    {
-        LLVM_DEBUG(llvm::dbgs() << "loading lib at path: " << libPath.c_str() << "\n";);
-
-        std::string errMsg;
-        auto lib = llvm::sys::DynamicLibrary::getPermanentLibrary(libPath.c_str(), &errMsg);
-
-        if (errMsg.size() > 0)
-        {
-            llvm::WithColor::error(llvm::errs(), "tsc") << "Loading error lib: " << errMsg << "\n";
-            return -1;
-        }
-
-        LLVM_DEBUG(llvm::dbgs() << "loaded path: " << libPath.c_str() << "\n";);
-
-        void *initSym = lib.getAddressOfSymbol("__mlir_runner_init");
-        if (!initSym)
-        {
-            LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_init";);
-        }
-
-        void *destroySim = lib.getAddressOfSymbol("__mlir_runner_destroy");
-        if (!destroySim)
-        {
-            LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_destroy";);
-        }
-
-        // Library does not support mlir runner, load it with ExecutionEngine.
-        if (!initSym || !destroySim)
-        {
-            executionEngineLibs.push_back(libPath);
-            continue;
-        }
-
-        LLVM_DEBUG(llvm::dbgs() << "added path: " << libPath.c_str() << "\n";);
-
-        auto initFn = reinterpret_cast<MlirRunnerInitFn>(initSym);
-        initFn(exportSymbols);
-
-        auto destroyFn = reinterpret_cast<MlirRunnerDestroyFn>(destroySim);
-        destroyFns.push_back(destroyFn);
-    }
-
-    auto noGC = false;
-
-    // Build a runtime symbol map from the config and exported symbols.
-    auto runtimeSymbolMap = [&](llvm::orc::MangleAndInterner interner) {
-        auto symbolMap = llvm::orc::SymbolMap();
-        for (auto &exportSymbol : exportSymbols)
-        {
-            LLVM_DEBUG(llvm::dbgs() << "loading symbol: " << exportSymbol.getKey() << "\n";);
-            symbolMap[interner(exportSymbol.getKey())] = llvm::JITEvaluatedSymbol::fromPointer(exportSymbol.getValue());
-        }
-
-#ifdef ENABLE_STACK_EXEC
-        // adding my ref to __enable_execute_stack
-        symbolMap[interner("__enable_execute_stack")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__enable_execute_stack);
-#endif        
-
-        if (!disableGC && symbolMap.count(interner("GC_init")) == 0)
-        {
-            noGC = true;
-        }
-
-        return symbolMap;
-    };
-
-    // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
-    // the module.
-    mlir::ExecutionEngineOptions engineOptions;
-    engineOptions.transformer = optPipeline;
-    engineOptions.enableObjectDump = dumpObjectFile;
-    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-    assert(maybeEngine && "failed to construct an execution engine");
-    auto &engine = maybeEngine.get();
-
-    engine->registerSymbols(runtimeSymbolMap);
-    if (noGC)
-    {
-#ifdef WIN32
-#define LIB_NAME ""
-#define LIB_EXT "dll"
-#else
-#define LIB_NAME "lib"
-#define LIB_EXT "so"
-#endif
-        llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                        "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
-        return -1;
-    }
-
-    if (dumpObjectFile)
-    {
-        auto expectedFPtr = engine->lookup(mainFuncName);
-        if (!expectedFPtr)
-        {
-            llvm::WithColor::error(llvm::errs(), "tsc") << expectedFPtr.takeError();
-            return -1;
-        }
-
-        llvm::Triple theTriple;
-        theTriple.setTriple(llvm::sys::getDefaultTargetTriple());
-
-        engine->dumpToObjectFile(
-            objectFilename.empty() 
-                ? inputFilename + (
-                    (theTriple.getOS() == llvm::Triple::Win32) 
-                        ? ".obj" 
-                        : ".o") 
-                : objectFilename);
-
-        return 0;
-    }
-
-    if (module.lookupSymbol("__mlir_gctors"))
-    {
-        auto gctorsResult = engine->invokePacked("__mlir_gctors");
-        if (gctorsResult)
-        {
-            llvm::WithColor::error(llvm::errs(), "tsc") << "JIT calling global constructors failed, error: " << gctorsResult << "\n";
-            return -1;
-        }
-    }
-
-    // Invoke the JIT-compiled function.
-    auto invocationResult = engine->invokePacked(mainFuncName);
-
-    // Run all dynamic library destroy callbacks to prepare for the shutdown.
-    llvm::for_each(destroyFns, [](MlirRunnerDestroyFn destroy) { destroy(); });
-
-    if (invocationResult)
-    {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "JIT invocation failed, error: " << invocationResult << "\n";
-        return -1;
-    }
 
     return 0;
 }
