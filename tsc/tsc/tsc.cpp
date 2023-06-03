@@ -92,6 +92,7 @@ using namespace typescript;
 namespace cl = llvm::cl;
 
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream();
+int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, mlir::OwningOpRef<mlir::ModuleOp> &);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp);
 int runJit(int, char **, mlir::ModuleOp);
 
@@ -132,24 +133,6 @@ cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JITted-com
 // cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
 cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(TypeScriptCompilerCategory));
-
-int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &module)
-{
-    auto fileName = llvm::StringRef(inputFilename);
-
-    // Handle '.ts' input to the compiler.
-    auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
-    if (std::error_code ec = fileOrErr.getError())
-    {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << ec.message() << "\n";
-        return -1;
-    }
-
-    CompileOptions compileOptions;
-    compileOptions.disableGC = disableGC;
-    module = mlirGenFromSource(context, fileName, fileOrErr.get()->getBuffer(), compileOptions);
-    return !module ? 1 : 0;
-}
 
 int runMLIRPasses(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp>  &module)
 {
