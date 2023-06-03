@@ -1,4 +1,5 @@
 #include "TypeScript/Version.h"
+#include "TypeScript/Config.h"
 #include "TypeScript/TypeScriptDialect.h"
 
 #include "mlir/InitAllDialects.h"
