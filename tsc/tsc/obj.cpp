@@ -40,6 +40,55 @@ std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int);
 
 static llvm::codegen::RegisterCodeGenFlags CGF;
 
+// Cmdline options
+static cl::opt<bool> 
+    DiscardValueNames("discard-value-names",
+                    cl::desc("Discard names from Value (other than GlobalValue)."),
+                    cl::init(false), cl::Hidden);
+
+static cl::list<std::string> IncludeDirs("I", cl::desc("include search path"));
+
+static cl::opt<std::string>
+    BinutilsVersion("binutils-version", cl::Hidden,
+                    cl::desc("Produced object files can use all ELF features "
+                             "supported by this binutils version and newer."
+                             "If -no-integrated-as is specified, the generated "
+                             "assembly will consider GNU as support."
+                             "'none' means that all ELF features can be used, "
+                             "regardless of binutils support"));
+
+static cl::opt<bool>
+    NoIntegratedAssembler("no-integrated-as", cl::Hidden,
+                      cl::desc("Disable integrated assembler"));
+
+static cl::opt<bool>
+    PreserveComments("preserve-as-comments", cl::Hidden,
+                     cl::desc("Preserve Comments in outputted assembly"),
+                     cl::init(true));
+
+cl::opt<std::string>
+    TargetTriple("mtriple", cl::desc("Override target triple for module"));
+
+static cl::opt<std::string> 
+    SplitDwarfFile("split-dwarf-file", 
+                cl::desc("Specify the name of the .dwo file to encode in the DWARF output"));
+
+static cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
+                              cl::desc("Do not verify input module"));
+
+static cl::opt<bool> ShowMCEncoding("show-mc-encoding", cl::Hidden,
+                                    cl::desc("Show encoding in .s output"));
+
+static cl::opt<bool>
+    DwarfDirectory("dwarf-directory", cl::Hidden,
+                   cl::desc("Use .file directives with an explicit directory"),
+                   cl::init(true));
+
+static cl::opt<bool> AsmVerbose("asm-verbose",
+                                cl::desc("Add comments to directives."),
+                                cl::init(true));
+
+
 struct LLCDiagnosticHandler : public llvm::DiagnosticHandler {
   bool *HasError;
   LLCDiagnosticHandler(bool *HasErrorPtr) : HasError(HasErrorPtr) {}
@@ -123,8 +172,7 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     cl::ParseCommandLineOptions(argc, argv, "tsc\n");
 
     llvm::LLVMContext Context;
-    // set from command line opt
-    //Context.setDiscardValueNames(DiscardValueNames);
+    Context.setDiscardValueNames(DiscardValueNames);
 
     // Set a diagnostic handler that doesn't exit on the first error
     bool HasError = false;
@@ -134,25 +182,25 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     llvm::TargetOptions Options;
     auto InitializeOptions = [&](const llvm::Triple &TheTriple) {
         Options = llvm::codegen::InitTargetOptionsFromCodeGenFlags(TheTriple);
-        // Options.BinutilsVersion = llvm::TargetMachine::parseBinutilsVersion(BinutilsVersion);
-        // Options.DisableIntegratedAS = NoIntegratedAssembler;
-        // Options.MCOptions.ShowMCEncoding = ShowMCEncoding;
-        // Options.MCOptions.AsmVerbose = AsmVerbose;
-        // Options.MCOptions.PreserveAsmComments = PreserveComments;
-        // Options.MCOptions.IASSearchPaths = IncludeDirs;
-        // Options.MCOptions.SplitDwarfFile = SplitDwarfFile;
-        // if (DwarfDirectory.getPosition()) 
-        // {
-        //     Options.MCOptions.MCUseDwarfDirectory =
-        //     DwarfDirectory ? llvm::MCTargetOptions::EnableDwarfDirectory
-        //                    : llvm::MCTargetOptions::DisableDwarfDirectory;
-        // } else {
-        //     // -dwarf-directory is not set explicitly. Some assemblers
-        //     // (e.g. GNU as or ptxas) do not support `.file directory'
-        //     // syntax prior to DWARFv5. Let the target decide the default
-        //     // value.
-        //     Options.MCOptions.MCUseDwarfDirectory = MCTargetOptions::DefaultDwarfDirectory;
-        // }
+        Options.BinutilsVersion = llvm::TargetMachine::parseBinutilsVersion(BinutilsVersion);
+        Options.DisableIntegratedAS = NoIntegratedAssembler;
+        Options.MCOptions.ShowMCEncoding = ShowMCEncoding;
+        Options.MCOptions.AsmVerbose = AsmVerbose;
+        Options.MCOptions.PreserveAsmComments = PreserveComments;
+        Options.MCOptions.IASSearchPaths = IncludeDirs;
+        Options.MCOptions.SplitDwarfFile = SplitDwarfFile;
+        if (DwarfDirectory.getPosition()) 
+        {
+            Options.MCOptions.MCUseDwarfDirectory =
+            DwarfDirectory ? llvm::MCTargetOptions::EnableDwarfDirectory
+                           : llvm::MCTargetOptions::DisableDwarfDirectory;
+        } else {
+            // -dwarf-directory is not set explicitly. Some assemblers
+            // (e.g. GNU as or ptxas) do not support `.file directory'
+            // syntax prior to DWARFv5. Let the target decide the default
+            // value.
+            Options.MCOptions.MCUseDwarfDirectory = llvm::MCTargetOptions::DefaultDwarfDirectory;
+        }
     };
 
     std::optional<llvm::Reloc::Model> RM = llvm::codegen::getExplicitRelocModel();
@@ -164,9 +212,10 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     
     // If we are supposed to override the target triple, do so now.
     std::string LLVMModuleTargetTriple = llvmModule.get()->getTargetTriple();
-    /*
-    // override from command line here
-    */
+    if (!TargetTriple.empty())
+    {
+        LLVMModuleTargetTriple = llvm::Triple::normalize(TargetTriple);
+    }
     
     TheTriple = llvm::Triple(LLVMModuleTargetTriple);
     if (TheTriple.getTriple().empty())
@@ -236,7 +285,7 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
 
 #ifndef NDEBUG
     // TODO: disable it in release
-    if (llvm::verifyModule(*llvmModule.get(), &llvm::errs()))
+    if (!NoVerify && llvm::verifyModule(*llvmModule.get(), &llvm::errs()))
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "input module cannot be verified\n";
         return -1;        

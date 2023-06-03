@@ -75,9 +75,9 @@ int main(int argc, char **argv)
 {
     // version printer
     cl::SetVersionPrinter(TscPrintVersion);
-    //cl::AddExtraVersionPrinter(TscPrintVersion);
 
     // Register any command line options.
+    // TODO: do I need to following options?
     mlir::registerAsmPrinterCLOptions();
     mlir::registerMLIRContextCLOptions();
     mlir::registerPassManagerCLOptions();
@@ -95,25 +95,25 @@ int main(int argc, char **argv)
 
     // If we aren't dumping the AST, then we are compiling with/to MLIR.
 
-    mlir::MLIRContext context;
+    mlir::MLIRContext mlirContext;
     // Load our Dialect in this MLIR Context.
-    context.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
-    context.getOrLoadDialect<mlir::arith::ArithDialect>();
-    context.getOrLoadDialect<mlir::math::MathDialect>();
-    context.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
-    context.getOrLoadDialect<mlir::func::FuncDialect>();
-    context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+    mlirContext.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
+    mlirContext.getOrLoadDialect<mlir::arith::ArithDialect>();
+    mlirContext.getOrLoadDialect<mlir::math::MathDialect>();
+    mlirContext.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
+    mlirContext.getOrLoadDialect<mlir::func::FuncDialect>();
+    mlirContext.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 #ifdef ENABLE_ASYNC
-    context.getOrLoadDialect<mlir::async::AsyncDialect>();
+    mlirContext.getOrLoadDialect<mlir::async::AsyncDialect>();
 #endif
 
     mlir::OwningOpRef<mlir::ModuleOp> module;
-    if (int error = compileTypeScriptFileIntoMLIR(context, module))
+    if (int error = compileTypeScriptFileIntoMLIR(mlirContext, module))
     {
         return error;
     }
 
-    if (int error = runMLIRPasses(context, module))
+    if (int error = runMLIRPasses(mlirContext, module))
     {
         return error;
     }

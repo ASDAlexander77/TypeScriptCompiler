@@ -22,6 +22,9 @@ extern cl::opt<bool> disableGC;
 extern cl::opt<std::string> mainFuncName;
 extern cl::opt<std::string> inputFilename;
 
+// obj
+extern cl::opt<std::string> TargetTriple;
+
 int registerMLIRDialects(mlir::ModuleOp);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int);
 
@@ -159,15 +162,18 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
             return -1;
         }
 
-        llvm::Triple theTriple;
-        theTriple.setTriple(llvm::sys::getDefaultTargetTriple());
+        llvm::Triple TheTriple;
+        std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+        if (!TargetTriple.empty())
+        {
+            targetTriple = llvm::Triple::normalize(TargetTriple);
+        }
+        
+        TheTriple = llvm::Triple(targetTriple);
 
         engine->dumpToObjectFile(
             objectFilename.empty() 
-                ? inputFilename + (
-                    (theTriple.getOS() == llvm::Triple::Win32) 
-                        ? ".obj" 
-                        : ".o") 
+                ? inputFilename + ((TheTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o") 
                 : objectFilename);
 
         return 0;

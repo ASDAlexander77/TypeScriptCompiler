@@ -15,6 +15,9 @@ extern cl::opt<std::string> inputFilename;
 extern cl::opt<std::string> outputFilename;
 extern cl::opt<enum Action> emitAction;
 
+// obj
+extern cl::opt<std::string> TargetTriple;
+
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream()
 {
     // If we don't yet have an output filename, make one.
@@ -54,9 +57,16 @@ std::unique_ptr<llvm::ToolOutputFile> getOutputStream()
                     break;
                 case DumpObj:
                     {
-                        llvm::Triple theTriple;
-                        theTriple.setTriple(llvm::sys::getDefaultTargetTriple());
-                        outputFilename += (theTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o";
+                        llvm::Triple TheTriple;
+                        std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+                        if (!TargetTriple.empty())
+                        {
+                            targetTriple = llvm::Triple::normalize(TargetTriple);
+                        }
+                        
+                        TheTriple = llvm::Triple(targetTriple);
+
+                        outputFilename += (TheTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o";
                     }
 
                     break;
