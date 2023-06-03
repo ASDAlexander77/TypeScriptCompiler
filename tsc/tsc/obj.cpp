@@ -171,8 +171,6 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     //
     // generate Obj
     //
-    cl::ParseCommandLineOptions(argc, argv, "tsc\n");
-
     llvm::LLVMContext Context;
     Context.setDiscardValueNames(DiscardValueNames);
 

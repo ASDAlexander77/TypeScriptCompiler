@@ -55,7 +55,7 @@ cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::Ze
 cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dynamically"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
                                    cl::cat(TypeScriptCompilerCategory)};
 
-cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called (default=main)"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
 
 cl::opt<bool> dumpObjectFile{"dump-object-file", cl::Hidden, cl::desc("Dump JITted-compiled object to file specified with "
                                                                  "-object-filename (<input file>.o by default)."), cl::cat(TypeScriptCompilerDebugCategory)};
@@ -73,6 +73,13 @@ static void TscPrintVersion(llvm::raw_ostream &OS) {
   cl::PrintVersionMessage();
 }
 
+void HideUnrelatedOptionsButVisibleForHidden(cl::SubCommand &Sub) {
+    for (auto &I : Sub.OptionsMap) {
+        if (I.second->getOptionHiddenFlag() == cl::ReallyHidden)
+            I.second->setHiddenFlag(cl::Hidden/*cl::ReallyHidden*/);
+    }
+}
+
 int main(int argc, char **argv)
 {
     // version printer
@@ -87,6 +94,7 @@ int main(int argc, char **argv)
     mlir::DebugCounter::registerCLOptions();
 
     cl::HideUnrelatedOptions({&TypeScriptCompilerCategory, &TypeScriptCompilerDebugCategory, &ObjOrAssemblyCategory});
+    HideUnrelatedOptionsButVisibleForHidden(SubCommand::getTopLevel());
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript native compiler\n");
 
