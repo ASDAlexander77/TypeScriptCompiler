@@ -1,80 +1,16 @@
 #include "TypeScript/Version.h"
-#include "TypeScript/Config.h"
-#include "TypeScript/Defines.h"
-#include "TypeScript/MLIRGen.h"
-#include "TypeScript/Passes.h"
-#include "TypeScript/DiagnosticHelper.h"
 #include "TypeScript/TypeScriptDialect.h"
-#include "TypeScript/TypeScriptOps.h"
-#include "TypeScript/TypeScriptDialectTranslation.h"
-#include "TypeScript/TypeScriptGC.h"
-#ifdef ENABLE_ASYNC
-#include "TypeScript/AsyncDialectTranslation.h"
-#endif
-#ifdef ENABLE_EXCEPTIONS
-#include "TypeScript/LandingPadFixPass.h"
-#ifdef WIN_EXCEPTION
-#include "TypeScript/Win32ExceptionPass.h"
-#endif
-#endif
 
-#include "mlir/ExecutionEngine/ExecutionEngine.h"
-#include "mlir/ExecutionEngine/OptUtils.h"
-#include "mlir/IR/AsmState.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Verifier.h"
-#include "llvm/IRPrinter/IRPrintingPasses.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
-#include "mlir/Parser/Parser.h"
-#include "mlir/Pass/Pass.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/AsmState.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
-#include "mlir/Target/LLVMIR/Export.h"
-#include "mlir/Transforms/Passes.h"
-
-#include "llvm/Bitcode/BitcodeWriterPass.h"
-#include "llvm/Bitcode/BitcodeWriter.h"
-
 #include "mlir/Support/DebugCounter.h"
-#include "mlir/Support/Timing.h"
-#include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/TargetParser/Host.h"
 
-#ifdef ENABLE_ASYNC
-#include "mlir/Conversion/AsyncToLLVM/AsyncToLLVM.h"
-#endif
-
-#include "llvm/PassInfo.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/ErrorOr.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/SourceMgr.h"
-#include "llvm/Support/TargetSelect.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/FormatVariadic.h"
-#include "llvm/Support/PrettyStackTrace.h"
-#include "llvm/Support/Signals.h"
 #include "llvm/Support/WithColor.h"
-
-// for custom pass
-#include "llvm/IR/PassManager.h"
-#include "llvm/Passes/OptimizationLevel.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/Analysis/LoopAnalysisManager.h"
-#include "llvm/Analysis/CGSCCPassManager.h"
-
-#ifdef GC_ENABLE
-#include "llvm/IR/GCStrategy.h"
-#include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
-#include "llvm/CodeGen/LinkAllCodegenComponents.h"
-#endif
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 

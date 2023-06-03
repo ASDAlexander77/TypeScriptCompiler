@@ -31,6 +31,12 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/CommandLine.h"
 
+#ifdef GC_ENABLE
+#include "llvm/IR/GCStrategy.h"
+#include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
+#include "llvm/CodeGen/LinkAllCodegenComponents.h"
+#endif
+
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
 #define ENABLE_CUSTOM_PASSES 1
