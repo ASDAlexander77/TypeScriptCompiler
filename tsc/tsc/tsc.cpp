@@ -26,6 +26,7 @@ int dumpLLVMIR(mlir::ModuleOp);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp);
 int runJit(int, char **, mlir::ModuleOp);
 
+extern cl::OptionCategory ObjOrAssemblyCategory;
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
 cl::OptionCategory TypeScriptCompilerDebugCategory("JIT Debug Options");
 
@@ -84,7 +85,7 @@ int main(int argc, char **argv)
     mlir::registerDefaultTimingManagerCLOptions();
     mlir::DebugCounter::registerCLOptions();
 
-    cl::HideUnrelatedOptions({&TypeScriptCompilerCategory, &TypeScriptCompilerDebugCategory});
+    cl::HideUnrelatedOptions({&TypeScriptCompilerCategory, &TypeScriptCompilerDebugCategory, &ObjOrAssemblyCategory});
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript native compiler\n");
 

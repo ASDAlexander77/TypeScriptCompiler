@@ -41,12 +41,14 @@ std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int);
 static llvm::codegen::RegisterCodeGenFlags CGF;
 
 // Cmdline options
+cl::OptionCategory ObjOrAssemblyCategory("OBJ/Assembly Options");
+
 static cl::opt<bool> 
     DiscardValueNames("discard-value-names",
                     cl::desc("Discard names from Value (other than GlobalValue)."),
-                    cl::init(false), cl::Hidden);
+                    cl::init(false), cl::Hidden, cl::cat(ObjOrAssemblyCategory));
 
-static cl::list<std::string> IncludeDirs("I", cl::desc("include search path"));
+static cl::list<std::string> IncludeDirs("I", cl::desc("include search path"), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<std::string>
     BinutilsVersion("binutils-version", cl::Hidden,
@@ -55,38 +57,38 @@ static cl::opt<std::string>
                              "If -no-integrated-as is specified, the generated "
                              "assembly will consider GNU as support."
                              "'none' means that all ELF features can be used, "
-                             "regardless of binutils support"));
+                             "regardless of binutils support"), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<bool>
     NoIntegratedAssembler("no-integrated-as", cl::Hidden,
-                      cl::desc("Disable integrated assembler"));
+                      cl::desc("Disable integrated assembler"), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<bool>
     PreserveComments("preserve-as-comments", cl::Hidden,
                      cl::desc("Preserve Comments in outputted assembly"),
-                     cl::init(true));
+                     cl::init(true), cl::cat(ObjOrAssemblyCategory));
 
 cl::opt<std::string>
-    TargetTriple("mtriple", cl::desc("Override target triple for module"));
+    TargetTriple("mtriple", cl::desc("Override target triple for module"), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<std::string> 
     SplitDwarfFile("split-dwarf-file", 
-                cl::desc("Specify the name of the .dwo file to encode in the DWARF output"));
+                cl::desc("Specify the name of the .dwo file to encode in the DWARF output"), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
-                              cl::desc("Do not verify input module"));
+                              cl::desc("Do not verify input module"), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<bool> ShowMCEncoding("show-mc-encoding", cl::Hidden,
-                                    cl::desc("Show encoding in .s output"));
+                                    cl::desc("Show encoding in .s output"), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<bool>
     DwarfDirectory("dwarf-directory", cl::Hidden,
                    cl::desc("Use .file directives with an explicit directory"),
-                   cl::init(true));
+                   cl::init(true), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<bool> AsmVerbose("asm-verbose",
                                 cl::desc("Add comments to directives."),
-                                cl::init(true));
+                                cl::init(true), cl::cat(ObjOrAssemblyCategory));
 
 
 struct LLCDiagnosticHandler : public llvm::DiagnosticHandler {
@@ -157,7 +159,6 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     // Initialize LLVM targets.
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
-    mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());
 
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
     if (auto err = optPipeline(llvmModule.get()))
