@@ -375,13 +375,21 @@ class MLIRGenImpl
     mlir::LogicalResult mlirCodeGenModule(SourceFile module, std::vector<SourceFile> includeFiles = {},
                                           bool validate = true)
     {
+        mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedWarningsMessages;
         mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
-            postponedMessages.emplace_back(new mlir::Diagnostic(std::move(diag)));
+            if (diag.getSeverity() == mlir::DiagnosticSeverity::Error)
+            {
+                postponedMessages.emplace_back(new mlir::Diagnostic(std::move(diag)));
+            }
+            else
+            {
+                postponedWarningsMessages.emplace_back(new mlir::Diagnostic(std::move(diag)));
+            }
         });
 
-        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(
-            fullNameGlobalsMap);
+        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> 
+            fullNameGlobalsMapScope(fullNameGlobalsMap);
 
         // Process generating here
         GenContext genContext{};
@@ -415,6 +423,8 @@ class MLIRGenImpl
             outputDiagnostics(postponedMessages, 1);
             return mlir::failure();
         }
+
+        printDiagnostics(postponedWarningsMessages);
 
         return mlir::success();
     }
@@ -561,14 +571,11 @@ class MLIRGenImpl
 
         if (body.is<Statement>() && !body.is<ArrowFunction>() && !body.is<FunctionExpression>() && !body.is<ClassExpression>())
         {
-            SymbolTableScopeT varScope(symbolTable);
             return mlirGen(body.as<Statement>(), genContext);
         }
 
         if (body.is<Expression>())
         {
-            SymbolTableScopeT varScope(symbolTable);
-
             auto result = mlirGen(body.as<Expression>(), genContext);
             EXIT_IF_FAILED(result)
             auto resultValue = V(result);
@@ -2247,7 +2254,7 @@ class MLIRGenImpl
     }
 
     mlir::Type registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
-                                std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
+                                std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext, bool showWarnings = false)
     {
         auto isGlobalScope =
             isFullName || !genContext.funcOp; /*symbolTable.getCurScope()->getParentScope() == nullptr*/
@@ -2511,7 +2518,7 @@ class MLIRGenImpl
 
         if (!isGlobal)
         {
-            if (mlir::failed(declare(location, varDecl, variableOp, genContext)))
+            if (mlir::failed(declare(location, varDecl, variableOp, genContext, showWarnings)))
             {
                 return mlir::Type();
             }
@@ -2683,7 +2690,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult processDeclarationName(DeclarationName name, VariableClass varClass,
-                            std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
+                            std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext, bool showWarnings = false)
     {
         auto location = loc(name);
 
@@ -2709,16 +2716,16 @@ class MLIRGenImpl
             auto nameStr = MLIRHelper::getName(name);
 
             // register
-            return !!registerVariable(location, nameStr, false, varClass, func, genContext) ? mlir::success() : mlir::failure();
+            return !!registerVariable(location, nameStr, false, varClass, func, genContext, showWarnings) ? mlir::success() : mlir::failure();
         }
 
         return mlir::success();       
     }
 
     mlir::LogicalResult processDeclaration(NamedDeclaration item, VariableClass varClass,
-                            std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
+                            std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext, bool showWarnings = false)
     {
-        return processDeclarationName(item->name, varClass, func, genContext);
+        return processDeclarationName(item->name, varClass, func, genContext, showWarnings);
     }
 
     template <typename ItemTy>
@@ -2854,7 +2861,7 @@ class MLIRGenImpl
             valClassItem = VariableClass::ConstRef;
         }
 
-        if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext)))
+        if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
         {
             return mlir::failure();
         }
@@ -4306,6 +4313,8 @@ class MLIRGenImpl
             funcProto->setNoBody(true);
             return mlir::success();
         }
+
+        SymbolTableScopeT varScope(symbolTable);
 
         auto location = loc(functionLikeDeclarationBaseAST);
 
@@ -17763,16 +17772,17 @@ genContext);
         return mlir_ts::OpaqueType::get(builder.getContext());
     }
 
-    mlir::LogicalResult declare(mlir::Location location, VariableDeclarationDOM::TypePtr var, mlir::Value value, const GenContext &genContext)
+    mlir::LogicalResult declare(mlir::Location location, VariableDeclarationDOM::TypePtr var, mlir::Value value, const GenContext &genContext, bool showWarnings = false)
     {
         const auto &name = var->getName();
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
 
-        if (symbolTable.count(name))
+        if (showWarnings && symbolTable.count(name))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! WARNING redeclaration: " << name << " = [" << value << "]\n";);
-            emitWarning(location, "") << "variable "<< name << " redeclared";
+            // TODO: find out why you have redeclared vars
+            emitWarning(location, "") << "variable "<< name << " redeclared. Previous declaration: " << symbolTable.lookup(name).first.getLoc();
         }
 
         if (!genContext.insertIntoParentScope)

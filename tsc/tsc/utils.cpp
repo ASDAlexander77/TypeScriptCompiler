@@ -71,7 +71,7 @@ std::unique_ptr<llvm::ToolOutputFile> getOutputStream()
 
                     break;
                 case DumpAssembly:
-                    outputFilename += ".asm";
+                    outputFilename += ".s";
                     break;
                 case RunJIT:
                     outputFilename = "-";
