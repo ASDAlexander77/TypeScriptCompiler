@@ -1,46 +1,5 @@
 #include "helper.h"
 
-#include <array>
-#include <chrono>
-#include <cstdio>
-#include <fstream>
-#include <iostream>
-#include <memory>
-#include <sstream>
-#include <stdexcept>
-#include <string>
-
-#ifdef WIN32
-#include <windows.h>
-#elif _POSIX_C_SOURCE >= 199309L
-#include <time.h> // for nanosleep
-#include <errno.h>
-#include <string.h>
-#else
-#include <unistd.h> // for usleep
-#include <errno.h>
-#include <string.h>
-#endif
-
-#if __cplusplus >= 201703L
-#include <filesystem>
-namespace fs = std::filesystem;
-#else
-#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
-#include <experimental/filesystem>
-namespace fs = std::experimental::filesystem;
-#endif
-
-#if WIN32
-#define POPEN _popen
-#define PCLOSE _pclose
-#define POPEN_MODE "rt"
-#else
-#define POPEN popen
-#define PCLOSE pclose
-#define POPEN_MODE "r"
-#endif
-
 //#define NEW_BAT 1
 
 #if WIN32
@@ -99,124 +58,15 @@ namespace fs = std::experimental::filesystem;
 #define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00funcs_capture.ts"
 #endif
 
-#ifdef WIN32
-#ifndef NDEBUG
-#define _D_ "d"
-#else
-#define _D_ ""
-#endif
-#else
-#define _D_ ""
-#endif
-
 #define _OPT_ "--opt "
 
 bool isJit = false;
 bool isJitCompile = false;
+bool isLlc = false;
 bool enableBuiltins = false;
 bool noGC = false;
 bool asyncRuntime = false;
 bool llvmGenerate = false;
-
-bool hasEnding(std::string const &fullString, std::string const &ending)
-{
-    if (fullString.length() >= ending.length())
-    {
-        return (0 == fullString.compare(fullString.length() - ending.length(), ending.length(), ending));
-    }
-    else
-    {
-        return false;
-    }
-}
-
-void sleep_ms(int milliseconds)
-{ // cross-platform sleep function
-#ifdef WIN32
-    Sleep(milliseconds);
-#elif _POSIX_C_SOURCE >= 199309L
-    struct timespec ts;
-    ts.tv_sec = milliseconds / 1000;
-    ts.tv_nsec = (milliseconds % 1000) * 1000000;
-    nanosleep(&ts, NULL);
-#else
-    if (milliseconds >= 1000)
-        sleep(milliseconds / 1000);
-    usleep((milliseconds % 1000) * 1000);
-#endif
-}
-
-std::string exec(std::string cmd)
-{
-    auto retry = 3;
-
-    do
-    {
-        std::array<char, 128> buffer;
-        std::string result;
-
-        FILE *pipe = POPEN(cmd.c_str(), POPEN_MODE);
-        if (!pipe)
-        {
-            std::cerr << "Can't run cmd: " << cmd.c_str() << std::endl;
-            std::cerr << "errno: " << strerror(errno) << std::endl;
-            throw std::runtime_error("popen() failed!");
-        }
-
-        while (fgets(buffer.data(), buffer.size(), pipe) != nullptr)
-        {
-            result += buffer.data();
-        }
-
-        if (feof(pipe))
-        {
-            auto code = PCLOSE(pipe);
-            if (code)
-            {
-                if (retry <= 1)
-                {
-                    std::cerr << "Error: return code is not 0, code: " << code << " cmd: " << cmd << " output: " << result << std::endl;
-                }
-                else
-                {
-                    std::cerr << "retrying..." << std::endl;
-                    sleep_ms(1000);
-                    continue;
-                }
-            }
-        }
-        else
-        {
-            std::cerr << "Error: Failed to read the pipe to the end" << std::endl;
-        }
-
-        return result;
-    } while (--retry > 0);
-
-    return "";
-}
-
-inline bool exists(std::string name)
-{
-    return fs::exists(name);
-}
-
-int runFolder(const char *folder)
-{
-    std::string path = folder;
-    for (const auto &entry : fs::directory_iterator(path))
-    {
-        if (!hasEnding(entry.path().extension().string(), ".ts"))
-        {
-            std::cout << "skipping: " << entry.path() << std::endl;
-            continue;
-        }
-
-        std::cout << "Testing: " << entry.path() << std::endl;
-    }
-
-    return 0;
-}
 
 #ifdef WIN32
 void createCompileBatchFile()
@@ -236,8 +86,7 @@ void createCompileBatchFile()
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
     batFile << "set LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
-    batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " _OPT_ "%2 -o=%FILENAME%.o" << std::endl;
     batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
                "/defaultlib:libcmt" _D_ ".lib libvcruntime" _D_ ".lib"
             << std::endl;
@@ -267,8 +116,7 @@ void createCompileBatchFileWithAsyncRT()
     batFile << "set LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
-    batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " _OPT_ "%2 -o=%FILENAME%.o" << std::endl;
     batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
                "/libpath:%LLVM_LIBPATH% /libpath:%TSCLIBPATH% /defaultlib:libcmt" _D_ ".lib libvcruntime" _D_
                ".lib TypeScriptAsyncRuntime.lib LLVMSupport.lib"
@@ -298,8 +146,7 @@ void createCompileBatchFileGC()
     batFile << "set LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
-    batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " _OPT_ "%2 -o=%FILENAME%.o" << std::endl;
     batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
                "/libpath:%GCLIBPATH% msvcrt" _D_ ".lib ucrt" _D_ ".lib kernel32.lib user32.lib "
             << GC_LIB << ".lib" << std::endl;
@@ -320,6 +167,129 @@ void createCompileBatchFileGCWithAsyncRT()
 #endif
 
     std::ofstream batFile("compile_gc_async" _D_ ".bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
+    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+    batFile << "set LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "set LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " _OPT_ "%2 -o=%FILENAME%.o" << std::endl;
+    batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
+               "/libpath:%GCLIBPATH% /libpath:%LLVM_LIBPATH% /libpath:%TSCLIBPATH% "
+               "msvcrt" _D_ ".lib ucrt" _D_ ".lib kernel32.lib user32.lib "
+            << GC_LIB << ".lib TypeScriptAsyncRuntime.lib LLVMSupport.lib" << std::endl;
+    batFile << "del %FILENAME%.il" << std::endl;
+    batFile << "del %FILENAME%.o" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFile_LLC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_llc" _D_ ".bat"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_llc" _D_ ".bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
+    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+    batFile << "set LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
+    batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
+    batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
+               "/defaultlib:libcmt" _D_ ".lib libvcruntime" _D_ ".lib"
+            << std::endl;
+    batFile << "del %FILENAME%.il" << std::endl;
+    batFile << "del %FILENAME%.o" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFileWithAsyncRT_LLC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_async_llc" _D_ ".bat"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_async_llc" _D_ ".bat");
+    // batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
+    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+    batFile << "set LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "set LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
+    batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
+    batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
+               "/libpath:%LLVM_LIBPATH% /libpath:%TSCLIBPATH% /defaultlib:libcmt" _D_ ".lib libvcruntime" _D_
+               ".lib TypeScriptAsyncRuntime.lib LLVMSupport.lib"
+            << std::endl;
+    batFile << "del %FILENAME%.il" << std::endl;
+    batFile << "del %FILENAME%.o" << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFileGC_LLC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_gc_llc" _D_ ".bat"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_gc_llc" _D_ ".bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
+    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+    batFile << "set LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm " _OPT_ "%2 -o=%FILENAME%.il" << std::endl;
+    batFile << "%LLVM_EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
+    batFile << "%LLVM_EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
+               "/libpath:%GCLIBPATH% msvcrt" _D_ ".lib ucrt" _D_ ".lib kernel32.lib user32.lib "
+            << GC_LIB << ".lib" << std::endl;
+    batFile << "del %FILENAME%.il" << std::endl;
+    batFile << "del %FILENAME%.o" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFileGCWithAsyncRT_LLC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_gc_async_llc" _D_ ".bat"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_gc_async_llc" _D_ ".bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
@@ -475,8 +445,7 @@ void createCompileBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 -o=$FILENAME.il" << std::endl;
-    batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=obj " _OPT_ "-nogc $2 -relocation-model=pic -o=$FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o -lm -frtti -fexceptions -lstdc++" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
@@ -499,8 +468,7 @@ void createCompileBatchFileWithAsyncRT()
     batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 -o=$FILENAME.il" << std::endl;
-    batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=obj " _OPT_ "-nogc $2 -relocation-model=pic -o=$FILENAME.o" << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o -L$LLVM_LIBPATH -L$TSCLIBPATH " << TYPESCRIPT_ASYNC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
@@ -522,8 +490,7 @@ void createCompileBatchFileGC()
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "$2 -o=$FILENAME.il" << std::endl;
-    batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=obj " _OPT_ "$2  -relocation-model=pic -o=$FILENAME.o" << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o " << GC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
@@ -541,6 +508,100 @@ void createCompileBatchFileGCWithAsyncRT()
 #endif
 
     std::ofstream batFile("compile_gc_async.sh");
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=obj " _OPT_ "$2 -relocation-model=pic -o=$FILENAME.o" << std::endl;
+    batFile << "gcc -o $FILENAME -L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o " << GC_LIB
+            << " " TYPESCRIPT_ASYNC_LIB << " " << LIBS << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFile_LLC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_llc.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_llc.sh");
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 -o=$FILENAME.il" << std::endl;
+    batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "gcc -o $FILENAME $FILENAME.o -lm -frtti -fexceptions -lstdc++" << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFile_LLC_WithAsyncRT()
+{
+#ifndef NEW_BAT
+    if (exists("compile_async_llc.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_async_llc.sh");
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "-nogc $2 -o=$FILENAME.il" << std::endl;
+    batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "gcc -o $FILENAME $FILENAME.o -L$LLVM_LIBPATH -L$TSCLIBPATH " << TYPESCRIPT_ASYNC_LIB << " " << LIBS << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFile_LLC_GC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_gc_llc.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_gc_llc.sh");
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm " _OPT_ "$2 -o=$FILENAME.il" << std::endl;
+    batFile << "$LLVM_EXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o " << GC_LIB << " " << LIBS << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFile_LLC_GCWithAsyncRT()
+{
+#ifndef NEW_BAT
+    if (exists("compile_gc_async_llc.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_gc_async_llc.sh");
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
@@ -773,6 +834,31 @@ void testFile(const char *file)
             ss << RUN_CMD << "compile_jit_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
+    else if (isLlc)
+    {
+        if (asyncRuntime)
+        {
+            if (noGC)
+            {
+                ss << RUN_CMD << "compile_async_llc" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            }
+            else
+            {
+                ss << RUN_CMD << "compile_gc_async_llc" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            }
+        }
+        else
+        {
+            if (noGC)
+            {
+                ss << RUN_CMD << "compile_llc" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            }
+            else
+            {
+                ss << RUN_CMD << "compile_gc_llc" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            }
+        }
+    }
     else if (asyncRuntime)
     {
         if (noGC)
@@ -840,8 +926,7 @@ int main(int argc, char **argv)
             }
             else if (std::string(argv[index]) == "-llc")
             {
-                isJit = false;
-                isJitCompile = false;
+                isLlc = true;
             }
             else if (std::string(argv[index]) == "-builtins")
             {
@@ -890,6 +975,31 @@ int main(int argc, char **argv)
             {
                 createJitCompileBatchFileGC();
             }
+        }
+        else if (isLlc)
+        {
+            if (asyncRuntime)
+            {
+                if (noGC)
+                {
+                    createCompileBatchFileWithAsyncRT_LLC();
+                }
+                else
+                {
+                    createCompileBatchFileGCWithAsyncRT_LLC();
+                }
+            }
+            else
+            {
+                if (noGC)
+                {
+                    createCompileBatchFile_LLC();
+                }
+                else
+                {
+                    createCompileBatchFileGC_LLC();
+                }
+            }            
         }
         else if (asyncRuntime)
         {
