@@ -17780,9 +17780,13 @@ genContext);
 
         if (showWarnings && symbolTable.count(name))
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! WARNING redeclaration: " << name << " = [" << value << "]\n";);
-            // TODO: find out why you have redeclared vars
-            emitWarning(location, "") << "variable "<< name << " redeclared. Previous declaration: " << symbolTable.lookup(name).first.getLoc();
+            auto previousVariable = symbolTable.lookup(name).first;
+            if (previousVariable.getParentBlock() == value.getParentBlock())
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! WARNING redeclaration: " << name << " = [" << value << "]\n";);
+                // TODO: find out why you have redeclared vars
+                emitWarning(location, "") << "variable "<< name << " redeclared. Previous declaration: " << previousVariable.getLoc();
+            }
         }
 
         if (!genContext.insertIntoParentScope)
