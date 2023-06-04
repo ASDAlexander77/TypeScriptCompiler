@@ -311,7 +311,7 @@ class MLIRGenImpl
         // print errors
         if (notResolved)
         {
-            printDiagnostics(postponedMessages);
+            printDiagnostics(postponedMessages, path);
         }
 
         postponedMessages.clear();
@@ -424,7 +424,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        printDiagnostics(postponedWarningsMessages);
+        printDiagnostics(postponedWarningsMessages, path);
 
         return mlir::success();
     }
@@ -17785,7 +17785,12 @@ genContext);
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! WARNING redeclaration: " << name << " = [" << value << "]\n";);
                 // TODO: find out why you have redeclared vars
-                emitWarning(location, "") << "variable "<< name << " redeclared. Previous declaration: " << previousVariable.getLoc();
+
+                std::string loc;
+                llvm::raw_string_ostream sloc(loc);
+                printLocation(sloc, previousVariable.getLoc(), path, true);
+                sloc.flush();
+                emitWarning(location, "") << "variable "<< name << " redeclared. Previous declaration: " << sloc.str();                
             }
         }
 
@@ -18318,7 +18323,7 @@ mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &con
                                         const llvm::StringRef &source, CompileOptions compileOptions)
 {
 
-    SmallString<128> path = llvm::sys::path::parent_path(fileName);
+    auto path = llvm::sys::path::parent_path(fileName);
     MLIRGenImpl mlirGenImpl(context, fileName, path, compileOptions);
     auto [sourceFile, includeFiles] = mlirGenImpl.loadSourceFile(fileName, source);
     return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);

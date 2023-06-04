@@ -30,6 +30,7 @@
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Path.h"
 
 #ifdef GC_ENABLE
 #include "llvm/IR/GCStrategy.h"
@@ -49,6 +50,7 @@
 
 namespace cl = llvm::cl;
 
+extern cl::opt<std::string> inputFilename;
 extern cl::opt<enum Action> emitAction;
 extern cl::opt<bool> enableOpt;
 extern cl::opt<int> optLevel;
@@ -143,7 +145,8 @@ int runMLIRPasses(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> 
         result = 4;
     }
 
-    printDiagnostics(postponedMessages);
+    auto path = llvm::sys::path::parent_path(inputFilename);
+    printDiagnostics(postponedMessages, path);
     return result;
 }
 
