@@ -12,6 +12,27 @@
 
 - Well-Known Symbols
 
+* ```union type in yield```
+
+```TypeScript
+function* g() {
+  yield* (function* () {
+    yield 1.0;
+    yield 2.0;
+    yield "3.0";
+    yield 4.0;
+  })();
+}
+
+function main() {
+    for (const x of g())
+        if (typeof x == "string")
+            print("string: ", x, glb1++);
+        else if (typeof x == "number")
+            print("number: ", x, glb2++);
+}
+```
+
 * ```toPrimitive```
 
 ```TypeScript
