@@ -16,6 +16,7 @@
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIRValueGuard.h"
 
+#include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 
 #ifdef WIN_EXCEPTION
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
@@ -6547,7 +6548,7 @@ class MLIRGenImpl
 
             if (resultType.isa<mlir_ts::AnyType>())
             {
-                auto typeOfAnyValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), result);
+                auto typeOfAnyValue = builder.create<mlir_ts::TypeOfAnyOp>(location, getStringType(), result);
                 auto classStrConst =
                     builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr("class"));
                 auto cmpResult = builder.create<mlir_ts::StringCompareOp>(
@@ -9577,8 +9578,13 @@ class MLIRGenImpl
         auto result = mlirGen(typeOfExpression->expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto resultValue = V(result);
-        auto typeOfValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), resultValue);
-        return V(typeOfValue);
+        // auto typeOfValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), resultValue);
+        // return V(typeOfValue);
+
+        // needed to use optimizers
+        TypeOfOpHelper toh(builder);
+        auto typeOfValue = toh.typeOfLogic(location, resultValue, resultValue.getType());
+        return typeOfValue;
     }
 
     ValueOrLogicalResult mlirGen(NonNullExpression nonNullExpression, const GenContext &genContext)

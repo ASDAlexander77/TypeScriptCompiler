@@ -1,8 +1,8 @@
-#ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_TYPEOFHELPER_H_
-#define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_TYPEOFHELPER_H_
+#ifndef MLIR_TYPESCRIPT_TYPEOFHELPER_H_
+#define MLIR_TYPESCRIPT_TYPEOFHELPER_H_
 
 #undef DEBUG_TYPE
-#define DEBUG_TYPE "llvm"
+#define DEBUG_TYPE "mlir"
 
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
@@ -10,7 +10,8 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-using namespace mlir;
+using namespace ::typescript;
+using namespace ts;
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
@@ -18,10 +19,10 @@ namespace typescript
 
 class TypeOfOpHelper
 {
-    OpBuilder &rewriter;
+    mlir::OpBuilder &rewriter;
 
   public:
-    TypeOfOpHelper(OpBuilder &rewriter) : rewriter(rewriter)
+    TypeOfOpHelper(mlir::OpBuilder &rewriter) : rewriter(rewriter)
     {
     }
 
@@ -258,4 +259,4 @@ class TypeOfOpHelper
 };
 } // namespace typescript
 
-#endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_TYPEOFHELPER_H_
+#endif // MLIR_TYPESCRIPT_TYPEOFHELPER_H_

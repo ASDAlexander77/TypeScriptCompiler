@@ -995,6 +995,8 @@ def TypeScript_ValueOp : TypeScript_Op<"Value",
   }];
   let arguments = (ins TypeScript_AnyOptional:$in);
   let results = (outs AnyType:$res);
+
+  let hasCanonicalizer = 1;  
 }
 
 def TypeScript_ValueOrDefaultOp : TypeScript_Op<"ValueOrDefault", 

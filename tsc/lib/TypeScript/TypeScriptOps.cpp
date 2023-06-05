@@ -381,6 +381,15 @@ void mlir_ts::LoadOp::getCanonicalizationPatterns(RewritePatternSet &results, ML
 }
 
 //===----------------------------------------------------------------------===//
+// ValueOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::ValueOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::ValueOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // NullOp
 //===----------------------------------------------------------------------===//
 
