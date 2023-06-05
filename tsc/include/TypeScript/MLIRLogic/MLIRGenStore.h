@@ -132,12 +132,12 @@ struct VirtualMethodOrFieldInfo
     }
 
     VirtualMethodOrFieldInfo(MethodInfo methodInfo, bool isMissing)
-        : methodInfo(methodInfo), isField(false), isMissing(isMissing)
+        : methodInfo(methodInfo), fieldInfo(), isField(false), isMissing(isMissing)
     {
     }
 
     VirtualMethodOrFieldInfo(mlir_ts::FieldInfo fieldInfo, bool isMissing)
-        : fieldInfo(fieldInfo), isField(true), isMissing(isMissing)
+        : methodInfo(), fieldInfo(fieldInfo), isField(true), isMissing(isMissing)
     {
     }
 

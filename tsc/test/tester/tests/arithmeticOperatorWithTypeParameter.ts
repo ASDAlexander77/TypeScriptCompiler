@@ -2,7 +2,8 @@ function foo<T>(t: T) {
     let a: TypeOf<1>;
     let b: boolean;
     let c: number;
-    let d: string;
+    // TODO: if you use uninit. string it will crash the code
+    let d: string = "0";
 
     let r1a1 = a * t;
     let r1a2 = a / t;
