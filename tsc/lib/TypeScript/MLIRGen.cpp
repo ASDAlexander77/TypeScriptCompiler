@@ -9932,7 +9932,6 @@ class MLIRGenImpl
                 // seems we can convert tuple into array, for example [1.0, 2, 3] -> [1.0, 2.0, 3.0]
                 dataType = TypeData::Array;
                 applyCast = true;
-                isConst = false;
             }
 
             if (dataType == TypeData::Array)
@@ -9946,7 +9945,6 @@ class MLIRGenImpl
                 {
                     arrayElementType = recevierContext.receiverElementType;
                     applyCast = true;
-                    isConst = false;
                 }
             }
         }
@@ -10159,7 +10157,9 @@ class MLIRGenImpl
                 type = itemValue.getType();
             }
 
-            if (!itemValue.getDefiningOp<mlir_ts::ConstantOp>())
+            if (!itemValue.getDefiningOp<mlir_ts::ConstantOp>() || 
+            // TODO: in case of [{ a: '', b: 0, c: '' }, { a: "", b: 3, c: 0 }]
+                (itemValue.getType().isa<mlir_ts::ConstTupleType>()))
             {
                 arrayInfo.isConst = false;
             }                

@@ -2370,6 +2370,7 @@ class MLIRTypeHelper
                 auto mergedTupleType = tupleMergeType(existingTupleType, currentTupleType, tupleMerged);
                 if (tupleMerged)
                 {
+                    merged = true;
                     return mergedTupleType;
                 }
             }
