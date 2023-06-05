@@ -27,9 +27,9 @@ function* g() {
 function main() {
     for (const x of g())
         if (typeof x == "string")
-            print("string: ", x, glb1++);
+            print("string: ", x);
         else if (typeof x == "number")
-            print("number: ", x, glb2++);
+            print("number: ", x);
 }
 ```
 
