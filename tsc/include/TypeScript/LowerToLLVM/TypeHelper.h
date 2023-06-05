@@ -34,6 +34,11 @@ class TypeHelper
         return mlir_ts::BooleanType::get(context);
     }
 
+    mlir::Type getStringType()
+    {
+        return mlir_ts::StringType::get(context);
+    }
+
     mlir::Type getUndefinedType()
     {
         return mlir_ts::UndefinedType::get(context);

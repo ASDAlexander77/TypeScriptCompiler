@@ -3624,7 +3624,7 @@ class MLIRGenImpl
         // add next statements
         // add default return with empty
         nextStatements.push_back(
-            nf.createReturnStatement(getYieldReturnObject(nf, location, nf.createIdentifier(S("undefined")), true)));
+            nf.createReturnStatement(getYieldReturnObject(nf, location, nf.createIdentifier(S(UNDEFINED_NAME)), true)));
 
         // create next body
         auto nextBody = nf.createBlock(nextStatements, /*multiLine*/ false);
@@ -14871,7 +14871,7 @@ genContext);
                         hint = nf.createStringLiteral(S("boolean"));
                     })
                     .template Case<mlir_ts::UndefinedType>([&](auto) {
-                        hint = nf.createStringLiteral(S("undefined"));
+                        hint = nf.createStringLiteral(S(UNDEFINED_NAME));
                     })
                     .template Case<mlir_ts::SymbolType>([&](auto) {
                         hint = nf.createStringLiteral(S("symbol"));

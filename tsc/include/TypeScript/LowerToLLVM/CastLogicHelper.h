@@ -281,7 +281,7 @@ class CastLogicHelper
         {
             if (auto stringTypeRes = resType.dyn_cast<mlir_ts::StringType>())
             {
-                return rewriter.create<mlir_ts::ConstantOp>(loc, stringTypeRes, rewriter.getStringAttr("undefined"));
+                return rewriter.create<mlir_ts::ConstantOp>(loc, stringTypeRes, rewriter.getStringAttr(UNDEFINED_NAME));
             }
         }
 

@@ -145,7 +145,7 @@ class TypeOfOpHelper
 
         if (type.isa<mlir_ts::UndefinedType>())
         {
-            auto typeOfValue = strValue(loc, "undefined");
+            auto typeOfValue = strValue(loc, UNDEFINED_NAME);
             return typeOfValue;
         }
 
@@ -226,8 +226,35 @@ class TypeOfOpHelper
 
         if (auto subType = origType.dyn_cast<mlir_ts::OptionalType>())
         {
-            auto valueOfOpt = rewriter.create<mlir_ts::ValueOp>(loc, subType.getElementType(), value);
-            return typeOfLogic(loc, valueOfOpt, subType.getElementType());
+            TypeHelper th(rewriter);
+
+            auto dataTypeIn = subType.getElementType();
+            auto resultType = th.getStringType();
+
+            // ts.if
+            auto hasValue = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), value);
+            auto ifOp = rewriter.create<mlir_ts::IfOp>(loc, resultType, hasValue, true);
+
+            // then block
+            auto &thenRegion = ifOp.getThenRegion();
+
+            rewriter.setInsertionPointToStart(&thenRegion.back());
+
+            mlir::Value valueOfOpt = rewriter.create<mlir_ts::ValueOp>(loc, subType.getElementType(), value);
+            auto typeOfValue = typeOfLogic(loc, valueOfOpt, valueOfOpt.getType());
+            rewriter.create<mlir_ts::ResultOp>(loc, typeOfValue);
+
+            // else block
+            auto &elseRegion = ifOp.getElseRegion();
+
+            rewriter.setInsertionPointToStart(&elseRegion.back());
+
+            auto undefStrValue = strValue(loc, UNDEFINED_NAME);
+            rewriter.create<mlir_ts::ResultOp>(loc, undefStrValue);
+
+            rewriter.setInsertionPointAfter(ifOp);
+
+            return ifOp.getResult(0);
         }
 
         return typeOfLogic(loc, origType);
