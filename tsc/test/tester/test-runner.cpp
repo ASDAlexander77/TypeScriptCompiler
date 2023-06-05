@@ -545,7 +545,7 @@ void createCompileBatchFile_LLC()
     batFile.close();
 }
 
-void createCompileBatchFile_LLC_WithAsyncRT()
+void createCompileBatchFileWithAsyncRT_LLC()
 {
 #ifndef NEW_BAT
     if (exists("compile_async_llc.sh"))
@@ -569,7 +569,7 @@ void createCompileBatchFile_LLC_WithAsyncRT()
     batFile.close();
 }
 
-void createCompileBatchFile_LLC_GC()
+void createCompileBatchFileGC_LLC()
 {
 #ifndef NEW_BAT
     if (exists("compile_gc_llc.sh"))
@@ -592,7 +592,7 @@ void createCompileBatchFile_LLC_GC()
     batFile.close();
 }
 
-void createCompileBatchFile_LLC_GCWithAsyncRT()
+void createCompileBatchFileGCWithAsyncRT_LLC()
 {
 #ifndef NEW_BAT
     if (exists("compile_gc_async_llc.sh"))
