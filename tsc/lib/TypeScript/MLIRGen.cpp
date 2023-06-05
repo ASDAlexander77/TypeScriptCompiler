@@ -10159,7 +10159,10 @@ class MLIRGenImpl
 
             if (!itemValue.getDefiningOp<mlir_ts::ConstantOp>() || 
             // TODO: in case of [{ a: '', b: 0, c: '' }, { a: "", b: 3, c: 0 }]
-                (itemValue.getType().isa<mlir_ts::ConstTupleType>()))
+                ((arrayInfo.dataType == TypeData::Array || arrayInfo.dataType == TypeData::NotSet)
+                    && itemValue.getType().isa<mlir_ts::ConstTupleType>()                 
+                    && arrayInfo.accumulatedArrayElementType 
+                    && mth.removeConstType(itemValue.getType()) != arrayInfo.accumulatedArrayElementType))
             {
                 arrayInfo.isConst = false;
             }                
