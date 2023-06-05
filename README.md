@@ -10,9 +10,7 @@
 
 # What's new
 
-- Well-Known Symbols
-
-* ```union type in yield```
+- ```union type``` in ```yield```
 
 ```TypeScript
 function* g() {
@@ -32,6 +30,8 @@ function main() {
             print("number: ", x);
 }
 ```
+
+- Well-Known Symbols
 
 * ```toPrimitive```
 
