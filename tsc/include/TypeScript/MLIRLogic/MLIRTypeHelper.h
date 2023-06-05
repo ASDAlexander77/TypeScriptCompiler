@@ -910,6 +910,7 @@ class MLIRTypeHelper
             return false;
         }
 
+        // TODO: review code in case of using "undefined" & "null"
         auto undefType = mlir_ts::UndefinedType::get(context);
         auto nullType = mlir_ts::NullType::get(context);
 
@@ -1141,12 +1142,7 @@ class MLIRTypeHelper
             return false;
         };
 
-        if (!llvm::any_of(type.getFields(), [&](::mlir::typescript::FieldInfo fi) { return testType(fi.type); }))
-        {
-            return true;
-        }
-
-        return false;
+        return llvm::any_of(type.getFields(), [&](::mlir::typescript::FieldInfo fi) { return testType(fi.type); });
     }
 
     bool hasUndefines(mlir::Type type)
@@ -2298,9 +2294,52 @@ class MLIRTypeHelper
         return mergeType(existType, currentType, merged);
     }
 
+    mlir::Type tupleMergeType(mlir_ts::TupleType existType, mlir_ts::TupleType currentType, bool& merged)
+    {
+        merged = false;
+        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: " << existType << " with " << currentType << "\n";);
+
+        if (existType == currentType)
+        {
+            merged = true;
+            return existType;
+        }
+
+        auto existingFields = existType.getFields();
+        auto currentFields = currentType.getFields();
+
+        if (existingFields.size() != currentFields.size())
+        {
+            return mlir::Type();
+        }
+
+        llvm::SmallVector<mlir_ts::FieldInfo> resultFields;
+        auto existingIt = existingFields.begin();
+        auto currentIt = currentFields.begin();
+        for (; existingIt != existingFields.end() && currentIt != currentFields.end(); ++existingIt, ++currentIt)
+        {
+            if (existingIt->id != currentIt->id)
+            {
+                return mlir::Type();
+            }
+
+            // try to merge types of tuple
+            auto merged = false;
+            auto mergedType = mergeType(existingIt->type, currentIt->type, merged);
+            if (mergedType)
+            {
+                resultFields.push_back({ existingIt->id, mergedType });
+            }
+        }
+
+        merged = true;
+        return mlir_ts::TupleType::get(context, resultFields);
+    }
+
     mlir::Type mergeType(mlir::Type existType, mlir::Type currentType, bool& merged)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: " << existType << " with " << currentType << "\n";);
+        merged = false;
+        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: \n\t" << existType << " with \n\t" << currentType << "\n";);
 
         if (existType == currentType)
         {
@@ -2321,6 +2360,20 @@ class MLIRTypeHelper
         }
         
         auto resType = wideStorageType(currentType);
+
+        // check if can merge tuple types
+        if (auto existingTupleType = existType.dyn_cast<mlir_ts::TupleType>())
+        {
+            if (auto currentTupleType = currentType.dyn_cast<mlir_ts::TupleType>())
+            {
+                auto tupleMerged = false;
+                auto mergedTupleType = tupleMergeType(existingTupleType, currentTupleType, tupleMerged);
+                if (tupleMerged)
+                {
+                    return mergedTupleType;
+                }
+            }
+        }
         
         auto found = false;
         resType = findBaseType(existType, resType, found);

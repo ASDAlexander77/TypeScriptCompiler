@@ -494,7 +494,9 @@ LogicalResult mlir_ts::CastOp::verify()
 
         if (inUnionType && !resUnionType)
         {
-            auto pred = [&](auto &item) { return cmpTypes(item, resType); };
+            auto pred = [&](auto &item) { 
+                return cmpTypes(item, resType); 
+            };
             auto types = inUnionType.getTypes();
             if (std::find_if(types.begin(), types.end(), pred) == types.end())
             {
@@ -514,11 +516,17 @@ LogicalResult mlir_ts::CastOp::verify()
 
         if (!inUnionType && resUnionType)
         {
-            auto pred = [&](auto &item) { return cmpTypes(inType, item); };
-            auto types = resUnionType.getTypes();
-            if (std::find_if(types.begin(), types.end(), pred) == types.end())
+            // TODO: review using "undefined", use proper union type
+            if (!inType.isa<mlir_ts::UndefinedType>())
             {
-                return emitOpError("type [") << inType << "] can't be stored in [" << resUnionType << "]";
+                auto pred = [&](auto &item) { 
+                    return cmpTypes(inType, item); 
+                };
+                auto types = resUnionType.getTypes();
+                if (std::find_if(types.begin(), types.end(), pred) == types.end())
+                {
+                    return emitOpError("type [") << inType << "] can't be stored in [" << resUnionType << "]";
+                }
             }
 
             return success();

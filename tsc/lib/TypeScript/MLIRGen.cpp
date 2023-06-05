@@ -4717,7 +4717,7 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
-            type = mth.stripLiteralType(type);
+            type = mth.wideStorageType(type);
 
             // if return type is not detected, take first and exit
             if (!genContext.passResult->functionReturnType)
@@ -4726,6 +4726,7 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
+            // TODO: undefined & null should be processed as union type
             auto undefType = getUndefinedType();
             auto nullType = getNullType();
 
@@ -4735,10 +4736,10 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            if (mth.hasUndefines(type))
-            {
-                return mlir::failure();
-            }
+            // if (mth.hasUndefines(type))
+            // {
+            //     return mlir::failure();
+            // }
 
             auto merged = false;
             auto resultReturnType = mth.mergeType(genContext.passResult->functionReturnType, type, merged);            
@@ -9931,6 +9932,7 @@ class MLIRGenImpl
                 // seems we can convert tuple into array, for example [1.0, 2, 3] -> [1.0, 2.0, 3.0]
                 dataType = TypeData::Array;
                 applyCast = true;
+                isConst = false;
             }
 
             if (dataType == TypeData::Array)
@@ -9944,6 +9946,7 @@ class MLIRGenImpl
                 {
                     arrayElementType = recevierContext.receiverElementType;
                     applyCast = true;
+                    isConst = false;
                 }
             }
         }
@@ -10529,6 +10532,7 @@ class MLIRGenImpl
         auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) {
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
+            funcGenContext.clearReceiverTypes();
             funcGenContext.thisType = objThis;
 
             funcLikeDecl->parent = objectLiteral;
@@ -10563,6 +10567,7 @@ class MLIRGenImpl
         auto processFunctionLike = [&](mlir_ts::ObjectType objThis, FunctionLikeDeclarationBase &funcLikeDecl) {
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
+            funcGenContext.clearReceiverTypes();
             funcGenContext.thisType = objThis;
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object Process function with this type: " << objThis << "\n";);
