@@ -62,7 +62,7 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
 
                 if (!notFirst)
                 {
-                    if (auto fileLineColLoc = loc.dyn_cast<mlir::FileLineColLoc>())
+                    if (auto fileLineColLoc = loc.template dyn_cast<mlir::FileLineColLoc>())
                     {
                         currentPath = fileLineColLoc.getFilename().getValue();
                     }
