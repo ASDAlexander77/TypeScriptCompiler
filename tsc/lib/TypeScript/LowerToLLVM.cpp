@@ -2653,12 +2653,14 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
         LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter());
 
+        // TODO: we need to write correct attributes to Ops and detect which ops should be in GlobalConstructor
         auto createAsGlobalConstructor = false;
         auto visitorAllOps = [&](Operation *op) {
             if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op) ||
                 isa<mlir_ts::SymbolCallInternalOp>(op) || isa<mlir_ts::CallInternalOp>(op) ||
                 isa<mlir_ts::CallHybridInternalOp>(op) || isa<mlir_ts::VariableOp>(op) || isa<mlir_ts::AllocaOp>(op) ||
-                isa<mlir_ts::CreateArrayOp>(op) || isa<mlir_ts::NewEmptyArrayOp>(op))
+                isa<mlir_ts::CreateArrayOp>(op) || isa<mlir_ts::NewEmptyArrayOp>(op) || 
+                isa<mlir_ts::LoadOp>(op) || isa<mlir_ts::StoreOp>(op))
             {
                 createAsGlobalConstructor = true;
             }

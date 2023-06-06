@@ -1077,7 +1077,7 @@ def TypeScript_LoadOp : TypeScript_Op<"Load", []> {
   let hasCanonicalizer = 1;
 }
 
-def TypeScript_ExtractPropertyOp : TypeScript_Op<"ExtractProperty"> {
+def TypeScript_ExtractPropertyOp : TypeScript_Op<"ExtractProperty", [Pure]> {
   let description = [{
     ```mlir
     %2 = ts.extract_property %1, %2 : f32
