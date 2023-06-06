@@ -212,9 +212,15 @@ class MLIRGenImpl
 
     mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles)
     {
-        if (mlir::failed(report(module, includeFiles)))
         {
-            return nullptr;
+            mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+                publishDiagnostic(diag, path);
+            });
+
+            if (mlir::failed(report(module, includeFiles)))
+            {
+                return nullptr;
+            }
         }
 
         if (mlir::failed(mlirGenCodeGenInit(module)))
@@ -547,8 +553,19 @@ class MLIRGenImpl
         declarationMode = true;
 
         auto [importSource, importIncludeFiles] = loadFile(stringVal);
-        if (mlir::succeeded(report(importSource, importIncludeFiles)) &&
-            mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
+
+        {
+            mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+                publishDiagnostic(diag, path);
+            });
+
+            if (mlir::failed(report(importSource, importIncludeFiles)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        if (mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
             mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false)))
         {
             return mlir::success();

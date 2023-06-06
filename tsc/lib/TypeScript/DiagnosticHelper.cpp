@@ -79,9 +79,9 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
         .Default([&](auto type) { llvm_unreachable("not implemented"); });
 }
 
-void publishDiagnostic(mlir::Diagnostic &diag, llvm::StringRef path)
+void publishDiagnostic(const mlir::Diagnostic &diag, llvm::StringRef path)
 {
-    auto printMsg = [](llvm::raw_ostream &os, mlir::Diagnostic &diag, const char *msg) {
+    auto printMsg = [](llvm::raw_ostream &os, const mlir::Diagnostic &diag, const char *msg) {
         os << msg;
         os << diag << '\n';
         os.flush();
@@ -104,7 +104,7 @@ void publishDiagnostic(mlir::Diagnostic &diag, llvm::StringRef path)
         printMsg(llvm::WithColor::warning(llvm::outs()), diag, "");
         break;
     case mlir::DiagnosticSeverity::Error:
-        printLocation(llvm::outs(), diag.getLocation(), path);
+        printLocation(llvm::errs(), diag.getLocation(), path);
         printMsg(llvm::WithColor::error(llvm::errs()), diag, "");
         break;
     case mlir::DiagnosticSeverity::Remark:
