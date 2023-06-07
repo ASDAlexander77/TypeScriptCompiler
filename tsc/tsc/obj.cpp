@@ -143,6 +143,49 @@ static char mapToLevel(unsigned optLevel)
     return '0';
 }
 
+bool setupTargetTriple(llvm::Module *llvmModule) {
+    // Setup the machine properties from the current architecture.
+    auto targetTriple = llvm::sys::getDefaultTargetTriple();
+    if (!TargetTriple.empty())
+    {
+        // override it from command line
+        targetTriple = llvm::Triple::normalize(TargetTriple);
+    }
+
+    std::string errorMessage;
+    const auto *target =
+        llvm::TargetRegistry::lookupTarget(targetTriple, errorMessage);
+    if (!target) 
+    {
+        llvm::errs() << "NO target: " << errorMessage << "\n";
+        return true;
+    }
+
+    std::string cpu(llvm::sys::getHostCPUName());
+    llvm::SubtargetFeatures features;
+    llvm::StringMap<bool> hostFeatures;
+
+    if (llvm::sys::getHostCPUFeatures(hostFeatures))
+    {
+        for (const auto &[feature, isEnabled] : hostFeatures)
+        {
+           features.AddFeature(feature, isEnabled);
+        }
+    }
+
+    std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
+        targetTriple, cpu, features.getString(), {}, {}));
+    if (!machine) 
+    {
+        llvm::errs() << "Unable to create target machine\n";
+        return true;
+    }
+
+    llvmModule->setDataLayout(machine->createDataLayout());
+    llvmModule->setTargetTriple(targetTriple);
+    return false;
+}
+
 int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
 {
     registerMLIRDialects(module);
@@ -159,7 +202,11 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     // Initialize LLVM targets.
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
-    mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());
+    //mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());
+    if (setupTargetTriple(llvmModule.get()))
+    {
+        return -1;
+    }
 
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
     if (auto err = optPipeline(llvmModule.get()))
@@ -211,13 +258,13 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     std::unique_ptr<llvm::TargetMachine> Target;
     
     // If we are supposed to override the target triple, do so now.
-    std::string LLVMModuleTargetTriple = llvmModule.get()->getTargetTriple();
+    std::string llvmModuleTargetTriple = llvmModule.get()->getTargetTriple();
     if (!TargetTriple.empty())
     {
-        LLVMModuleTargetTriple = llvm::Triple::normalize(TargetTriple);
+        llvmModuleTargetTriple = llvm::Triple::normalize(TargetTriple);
     }
     
-    TheTriple = llvm::Triple(LLVMModuleTargetTriple);
+    TheTriple = llvm::Triple(llvmModuleTargetTriple);
     if (TheTriple.getTriple().empty())
     {
         TheTriple.setTriple(llvm::sys::getDefaultTargetTriple());
@@ -253,7 +300,6 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
         llvm::WithColor::error(llvm::errs(), "tsc") << "invalid optimization level.\n";
         return 1;
     }
-
 
     InitializeOptions(TheTriple);
     Target = std::unique_ptr<llvm::TargetMachine>(TheTarget->createTargetMachine(
