@@ -300,14 +300,11 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
 
     PM.add(new llvm::TargetLibraryInfoWrapperPass(TLII));
 
-#ifndef NDEBUG
-    // TODO: disable it in release
     if (!NoVerify && llvm::verifyModule(*llvmModule.get(), &llvm::errs()))
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "input module cannot be verified\n";
         return -1;        
     }
-#endif    
 
     auto fileFormat = emitAction == DumpObj ? llvm::CGFT_ObjectFile : emitAction == DumpAssembly ? llvm::CGFT_AssemblyFile : llvm::CGFT_Null;
 
@@ -343,7 +340,7 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
         const_cast<llvm::TargetLoweringObjectFile *>(LLVMTM.getObjFileLowering())->Initialize(MMIWP->getMMI().getContext(), *Target);
 
         // Before executing passes, print the final values of the LLVM options.
-        llvm::cl::PrintOptionValues();
+        //llvm::cl::PrintOptionValues();
 
         PM.run(*llvmModule.get());
 
