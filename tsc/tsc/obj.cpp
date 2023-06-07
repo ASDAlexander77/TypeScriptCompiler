@@ -256,6 +256,7 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     // Initialize LLVM targets.
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
+    //mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());    
 
     llvm::TargetOptions Options;
     std::unique_ptr<llvm::TargetMachine> Target;
