@@ -1,6 +1,12 @@
 set_Options()
 
 set(LLVM_LINK_COMPONENTS
+    # for Obj/ASM
+    AllTargetsAsmParsers
+    AllTargetsCodeGens
+    AllTargetsDescs
+    AllTargetsInfos
+    # end - Obj/ASM
     Core
     Support
     nativecodegen

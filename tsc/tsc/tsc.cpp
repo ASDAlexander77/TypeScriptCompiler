@@ -14,6 +14,13 @@
 #include "llvm/Support/WithColor.h"
 #include "llvm/CodeGen/CommandFlags.h"
 
+// Obj/ASM
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/TargetParser/Host.h"
+#include "llvm/Pass.h"
+#include "llvm/InitializePasses.h"
+
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
 #define DEBUG_TYPE "tsc"
@@ -93,8 +100,44 @@ int main(int argc, char **argv)
     mlir::registerDefaultTimingManagerCLOptions();
     mlir::DebugCounter::registerCLOptions();
 
+    // Register for Obj/ASM
+    // Initialize targets first, so that --version shows registered targets.
+    llvm::InitializeAllTargets();
+    llvm::InitializeAllTargetMCs();
+    llvm::InitializeAllAsmPrinters();
+    llvm::InitializeAllAsmParsers();
+
+    // Initialize codegen and IR passes used by llc so that the -print-after,
+    // -print-before, and -stop-after options work.
+    llvm::PassRegistry *Registry = llvm::PassRegistry::getPassRegistry();
+    llvm::initializeCore(*Registry);
+    llvm::initializeCodeGen(*Registry);
+    llvm::initializeLoopStrengthReducePass(*Registry);
+    llvm::initializeLowerIntrinsicsPass(*Registry);
+    llvm::initializeUnreachableBlockElimLegacyPassPass(*Registry);
+    llvm::initializeConstantHoistingLegacyPassPass(*Registry);
+    llvm::initializeScalarOpts(*Registry);
+    llvm::initializeVectorization(*Registry);
+    llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(*Registry);
+    llvm::initializeExpandReductionsPass(*Registry);
+    llvm::initializeExpandVectorPredicationPass(*Registry);
+    llvm::initializeHardwareLoopsPass(*Registry);
+    llvm::initializeTransformUtils(*Registry);
+    llvm::initializeReplaceWithVeclibLegacyPass(*Registry);
+    llvm::initializeTLSVariableHoistLegacyPassPass(*Registry);
+
+    // Initialize debugging passes.
+    llvm::initializeScavengerTestPass(*Registry);
+    
+    // End - Register for Obj/ASM
+
     cl::HideUnrelatedOptions({&TypeScriptCompilerCategory, &TypeScriptCompilerDebugCategory, &ObjOrAssemblyCategory});
     HideUnrelatedOptionsButVisibleForHidden(SubCommand::getTopLevel());
+
+    // Register the Target and CPU printer for --version.
+    cl::AddExtraVersionPrinter(llvm::sys::printDefaultTargetAndDetectedCPU);
+    // Register the target printer for --version.
+    cl::AddExtraVersionPrinter(llvm::TargetRegistry::printRegisteredTargetsForVersion);
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript native compiler\n");
 

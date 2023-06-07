@@ -200,8 +200,7 @@ set GCLIBPATH=C:/dev/TypeScriptCompiler/3rdParty/gc/Release
 set LIBPATH="C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.35.32215/lib/x64"
 set SDKPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/um/x64"
 set UCRTPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/ucrt/x64"
-%TSCEXEPATH%\tsc.exe --opt --emit=llvm C:\temp\%FILENAME%.ts -o=%FILENAME%.ll
-%LLVMEXEPATH%\llc.exe -O3 --filetype=obj -o=%FILENAME%.o %FILENAME%.ll
+%TSCEXEPATH%\tsc.exe --opt --emit=obj C:\temp\%FILENAME%.ts -o=%FILENAME%.o
 %LLVMEXEPATH%\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%LLVMLIBPATH% /libpath:%GCLIBPATH% /libpath:%TSCLIBPATH% msvcrt.lib ucrt.lib kernel32.lib user32.lib gcmt-lib.lib TypeScriptAsyncRuntime.lib LLVMSupport.lib
 ```
 Compile 
@@ -221,8 +220,7 @@ set TSCEXEPATH=C:/dev/TypeScriptCompiler/__build/tsc-release/bin
 set LIBPATH="C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.35.32215/lib/x64"
 set SDKPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/um/x64"
 set UCRTPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/ucrt/x64"
-%TSCEXEPATH%\tsc.exe --opt -nogc --emit=llvm C:\temp\%FILENAME%.ts -o=%FILENAME%.ll
-%LLVMEXEPATH%\llc.exe -O3 --filetype=obj -o=%FILENAME%.o %FILENAME%.ll
+%TSCEXEPATH%\tsc.exe --opt -nogc --emit=obj C:\temp\%FILENAME%.ts -o=%FILENAME%.o
 %LLVMEXEPATH%\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH% msvcrt.lib ucrt.lib kernel32.lib user32.lib TypeScriptAsyncRuntime.lib LLVMSupport.lib
 ```
 Compile 
@@ -249,11 +247,9 @@ File ``tsc-compile-gc.sh``
 FILENAME=$1
 TSCEXEPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/bin
 TSCLIBPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/lib
-LLVMEXEPATH=/home/dev/TypeScriptCompiler/3rdParty/llvm-ninja/release/bin
 LLVMLIBPATH=/home/dev/TypeScriptCompiler/3rdParty/llvm-ninja/release/lib
 GCLIBPATH=/home/dev/TypeScriptCompiler/3rdParty/gc/release
-$TSCEXEPATH/tsc --emit=llvm --opt $FILENAME.ts -o=$FILENAME.il
-$LLVMEXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il
+$TSCEXEPATH/tsc --emit=obj --opt -relocation-model=pic $FILENAME.ts -o=$FILENAME.o
 gcc -o $FILENAME -L$LLVMLIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o -lgcmt-lib -lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle -frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo -ldl
 ```
 Compile 
@@ -270,8 +266,7 @@ TSCEXEPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/bin
 TSCLIBPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/lib
 LLVMEXEPATH=/home/dev/TypeScriptCompiler/3rdParty/llvm-ninja/release/bin
 LLVMLIBPATH=/home/dev/TypeScriptCompiler/3rdParty/llvm-ninja/release/lib
-$TSCEXEPATH/tsc --emit=llvm --opt -nogc $FILENAME.ts -o=$FILENAME.il
-$LLVMEXEPATH/llc -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il
+$TSCEXEPATH/tsc --emit=obj --opt -nogc -relocation-model=pic $FILENAME.ts -o=$FILENAME.o
 gcc -o $FILENAME -L$LLVMLIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o -lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle -frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo -ldl
 ```
 Compile 
