@@ -143,90 +143,8 @@ static char mapToLevel(unsigned optLevel)
     return '0';
 }
 
-bool setupTargetTriple(llvm::Module *llvmModule) {
-    // Setup the machine properties from the current architecture.
-    auto targetTriple = llvm::sys::getDefaultTargetTriple();
-    if (!TargetTriple.empty())
-    {
-        // override it from command line
-        targetTriple = llvm::Triple::normalize(TargetTriple);
-    }
-
-    std::string errorMessage;
-    const auto *target =
-        llvm::TargetRegistry::lookupTarget(targetTriple, errorMessage);
-    if (!target) 
-    {
-        llvm::errs() << "NO target: " << errorMessage << "\n";
-        return true;
-    }
-
-    std::string cpu(llvm::sys::getHostCPUName());
-    llvm::SubtargetFeatures features;
-    llvm::StringMap<bool> hostFeatures;
-
-    if (llvm::sys::getHostCPUFeatures(hostFeatures))
-    {
-        for (const auto &[feature, isEnabled] : hostFeatures)
-        {
-           features.AddFeature(feature, isEnabled);
-        }
-    }
-
-    std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-        targetTriple, cpu, features.getString(), {}, {}));
-    if (!machine) 
-    {
-        llvm::errs() << "Unable to create target machine\n";
-        return true;
-    }
-
-    llvmModule->setDataLayout(machine->createDataLayout());
-    llvmModule->setTargetTriple(targetTriple);
-    return false;
-}
-
-int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
+int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMachine> &Target, llvm::TargetOptions &Options)
 {
-    registerMLIRDialects(module);
-
-    // Convert the module to LLVM IR in a new LLVM IR context.
-    llvm::LLVMContext llvmContext;
-    auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
-    if (!llvmModule)
-    {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to emit LLVM IR\n";
-        return -1;
-    }
-
-    // Initialize LLVM targets.
-    llvm::InitializeNativeTarget();
-    llvm::InitializeNativeTargetAsmPrinter();
-    //mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());
-    if (setupTargetTriple(llvmModule.get()))
-    {
-        return -1;
-    }
-
-    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
-    if (auto err = optPipeline(llvmModule.get()))
-    {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to optimize LLVM IR " << err << "\n";
-        return -1;
-    }
-
-    //
-    // generate Obj
-    //
-    llvm::LLVMContext Context;
-    Context.setDiscardValueNames(DiscardValueNames);
-
-    // Set a diagnostic handler that doesn't exit on the first error
-    bool HasError = false;
-    Context.setDiagnosticHandler(std::make_unique<LLCDiagnosticHandler>(&HasError));
-
-    // set options
-    llvm::TargetOptions Options;
     auto InitializeOptions = [&](const llvm::Triple &TheTriple) {
         Options = llvm::codegen::InitTargetOptionsFromCodeGenFlags(TheTriple);
         Options.BinutilsVersion = llvm::TargetMachine::parseBinutilsVersion(BinutilsVersion);
@@ -255,10 +173,9 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
 
     llvm::Triple TheTriple;
     const llvm::Target *TheTarget = nullptr;
-    std::unique_ptr<llvm::TargetMachine> Target;
     
     // If we are supposed to override the target triple, do so now.
-    std::string llvmModuleTargetTriple = llvmModule.get()->getTargetTriple();
+    std::string llvmModuleTargetTriple = llvmModule->getTargetTriple();
     if (!TargetTriple.empty())
     {
         llvmModuleTargetTriple = llvm::Triple::normalize(TargetTriple);
@@ -306,11 +223,64 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
           TheTriple.getTriple(), CPUStr, FeaturesStr, Options, RM, CM, OLvl));
     assert(Target && "Could not allocate target machine!");
 
-    assert(llvmModule.get() && "Should have exited if we didn't have a module!");
+    assert(llvmModule && "Should have exited if we didn't have a module!");
+    // TODO: seems it should be used in Target
     if (llvm::codegen::getFloatABIForCalls() != llvm::FloatABI::Default)
     {
         Options.FloatABIType = llvm::codegen::getFloatABIForCalls();
     }
+
+    // setting values to module
+    llvmModule->setDataLayout(Target->createDataLayout());
+    llvmModule->setTargetTriple(TheTriple.getTriple());
+
+    // Override function attributes based on CPUStr, FeaturesStr, and command line flags.
+    llvm::codegen::setFunctionAttributes(CPUStr, FeaturesStr, *llvmModule);
+
+    return 0;
+}
+
+int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
+{
+    registerMLIRDialects(module);
+
+    // Convert the module to LLVM IR in a new LLVM IR context.
+    llvm::LLVMContext llvmContext;
+    auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
+    if (!llvmModule)
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to emit LLVM IR\n";
+        return -1;
+    }
+
+    // Initialize LLVM targets.
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+
+    llvm::TargetOptions Options;
+    std::unique_ptr<llvm::TargetMachine> Target;
+    auto retCode = setupTargetTriple(llvmModule.get(), Target, Options);
+    if (retCode != 0)
+    {
+        return retCode;
+    }
+
+    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
+    if (auto err = optPipeline(llvmModule.get()))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to optimize LLVM IR " << err << "\n";
+        return -1;
+    }
+
+    //
+    // generate Obj
+    //
+    llvm::LLVMContext Context;
+    Context.setDiscardValueNames(DiscardValueNames);
+
+    // Set a diagnostic handler that doesn't exit on the first error
+    bool HasError = false;
+    Context.setDiagnosticHandler(std::make_unique<LLCDiagnosticHandler>(&HasError));
 
     auto FDOut = getOutputStream();
     if (!FDOut)
@@ -337,9 +307,6 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
         return -1;        
     }
 #endif    
-
-    // Override function attributes based on CPUStr, FeaturesStr, and command line flags.
-    llvm::codegen::setFunctionAttributes(CPUStr, FeaturesStr, *llvmModule.get());
 
     auto fileFormat = emitAction == DumpObj ? llvm::CGFT_ObjectFile : emitAction == DumpAssembly ? llvm::CGFT_AssemblyFile : llvm::CGFT_Null;
 
