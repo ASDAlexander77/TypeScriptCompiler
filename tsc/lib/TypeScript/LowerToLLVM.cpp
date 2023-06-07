@@ -2687,9 +2687,9 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
         if (createAsGlobalConstructor)
         {
-            // TODO: create function and call GlobalConstructor
+            // we can't have constant here as we need to initialize it in global construct
             lch.createUndefGlobalVarIfNew(globalOp.getSymName(), getTypeConverter()->convertType(globalOp.getType()),
-                                          globalOp.getValueAttr(), globalOp.getConstant(), linkage);
+                                          globalOp.getValueAttr(), false /*globalOp.getConstant()*/, linkage);
 
             auto name = globalOp.getSymName().str();
             name.append("__cctor");
