@@ -93,7 +93,6 @@ int main(int argc, char **argv)
     cl::SetVersionPrinter(TscPrintVersion);
 
     // Register any command line options.
-    // TODO: do I need to following options?
     mlir::registerAsmPrinterCLOptions();
     mlir::registerMLIRContextCLOptions();
     mlir::registerPassManagerCLOptions();

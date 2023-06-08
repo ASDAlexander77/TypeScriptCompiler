@@ -292,8 +292,7 @@ echo "check if your LLC support WebAssembly by running command: llc.exe --versio
 rem set %LLVM% and %TSCBIN%
 set LLVMPATH=%LLVM%\llvm\release\bin
 set TSCPATH=%TSCBIN%\tsc\bin
-%TSCPATH%\tsc.exe --emit=llvm -nogc %FILENAME%.ts -o=%FILENAME%.ll
-%LLVMPATH%\llc.exe -mtriple=wasm32-unknown-unknown -O3 --filetype=obj -o=%FILENAME%.o %FILENAME%.ll
+%TSCPATH%\tsc.exe -nogc --emit=obj --opt --mtriple=wasm32-unknown-unknown %FILENAME%.ts -o=%FILENAME%.ll
 %LLVMPATH%\wasm-ld.exe %FILENAME%.o -o %FILENAME%.wasm --no-entry --export-all --allow-undefined
 ```
 Compile 
