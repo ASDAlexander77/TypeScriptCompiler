@@ -54,11 +54,11 @@ jobs:
 
     - name: Delete __Build TS folders
       continue-on-error: true
-      run: rm -R ./__build/tsc-ninja-release
+      run: rm -R ./__build/tsc/ninja/release
       shell: sh
 
     - name: Create __Build Folders
-      run: mkdir -p ./__build/tsc-ninja-release; mkdir -p ./__build/gc-ninja-release
+      run: mkdir -p ./__build/tsc/ninja/release; mkdir -p ./__build/gc/ninja/release
       shell: sh
 
     - name: Download 3rd party - LLVM
@@ -71,8 +71,8 @@ jobs:
       continue-on-error: false
       shell: sh
       if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.tgz') != ''
-      run: file llvm_${{ env.LLVM_VERSION }}_release.tgz; mkdir -p ./3rdParty/llvm-ninja; tar -xf llvm_${{ env.LLVM_VERSION }}_release.tgz -C ./3rdParty/llvm-ninja/
-      #run: file llvm_${{ env.LLVM_VERSION }}_release.tgz; unzip llvm_${{ env.LLVM_VERSION }}_release.tgz -d ./3rdParty/llvm-ninja/
+      run: file llvm_${{ env.LLVM_VERSION }}_release.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release.tgz -C ./3rdParty/llvm/
+      #run: file llvm_${{ env.LLVM_VERSION }}_release.tgz; unzip llvm_${{ env.LLVM_VERSION }}_release.tgz -d ./3rdParty/llvm/
 
     - name: Download 3rd party source - GC
       continue-on-error: true
@@ -120,37 +120,37 @@ jobs:
 
     - name: Configure GC
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/gc-ninja-release
+      working-directory: ${{github.workspace}}/__build/gc/ninja/release
       shell: sh
       run: cmake ../../3rdParty/gc-8.0.4 -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../3rdParty/gc/release -Denable_threads=ON -Denable_cplusplus=OFF
 
     - name: Build GC
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/gc-ninja-release
+      working-directory: ${{github.workspace}}/__build/gc/ninja/release
       shell: sh
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
 
     - name: Copy GC
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/gc-ninja-release
+      working-directory: ${{github.workspace}}/__build/gc/ninja/release
       shell: sh
       run: mkdir -p ../../3rdParty/gc/release/; cp ./lib* ../../3rdParty/gc/release/
 
     - name: Configure
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/tsc-ninja-release
+      working-directory: ${{github.workspace}}/__build/tsc/ninja/release
       shell: sh
       run: cmake ../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
 
     - name: Build
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/tsc-ninja-release
+      working-directory: ${{github.workspace}}/__build/tsc/ninja/release
       shell: sh
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 4
 
     - name: Test
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/tsc-ninja-release
+      working-directory: ${{github.workspace}}/__build/tsc/ninja/release
       shell: sh
       # Execute tests defined by the CMake configuration.  
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail

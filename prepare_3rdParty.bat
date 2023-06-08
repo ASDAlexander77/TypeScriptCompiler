@@ -6,7 +6,7 @@ if not "%1"=="" (
 
 set p=%cd%
 
-IF EXIST ".\3rdParty\llvm\%BUILD%\bin" (
+IF EXIST ".\3rdParty\llvm\msbuild\x64\%BUILD%\bin" (
   echo "No need to build LLVM (%BUILD%)"
 ) ELSE (
   cd %p%
@@ -21,7 +21,7 @@ IF EXIST ".\3rdParty\llvm\%BUILD%\bin" (
   @call scripts\build_llvm_%BUILD%.bat
 )
 
-IF EXIST ".\3rdParty\gc\%BUILD%\gc-lib.lib" (
+IF EXIST ".\3rdParty\gc\msbuild\x64\%BUILD%\gc-lib.lib" (
   echo "No need to build GC (%BUILD%)"
 ) ELSE (
   cd %p%
@@ -40,6 +40,6 @@ IF EXIST ".\3rdParty\gc\%BUILD%\gc-lib.lib" (
   cd %p%
   @call scripts\build_gc_%BUILD%.bat
   cd %p%
-  if "%BUILD%"=="debug" ( xcopy  /E /H /C /I /Y .\__build\gc\%BUILD%\ .\3rdParty\gc\debug\ )
-  if "%BUILD%"=="release" ( xcopy  /E /H /C /I /Y .\__build\gc-release\%BUILD%\ .\3rdParty\gc\release\ )
+  if "%BUILD%"=="debug" ( xcopy  /E /H /C /I /Y .\__build\gc\msbuild\x64\%BUILD%\ .\3rdParty\gc\x64\debug\ )
+  if "%BUILD%"=="release" ( xcopy  /E /H /C /I /Y .\__build\gc\msbuild\x64\%BUILD%\ .\3rdParty\gc\x64\release\ )
 )

@@ -54,11 +54,11 @@ jobs:
 
     - name: Delete __Build TS folders
       continue-on-error: true
-      run: if (Test-Path -Path ".\__build\tsc-release") { Remove-Item -Recurse -Force ".\__build\tsc-release" }
+      run: if (Test-Path -Path ".\__build\tsc\msbuild\x64\release") { Remove-Item -Recurse -Force ".\__build\tsc\msbuild\x64\release" }
       shell: pwsh
 
     - name: Create __Build Folders
-      run: if (!(Test-Path -Path ".\__build\tsc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }; if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\gc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc-release" };
+      run: if (!(Test-Path -Path ".\__build\tsc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\llvm\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
       shell: pwsh
 
     - name: Download 3rd party - LLVM
