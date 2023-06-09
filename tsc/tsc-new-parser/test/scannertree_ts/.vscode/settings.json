@@ -1,5 +1,3 @@
 {
-    "cmake.configureOnOpen": false,
-    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
-    "cmake.sourceDirectory": "c:\\dev\\TypeScriptCompiler\\tsc"
+    "cmake.configureOnOpen": false
 }
