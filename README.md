@@ -360,13 +360,15 @@ build_tsc_debug.bat
 First, precompile dependencies
 
 ```
-sh -f prepare_3rdParty.sh
+chmod +x *.sh
+./prepare_3rdParty.sh
 ```
 
 To build ``TSC`` binaries:
 
 ```
 cd tsc
-sh -f config_tsc_debug.sh
-sh -f build_tsc_debug.sh
+chmod +x *.sh
+./config_tsc_debug.sh
+./build_tsc_debug.sh
 ```
