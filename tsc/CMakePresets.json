@@ -13,7 +13,8 @@
             "generator": "Visual Studio 17 2022",
             "binaryDir": "${sourceDir}/../__build/tsc/${presetName}",
             "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../__build/install/${presetName}"
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../__build/install/${presetName}",
+                "TSC_PACKAGE_VERSION": "$env{TSC_PACKAGE_VERSION}"
             }
         },
         {
@@ -27,6 +28,13 @@
                 "type": "equals",
                 "lhs": "${hostSystemName}",
                 "rhs": "Windows"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": [
+                        "Windows"
+                    ]
+                }
             }
         },
         {
@@ -48,6 +56,18 @@
             "name": "windows-msbuild-release",
             "displayName": "Visual Studio Professional 2022 - x86_amd64 - Release",
             "configurePreset": "windows-msbuild",
+            "configuration": "Release"
+        },
+        {
+            "name": "ninja-debug",
+            "displayName": "Ninja - Debug",
+            "configurePreset": "ninja",
+            "configuration": "Debug"
+        },
+        {
+            "name": "ninja-release",
+            "displayName": "Ninja - Release",
+            "configurePreset": "ninja",
             "configuration": "Release"
         }
     ],
