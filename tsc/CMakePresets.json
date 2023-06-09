@@ -1,5 +1,5 @@
 {
-    "version": 4,
+    "version": 6,
     "cmakeMinimumRequired": {
         "major": 3,
         "minor": 17,
@@ -12,7 +12,11 @@
             "description": "Default build using using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
             "generator": "Visual Studio 17 2022",
             "binaryDir": "${sourceDir}/../__build/tsc/${presetName}",
+            "toolset": "host=x86",
+            "architecture": "x64",
             "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/../__build/install/${presetName}",
                 "TSC_PACKAGE_VERSION": "$env{TSC_PACKAGE_VERSION}"
             }
@@ -22,8 +26,6 @@
             "inherits": "default",
             "displayName": "Visual Studio Professional 2022 - x86_amd64",
             "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
-            "toolset": "host=x86",
-            "architecture": "x64",
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
@@ -42,7 +44,13 @@
             "inherits": "default",
             "generator": "Ninja",
             "displayName": "Ninja",
-            "description": "Ninja"
+            "description": "Ninja",
+            "toolset": "",
+            "architecture": "",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "gcc",
+                "CMAKE_CXX_COMPILER": "gcc"
+            }
         }
     ],
     "buildPresets": [
@@ -69,6 +77,12 @@
             "displayName": "Ninja - Release",
             "configurePreset": "ninja",
             "configuration": "Release"
+        },
+        {
+            "name": "build1-debug",
+            "displayName": "Visual Studio Professional 2022 4 - x86_amd64 - Debug",
+            "configurePreset": "build1",
+            "configuration": "Debug"
         }
     ],
     "testPresets": [
