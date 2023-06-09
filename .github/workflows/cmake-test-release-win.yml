@@ -122,12 +122,12 @@ jobs:
     - name: Copy GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
-      run:  xcopy /E /H /C /I /Y .\${{ env.BUILD_TYPE }}\ ..\..\..\..\..\3rdParty\gc\release\
+      run:  xcopy /E /H /C /I /Y .\${{ env.BUILD_TYPE }}\ ..\..\..\..\..\3rdParty\gc\x64\release\
       shell: pwsh
 
     - name: List GC files
       continue-on-error: false
-      working-directory: ${{github.workspace}}/3rdParty/gc/release
+      working-directory: ${{github.workspace}}/3rdParty/gc/x64/release
       run:  dir
       shell: pwsh
 
