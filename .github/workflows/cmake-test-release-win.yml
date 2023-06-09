@@ -70,7 +70,7 @@ jobs:
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
       if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.zip') != ''
-      run: Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\" -Force
+      run: Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force
       shell: pwsh
 
     - name: Download 3rd party source - GC
@@ -109,36 +109,36 @@ jobs:
 
     - name: Configure GC
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/gc-release
+      working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
       run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 17 2022" -A x64 -Wno-dev -Denable_threads=ON -Denable_cplusplus=OFF
       shell: pwsh
 
     - name: Build GC
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/gc-release
+      working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
       shell: pwsh
 
     - name: Copy GC
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/gc-release
+      working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
       run:  xcopy /Y .\${{ env.BUILD_TYPE }}\*.* ..\..\3rdParty\gc\release\
       shell: pwsh
 
     - name: Configure
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/tsc-release
+      working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
       run: cmake ../../tsc -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
       shell: pwsh
 
     - name: Build
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/tsc-release
+      working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
       shell: pwsh
 
     - name: Test
-      working-directory: ${{github.workspace}}/__build/tsc-release
+      working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
       # Execute tests defined by the CMake configuration.  
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
