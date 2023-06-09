@@ -9,23 +9,25 @@
         {
             "name": "default",
             "displayName": "Default Config",
-            "description": "Default build using using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
-            "generator": "Visual Studio 17 2022",
+            "description": "Default build",
             "binaryDir": "${sourceDir}/../__build/tsc/${presetName}",
-            "toolset": "host=x86",
-            "architecture": "x64",
             "cacheVariables": {
-                "CMAKE_C_COMPILER": "cl.exe",
-                "CMAKE_CXX_COMPILER": "cl.exe",
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/../__build/install/${presetName}",
-                "TSC_PACKAGE_VERSION": "$env{TSC_PACKAGE_VERSION}"
+                "TSC_PACKAGE_VERSION": "$env{TSC_PACKAGE_VERSION}"          
             }
         },
         {
             "name": "windows-msbuild",
             "inherits": "default",
+            "generator": "Visual Studio 17 2022",
             "displayName": "Visual Studio Professional 2022 - x86_amd64",
             "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
+            "toolset": "host=x86",
+            "architecture": "x64",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe"
+            },
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
@@ -43,14 +45,11 @@
             "name": "linux-ninja",
             "inherits": "default",
             "generator": "Ninja",
-            "toolset": "",
-            "architecture": "",
             "displayName": "GCC 11.3.0 x86_64-linux-gnu",
             "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",
             "cacheVariables": {
                 "CMAKE_C_COMPILER": "/usr/bin/gcc",
-                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
-                "CMAKE_BUILD_TYPE": "$env{ENV_CMAKE_BUILD_TYPE}"
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++"
             },
             "condition": {
                 "type": "equals",
@@ -76,15 +75,13 @@
             "name": "linux-ninja-debug",
             "displayName": "GCC 11.3.0 x86_64-linux-gnu - Debug",
             "configurePreset": "linux-ninja",
-            "configuration": "Debug",
-            "environment": { "ENV_CMAKE_BUILD_TYPE": "Debug" }
+            "configuration": "Debug"
         },
         {
             "name": "linux-ninja-release",
             "displayName": "GCC 11.3.0 x86_64-linux-gnu - Release",
             "configurePreset": "linux-ninja",
-            "configuration": "Release",
-            "environment": { "ENV_CMAKE_BUILD_TYPE": "Release" }
+            "configuration": "Release"
         }
     ],
     "testPresets": [
