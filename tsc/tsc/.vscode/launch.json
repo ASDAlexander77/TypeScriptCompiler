@@ -8,7 +8,7 @@
             "name": "(Windows) tsc.exe - DUMP",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=ast",
                 "C:/temp/1.ts"
@@ -23,7 +23,7 @@
             "name": "(Windows) tsc.exe - MLIR",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir",
@@ -40,7 +40,7 @@
             "name": "(Linux) ./tsc - MLIR",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir",
@@ -57,7 +57,7 @@
             "name": "(Windows) tsc.exe - MLIR-AFFINE",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=mlir-affine",
                 "-debug-only=mlir,affine",
@@ -74,7 +74,7 @@
             "name": "(Linux) ./tsc - MLIR-AFFINE",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
             "args": [
                 "-emit=mlir-affine",
                 "-debug-only=affine",
@@ -92,7 +92,7 @@
             "name": "(Windows) tsc.exe - MLIR-LLVM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=mlir-llvm",
                 "-debug-only=llvm",
@@ -109,7 +109,7 @@
             "name": "(Linux) ./tsc - MLIR-LLVM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
             "args": [
                 "-emit=mlir-llvm",
                 "/mnt/c/temp/1.ts"
@@ -124,7 +124,7 @@
             "name": "(Windows) tsc.exe - LLVM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=llvm",
                 "-mlir-disable-threading",
@@ -143,7 +143,7 @@
             "name": "(Windows) tsc.exe - BC",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=bc",
                 "-opt",
@@ -160,7 +160,7 @@
             "name": "(Windows) tsc.exe - OBJ",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=obj",
                 "-opt",
@@ -177,7 +177,7 @@
             "name": "(Windows) tsc.exe - ASM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=asm",
                 "-opt",
@@ -196,7 +196,7 @@
             "name": "(Linux) ./tsc - LLVM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
             "args": [
                 "-emit=llvm",
                 "/mnt/c/temp/1.ts"
@@ -211,13 +211,13 @@
             "name": "(Windows) tsc.exe - JIT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=jit",
                 "C:/temp/1.ts",
                 "-debug-only=llvm",
                 "-mlir-disable-threading",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/bin/TypeScriptRuntime.dll"
+                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -229,7 +229,7 @@
             "name": "(Windows) tsc.exe - JIT-OBJ",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
             "args": [
                 "-emit=jit",
                 "-nogc",
