@@ -122,7 +122,7 @@ jobs:
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/ninja/release
       shell: sh
-      run: cmake ../../3rdParty/gc-8.0.4 -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../3rdParty/gc/release -Denable_threads=ON -Denable_cplusplus=OFF
+      run: cmake ../../../../3rdParty/gc-8.0.4 -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../../../3rdParty/gc/release -Denable_threads=ON -Denable_cplusplus=OFF
 
     - name: Build GC
       continue-on-error: false
@@ -134,13 +134,13 @@ jobs:
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/ninja/release
       shell: sh
-      run: mkdir -p ../../3rdParty/gc/release/; cp ./lib* ../../3rdParty/gc/release/
+      run: mkdir -p ../../../../3rdParty/gc/release/; cp ./lib* ../../../../3rdParty/gc/release/
 
     - name: Configure
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/tsc/ninja/release
       shell: sh
-      run: cmake ../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
+      run: cmake ../../../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
 
     - name: Build
       continue-on-error: false

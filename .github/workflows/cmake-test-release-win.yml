@@ -110,7 +110,7 @@ jobs:
     - name: Configure GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
-      run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 17 2022" -A x64 -Wno-dev -Denable_threads=ON -Denable_cplusplus=OFF
+      run: cmake ../../../../../3rdParty/gc-8.0.4 -G "Visual Studio 17 2022" -A x64 -Wno-dev -Denable_threads=ON -Denable_cplusplus=OFF
       shell: pwsh
 
     - name: Build GC
@@ -122,13 +122,13 @@ jobs:
     - name: Copy GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
-      run:  xcopy /Y .\${{ env.BUILD_TYPE }}\*.* ..\..\3rdParty\gc\release\
+      run:  xcopy /Y .\${{ env.BUILD_TYPE }}\*.* ..\..\..\..\..\3rdParty\gc\release\
       shell: pwsh
 
     - name: Configure
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
-      run: cmake ../../tsc -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
+      run: cmake ../../../../../tsc -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
       shell: pwsh
 
     - name: Build
