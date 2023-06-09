@@ -40,7 +40,7 @@
                 "isDefault": false
             },
             "options": {
-                "cwd": "${workspaceFolder}/../../__build/tsc"
+                "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild"
             }
         },
         {
@@ -54,7 +54,7 @@
                 "isDefault": true
             },
             "options": {
-                "cwd": "${workspaceFolder}/../../__build/tsc"
+                "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild"
             }
         }
     ]

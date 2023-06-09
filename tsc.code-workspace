@@ -149,11 +149,10 @@
             "ranges": "cpp",
             "span": "cpp"
         },
-        "cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
         "cmake.sourceDirectory": "${workspaceFolder}/..",
         "cmake.parallelJobs": 16,
         "cmake.ctestArgs": ["--parallel", "16"],
-	"cmake.useCMakePresets": "always",
+        "cmake.useCMakePresets": "always",
         "C_Cpp.codeAnalysis.clangTidy.headerFilter": ".*",
         "editor.defaultFormatter": "xaver.clang-format",
         "[cpp]": {
