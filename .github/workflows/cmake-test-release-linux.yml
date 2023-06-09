@@ -136,6 +136,12 @@ jobs:
       shell: sh
       run: mkdir -p ../../../../3rdParty/gc/release/; cp ./lib* ../../../../3rdParty/gc/release/
 
+    - name: List GC files
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/3rdParty/gc/release/
+      shell: sh
+      run: ls -l
+
     - name: Configure
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/tsc/ninja/release
