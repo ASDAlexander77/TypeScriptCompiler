@@ -40,16 +40,22 @@
             }
         },
         {
-            "name": "ninja",
+            "name": "linux-ninja",
             "inherits": "default",
             "generator": "Ninja",
-            "displayName": "Ninja",
-            "description": "Ninja",
             "toolset": "",
             "architecture": "",
+            "displayName": "GCC 11.3.0 x86_64-linux-gnu",
+            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",
             "cacheVariables": {
-                "CMAKE_C_COMPILER": "gcc",
-                "CMAKE_CXX_COMPILER": "gcc"
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
+                "CMAKE_BUILD_TYPE": "$env{ENV_CMAKE_BUILD_TYPE}"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
             }
         }
     ],
@@ -67,22 +73,18 @@
             "configuration": "Release"
         },
         {
-            "name": "ninja-debug",
-            "displayName": "Ninja - Debug",
-            "configurePreset": "ninja",
-            "configuration": "Debug"
+            "name": "linux-ninja-debug",
+            "displayName": "GCC 11.3.0 x86_64-linux-gnu - Debug",
+            "configurePreset": "linux-ninja",
+            "configuration": "Debug",
+            "environment": { "ENV_CMAKE_BUILD_TYPE": "Debug" }
         },
         {
-            "name": "ninja-release",
-            "displayName": "Ninja - Release",
-            "configurePreset": "ninja",
-            "configuration": "Release"
-        },
-        {
-            "name": "build1-debug",
-            "displayName": "Visual Studio Professional 2022 4 - x86_amd64 - Debug",
-            "configurePreset": "build1",
-            "configuration": "Debug"
+            "name": "linux-ninja-release",
+            "displayName": "GCC 11.3.0 x86_64-linux-gnu - Release",
+            "configurePreset": "linux-ninja",
+            "configuration": "Release",
+            "environment": { "ENV_CMAKE_BUILD_TYPE": "Release" }
         }
     ],
     "testPresets": [
