@@ -125,6 +125,12 @@ jobs:
       run:  xcopy /E /H /C /I /Y .\${{ env.BUILD_TYPE }}\ ..\..\..\..\..\3rdParty\gc\release\
       shell: pwsh
 
+    - name: List GC files
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/3rdParty/gc/release
+      run:  dir
+      shell: pwsh
+
     - name: Configure
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
