@@ -8,16 +8,18 @@
     "configurePresets": [
         {
             "name": "default",
+            "hidden": true,
             "displayName": "Default Config",
             "description": "Default build",
             "binaryDir": "${sourceDir}/../__build/tsc/${presetName}",
             "cacheVariables": {
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/../__build/install/${presetName}",
-                "TSC_PACKAGE_VERSION": "$env{TSC_PACKAGE_VERSION}"          
+                "TSC_PACKAGE_VERSION": "$env{TSC_PACKAGE_VERSION}"
             }
         },
         {
             "name": "windows-msbuild",
+            "hidden": true,
             "inherits": "default",
             "generator": "Visual Studio 17 2022",
             "displayName": "Visual Studio Professional 2022 - x86_amd64",
@@ -42,6 +44,24 @@
             }
         },
         {
+            "name": "windows-msbuild-debug",
+            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Debug",
+            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
+            "inherits": "windows-msbuild",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "windows-msbuild-release",
+            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Release",
+            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
+            "inherits": "windows-msbuild",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
             "name": "linux-ninja",
             "inherits": "default",
             "generator": "Ninja",
@@ -60,15 +80,15 @@
     ],
     "buildPresets": [
         {
-            "name": "windows-msbuild-debug",
+            "name": "build-windows-msbuild-debug",
             "displayName": "Visual Studio Professional 2022 - x86_amd64 - Debug",
-            "configurePreset": "windows-msbuild",
+            "configurePreset": "windows-msbuild-debug",
             "configuration": "Debug"
         },
         {
-            "name": "windows-msbuild-release",
+            "name": "build-windows-msbuild-release",
             "displayName": "Visual Studio Professional 2022 - x86_amd64 - Release",
-            "configurePreset": "windows-msbuild",
+            "configurePreset": "windows-msbuild-release",
             "configuration": "Release"
         },
         {
