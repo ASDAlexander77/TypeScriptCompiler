@@ -68,7 +68,7 @@ jobs:
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
         if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.zip') != ''
-        run: Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\" -Force
+        run: Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force
         shell: pwsh
 
       - name: Download 3rd party source - GC
