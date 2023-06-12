@@ -15509,7 +15509,11 @@ genContext);
             auto type = index < argsCount
                             ? getType(typeArgs[index], genContext)
                             : (isDefault = true,
-                               typeParam->hasDefault() ? getType(typeParam->getDefault(), genContext) : mlir::Type());
+                               typeParam->hasDefault() 
+                                    ? getType(typeParam->getDefault(), genContext) 
+                                    : typeParam->hasConstraint() 
+                                        ? getType(typeParam->getConstraint(), genContext) 
+                                        : mlir::Type());
             if (!type)
             {
                 return {mlir::success(), anyNamedGenericType};
@@ -15517,6 +15521,17 @@ genContext);
 
             if (isDefault)
             {
+                auto name = typeParam->getName();
+                auto existType = pairs.lookup(name);
+                if (existType.second)
+                {
+                    // type is resolved
+                    continue;
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! adding default type: " << typeParam->getName() << " type: " << type
+                                    << "\n";);
+
                 auto [result, hasNamedGenericType] =
                     zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault, genContext);
                 if (mlir::failed(result))
