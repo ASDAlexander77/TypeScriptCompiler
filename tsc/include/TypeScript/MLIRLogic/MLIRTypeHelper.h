@@ -1958,6 +1958,14 @@ class MLIRTypeHelper
             return false;
         }
 
+        if (auto objType = extendType.dyn_cast<mlir_ts::ObjectType>())
+        {
+            if (objType.getStorageType().isa<mlir_ts::AnyType>())
+            {
+                return srcType.isa<mlir_ts::TupleType>() || srcType.isa<mlir_ts::ConstTupleType>() || srcType.isa<mlir_ts::ObjectType>();
+            }
+        }        
+
         // TODO: finish Function Types, etc
         LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [FLASE]\n";);
         return false;
