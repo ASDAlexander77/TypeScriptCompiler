@@ -1100,6 +1100,12 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! inferring \n\ttemplate type: " << templateType << ", \n\ttype: " << concreteType
                                 << "\n";);
 
+        if (!currentTemplateType || !currentType)
+        {
+            // nothing todo here
+            return;
+        }                                
+
         if (currentTemplateType == currentType)
         {
             // nothing todo here
@@ -16050,6 +16056,11 @@ genContext);
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! Pick: " << type << ", keys: " << keys << "\n";);
 
+        if (!keys)
+        {
+            return mlir::Type();
+        }
+
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
             SmallVector<mlir::Type> pickedTypes;
@@ -16231,6 +16242,10 @@ genContext);
     {
         auto checkType = getType(conditionalTypeNode->checkType, genContext);
         auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
+        if (!checkType || !extendsType)
+        {
+            return mlir::Type();
+        }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! condition type check: " << checkType << ", extends: " << extendsType << "\n";);
 
@@ -16475,7 +16490,13 @@ genContext);
 
         if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
         {
-            if (indexType.isa<mlir_ts::NumberType>())
+            auto effectiveIndexType = indexType;
+            if (auto intIndexType = effectiveIndexType.dyn_cast<mlir_ts::LiteralType>())
+            {
+                effectiveIndexType = intIndexType.getElementType();
+            }
+
+            if (effectiveIndexType.isa<mlir_ts::NumberType>() || effectiveIndexType.isIntOrIndexOrFloat())
             {
                 return arrayType.getElementType();
             }
@@ -16483,7 +16504,13 @@ genContext);
 
         if (auto arrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
         {
-            if (indexType.isa<mlir_ts::NumberType>())
+            auto effectiveIndexType = indexType;
+            if (auto intIndexType = effectiveIndexType.dyn_cast<mlir_ts::LiteralType>())
+            {
+                effectiveIndexType = intIndexType.getElementType();
+            }
+
+            if (effectiveIndexType.isa<mlir_ts::NumberType>() || effectiveIndexType.isIntOrIndexOrFloat())
             {
                 return arrayType.getElementType();
             }
@@ -16670,6 +16697,11 @@ genContext);
         {
             auto type = getType(mappedTypeNode->type, genContext);
             auto nameType = getType(mappedTypeNode->nameType, genContext);
+            if (!type || hasNameType && !nameType)
+            {
+                return mlir::Type();
+            }
+
             return getMappedType(type, nameType, constrainType);
         }
 

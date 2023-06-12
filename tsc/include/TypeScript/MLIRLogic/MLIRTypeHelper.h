@@ -1634,6 +1634,10 @@ class MLIRTypeHelper
         {
             auto srcParamType = (index < srcParams.size() - skipSrcParams) ? srcParams[index + skipSrcParams] : mlir::Type();
             auto extParamType = (index < extParams.size()) ? extParams[index] : extIsVarArgs ? extParams[extParams.size() - 1] : mlir::Type();
+            if (!extParamType)
+            {
+                return false;
+            }
 
             auto isIndexAtExtVarArgs = extIsVarArgs && index >= extParams.size() - 1;
 
@@ -1643,7 +1647,7 @@ class MLIRTypeHelper
                 useTupleWhenMergeTypes = true;
                 if (isIndexAtExtVarArgs && !srcParamType)
                 {
-                        // default empty tuple
+                    // default empty tuple
                     SmallVector<mlir_ts::FieldInfo> fieldInfos;
                     srcParamType = getTupleType(fieldInfos);    
                 }
