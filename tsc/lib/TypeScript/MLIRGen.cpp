@@ -16002,7 +16002,9 @@ genContext);
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
         {
-            if (excludeTypes.count(item))
+            // TODO: should I use TypeParamsWithArgs from genContext?
+            llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> emptyTypeParamsWithArgs;
+            if (llvm::any_of(excludeTypes, [&](mlir::Type type) { return mth.extendsType(item, type, emptyTypeParamsWithArgs); }))
             {
                 continue;
             }
@@ -16024,7 +16026,9 @@ genContext);
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
         {
-            if (extractTypes.count(item))
+            // TODO: should I use TypeParamsWithArgs from genContext?
+            llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> emptyTypeParamsWithArgs;
+            if (llvm::any_of(extractTypes, [&](mlir::Type type) { return mth.extendsType(item, type, emptyTypeParamsWithArgs); }))
             {
                 resTypes.push_back(item);
             }

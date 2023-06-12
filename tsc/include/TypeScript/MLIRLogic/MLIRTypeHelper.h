@@ -1607,6 +1607,14 @@ class MLIRTypeHelper
             return mlir_ts::UnionType::get(context, types);
         }        
 
+        if (auto namedGenericType = srcType.dyn_cast<mlir_ts::NamedGenericType>())
+        {
+            auto typedAttr = fieldName.dyn_cast<mlir::TypedAttr>();
+            // TODO: make common function
+            auto fieldNameLiteralType = mlir_ts::LiteralType::get(fieldName, typedAttr && !isNoneType(typedAttr.getType()) ? typedAttr.getType() : mlir_ts::StringType::get(context));
+            return mlir_ts::IndexAccessType::get(srcType, fieldNameLiteralType);
+        }
+
         llvm_unreachable("not implemented");
     }
 
