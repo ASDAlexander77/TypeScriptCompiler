@@ -917,12 +917,39 @@ class CastLogicHelper
 
     mlir::Value castToAny(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! cast to any: " << in << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! cast to any: " << inType << " value: " << in << "\n";);
 
         TypeOfOpHelper toh(rewriter);
-        auto typeOfValue = toh.typeOfLogic(loc, inType);
+        mlir::Value typeOfValue;
+        auto valueForBoxing = in;
+
+        if (auto unionType = inType.dyn_cast<mlir_ts::UnionType>())
+        {
+            MLIRTypeHelper mth(unionType.getContext());
+            mlir::Type baseType;
+            bool needTag = mth.isUnionTypeNeedsTag(unionType, baseType);
+            if (needTag)
+            {
+                typeOfValue = toh.typeOfLogic(loc, valueForBoxing, unionType);
+
+                LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)&tch.typeConverter);
+                // so we need to get biggest value from Union
+                auto maxUnionType = llvmtch.findMaxSizeType(unionType);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! max size union type: " << maxUnionType << "\n";);
+                valueForBoxing = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxUnionType, in);
+            }
+            else
+            {
+                typeOfValue = toh.typeOfLogic(loc, inType);    
+            }
+        }
+        else
+        {
+            typeOfValue = toh.typeOfLogic(loc, inType);
+        }
+
         auto boxedValue = rewriter.create<mlir_ts::BoxOp>(loc, mlir_ts::AnyType::get(rewriter.getContext()),
-                                                            in, typeOfValue);
+                                                            valueForBoxing, typeOfValue);
         return boxedValue;
     }
 

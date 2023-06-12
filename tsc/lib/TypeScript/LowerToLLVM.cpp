@@ -1363,7 +1363,8 @@ struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
         auto resType = op.getRes().getType();
 
         CastLogicHelper castLogic(op, rewriter, tch);
-        auto result = castLogic.cast(in, op.getIn().getType(), resType);
+        // in case of Union we need mlir_ts::UnionType value
+        auto result = castLogic.cast(op.getIn().getType().isa<mlir_ts::UnionType>() ? op.getIn() : in, op.getIn().getType(), resType);
         if (!result)
         {
             return failure();
