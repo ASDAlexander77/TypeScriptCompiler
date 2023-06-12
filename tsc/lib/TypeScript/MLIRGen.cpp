@@ -15709,6 +15709,7 @@ genContext);
             {"Object", true },
             {"String", true },
             {"Boolean", true },
+            {"Function", true },
 #endif
             {"Int8Array", true },
             {"Uint8Array", true },
@@ -15765,6 +15766,7 @@ genContext);
             {"Object", getObjectType(getAnyType()) },
             {"String", getStringType()},
             {"Boolean", getBooleanType()},
+            {"Function", getFunctionType({getArrayType(getAnyType())}, {getAnyType()}, true)},
 #endif
             {"Int8Array", getArrayType(builder.getIntegerType(8, true)) },
             {"Uint8Array", getArrayType(builder.getIntegerType(8, false))},
