@@ -15,6 +15,7 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Interfaces/CopyOpInterface.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"
+#include "mlir/IR/Matchers.h"
 
 namespace mlir
 {
@@ -38,6 +39,9 @@ struct FieldInfo
 };
 
 void buildTerminatedBody(OpBuilder &builder, Location loc);
+
+bool isTrue(mlir::Region &);
+bool isEmpty(mlir::Region &);
 
 } // namespace typescript
 

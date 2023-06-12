@@ -17,7 +17,6 @@ include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
 include "mlir/IR/RegionKindInterface.td"
 
-
 //===----------------------------------------------------------------------===//
 // TypeScript op definitions
 //===----------------------------------------------------------------------===//
@@ -1612,6 +1611,7 @@ def TypeScript_ResultOp : TypeScript_Op<"Result", [Pure, ReturnLike, Terminator,
 def TypeScript_WhileOp : TypeScript_Op<"While",
     [
         LoopLikeOpInterface,
+        ConditionallySpeculatable,
         DeclareOpInterfaceMethods<RegionBranchOpInterface>
     ]> {
   let summary = "a generic 'while' loop";
@@ -1643,6 +1643,11 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
     mlir::Region &getLoopBody() { return getBody(); }    
+    Speculation::Speculatability getSpeculatability() {  
+        return isTrue(getCond()) 
+            ? Speculation::Speculatable
+            : Speculation::NotSpeculatable;
+    };
   }];
 
   let assemblyFormat =
@@ -1652,6 +1657,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
 def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
     [
         LoopLikeOpInterface,
+        ConditionallySpeculatable,
         DeclareOpInterfaceMethods<RegionBranchOpInterface>
     ]> {
   let summary = "a generic 'do-while' loop";
@@ -1666,6 +1672,11 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
     mlir::Region &getLoopBody() { return getBody(); }
+    Speculation::Speculatability getSpeculatability() {  
+        return isTrue(getCond()) 
+            ? Speculation::Speculatable
+            : Speculation::NotSpeculatable;
+    };    
   }];
 
   let assemblyFormat =
@@ -1675,6 +1686,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
 def TypeScript_ForOp : TypeScript_Op<"For",
     [
         LoopLikeOpInterface,
+        ConditionallySpeculatable,
         DeclareOpInterfaceMethods<RegionBranchOpInterface>
     ]> {
   let summary = "a generic 'for' loop";
@@ -1686,6 +1698,11 @@ def TypeScript_ForOp : TypeScript_Op<"For",
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
     mlir::Region &getLoopBody() { return getBody(); }
+    Speculation::Speculatability getSpeculatability() {  
+        return isTrue(getCond()) || isEmpty(getCond()) 
+            ? Speculation::Speculatable
+            : Speculation::NotSpeculatable;
+    };    
   }];
 
   let assemblyFormat =

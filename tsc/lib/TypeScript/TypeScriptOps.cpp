@@ -30,6 +30,49 @@ void mlir_ts::buildTerminatedBody(OpBuilder &builder, Location loc)
     builder.create<mlir_ts::ResultOp>(loc);
 }
 
+// util
+bool mlir_ts::isTrue(mlir::Region &condtion)
+{
+    if (!condtion.hasOneBlock())
+    {
+        return false;
+    }
+
+    if (auto condOp = dyn_cast<mlir_ts::ConditionOp>(condtion.back().back()))
+    {
+        mlir::Value condVal = condOp.getCondition();
+        if (auto castVal = condVal.getDefiningOp<mlir_ts::CastOp>())
+        {
+            condVal = castVal.getIn();
+        }
+
+        if (auto constOp = condVal.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            if (auto boolAttr = constOp.getValueAttr().dyn_cast<mlir::BoolAttr>())
+            {
+                return boolAttr.getValue();
+            }
+        }
+    }
+
+    return false;
+}
+
+bool mlir_ts::isEmpty(mlir::Region &condtion)
+{
+    if (!condtion.hasOneBlock())
+    {
+        return false;
+    }
+
+    if (auto noCondOp = dyn_cast<mlir_ts::NoConditionOp>(condtion.back().back()))
+    {
+        return true;
+    }
+
+    return false;
+}
+
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
