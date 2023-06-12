@@ -153,6 +153,11 @@ class MLIRHelper
 
     static void loadTypes(mlir::SmallVector<mlir::Type> &types, mlir::Type type)
     {
+        if (!type)
+        {
+            return;
+        }
+
         if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
         {
             for (auto item : sourceUnionType.getTypes())
@@ -168,6 +173,11 @@ class MLIRHelper
 
     static void loadTypes(mlir::SmallPtrSet<mlir::Type, 2> &types, mlir::Type type)
     {
+        if (!type)
+        {
+            return;
+        }
+
         if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
         {
             for (auto item : sourceUnionType.getTypes())

@@ -16539,6 +16539,23 @@ genContext);
             }
         }
 
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            SmallVector<mlir::Type> types;
+            for (auto subType : unionType)
+            {
+                auto typeByKey = getIndexedAccessType(subType, indexType, genContext);
+                if (!typeByKey)
+                {
+                    return mlir::Type();
+                }
+
+                types.push_back(typeByKey);
+            }
+
+            return getUnionType(types);
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted \n";);
 
         llvm_unreachable("not implemented");
