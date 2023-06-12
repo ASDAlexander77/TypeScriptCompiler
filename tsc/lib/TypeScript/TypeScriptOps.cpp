@@ -493,6 +493,11 @@ LogicalResult mlir_ts::CastOp::verify()
         }
     }
 
+    if (resType.isa<mlir_ts::AnyType>())
+    {
+        return success();
+    }
+
     // check if we can cast type to union type
     auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>();
     auto resUnionType = resType.dyn_cast<mlir_ts::UnionType>();
@@ -610,8 +615,13 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
         // union support
         // TODO: review this code, should it be in "cast" logic?
-        auto inUnionType = in.getType().dyn_cast<mlir_ts::UnionType>();
+        if (res.getType().isa<mlir_ts::AnyType>())
+        {
+            return success();
+        }
+
         auto resUnionType = res.getType().dyn_cast<mlir_ts::UnionType>();
+        auto inUnionType = in.getType().dyn_cast<mlir_ts::UnionType>();
         if (resUnionType && !inUnionType)
         {
             ::typescript::MLIRTypeHelper mth(rewriter.getContext());

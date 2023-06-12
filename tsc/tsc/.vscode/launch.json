@@ -23,7 +23,7 @@
             "name": "(Windows) tsc.exe - MLIR",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir",
@@ -124,7 +124,7 @@
             "name": "(Windows) tsc.exe - LLVM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=llvm",
                 "-mlir-disable-threading",
@@ -244,7 +244,7 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
-            "name": "(Windows) CMake current - Launch",
+            "name": "(Windows) CMake",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${command:cmake.launchTargetPath}",
@@ -258,12 +258,21 @@
             "console": "externalTerminal"
         },
         {
-            "name": "(Windows-LLDB) 1.exe current - Launch",
+            "name": "(Windows-LLDB) 1.exe",
             "type": "lldb-vscode",
             "request": "launch",
             "program": "C:/temp/MLIR_to_exe/1.exe",
             "args": [],
             "env": [],
+            "cwd": "${workspaceRoot}"
+        },
+        {
+            "name": "(Windows-cppvsdbg) 1.exe",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "C:/temp/MLIR_to_exe/1.exe",
+            "args": [],
+            "stopAtEntry": true,
             "cwd": "${workspaceRoot}"
         }
     ]

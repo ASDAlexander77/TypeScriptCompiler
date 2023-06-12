@@ -1469,8 +1469,8 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
             // create tagged union
             auto udefVal = rewriter.create<LLVM::UndefOp>(loc, unionPartialType);
             auto val0 =
-                rewriter.create<LLVM::InsertValueOp>(loc, udefVal, transformed.getTypeInfo(), MLIRHelper::getStructIndex(rewriter, 0));
-            auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, in, MLIRHelper::getStructIndex(rewriter, 1));
+                rewriter.create<LLVM::InsertValueOp>(loc, udefVal, transformed.getTypeInfo(), MLIRHelper::getStructIndex(rewriter, UNION_TAG_VALUE_INDEX));
+            auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, in, MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
 
             auto casted = castLogic.castLLVMTypes(val1, unionPartialType, op.getType(), resType);
             if (!casted)
@@ -1514,6 +1514,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
             types.push_back(valueType);
             auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, false);
 
+            // TODO: should not cast anything
             CastLogicHelper castLogic(op, rewriter, tch);
             auto casted = castLogic.castLLVMTypes(transformed.getIn(), transformed.getIn().getType(), unionPartialType,
                                                   unionPartialType);
@@ -1522,9 +1523,9 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
                 return mlir::failure();
             }
 
-            auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, valueType, casted, MLIRHelper::getStructIndex(rewriter, 1));
+            auto val1 = rewriter.create<LLVM::ExtractValueOp>(loc, valueType, casted, MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
 
-            rewriter.replaceOp(op, ValueRange{val0});
+            rewriter.replaceOp(op, ValueRange{val1});
         }
         else
         {
@@ -1555,7 +1556,7 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
         if (needTag)
         {
             auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.getIn(),
-                                                              MLIRHelper::getStructIndex(rewriter, 0));
+                                                              MLIRHelper::getStructIndex(rewriter, UNION_TAG_VALUE_INDEX));
 
             rewriter.replaceOp(op, ValueRange{val0});
         }
