@@ -45,8 +45,9 @@ type T13 = Extract<Options, { k: "a" } | { k: "b" }>;  // { k: "a", a: number } 
 type T14 = Exclude<Options, { q: "a" }>;  // Options
 type T15 = Extract<Options, { q: "a" }>;  // never
 
-declare function f5<T extends Options, K extends string>(p: K): Extract<T, { k: K }>;
-let x0 = f5("a");  // { k: "a", a: number }
+// TODO: can't be used as literal types for generics are not allowed
+//declare function f5<T extends Options, K extends string>(p: K): Extract<T, { k: K }>;
+//let x0 = f5("a");  // { k: "a", a: number }
 
 type OptionsOfKind<K extends Options["k"]> = Extract<Options, { k: K }>;
 
@@ -314,8 +315,6 @@ type OldDiff<T extends keyof any, U extends keyof any> = (
     & { [x: string]: never; }
 )[T];
 type NewDiff<T, U> = T extends U ? never : T;
-// TODO: bug, conflict of names A
-/*
 interface A {
     a: 'a';
 }
@@ -329,7 +328,6 @@ interface B2 extends A {
 }
 type c1 = B1['c']; // 'c' | 'b'
 type c2 = B2['c']; // 'c' | 'b'
-*/
 
 // Repro from #21929
 

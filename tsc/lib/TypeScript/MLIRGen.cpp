@@ -11147,6 +11147,16 @@ class MLIRGenImpl
 
     mlir::Value resolveIdentifierInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
+        // support generic types
+        if (genContext.typeParamsWithArgs.size() > 0)
+        {
+            auto type = getResolveTypeParameter(name, false, genContext);
+            if (type)
+            {
+                return builder.create<mlir_ts::TypeRefOp>(location, type);
+            }
+        }
+
         auto value = resolveFunctionNameInNamespace(location, name, genContext);
         if (value)
         {
@@ -11236,16 +11246,6 @@ class MLIRGenImpl
             auto typeAliasInfo = genContext.typeAliasMap.lookup(name);
             assert(typeAliasInfo);
             return builder.create<mlir_ts::TypeRefOp>(location, typeAliasInfo);
-        }
-
-        // support generic types
-        if (genContext.typeParamsWithArgs.size() > 0)
-        {
-            auto type = getResolveTypeParameter(name, false, genContext);
-            if (type)
-            {
-                return builder.create<mlir_ts::TypeRefOp>(location, type);
-            }
         }
 
         if (getNamespaceMap().count(name))
@@ -15604,56 +15604,59 @@ genContext);
         // check utility types
         auto name = MLIRHelper::getName(typeReferenceAST->typeName);
 
-        // try to resolve from type alias first
-        auto genericTypeAliasInfo = lookupGenericTypeAliasMap(name);
-        if (!is_default(genericTypeAliasInfo))
+        if (typeReferenceAST->typeArguments.size())
         {
-            GenContext genericTypeGenContext(genContext);
-
-            auto typeParams = std::get<0>(genericTypeAliasInfo);
-            auto typeNode = std::get<1>(genericTypeAliasInfo);
-
-            auto [result, hasAnyNamedGenericType] =
-                zipTypeParametersWithArguments(location, typeParams, typeReferenceAST->typeArguments,
-                                               genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
-
-            if (mlir::failed(result))
+            // try to resolve from type alias first
+            auto genericTypeAliasInfo = lookupGenericTypeAliasMap(name);
+            if (!is_default(genericTypeAliasInfo))
             {
-                return mlir::Type();
+                GenContext genericTypeGenContext(genContext);
+
+                auto typeParams = std::get<0>(genericTypeAliasInfo);
+                auto typeNode = std::get<1>(genericTypeAliasInfo);
+
+                auto [result, hasAnyNamedGenericType] =
+                    zipTypeParametersWithArguments(location, typeParams, typeReferenceAST->typeArguments,
+                                                genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
+
+                if (mlir::failed(result))
+                {
+                    return mlir::Type();
+                }
+
+                if (hasAnyNamedGenericType)
+                {
+                    return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
+                }
+
+                return getType(typeNode, genericTypeGenContext);
             }
 
-            if (hasAnyNamedGenericType)
+            if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
             {
-                return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
+                auto classType = genericClassTypeInfo->classType;
+                auto [result, specType] = instantiateSpecializedClassType(location, classType,
+                                                                        typeReferenceAST->typeArguments, genContext, true);
+                if (mlir::succeeded(result))
+                {
+                    return specType;
+                }
+
+                return classType;
             }
 
-            return getType(typeNode, genericTypeGenContext);
-        }
-
-        if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
-        {
-            auto classType = genericClassTypeInfo->classType;
-            auto [result, specType] = instantiateSpecializedClassType(location, classType,
-                                                                      typeReferenceAST->typeArguments, genContext, true);
-            if (mlir::succeeded(result))
+            if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
             {
-                return specType;
+                auto interfaceType = genericInterfaceTypeInfo->interfaceType;
+                auto [result, specType] = instantiateSpecializedInterfaceType(location, interfaceType,
+                                                                            typeReferenceAST->typeArguments, genContext, true);
+                if (mlir::succeeded(result))
+                {
+                    return specType;
+                }
+
+                return interfaceType;
             }
-
-            return classType;
-        }
-
-        if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
-        {
-            auto interfaceType = genericInterfaceTypeInfo->interfaceType;
-            auto [result, specType] = instantiateSpecializedInterfaceType(location, interfaceType,
-                                                                          typeReferenceAST->typeArguments, genContext, true);
-            if (mlir::succeeded(result))
-            {
-                return specType;
-            }
-
-            return interfaceType;
         }
 
         if (auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext))
