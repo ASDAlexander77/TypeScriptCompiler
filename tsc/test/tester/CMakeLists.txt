@@ -339,6 +339,7 @@ add_test(NAME test-compile-typeGuardOfFormThisMember COMMAND test-runner "${PROJ
 add_test(NAME test-compile-typeGuardOfFormTypeOfBoolean COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormTypeOfBoolean.ts")
 add_test(NAME test-compile-typeGuardFunction COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardFunction.ts")
 add_test(NAME test-compile-thisTypeInClasses COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/thisTypeInClasses.ts")
+add_test(NAME test-compile-conditionalTypes1 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/conditionalTypes1.ts")
 add_test(NAME test-compile-nbody COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/nbody.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
@@ -598,4 +599,5 @@ add_test(NAME test-jit-typeGuardOfFormThisMember COMMAND test-runner -jit "${PRO
 add_test(NAME test-jit-typeGuardOfFormTypeOfBoolean COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardOfFormTypeOfBoolean.ts")
 add_test(NAME test-jit-typeGuardFunction COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/typeGuardFunction.ts")
 add_test(NAME test-jit-thisTypeInClasses COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/thisTypeInClasses.ts")
+add_test(NAME test-jit-conditionalTypes1 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/conditionalTypes1.ts")
 add_test(NAME test-jit-nbody COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/nbody.ts")
