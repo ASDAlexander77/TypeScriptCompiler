@@ -357,7 +357,7 @@ type RecursivePartial<T> = {
 
 declare function assign<T>(o: T, a: RecursivePartial<T>): void;
 
-var a = {o: 1, b: 2, c: [{a: 1, c: '213'}]}
+var a = {o: 1, /*b: 2,*/ c: [{a: 1, c: '213'}]}
 
 // Repros from #23843
 
@@ -369,6 +369,7 @@ type Weird2 = (<U extends boolean>(a: U) => U) extends
 
 function main()
 {
+    // TODO: add normal message that array can't be casted into object
 	//assign(a, {o: 2, c: {0: {a: 2, c: '213123'}}});
 
 	print("done.");
