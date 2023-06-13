@@ -11145,7 +11145,7 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
-    mlir::Value resolveIdentifierInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
+    mlir::Type resolveTypeByNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
         // support generic types
         if (genContext.typeParamsWithArgs.size() > 0)
@@ -11153,10 +11153,123 @@ class MLIRGenImpl
             auto type = getResolveTypeParameter(name, false, genContext);
             if (type)
             {
-                return builder.create<mlir_ts::TypeRefOp>(location, type);
+                return type;
             }
         }
 
+        if (genContext.typeAliasMap.count(name))
+        {
+            auto typeAliasInfo = genContext.typeAliasMap.lookup(name);
+            assert(typeAliasInfo);
+            return typeAliasInfo;
+        }
+
+        if (getTypeAliasMap().count(name))
+        {
+            auto typeAliasInfo = getTypeAliasMap().lookup(name);
+            assert(typeAliasInfo);
+            return typeAliasInfo;
+        }
+
+        if (getClassesMap().count(name))
+        {
+            auto classInfo = getClassesMap().lookup(name);
+            if (!classInfo->classType)
+            {
+                emitError(location) << "can't find class: " << name << "\n";
+                return mlir::Type();
+            }
+
+            return classInfo->classType;
+        }
+
+        if (getGenericClassesMap().count(name))
+        {
+            auto genericClassInfo = getGenericClassesMap().lookup(name);
+
+            return genericClassInfo->classType;
+        }
+
+        if (getInterfacesMap().count(name))
+        {
+            auto interfaceInfo = getInterfacesMap().lookup(name);
+            if (!interfaceInfo->interfaceType)
+            {
+                emitError(location) << "can't find interface: " << name << "\n";
+                return mlir::Type();
+            }
+
+            return interfaceInfo->interfaceType;
+        }
+
+        if (getGenericInterfacesMap().count(name))
+        {
+            auto genericInterfaceInfo = getGenericInterfacesMap().lookup(name);
+            return genericInterfaceInfo->interfaceType;
+        }
+
+        // check if we have enum
+        if (getEnumsMap().count(name))
+        {
+            auto enumTypeInfo = getEnumsMap().lookup(name);
+            return getEnumType(enumTypeInfo.first, enumTypeInfo.second);
+        }
+
+        if (getImportEqualsMap().count(name))
+        {
+            auto fullName = getImportEqualsMap().lookup(name);
+            auto classInfo = getClassInfoByFullName(fullName);
+            if (classInfo)
+            {
+                return classInfo->classType;
+            }
+
+            auto interfaceInfo = getInterfaceInfoByFullName(fullName);
+            if (interfaceInfo)
+            {
+                return interfaceInfo->interfaceType;
+            }
+        }        
+
+        return mlir::Type();
+    }
+
+    mlir::Type resolveTypeByName(mlir::Location location, StringRef name, const GenContext &genContext)
+    {
+        auto type = resolveTypeByNameInNamespace(location, name, genContext);
+        if (type)
+        {
+            return type;
+        }
+
+        {
+            MLIRNamespaceGuard ng(currentNamespace);
+
+            // search in outer namespaces
+            while (currentNamespace->isFunctionNamespace)
+            {
+                currentNamespace = currentNamespace->parentNamespace;
+                type = resolveTypeByNameInNamespace(location, name, genContext);
+                if (type)
+                {
+                    return type;
+                }
+            }
+
+            // search in root namespace
+            currentNamespace = rootNamespace;
+            type = resolveTypeByNameInNamespace(location, name, genContext);
+            if (type)
+            {
+                return type;
+            }
+        }    
+
+        return mlir::Type();    
+    }
+
+    mlir::Value resolveIdentifierInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
+    {
         auto value = resolveFunctionNameInNamespace(location, name, genContext);
         if (value)
         {
@@ -11187,67 +11300,6 @@ class MLIRGenImpl
             return funcSymbolOp;
         }
 
-        if (getClassesMap().count(name))
-        {
-            auto classInfo = getClassesMap().lookup(name);
-            if (!classInfo->classType)
-            {
-                emitError(location) << "can't find class: " << name << "\n";
-                return mlir::Value();
-            }
-
-            return builder.create<mlir_ts::ClassRefOp>(
-                location, classInfo->classType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
-        }
-
-        if (getGenericClassesMap().count(name))
-        {
-            auto genericClassInfo = getGenericClassesMap().lookup(name);
-
-            return builder.create<mlir_ts::ClassRefOp>(
-                location, genericClassInfo->classType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericClassInfo->classType.getName().getValue()));
-        }
-
-        if (getInterfacesMap().count(name))
-        {
-            auto interfaceInfo = getInterfacesMap().lookup(name);
-            if (!interfaceInfo->interfaceType)
-            {
-                emitError(location) << "can't find interface: " << name << "\n";
-                return mlir::Value();
-            }
-
-            return builder.create<mlir_ts::InterfaceRefOp>(
-                location, interfaceInfo->interfaceType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), interfaceInfo->interfaceType.getName().getValue()));
-        }
-
-        if (getGenericInterfacesMap().count(name))
-        {
-            auto genericInterfaceInfo = getGenericInterfacesMap().lookup(name);
-
-            return builder.create<mlir_ts::InterfaceRefOp>(
-                location, genericInterfaceInfo->interfaceType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                             genericInterfaceInfo->interfaceType.getName().getValue()));
-        }
-
-        if (getTypeAliasMap().count(name))
-        {
-            auto typeAliasInfo = getTypeAliasMap().lookup(name);
-            assert(typeAliasInfo);
-            return builder.create<mlir_ts::TypeRefOp>(location, typeAliasInfo);
-        }
-
-        if (genContext.typeAliasMap.count(name))
-        {
-            auto typeAliasInfo = genContext.typeAliasMap.lookup(name);
-            assert(typeAliasInfo);
-            return builder.create<mlir_ts::TypeRefOp>(location, typeAliasInfo);
-        }
-
         if (getNamespaceMap().count(name))
         {
             auto namespaceInfo = getNamespaceMap().lookup(name);
@@ -11266,26 +11318,25 @@ class MLIRGenImpl
                 auto nsName = mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName);
                 return builder.create<mlir_ts::NamespaceRefOp>(location, namespaceInfo->namespaceType, nsName);
             }
+        }
 
-            auto classInfo = getClassInfoByFullName(fullName);
-            if (classInfo)
+        auto type = resolveTypeByNameInNamespace(location, name, genContext);
+        if (type)
+        {
+            if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
             {
                 return builder.create<mlir_ts::ClassRefOp>(
-                    location, classInfo->classType,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
+                    location, classType, mlir::FlatSymbolRefAttr::get(builder.getContext(), classType.getName().getValue()));
             }
 
-            auto interfaceInfo = getInterfaceInfoByFullName(fullName);
-            if (interfaceInfo)
+            if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
             {
                 return builder.create<mlir_ts::InterfaceRefOp>(
-                    location, interfaceInfo->interfaceType,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                                 interfaceInfo->interfaceType.getName().getValue()));
+                    location, interfaceType, mlir::FlatSymbolRefAttr::get(builder.getContext(), interfaceType.getName().getValue()));
             }
 
-            assert(false);
-        }
+            return builder.create<mlir_ts::TypeRefOp>(location, type);
+        }        
 
         return mlir::Value();
     }
@@ -11564,14 +11615,17 @@ class MLIRGenImpl
                 getImportEqualsMap().insert({name, namespaceOp.getIdentifier()});
                 return mlir::success();
             }
-            else if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>())
+            else if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
             {
-                getImportEqualsMap().insert({name, classRefOp.getIdentifier()});
+                getImportEqualsMap().insert({name, classType.getName().getValue()});
                 return mlir::success();
             }
-        }
-        else
-        {
+            else if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
+            {
+                getImportEqualsMap().insert({name, interfaceType.getName().getValue()});
+                return mlir::success();
+            }
+
             llvm_unreachable("not implemented");
         }
 
@@ -15248,10 +15302,14 @@ genContext);
 
     mlir::Type getTypeByTypeName(Node node, const GenContext &genContext)
     {
-        mlir::Type type;
-        SyntaxKind kind = node;
-        if (kind == SyntaxKind::QualifiedName)
+        if (node == SyntaxKind::Identifier)
         {
+            auto name = MLIRHelper::getName(node);
+            return resolveTypeByName(loc(node), name, genContext);
+        }        
+        else if (node == SyntaxKind::QualifiedName)
+        {
+            // TODO: it seems namespace access, can u optimize it somehow?
             auto result = mlirGen(node.as<QualifiedName>(), genContext);
             if (result.failed_or_no_value())
             {
@@ -15259,36 +15317,10 @@ genContext);
             }
 
             auto val = V(result);
-            type = val.getType();
+            return val.getType();
         }
-        // TODO: uncomment it, to find out there the issue with outer ops, test file test-compile-00-class-expression
-        else if (kind == SyntaxKind::Identifier)
-        {
-            auto result = mlirGen(node.as<Identifier>(), genContext);
-            if (result.failed_or_no_value())
-            {
-                return mlir::Type();
-            }
-
-            auto val = V(result);
-            type = val.getType();
-
-            if (val.getDefiningOp<mlir_ts::LoadOp>() && val.use_empty())
-            {
-                val.getDefiningOp()->erase();
-            }
-        }        
-        else
-        {
-            type = evaluate(node.as<Expression>(), genContext);
-        }
-
-        if (type)
-        {
-            return type;
-        }
-
-        return mlir::Type();
+        
+        llvm_unreachable("not implemented");
     }
 
     mlir::Type getFirstTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext)
@@ -16184,7 +16216,22 @@ genContext);
 
     mlir::Type getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext)
     {
-        return getTypeByTypeName(typeQueryAST->exprName, genContext);
+        auto exprName = typeQueryAST->exprName;
+        if (exprName == SyntaxKind::QualifiedName)
+        {
+            // TODO: it seems namespace access, can u optimize it somehow?
+            auto result = mlirGen(exprName.as<QualifiedName>(), genContext);
+            if (result.failed_or_no_value())
+            {
+                return mlir::Type();
+            }
+
+            auto val = V(result);
+            return val.getType();
+        }
+
+        auto type = evaluate(exprName.as<Expression>(), genContext);
+        return type;
     }
 
     mlir::Type getTypePredicateType(TypePredicateNode typePredicateNode, const GenContext &genContext)
