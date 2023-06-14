@@ -8,6 +8,8 @@ function main()
 
 	f();
 
+	rrr.t();
+
 	print("done.");
 }
 
@@ -20,4 +22,18 @@ function f()
 	a = 20;
 
 	assert(a == 20);
+}
+
+namespace rrr
+{
+	var r = 30;
+
+	function t()
+	{
+		print(r);
+		print(a);
+
+		assert(a == 20);
+		assert(r == 30);
+	}
 }
