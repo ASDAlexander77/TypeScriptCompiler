@@ -1,24 +1,18 @@
 set (ROOT_PATH "C:\\dev\\TypeScriptCompiler")
 set (_3RD_PARTY_PATH "${ROOT_PATH}\\3rdParty")
 set (BUILD_PATH "${ROOT_PATH}\\__build")
-#set (TSCPATH "${BUILD_PATH}\\tsc-release\\bin")
-set (TSCPATH "${BUILD_PATH}\\tsc\\bin")
-set (LLVM_BIN_PATH "${_3RD_PARTY_PATH}\\llvm\\release\\bin")
+set (TSCPATH "${BUILD_PATH}\\tsc\\windows-msbuild-debug\\bin")
+#set (TSCPATH "${BUILD_PATH}\\tsc\\windows-msbuild-release\\bin")
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-	set (GCLIBPATH "${_3RD_PARTY_PATH}\\gc\\Release")
+	set (GCLIBPATH "${_3RD_PARTY_PATH}\\gc\\x64\\release")
 else()
-	set (GCLIBPATH "${_3RD_PARTY_PATH}\\gc\\Debug")
+	set (GCLIBPATH "${_3RD_PARTY_PATH}\\gc\\x64\\debug")
 endif()
 
 find_program(TSC_APP tsc.exe HINTS "${TSCPATH}" DOC "path to tsc")
-find_program(LLC_APP llc.exe HINTS "${LLVM_BIN_PATH}" DOC "path to llc")
 
 if (NOT TSC_APP)
 	message(FATAL_ERROR "Can't find tsc.exe")
-endif()
-
-if (NOT LLC_APP)
-	message(FATAL_ERROR "Can't find llc.exe")
 endif()
 
 macro(add_tsc_files subpath)
@@ -35,7 +29,7 @@ macro(add_tsc_files subpath)
 		set (LLC_FLAGS "")
 	else()
 		set (TS_FLAGS "")
-		set (LLC_FLAGS "-O0 --experimental-debug-variable-locations --debug-entry-values --debugger-tune=lldb --xcoff-traceback-table --debugify-level=location+variables")
+		set (LLC_FLAGS "--experimental-debug-variable-locations")
 	endif()
 
 	set (TS_FILES)
@@ -55,8 +49,7 @@ macro(add_tsc_files subpath)
 
 	    add_custom_command(
 		OUTPUT "${obj_file}"
-		COMMAND "${TSC_APP}" --emit=llvm ${TS_FLAGS} "${source_file}" 2>"${ll_file}"
-  		COMMAND "${LLC_APP}" --filetype=obj ${LLC_FLAGS} -o="${obj_file}" "${ll_file}"
+		COMMAND "${TSC_APP}" --emit=obj -o="${obj_file}" ${TS_FLAGS} ${LLC_FLAGS} "${source_file}"
 		DEPENDS "${source_file}"
   		COMMENT Added TS file
 	   )
