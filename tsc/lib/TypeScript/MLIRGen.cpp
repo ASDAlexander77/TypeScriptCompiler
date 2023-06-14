@@ -461,6 +461,7 @@ class MLIRGenImpl
             newNamespacePtr->namespaceType = getNamespaceType(fullNamePtr);
             newNamespacePtr->parentNamespace = currentNamespace;
             newNamespacePtr->isFunctionNamespace = isFunctionNamespace;
+
             namespacesMap.insert({namePtr, newNamespacePtr});
             if (!isFunctionNamespace && !fullNamespacesMap.count(fullNamePtr))
             {
@@ -2293,8 +2294,11 @@ class MLIRGenImpl
             variableName = name_;
             name = name_;
 
+            // I think it is only making it worst
+            /*
             if (!isFullName && isGlobal)
                 name = getFullNamespaceName(name_);
+            */
         }        
 
         void setType(mlir::Type type_)
@@ -2422,13 +2426,12 @@ class MLIRGenImpl
     mlir::LogicalResult adjustLocalVariableType(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
     {
         auto type = variableDeclarationInfo.type;
-        auto init = variableDeclarationInfo.initial;
 
         // if it is Optional type, we need to set to undefined                
-        if (type.isa<mlir_ts::OptionalType>() && !init)
+        if (type.isa<mlir_ts::OptionalType>() && !variableDeclarationInfo.initial)
         {                    
-            // TODO: test cast result
-            init = cast(location, type, getUndefined(location), genContext);
+            CAST_A(castedValue, location, type, getUndefined(location), genContext);
+            variableDeclarationInfo.setInitial(castedValue);
         }
 
         auto actualType = mth.wideStorageType(type);
@@ -2439,10 +2442,10 @@ class MLIRGenImpl
             actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
         }
 
-        if (init && actualType != type)
+        if (variableDeclarationInfo.initial && actualType != type)
         {
-            // TODO: test cast result
-            init = cast(location, actualType, init, genContext);
+            CAST_A(castedValue, location, actualType, variableDeclarationInfo.initial, genContext);
+            variableDeclarationInfo.setInitial(castedValue);
         }
 
         variableDeclarationInfo.setType(actualType);
@@ -11483,6 +11486,11 @@ class MLIRGenImpl
     mlir::Value globalVariableAccess(mlir::Location location, VariableDeclarationDOM::TypePtr value, bool asAddess,
                                      const GenContext &genContext)
     {
+        if (!value->getType())
+        {
+            return mlir::Value();
+        }
+
         if (!value->getReadWriteAccess() && value->getType().isa<mlir_ts::StringType>())
         {
             // load address of const object in global
@@ -18238,7 +18246,18 @@ genContext);
 
     auto getGlobalsMap() -> llvm::StringMap<VariableDeclarationDOM::TypePtr> &
     {
-        return currentNamespace->globalsMap;
+        if (!currentNamespace->isFunctionNamespace)
+        {
+            return currentNamespace->globalsMap;
+        }
+
+        auto curr = currentNamespace;
+        while (curr->isFunctionNamespace)
+        {
+            curr = curr->parentNamespace;
+        }
+
+        return curr->globalsMap;
     }
 
     auto getCaptureVarsMap() -> llvm::StringMap<llvm::StringMap<ts::VariableDeclarationDOM::TypePtr>> &
