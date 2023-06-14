@@ -2291,10 +2291,9 @@ class MLIRGenImpl
             isExternal = true;
         }
 
-        auto effectiveName = name;
-
-        mlir::Value variableOp;
-        mlir::Type varType;
+        auto variableName = name;
+        mlir::Value variableInitialValue;
+        mlir::Type variableType;
         if (!isGlobal)
         {
             auto [type, init] = func();
@@ -2305,7 +2304,7 @@ class MLIRGenImpl
                     emitError(location) << "Can't resolve variable '" << name << "' type";
                 }
 
-                return varType;
+                return variableType;
             }
 
             if (type.isa<mlir_ts::VoidType>())
@@ -2315,20 +2314,20 @@ class MLIRGenImpl
             }
 
             assert(type);
-            varType = type;
+            variableType = type;
 
             if (isConst)
             {
-                variableOp = init;
+                variableInitialValue = init;
                 // special cast to support ForOf
                 if (varClass == VariableClass::ConstRef)
                 {
                     MLIRCodeLogic mcl(builder);
-                    variableOp = mcl.GetReferenceOfLoadOp(init);
-                    if (!variableOp)
+                    variableInitialValue = mcl.GetReferenceOfLoadOp(init);
+                    if (!variableInitialValue)
                     {
                         // convert ConstRef to Const again as this is const object (it seems)
-                        variableOp = init;
+                        variableInitialValue = init;
                         varClass = VariableClass::Const;
                     }
                 }
@@ -2358,7 +2357,7 @@ class MLIRGenImpl
                     init = cast(location, actualType, init, genContext);
                 }
 
-                varType = actualType;
+                variableType = actualType;
 
                 // scope to restore inserting point
                 {
@@ -2370,13 +2369,13 @@ class MLIRGenImpl
 
                     if (genContext.allocateVarsInContextThis)
                     {
-                        variableOp = registerVariableInThisContext(location, name, actualType, genContext);
+                        variableInitialValue = registerVariableInThisContext(location, name, actualType, genContext);
                     }
 
-                    if (!variableOp)
+                    if (!variableInitialValue)
                     {
                         // default case
-                        variableOp = builder.create<mlir_ts::VariableOp>(
+                        variableInitialValue = builder.create<mlir_ts::VariableOp>(
                             location, mlir_ts::RefType::get(actualType),
                             genContext.allocateVarsOutsideOfOperation ? mlir::Value() : init,
                             builder.getBoolAttr(false));
@@ -2385,10 +2384,10 @@ class MLIRGenImpl
             }
 
             // init must be in its normal place
-            if ((genContext.allocateVarsInContextThis || genContext.allocateVarsOutsideOfOperation) && variableOp &&
+            if ((genContext.allocateVarsInContextThis || genContext.allocateVarsOutsideOfOperation) && variableInitialValue &&
                 init && !isConst)
             {
-                builder.create<mlir_ts::StoreOp>(location, init, variableOp);
+                builder.create<mlir_ts::StoreOp>(location, init, variableInitialValue);
             }
         }
         else
@@ -2410,7 +2409,7 @@ class MLIRGenImpl
                 theModule.getBody()->walk(lastUse);
 
                 // TODO: investigate why I need it here
-                effectiveName = isFullName ? name : getFullNamespaceName(name);
+                variableName = isFullName ? name : getFullNamespaceName(name);
 
                 SmallVector<mlir::NamedAttribute> attrs;
                 if (isExternal)
@@ -2421,7 +2420,7 @@ class MLIRGenImpl
 
                 globalOp = builder.create<mlir_ts::GlobalOp>(location,
                                                              // temp type
-                                                             builder.getI32Type(), isConst, effectiveName,
+                                                             builder.getI32Type(), isConst, variableName,
                                                              mlir::Attribute(), attrs);
                 if (genContext.dummyRun && genContext.cleanUpOps)
                 {
@@ -2442,11 +2441,11 @@ class MLIRGenImpl
                         auto [type, init] = func();
                         if (!type && genContext.allowPartialResolve)
                         {
-                            return varType;
+                            return variableType;
                         }
 
                         assert(type);
-                        varType = type;
+                        variableType = type;
 
                         globalOp.setTypeAttr(mlir::TypeAttr::get(type));
 
@@ -2455,19 +2454,22 @@ class MLIRGenImpl
                             init = builder.create<mlir_ts::UndefOp>(location, type);
                         }
 
+                        variableInitialValue = init;
+
                         builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{init});
                     }
                     else
                     {
-                        auto res = func();
-                        auto type = std::get<0>(res);
+                        auto [type, init] = func();
                         if (!type && genContext.allowPartialResolve)
                         {
-                            return varType;
+                            return variableType;
                         }
 
                         assert(type);
-                        varType = type;
+                        variableType = type;
+
+                        variableInitialValue = init;                        
 
                         globalOp.setTypeAttr(mlir::TypeAttr::get(type));
                     }
@@ -2476,12 +2478,10 @@ class MLIRGenImpl
 
             if (!isGlobalScope)
             {
-                auto res = func();
-                auto type = std::get<0>(res);
-                auto init = std::get<1>(res);
+                auto [type, init] = func();
                 if (!type && genContext.allowPartialResolve)
                 {
-                    return varType;
+                    return variableType;
                 }
 
                 if (type.isa<mlir_ts::VoidType>())
@@ -2491,7 +2491,8 @@ class MLIRGenImpl
                 }
 
                 assert(type);
-                varType = type;
+                variableType = type;
+                variableInitialValue = init;
 
                 globalOp.setTypeAttr(mlir::TypeAttr::get(type));
 
@@ -2501,7 +2502,7 @@ class MLIRGenImpl
                     {
                         // save value
                         auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type),
-                                                                            effectiveName, mlir::IntegerAttr());
+                                                                            variableName, mlir::IntegerAttr());
                         builder.create<mlir_ts::StoreOp>(location, init, address);
                     }
 
@@ -2519,15 +2520,22 @@ class MLIRGenImpl
             }
         }
 
+        // in case of generic methods which are global
+        // if (mth.isAnyFunctionType(variableType) && mth.isGenericType(variableType))
+        // {
+        //     // remove global
+        // }
+
+
 #ifndef NDEBUG
-        if (variableOp)
+        if (variableInitialValue)
         {
-            LLVM_DEBUG(dbgs() << "\n!! variable = " << effectiveName << " type: " << varType << " op: " << variableOp
+            LLVM_DEBUG(dbgs() << "\n!! variable = " << variableName << " type: " << variableType << " op: " << variableInitialValue
                               << "\n";);
         }
 #endif
 
-        auto varDecl = std::make_shared<VariableDeclarationDOM>(effectiveName, varType, location);
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(variableName, variableType, location);
         if (!isConst || varClass == VariableClass::ConstRef)
         {
             varDecl->setReadWriteAccess();
@@ -2542,7 +2550,7 @@ class MLIRGenImpl
 
         if (!isGlobal)
         {
-            if (mlir::failed(declare(location, varDecl, variableOp, genContext, showWarnings)))
+            if (mlir::failed(declare(location, varDecl, variableInitialValue, genContext, showWarnings)))
             {
                 return mlir::Type();
             }
