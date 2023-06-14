@@ -2292,13 +2292,11 @@ class MLIRGenImpl
         void setName(StringRef name_)
         {
             variableName = name_;
-            name = name_;
+            fullName = name_;
 
             // I think it is only making it worst
-            /*
             if (!isFullName && isGlobal)
-                name = getFullNamespaceName(name_);
-            */
+                fullName = getFullNamespaceName(name_);
         }        
 
         void setType(mlir::Type type_)
@@ -2384,7 +2382,7 @@ class MLIRGenImpl
 
         VariableDeclarationDOM::TypePtr createVariableDeclaration(mlir::Location location, const GenContext &genContext)
         {
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(fullName, type, location);
             if (!isConst || varClass == VariableClass::ConstRef)
             {
                 varDecl->setReadWriteAccess();
@@ -2402,7 +2400,7 @@ class MLIRGenImpl
 
         void printDebugInfo()
         {
-            LLVM_DEBUG(dbgs() << "\n!! variable = " << name << " type: " << type << " init: " << initial << " storage: " << storage
+            LLVM_DEBUG(dbgs() << "\n!! variable = " << fullName << " type: " << type << " init: " << initial << " storage: " << storage
                             << "\n";);
         }
 
@@ -2410,7 +2408,7 @@ class MLIRGenImpl
         std::function<StringRef(StringRef)> getFullNamespaceName;
 
         StringRef variableName;
-        StringRef name;
+        StringRef fullName;
         mlir::Value initial;
         mlir::Type type;
         mlir::Value storage;
@@ -2475,7 +2473,7 @@ class MLIRGenImpl
 
             if (genContext.allocateVarsInContextThis)
             {
-                auto varValueInThisContext = registerVariableInThisContext(location, variableDeclarationInfo.name, variableDeclarationInfo.type, genContext);
+                auto varValueInThisContext = registerVariableInThisContext(location, variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
                 variableDeclarationInfo.setStorage(varValueInThisContext);
             }
 
@@ -2569,7 +2567,7 @@ class MLIRGenImpl
             }
 
             globalOp = builder.create<mlir_ts::GlobalOp>(
-                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.name, mlir::Attribute(), attrs);
+                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, mlir::Attribute(), attrs);
             if (genContext.dummyRun && genContext.cleanUpOps)
             {
                 genContext.cleanUpOps->push_back(globalOp);
@@ -2613,14 +2611,14 @@ class MLIRGenImpl
         {
             // save value
             auto address = builder.create<mlir_ts::AddressOfOp>(
-                location, mlir_ts::RefType::get(variableDeclarationInfo.type), variableDeclarationInfo.name, mlir::IntegerAttr());
+                location, mlir_ts::RefType::get(variableDeclarationInfo.type), variableDeclarationInfo.fullName, mlir::IntegerAttr());
             builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, address);
         }
 
         return createGlobalVariableUndefinedInitialization(location, globalOp, variableDeclarationInfo);
     }    
 
-    mlir::LogicalResult registerVariableDeclaration(mlir::Location location, VariableDeclarationDOM::TypePtr variableDeclaration, struct VariableDeclarationInfo variableDeclarationInfo, bool showWarnings, const GenContext &genContext)
+    mlir::LogicalResult registerVariableDeclaration(mlir::Location location, VariableDeclarationDOM::TypePtr variableDeclaration, struct VariableDeclarationInfo &variableDeclarationInfo, bool showWarnings, const GenContext &genContext)
     {
         if (!variableDeclarationInfo.isGlobal)
         {
@@ -2638,11 +2636,11 @@ class MLIRGenImpl
         }
         else if (variableDeclarationInfo.isFullName)
         {
-            fullNameGlobalsMap.insert(variableDeclarationInfo.name, variableDeclaration);
+            fullNameGlobalsMap.insert(variableDeclarationInfo.fullName, variableDeclaration);
         }
         else
         {
-            getGlobalsMap().insert({variableDeclarationInfo.name, variableDeclaration});
+            getGlobalsMap().insert({variableDeclarationInfo.variableName, variableDeclaration});
         }
 
         return mlir::success();
@@ -2652,7 +2650,7 @@ class MLIRGenImpl
                                 std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext, bool showWarnings = false)
     {
         struct VariableDeclarationInfo variableDeclarationInfo(
-            func, std::bind(&MLIRGenImpl::getFullNamespaceName, this, std::placeholders::_1));
+            func, std::bind(&MLIRGenImpl::getGlobalsFullNamespaceName, this, std::placeholders::_1));
 
         variableDeclarationInfo.detectFlags(isFullName, varClass, genContext);
         variableDeclarationInfo.setName(name);
@@ -18060,6 +18058,11 @@ genContext);
 
     mlir::LogicalResult declare(mlir::Location location, VariableDeclarationDOM::TypePtr var, mlir::Value value, const GenContext &genContext, bool showWarnings = false)
     {
+        if (!value)
+        {
+            return mlir::failure();
+        }
+
         const auto &name = var->getName();
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
@@ -18116,6 +18119,24 @@ genContext);
 
         auto namePtr = StringRef(res).copy(stringAllocator);
         return namePtr;
+    }
+
+    auto getGlobalsFullNamespaceName(StringRef name) -> StringRef
+    {
+        auto globalsFullNamespaceName = getGlobalsNamespaceFullName();
+
+        if (globalsFullNamespaceName.empty())
+        {
+            return StringRef(name).copy(stringAllocator);
+        }
+
+        std::string res;
+        res += globalsFullNamespaceName;
+        res += ".";
+        res += name;
+
+        auto namePtr = StringRef(res).copy(stringAllocator);
+        return namePtr;            
     }
 
     auto concat(StringRef fullNamespace, StringRef name) -> StringRef
@@ -18243,6 +18264,22 @@ genContext);
     {
         existLogic(genericFunctionMap);
     }
+
+    auto getGlobalsNamespaceFullName() -> llvm::StringRef
+    {
+        if (!currentNamespace->isFunctionNamespace)
+        {
+            return currentNamespace->fullName;
+        }
+
+        auto curr = currentNamespace;
+        while (curr->isFunctionNamespace)
+        {
+            curr = curr->parentNamespace;
+        }
+
+        return curr->fullName;
+    }    
 
     auto getGlobalsMap() -> llvm::StringMap<VariableDeclarationDOM::TypePtr> &
     {

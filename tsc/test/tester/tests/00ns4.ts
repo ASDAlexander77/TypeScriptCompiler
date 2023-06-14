@@ -1,4 +1,4 @@
-let glb1 = 0;
+let glb1 = 10;
 namespace fooX.bar.baz {
     let glb1 = 1;
 
@@ -11,6 +11,7 @@ namespace fooX.bar.baz {
 import bz = fooX.bar.baz;
 function main() {
     bz.b();
-    assert(glb1 == 0, "glb1");
+    assert(glb1 == 10, "glb1");
+    assert(bz.glb1 == 2, "glb1");
     print("done.");
 }
