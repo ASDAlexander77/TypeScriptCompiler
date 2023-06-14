@@ -1,24 +1,10 @@
 /// <reference path="window.win32.d.ts" />
 
-enum Messages {
-    Destroy = 0x0002,
-    Size = 0x0005,
-    Paint = 0x000f,
-    Close = 0x0010,
-    KeyDown = 0x0100,
-    Erasebkgnd = 0x0014
-}
-
-enum Keys {
-    Escape = 0x1b,
-    Space = 0x20
-}
-
 export class AppWindow {
 
     private handler_window: intptr_t;
 
-    constructor(parent_handler_window?: intptr_t) {
+    export constructor(parent_handler_window?: intptr_t) {
         this.handler_window = create_window('Hello World!', parent_handler_window, this.onMessage);
     }
 
@@ -48,17 +34,4 @@ export class AppWindow {
 
         return default_window_procedure(this.handler_window, uMsg, wParam, lParam);
     }
-}
-
-export class Application {
-    static appWindow: AppWindow;
-
-    static run() {
-        this.appWindow = new AppWindow();
-    }
-}
-
-export function Main()
-{
-    Application.run();
 }

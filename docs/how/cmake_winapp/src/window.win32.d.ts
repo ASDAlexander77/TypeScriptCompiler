@@ -10,3 +10,16 @@ declare function close_window(exitCode: uint32_t): void;
 declare function destroy_window(hwnd: intptr_t): uint32_t;
 declare function default_window_procedure(hwnd: intptr_t, msg: uint32_t, wparam: uint64_t, lparam: uint64_t): intptr_t;
 
+enum Messages {
+    Destroy = 0x0002,
+    Size = 0x0005,
+    Paint = 0x000f,
+    Close = 0x0010,
+    KeyDown = 0x0100,
+    Erasebkgnd = 0x0014
+}
+
+enum Keys {
+    Escape = 0x1b,
+    Space = 0x20
+}
