@@ -2395,8 +2395,7 @@ class MLIRGenImpl
 
         void printDebugInfo()
         {
-            LLVM_DEBUG(dbgs() << "\n!! variable = " << fullName << " type: " << type << " init: " << initial << " storage: " << storage
-                            << "\n";);
+            LLVM_DEBUG(dbgs() << "\n!! variable = " << fullName << " type: " << type << "\n";);
         }
 
         std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func;
@@ -2415,6 +2414,7 @@ class MLIRGenImpl
         bool isGlobal;
         bool isConst;
         bool isExternal;
+        bool deleted;
     };
 
     mlir::LogicalResult adjustLocalVariableType(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
@@ -2505,7 +2505,9 @@ class MLIRGenImpl
 
         builder.setInsertionPoint(block, block->begin());
 
-        if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext)))
+        GenContext genContextWithNameReceiver(genContext);
+        genContextWithNameReceiver.receiverName = variableDeclarationInfo.fullName;
+        if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver)))
         {
             return mlir::failure();
         }
@@ -2632,7 +2634,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult registerVariableDeclaration(mlir::Location location, VariableDeclarationDOM::TypePtr variableDeclaration, struct VariableDeclarationInfo &variableDeclarationInfo, bool showWarnings, const GenContext &genContext)
     {
-        if (!variableDeclarationInfo.isGlobal)
+        if (variableDeclarationInfo.deleted)
+        {
+            return mlir::success();
+        }
+        else if (!variableDeclarationInfo.isGlobal)
         {
             if (mlir::failed(declare(
                 location, 
@@ -2688,6 +2694,7 @@ class MLIRGenImpl
             if (mlir::succeeded(isGlobalGenericLambda(location, variableDeclarationInfo, genContext)))
             {
                 variableDeclarationInfo.globalOp->erase();
+                variableDeclarationInfo.deleted = true;
             }
         }
 
@@ -14048,7 +14055,14 @@ genContext);
         {
             if (declarationAST == SyntaxKind::ArrowFunction)
             {
-                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".af");
+                if (!genContext.receiverName.empty())
+                {
+                    name = genContext.receiverName.str();
+                }
+                else
+                {
+                    name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".af");
+                }
             }
             else if (declarationAST == SyntaxKind::FunctionExpression)
             {
