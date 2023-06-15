@@ -49,9 +49,11 @@ macro(add_tsc_files subpath)
 
 	    add_custom_command(
 		OUTPUT "${obj_file}"
+		#COMMAND ${CMAKE_COMMAND} -E echo "Compiling ${source_file} to ${obj_file}"
 		COMMAND "${TSC_APP}" --emit=obj -o="${obj_file}" ${TS_FLAGS} ${LLC_FLAGS} "${source_file}"
 		DEPENDS "${source_file}"
-  		COMMENT Added TS file
+		BYPRODUCTS "${obj_file}"
+  		COMMENT "Compiling ${source_file} to ${obj_file}"
 	   )
 
 	   list(APPEND TS_FILES ${obj_file})    
