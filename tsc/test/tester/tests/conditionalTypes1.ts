@@ -280,21 +280,18 @@ function f33<T, U>() {
 
 type T90<T> = T extends 0 ? 0 : () => 0;
 type T91<T> = T extends 0 ? 0 : () => 0;
-// TODO: bug: should not create function
-//const f40 = <U>(a: T90<U>): T91<U> => a;
-//const f41 = <U>(a: T91<U>): T90<U> => a;
+const f40 = <U>(a: T90<U>): T91<U> => a;
+const f41 = <U>(a: T91<U>): T90<U> => a;
 
 type T92<T> = T extends () => 0 ? () => 1 : () => 2;
 type T93<T> = T extends () => 0 ? () => 1 : () => 2;
-// TODO: bug: should not create function
-//const f42 = <U>(a: T92<U>): T93<U> => a;
-//const f43 = <U>(a: T93<U>): T92<U> => a;
+const f42 = <U>(a: T92<U>): T93<U> => a;
+const f43 = <U>(a: T93<U>): T92<U> => a;
 
 type T94<T> = T extends string ? true : 42;
 type T95<T> = T extends string ? boolean : number;
-// TODO: bug: should not create function
-//const f44 = <U>(value: T94<U>): T95<U> => value;
-//const f45 = <U>(value: T95<U>): T94<U> => value;  // Error
+const f44 = <U>(value: T94<U>): T95<U> => value;
+const f45 = <U>(value: T95<U>): T94<U> => value;  // Error
 
 // Repro from #21863
 
@@ -370,7 +367,7 @@ type Weird2 = (<U extends boolean>(a: U) => U) extends
 function main()
 {
     // TODO: add normal message that array can't be casted into object
-	//assign(a, {o: 2, c: {0: {a: 2, c: '213123'}}});
+    //assign(a, {o: 2, c: {0: {a: 2, c: '213123'}}});
 
-	print("done.");
+    print("done.");
 }
