@@ -2309,6 +2309,11 @@ class MLIRGenImpl
             initial = initial_;
         }             
 
+        void setExternal(bool isExternal_)
+        {
+            isExternal = isExternal_;
+        }        
+
         void setStorage(mlir::Value storage_)
         {
             storage = storage_;
@@ -2324,11 +2329,6 @@ class MLIRGenImpl
                        !genContext.allocateVarsOutsideOfOperation && !genContext.allocateVarsInContextThis;
             isExternal = varClass_ == VariableClass::External;
         }
-
-        void setDeclarationMode()
-        {
-            isExternal = false;
-        }        
 
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
         {
@@ -2656,7 +2656,7 @@ class MLIRGenImpl
         variableDeclarationInfo.setName(name);
 
         if (declarationMode)
-            variableDeclarationInfo.setDeclarationMode();
+            variableDeclarationInfo.setExternal(true);
 
         if (!variableDeclarationInfo.isGlobal)
         {
