@@ -51,6 +51,7 @@ macro(add_tsc_files subpath)
 		OUTPUT "${obj_file}"
 		COMMAND "${TSC_APP}" --emit=obj -o="${obj_file}" ${TS_FLAGS} ${LLC_FLAGS} "${source_file}"
 		DEPENDS "${source_file}"
+		BYPRODUCTS "${obj_file}"
   		COMMENT Added TS file
 	   )
 
