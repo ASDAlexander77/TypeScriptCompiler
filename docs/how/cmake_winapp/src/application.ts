@@ -5,5 +5,7 @@ export class Application {
 
     export static run() {
         this.appWindow = new AppWindow();
+
+	const a = this.appWindow instanceof AppWindow;
     }
 }

@@ -395,9 +395,6 @@ class MLIRGenImpl
             }
         });
 
-        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> 
-            fullNameGlobalsMapScope(fullNameGlobalsMap);
-
         // Process generating here
         GenContext genContext{};
 
