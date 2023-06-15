@@ -57,8 +57,8 @@ class VariableDeclarationDOM : public BaseDOM
   public:
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
-    VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, mlir_ts::FuncOp funcScope, Expression initValue = undefined)
-        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), functionScope(funcScope), captured(false), ignoreCapturing(false), readWrite(false)
+    VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = undefined)
+        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), readWrite(false)
     {
     }
 
@@ -94,14 +94,6 @@ class VariableDeclarationDOM : public BaseDOM
     {
         readWrite = value;
     };
-    mlir_ts::FuncOp getFuncOp() const
-    {
-        return functionScope;
-    };
-    void setFuncOp(mlir_ts::FuncOp value)
-    {
-        functionScope = value;
-    };
     bool getCaptured() const
     {
         return captured;
@@ -128,9 +120,9 @@ class FunctionParamDOM : public VariableDeclarationDOM
   public:
     using TypePtr = std::shared_ptr<FunctionParamDOM>;
 
-    FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, mlir_ts::FuncOp funcScope, bool isOptional = false, bool isMultiArgsParam = false,
+    FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, bool isMultiArgsParam = false,
                      Expression initValue = undefined, Node bindingPattern = undefined)
-        : VariableDeclarationDOM(name, type, loc, funcScope, initValue), processed(false), isOptional(isOptional), isMultiArgsParam(isMultiArgsParam),
+        : VariableDeclarationDOM(name, type, loc, initValue), processed(false), isOptional(isOptional), isMultiArgsParam(isMultiArgsParam),
           bindingPattern(bindingPattern)
     {
     }

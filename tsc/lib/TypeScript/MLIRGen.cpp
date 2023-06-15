@@ -2379,7 +2379,7 @@ class MLIRGenImpl
 
         VariableDeclarationDOM::TypePtr createVariableDeclaration(mlir::Location location, const GenContext &genContext)
         {
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(fullName, type, location, genContext.funcOp);
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(fullName, type, location);
             if (!isConst || varClass == VariableClass::ConstRef)
             {
                 varDecl->setReadWriteAccess();
@@ -3056,7 +3056,7 @@ class MLIRGenImpl
              kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor))
         {
             params.push_back(
-                std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST), genContext.funcOp));
+                std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
 
         if (!isStatic && genContext.thisType && !!parametersContextAST->parent &&
@@ -3065,12 +3065,12 @@ class MLIRGenImpl
         {            
             // TODO: this is very tricky code, if we rediscover function again and if by any chance thisType is not null, it will append thisType to lambda which very wrong code
             params.push_back(
-                std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST), genContext.funcOp));
+                std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
 
         if (parametersContextAST->parent.is<InterfaceDeclaration>())
         {
-            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST), genContext.funcOp));
+            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
         }
 
         auto formalParams = parametersContextAST->parameters;
@@ -3194,13 +3194,13 @@ class MLIRGenImpl
 
             if (isBindingPattern)
             {
-                params.push_back(std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), genContext.funcOp, isOptional, isMultiArgs,
+                params.push_back(std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, isMultiArgs,
                                                                     initializer, arg->name));
             }
             else
             {
                 params.push_back(
-                    std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), genContext.funcOp, isOptional, isMultiArgs, initializer));
+                    std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, isMultiArgs, initializer));
             }
 
             index++;
@@ -4067,7 +4067,7 @@ class MLIRGenImpl
         if (hasReturn)
         {
             auto entryOp = builder.create<mlir_ts::EntryOp>(location, mlir_ts::RefType::get(retType));
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location, genContext.funcOp);
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
             varDecl->setReadWriteAccess();
             DECLARE(varDecl, entryOp.getReference());
         }
@@ -4129,7 +4129,7 @@ class MLIRGenImpl
         auto capturedParam = arguments[firstIndex];
         auto capturedRefType = capturedParam.getType();
 
-        auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, capturedRefType, location, genContext.funcOp);
+        auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, capturedRefType, location);
 
         DECLARE(capturedParamVar, capturedParam);
 
@@ -4165,7 +4165,7 @@ class MLIRGenImpl
             assert(propValue);
 
             // captured is in this->".captured"
-            auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, propValue.getType(), location, genContext.funcOp);
+            auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, propValue.getType(), location);
             DECLARE(capturedParamVar, propValue);
         }
 
@@ -4353,7 +4353,7 @@ class MLIRGenImpl
             std::string paramName("p");
             paramName += std::to_string(index - firstIndex);
             
-            auto paramDecl = std::make_shared<VariableDeclarationDOM>(paramName, arguments[index].getType(), location, genContext.funcOp);
+            auto paramDecl = std::make_shared<VariableDeclarationDOM>(paramName, arguments[index].getType(), location);
             
             /*
             mlir::Value paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(arguments[index].getType()),
@@ -4432,7 +4432,7 @@ class MLIRGenImpl
             auto variableRefType = mlir_ts::RefType::get(variableInfo->getType());
 
             auto capturedParam =
-                std::make_shared<VariableDeclarationDOM>(name, variableRefType, variableInfo->getLoc(), genContext.funcOp);
+                std::make_shared<VariableDeclarationDOM>(name, variableRefType, variableInfo->getLoc());
             assert(capturedVarValue);
             if (capturedVarValue.getType().isa<mlir_ts::RefType>())
             {
@@ -5598,7 +5598,7 @@ class MLIRGenImpl
 
         auto location = loc(forOfStatementAST);
 
-        auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location, genContext.funcOp);
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
         // somehow it is detected as external var, seems because it is contains external ref
         varDecl->setIgnoreCapturing();
         DECLARE(varDecl, exprValue);
@@ -5676,7 +5676,7 @@ class MLIRGenImpl
 
         auto location = loc(forOfStatementAST);
 
-        auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location, genContext.funcOp);
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
         // somehow it is detected as external var, seems because it is contains external ref
         varDecl->setIgnoreCapturing();
         DECLARE(varDecl, exprValue);
@@ -6629,7 +6629,7 @@ class MLIRGenImpl
         // to remove temp var after call
         SymbolTableScopeT varScope(symbolTable);
 
-        auto varDecl = std::make_shared<VariableDeclarationDOM>(THIS_TEMPVAR_NAME, thisValue.getType(), location, genContext.funcOp);
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(THIS_TEMPVAR_NAME, thisValue.getType(), location);
         DECLARE(varDecl, thisValue);
 
         NodeFactory nf(NodeFactoryFlags::None);
@@ -8353,10 +8353,10 @@ class MLIRGenImpl
         auto funcSrc = operands[1];
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location, genContext.funcOp);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         DECLARE(srcArrayVarDecl, arraySrc);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location, genContext.funcOp);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
@@ -8400,10 +8400,10 @@ class MLIRGenImpl
         auto funcSrc = operands[1];
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location, genContext.funcOp);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         DECLARE(srcArrayVarDecl, arraySrc);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location, genContext.funcOp);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
@@ -8453,10 +8453,10 @@ class MLIRGenImpl
         auto funcSrc = operands[1];
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location, genContext.funcOp);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         DECLARE(srcArrayVarDecl, arraySrc);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location, genContext.funcOp);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
@@ -8497,10 +8497,10 @@ class MLIRGenImpl
         auto [pos, _end] = getPos(location);
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location, genContext.funcOp);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         DECLARE(srcArrayVarDecl, arraySrc);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location, genContext.funcOp);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
@@ -8555,10 +8555,10 @@ class MLIRGenImpl
         auto funcSrc = operands[1];
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location, genContext.funcOp);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         DECLARE(srcArrayVarDecl, arraySrc);
 
-        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location, genContext.funcOp);
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>(".func", funcSrc.getType(), location);
         DECLARE(funcVarDecl, funcSrc);
 
         NodeFactory nf(NodeFactoryFlags::None);
@@ -9938,10 +9938,10 @@ class MLIRGenImpl
         SymbolTableScopeT varScope(symbolTable);
 
         // register vals
-        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location, genContext.funcOp);
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
         DECLARE(srcArrayVarDecl, arraySrc);
 
-        auto dstArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".dst_array", arrayDest.getType(), location, genContext.funcOp);
+        auto dstArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".dst_array", arrayDest.getType(), location);
         dstArrayVarDecl->setReadWriteAccess(true);
         DECLARE(dstArrayVarDecl, arrayDest);
 
@@ -11105,7 +11105,6 @@ class MLIRGenImpl
                 }
             }
 
-            // auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
             if (isOuterVar && genContext.passResult)
             {
                 LLVM_DEBUG(dbgs() << "\n!! capturing var: [" << value.second->getName()
@@ -11828,7 +11827,7 @@ class MLIRGenImpl
 
                 enumLiteralTypes.push_back(enumValue.getType());
                 
-                auto varDecl = std::make_shared<VariableDeclarationDOM>(memberNamePtr, enumValue.getType(), location, genContext.funcOp);
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(memberNamePtr, enumValue.getType(), location);
                 DECLARE(varDecl, enumValue);
 
             }
@@ -11841,7 +11840,7 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: " << memberNamePtr << " <- " << indexType << "\n");
 
-                auto varDecl = std::make_shared<VariableDeclarationDOM>(memberNamePtr, indexType, location, genContext.funcOp);
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(memberNamePtr, indexType, location);
                 auto enumVal = builder.create<mlir_ts::ConstantOp>(location, indexType, enumValueAttr);
                 DECLARE(varDecl, enumVal);
             }
