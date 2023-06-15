@@ -43,6 +43,11 @@ class MLIRTypeIterator
         if (!f(def))
             return false;
 
+        if (!def)
+        {
+            return false;
+        }
+
         if (!usedTypes.contains(def))
         {
             usedTypes.insert(def);

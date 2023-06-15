@@ -529,7 +529,7 @@ class MLIRTypeHelper
             funcType = optType.getElementType();
         }        
 
-        auto f = [&](auto calledFuncType) { return calledFuncType.getInput(index); };
+        auto f = [&](auto calledFuncType) { return (index >= (int) calledFuncType.getNumInputs()) ? mlir::Type() : calledFuncType.getInput(index); };
 
         mlir::TypeSwitch<mlir::Type>(funcType)
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
