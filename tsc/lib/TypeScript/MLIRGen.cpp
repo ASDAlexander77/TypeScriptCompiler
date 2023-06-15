@@ -11096,8 +11096,6 @@ class MLIRGenImpl
                 // auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
                 auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
 
-                LLVM_DEBUG(dbgs() << "\n!! variable: " << name << " func: " << const_cast<GenContext &>(genContext).funcOp.getSymName(););
-
                 isOuterVar = !funcRegion->isAncestor(valueRegion);
                 // TODO: HACK
                 if (isOuterVar && value.second->getIgnoreCapturing())
