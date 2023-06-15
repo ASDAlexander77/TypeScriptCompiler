@@ -12860,6 +12860,12 @@ genContext);
     mlir::LogicalResult mlirGenClassTypeDescriptorField(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                         const GenContext &genContext)
     {
+        // TODO: experiment if we need it at all even external declaration
+        if (newClassPtr->isDeclaration)
+        {
+            return mlir::success();
+        }
+
         MLIRCodeLogic mcl(builder);
 
         // register global
