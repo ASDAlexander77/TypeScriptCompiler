@@ -14189,6 +14189,15 @@ genContext);
                         extendsType->processed = true;
                     }
                 })
+                .template Case<mlir_ts::TupleType>([&](auto tupleType) {
+                    llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+                    if (mlir::succeeded(mth.getFields(tupleType, destTupleFields)))
+                    {
+                        success = true;
+                        for (auto field : destTupleFields)
+                            success &= mlir::succeeded(mlirGenInterfaceAddFieldMember(newInterfacePtr, field.id, field.type, field.isConditional));
+                    }
+                })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
             if (!success)
@@ -14284,6 +14293,38 @@ genContext);
         return mlir::failure();
     }
 
+    mlir::LogicalResult mlirGenInterfaceAddFieldMember(InterfaceInfo::TypePtr newInterfacePtr, mlir::Attribute fieldId, mlir::Type typeIn, bool isConditional, bool declareInterface = true)
+    {
+        auto &fieldInfos = newInterfacePtr->fields;
+        auto type = typeIn;
+
+        // fix type for fields with FuncType
+        if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
+        {
+
+            auto funcType = getFunctionType(hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
+            type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
+        }
+        else if (auto funcType = type.dyn_cast<mlir_ts::FunctionType>())
+        {
+
+            type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
+        }
+
+        if (isNoneType(type))
+        {
+            LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " FAILED\n");
+            return mlir::failure();
+        }
+
+        if (declareInterface || newInterfacePtr->getFieldIndex(fieldId) == -1)
+        {
+            fieldInfos.push_back({fieldId, type, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenInterfaceMethodMember(InterfaceDeclaration interfaceDeclarationAST,
                                                      InterfaceInfo::TypePtr newInterfacePtr,
                                                      TypeElement interfaceMember, bool declareInterface,
@@ -14296,7 +14337,6 @@ genContext);
 
         auto location = loc(interfaceMember);
 
-        auto &fieldInfos = newInterfacePtr->fields;
         auto &methodInfos = newInterfacePtr->methods;
 
         mlir::Value initValue;
@@ -14322,28 +14362,9 @@ genContext);
                 return mlir::failure();
             }
 
-            // fix type for fields with FuncType
-            if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
+            if (mlir::failed(mlirGenInterfaceAddFieldMember(newInterfacePtr, fieldId, type, isConditional, declareInterface)))
             {
-
-                auto funcType = getFunctionType(hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
-                type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
-            }
-            else if (auto funcType = type.dyn_cast<mlir_ts::FunctionType>())
-            {
-
-                type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
-            }
-
-            if (isNoneType(type))
-            {
-                LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " FAILED\n");
                 return mlir::failure();
-            }
-
-            if (declareInterface || newInterfacePtr->getFieldIndex(fieldId) == -1)
-            {
-                fieldInfos.push_back({fieldId, type, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
             }
         }
         else if (kind == SyntaxKind::MethodSignature || kind == SyntaxKind::ConstructSignature 
