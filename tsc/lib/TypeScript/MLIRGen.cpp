@@ -6662,13 +6662,19 @@ class MLIRGenImpl
 
         if (!isConstValue(leftExpressionValue))
         {
-            emitError(location, "not supported");
+            emitError(loc(binaryExpressionAST->left), "not supported");
             return mlir::failure();
         }
 
         auto resultRight = mlirGen(binaryExpressionAST->right, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(resultRight)
         auto rightExpressionValue = V(resultRight);
+
+        if (rightExpressionValue.getType().isa<mlir_ts::UnionType>())
+        {
+            emitError(loc(binaryExpressionAST->right), "not supported");
+            return mlir::failure();
+        }
 
         if (auto constantOp = leftExpressionValue.getDefiningOp<mlir_ts::ConstantOp>())        
         {
