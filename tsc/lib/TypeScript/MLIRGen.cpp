@@ -4697,7 +4697,7 @@ class MLIRGenImpl
             {
                 emitError(location, "No return value");
             }
-            
+
             VALIDATE(expressionValue, location)
             
             return mlirGenReturnValue(location, expressionValue, false, genContext);
@@ -8329,7 +8329,12 @@ class MLIRGenImpl
             }
 
             llvm_unreachable("not implemented (ElementAccessExpression)");
-        }            
+        }          
+        else if (auto enumType = arrayType.dyn_cast<mlir_ts::AnyType>())
+        {
+            emitError(location, "not supported");
+            return mlir::failure();
+        }          
         else
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: " << arrayType
@@ -9890,6 +9895,12 @@ class MLIRGenImpl
         auto result = mlirGen(taggedTemplateExpressionAST->tag, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto callee = V(result);
+
+        if (!mth.isAnyFunctionType(callee.getType()))
+        {
+            emitError(location, "is not callable");
+            return mlir::failure();
+        }
 
         auto inputs = mth.getParamsFromFuncRef(callee.getType());
 
