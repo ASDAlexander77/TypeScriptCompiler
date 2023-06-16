@@ -6639,11 +6639,6 @@ class MLIRGenImpl
 
         if (auto hasLength = evaluateProperty(binaryExpressionAST->right, LENGTH_FIELD_NAME, genContext))
         {
-            // condition
-            // auto cond = nf.createBinaryExpression(
-            //     binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken),
-            //     nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
-
             auto cond1 = nf.createBinaryExpression(
                 binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken),
                 nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
