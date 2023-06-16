@@ -6637,12 +6637,47 @@ class MLIRGenImpl
 
         NodeFactory nf(NodeFactoryFlags::None);
 
-        // condition
-        auto cond = nf.createBinaryExpression(
-            binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken),
-            nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
+        if (auto hasLength = evaluateProperty(binaryExpressionAST->right, LENGTH_FIELD_NAME, genContext))
+        {
+            // condition
+            // auto cond = nf.createBinaryExpression(
+            //     binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken),
+            //     nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
 
-        return mlirGen(cond, genContext);
+            auto cond1 = nf.createBinaryExpression(
+                binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken),
+                nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(LENGTH_FIELD_NAME))));
+
+            auto cond2 = nf.createBinaryExpression(
+                binaryExpressionAST->left, nf.createToken(SyntaxKind::GreaterThanEqualsToken), nf.createNumericLiteral(S("0")));
+
+            auto cond = nf.createBinaryExpression(cond1, nf.createToken(SyntaxKind::AmpersandAmpersandToken), cond2);
+
+            return mlirGen(cond, genContext);
+        }
+
+        auto resultLeft = mlirGen(binaryExpressionAST->left, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(resultLeft)
+        auto leftExpressionValue = V(resultLeft);
+
+        if (!isConstValue(leftExpressionValue))
+        {
+            emitError(location, "not supported");
+            return mlir::failure();
+        }
+
+        auto resultRight = mlirGen(binaryExpressionAST->right, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(resultRight)
+        auto rightExpressionValue = V(resultRight);
+
+        if (auto constantOp = leftExpressionValue.getDefiningOp<mlir_ts::ConstantOp>())        
+        {
+            auto hasField = !!mth.getFieldTypeByFieldName(rightExpressionValue.getType(), constantOp.getValue());
+            return mlirGenBooleanValue(loc(binaryExpressionAST->right), hasField);
+        }
+
+        emitError(location, "not supported");
+        return mlir::failure();
     }
 
     ValueOrLogicalResult mlirGenCallThisMethod(mlir::Location location, mlir::Value thisValue, StringRef methodName,
@@ -9886,18 +9921,21 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::NullOp>(loc(nullLiteral), getNullType()));
     }
 
+    ValueOrLogicalResult mlirGenBooleanValue(mlir::Location location, bool val)
+    {
+        auto attrVal = mlir::BoolAttr::get(builder.getContext(), val);
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getBooleanType());
+        return V(builder.create<mlir_ts::ConstantOp>(location, literalType, attrVal));
+    }
+
     ValueOrLogicalResult mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
     {
-        auto attrVal = mlir::BoolAttr::get(builder.getContext(), true);
-        auto literalType = mlir_ts::LiteralType::get(attrVal, getBooleanType());
-        return V(builder.create<mlir_ts::ConstantOp>(loc(trueLiteral), literalType, attrVal));
+        return mlirGenBooleanValue(loc(trueLiteral), true);
     }
 
     ValueOrLogicalResult mlirGen(FalseLiteral falseLiteral, const GenContext &genContext)
     {
-        auto attrVal = mlir::BoolAttr::get(builder.getContext(), false);
-        auto literalType = mlir_ts::LiteralType::get(attrVal, getBooleanType());
-        return V(builder.create<mlir_ts::ConstantOp>(loc(falseLiteral), literalType, attrVal));
+        return mlirGenBooleanValue(loc(falseLiteral), false);
     }
 
     ValueOrLogicalResult mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
@@ -9936,13 +9974,17 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), literalType, attrVal));
     }
 
+    ValueOrLogicalResult mlirGenStringValue(mlir::Location location, std::string text)
+    {
+        auto attrVal = getStringAttr(text);
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getStringType());
+        return V(builder.create<mlir_ts::ConstantOp>(location, literalType, attrVal));
+    }
+
     ValueOrLogicalResult mlirGen(ts::StringLiteral stringLiteral, const GenContext &genContext)
     {
         auto text = convertWideToUTF8(stringLiteral->text);
-
-        auto attrVal = getStringAttr(text);
-        auto literalType = mlir_ts::LiteralType::get(attrVal, getStringType());
-        return V(builder.create<mlir_ts::ConstantOp>(loc(stringLiteral), literalType, attrVal));
+        return mlirGenStringValue(loc(stringLiteral), text);
     }
 
     ValueOrLogicalResult mlirGen(ts::NoSubstitutionTemplateLiteral noSubstitutionTemplateLiteral,
