@@ -4693,6 +4693,11 @@ class MLIRGenImpl
             EXIT_IF_FAILED(result)
             
             auto expressionValue = V(result);
+            if (!expressionValue)
+            {
+                emitError(location, "No return value");
+            }
+            
             VALIDATE(expressionValue, location)
             
             return mlirGenReturnValue(location, expressionValue, false, genContext);
