@@ -1225,6 +1225,8 @@ def TypeScript_CreateExtensionFunctionOp : TypeScript_Op<"CreateExtensionFunctio
   );
 
   let assemblyFormat = "$thisVal `,` $func `:` type($thisVal) `,` type($func) attr-dict `->` type($result)";
+
+  let hasCanonicalizer = 1;
 }
 
 def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {

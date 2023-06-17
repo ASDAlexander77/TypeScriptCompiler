@@ -442,6 +442,15 @@ void mlir_ts::NullOp::getCanonicalizationPatterns(RewritePatternSet &results, ML
 }
 
 //===----------------------------------------------------------------------===//
+// CreateExtensionFunction
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::CreateExtensionFunctionOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::CreateExtensionFunctionOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // UndefOp
 //===----------------------------------------------------------------------===//
 
