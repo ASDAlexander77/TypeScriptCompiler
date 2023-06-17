@@ -13,5 +13,8 @@ function main() {
 
     assert(glb1 == 1);
 
+    const test = (names: string[]) => names?.filter(x => x);
+    for (const s of test(["asd", "asd1", null])) print(s);
+
     print("done.");
 }
