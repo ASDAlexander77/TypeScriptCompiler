@@ -1365,14 +1365,13 @@ class MLIRGenImpl
             {
                 // TODO: review how to call functions such as: "function* Map<T, R>(a: T[] | Iterable<T>, f: (i: T) => R) { ... }"
                 // special case when UnionType is used in generic method
-                /*
                 for (auto tempSubType : tempUnionType.getTypes())
                 {
                     currentTemplateType = tempSubType;
                     currentType = concreteType;
 
                     auto count = results.size();
-                    inferType(currentTemplateType, currentType, results);
+                    inferType(location, currentTemplateType, currentType, results, genContext);
                     if (count < results.size())
                     {
                         return;
@@ -1380,7 +1379,6 @@ class MLIRGenImpl
                 }
 
                 return;
-                */
             }
         }
 
