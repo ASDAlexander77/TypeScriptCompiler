@@ -213,6 +213,31 @@ class MLIRTypeHelper
         return elementType;
     }
 
+    bool isNullableOrOptionalType(mlir::Type typeIn)
+    {
+        if (typeIn.isa<mlir_ts::NullType>() 
+            || typeIn.isa<mlir_ts::UndefinedType>() 
+            || typeIn.isa<mlir_ts::StringType>() 
+            || typeIn.isa<mlir_ts::ObjectType>() 
+            || typeIn.isa<mlir_ts::ClassType>() 
+            || typeIn.isa<mlir_ts::InterfaceType>()
+            || typeIn.isa<mlir_ts::OptionalType>()
+            || typeIn.isa<mlir_ts::AnyType>()
+            || typeIn.isa<mlir_ts::UnknownType>()
+            || typeIn.isa<mlir_ts::RefType>()
+            || typeIn.isa<mlir_ts::ValueRefType>())
+        {
+            return true;            
+        }
+
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(typeIn))
+        {
+            return llvm::any_of(unionType.getTypes(), [&](mlir::Type t) { return isNullableOrOptionalType(t); });
+        }
+
+        return false;
+    }
+
     mlir::Attribute convertAttrIntoType(mlir::Attribute attr, mlir::Type destType, mlir::OpBuilder &builder)
     {
         mlir::Type srcType;

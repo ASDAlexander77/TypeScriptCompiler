@@ -7568,7 +7568,7 @@ class MLIRGenImpl
                                                               bool isConditional, MLIRPropertyAccessCodeLogic &cl,
                                                               const GenContext &genContext)
     {
-        if (isConditional)
+        if (isConditional && mth.isNullableOrOptionalType(objectValue.getType()))
         {
             // TODO: replace with one op "Optional <has_value>, <value>"
             CAST_A(condValue, location, getBooleanType(), objectValue, genContext);
