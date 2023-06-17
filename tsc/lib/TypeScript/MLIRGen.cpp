@@ -7587,6 +7587,24 @@ class MLIRGenImpl
             // value if true
             auto result = mlirGenPropertyAccessExpressionBaseLogic(location, objectValue, cl, genContext);
             auto value = V(result);
+
+            // special case: conditional extension function <xxx>?.<ext>();
+            if (auto createExtentionFunction = value.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>())
+            {
+                // we need to convert into CreateBoundFunction, so it should be reference type for this, do I need to case value type into reference type?
+                auto extFuncType = createExtentionFunction.getType();
+                auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(
+                    location, 
+                    getBoundFunctionType(
+                        extFuncType.getInputs(), 
+                        extFuncType.getResults(), 
+                        extFuncType.isVarArg()), 
+                    createExtentionFunction.getThisVal(), createExtentionFunction.getFunc());            
+                createExtentionFunction->erase();
+                value = boundFuncVal;
+                ifOp.getResults().front().setType(getOptionalType(value.getType()));
+            }
+
             auto optValue =
                 builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
