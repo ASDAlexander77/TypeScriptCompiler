@@ -3391,6 +3391,16 @@ class MLIRGenImpl
         return std::make_tuple(funcProto, funcType, argTypes);
     }
 
+    bool isFuncAttr(StringRef name)
+    {
+        static llvm::StringMap<bool> funcAttrs {
+            {"noinline", true },
+            {"optnone", true },
+        };
+
+        return funcAttrs[name];        
+    }
+
     std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, mlir::LogicalResult, bool> mlirGenFunctionPrototype(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
@@ -3474,23 +3484,34 @@ class MLIRGenImpl
             funcProto->setHasExtraFields(existLocalVarsInThisContextMap(funcProto->getName()));
         }
 
+        SmallVector<mlir::NamedAttribute> attrs;
+#ifdef ADD_GC_ATTRIBUTE
+        attrs.push_back({builder.getIdentifier(TS_GC_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
+#endif
+        // add decorations, "noinline, optnone"
+        for (auto decorator : functionLikeDeclarationBaseAST->decorators)
+        {
+            if (decorator->expression == SyntaxKind::Identifier)
+            {
+                auto name = MLIRHelper::getName(decorator->expression.as<Node>());
+                if (isFuncAttr(name))
+                {
+                    attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
+                }
+            }
+        }
+
         auto it = getCaptureVarsMap().find(funcProto->getName());
         auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
         if (hasCapturedVars)
         {
             // important set when it is discovered and in process second type
             funcProto->setHasCapturedVars(true);
-            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType);
+            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
         }
         else
         {
-#ifdef ADD_GC_ATTRIBUTE
-            SmallVector<mlir::NamedAttribute> attrs;
-            attrs.push_back({builder.getIdentifier(TS_GC_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
             funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
-#else
-            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType);
-#endif
         }
 
         funcProto->setFuncType(funcType);
