@@ -2739,6 +2739,11 @@ class MLIRGenImpl
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
+            if (!subInit)
+            {
+                return mlir::failure();
+            }
+
             if (mlir::failed(processDeclaration(
                     arrayBindingElement.as<BindingElement>(), varClass,
                     [&](mlir::Location, const GenContext &) { return std::make_pair(subInit.getType(), subInit); }, genContext)))
