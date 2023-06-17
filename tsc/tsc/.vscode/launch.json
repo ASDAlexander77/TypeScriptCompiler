@@ -57,7 +57,7 @@
             "name": "(Windows) tsc.exe - MLIR-AFFINE",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=mlir-affine",
                 "-debug-only=mlir,affine",

@@ -1088,18 +1088,24 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                     auto getThisVal = indirectCall.getArgOperands().front().getDefiningOp<mlir_ts::GetThisOp>();
 
                     auto thisVal = createBoundFunctionOp.getThisVal();
+                    auto thisValStripedCast = thisVal;
                     if (auto castOp = thisVal.getDefiningOp<mlir_ts::CastOp>())
                     {
-                        thisVal = castOp.getIn();
+                        thisValStripedCast = castOp.getIn();
                     }
 
-                    auto hasThis = !isa<mlir_ts::NullOp>(thisVal.getDefiningOp());
+                    auto hasThis = !isa<mlir_ts::NullOp>(thisValStripedCast.getDefiningOp());
 
                     // Replace with a direct call.
                     SmallVector<mlir::Value> args;
                     if (hasThis)
                     {
-                        args.push_back(thisVal);
+                        auto neededThisForCall = 
+                            createBoundFunctionOp.getType().cast<mlir_ts::BoundFunctionType>().getInput(0) == thisValStripedCast.getType() 
+                                ? thisValStripedCast 
+                                : thisVal;
+
+                        args.push_back(neededThisForCall);
                     }
 
                     args.append(indirectCall.getArgOperands().begin() + (hasThis ? 1 : 0), indirectCall.getArgOperands().end());
