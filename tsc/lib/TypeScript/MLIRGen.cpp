@@ -8852,13 +8852,20 @@ class MLIRGenImpl
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledExtentFuncType) {
                 auto calledFuncType =
                     getFunctionType(calledExtentFuncType.getInputs(), calledExtentFuncType.getResults(), calledExtentFuncType.isVarArg());
-                auto createExtensionFunctionOp = funcRefValue.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>();
-                auto thisValue = createExtensionFunctionOp.getThisVal();
-                auto funcRefValue = createExtensionFunctionOp.getFunc();
-                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, operands, genContext);
+                if (auto createExtensionFunctionOp = funcRefValue.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>())
+                {
+                    auto thisValue = createExtensionFunctionOp.getThisVal();
+                    auto funcRefValue = createExtensionFunctionOp.getFunc();
+                    value = mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, operands, genContext);
 
-                // cleanup
-                createExtensionFunctionOp.erase();
+                    // cleanup
+                    createExtensionFunctionOp.erase();
+                }
+                else
+                {
+                    emitError(location, "not supported");
+                    value = mlir::Value();
+                }
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
