@@ -932,6 +932,15 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             funcAttrs.push_back(ATTR("noinline"));
         }
 
+        // copy attributes over
+        for (auto attr : funcOp->getAttrs())
+        {
+            auto name = attr.getName();
+            if (isSkipAttr(name)) 
+                continue;
+            funcAttrs.push_back(name);
+        }
+
 #ifdef DISABLE_OPT
         // add LLVM attributes to fix issue with shift >> 32
         funcAttrs.append({
@@ -973,6 +982,17 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         rewriter.eraseOp(funcOp);
 
         return success();
+    }
+
+    bool isSkipAttr(StringRef name) const
+    {
+        static llvm::StringMap<bool> funcAttrs {
+            {"function_type", true },
+            {"sym_name", true },
+            {"sym_visibility", true },
+        };
+
+        return funcAttrs[name];        
     }
 };
 

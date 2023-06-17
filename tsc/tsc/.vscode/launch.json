@@ -60,6 +60,7 @@
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=mlir-affine",
+                "--opt",
                 "-debug-only=mlir,affine",
                 "-mlir-disable-threading",
                 "C:/temp/1.ts"
