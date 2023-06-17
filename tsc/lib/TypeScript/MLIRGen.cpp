@@ -7592,16 +7592,7 @@ class MLIRGenImpl
             if (auto createExtentionFunction = value.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>())
             {
                 // we need to convert into CreateBoundFunction, so it should be reference type for this, do I need to case value type into reference type?
-                auto extFuncType = createExtentionFunction.getType();
-                auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(
-                    location, 
-                    getBoundFunctionType(
-                        extFuncType.getInputs(), 
-                        extFuncType.getResults(), 
-                        extFuncType.isVarArg()), 
-                    createExtentionFunction.getThisVal(), createExtentionFunction.getFunc());            
-                createExtentionFunction->erase();
-                value = boundFuncVal;
+                value = createBoundMethodFromExtensionMethod(location, createExtentionFunction);
                 ifOp.getResults().front().setType(getOptionalType(value.getType()));
             }
 
@@ -8857,9 +8848,6 @@ class MLIRGenImpl
                     auto thisValue = createExtensionFunctionOp.getThisVal();
                     auto funcRefValue = createExtensionFunctionOp.getFunc();
                     value = mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, operands, genContext);
-
-                    // cleanup
-                    createExtensionFunctionOp.erase();
                 }
                 else
                 {
@@ -15243,6 +15231,22 @@ genContext);
             }        
         }
 
+        // cast ext method to bound method
+        if (auto extFuncType = valueType.dyn_cast<mlir_ts::ExtensionFunctionType>())
+        {
+            if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
+            {
+                auto boundFunc = createBoundMethodFromExtensionMethod(location, value.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>());
+                return V(builder.create<mlir_ts::CastOp>(location, type, boundFunc));
+            }
+
+            if (auto boundFuncType = type.dyn_cast<mlir_ts::BoundFunctionType>())
+            {
+                auto boundFunc = createBoundMethodFromExtensionMethod(location, value.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>());
+                return V(builder.create<mlir_ts::CastOp>(location, type, boundFunc));
+            }            
+        }
+
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
@@ -15341,6 +15345,20 @@ genContext);
 
         return mlir::Value();    
     }    
+
+    mlir_ts::CreateBoundFunctionOp createBoundMethodFromExtensionMethod(mlir::Location location, mlir_ts::CreateExtensionFunctionOp createExtentionFunction)
+    {
+        auto extFuncType = createExtentionFunction.getType();
+        auto boundFuncVal = builder.create<mlir_ts::CreateBoundFunctionOp>(
+            location, 
+            getBoundFunctionType(
+                extFuncType.getInputs(), 
+                extFuncType.getResults(), 
+                extFuncType.isVarArg()), 
+            createExtentionFunction.getThisVal(), createExtentionFunction.getFunc());            
+
+        return boundFuncVal;
+    }
 
     mlir::Type getType(Node typeReferenceAST, const GenContext &genContext)
     {

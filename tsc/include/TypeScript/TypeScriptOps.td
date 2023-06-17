@@ -1217,7 +1217,7 @@ def TypeScript_CreateExtensionFunctionOp : TypeScript_Op<"CreateExtensionFunctio
   }];
 
   let arguments = (ins
-    TypeScript_AnyRefLikeOrInterface:$thisVal, TypeScript_Function:$func
+    AnyType:$thisVal, TypeScript_Function:$func
   );
 
   let results = (outs
