@@ -7112,28 +7112,79 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto rightExpressionValue = V(result);
 
+        LLVM_DEBUG(dbgs() << "\n!! right expr.: " << rightExpressionValue << "\n";);
+
+        auto isTuple = false;
         mlir::Type elementType;
+        mlir_ts::TupleType tupleType;
         TypeSwitch<mlir::Type>(rightExpressionValue.getType())
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { elementType = arrayType.getElementType(); })
             .Case<mlir_ts::ConstArrayType>([&](auto constArrayType) { elementType = constArrayType.getElementType(); })
+            .Case<mlir_ts::TupleType>([&](auto tupleType_) { isTuple = true; tupleType = tupleType_; })
+            .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { isTuple = true; tupleType = mth.convertConstTupleTypeToTupleType(constTupleType); })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
 
-        auto index = 0;
-        for (auto leftItem : arrayLiteralExpression->elements)
+        if (!isTuple)
         {
-            auto result = mlirGen(leftItem, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(result)
-            auto leftExpressionValue = V(result);
+            auto index = 0;
+            for (auto leftItem : arrayLiteralExpression->elements)
+            {
+                auto result = mlirGen(leftItem, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                auto leftExpressionValue = V(result);
 
-            // TODO: unify array access like Property access
-            auto indexValue =
-                builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index++));
+                // special case for [a = 1, b = 2] = [2, 3];
+                if (leftItem == SyntaxKind::BinaryExpression)
+                {
+                    auto binExpr = leftItem.as<BinaryExpression>();
+                    auto result = mlirGen(binExpr->left, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(result)
+                    leftExpressionValue = V(result);
+                }
 
-            auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType),
-                                                                 rightExpressionValue, indexValue);
-            auto rightValue = builder.create<mlir_ts::LoadOp>(location, elementType, elemRef);
+                // TODO: unify array access like Property access
+                auto indexValue =
+                    builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index++));
 
-            mlirGenSaveLogicOneItem(location, leftExpressionValue, rightValue, genContext);
+                auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType),
+                                                                    rightExpressionValue, indexValue);
+                auto rightValue = builder.create<mlir_ts::LoadOp>(location, elementType, elemRef);
+
+                if (mlir::failed(mlirGenSaveLogicOneItem(location, leftExpressionValue, rightValue, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+        }
+        else
+        {
+            auto index = 0;
+            for (auto leftItem : arrayLiteralExpression->elements)
+            {
+                auto result = mlirGen(leftItem, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                auto leftExpressionValue = V(result);
+
+                // special case for [a = 1, b = "abc"] = [2, "def"];
+                if (leftItem == SyntaxKind::BinaryExpression)
+                {
+                    auto binExpr = leftItem.as<BinaryExpression>();
+                    auto result = mlirGen(binExpr->left, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(result)
+                    leftExpressionValue = V(result);
+                }
+
+                MLIRPropertyAccessCodeLogic cl(builder, location, rightExpressionValue, builder.getI32IntegerAttr(index));
+                auto rightValue = cl.Tuple(tupleType, true);
+
+                if (mlir::failed(mlirGenSaveLogicOneItem(location, leftExpressionValue, rightValue, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                index++;
+            }
+
         }
 
         // no passing value
