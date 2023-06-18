@@ -2767,26 +2767,37 @@ class MLIRGenImpl
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
             auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
-            auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
-            if (propertyName.empty())
+
+            mlir::Attribute fieldName;
+
+            if (objectBindingElement->propertyName == SyntaxKind::NumericLiteral)
             {
-                propertyName = MLIRHelper::getName(objectBindingElement->name);
+                fieldName = getNumericLiteralAttribute(objectBindingElement->propertyName);
+            }
+            else
+            {
+                auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
+                if (propertyName.empty())
+                {
+                    propertyName = MLIRHelper::getName(objectBindingElement->name);
+                }
+
+                fieldName = MLIRHelper::TupleFieldName(propertyName, builder.getContext());
             }
 
-            LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern:\n\t" << init << "\n\tprop: " << propertyName << "\n");
+            LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern:\n\t" << init << "\n\tprop: " << fieldName << "\n");
 
             mlir::Value subInit;
             mlir::Type subInitType;
 
             if (!isSpreadBinding)
             {
-                auto result = mlirGenPropertyAccessExpression(location, init, propertyName, false, genContext);
+                auto result = mlirGenPropertyAccessExpression(location, init, fieldName, false, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
 
                 if (objectBindingElement->initializer)
                 {
                     auto tupleType = type.cast<mlir_ts::TupleType>();
-                    auto fieldName = MLIRHelper::TupleFieldName(propertyName, builder.getContext());
                     auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
                     auto res = optionalValueOrDefault(location, subType, V(result), objectBindingElement->initializer, genContext);
                     subInit = V(res);
@@ -2898,6 +2909,11 @@ class MLIRGenImpl
     mlir::LogicalResult processDeclaration(NamedDeclaration item, VariableClass varClass,
                             std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func, const GenContext &genContext, bool showWarnings = false)
     {
+        if (item == SyntaxKind::OmittedExpression)
+        {
+            return mlir::success();
+        }
+
         return processDeclarationName(item->name, varClass, func, genContext, showWarnings);
     }
 
@@ -7176,6 +7192,10 @@ class MLIRGenImpl
 
                 MLIRPropertyAccessCodeLogic cl(builder, location, rightExpressionValue, builder.getI32IntegerAttr(index));
                 auto rightValue = cl.Tuple(tupleType, true);
+                if (!rightValue)
+                {
+                    return mlir::failure();
+                }
 
                 if (mlir::failed(mlirGenSaveLogicOneItem(location, leftExpressionValue, rightValue, genContext)))
                 {
@@ -10041,6 +10061,27 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(FalseLiteral falseLiteral, const GenContext &genContext)
     {
         return mlirGenBooleanValue(loc(falseLiteral), false);
+    }
+
+    mlir::Attribute getNumericLiteralAttribute(NumericLiteral numericLiteral)
+    {
+        if (numericLiteral->text.find(S(".")) == string::npos)
+        {
+            try
+            {
+                return builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text));
+            }
+            catch (const std::out_of_range &)
+            {
+                return builder.getI64IntegerAttr(to_bignumber(numericLiteral->text));
+            }
+        }
+
+#ifdef NUMBER_F64
+        return builder.getF64FloatAttr(to_float_val(numericLiteral->text));
+#else
+        return builder.getF32FloatAttr(to_float_val(numericLiteral->text));
+#endif
     }
 
     ValueOrLogicalResult mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
