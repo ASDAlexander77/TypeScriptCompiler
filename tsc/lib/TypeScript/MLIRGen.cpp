@@ -3126,17 +3126,17 @@ class MLIRGenImpl
 
         mlir::Type fieldType;
 
-        if (objectBindingElement->name == SyntaxKind::ObjectBindingPattern || objectBindingElement->name == SyntaxKind::ArrayBindingPattern)
-        {
-            fieldType = mlirGenParameterObjectOrArrayBinding(objectBindingElement->name, genContext);
-        }
-        else if (objectBindingElement->initializer)
+        if (objectBindingElement->initializer)
         {
             auto evalType = evaluate(objectBindingElement->initializer, genContext);
             auto widenType = mth.wideStorageType(evalType);
 
             // if it has initializer - it should have optional type to support default values
             fieldType = getOptionalType(widenType);
+        }
+        else if (objectBindingElement->name == SyntaxKind::ObjectBindingPattern || objectBindingElement->name == SyntaxKind::ArrayBindingPattern)
+        {
+            fieldType = mlirGenParameterObjectOrArrayBinding(objectBindingElement->name, genContext);
         }
         else
         {
