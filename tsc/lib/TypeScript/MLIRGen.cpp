@@ -2729,13 +2729,13 @@ class MLIRGenImpl
                         location, mlir_ts::RefType::get(constArrayType.getElementType()), init, constIndex);
                     subInit = builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef);
                 })
-                .template Case<mlir_ts::ArrayType>([&](auto tupleType) {
+                .template Case<mlir_ts::ArrayType>([&](auto arrayType) {
                     // TODO: unify it with ElementAccess
                     auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
                                                                           builder.getI32IntegerAttr(index));
                     auto elemRef = builder.create<mlir_ts::ElementRefOp>(
-                        location, mlir_ts::RefType::get(tupleType.getElementType()), init, constIndex);
-                    subInit = builder.create<mlir_ts::LoadOp>(location, tupleType.getElementType(), elemRef);
+                        location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
+                    subInit = builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef);
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
@@ -2764,15 +2764,18 @@ class MLIRGenImpl
     {
         auto [type, init] = func(location, genContext);
 
+        auto index = 0;
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
             auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
 
             mlir::Attribute fieldName;
+            auto isNumericAccess = false;
 
             if (objectBindingElement->propertyName == SyntaxKind::NumericLiteral)
             {
                 fieldName = getNumericLiteralAttribute(objectBindingElement->propertyName);
+                isNumericAccess = true;
             }
             else
             {
@@ -2792,20 +2795,42 @@ class MLIRGenImpl
 
             if (!isSpreadBinding)
             {
-                auto result = mlirGenPropertyAccessExpression(location, init, fieldName, false, genContext);
-                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                mlir::Value value;
+                if (isNumericAccess)
+                {
+                    MLIRPropertyAccessCodeLogic cl(builder, location, init, fieldName);
+                    if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+                    {
+                        value = cl.Tuple(tupleType, true);
+                    }
+                    else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
+                    {
+                        value = cl.Tuple(constTupleType, true);
+                    }
+                }
+                else
+                {
+                    auto result = mlirGenPropertyAccessExpression(location, init, fieldName, false, genContext);
+                    EXIT_IF_FAILED_OR_NO_VALUE(result)
+                    value = V(result);
+                }
+
+                if (!value)
+                {
+                    return mlir::failure();
+                }
 
                 if (objectBindingElement->initializer)
                 {
                     auto tupleType = type.cast<mlir_ts::TupleType>();
                     auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
-                    auto res = optionalValueOrDefault(location, subType, V(result), objectBindingElement->initializer, genContext);
+                    auto res = optionalValueOrDefault(location, subType, value, objectBindingElement->initializer, genContext);
                     subInit = V(res);
                     subInitType = subInit.getType();                    
                 }
                 else
                 {
-                    subInit = V(result);
+                    subInit = value;
                     subInitType = subInit.getType();
                 }
             }
@@ -2868,6 +2893,8 @@ class MLIRGenImpl
             {
                 return mlir::failure();
             }
+
+            index++;
         }
 
         return mlir::success();;
