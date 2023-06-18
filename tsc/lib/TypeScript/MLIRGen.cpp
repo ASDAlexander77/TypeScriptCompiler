@@ -3111,6 +3111,80 @@ class MLIRGenImpl
         return mlirGen(variableStatementAST->declarationList, genContext);
     }
 
+    mlir::LogicalResult mlirGenParameterBindingElement(BindingElement objectBindingElement, SmallVector<mlir_ts::FieldInfo> &fieldInfos, const GenContext &genContext)
+    {
+        auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
+        if (propertyName.empty())
+        {
+            propertyName = MLIRHelper::getName(objectBindingElement->name);
+        }
+
+        if (objectBindingElement->initializer)
+        {
+            auto evalType = evaluate(objectBindingElement->initializer, genContext);
+            auto widenType = mth.wideStorageType(evalType);
+
+            // if it has initializer - it should have optional type to support default values
+            widenType = getOptionalType(widenType);
+
+            LLVM_DEBUG(dbgs() << "\n!! property " << propertyName << " mapped to type " << widenType << "");
+
+            fieldInfos.push_back({MLIRHelper::TupleFieldName(propertyName, builder.getContext()), widenType});
+        }
+        else
+        {
+            emitError(loc(objectBindingElement)) << "can't resolve type for binding pattern '"
+                                                << propertyName << "', provide default initializer";
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
+    mlir::Type mlirGenParameterBindingDeclaration(ParameterDeclaration arg, const GenContext &genContext)
+    {
+        // TODO: put it into function to support recursive call
+        if (arg->name == SyntaxKind::ObjectBindingPattern)
+        {
+            SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
+            // we need to construct object type
+            auto objectBindingPattern = arg->name.as<ObjectBindingPattern>();
+            auto index = 0;
+            for (auto objectBindingElement : objectBindingPattern->elements)
+            {
+                mlirGenParameterBindingElement(objectBindingElement, fieldInfos, genContext);
+                index++;
+            }
+
+            return getTupleType(fieldInfos);
+        } 
+        else if (arg->name == SyntaxKind::ArrayBindingPattern)
+        {
+            SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
+            // we need to construct object type
+            auto arrayBindingPattern = arg->name.as<ArrayBindingPattern>();
+            auto index = 0;
+            for (auto arrayBindingElement : arrayBindingPattern->elements)
+            {
+                if (arrayBindingElement == SyntaxKind::OmittedExpression)
+                {
+                    index++;
+                    continue;
+                }
+
+                auto objectBindingElement = arrayBindingElement.as<BindingElement>();
+                mlirGenParameterBindingElement(objectBindingElement, fieldInfos, genContext);
+                index++;
+            }
+
+            return getTupleType(fieldInfos);
+        }        
+
+        return mlir::Type();
+    }
+
     std::tuple<mlir::LogicalResult, bool, std::vector<std::shared_ptr<FunctionParamDOM>>> mlirGenParameters(
         SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
@@ -3146,16 +3220,16 @@ class MLIRGenImpl
         auto index = 0;
         for (auto arg : formalParams)
         {
-            auto isBindingPattern = false;
-            auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
+            mlir::StringRef namePtr;
+            namePtr = MLIRHelper::getName(arg->name, stringAllocator);
             if (namePtr.empty())
             {
-                isBindingPattern = true;
-
                 std::stringstream ss;
                 ss << "arg" << index;
                 namePtr = mlir::StringRef(ss.str()).copy(stringAllocator);
             }
+
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
 
             mlir::Type type;
             auto isMultiArgs = !!arg->dotDotDotToken;
@@ -3196,43 +3270,7 @@ class MLIRGenImpl
             // in case of binding
             if (isNoneType(type) && isBindingPattern)
             {
-
-                SmallVector<mlir_ts::FieldInfo> fieldInfos;
-
-                // we need to construct object type
-                auto objectBindingPattern = arg->name.as<ObjectBindingPattern>();
-                auto index = 0;
-                for (auto objectBindingElement : objectBindingPattern->elements)
-                {
-                    auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
-                    if (propertyName.empty())
-                    {
-                        propertyName = MLIRHelper::getName(objectBindingElement->name);
-                    }
-
-                    if (objectBindingElement->initializer)
-                    {
-                        auto evalType = evaluate(objectBindingElement->initializer, genContext);
-                        auto widenType = mth.wideStorageType(evalType);
-
-                        // if it has initializer - it should have optional type to support default values
-                        widenType = getOptionalType(widenType);
-
-                        LLVM_DEBUG(dbgs() << "\n!! property " << propertyName << " mapped to type " << widenType << "");
-
-                        fieldInfos.push_back({MLIRHelper::TupleFieldName(propertyName, builder.getContext()), widenType});
-                    }
-                    else
-                    {
-                        emitError(loc(objectBindingElement)) << "can't resolve type for binding pattern '"
-                                                             << propertyName << "', provide default initializer";
-                    }
-
-                    index++;
-                }
-
-                type = getTupleType(fieldInfos);
-
+                type = mlirGenParameterBindingDeclaration(arg, genContext);
                 LLVM_DEBUG(dbgs() << "\n!! binding param " << namePtr << " is type " << type << "");
             }
 
@@ -4468,6 +4506,7 @@ class MLIRGenImpl
             {
                 auto location = loc(bindingPattern);
                 auto val = resolveIdentifier(location, param->getName(), genContext);
+                assert(val);
                 auto initFunc = [&](mlir::Location, const GenContext &) { return std::make_pair(val.getType(), val); };
 
                 if (bindingPattern == SyntaxKind::ArrayBindingPattern)
