@@ -54,27 +54,19 @@ enum class VariableScope
     Global
 };
 
-enum class VariableCreationInfo
-{
-    Default,
-    UseGlobalConstuct,
-};
-
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}, opt{VariableCreationInfo::Default}
+    VariableClass() : type{VariableType::Const}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}, opt{VariableCreationInfo::Default}
+    VariableClass(VariableType type_) : type{type_}
     {
     }
 
     VariableType type;
-    VariableCreationInfo opt;
 
     inline bool operator==(VariableType type_) const { return type == type_; }
-    inline bool operator==(VariableCreationInfo opt_) const { return opt == opt_; }
 };
 
 struct StaticFieldInfo

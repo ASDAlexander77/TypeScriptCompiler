@@ -2682,13 +2682,9 @@ class MLIRGenImpl
         if (!variableDeclarationInfo.isGlobal)
         {
             if (variableDeclarationInfo.isConst)
-            {
                 variableDeclarationInfo.processConstRef(location, builder, genContext);
-            }
             else
-            {
                 createLocalVariable(location, variableDeclarationInfo, genContext);
-            }
         }
         else
         {
@@ -3090,6 +3086,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext)
     {
+        auto location = loc(item);
+
         auto isExternal = varClass == VariableType::External;
         if (declarationMode)
         {
@@ -3127,7 +3125,25 @@ class MLIRGenImpl
             valClassItem = VariableType::ConstRef;
         }
 
-        if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
+        if (!genContext.funcOp && (item->name == SyntaxKind::ObjectBindingPattern || item->name == SyntaxKind::ArrayBindingPattern))
+        {
+            // create global construct
+            valClassItem = VariableType::Var;
+
+            auto fullInitGlobalFuncName = MLIRHelper::getAnonymousName(location, ".gc");
+
+            auto funcType = getFunctionType({}, {}, false);
+
+            if (mlir::failed(mlirGenFunctionBody(location, fullInitGlobalFuncName, funcType,
+                [&](const GenContext &genContext) {
+                    auto valClassForConstruct = VariableType::Var;
+                    return processDeclaration(item, valClassForConstruct, initFunc, genContext, true);
+                }, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+        else if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
         {
             return mlir::failure();
         }
@@ -4723,7 +4739,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef fullFuncName,
-                                            mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult()> funcBody,                                            
+                                            mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult(const GenContext &genContext)> funcBody,                                            
                                             const GenContext &genContext,
                                             int firstParam = 0)
     {
@@ -4738,6 +4754,9 @@ class MLIRGenImpl
 
         auto funcOp = mlir_ts::FuncOp::create(location, fullFuncName, funcType);
 
+        GenContext funcGenContext(genContext);
+        funcGenContext.funcOp = funcOp;
+
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;
 
@@ -4746,17 +4765,17 @@ class MLIRGenImpl
         auto arguments = entryBlock.getArguments();
 
         // add exit code
-        if (failed(mlirGenFunctionEntry(location, mth.getReturnTypeFromFuncRef(funcType), genContext)))
+        if (failed(mlirGenFunctionEntry(location, mth.getReturnTypeFromFuncRef(funcType), funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionParams(location, firstParam, arguments, genContext)))
+        if (failed(mlirGenFunctionParams(location, firstParam, arguments, funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (failed(funcBody()))
+        if (failed(funcBody(funcGenContext)))
         {
             return mlir::failure();
         }
@@ -4786,7 +4805,7 @@ class MLIRGenImpl
 
         funcOp.setPrivate();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' is dummy run: " << genContext.dummyRun << " << allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' is dummy run: " << funcGenContext.dummyRun << " << allowed partial resolve: " << funcGenContext.allowPartialResolve << "\n";);
 
         return mlir::success();
     }
@@ -13238,7 +13257,7 @@ genContext);
 
         mlirGenFunctionBody(
             location, fullClassStaticFieldName, funcType,
-            [&]() {
+            [&](const GenContext &genContext) {
                 auto bitmapValueType = mth.getTypeBitmapValueType();
 
                 auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
@@ -13775,7 +13794,7 @@ genContext);
 
             auto result = mlirGenFunctionBody(
                 location, fullClassStaticName, funcType,
-                [&]() {
+                [&](const GenContext &genContext) {
                     NodeFactory nf(NodeFactoryFlags::None);
 
                     NodeArray<Expression> argumentsArray;
