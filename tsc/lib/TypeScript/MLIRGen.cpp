@@ -2791,10 +2791,8 @@ class MLIRGenImpl
     }
 
     ValueOrLogicalResult processDeclarationObjectBindingPatternSubPath(
-        mlir::Location location, BindingElement objectBindingElement, ObjectBindingPattern objectBindingPattern, mlir::Type type, mlir::Value init, const GenContext &genContext)
+        mlir::Location location, BindingElement objectBindingElement, mlir::Type type, mlir::Value init, const GenContext &genContext)
     {
-        auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
-
         auto fieldName = getFieldNameFromBindingElement(objectBindingElement);
         auto isNumericAccess = fieldName.isa<mlir::IntegerAttr>();
 
@@ -2803,88 +2801,94 @@ class MLIRGenImpl
         mlir::Value subInit;
         mlir::Type subInitType;
 
-        if (!isSpreadBinding)
+        mlir::Value value;
+        if (isNumericAccess)
         {
-            mlir::Value value;
-            if (isNumericAccess)
+            MLIRPropertyAccessCodeLogic cl(builder, location, init, fieldName);
+            if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
             {
-                MLIRPropertyAccessCodeLogic cl(builder, location, init, fieldName);
-                if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
-                {
-                    value = cl.Tuple(tupleType, true);
-                }
-                else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
-                {
-                    value = cl.Tuple(constTupleType, true);
-                }
+                value = cl.Tuple(tupleType, true);
             }
-            else
+            else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
             {
-                auto result = mlirGenPropertyAccessExpression(location, init, fieldName, false, genContext);
-                EXIT_IF_FAILED_OR_NO_VALUE(result)
-                value = V(result);
-            }
-
-            if (!value)
-            {
-                return mlir::failure();
-            }
-
-            if (objectBindingElement->initializer)
-            {
-                auto tupleType = type.cast<mlir_ts::TupleType>();
-                auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
-                auto res = optionalValueOrDefault(location, subType, value, objectBindingElement->initializer, genContext);
-                subInit = V(res);
-                subInitType = subInit.getType();                    
-            }
-            else
-            {
-                subInit = value;
-                subInitType = subInit.getType();
+                value = cl.Tuple(constTupleType, true);
             }
         }
         else
         {
-            SmallVector<mlir::Attribute> names;
+            auto result = mlirGenPropertyAccessExpression(location, init, fieldName, false, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            value = V(result);
+        }
 
-            // take all used fields
-            for (auto objectBindingElement : objectBindingPattern->elements)
+        if (!value)
+        {
+            return mlir::failure();
+        }
+
+        if (objectBindingElement->initializer)
+        {
+            auto tupleType = type.cast<mlir_ts::TupleType>();
+            auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
+            auto res = optionalValueOrDefault(location, subType, value, objectBindingElement->initializer, genContext);
+            subInit = V(res);
+            subInitType = subInit.getType();                    
+        }
+        else
+        {
+            subInit = value;
+            subInitType = subInit.getType();
+        }
+
+        assert(subInit);
+
+        return subInit; 
+    }
+
+    ValueOrLogicalResult processDeclarationObjectBindingPatternSubPathSpread(
+        mlir::Location location, ObjectBindingPattern objectBindingPattern, mlir::Type type, mlir::Value init, const GenContext &genContext)
+    {
+        mlir::Value subInit;
+        mlir::Type subInitType;
+
+        SmallVector<mlir::Attribute> names;
+
+        // take all used fields
+        for (auto objectBindingElement : objectBindingPattern->elements)
+        {
+            auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
+            if (isSpreadBinding)
             {
-                auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
-                if (isSpreadBinding)
-                {
-                    continue;
-                }
-
-                auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
-                if (propertyName.empty())
-                {
-                    propertyName = MLIRHelper::getName(objectBindingElement->name);
-                }
-
-                names.push_back(MLIRHelper::TupleFieldName(propertyName, builder.getContext()));
-            }                
-
-            // filter all fields
-            llvm::SmallVector<mlir_ts::FieldInfo> tupleFields;
-            llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
-            if (mlir::succeeded(mth.getFields(init.getType(), tupleFields)))
-            {
-                for (auto fieldInfo : tupleFields)
-                {
-                    if (std::find_if(names.begin(), names.end(), [&] (auto& item) { return item == fieldInfo.id; }) == names.end())
-                    {
-                        // filter;
-                        destTupleFields.push_back(fieldInfo);
-                    }
-                }
+                continue;
             }
 
-            // create object
-            subInitType = getTupleType(destTupleFields);
-            CAST(subInit, location, subInitType, init, genContext);
+            auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
+            if (propertyName.empty())
+            {
+                propertyName = MLIRHelper::getName(objectBindingElement->name);
+            }
+
+            names.push_back(MLIRHelper::TupleFieldName(propertyName, builder.getContext()));
+        }                
+
+        // filter all fields
+        llvm::SmallVector<mlir_ts::FieldInfo> tupleFields;
+        llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+        if (mlir::succeeded(mth.getFields(init.getType(), tupleFields)))
+        {
+            for (auto fieldInfo : tupleFields)
+            {
+                if (std::find_if(names.begin(), names.end(), [&] (auto& item) { return item == fieldInfo.id; }) == names.end())
+                {
+                    // filter;
+                    destTupleFields.push_back(fieldInfo);
+                }
+            }
         }
+
+        // create object
+        subInitType = getTupleType(destTupleFields);
+        CAST(subInit, location, subInitType, init, genContext);
 
         assert(subInit);
 
@@ -2902,7 +2906,18 @@ class MLIRGenImpl
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
             auto subValueFunc = [&] (mlir::Location location, const GenContext &genContext) {
-                auto result = processDeclarationObjectBindingPatternSubPath(location, objectBindingElement, objectBindingPattern, type, init, genContext);
+
+                auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
+                if (isSpreadBinding)
+                {
+                    auto result = processDeclarationObjectBindingPatternSubPathSpread(location, objectBindingPattern, type, init, genContext);
+                    // TODO: finish it
+                    //EXIT_IF_FAILED_OR_NO_VALUE(result)
+                    auto value = V(result);
+                    return std::make_pair(value.getType(), value); 
+                }
+
+                auto result = processDeclarationObjectBindingPatternSubPath(location, objectBindingElement, type, init, genContext);
                 // TODO: finish it
                 //EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto value = V(result);
