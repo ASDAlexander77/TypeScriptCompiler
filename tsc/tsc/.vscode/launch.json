@@ -212,13 +212,13 @@
             "name": "(Windows) tsc.exe - JIT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=jit",
                 "C:/temp/1.ts",
                 "-debug-only=llvm",
                 "-mlir-disable-threading",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/TypeScriptRuntime.dll"
+                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

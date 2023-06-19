@@ -16952,6 +16952,7 @@ genContext);
 
         if (type.isa<mlir_ts::AnyType>())
         {
+            // TODO: and all methods etc
             return getUnionType(getStringType(), getNumberType());
         }
 
@@ -16962,6 +16963,13 @@ genContext);
 
         if (type.isa<mlir_ts::ArrayType>())
         {
+            // TODO: and all methods etc
+            return getNumberType();
+        }
+
+        if (type.isa<mlir_ts::StringType>())
+        {
+            // TODO: and all methods etc
             return getNumberType();
         }
 
@@ -17418,9 +17426,8 @@ genContext);
 
         if (fields.size() == 0)
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... not implemented for: " << constrainType << ".\n";);
-            llvm_unreachable("not implemented yet");
-            //return mlir::Type();
+            LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type is empty for constrain: " << constrainType << ".\n";);
+            emitWarning(loc(mappedTypeNode), "mapped type is empty for constrain: ")  << constrainType;
         }
 
         return getTupleType(fields);            
