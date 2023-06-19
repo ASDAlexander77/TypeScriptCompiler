@@ -2792,7 +2792,10 @@ class MLIRGenImpl
                 propertyName = MLIRHelper::getName(objectBindingElement->name);
             }
 
-            fieldName = MLIRHelper::TupleFieldName(propertyName, builder.getContext());
+            if (!propertyName.empty())
+            {
+                fieldName = MLIRHelper::TupleFieldName(propertyName, builder.getContext());
+            }
         }
 
         return fieldName;
@@ -2870,13 +2873,8 @@ class MLIRGenImpl
                 continue;
             }
 
-            auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
-            if (propertyName.empty())
-            {
-                propertyName = MLIRHelper::getName(objectBindingElement->name);
-            }
-
-            names.push_back(MLIRHelper::TupleFieldName(propertyName, builder.getContext()));
+            auto fieldId = getFieldNameFromBindingElement(objectBindingElement);
+            names.push_back(fieldId);
         }                
 
         // filter all fields
@@ -2916,19 +2914,9 @@ class MLIRGenImpl
             auto subValueFunc = [&] (mlir::Location location, const GenContext &genContext) {
 
                 auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
-                if (isSpreadBinding)
-                {
-                    auto result = processDeclarationObjectBindingPatternSubPathSpread(location, objectBindingPattern, type, init, genContext);
-                    if (result.failed_or_no_value()) 
-                    {
-                        return std::make_pair(mlir::Type(), mlir::Value()); 
-                    }                    
-
-                    auto value = V(result);
-                    return std::make_pair(value.getType(), value); 
-                }
-
-                auto result = processDeclarationObjectBindingPatternSubPath(location, objectBindingElement, type, init, genContext);
+                auto result = isSpreadBinding 
+                    ? processDeclarationObjectBindingPatternSubPathSpread(location, objectBindingPattern, type, init, genContext)
+                    : processDeclarationObjectBindingPatternSubPath(location, objectBindingElement, type, init, genContext);
                 if (result.failed_or_no_value()) 
                 {
                     return std::make_pair(mlir::Type(), mlir::Value()); 
@@ -3198,15 +3186,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenParameterBindingElement(BindingElement objectBindingElement, SmallVector<mlir_ts::FieldInfo> &fieldInfos, const GenContext &genContext)
     {
-        auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
-        if (propertyName.empty())
+        auto fieldId = getFieldNameFromBindingElement(objectBindingElement);
+        if (!fieldId)
         {
-            propertyName = MLIRHelper::getName(objectBindingElement->name);
-        }
-        
-        if (propertyName.empty())
-        {
-            propertyName = MLIRHelper::getAnonymousName(loc_check(objectBindingElement), ".be");
+            auto genName = MLIRHelper::getAnonymousName(loc_check(objectBindingElement), ".be");
+            fieldId = MLIRHelper::TupleFieldName(genName, builder.getContext());
         }
 
         mlir::Type fieldType;
@@ -3226,13 +3210,13 @@ class MLIRGenImpl
         else
         {
             emitError(loc(objectBindingElement)) << "can't resolve type for binding pattern '"
-                                                << propertyName << "', provide default initializer";
+                                                << fieldId << "', provide default initializer";
             return mlir::failure();
         }
 
-        LLVM_DEBUG(dbgs() << "\n!! property " << propertyName << " mapped to type " << fieldType << "");
+        LLVM_DEBUG(dbgs() << "\n!! property " << fieldId << " mapped to type " << fieldType << "");
 
-        fieldInfos.push_back({MLIRHelper::TupleFieldName(propertyName, builder.getContext()), fieldType});
+        fieldInfos.push_back({fieldId, fieldType});
 
         return mlir::success();
     }
