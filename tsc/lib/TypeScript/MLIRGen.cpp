@@ -9192,8 +9192,9 @@ class MLIRGenImpl
                     operands.pop_back_n(toIndex - fromIndex);
 
                     // create array
-                    auto array =
-                        builder.create<mlir_ts::CreateArrayOp>(location, varArgsType, varArgOperands);
+                    auto array = varArgOperands.empty() && !varArgsType.isa<mlir_ts::ArrayType>()
+                        ? V(builder.create<mlir_ts::UndefOp>(location, varArgsType))
+                        : V(builder.create<mlir_ts::CreateArrayOp>(location, varArgsType, varArgOperands));
                     operands.push_back(array);
 
                     LLVM_DEBUG(for (auto& ops : varArgOperands) llvm::dbgs() << "\t value = " << ops << "\n";);
@@ -9604,7 +9605,13 @@ class MLIRGenImpl
         mlir::Type varArgType;
         if (isVarArg)
         {
-            varArgType = argFuncTypes.back().cast<mlir_ts::ArrayType>().getElementType();
+            auto lastType = argFuncTypes.back();
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(lastType))
+            {
+                lastType = arrayType.getElementType();
+            }
+
+            varArgType = lastType;
         }
 
         for (auto value : operands)
