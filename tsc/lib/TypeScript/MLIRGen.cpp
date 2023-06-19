@@ -2513,7 +2513,7 @@ class MLIRGenImpl
         {
             genContextWithNameReceiver.receiverName = variableDeclarationInfo.fullName;
         }
-        
+
         if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver)))
         {
             return mlir::failure();
@@ -2756,8 +2756,11 @@ class MLIRGenImpl
         {
             auto subValueFunc = [&](mlir::Location location, const GenContext &genContext) { 
                 auto result = processDeclarationArrayBindingPatternSubPath(location, index, type, init, genContext);
-                // TODO: finish it
-                //EXIT_IF_FAILED_OR_NO_VALUE(result)
+                if (result.failed_or_no_value()) 
+                {
+                    return std::make_pair(mlir::Type(), mlir::Value()); 
+                }
+
                 auto value = V(result);
                 return std::make_pair(value.getType(), value); 
             };
@@ -2916,15 +2919,21 @@ class MLIRGenImpl
                 if (isSpreadBinding)
                 {
                     auto result = processDeclarationObjectBindingPatternSubPathSpread(location, objectBindingPattern, type, init, genContext);
-                    // TODO: finish it
-                    //EXIT_IF_FAILED_OR_NO_VALUE(result)
+                    if (result.failed_or_no_value()) 
+                    {
+                        return std::make_pair(mlir::Type(), mlir::Value()); 
+                    }                    
+
                     auto value = V(result);
                     return std::make_pair(value.getType(), value); 
                 }
 
                 auto result = processDeclarationObjectBindingPatternSubPath(location, objectBindingElement, type, init, genContext);
-                // TODO: finish it
-                //EXIT_IF_FAILED_OR_NO_VALUE(result)
+                if (result.failed_or_no_value()) 
+                {
+                    return std::make_pair(mlir::Type(), mlir::Value()); 
+                }                    
+
                 auto value = V(result);
                 return std::make_pair(value.getType(), value); 
             };
