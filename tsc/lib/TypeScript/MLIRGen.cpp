@@ -3130,7 +3130,7 @@ class MLIRGenImpl
             // create global construct
             valClassItem = VariableType::Var;
 
-            auto fullInitGlobalFuncName = MLIRHelper::getAnonymousName(location, ".gc");
+            auto fullInitGlobalFuncName = getFullNamespaceName(MLIRHelper::getAnonymousName(location, ".gc"));
 
             auto funcType = getFunctionType({}, {}, false);
 
@@ -3142,6 +3142,8 @@ class MLIRGenImpl
             {
                 return mlir::failure();
             }
+
+            builder.create<mlir_ts::GlobalConstructorOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName));
         }
         else if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
         {
