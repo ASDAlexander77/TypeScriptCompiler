@@ -2710,6 +2710,7 @@ class MLIRGenImpl
         return varDecl->getType();
     }
 
+    // TODO: to support '...' u need to use 'processOperandSpreadElement' and instead of "index" param use "next" logic
     ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(mlir::Location location, int index, mlir::Type type, mlir::Value init, const GenContext &genContext)
     {
         MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index));
@@ -17214,6 +17215,11 @@ genContext);
             }
 
             return getUnionType(types);
+        }
+
+        if (type.isa<mlir_ts::NeverType>())
+        {
+            return type;
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted \n";);
