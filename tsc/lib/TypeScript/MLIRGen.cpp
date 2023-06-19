@@ -2318,11 +2318,16 @@ class MLIRGenImpl
         {
             varClass = varClass_;
             isFullName = isFullName_;
-            isGlobalScope = isFullName_ || !genContext.funcOp; /*symbolTable.getCurScope()->getParentScope() == nullptr*/
-            isGlobal = isGlobalScope || varClass_ == VariableClass::Var;
-            isConst = (varClass_ == VariableClass::Const || varClass_ == VariableClass::ConstRef) &&
+            
+            if (isFullName_ || !genContext.funcOp)
+            {
+                scope = VariableScope::Global;
+            }
+
+            isGlobal = scope == VariableScope::Global || varClass == VariableType::Var;
+            isConst = (varClass == VariableType::Const || varClass == VariableType::ConstRef) &&
                        !genContext.allocateVarsOutsideOfOperation && !genContext.allocateVarsInContextThis;
-            isExternal = varClass_ == VariableClass::External;
+            isExternal = varClass == VariableType::External;
         }
 
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
@@ -2332,7 +2337,7 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            if (varClass == VariableClass::ConstRef)
+            if (varClass == VariableType::ConstRef)
             {
                 MLIRCodeLogic mcl(builder);
                 if (auto possibleInit = mcl.GetReferenceOfLoadOp(initial))
@@ -2342,7 +2347,7 @@ class MLIRGenImpl
                 else
                 {
                     // convert ConstRef to Const again as this is const object (it seems)
-                    varClass = VariableClass::Const;
+                    varClass = VariableType::Const;
                 }
             }
 
@@ -2378,11 +2383,11 @@ class MLIRGenImpl
         VariableDeclarationDOM::TypePtr createVariableDeclaration(mlir::Location location, const GenContext &genContext)
         {
             auto varDecl = std::make_shared<VariableDeclarationDOM>(fullName, type, location);
-            if (!isConst || varClass == VariableClass::ConstRef)
+            if (!isConst || varClass == VariableType::ConstRef)
             {
                 varDecl->setReadWriteAccess();
                 // TODO: HACK: to mark var as local and ignore when capturing
-                if (varClass == VariableClass::ConstRef)
+                if (varClass == VariableType::ConstRef)
                 {
                     varDecl->setIgnoreCapturing();
                 }
@@ -2407,8 +2412,8 @@ class MLIRGenImpl
         mlir_ts::GlobalOp globalOp;
 
         VariableClass varClass;
+        VariableScope scope;
         bool isFullName;
-        bool isGlobalScope;
         bool isGlobal;
         bool isConst;
         bool isExternal;
@@ -2572,7 +2577,7 @@ class MLIRGenImpl
                 genContext.cleanUpOps->push_back(globalOp);
             }
 
-            if (variableDeclarationInfo.isGlobalScope)
+            if (variableDeclarationInfo.scope == VariableScope::Global)
             {
                 if (variableDeclarationInfo.isExternal)
                 {
@@ -3085,7 +3090,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext)
     {
-        auto isExternal = varClass == VariableClass::External;
+        auto isExternal = varClass == VariableType::External;
         if (declarationMode)
         {
             isExternal = true;
@@ -3114,12 +3119,12 @@ class MLIRGenImpl
         auto valClassItem = varClass;
         if ((item->internalFlags & InternalFlags::ForceConst) == InternalFlags::ForceConst)
         {
-            valClassItem = VariableClass::Const;
+            valClassItem = VariableType::Const;
         }
 
         if ((item->internalFlags & InternalFlags::ForceConstRef) == InternalFlags::ForceConstRef)
         {
-            valClassItem = VariableClass::ConstRef;
+            valClassItem = VariableType::ConstRef;
         }
 
         if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
@@ -3135,10 +3140,10 @@ class MLIRGenImpl
         auto isLet = (variableDeclarationListAST->flags & NodeFlags::Let) == NodeFlags::Let;
         auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
         auto isExternal = (variableDeclarationListAST->flags & NodeFlags::Ambient) == NodeFlags::Ambient;
-        auto varClass = isExternal ? VariableClass::External
-                        : isLet    ? VariableClass::Let
-                        : isConst  ? VariableClass::Const
-                                   : VariableClass::Var;
+        auto varClass = isExternal ? VariableType::External
+                        : isLet    ? VariableType::Let
+                        : isConst  ? VariableType::Const
+                                   : VariableType::Var;
 
         for (auto &item : variableDeclarationListAST->declarations)
         {
@@ -4568,7 +4573,7 @@ class MLIRGenImpl
                 if (bindingPattern == SyntaxKind::ArrayBindingPattern)
                 {
                     auto arrayBindingPattern = bindingPattern.as<ArrayBindingPattern>();
-                    if (mlir::failed(processDeclarationArrayBindingPattern(location, arrayBindingPattern, VariableClass::Let,
+                    if (mlir::failed(processDeclarationArrayBindingPattern(location, arrayBindingPattern, VariableType::Let,
                                                                initFunc, genContext)))
                     {
                         return mlir::failure();
@@ -4577,7 +4582,7 @@ class MLIRGenImpl
                 else if (bindingPattern == SyntaxKind::ObjectBindingPattern)
                 {
                     auto objectBindingPattern = bindingPattern.as<ObjectBindingPattern>();
-                    if (mlir::failed(processDeclarationObjectBindingPattern(location, objectBindingPattern, VariableClass::Let,
+                    if (mlir::failed(processDeclarationObjectBindingPattern(location, objectBindingPattern, VariableType::Let,
                                                                 initFunc, genContext)))
                     {
                         return mlir::failure();
@@ -5196,7 +5201,7 @@ class MLIRGenImpl
 
         return 
             !!registerVariable(
-                location, parameterName, false, VariableClass::Const,
+                location, parameterName, false, VariableType::Const,
                 [&](mlir::Location, const GenContext &) -> std::pair<mlir::Type, mlir::Value>
                 {
                     return {safeType, castedValue};
@@ -6306,7 +6311,7 @@ class MLIRGenImpl
             if (varDecl)
             {
                 varName = MLIRHelper::getName(varDecl->name);
-                if (mlir::failed(mlirGen(varDecl, VariableClass::Let, genContext)))
+                if (mlir::failed(mlirGen(varDecl, VariableType::Let, genContext)))
                 {
                     return mlir::failure();
                 }
@@ -8685,7 +8690,7 @@ class MLIRGenImpl
         auto varName = ".ev";
         auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
         registerVariable(
-            location, varName, false, VariableClass::Let,
+            location, varName, false, VariableType::Let,
             [&](mlir::Location, const GenContext &) -> std::pair<mlir::Type, mlir::Value> {
                 return {getBooleanType(), initVal};
             },
@@ -8738,7 +8743,7 @@ class MLIRGenImpl
         auto varName = ".sm";
         auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
         registerVariable(
-            location, varName, false, VariableClass::Let,
+            location, varName, false, VariableType::Let,
             [&](mlir::Location, const GenContext &) -> std::pair<mlir::Type, mlir::Value> {
                 return {getBooleanType(), initVal};
             },
@@ -12950,7 +12955,7 @@ class MLIRGenImpl
                     concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
                 auto staticFieldType = registerVariable(
                     location, fullClassStaticFieldName, true,
-                    newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
+                    newClassPtr->isDeclaration ? VariableType::External : VariableType::Var,
                     [&](mlir::Location location, const GenContext &genContext) {
                         auto isConst = false;
                         mlir::Type typeInit;
@@ -13149,7 +13154,7 @@ genContext);
         {
             registerVariable(
                 location, fullClassStaticFieldName, true,
-                newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
+                newClassPtr->isDeclaration ? VariableType::External : VariableType::Var,
                 [&](mlir::Location location, const GenContext &genContext) {
                     auto stringType = getStringType();
                     if (newClassPtr->isDeclaration)
@@ -13203,7 +13208,7 @@ genContext);
         {
             registerVariable(
                 location, fullClassStaticFieldName, true,
-                newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
+                newClassPtr->isDeclaration ? VariableType::External : VariableType::Var,
                 [&](mlir::Location location, const GenContext &genContext) {
                     auto init =
                         builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), mth.getI64AttrValue(0));
@@ -13526,7 +13531,7 @@ genContext);
         // register global
         auto fullClassInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
         registerVariable(
-            location, fullClassInterfaceVTableFieldName, true, VariableClass::Var,
+            location, fullClassInterfaceVTableFieldName, true, VariableType::Var,
             [&](mlir::Location location, const GenContext &genContext) {
                 // build vtable from names of methods
 
@@ -13687,7 +13692,7 @@ genContext);
         // register global
         auto fullClassInterfaceVTableFieldName = interfaceVTableNameForClass(newClassPtr, newInterfacePtr);
         registerVariable(
-            location, fullClassInterfaceVTableFieldName, true, VariableClass::Var,
+            location, fullClassInterfaceVTableFieldName, true, VariableType::Var,
             [&](mlir::Location location, const GenContext &genContext) {
                 // build vtable from names of methods
 
@@ -13966,7 +13971,7 @@ genContext);
         // register global
         auto vtableRegisteredType = registerVariable(
             location, fullClassVTableFieldName, true,
-            newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
+            newClassPtr->isDeclaration ? VariableType::External : VariableType::Var,
             [&](mlir::Location location, const GenContext &genContext) {
                 // build vtable from names of methods
 

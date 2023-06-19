@@ -39,13 +39,42 @@ struct GenericFunctionInfo
     GenericFunctionInfo() = default;
 };
 
-enum class VariableClass
+enum class VariableType
 {
     Const,
     Let,
     Var,
     ConstRef,
     External
+};
+
+enum class VariableScope
+{
+    Local,
+    Global
+};
+
+enum class VariableCreationInfo
+{
+    Default,
+    UseGlobalConstuct,
+};
+
+struct VariableClass
+{
+    VariableClass() : type{VariableType::Const}, opt{VariableCreationInfo::Default}
+    {
+    }
+
+    VariableClass(VariableType type_) : type{type_}, opt{VariableCreationInfo::Default}
+    {
+    }
+
+    VariableType type;
+    VariableCreationInfo opt;
+
+    inline bool operator==(VariableType type_) const { return type == type_; }
+    inline bool operator==(VariableCreationInfo opt_) const { return opt == opt_; }
 };
 
 struct StaticFieldInfo
