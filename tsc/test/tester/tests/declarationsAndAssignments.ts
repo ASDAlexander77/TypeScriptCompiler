@@ -103,8 +103,7 @@ function f14([a = 1, [b = "hello", { x = 0, y: c = false }]]) {
 }
 
 module M {
-    // TODO: bug, fix it
-    //export let [a, b] = [1, 2];
+    export let [a, b] = [1, 2];
 }
 
 function f15() {
@@ -180,7 +179,7 @@ function f21(v: [number, string, boolean]) {
 function main() {
     f14([2, ["abc", { x: 0, y: true }]]);
     f14([2, ["abc", { x: 0 }]]);
-    //f14([2, ["abc", { y: false }]]);  // Error, no x
+    f14([2, ["abc", { y: false }]]);
 
     f17({});
     f17({ a: "hello" });

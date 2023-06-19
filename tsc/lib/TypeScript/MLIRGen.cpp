@@ -3127,20 +3127,24 @@ class MLIRGenImpl
 
         if (!genContext.funcOp && (item->name == SyntaxKind::ObjectBindingPattern || item->name == SyntaxKind::ArrayBindingPattern))
         {
-            // create global construct
-            valClassItem = VariableType::Var;
-
             auto fullInitGlobalFuncName = getFullNamespaceName(MLIRHelper::getAnonymousName(location, ".gc"));
 
-            auto funcType = getFunctionType({}, {}, false);
-
-            if (mlir::failed(mlirGenFunctionBody(location, fullInitGlobalFuncName, funcType,
-                [&](const GenContext &genContext) {
-                    auto valClassForConstruct = VariableType::Var;
-                    return processDeclaration(item, valClassForConstruct, initFunc, genContext, true);
-                }, genContext)))
             {
-                return mlir::failure();
+                mlir::OpBuilder::InsertionGuard insertGuard(builder);
+
+                // create global construct
+                valClassItem = VariableType::Var;
+
+                auto funcType = getFunctionType({}, {}, false);
+
+                if (mlir::failed(mlirGenFunctionBody(location, fullInitGlobalFuncName, funcType,
+                    [&](const GenContext &genContext) {
+                        auto valClassForConstruct = VariableType::Var;
+                        return processDeclaration(item, valClassForConstruct, initFunc, genContext, true);
+                    }, genContext)))
+                {
+                    return mlir::failure();
+                }
             }
 
             builder.create<mlir_ts::GlobalConstructorOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName));
