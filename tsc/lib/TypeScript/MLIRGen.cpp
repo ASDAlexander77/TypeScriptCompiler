@@ -6792,6 +6792,7 @@ class MLIRGenImpl
 
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
         auto result2 = mlirGen(rightExpression, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto resultTrue = V(result2);
 
         // sync left part
