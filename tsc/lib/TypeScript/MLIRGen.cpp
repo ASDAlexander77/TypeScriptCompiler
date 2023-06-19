@@ -2509,7 +2509,11 @@ class MLIRGenImpl
         builder.setInsertionPoint(block, block->begin());
 
         GenContext genContextWithNameReceiver(genContext);
-        genContextWithNameReceiver.receiverName = variableDeclarationInfo.fullName;
+        if (variableDeclarationInfo.isConst)
+        {
+            genContextWithNameReceiver.receiverName = variableDeclarationInfo.fullName;
+        }
+        
         if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver)))
         {
             return mlir::failure();
