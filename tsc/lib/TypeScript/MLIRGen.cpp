@@ -2705,6 +2705,40 @@ class MLIRGenImpl
         return varDecl->getType();
     }
 
+    ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(mlir::Location location, int index, mlir::Type type, mlir::Value init, const GenContext &genContext)
+    {
+        MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index));
+        mlir::Value subInit;
+        TypeSwitch<mlir::Type>(type)
+            .template Case<mlir_ts::ConstTupleType>(
+                [&](auto constTupleType) { subInit = cl.Tuple(constTupleType, true); })
+            .template Case<mlir_ts::TupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
+            .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
+                // TODO: unify it with ElementAccess
+                auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
+                                                                    builder.getI32IntegerAttr(index));
+                auto elemRef = builder.create<mlir_ts::ElementRefOp>(
+                    location, mlir_ts::RefType::get(constArrayType.getElementType()), init, constIndex);
+                subInit = builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef);
+            })
+            .template Case<mlir_ts::ArrayType>([&](auto arrayType) {
+                // TODO: unify it with ElementAccess
+                auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
+                                                                    builder.getI32IntegerAttr(index));
+                auto elemRef = builder.create<mlir_ts::ElementRefOp>(
+                    location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
+                subInit = builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef);
+            })
+            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+        if (!subInit)
+        {
+            return mlir::failure();
+        }
+
+        return subInit; 
+    }
+
     mlir::LogicalResult processDeclarationArrayBindingPattern(mlir::Location location, ArrayBindingPattern arrayBindingPattern,
                                                VariableClass varClass,
                                                std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func,
@@ -2715,38 +2749,16 @@ class MLIRGenImpl
         auto index = 0;
         for (auto arrayBindingElement : arrayBindingPattern->elements)
         {
-            MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index));
-            mlir::Value subInit;
-            TypeSwitch<mlir::Type>(type)
-                .template Case<mlir_ts::ConstTupleType>(
-                    [&](auto constTupleType) { subInit = cl.Tuple(constTupleType, true); })
-                .template Case<mlir_ts::TupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
-                .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
-                    // TODO: unify it with ElementAccess
-                    auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-                                                                          builder.getI32IntegerAttr(index));
-                    auto elemRef = builder.create<mlir_ts::ElementRefOp>(
-                        location, mlir_ts::RefType::get(constArrayType.getElementType()), init, constIndex);
-                    subInit = builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef);
-                })
-                .template Case<mlir_ts::ArrayType>([&](auto arrayType) {
-                    // TODO: unify it with ElementAccess
-                    auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-                                                                          builder.getI32IntegerAttr(index));
-                    auto elemRef = builder.create<mlir_ts::ElementRefOp>(
-                        location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
-                    subInit = builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef);
-                })
-                .Default([&](auto type) { llvm_unreachable("not implemented"); });
-
-            if (!subInit)
-            {
-                return mlir::failure();
-            }
+            auto subValueFunc = [&](mlir::Location location, const GenContext &genContext) { 
+                auto result = processDeclarationArrayBindingPatternSubPath(location, index, type, init, genContext);
+                // TODO: finish it
+                //EXIT_IF_FAILED_OR_NO_VALUE(result)
+                auto value = V(result);
+                return std::make_pair(value.getType(), value); 
+            };
 
             if (mlir::failed(processDeclaration(
-                    arrayBindingElement.as<BindingElement>(), varClass,
-                    [&](mlir::Location, const GenContext &) { return std::make_pair(subInit.getType(), subInit); }, genContext)))
+                    arrayBindingElement.as<BindingElement>(), varClass, subValueFunc, genContext)))
             {
                 return mlir::failure();
             }
@@ -2755,6 +2767,128 @@ class MLIRGenImpl
         }
 
         return mlir::success();
+    }
+
+    mlir::Attribute getFieldNameFromBindingElement(BindingElement objectBindingElement)
+    {
+        mlir::Attribute fieldName;
+        if (objectBindingElement->propertyName == SyntaxKind::NumericLiteral)
+        {
+            fieldName = getNumericLiteralAttribute(objectBindingElement->propertyName);
+        }
+        else
+        {
+            auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
+            if (propertyName.empty())
+            {
+                propertyName = MLIRHelper::getName(objectBindingElement->name);
+            }
+
+            fieldName = MLIRHelper::TupleFieldName(propertyName, builder.getContext());
+        }
+
+        return fieldName;
+    }
+
+    ValueOrLogicalResult processDeclarationObjectBindingPatternSubPath(
+        mlir::Location location, BindingElement objectBindingElement, ObjectBindingPattern objectBindingPattern, mlir::Type type, mlir::Value init, const GenContext &genContext)
+    {
+        auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
+
+        auto fieldName = getFieldNameFromBindingElement(objectBindingElement);
+        auto isNumericAccess = fieldName.isa<mlir::IntegerAttr>();
+
+        LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern:\n\t" << init << "\n\tprop: " << fieldName << "\n");
+
+        mlir::Value subInit;
+        mlir::Type subInitType;
+
+        if (!isSpreadBinding)
+        {
+            mlir::Value value;
+            if (isNumericAccess)
+            {
+                MLIRPropertyAccessCodeLogic cl(builder, location, init, fieldName);
+                if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+                {
+                    value = cl.Tuple(tupleType, true);
+                }
+                else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
+                {
+                    value = cl.Tuple(constTupleType, true);
+                }
+            }
+            else
+            {
+                auto result = mlirGenPropertyAccessExpression(location, init, fieldName, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                value = V(result);
+            }
+
+            if (!value)
+            {
+                return mlir::failure();
+            }
+
+            if (objectBindingElement->initializer)
+            {
+                auto tupleType = type.cast<mlir_ts::TupleType>();
+                auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
+                auto res = optionalValueOrDefault(location, subType, value, objectBindingElement->initializer, genContext);
+                subInit = V(res);
+                subInitType = subInit.getType();                    
+            }
+            else
+            {
+                subInit = value;
+                subInitType = subInit.getType();
+            }
+        }
+        else
+        {
+            SmallVector<mlir::Attribute> names;
+
+            // take all used fields
+            for (auto objectBindingElement : objectBindingPattern->elements)
+            {
+                auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
+                if (isSpreadBinding)
+                {
+                    continue;
+                }
+
+                auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
+                if (propertyName.empty())
+                {
+                    propertyName = MLIRHelper::getName(objectBindingElement->name);
+                }
+
+                names.push_back(MLIRHelper::TupleFieldName(propertyName, builder.getContext()));
+            }                
+
+            // filter all fields
+            llvm::SmallVector<mlir_ts::FieldInfo> tupleFields;
+            llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+            if (mlir::succeeded(mth.getFields(init.getType(), tupleFields)))
+            {
+                for (auto fieldInfo : tupleFields)
+                {
+                    if (std::find_if(names.begin(), names.end(), [&] (auto& item) { return item == fieldInfo.id; }) == names.end())
+                    {
+                        // filter;
+                        destTupleFields.push_back(fieldInfo);
+                    }
+                }
+            }
+
+            // create object
+            subInitType = getTupleType(destTupleFields);
+            CAST(subInit, location, subInitType, init, genContext);
+        }
+
+        assert(subInit);
+
+        return subInit; 
     }
 
     mlir::LogicalResult processDeclarationObjectBindingPattern(mlir::Location location, ObjectBindingPattern objectBindingPattern,
@@ -2767,130 +2901,26 @@ class MLIRGenImpl
         auto index = 0;
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
-            auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
-
-            mlir::Attribute fieldName;
-            auto isNumericAccess = false;
-
-            if (objectBindingElement->propertyName == SyntaxKind::NumericLiteral)
-            {
-                fieldName = getNumericLiteralAttribute(objectBindingElement->propertyName);
-                isNumericAccess = true;
-            }
-            else
-            {
-                auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
-                if (propertyName.empty())
-                {
-                    propertyName = MLIRHelper::getName(objectBindingElement->name);
-                }
-
-                fieldName = MLIRHelper::TupleFieldName(propertyName, builder.getContext());
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern:\n\t" << init << "\n\tprop: " << fieldName << "\n");
-
-            mlir::Value subInit;
-            mlir::Type subInitType;
-
-            if (!isSpreadBinding)
-            {
-                mlir::Value value;
-                if (isNumericAccess)
-                {
-                    MLIRPropertyAccessCodeLogic cl(builder, location, init, fieldName);
-                    if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
-                    {
-                        value = cl.Tuple(tupleType, true);
-                    }
-                    else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
-                    {
-                        value = cl.Tuple(constTupleType, true);
-                    }
-                }
-                else
-                {
-                    auto result = mlirGenPropertyAccessExpression(location, init, fieldName, false, genContext);
-                    EXIT_IF_FAILED_OR_NO_VALUE(result)
-                    value = V(result);
-                }
-
-                if (!value)
-                {
-                    return mlir::failure();
-                }
-
-                if (objectBindingElement->initializer)
-                {
-                    auto tupleType = type.cast<mlir_ts::TupleType>();
-                    auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
-                    auto res = optionalValueOrDefault(location, subType, value, objectBindingElement->initializer, genContext);
-                    subInit = V(res);
-                    subInitType = subInit.getType();                    
-                }
-                else
-                {
-                    subInit = value;
-                    subInitType = subInit.getType();
-                }
-            }
-            else
-            {
-                SmallVector<mlir::Attribute> names;
-
-                // take all used fields
-                for (auto objectBindingElement : objectBindingPattern->elements)
-                {
-                    auto isSpreadBinding = !!objectBindingElement->dotDotDotToken;
-                    if (isSpreadBinding)
-                    {
-                        continue;
-                    }
-
-                    auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
-                    if (propertyName.empty())
-                    {
-                        propertyName = MLIRHelper::getName(objectBindingElement->name);
-                    }
-
-                    names.push_back(MLIRHelper::TupleFieldName(propertyName, builder.getContext()));
-                }                
-
-                // filter all fields
-                llvm::SmallVector<mlir_ts::FieldInfo> tupleFields;
-                llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
-                if (mlir::succeeded(mth.getFields(init.getType(), tupleFields)))
-                {
-                    for (auto fieldInfo : tupleFields)
-                    {
-                        if (std::find_if(names.begin(), names.end(), [&] (auto& item) { return item == fieldInfo.id; }) == names.end())
-                        {
-                            // filter;
-                            destTupleFields.push_back(fieldInfo);
-                        }
-                    }
-                }
-
-                // create object
-                subInitType = getTupleType(destTupleFields);
-                CAST(subInit, location, subInitType, init, genContext);
-            }
-
-            assert(subInit);
+            auto subValueFunc = [&] (mlir::Location location, const GenContext &genContext) {
+                auto result = processDeclarationObjectBindingPatternSubPath(location, objectBindingElement, objectBindingPattern, type, init, genContext);
+                // TODO: finish it
+                //EXIT_IF_FAILED_OR_NO_VALUE(result)
+                auto value = V(result);
+                return std::make_pair(value.getType(), value); 
+            };
 
             // nested obj, objectBindingElement->propertyName -> name
             if (objectBindingElement->name == SyntaxKind::ObjectBindingPattern)
             {
                 auto objectBindingPattern = objectBindingElement->name.as<ObjectBindingPattern>();
+
                 return processDeclarationObjectBindingPattern(
-                    location, objectBindingPattern, varClass,
-                    [&](mlir::Location, const GenContext &) { return std::make_pair(subInitType, subInit); }, genContext);
+                    location, objectBindingPattern, varClass, subValueFunc, genContext);
             }
 
             if (mlir::failed(processDeclaration(
-                    objectBindingElement, varClass, [&](mlir::Location, const GenContext &) { return std::make_pair(subInitType, subInit); },
-                    genContext)))
-            {
+                    objectBindingElement, varClass, subValueFunc, genContext)))
+            { 
                 return mlir::failure();
             }
 
