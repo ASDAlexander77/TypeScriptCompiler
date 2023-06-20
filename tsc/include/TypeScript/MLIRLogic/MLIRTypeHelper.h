@@ -1475,6 +1475,11 @@ class MLIRTypeHelper
             return literalTypes.front();
         }
 
+        if (literalTypes.size() == 0)
+        {
+            return mlir_ts::NeverType::get(context);
+        }
+
         return getUnionType(literalTypes);    
     }
 

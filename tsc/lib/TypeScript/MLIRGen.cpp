@@ -17098,6 +17098,12 @@ genContext);
             return getIndexAccessType(type, indexType);
         }
 
+        if (indexType.isa<mlir_ts::StringType>())
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted, index type should not be 'string' it should be literal type \n";);
+            llvm_unreachable("not implemented");
+        }
+
         if (auto unionType = indexType.dyn_cast<mlir_ts::UnionType>())
         {
             SmallVector<mlir::Type> resolvedTypes;
@@ -17117,6 +17123,7 @@ genContext);
 
         if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
         {
+            // TODO: rewrite using mth.getFieldTypeByIndex(type, indexType);
             return getIndexedAccessTypeForArray(arrayType, indexType, genContext);
         }
 
@@ -17132,99 +17139,23 @@ genContext);
 
         if (auto objType = type.dyn_cast<mlir_ts::ObjectType>())
         {
-            type = objType.getStorageType();
+            return mth.getFieldTypeByIndex(type, indexType);
         }
 
         if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
         {
-            // TODO: finish it the same way as interface
-            auto classTypeInfo = getClassInfoByFullName(classType.getName().getValue());
-            SmallVector<mlir::Type> literalTypes;
-            for (auto field : classType.getStorageType().cast<mlir_ts::ClassStorageType>().getFields())
-            {
-                auto litType = mlir_ts::LiteralType::get(field.id, mth.getAttributeType(field.id));
-                if (litType == indexType)
-                {
-                    return field.type;
-                }
-            }
-
-            for (auto method : classTypeInfo->methods)
-            {
-                auto litType = mlir_ts::LiteralType::get(builder.getStringAttr(method.name), mlir_ts::StringType::get(builder.getContext()));
-                if (litType == indexType)
-                {
-                    return method.funcType;
-                }
-            }            
+            return mth.getFieldTypeByIndex(type, indexType);
         }
 
         // TODO: sync it with mth.getFields
         if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
-            SmallVector<mlir::Type> literalTypes;
-            for (auto field : tupleType.getFields())
-            {
-                auto litType = mlir_ts::LiteralType::get(field.id, mth.getAttributeType(field.id));
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! field access type: " << litType << " <-> " << indexType << "\n";);
-
-                if (litType == indexType)
-                {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! field access return type: " << field.type << "\n";);
-                    return field.type;
-                }
-            }
-
-            if (indexType.isa<mlir_ts::StringType>())
-            {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted, index type should not be 'string' it should be literal type \n";);
-                llvm_unreachable("not implemented");
-            }
-
-            // in TS if tuple does not have field, it treats it as Any, we need to use Never
-            //return getAnyType();
-            return getNeverType();
+            return mth.getFieldTypeByIndex(type, indexType);
         }
 
         if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
         {
-            auto interfaceTypeInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
-            SmallVector<mlir::Type> literalTypes;
-            for (auto field : interfaceTypeInfo->fields)
-            {
-                auto litType = mlir_ts::LiteralType::get(field.id, mth.getAttributeType(field.id));
-                if (litType == indexType)
-                {
-                    return field.type;
-                }
-            }
-
-            for (auto method : interfaceTypeInfo->methods)
-            {
-                auto litType = mlir_ts::LiteralType::get(builder.getStringAttr(method.name), mlir_ts::StringType::get(builder.getContext()));
-                if (litType == indexType)
-                {
-                    return method.funcType;
-                }
-            }            
-        }
-
-        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
-        {
-            SmallVector<mlir::Type> types;
-            for (auto subType : unionType)
-            {
-                auto typeByKey = getIndexedAccessType(subType, indexType, genContext);
-                if (!typeByKey)
-                {
-                    return mlir::Type();
-                }
-
-                types.push_back(typeByKey);
-            }
-
-            return getUnionType(types);
+            return mth.getFieldTypeByIndex(type, indexType);
         }
 
         if (type.isa<mlir_ts::NeverType>())
