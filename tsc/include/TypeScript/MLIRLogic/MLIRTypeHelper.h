@@ -1423,6 +1423,62 @@ class MLIRTypeHelper
         return true;        
     }
 
+    mlir::Type getAttributeType(mlir::Attribute attr)
+    {
+        if (!attr)
+        {
+            return mlir_ts::UnknownType::get(context);
+        }
+
+        if (attr.isa<mlir::StringAttr>())
+        {
+            return mlir_ts::StringType::get(context);
+        }
+
+        if (attr.isa<mlir::FloatAttr>())
+        {
+            return mlir_ts::NumberType::get(context);
+        }
+
+        if (attr.isa<mlir::IntegerAttr>())
+        {
+            return mlir_ts::NumberType::get(context);
+        }
+
+        if (auto typedAttr = attr.dyn_cast<mlir::TypedAttr>())
+        {
+            return typedAttr.getType();
+        }
+
+        llvm_unreachable("not implemented");
+    }
+
+
+    mlir::Type getFieldNames(mlir::Type srcType)
+    { 
+        llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+        if (mlir::failed(getFields(srcType, destTupleFields)))
+        {
+            return mlir::Type();
+        }
+
+        SmallVector<mlir::Type> literalTypes;
+        for (auto field : destTupleFields)
+        {
+            auto litType = field.id && field.id.isa<mlir::StringAttr>() 
+                ? mlir_ts::LiteralType::get(field.id, mlir_ts::StringType::get(context))
+                : getAttributeType(field.id);
+            literalTypes.push_back(litType);
+        }
+
+        if (literalTypes.size() == 1)
+        {
+            return literalTypes.front();
+        }
+
+        return getUnionType(literalTypes);    
+    }
+
     mlir::LogicalResult getFields(mlir::Type srcType, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields)
     {       
         if (auto constTupleType = srcType.dyn_cast<mlir_ts::ConstTupleType>())
@@ -1469,6 +1525,13 @@ class MLIRTypeHelper
 
             return mlir::failure();
         }         
+        else if (srcType.dyn_cast<mlir_ts::ArrayType>() || srcType.dyn_cast<mlir_ts::ConstArrayType>() || srcType.dyn_cast<mlir_ts::StringType>())
+        {
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir_ts::StringType::get(context) });
+            //destTupleFields.push_back({ MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context), mlir_ts::NumberType::get(context) });
+            destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context) });
+            return mlir::success();
+        }
 
         LLVM_DEBUG(llvm::dbgs() << "!! getFields is not implemented for type [" << srcType << "]\n";);
         llvm_unreachable("not implemented");
@@ -1573,6 +1636,7 @@ class MLIRTypeHelper
         }
 
         // TODO: read fields info from class Array
+        // TODO: sync it with getFields
         if (auto arrayType = srcType.dyn_cast<mlir_ts::ArrayType>())
         {
             if (fieldName == MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context))
