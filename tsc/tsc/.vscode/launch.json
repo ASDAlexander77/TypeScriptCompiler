@@ -40,17 +40,19 @@
             "name": "(Linux) ./tsc - MLIR",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja/bin/tsc",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir",
                 "-mlir-disable-threading",
-                "/mnt/c/temp/1.ts"
+                "/home/alex/dev/playground/1.ts"
             ],
+            "externalConsole": true,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb",            
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
