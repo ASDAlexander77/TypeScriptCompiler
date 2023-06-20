@@ -1453,7 +1453,6 @@ class MLIRTypeHelper
         llvm_unreachable("not implemented");
     }
 
-
     mlir::Type getFieldNames(mlir::Type srcType)
     { 
         llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
@@ -1478,6 +1477,28 @@ class MLIRTypeHelper
 
         return getUnionType(literalTypes);    
     }
+
+    mlir::Type getFieldTypeByIndex(mlir::Type srcType, mlir::Type index)
+    { 
+        llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+        if (mlir::failed(getFields(srcType, destTupleFields)))
+        {
+            return mlir::Type();
+        }
+
+        for (auto field : destTupleFields)
+        {
+            auto litType = field.id && field.id.isa<mlir::StringAttr>() 
+                ? mlir_ts::LiteralType::get(field.id, mlir_ts::StringType::get(context))
+                : getAttributeType(field.id);
+            if (litType == index)
+            {
+                return field.type;
+            }
+        }
+
+        return mlir_ts::NeverType::get(context);    
+    }    
 
     mlir::LogicalResult getFields(mlir::Type srcType, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields)
     {       

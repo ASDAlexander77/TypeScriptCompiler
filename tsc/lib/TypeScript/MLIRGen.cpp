@@ -17159,6 +17159,7 @@ genContext);
             }            
         }
 
+        // TODO: sync it with mth.getFields
         if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
             SmallVector<mlir::Type> literalTypes;
@@ -17181,7 +17182,9 @@ genContext);
                 llvm_unreachable("not implemented");
             }
 
-            return mlir::Type();
+            // in TS if tuple does not have field, it treats it as Any, we need to use Never
+            //return getAnyType();
+            return getNeverType();
         }
 
         if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
@@ -17356,6 +17359,17 @@ genContext);
                 .typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, typeParamItem)});
 
             auto type = getType(mappedTypeNode->type, genContext);
+            if (!type)
+            {
+                // TODO: do we need to return error?
+                // finish it
+                return;
+            }
+
+            if (type.isa<mlir_ts::NeverType>())
+            {
+                return; 
+            }
 
             mlir::Type nameType = typeParamItem;
             if (hasNameType)
