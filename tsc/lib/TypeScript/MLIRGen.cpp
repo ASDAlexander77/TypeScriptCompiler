@@ -17104,6 +17104,23 @@ genContext);
             llvm_unreachable("not implemented");
         }
 
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            SmallVector<mlir::Type> types;
+            for (auto subType : unionType)
+            {
+                auto typeByKey = getIndexedAccessType(subType, indexType, genContext);
+                if (!typeByKey)
+                {
+                    return mlir::Type();
+                }
+
+                types.push_back(typeByKey);
+            }
+
+            return getUnionType(types);
+        }        
+
         if (auto unionType = indexType.dyn_cast<mlir_ts::UnionType>())
         {
             SmallVector<mlir::Type> resolvedTypes;
@@ -17163,7 +17180,7 @@ genContext);
             return type;
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : " << type << " index " << indexType << " is not implemeneted \n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! IndexedAccessType for : \n\t" << type << " \n\tindex " << indexType << " is not implemeneted \n";);
 
         llvm_unreachable("not implemented");
         //return mlir::Type();
