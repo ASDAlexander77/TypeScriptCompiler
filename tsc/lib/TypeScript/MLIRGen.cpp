@@ -10475,8 +10475,8 @@ class MLIRGenImpl
         TypeData dataType;
         mlir::Type accumulatedArrayElementType;
         mlir::Type arrayElementType;
-        bool anySpreadElement;
         bool isConst;
+        bool anySpreadElement;
         bool applyCast;
     };
 
