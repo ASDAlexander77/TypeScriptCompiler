@@ -9369,12 +9369,12 @@ class MLIRGenImpl
         }
 
         SmallVector<mlir::Value, 4> &operands;
-        int currentParameter;
         llvm::ArrayRef<mlir::typescript::FieldInfo> parameters;
         int lastArgIndex;
         bool isVarArg;
         mlir::Type varArgType;
         bool hasType;
+        int currentParameter;
         bool noReceiverTypesForGenericCall;
         MLIRTypeHelper &mth;
     };
@@ -10470,14 +10470,14 @@ class MLIRGenImpl
             }
         }
 
+        RecevierContext recevierContext;
+
         TypeData dataType;
         mlir::Type accumulatedArrayElementType;
         mlir::Type arrayElementType;
         bool anySpreadElement;
         bool isConst;
         bool applyCast;
-
-        RecevierContext recevierContext;
     };
 
     struct ArrayElement
