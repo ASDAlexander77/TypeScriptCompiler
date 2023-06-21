@@ -15,7 +15,6 @@
                 "_UNICODE"
             ],
             "windowsSdkVersion": "10.0.18362.0",
-            "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Tools/MSVC/14.28.29910/bin/Hostx64/x64/cl.exe",
             "cStandard": "c17",
             "cppStandard": "c++17",
             "intelliSenseMode": "msvc-x64",
@@ -26,8 +25,8 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
-                "${workspaceFolder}/../../3rdParty/llvm/ninja/debug/include",
-                "${workspaceFolder}/../../__build/tsc/include",
+                "${workspaceFolder}/../../3rdParty/llvm/debug/include",
+                "${workspaceFolder}/../../__build/tsc/linux-ninja/include",
                 "${workspaceFolder}/../tsc-new-parser"
             ],
             "defines": [
