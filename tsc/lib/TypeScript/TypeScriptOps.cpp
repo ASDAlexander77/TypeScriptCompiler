@@ -583,10 +583,16 @@ LogicalResult mlir_ts::CastOp::verify()
         if (!inUnionType && resUnionType)
         {
             // TODO: review using "undefined", use proper union type
-            if (!inType.isa<mlir_ts::UndefinedType>())
+            auto effectiveInType = inType;
+            if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
+            {
+                effectiveInType = optType.getElementType();
+            }
+
+            if (!effectiveInType.isa<mlir_ts::UndefinedType>())
             {
                 auto pred = [&](auto &item) { 
-                    return cmpTypes(inType, item); 
+                    return cmpTypes(effectiveInType, item); 
                 };
                 auto types = resUnionType.getTypes();
                 if (std::find_if(types.begin(), types.end(), pred) == types.end())

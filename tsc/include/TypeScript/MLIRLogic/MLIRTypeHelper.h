@@ -2140,7 +2140,11 @@ class MLIRTypeHelper
             }
         }
 
-        unionContext.types.insert(type);
+        if (!type.isa<mlir_ts::UndefinedType>() && !type.isa<mlir_ts::NullType>())
+        {
+            unionContext.types.insert(type);
+        }
+
         return mlir::success();
     }
 
