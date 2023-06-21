@@ -2754,7 +2754,9 @@ class MLIRGenImpl
                                                std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func,
                                                const GenContext &genContext)
     {
-        auto [type, init] = func(location, genContext);
+        auto [typeRef, initRef] = func(location, genContext);
+        mlir::Type type = typeRef;
+        mlir::Value init = initRef;
 
         auto index = 0;
         for (auto arrayBindingElement : arrayBindingPattern->elements)
@@ -2911,7 +2913,9 @@ class MLIRGenImpl
                                                 std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func,
                                                 const GenContext &genContext)
     {
-        auto [type, init] = func(location, genContext);
+        auto [typeRef, initRef] = func(location, genContext);
+        mlir::Type type = typeRef;
+        mlir::Value init = initRef;
 
         auto index = 0;
         for (auto objectBindingElement : objectBindingPattern->elements)
