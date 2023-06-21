@@ -2116,30 +2116,6 @@ class MLIRTypeHelper
 
     mlir::LogicalResult processUnionTypeItem(mlir::Type type, UnionTypeProcessContext &unionContext)
     {
-        if (type.isa<mlir_ts::UndefinedType>())
-        {
-            unionContext.isUndefined = true;
-            return mlir::success();
-        }
-
-        if (type.isa<mlir_ts::NullType>())
-        {
-            unionContext.isNullable = true;
-            return mlir::success();
-        }
-
-        if (type.isa<mlir_ts::AnyType>())
-        {
-            unionContext.isAny = true;
-            return mlir::success();
-        }
-
-        if (type.isa<mlir_ts::NeverType>())
-        {
-            unionContext.isNever = true;
-            return mlir::success();
-        }
-
         if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
         {
             unionContext.literalTypes.insert(literalType);
@@ -2148,8 +2124,11 @@ class MLIRTypeHelper
 
         if (auto optionalType = type.dyn_cast<mlir_ts::OptionalType>())
         {
-            unionContext.isUndefined = true;
-            unionContext.types.insert(optionalType.getElementType());
+            if (unionContext.isUndefined)
+            {
+                unionContext.types.insert(optionalType.getElementType());
+            }
+
             return mlir::success();
         }
 
@@ -2273,9 +2252,59 @@ class MLIRTypeHelper
         return retType;
     }
 
+    void detectTypeForGroupOfTypes(mlir::ArrayRef<mlir::Type> types, UnionTypeProcessContext &unionContext)
+    {
+        // check if type is nullable or undefinable
+        for (auto type : types)
+        {
+            if (type.isa<mlir_ts::UndefinedType>())
+            {
+                unionContext.isUndefined = true;
+                continue;
+            }
+
+            if (type.isa<mlir_ts::NullType>())
+            {
+                unionContext.isNullable = true;
+                continue;
+            }            
+
+            if (type.isa<mlir_ts::AnyType>())
+            {
+                unionContext.isAny = true;
+                continue;
+            }
+
+            if (type.isa<mlir_ts::NeverType>())
+            {
+                unionContext.isNever = true;
+                continue;
+            }
+
+            if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+            {
+                detectTypeForGroupOfTypes(unionType.getTypes(), unionContext);
+            }
+        }
+    }
+
     mlir::Type getUnionTypeWithMerge(mlir::ArrayRef<mlir::Type> types, bool mergeLiterals = true, bool mergeTypes = true)
     {
         UnionTypeProcessContext unionContext = {};
+
+        detectTypeForGroupOfTypes(types, unionContext);
+
+        // default wide types
+        if (unionContext.isAny)
+        {
+            return mlir_ts::AnyType::get(context);
+        }
+
+        if (unionContext.isNever)
+        {
+            return mlir_ts::NeverType::get(context);
+        }
+
         for (auto type : types)
         {
             if (!type)
@@ -2284,17 +2313,6 @@ class MLIRTypeHelper
             }
 
             processUnionTypeItem(type, unionContext);
-
-            // default wide types
-            if (unionContext.isAny)
-            {
-                return mlir_ts::AnyType::get(context);
-            }
-
-            if (unionContext.isNever)
-            {
-                return mlir_ts::NeverType::get(context);
-            }
         }
 
         return getUnionTypeMergeTypes(unionContext, mergeLiterals, mergeTypes);
@@ -2318,9 +2336,26 @@ class MLIRTypeHelper
     mlir::Type normalizeUnionType(mlir::SmallVector<mlir::Type> &types)
     {
         mlir::SmallPtrSet<mlir::Type, 2> normalizedTypes;
+        auto isUndefined = false;
         for (auto type : types)
         {
+            if (type.isa<mlir_ts::UndefinedType>())
+            {
+                isUndefined = true; 
+                continue;
+            }
+
             normalizedTypes.insert(type);
+        }
+
+        if (normalizedTypes.size() == 0)
+        {
+            return isUndefined ? mlir::Type(mlir_ts::UndefinedType::get(context)) : mlir::Type(mlir_ts::NeverType::get(context));
+        }
+
+        if (normalizedTypes.size() == 1)
+        {
+            return isUndefined ? mlir_ts::OptionalType::get(*normalizedTypes.begin()) : *normalizedTypes.begin();
         }
 
         mlir::SmallVector<mlir::Type> newTypes;
@@ -2331,7 +2366,7 @@ class MLIRTypeHelper
 
         std::sort (newTypes.begin(), newTypes.end(), [](auto i, auto j) { return (i.getAsOpaquePointer() < j.getAsOpaquePointer()); });
 
-        return mlir_ts::UnionType::get(context, newTypes);
+        return isUndefined ? mlir::Type(mlir_ts::OptionalType::get(mlir_ts::UnionType::get(context, newTypes))) : mlir::Type(mlir_ts::UnionType::get(context, newTypes));
     }
 
     mlir::Type getIntersectionType(mlir::Type type1, mlir::Type type2)
