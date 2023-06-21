@@ -1078,11 +1078,11 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<ClassExpression>(), genContext);
         }
-        else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
+        else if (kind == SyntaxKind::OmittedExpression)
         {
-            return mlir::success();
+            return mlirGen(expressionAST.as<OmittedExpression>(), genContext);
         }
-        else if (kind == SyntaxKind::OmittedExpression /*TODO: temp solution to treat null expr as empty expr*/)
+        else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
         {
             return mlir::success();
         }
@@ -10077,6 +10077,13 @@ class MLIRGenImpl
         return mlirGen(nonNullExpression->expression, genContext);
     }
 
+    ValueOrLogicalResult mlirGen(OmittedExpression ommitedExpression, const GenContext &genContext)
+    {
+        auto location = loc(ommitedExpression);
+
+        return V(builder.create<mlir_ts::UndefOp>(location, getUndefinedType()));
+    }
+
     ValueOrLogicalResult mlirGen(TemplateLiteralLikeNode templateExpressionAST, const GenContext &genContext)
     {
         auto location = loc(templateExpressionAST);
@@ -10650,6 +10657,8 @@ class MLIRGenImpl
     
     mlir::LogicalResult processArrayElementForValues(Expression item, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
     {
+        auto location = loc(item);
+
         auto &recevierContext = arrayInfo.recevierContext;
 
         recevierContext.nextTupleField();
@@ -10661,10 +10670,13 @@ class MLIRGenImpl
         auto result = mlirGen(item, noReceiverGenContext);
         EXIT_IF_FAILED(result)
         auto itemValue = V(result);
-        if (!itemValue)
+        if (itemValue.getDefiningOp<mlir_ts::UndefOp>())
         {
-            // omitted expression
-            return mlir::success();
+            // process ommited expression
+            if (auto optionalType = recevierContext.receiverElementType.dyn_cast_or_null<mlir_ts::OptionalType>())
+            {
+                itemValue = builder.create<mlir_ts::OptionalUndefOp>(location, recevierContext.receiverElementType);
+            }
         }
 
         auto type = itemValue.getType();
@@ -10680,7 +10692,7 @@ class MLIRGenImpl
         {
             if (auto castType = recevierContext.isCastNeeded(type))
             {
-                CAST(itemValue, loc(item), castType, itemValue, genContext);
+                CAST(itemValue, location, castType, itemValue, genContext);
                 type = itemValue.getType();
             }
 
