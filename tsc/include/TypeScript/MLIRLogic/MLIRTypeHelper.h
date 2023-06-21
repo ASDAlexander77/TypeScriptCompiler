@@ -350,6 +350,16 @@ class MLIRTypeHelper
         return type;
     }
 
+    mlir::Type stripOptionalType(mlir::Type type)
+    {
+        if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
+        {
+            return optType.getElementType();
+        }
+
+        return type;
+    }    
+
     mlir::Type convertConstArrayTypeToArrayType(mlir::Type type)
     {
         if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
@@ -487,10 +497,7 @@ class MLIRTypeHelper
 
     bool isAnyFunctionType(mlir::Type funcType)
     {
-        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
-        {
-            funcType = optType.getElementType();
-        }
+        funcType = stripOptionalType(funcType);    
 
         bool isFuncType = true;
         mlir::TypeSwitch<mlir::Type>(funcType)
@@ -524,10 +531,7 @@ class MLIRTypeHelper
     {
         mlir::ArrayRef<mlir::Type> returnTypes;
 
-        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
-        {
-            funcType = optType.getElementType();
-        }
+        funcType = stripOptionalType(funcType);    
 
         auto f = [&](auto calledFuncType) { returnTypes = calledFuncType.getResults(); };
 
@@ -549,10 +553,7 @@ class MLIRTypeHelper
     {
         mlir::Type paramType;
 
-        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
-        {
-            funcType = optType.getElementType();
-        }        
+        funcType = stripOptionalType(funcType);          
 
         auto f = [&](auto calledFuncType) { return (index >= (int) calledFuncType.getNumInputs()) ? mlir::Type() : calledFuncType.getInput(index); };
 
@@ -576,10 +577,7 @@ class MLIRTypeHelper
     {
         mlir::Type paramType;
 
-        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
-        {
-            funcType = optType.getElementType();
-        }        
+        funcType = stripOptionalType(funcType);    
 
         auto f = [&](auto calledFuncType) { return calledFuncType.getInputs().front(); };
 
@@ -607,10 +605,7 @@ class MLIRTypeHelper
             return paramsType;
         }
 
-        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
-        {
-            funcType = optType.getElementType();
-        }        
+        funcType = stripOptionalType(funcType);       
 
         mlir::TypeSwitch<mlir::Type>(funcType)
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
@@ -635,10 +630,7 @@ class MLIRTypeHelper
             return paramsType;
         }
 
-        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
-        {
-            funcType = optType.getElementType();
-        }        
+        funcType = stripOptionalType(funcType);     
 
         auto f = [&](auto calledFuncType) {
             SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -671,10 +663,7 @@ class MLIRTypeHelper
     {
         bool isVarArg = false;
 
-        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
-        {
-            funcType = optType.getElementType();
-        }
+        funcType = stripOptionalType(funcType);    
 
         mlir::TypeSwitch<mlir::Type>(funcType)
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
@@ -697,10 +686,9 @@ class MLIRTypeHelper
     {
         mlir::Type paramsType;
 
-        if (auto optType = funcType.dyn_cast<mlir_ts::OptionalType>())
-        {
-            funcType = optType.getElementType();
-        }        
+        auto isOptType = funcType.isa<mlir_ts::OptionalType>();
+
+        funcType = stripOptionalType(funcType);    
 
         auto f = [&](auto calledFuncType) {
             using t = decltype(calledFuncType);
@@ -724,7 +712,7 @@ class MLIRTypeHelper
                 llvm_unreachable("not implemented"); 
             });
 
-        return paramsType;
+        return isOptType ? mlir_ts::OptionalType::get(paramsType) : paramsType;
     }
 
     MatchResult TestFunctionTypesMatch(
@@ -1124,6 +1112,14 @@ class MLIRTypeHelper
 
         if (isAnyFunctionType(srcType) && isAnyFunctionType(destType))
         {
+            auto srcTypeUnwrapped = stripOptionalType(srcType);
+            auto destTypeUnwrapped = stripOptionalType(destType);
+            if (!srcTypeUnwrapped.isa<mlir_ts::FunctionType>() && destTypeUnwrapped.isa<mlir_ts::FunctionType>())
+            {
+                // because of data loss we need to return false;
+                return false;
+            }
+
             auto srcInputs = getParamsFromFuncRef(srcType);
             auto destInputs = getParamsFromFuncRef(destType);
             auto srcResults = getReturnsFromFuncRef(srcType);

@@ -8525,10 +8525,7 @@ class MLIRGenImpl
 
         if (isConditionalAccess)
         {
-            if (auto optType = arrayType.dyn_cast<mlir_ts::OptionalType>())
-            {
-                arrayType = optType.getElementType();
-            }
+            arrayType = mth.stripOptionalType(arrayType);
         }
 
         mlir::Type elementType;
@@ -18191,10 +18188,7 @@ genContext);
                 // umwrap optional
                 if (!anyTypesInBaseTupleType)
                 {
-                    if (auto optionalType = type.dyn_cast<mlir_ts::OptionalType>())
-                    {
-                        type = optionalType.getElementType();
-                    }
+                    type = mth.stripOptionalType(type);
                 }
 
                 if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())

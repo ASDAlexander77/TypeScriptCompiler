@@ -583,11 +583,7 @@ LogicalResult mlir_ts::CastOp::verify()
         if (!inUnionType && resUnionType)
         {
             // TODO: review using "undefined", use proper union type
-            auto effectiveInType = inType;
-            if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
-            {
-                effectiveInType = optType.getElementType();
-            }
+            auto effectiveInType = mth.stripOptionalType(inType);
 
             if (!effectiveInType.isa<mlir_ts::UndefinedType>())
             {
