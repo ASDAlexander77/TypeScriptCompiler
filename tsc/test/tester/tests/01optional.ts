@@ -7,7 +7,9 @@ function main() {
         [2, "Aneurin", "aneurin.s@", "Supervisor"],
     ];
 
-    //assert(staff[0][3] == "Supervisor");
+    for (const v of staff) print(v[0], v[1], v[2], v[3] || "<no value>");
+
+    assert(staff[2][3] == "Supervisor");
 
     print("done.");
 }

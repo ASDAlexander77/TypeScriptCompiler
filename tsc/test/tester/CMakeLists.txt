@@ -228,6 +228,7 @@ add_test(NAME test-compile-00-generator-6 COMMAND test-runner "${PROJECT_SOURCE_
 add_test(NAME test-compile-00-safe-cast COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast.ts")
 add_test(NAME test-compile-00-safe-cast-2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast2.ts")
 add_test(NAME test-compile-00-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional.ts")
+add_test(NAME test-compile-01-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
 add_test(NAME test-compile-00-async-await COMMAND test-runner -async "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
 add_test(NAME test-compile-00-for-await COMMAND test-runner -async "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
 # TODO: in opt mode, error
@@ -492,6 +493,7 @@ add_test(NAME test-jit-00-generator-6 COMMAND test-runner -jit "${PROJECT_SOURCE
 add_test(NAME test-jit-00-safe-cast COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast.ts")
 add_test(NAME test-jit-00-safe-cast-2 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast2.ts")
 add_test(NAME test-jit-00-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional.ts")
+add_test(NAME test-jit-01-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
 if (NOT(WIN32))
 # TODO: crash
 #add_test(NAME test-jit-00-async-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
