@@ -10668,7 +10668,7 @@ class MLIRGenImpl
         recevierContext.setReceiverTo(noReceiverGenContext);
 
         auto result = mlirGen(item, noReceiverGenContext);
-        EXIT_IF_FAILED(result)
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto itemValue = V(result);
         if (itemValue.getDefiningOp<mlir_ts::UndefOp>())
         {
@@ -15859,6 +15859,10 @@ genContext);
         {
             return getOptionalType(typeReferenceAST.as<OptionalTypeNode>(), genContext);
         }
+        else if (kind == SyntaxKind::RestType)
+        {
+            return getRestType(typeReferenceAST.as<RestTypeNode>(), genContext);
+        }
         else if (kind == SyntaxKind::NeverKeyword)
         {
             return getNeverType();
@@ -18487,6 +18491,11 @@ genContext);
         }
 
         return mlir_ts::OptionalType::get(type);
+    }
+
+    mlir::Type getRestType(RestTypeNode restTypeNode, const GenContext &genContext)
+    {
+        return getConstArrayType(getType(restTypeNode->type, genContext), 0);
     }
 
     mlir_ts::AnyType getAnyType()
