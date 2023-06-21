@@ -2275,15 +2275,18 @@ class MLIRGenImpl
 
     struct VariableDeclarationInfo
     {
-        VariableDeclarationInfo() = default;
+        VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
+            scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, deleted{false} 
+        {
+        };
 
         VariableDeclarationInfo(
             std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func_, 
-            std::function<StringRef(StringRef)> getFullNamespaceName_) : VariableDeclarationInfo() {
-                getFullNamespaceName = getFullNamespaceName_;
-                func = func_;
-                deleted = false;
-            }
+            std::function<StringRef(StringRef)> getFullNamespaceName_) : VariableDeclarationInfo() 
+        {
+            getFullNamespaceName = getFullNamespaceName_;
+            func = func_;
+        }
 
         void setName(StringRef name_)
         {
