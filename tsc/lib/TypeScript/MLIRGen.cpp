@@ -2282,6 +2282,7 @@ class MLIRGenImpl
             std::function<StringRef(StringRef)> getFullNamespaceName_) : VariableDeclarationInfo() {
                 getFullNamespaceName = getFullNamespaceName_;
                 func = func_;
+                deleted = false;
             }
 
         void setName(StringRef name_)
