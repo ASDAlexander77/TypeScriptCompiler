@@ -18045,17 +18045,17 @@ genContext);
             }
 
             mth.processUnionTypeItem(type, unionContext);
+        }
 
-            // default wide types
-            if (unionContext.isAny)
-            {
-                return getAnyType();
-            }
+        // default wide types
+        if (unionContext.isAny)
+        {
+            return getAnyType();
+        }
 
-            if (unionContext.isNever)
-            {
-                return getNeverType();
-            }
+        if (unionContext.isNever)
+        {
+            return getNeverType();
         }
 
         return mth.getUnionTypeMergeTypes(unionContext, false, false);

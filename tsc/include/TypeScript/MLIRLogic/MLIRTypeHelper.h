@@ -2116,6 +2116,30 @@ class MLIRTypeHelper
 
     mlir::LogicalResult processUnionTypeItem(mlir::Type type, UnionTypeProcessContext &unionContext)
     {
+        if (type.isa<mlir_ts::UndefinedType>())
+        {
+            unionContext.isUndefined = true;
+            return mlir::success();
+        }
+
+        if (type.isa<mlir_ts::NullType>())
+        {
+            unionContext.isNullable = true;
+            return mlir::success();
+        }            
+
+        if (type.isa<mlir_ts::AnyType>())
+        {
+            unionContext.isAny = true;
+            return mlir::success();
+        }
+
+        if (type.isa<mlir_ts::NeverType>())
+        {
+            unionContext.isNever = true;
+            return mlir::success();
+        }
+
         if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
         {
             unionContext.literalTypes.insert(literalType);
@@ -2140,11 +2164,7 @@ class MLIRTypeHelper
             }
         }
 
-        if (!type.isa<mlir_ts::UndefinedType>() && !type.isa<mlir_ts::NullType>())
-        {
-            unionContext.types.insert(type);
-        }
-
+        unionContext.types.insert(type);
         return mlir::success();
     }
 
