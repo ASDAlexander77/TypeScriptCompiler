@@ -10452,7 +10452,9 @@ class MLIRGenImpl
                 dataType = TypeData::Array;
             }
 
-            if (dataType == TypeData::Tuple && !accumulatedArrayElementType.isa<mlir_ts::UnionType>())
+            if (dataType == TypeData::Tuple 
+                && (recevierContext.receiverTupleType == mlir::Type()) 
+                && !accumulatedArrayElementType.isa<mlir_ts::UnionType>())
             {
                 // seems we can convert tuple into array, for example [1.0, 2, 3] -> [1.0, 2.0, 3.0]
                 dataType = TypeData::Array;
@@ -10699,6 +10701,35 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult processTupleTailingOptionalValues(mlir::Location location, int processedValues, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
+    {
+        if (!arrayInfo.recevierContext.receiverTupleType)
+        {
+            return mlir::success();
+        }
+
+        if (processedValues >= arrayInfo.recevierContext.receiverTupleType.getFields().size())
+        {
+            return mlir::success();
+        }
+
+        auto &recevierContext = arrayInfo.recevierContext;
+        for (auto i = processedValues; i < arrayInfo.recevierContext.receiverTupleType.getFields().size(); i++)
+        {
+            recevierContext.nextTupleField();
+            if (!recevierContext.receiverElementType.isa<mlir_ts::OptionalType>())
+            {
+                emitError(location, "value is not provided for non-optional type");
+                return mlir::failure();
+            }
+
+            auto undefVal = builder.create<mlir_ts::OptionalUndefOp>(location, recevierContext.receiverElementType);
+            values.push_back({undefVal, false, false});
+        }
+
+        return mlir::success();
+    }    
+
     mlir::LogicalResult processArrayValues(NodeArray<Expression> arrayElements, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
     {
         // check receiverType
@@ -10715,6 +10746,11 @@ class MLIRGenImpl
             {
                 return mlir::failure();
             }
+        }
+
+        if (mlir::failed(processTupleTailingOptionalValues(loc(arrayElements), arrayElements.size(), values, arrayInfo, genContext)))
+        {
+            return mlir::failure();
         }
 
         arrayInfo.adjustArrayType(getAnyType());
@@ -15058,8 +15094,17 @@ genContext);
 
             if (fieldInfo.id == mlir::Attribute() || (index < srcTupleType.size() && srcTupleType.getFieldInfo(index).id == mlir::Attribute()))
             {
+                if (index >= srcTupleType.size() && fieldInfo.type.isa<mlir_ts::OptionalType>())
+                {
+                    // add undefined value
+                    auto undefVal = builder.create<mlir_ts::OptionalUndefOp>(location, fieldInfo.type);
+                    values.push_back(undefVal);
+                    continue;
+                }
+
                 MLIRPropertyAccessCodeLogic cl(builder, location, value, builder.getI32IntegerAttr(index));
                 auto value = cl.Tuple(srcTupleType, true);
+                VALIDATE(value, location)
                 values.push_back(value);
             }
             else
@@ -15797,6 +15842,10 @@ genContext);
         else if (kind == SyntaxKind::InferType)
         {
             return getInferType(typeReferenceAST.as<InferTypeNode>(), genContext);
+        }
+        else if (kind == SyntaxKind::OptionalType)
+        {
+            return getOptionalType(typeReferenceAST.as<OptionalTypeNode>(), genContext);
         }
         else if (kind == SyntaxKind::NeverKeyword)
         {
@@ -18411,6 +18460,11 @@ genContext);
         LLVM_DEBUG(llvm::dbgs() << "\n!! value of literal: " << value << "\n";);
 
         llvm_unreachable("not implemented");
+    }
+
+    mlir::Type getOptionalType(OptionalTypeNode optionalTypeNode, const GenContext &genContext)
+    {
+        return getOptionalType(getType(optionalTypeNode->type, genContext));
     }
 
     mlir::Type getOptionalType(mlir::Type type)
