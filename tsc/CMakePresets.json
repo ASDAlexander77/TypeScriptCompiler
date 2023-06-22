@@ -64,7 +64,7 @@
         {
             "name": "linux-ninja",
             "inherits": "default",
-            "generator": "Ninja",
+            "generator": "Ninja Multi-Config",
             "displayName": "GCC 11.3.0 x86_64-linux-gnu",
             "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",
             "cacheVariables": {
