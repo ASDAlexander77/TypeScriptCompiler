@@ -9,6 +9,31 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+
+- Logical Assignments
+```TypeScript
+function foo1(f?: (a: number) => number) {
+    f ??= ((a: number) => a)
+    f(42);
+}
+
+function foo2(f?: (a: number) => number) {
+    f ||= ((a: number) => a)
+    f(42);
+}
+
+function foo3(f?: (a: number) => number) {
+    f &&= ((a: number) => a)
+    f(42);
+}
+
+function main() {
+    foo1();
+    foo2();
+    foo3((a: number) => a * 2);
+}
+```
+
 - Optional type in tuple
 ```TypeScript
 function main() {
