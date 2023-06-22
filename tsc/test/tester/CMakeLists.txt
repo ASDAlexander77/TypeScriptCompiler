@@ -354,6 +354,7 @@ add_test(NAME test-compile-structural-typing COMMAND test-runner "${PROJECT_SOUR
 add_test(NAME test-compile-declarationsAndAssignments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/declarationsAndAssignments.ts")
 add_test(NAME test-compile-disallowLineTerminatorBeforeArrow COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/disallowLineTerminatorBeforeArrow.ts")
 add_test(NAME test-compile-emitDefaultParametersFunctionExpression COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/emitDefaultParametersFunctionExpression.ts")
+add_test(NAME test-compile-logicalAssignment5 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/logicalAssignment5.ts")
 add_test(NAME test-compile-nbody COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/nbody.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
@@ -628,4 +629,5 @@ add_test(NAME test-jit-structural-typing COMMAND test-runner -jit "${PROJECT_SOU
 add_test(NAME test-jit-declarationsAndAssignments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/declarationsAndAssignments.ts")
 add_test(NAME test-jit-disallowLineTerminatorBeforeArrow COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/disallowLineTerminatorBeforeArrow.ts")
 add_test(NAME test-jit-emitDefaultParametersFunctionExpression COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/emitDefaultParametersFunctionExpression.ts")
+add_test(NAME test-jit-logicalAssignment5 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/logicalAssignment5.ts")
 add_test(NAME test-jit-nbody COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/nbody.ts")

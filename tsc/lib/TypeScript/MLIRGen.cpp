@@ -6790,8 +6790,13 @@ class MLIRGenImpl
         if (hasOptional)
         {
             CAST_A(hasValue, location, getBooleanType(), leftExpressionValue, genContext);      
-            auto orOp = builder.create<mlir_ts::LogicalBinaryOp>(
-                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::ExclamationEqualsEqualsToken), hasValue,
+            CAST_A(isFalse, location, getBooleanType(), mlirGenBooleanValue(location, false), genContext);
+            auto compareToFalse = builder.create<mlir_ts::LogicalBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsEqualsToken), isFalse,
+                hasValue);
+
+            auto orOp = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::BarToken), compareToFalse,
                 compareToNull);   
 
             ifCond = orOp;            
