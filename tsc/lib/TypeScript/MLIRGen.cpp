@@ -18894,7 +18894,6 @@ genContext);
     }
 
   protected:
-    /// Helper conversion for a TypeScript AST location to an MLIR location.
     mlir::Location loc(TextRange loc)
     {
         if (!loc)

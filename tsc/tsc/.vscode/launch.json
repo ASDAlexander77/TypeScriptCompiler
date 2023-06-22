@@ -132,7 +132,6 @@
                 "-emit=llvm",
                 "-mlir-disable-threading",
                 "-debug-only=llvm",
-                "-opt",
                 "-o=c:/temp/1.ll",
                 "C:/temp/1.ts"
             ],
@@ -274,9 +273,14 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "C:/temp/MLIR_to_exe/1.exe",
+            "symbolSearchPath": "C:/temp/MLIR_to_exe/",
             "args": [],
-            "stopAtEntry": true,
-            "cwd": "${workspaceRoot}"
+            "stopAtEntry": false,
+            "cwd": "${workspaceRoot}",
+            "logging": {
+                "moduleLoad": true,
+                "trace": true
+            },            
         }
     ]
 }

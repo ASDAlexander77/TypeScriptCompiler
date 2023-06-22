@@ -30,6 +30,7 @@
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/IR/DIBuilder.h"
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
@@ -896,12 +897,32 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             argDictAttrs.append(argAttrRange.begin(), argAttrRange.end());
         }
 
-        std::string name;
+        // debug info
+        // File
+        auto file = LLVM::DIFileAttr::get(rewriter.getContext(), "debuginfo.mlir", ".");
+
+        // CU
+        unsigned sourceLanguage = llvm::dwarf::DW_LANG_C; 
+        auto producer = rewriter.getStringAttr("MLIR");
+        auto isOptimized = true;
+        auto emissionKind = LLVM::DIEmissionKind::Full;
+        auto compileUnit = LLVM::DICompileUnitAttr::get(rewriter.getContext(), sourceLanguage, file, producer, isOptimized, emissionKind);
+
+        unsigned line = 1;
+        unsigned scopeLine = 1;
+        auto subprogramFlags = LLVM::DISubprogramFlags::Definition|LLVM::DISubprogramFlags::Optimized;
+        auto type = LLVM::DISubroutineTypeAttr::get(rewriter.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
+
+        auto fusedLocWithSubprogram = mlir::FusedLoc::get(
+            rewriter.getContext(), {funcOp.getLoc()}, LLVM::DISubprogramAttr::get(rewriter.getContext(), compileUnit, file, 
+            rewriter.getStringAttr(funcOp.getName()), rewriter.getStringAttr(funcOp.getName()), file, line, scopeLine, subprogramFlags, type));
+
         auto newFuncOp =
-            rewriter.create<mlir::func::FuncOp>(funcOp.getLoc(), funcOp.getName(),
+            rewriter.create<mlir::func::FuncOp>(fusedLocWithSubprogram, funcOp.getName(),
                                           rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(),
                                                                    signatureResultsConverter.getConvertedTypes()),
                                           ArrayRef<NamedAttribute>{}, argDictAttrs);
+
         for (const auto &namedAttr : funcOp->getAttrs())
         {
             if (namedAttr.getName() == funcOp.getFunctionTypeAttrName())
@@ -911,7 +932,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
             if (namedAttr.getName() == SymbolTable::getSymbolAttrName())
             {
-                name = namedAttr.getValue().dyn_cast<mlir::StringAttr>().getValue().str();
+                //name = namedAttr.getValue().dyn_cast<mlir::StringAttr>().getValue().str();
                 continue;
             }
 
@@ -5183,13 +5204,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     mlir::SmallPtrSet<mlir::Type, 32> usedTypes;
     populateTypeScriptConversionPatterns(typeConverter, m, usedTypes);
 
-    // We want to completely lower to LLVM, so we use a `FullConversion`. This
-    // ensures that only legal operations will remain after the conversion.
-    auto module = getOperation();
+    LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << m << "\n";);
 
-    LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << module << "\n";);
-
-    if (failed(applyFullConversion(module, target, std::move(patterns))))
+    if (failed(applyFullConversion(m, target, std::move(patterns))))
     {
         signalPassFailure();
     }
@@ -5200,7 +5217,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     RewritePatternSet patterns2(&getContext());
     patterns2.insert<GlobalConstructorOpLowering, DialectCastOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
-    if (failed(applyFullConversion(module, target2, std::move(patterns2))))
+    if (failed(applyFullConversion(m, target2, std::move(patterns2))))
     {
         signalPassFailure();
     }
@@ -5209,11 +5226,11 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP - BEFORE CLEANUP: \n" << module << "\n";);
     */
 
-    cleanupUnrealizedConversionCast(module);
+    cleanupUnrealizedConversionCast(m);
 
-    LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP: \n" << module << "\n";);
+    LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP: \n" << m << "\n";);
 
-    LLVM_DEBUG(verifyModule(module););
+    LLVM_DEBUG(verifyModule(m););
 }
 
 /// Create a pass for lowering operations the remaining `TypeScript` operations, as
