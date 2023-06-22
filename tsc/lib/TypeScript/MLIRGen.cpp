@@ -6831,7 +6831,7 @@ class MLIRGenImpl
             return mlirGenSaveLogicOneItem(location, leftExpressionValue, ifResult, genContext);
         }
 
-        return result;
+        return ifResult;
     }
 
     ValueOrLogicalResult mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
