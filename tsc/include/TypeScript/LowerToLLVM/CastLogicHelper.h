@@ -430,7 +430,9 @@ class CastLogicHelper
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
-                auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(opaqueType), ptrValue);
+
+                auto ptrValueAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(ptrValue.getType()), ptrValue);
+                auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(opaqueType), ptrValueAdapt);
                 return bitcast;
             }
 
@@ -438,7 +440,9 @@ class CastLogicHelper
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
-                auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(opaqueType), ptrValue);
+
+                auto ptrValueAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(ptrValue.getType()), ptrValue);
+                auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(opaqueType), ptrValueAdapt);
                 return bitcast;
             }
         }
