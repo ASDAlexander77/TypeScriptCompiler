@@ -10,9 +10,7 @@ function foo2(f?: (a: number) => number) {
 
 function foo3(f?: (a: number) => number) {
     f &&= ((a: number) => a)
-    print(f(42));
-    // TODO: bug
-    //assert(f(42) == 84);
+    assert(f(42) == 42);
 }
 
 function bar1(f?: (a: number) => number) {
@@ -27,9 +25,7 @@ function bar2(f?: (a: number) => number) {
 
 function bar3(f?: (a: number) => number) {
     f &&= (f, ((a: number) => a))
-    print(f(42));
-    // TODO: bug
-    //assert(f(42) == 84);
+    assert(f(42) == 42);
 }
 
 function main() {
