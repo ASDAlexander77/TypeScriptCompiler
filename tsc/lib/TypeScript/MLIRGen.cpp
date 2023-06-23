@@ -18934,8 +18934,8 @@ genContext);
         }
 
         auto pos = loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos;
-        //return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
-        return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
+        return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
+        //return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
     }
 
     mlir::Location loc1(ts::SourceFile sourceFile, std::string fileName, int start, int length)
