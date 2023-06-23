@@ -18975,14 +18975,20 @@ genContext);
         auto _end = 0;
 
         auto locs = location.getLocations();
-        if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
+        if (locs.size() > 0)
         {
-            pos = getPos(fileLineColLoc);
+            if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
+            {
+                pos = getPos(fileLineColLoc);
+            }
         }
         
-        if (auto fileLineColLoc = locs[1].dyn_cast<mlir::FileLineColLoc>())
+        if (locs.size() > 1)
         {
-            _end = getPos(fileLineColLoc);
+            if (auto fileLineColLoc = locs[1].dyn_cast<mlir::FileLineColLoc>())
+            {
+                _end = getPos(fileLineColLoc);
+            }
         }
             
         return {pos, _end};

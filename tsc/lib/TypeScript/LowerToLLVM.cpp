@@ -906,9 +906,10 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         {
             if (auto compileUnitAttr = fusedLocWith.getMetadata().dyn_cast_or_null<mlir::LLVM::DICompileUnitAttr>())
             {
-                // debug info DISubroutineTypeAttr
-                unsigned line = 1;
-                unsigned scopeLine = 1;
+                auto [pos, _end] = getPos(location);
+                unsigned line, scopeLine;
+                line = scopeLine = pos;
+
                 auto subprogramFlags = LLVM::DISubprogramFlags::Definition;
                 if (compileUnitAttr.getIsOptimized())
                 {
@@ -1028,6 +1029,53 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         };
 
         return funcAttrs[name];        
+    }
+
+    // TODO: extract it into separate file
+    size_t getPos(mlir::FileLineColLoc location) const
+    {
+        return location.getLine() + location.getColumn();
+    }
+
+    std::pair<size_t, size_t> getPos(mlir::FusedLoc location) const
+    {
+        auto pos = 0;
+        auto _end = 0;
+
+        auto locs = location.getLocations();
+        if (locs.size() > 0)
+        {
+            if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
+            {
+                pos = getPos(fileLineColLoc);
+            }
+        }
+        
+        if (locs.size() > 1)
+        {
+            if (auto fileLineColLoc = locs[1].dyn_cast<mlir::FileLineColLoc>())
+            {
+                _end = getPos(fileLineColLoc);
+            }
+        }
+            
+        return {pos, _end};
+    }
+
+    std::pair<size_t, size_t> getPos(mlir::Location location) const
+    {
+        auto pos = 0;
+        auto _end = 0;
+
+        mlir::TypeSwitch<mlir::LocationAttr>(location)
+            .Case<mlir::FusedLoc>([&](auto locParam) {
+                auto [pos_, _end_] = getPos(locParam);
+                pos = pos_;
+                _end = _end_;
+            }
+        );       
+            
+        return {pos, _end};
     }
 };
 
