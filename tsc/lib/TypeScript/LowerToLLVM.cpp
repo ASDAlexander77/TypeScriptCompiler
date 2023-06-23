@@ -904,7 +904,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         auto module = funcOp->getParentOfType<mlir::ModuleOp>();
         if (auto fusedLocWith = module.getLoc().dyn_cast<mlir::FusedLoc>())
         {
-            if (auto compileUnitAttr = fusedLocWith.getMetadata().dyn_cast<mlir::LLVM::DICompileUnitAttr>())
+            if (auto compileUnitAttr = fusedLocWith.getMetadata().dyn_cast_or_null<mlir::LLVM::DICompileUnitAttr>())
             {
                 // debug info DISubroutineTypeAttr
                 unsigned line = 1;
