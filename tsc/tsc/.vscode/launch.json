@@ -134,6 +134,7 @@
                 "-debug-only=llvm",
                 "-o=c:/temp/1.ll",
                 "-di",
+                "-lldb",
                 "C:/temp/1.ts"
             ],
             "stopAtEntry": false,
@@ -259,15 +260,6 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal"
-        },
-        {
-            "name": "(Windows-LLDB) 1.exe",
-            "type": "lldb-vscode",
-            "request": "launch",
-            "program": "C:/temp/MLIR_to_exe/1.exe",
-            "args": [],
-            "env": [],
-            "cwd": "${workspaceRoot}"
         },
         {
             "name": "(Windows-CodeLLDB) 1.exe",

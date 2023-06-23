@@ -26,6 +26,7 @@ extern cl::opt<enum Action> emitAction;
 extern cl::opt<bool> enableOpt;
 extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
+extern cl::opt<bool> lldbDebugInfo;
 
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream();
 int registerMLIRDialects(mlir::ModuleOp);
@@ -56,6 +57,17 @@ int dumpLLVMIR(mlir::ModuleOp module)
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to emit LLVM IR\n";
         return -1;
+    }
+
+    if (lldbDebugInfo)
+    {
+        auto MD = llvmModule->getModuleFlag("CodeView");
+        if (llvm::ConstantInt *Behavior = llvm::mdconst::dyn_extract_or_null<llvm::ConstantInt>(MD)) {
+            uint64_t Val = Behavior->getLimitedValue();
+            if (Val == 1) {
+                llvmModule->setModuleFlag(llvm::Module::Warning, "CodeView", 0);
+            }
+        }
     }
 
     // Initialize LLVM targets.
