@@ -52,6 +52,9 @@ namespace
 struct TsLlvmContext
 {
     TsLlvmContext() = default;
+
+    LLVM::DIFileAttr file;
+    LLVM::DICompileUnitAttr compileUnit;    
 };
 
 template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
@@ -871,7 +874,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
     {
         
 
-        auto location = funcOp->getLoc();
+        auto location = funcOp.getLoc();
 
         auto &typeConverter = *getTypeConverter();
         auto fnType = funcOp.getFunctionType();
@@ -898,27 +901,38 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         }
 
         // debug info
-        // File
-        auto file = LLVM::DIFileAttr::get(rewriter.getContext(), "debuginfo.mlir", ".");
+        auto module = funcOp->getParentOfType<mlir::ModuleOp>();
+        if (auto fusedLocWith = module.getLoc().dyn_cast<mlir::FusedLoc>())
+        {
+            if (auto compileUnitAttr = fusedLocWith.getMetadata().dyn_cast<mlir::LLVM::DICompileUnitAttr>())
+            {
+                // debug info DISubroutineTypeAttr
+                unsigned line = 1;
+                unsigned scopeLine = 1;
+                auto subprogramFlags = LLVM::DISubprogramFlags::Definition;
+                if (compileUnitAttr.getIsOptimized())
+                {
+                    subprogramFlags = subprogramFlags | LLVM::DISubprogramFlags::Optimized;
+                }
 
-        // CU
-        unsigned sourceLanguage = llvm::dwarf::DW_LANG_C; 
-        auto producer = rewriter.getStringAttr("MLIR");
-        auto isOptimized = true;
-        auto emissionKind = LLVM::DIEmissionKind::Full;
-        auto compileUnit = LLVM::DICompileUnitAttr::get(rewriter.getContext(), sourceLanguage, file, producer, isOptimized, emissionKind);
+                auto type = LLVM::DISubroutineTypeAttr::get(rewriter.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
 
-        unsigned line = 1;
-        unsigned scopeLine = 1;
-        auto subprogramFlags = LLVM::DISubprogramFlags::Definition|LLVM::DISubprogramFlags::Optimized;
-        auto type = LLVM::DISubroutineTypeAttr::get(rewriter.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
+                auto subprogramAttr = LLVM::DISubprogramAttr::get(
+                    rewriter.getContext(), 
+                    compileUnitAttr, 
+                    compileUnitAttr.getFile(), 
+                    rewriter.getStringAttr(funcOp.getName()), 
+                    rewriter.getStringAttr(funcOp.getName()), 
+                    compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);
 
-        auto fusedLocWithSubprogram = mlir::FusedLoc::get(
-            rewriter.getContext(), {funcOp.getLoc()}, LLVM::DISubprogramAttr::get(rewriter.getContext(), compileUnit, file, 
-            rewriter.getStringAttr(funcOp.getName()), rewriter.getStringAttr(funcOp.getName()), file, line, scopeLine, subprogramFlags, type));
+                auto fusedLocWithSubprogram = mlir::FusedLoc::get(
+                    rewriter.getContext(), {funcOp.getLoc()}, subprogramAttr);
+                location = fusedLocWithSubprogram;
+            }
+        }
 
         auto newFuncOp =
-            rewriter.create<mlir::func::FuncOp>(fusedLocWithSubprogram, funcOp.getName(),
+            rewriter.create<mlir::func::FuncOp>(location, funcOp.getName(),
                                           rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(),
                                                                    signatureResultsConverter.getConvertedTypes()),
                                           ArrayRef<NamedAttribute>{}, argDictAttrs);

@@ -6,6 +6,9 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/WithColor.h"
+#include "llvm/TargetParser/Host.h"
+#include "llvm/TargetParser/Triple.h"
+#include "llvm/Support/TargetSelect.h"
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
@@ -16,6 +19,8 @@ namespace cl = llvm::cl;
 
 extern cl::opt<std::string> inputFilename;
 extern cl::opt<bool> disableGC;
+extern cl::opt<bool> generateDebugInfo;
+extern cl::opt<std::string> TargetTriple;
 
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &module)
 {
@@ -29,8 +34,15 @@ int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<
         return -1;
     }
 
+    auto moduleTargetTriple = TargetTriple.empty() 
+        ? llvm::sys::getDefaultTargetTriple() 
+        : llvm::Triple::normalize(TargetTriple);
+
     CompileOptions compileOptions;
     compileOptions.disableGC = disableGC;
+    compileOptions.generateDebugInfo = generateDebugInfo;
+    compileOptions.moduleTargetTriple = moduleTargetTriple;
+    
     module = mlirGenFromSource(context, fileName, fileOrErr.get()->getBuffer(), compileOptions);
     return !module ? 1 : 0;
 }

@@ -133,6 +133,7 @@
                 "-mlir-disable-threading",
                 "-debug-only=llvm",
                 "-o=c:/temp/1.ll",
+                "-di",
                 "C:/temp/1.ts"
             ],
             "stopAtEntry": false,
@@ -266,6 +267,14 @@
             "program": "C:/temp/MLIR_to_exe/1.exe",
             "args": [],
             "env": [],
+            "cwd": "${workspaceRoot}"
+        },
+        {
+            "name": "(Windows-CodeLLDB) 1.exe",
+            "type": "lldb",
+            "request": "launch",
+            "program": "C:/temp/MLIR_to_exe/1.exe",
+            "stopOnEntry": true,
             "cwd": "${workspaceRoot}"
         },
         {

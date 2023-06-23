@@ -59,6 +59,9 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/BinaryFormat/Dwarf.h"
+//#include "llvm/IR/DebugInfoMetadata.h"
+
 
 #include <algorithm>
 #include <iterator>
@@ -179,7 +182,7 @@ class MLIRGenImpl
             string includeFileName = filesToProcess.back();
             std::string includeFileNameChar = wstos(includeFileName);
             mlir::StringRef refFileName(includeFileNameChar);
-            SmallString<128> fullPath = path;
+            SmallString<256> fullPath = path;
             sys::path::append(fullPath, refFileName);
 
             filesToProcess.pop_back();
@@ -255,9 +258,38 @@ class MLIRGenImpl
     {
         sourceFile = module;
 
+        auto location = loc(module);
+        if (compileOptions.generateDebugInfo)
+        {
+            auto isOptimized = false;
+
+            SmallString<256> FullName(fileName);
+            sys::path::remove_filename(FullName);
+            auto file = mlir::LLVM::DIFileAttr::get(builder.getContext(), sys::path::filename(fileName), FullName);
+
+            // CU
+            unsigned sourceLanguage = llvm::dwarf::DW_LANG_C; 
+            auto producer = builder.getStringAttr("MLIR");
+            auto emissionKind = mlir::LLVM::DIEmissionKind::Full;
+            auto compileUnit = mlir::LLVM::DICompileUnitAttr::get(builder.getContext(), sourceLanguage, file, producer, isOptimized, emissionKind);        
+
+            auto fusedLocWithCU = mlir::FusedLoc::get(
+                    builder.getContext(), {location}, compileUnit);                
+
+            location = fusedLocWithCU;
+        }
+
         // We create an empty MLIR module and codegen functions one at a time and
         // add them to the module.
-        theModule = mlir::ModuleOp::create(loc(module), fileName);
+        theModule = mlir::ModuleOp::create(location, fileName);
+
+        if (!compileOptions.moduleTargetTriple.empty())
+        {
+            theModule->setAttr(
+                mlir::LLVM::LLVMDialect::getTargetTripleAttrName(), 
+                builder.getStringAttr(compileOptions.moduleTargetTriple));
+        }
+
         builder.setInsertionPointToStart(theModule.getBody());
 
         return mlir::success();
@@ -18902,7 +18934,17 @@ genContext);
         }
 
         auto pos = loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos;
+        //return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
         return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
+    }
+
+    mlir::Location loc1(ts::SourceFile sourceFile, std::string fileName, int start, int length)
+    {
+        auto fileId = getStringAttr(fileName);
+        auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start);
+        auto begin =
+            mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
+        return begin;
     }
 
     mlir::Location loc2(ts::SourceFile sourceFile, std::string fileName, int start, int length)

@@ -5,8 +5,8 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
-                "${workspaceFolder}/../../3rdParty/llvm/debug/include",
-                "${workspaceFolder}/../../__build/tsc/include",
+                "${workspaceFolder}/../../3rdParty/llvm/x64/debug/include",
+                "${workspaceFolder}/../../tsc/include",
                 "${workspaceFolder}/../tsc-new-parser"
             ],
             "defines": [
@@ -21,7 +21,7 @@
         },
         {
             "name": "Linux",
-            "includePath": [                
+            "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
                 "${workspaceFolder}/../../3rdParty/llvm/debug/include",
@@ -31,13 +31,13 @@
             "defines": [
                 "_DEBUG",
                 "UNICODE",
-                "_UNICODE"                
+                "_UNICODE"
             ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "clang-x64"
-          }
+        }
     ],
     "version": 4
 }
