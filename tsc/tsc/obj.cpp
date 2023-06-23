@@ -68,12 +68,12 @@ static cl::opt<bool>
                      cl::desc("Preserve Comments in outputted assembly"),
                      cl::init(true), cl::cat(ObjOrAssemblyCategory));
 
-cl::opt<std::string>
-    TargetTriple("mtriple", cl::desc("Override target triple for module"), cl::cat(ObjOrAssemblyCategory));
+cl::opt<std::string> TargetTriple("mtriple", 
+                                  cl::desc("Override target triple for module"), 
+                                  cl::cat(ObjOrAssemblyCategory));
 
-static cl::opt<std::string> 
-    SplitDwarfFile("split-dwarf-file", 
-                cl::desc("Specify the name of the .dwo file to encode in the DWARF output"), cl::cat(ObjOrAssemblyCategory));
+static cl::opt<std::string> SplitDwarfFile("split-dwarf-file", 
+                                            cl::desc("Specify the name of the .dwo file to encode in the DWARF output"), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
                               cl::desc("Do not verify input module"), cl::cat(ObjOrAssemblyCategory));
@@ -81,10 +81,12 @@ static cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
 static cl::opt<bool> ShowMCEncoding("show-mc-encoding", cl::Hidden,
                                     cl::desc("Show encoding in .s output"), cl::cat(ObjOrAssemblyCategory));
 
-static cl::opt<bool>
-    DwarfDirectory("dwarf-directory", cl::Hidden,
-                   cl::desc("Use .file directives with an explicit directory"),
-                   cl::init(true), cl::cat(ObjOrAssemblyCategory));
+static cl::opt<std::string> SplitDwarfOutputFile("split-dwarf-output", cl::Hidden,
+                                                 cl::desc(".dwo output filename"), cl::value_desc("filename"));
+
+static cl::opt<bool> DwarfDirectory("dwarf-directory", cl::Hidden,
+                                    cl::desc("Use .file directives with an explicit directory"),
+                                    cl::init(true), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<bool> AsmVerbose("asm-verbose",
                                 cl::desc("Add comments to directives."),
@@ -292,6 +294,17 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     // Ensure the filename is passed down to CodeViewDebug.
     Target->Options.ObjectFilenameForDebug = FDOut->outputFilename();
 
+    std::unique_ptr<llvm::ToolOutputFile> DwoOut;
+    if (!SplitDwarfOutputFile.empty()) {
+        std::error_code EC;
+        DwoOut = std::make_unique<llvm::ToolOutputFile>(SplitDwarfOutputFile, EC, llvm::sys::fs::OF_None);
+        if (EC)
+        {
+            llvm::WithColor::error(llvm::errs(), "tsc") << EC.message() << SplitDwarfOutputFile << "\n";
+            return -1;
+        }
+    }
+
     // Build up all of the passes that we want to do to the module.
     llvm::legacy::PassManager PM;
 
@@ -331,7 +344,7 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
         auto *MMIWP = new llvm::MachineModuleInfoWrapperPass(&LLVMTM);
 
         if (Target->addPassesToEmitFile(
-                        PM, *OS, /*DwoOut ? &DwoOut->os() : */nullptr,
+                        PM, *OS, DwoOut ? &DwoOut->os() : nullptr,
                         fileFormat /*llvm::codegen::getFileType()*/, true, MMIWP)) 
         {
             llvm::WithColor::error(llvm::errs(), "tsc") << "target does not support generation of this file type\n";
@@ -359,6 +372,10 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
 
     // Declare success.
     FDOut->keep();
+    if (DwoOut)
+    {
+        DwoOut->keep();
+    }
 
     return 0;
 }
