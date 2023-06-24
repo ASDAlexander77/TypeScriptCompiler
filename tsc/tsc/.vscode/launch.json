@@ -276,7 +276,7 @@
             "program": "C:/temp/MLIR_to_exe/1.exe",
             "symbolSearchPath": "C:/temp/MLIR_to_exe/",
             "args": [],
-            "stopAtEntry": false,
+            "stopAtEntry": true,
             "cwd": "${workspaceRoot}",
             "logging": {
                 "moduleLoad": true,

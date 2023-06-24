@@ -1740,6 +1740,8 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
                         varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
                         rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
+
+                        allocated.getDefiningOp()->setAttr("di_var", varInfo);
                     }
                 }
             }
@@ -2625,6 +2627,14 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
         }
 
         rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference());
+        if (tsLlvmContext->debugEnabled)
+        {
+            if (auto varInfo = transformed.getReference().getDefiningOp()->getAttrOfType<LLVM::DILocalVariableAttr>("di_var"))
+            {
+                rewriter.create<LLVM::DbgValueOp>(storeOp->getLoc(), transformed.getValue(), varInfo);
+            }
+        }
+
         return success();
     }
 };
