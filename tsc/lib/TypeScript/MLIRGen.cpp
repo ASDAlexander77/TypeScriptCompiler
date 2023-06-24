@@ -18603,7 +18603,10 @@ genContext);
 
         if (compileOptions.generateDebugInfo)
         {
-            value.getDefiningOp()->setAttr(builder.getStringAttr("di_name"), builder.getStringAttr(var->getName()));
+            if (auto defOp = value.getDefiningOp())
+            {
+                defOp->setAttr(builder.getStringAttr("di_name"), builder.getStringAttr(var->getName()));
+            }
         }
 
         if (!genContext.insertIntoParentScope)
