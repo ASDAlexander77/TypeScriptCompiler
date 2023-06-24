@@ -1730,7 +1730,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             {
                 if (auto scope = funcOp->getAttrOfType<LLVM::DIScopeAttr>("scope"))
                 {
-                    if (auto name = varOp->getAttrOfType<mlir::StringAttr>("di_name"))
+                    if (auto namedLoc = varOp->getLoc().dyn_cast<mlir::NameLoc>())
                     {
                         LLVMDebugInfoHelper di(rewriter.getContext());
 
@@ -1738,6 +1738,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                         unsigned alignInBits = 8;
                         auto diType = di.getDIType(tch.convertType(storageType));
 
+                        auto name = namedLoc.getName();
                         varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
                         rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
 

@@ -18605,7 +18605,7 @@ genContext);
         {
             if (auto defOp = value.getDefiningOp())
             {
-                defOp->setAttr(builder.getStringAttr("di_name"), builder.getStringAttr(var->getName()));
+                defOp->setLoc(mlir::NameLoc::get(builder.getStringAttr(var->getName()), defOp->getLoc()));
             }
         }
 
