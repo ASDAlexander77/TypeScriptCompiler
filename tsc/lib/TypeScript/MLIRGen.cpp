@@ -19015,7 +19015,7 @@ genContext);
             }
         }
 
-        if (auto fileLineColLoc = location.dyn_cast_or_null<mlir::FileLineColLoc>())
+        if (auto fileLineColLoc = location.getMetadata().dyn_cast_or_null<mlir::FileLineColLoc>())
         {
             _end = getPos(fileLineColLoc);
         }
