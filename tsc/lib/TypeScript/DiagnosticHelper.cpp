@@ -71,6 +71,16 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
                 notFirst = true;
             }
 
+            if (auto fileLineColLoc = fusedLoc.getMetadata().template dyn_cast<mlir::FileLineColLoc>())
+            {
+                if (notFirst)
+                {
+                    os << ' ' << '-' << ' ';
+                }
+
+                printLocation(os, fileLineColLoc, currentPath, true);
+            }
+
             if (!suppressSeparator)
             {
                 os << ':' << ' ';
