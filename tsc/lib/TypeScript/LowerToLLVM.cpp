@@ -33,6 +33,7 @@
 #include "llvm/IR/DIBuilder.h"
 
 #include "TypeScript/LowerToLLVMLogic.h"
+#include "TypeScript/LowerToLLVM/LLVMDebugInfo.h"
 
 #include "scanner_enums.h"
 
@@ -53,8 +54,7 @@ struct TsLlvmContext
 {
     TsLlvmContext() = default;
 
-    LLVM::DIFileAttr file;
-    LLVM::DICompileUnitAttr compileUnit;    
+    bool debugEnabled;
 };
 
 template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
@@ -901,14 +901,15 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         }
 
         // debug info
+        tsLlvmContext->debugEnabled = false;
         auto module = funcOp->getParentOfType<mlir::ModuleOp>();
         if (auto fusedLocWith = module.getLoc().dyn_cast<mlir::FusedLoc>())
         {
             if (auto compileUnitAttr = fusedLocWith.getMetadata().dyn_cast_or_null<mlir::LLVM::DICompileUnitAttr>())
             {
-                auto [pos, _end] = getPos(location);
+                auto lineValue = LocationHelper::getLine(location);
                 unsigned line, scopeLine;
-                line = scopeLine = pos;
+                line = scopeLine = lineValue;
 
                 auto subprogramFlags = LLVM::DISubprogramFlags::Definition;
                 if (compileUnitAttr.getIsOptimized())
@@ -926,9 +927,13 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                     rewriter.getStringAttr(funcOp.getName()), 
                     compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);
 
+                funcOp->setAttr("scope", subprogramAttr);
+
                 auto fusedLocWithSubprogram = mlir::FusedLoc::get(
                     rewriter.getContext(), {funcOp.getLoc()}, subprogramAttr);
                 location = fusedLocWithSubprogram;
+
+                tsLlvmContext->debugEnabled = true;
             }
         }
 
@@ -1030,53 +1035,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         return funcAttrs[name];        
     }
-
-    // TODO: extract it into separate file
-    size_t getPos(mlir::FileLineColLoc location) const
-    {
-        return location.getLine() + location.getColumn();
-    }
-
-    std::pair<size_t, size_t> getPos(mlir::FusedLoc location) const
-    {
-        auto pos = 0;
-        auto _end = 0;
-
-        auto locs = location.getLocations();
-        if (locs.size() > 0)
-        {
-            if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
-            {
-                pos = getPos(fileLineColLoc);
-            }
-        }
-        
-        if (locs.size() > 1)
-        {
-            if (auto fileLineColLoc = locs[1].dyn_cast<mlir::FileLineColLoc>())
-            {
-                _end = getPos(fileLineColLoc);
-            }
-        }
-            
-        return {pos, _end};
-    }
-
-    std::pair<size_t, size_t> getPos(mlir::Location location) const
-    {
-        auto pos = 0;
-        auto _end = 0;
-
-        mlir::TypeSwitch<mlir::LocationAttr>(location)
-            .Case<mlir::FusedLoc>([&](auto locParam) {
-                auto [pos_, _end_] = getPos(locParam);
-                pos = pos_;
-                _end = _end_;
-            }
-        );       
-            
-        return {pos, _end};
-    }
 };
 
 struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallInternalOp>
@@ -1086,8 +1044,6 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
     LogicalResult matchAndRewrite(mlir_ts::SymbolCallInternalOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto loc = op->getLoc();
 
         TypeConverterHelper tch(getTypeConverter());
@@ -1761,6 +1717,32 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             }
         }
 #endif
+
+        if (tsLlvmContext->debugEnabled)
+        {
+            //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
+            LocationHelper lh(rewriter.getContext());
+            auto [file, line] = lh.getLineAndFile(location);
+
+            LLVM::DIScopeAttr scope;
+            if (auto funcOp = varOp->getParentOfType<LLVM::LLVMFuncOp>())
+            {
+                if (auto scope = funcOp->getAttrOfType<LLVM::DIScopeAttr>("scope"))
+                {
+                    if (auto name = varOp->getAttrOfType<mlir::StringAttr>("di_name"))
+                    {
+                        LLVMDebugInfoHelper di(rewriter.getContext());
+
+                        unsigned arg = 0;
+                        unsigned alignInBits = 8;
+                        auto diType = di.getDIType(tch.convertType(storageType));
+
+                        auto varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
+                        rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
+                    }
+                }
+            }
+        }
 
         auto value = transformed.getInitializer();
         if (value)

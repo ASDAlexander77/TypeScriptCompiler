@@ -175,8 +175,13 @@ struct ParamOpLowering : public TsPattern<mlir_ts::ParamOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.getArgValue(),
+        auto variable = rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.getArgValue(),
                                                          paramOp.getCapturedAttr());
+        if (auto diName = paramOp->getAttr("di_name"))
+        {
+            variable->setAttr("di_name", diName);
+        }
+
         return success();
     }
 };
@@ -259,10 +264,14 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
 
         rewriter.setInsertionPointAfter(ifOp);
 
-        mlir::Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.getResults().front(),
+        auto variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.getResults().front(),
                                                                     paramOp.getCapturedAttr());
+        if (auto diName = paramOp->getAttr("di_name"))
+        {
+            variable->setAttr("di_name", diName);
+        }                                                                    
 
-        rewriter.replaceOp(paramOp, variable);
+        rewriter.replaceOp(paramOp, mlir::Value(variable));
 
         return success();
     }

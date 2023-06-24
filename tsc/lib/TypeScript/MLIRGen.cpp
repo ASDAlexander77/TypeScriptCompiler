@@ -263,6 +263,7 @@ class MLIRGenImpl
         {
             auto isOptimized = false;
 
+            // TODO: in file location helper
             SmallString<256> FullName(fileName);
             sys::path::remove_filename(FullName);
             auto file = mlir::LLVM::DIFileAttr::get(builder.getContext(), sys::path::filename(fileName), FullName);
@@ -18600,6 +18601,11 @@ genContext);
             }
         }
 
+        if (compileOptions.generateDebugInfo)
+        {
+            value.getDefiningOp()->setAttr(builder.getStringAttr("di_name"), builder.getStringAttr(var->getName()));
+        }
+
         if (!genContext.insertIntoParentScope)
         {
             symbolTable.insert(name, {value, var});
@@ -18934,8 +18940,9 @@ genContext);
         }
 
         auto pos = loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos;
-        return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
+        //return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
         //return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
+        return loc2Fuse(sourceFile, fileName.str(), pos, loc->_end - pos);
     }
 
     mlir::Location loc1(ts::SourceFile sourceFile, std::string fileName, int start, int length)
@@ -18964,9 +18971,26 @@ genContext);
         return mlir::FusedLoc::get(builder.getContext(), {begin, end});
     }
 
+    mlir::Location loc2Fuse(ts::SourceFile sourceFile, std::string fileName, int start, int length)
+    {
+        auto fileId = getStringAttr(fileName);
+        auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start);
+        auto begin =
+            mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
+        if (length <= 1)
+        {
+            return begin;
+        }
+
+        auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
+        auto end =
+            mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
+        return mlir::FusedLoc::get(builder.getContext(), {begin}, end);
+    }
+
     size_t getPos(mlir::FileLineColLoc location)
     {
-        return location.getLine() + location.getColumn();
+        return location.getLine() * 256 + location.getColumn();
     }
 
     std::pair<size_t, size_t> getPos(mlir::FusedLoc location)
@@ -18989,6 +19013,11 @@ genContext);
             {
                 _end = getPos(fileLineColLoc);
             }
+        }
+
+        if (auto fileLineColLoc = location.dyn_cast_or_null<mlir::FileLineColLoc>())
+        {
+            _end = getPos(fileLineColLoc);
         }
             
         return {pos, _end};
