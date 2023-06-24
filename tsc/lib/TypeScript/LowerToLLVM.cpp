@@ -927,7 +927,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                     rewriter.getStringAttr(funcOp.getName()), 
                     compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);
 
-                funcOp->setAttr("scope", subprogramAttr);
+                funcOp->setLoc(mlir::FusedLoc::get(rewriter.getContext(), {funcOp->getLoc()}, subprogramAttr));
 
                 auto fusedLocWithSubprogram = mlir::FusedLoc::get(
                     rewriter.getContext(), {funcOp.getLoc()}, subprogramAttr);
@@ -1728,17 +1728,20 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             LLVM::DIScopeAttr scope;
             if (auto funcOp = varOp->getParentOfType<LLVM::LLVMFuncOp>())
             {
-                if (auto scope = funcOp->getAttrOfType<LLVM::DIScopeAttr>("scope"))
+                if (auto scopeFusedLoc = funcOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
                 {
                     if (auto namedLoc = varOp->getLoc().dyn_cast<mlir::NameLoc>())
                     {
                         LLVMDebugInfoHelper di(rewriter.getContext());
 
+                        // TODO: finish the DI logic
                         unsigned arg = 0;
+                        // TODO: finish the DI logic
                         unsigned alignInBits = 8;
                         auto diType = di.getDIType(tch.convertType(storageType));
 
                         auto name = namedLoc.getName();
+                        auto scope = scopeFusedLoc.getMetadata();
                         varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
                         rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
 
@@ -2619,8 +2622,6 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
     LogicalResult matchAndRewrite(mlir_ts::StoreOp storeOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         if (auto boundRefType = storeOp.getReference().getType().dyn_cast<mlir_ts::BoundRefType>())
         {
             rewriter.replaceOpWithNewOp<mlir_ts::StoreBoundRefOp>(storeOp, storeOp.getValue(), storeOp.getReference());
