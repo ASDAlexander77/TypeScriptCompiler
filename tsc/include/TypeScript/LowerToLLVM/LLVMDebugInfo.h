@@ -72,11 +72,12 @@ class LLVMDebugInfoHelper
                     StringAttr name = StringAttr::get(context, std::to_string(index));
                     if (hasFields)
                     {
-                        if (auto fieldId = destTupleFields[index].id.dyn_cast<mlir::StringAttr>())
+                        auto fieldId = destTupleFields[index].id;
+                        if (auto strFieldId = fieldId.dyn_cast_or_null<mlir::StringAttr>())
                         {
-                            name = fieldId;
+                            name = strFieldId;
                         }
-                        
+
                         elementType = destTupleFields[index].type;
                     }
 
@@ -89,7 +90,7 @@ class LLVMDebugInfoHelper
 
                 sizeInBits = offsetInBits;
 
-                diTypeAttr = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, "struct"), 
+                diTypeAttr = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, MLIRHelper::getAnonymousName(structType, "struct")), 
                     file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizeInBits, alignInBits, elements);
             })
             .Case<LLVM::LLVMPointerType>([&](auto llvmPointerType) {  

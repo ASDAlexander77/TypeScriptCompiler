@@ -127,6 +127,15 @@ class MLIRHelper
         return ssName.str();
     }
 
+    static std::string getAnonymousName(mlir::Type type, const char *prefix)
+    {
+        // auto calculate name
+        std::stringstream ssName;
+        ssName << prefix;
+        ssName << '_' << type.getAsOpaquePointer();
+        return ssName.str();
+    }
+
     static mlir::ArrayRef<int64_t> getStructIndex(mlir::OpBuilder &builder, int64_t index)
     {
         return builder.getDenseI64ArrayAttr(index);
