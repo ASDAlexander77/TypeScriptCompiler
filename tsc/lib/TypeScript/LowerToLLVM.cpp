@@ -1739,7 +1739,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                         unsigned arg = 0;
                         // TODO: finish the DI logic
                         unsigned alignInBits = 8;
-                        auto diType = di.getDIType(tch.convertType(storageType), file, line, file);
+                        auto diType = di.getDIType(tch.convertType(storageType), storageType, file, line, file);
 
                         auto name = namedLoc.getName();
                         auto scope = scopeFusedLoc.getMetadata();
