@@ -14,11 +14,11 @@ namespace typescript
 class LLVMDebugInfoHelper
 {
   public:
-    LLVMDebugInfoHelper(MLIRContext *context) : context(context)
+    LLVMDebugInfoHelper(MLIRContext *context, LLVMTypeConverterHelper llvmtch) : context(context), llvmtch(llvmtch)
     {
     }
 
-    LLVM::DITypeAttr getDIType(mlir::Type type)
+    LLVM::DITypeAttr getDIType(mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         LLVM::DITypeAttr diTypeAttr;
 
@@ -50,8 +50,36 @@ class LLVMDebugInfoHelper
 
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), floatType.getIntOrFloatBitWidth(), dwarf::DW_ATE_float);
             })
+            .Case<LLVM::LLVMStructType>([&](auto structType) {  
+                auto sizeInBits = 0;
+                auto alignInBits = 0;
+                auto offsetInBits = 0;
+
+                llvm::SmallVector<LLVM::DINodeAttr> elements;
+                for (auto elementType : structType.getBody())
+                {
+                    sizeInBits = llvmtch.getTypeSizeEstimate(elementType); // size of element
+
+                    auto elementDiType = getDIType(elementType, file, line, scope);
+                    auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, StringAttr::get(context, "member"), elementDiType, sizeInBits, alignInBits, offsetInBits);
+                    elements.push_back(wrapperDiType);
+
+                    offsetInBits += sizeInBits;
+                }
+
+                sizeInBits = offsetInBits;
+
+                diTypeAttr = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, "struct"), 
+                    file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizeInBits, alignInBits, elements);
+            })
             .Case<LLVM::LLVMPointerType>([&](auto pointerType) {  
-                diTypeAttr = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_pointer_type, StringAttr::get(context, "pointer"), getDIType(pointerType.getElementType()), 64, 8, 0);
+                auto sizeInBits = 64;
+                auto alignInBits = 32;
+                auto offsetInBits = 0;
+
+                diTypeAttr = LLVM::DIDerivedTypeAttr::get(
+                    context, dwarf::DW_TAG_pointer_type, StringAttr::get(context, "pointer"), getDIType(pointerType.getElementType(), file, line, scope), 
+                    sizeInBits, alignInBits, offsetInBits);
             })
             .Default([&](auto type) { });
 
@@ -60,6 +88,7 @@ class LLVMDebugInfoHelper
 
   private:
     MLIRContext *context;
+    LLVMTypeConverterHelper llvmtch;
 };
 
 }

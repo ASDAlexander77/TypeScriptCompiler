@@ -1732,13 +1732,14 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                 {
                     if (auto namedLoc = varOp->getLoc().dyn_cast<mlir::NameLoc>())
                     {
-                        LLVMDebugInfoHelper di(rewriter.getContext());
+                        LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+                        LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
 
                         // TODO: finish the DI logic
                         unsigned arg = 0;
                         // TODO: finish the DI logic
                         unsigned alignInBits = 8;
-                        auto diType = di.getDIType(tch.convertType(storageType));
+                        auto diType = di.getDIType(tch.convertType(storageType), file, line, file);
 
                         auto name = namedLoc.getName();
                         auto scope = scopeFusedLoc.getMetadata();
