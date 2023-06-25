@@ -46,7 +46,7 @@ class LLVMTypeConverterHelper
 
         for (auto subType : structType.getBody())
         {
-            size += getTypeSizeEstimate(subType);
+            size += getTypeSizeEstimateInBytes(subType);
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! struct type: " << structType 
@@ -55,7 +55,7 @@ class LLVMTypeConverterHelper
         return size;
     }
 
-    uint64_t getTypeSizeEstimate(mlir::Type llvmType)
+    uint64_t getTypeSizeEstimateInBytes(mlir::Type llvmType)
     {
         if (llvmType == LLVM::LLVMVoidType::get(llvmType.getContext()))
         {
@@ -86,7 +86,7 @@ class LLVMTypeConverterHelper
         for (auto subType : unionType.getTypes())
         {
             auto converted = typeConverter.convertType(subType);
-            auto typeSize = getTypeSizeEstimate(converted);
+            auto typeSize = getTypeSizeEstimateInBytes(converted);
             if (typeSize > currentSize)
             {
                 selectedType = converted;

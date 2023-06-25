@@ -58,7 +58,7 @@ class LLVMDebugInfoHelper
                 llvm::SmallVector<LLVM::DINodeAttr> elements;
                 for (auto elementType : structType.getBody())
                 {
-                    sizeInBits = llvmtch.getTypeSizeEstimate(elementType); // size of element
+                    sizeInBits = llvmtch.getTypeSizeEstimateInBytes(elementType) * 8; // size of element
 
                     auto elementDiType = getDIType(elementType, file, line, scope);
                     auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, StringAttr::get(context, "member"), elementDiType, sizeInBits, alignInBits, offsetInBits);
