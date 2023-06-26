@@ -23,7 +23,12 @@ class LLVMDebugInfoHelper
         LLVM::DITypeAttr diTypeAttr;
 
         // special case
-        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        if (auto anyType = type.dyn_cast_or_null<mlir_ts::AnyType>())
+        {
+            return getDIType(anyType, file, line, scope);
+        }
+
+        if (auto unionType = type.dyn_cast_or_null<mlir_ts::UnionType>())
         {
             MLIRTypeHelper mth(context);
             if (mth.isUnionTypeNeedsTag(unionType))
@@ -187,7 +192,7 @@ class LLVMDebugInfoHelper
         auto llvmStrType = llvmtch.typeConverter.convertType(strType);
         auto diStrType = getDIType(llvmStrType, strType, file, line, scope);
 
-        auto wrapperTagDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, StringAttr::get(context, "tag"), 
+        auto wrapperTagDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, StringAttr::get(context, "type"), 
             diStrType, llvmtch.getPointerBitwidth(0), alignInBits, 0);
         unionWithTagElements.push_back(wrapperTagDiType);
 
@@ -200,6 +205,43 @@ class LLVMDebugInfoHelper
 
         return diTypeAttr;
     }    
+
+    LLVM::DITypeAttr getDIType(mlir_ts::AnyType anyType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        auto intSize = 32;
+        auto alignInBits = 32;
+
+        MLIRTypeHelper mth(context);
+
+        // size
+        llvm::SmallVector<LLVM::DINodeAttr> anyElements;
+
+        // size
+        auto sizeType = mlir::IndexType::get(context);
+        auto llvmSizeType = llvmtch.typeConverter.convertType(sizeType);
+        auto diSizeType = getDIType(llvmSizeType, sizeType, file, line, scope);
+
+        // type
+        auto strType = mlir_ts::StringType::get(context);
+        auto llvmStrType = llvmtch.typeConverter.convertType(strType);
+        auto diStrType = getDIType(llvmStrType, strType, file, line, scope);
+
+        // data
+        // skipping it
+
+        auto wrapperTagDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, StringAttr::get(context, "size"), 
+            diSizeType, intSize, alignInBits, 0);
+        anyElements.push_back(wrapperTagDiType);
+
+        auto wrapperUnionDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, StringAttr::get(context, "type"), 
+            diStrType, intSize + llvmtch.getPointerBitwidth(0), alignInBits, intSize);
+        anyElements.push_back(wrapperUnionDiType);
+
+        auto diTypeAttr = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, "any"), 
+            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, intSize + llvmtch.getPointerBitwidth(0), alignInBits, anyElements);                                    
+
+        return diTypeAttr;
+    } 
 
   private:
     MLIRContext *context;
