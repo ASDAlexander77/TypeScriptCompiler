@@ -27,11 +27,16 @@ class LLVMDebugInfoHelper
                 auto typeCode = dwarf::DW_ATE_signed;
                 StringRef typeName = "int";
                 auto size = intType.getIntOrFloatBitWidth(); 
-                if (size == 8)
+                if (type && type.isa<mlir_ts::CharType>())
                 {
                     typeName = "char";
                     typeCode = dwarf::DW_ATE_signed_char;
                 }
+                else if (size == 8)
+                {
+                    LLVM::DIVoidResultTypeAttr::get(context);
+                    return;
+                }                
                 else if (size == 1)
                 {
                     typeName = "bool";
@@ -57,7 +62,7 @@ class LLVMDebugInfoHelper
 
                 MLIRTypeHelper mth(context);
                 llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
-                auto hasFields = mlir::succeeded(mth.getFields(type, destTupleFields));
+                auto hasFields = mlir::succeeded(mth.getFields(type, destTupleFields, true));
 
                 llvm::SmallVector<LLVM::DINodeAttr> elements;
                 auto index = -1;
@@ -100,6 +105,10 @@ class LLVMDebugInfoHelper
 
                 // TODO: get type of pointer element
                 mlir::Type elementType;
+                if (type && type.isa<mlir_ts::StringType>())
+                {
+                    elementType = mlir_ts::CharType::get(context);
+                }
 
                 diTypeAttr = LLVM::DIDerivedTypeAttr::get(
                     context, dwarf::DW_TAG_pointer_type, StringAttr::get(context, "pointer"), getDIType(llvmPointerType.getElementType(), elementType, file, line, scope), 

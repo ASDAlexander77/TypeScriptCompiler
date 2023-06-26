@@ -1501,7 +1501,7 @@ class MLIRTypeHelper
         return mlir_ts::NeverType::get(context);    
     }    
 
-    mlir::LogicalResult getFields(mlir::Type srcType, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields)
+    mlir::LogicalResult getFields(mlir::Type srcType, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields, bool noError = false)
     {       
         if (auto constTupleType = srcType.dyn_cast<mlir_ts::ConstTupleType>())
         {
@@ -1549,10 +1549,16 @@ class MLIRTypeHelper
         }         
         else if (srcType.dyn_cast<mlir_ts::ArrayType>() || srcType.dyn_cast<mlir_ts::ConstArrayType>() || srcType.dyn_cast<mlir_ts::StringType>())
         {
+            // TODO: do not break the order as it is used in Debug info
+            destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context) });
             destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir_ts::StringType::get(context) });
             //destTupleFields.push_back({ MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context), mlir_ts::NumberType::get(context) });
-            destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context) });
             return mlir::success();
+        }
+
+        if (noError)
+        {
+            return mlir::failure();
         }
 
         LLVM_DEBUG(llvm::dbgs() << "!! getFields is not implemented for type [" << srcType << "]\n";);
