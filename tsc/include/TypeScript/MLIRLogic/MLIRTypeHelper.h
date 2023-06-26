@@ -1528,11 +1528,14 @@ class MLIRTypeHelper
         }         
         else if (auto srcInterfaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
         {
-            if (auto srcInterfaceInfo = getInterfaceInfoByFullName(srcInterfaceType.getName().getValue()))
+            if (getInterfaceInfoByFullName)
             {
-                if (mlir::succeeded(srcInterfaceInfo->getTupleTypeFields(destTupleFields, context)))
+                if (auto srcInterfaceInfo = getInterfaceInfoByFullName(srcInterfaceType.getName().getValue()))
                 {
-                    return mlir::success();
+                    if (mlir::succeeded(srcInterfaceInfo->getTupleTypeFields(destTupleFields, context)))
+                    {
+                        return mlir::success();
+                    }
                 }
             }
 

@@ -85,6 +85,10 @@ class LLVMDebugInfoHelper
 
                         elementType = destTupleFields[index].type;
                     }
+                    else if (type.isa<mlir_ts::UnionType>() && index == 0)
+                    {
+                        elementType = mlir_ts::StringType::get(context);
+                    }
 
                     auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
                     auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, sizeInBits, alignInBits, offsetInBits);
