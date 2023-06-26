@@ -11,6 +11,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "mlir/Analysis/DataLayoutAnalysis.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/TypeToLLVM.h"
@@ -38,6 +39,26 @@ class LLVMTypeConverterHelper
         return typeConverter.getPointerBitwidth(addressSpace);
     }
 
+    uint64_t getTypeAllocSizeInBits(mlir::Type type)
+    {
+        llvm::LLVMContext llvmContext;
+        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(llvmContext);
+
+        auto llvmType = typeToLLVMIRTranslator.translateType(type);
+
+        return  typeConverter.getDataLayout().getTypeAllocSize(llvmType) << 3;
+    }
+
+    uint64_t getTypeAlignSizeInBits(mlir::Type type)
+    {
+        llvm::LLVMContext llvmContext;
+        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(llvmContext);
+
+        auto llvmType = typeToLLVMIRTranslator.translateType(type);
+
+        return  typeConverter.getDataLayout().getABITypeAlign(llvmType).value() << 3;
+    }    
+
     uint64_t getStructTypeSizeNonAligned(LLVM::LLVMStructType structType)
     {
         uint64_t size = 0;
@@ -51,6 +72,11 @@ class LLVMTypeConverterHelper
                         << "\n estimated size: " << size << "\n";);
 
         return size;
+    }
+    
+    uint64_t getTypeSizeEstimateInBits(mlir::Type llvmType)
+    {
+        return getTypeSizeEstimateInBytes(llvmType) << 3;
     }
 
     uint64_t getTypeSizeEstimateInBytes(mlir::Type llvmType)

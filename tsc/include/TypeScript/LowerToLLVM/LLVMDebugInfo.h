@@ -105,7 +105,8 @@ class LLVMDebugInfoHelper
         {
             index++;
 
-            sizeInBits = llvmtch.getTypeSizeEstimateInBytes(llvmElementType) * 8; // size of element
+            auto elementSizeInBits = llvmtch.getTypeAllocSizeInBits(llvmElementType); // size of element
+            auto elementAlignInBits = llvmtch.getTypeAlignSizeInBits(llvmElementType); // size of element
 
             // name
             mlir::Type elementType;
@@ -122,10 +123,14 @@ class LLVMDebugInfoHelper
             }
 
             auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
-            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, sizeInBits, alignInBits, offsetInBits);
+            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, elementSizeInBits, elementAlignInBits, offsetInBits);
             elements.push_back(wrapperDiType);
 
-            offsetInBits += sizeInBits;
+            offsetInBits += elementSizeInBits;
+            if (elementAlignInBits > alignInBits)
+            {
+                alignInBits = elementAlignInBits;
+            }
         }
 
         sizeInBits = offsetInBits;
@@ -159,15 +164,23 @@ class LLVMDebugInfoHelper
             index++;
 
             auto llvmElementType = llvmtch.typeConverter.convertType(elementType);
-            auto elemSize = llvmtch.getTypeSizeEstimateInBytes(llvmElementType) * 8; // size of element
-            if (elemSize > sizeInBits) sizeInBits = elemSize;
+
+            auto elementSizeInBits = llvmtch.getTypeAllocSizeInBits(llvmElementType); // size of element
+            auto elementAlignInBits = llvmtch.getTypeAlignSizeInBits(llvmElementType); // size of element
+
+            if (elementSizeInBits > sizeInBits) sizeInBits = elementSizeInBits;
 
             // name
             StringAttr name = mth.getLabelName(elementType);
 
             auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
-            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, sizeInBits, alignInBits, offsetInBits);
+            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, elementSizeInBits, elementAlignInBits, offsetInBits);
             elements.push_back(wrapperDiType);
+
+            if (elementAlignInBits > alignInBits)
+            {
+                alignInBits = elementAlignInBits;
+            }             
         }
 
         sizeInBits = offsetInBits;
@@ -233,13 +246,19 @@ private:
 
             mlir::Type elementType = std::get<1>(field);
             auto llvmElementType = llvmtch.typeConverter.convertType(elementType);
-            sizeInBits = llvmtch.getTypeSizeEstimateInBytes(llvmElementType) * 8; // size of element
+            
+            auto elementSizeInBits = llvmtch.getTypeAllocSizeInBits(llvmElementType); // size of element
+            auto elementAlignInBits = llvmtch.getTypeAlignSizeInBits(llvmElementType); // size of element
 
             auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
-            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, sizeInBits, alignInBits, offsetInBits);
+            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, elementSizeInBits, elementAlignInBits, offsetInBits);
             elements.push_back(wrapperDiType);
 
-            offsetInBits += sizeInBits;
+            offsetInBits += elementSizeInBits;
+            if (elementAlignInBits > alignInBits)
+            {
+                alignInBits = elementAlignInBits;
+            }            
         }
 
         sizeInBits = offsetInBits;
