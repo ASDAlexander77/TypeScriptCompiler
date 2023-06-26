@@ -7,6 +7,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "mlir/Analysis/DataLayoutAnalysis.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -5204,7 +5205,11 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // conversion we use a TypeConverter as part of the lowering. This converter
     // details how one type maps to another. This is necessary now that we will be
     // doing more complicated lowerings, involving loop region arguments.
-    LLVMTypeConverter typeConverter(&getContext());
+    mlir::DataLayout dl(m);
+    LowerToLLVMOptions options(&getContext(), dl);
+    options.allocLowering = LowerToLLVMOptions::AllocLowering::AlignedAlloc;
+    DataLayoutAnalysis analysis(m);
+    LLVMTypeConverter typeConverter(&getContext(), options, &analysis);
 
     // Now that the conversion target has been defined, we need to provide the
     // patterns used for lowering. At this point of the compilation process, we
