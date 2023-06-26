@@ -23,8 +23,6 @@ namespace typescript
 
 class LLVMTypeConverterHelper
 {
-    LLVMTypeConverter &typeConverter;
-
   public:
     LLVMTypeConverterHelper(LLVMTypeConverter &typeConverter) : typeConverter(typeConverter)
     {
@@ -102,6 +100,8 @@ class LLVMTypeConverterHelper
 
         return selectedType;
     }
+
+    LLVMTypeConverter &typeConverter;
 };
 } // namespace typescript
 

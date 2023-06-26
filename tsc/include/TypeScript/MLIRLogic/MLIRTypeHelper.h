@@ -238,6 +238,80 @@ class MLIRTypeHelper
         return false;
     }
 
+    mlir::StringAttr getLabelName(mlir::Type typeIn)
+    {
+        if (typeIn.isIntOrIndex())
+        {
+            return mlir::StringAttr::get(context, std::string("i") + std::to_string(typeIn.getIntOrFloatBitWidth()));
+        }
+        else if (typeIn.isIntOrFloat())
+        {
+            return mlir::StringAttr::get(context, std::string("f") + std::to_string(typeIn.getIntOrFloatBitWidth()));
+        }
+        else if (typeIn.isa<mlir_ts::NullType>())
+        {
+            return mlir::StringAttr::get(context, "null");
+        }
+        else if (typeIn.isa<mlir_ts::UndefinedType>()) 
+        {
+            return mlir::StringAttr::get(context, "undefined");
+        }
+        else if (typeIn.isa<mlir_ts::NumberType>())
+        {
+            return mlir::StringAttr::get(context, "number");
+        }
+        else if (typeIn.isa<mlir_ts::TupleType>())
+        {
+            return mlir::StringAttr::get(context, "tuple");
+        }
+        else if (typeIn.isa<mlir_ts::ObjectType>())
+        {
+            return mlir::StringAttr::get(context, "object");
+        }
+        else if (typeIn.isa<mlir_ts::StringType>()) 
+        {
+            return mlir::StringAttr::get(context, "string");
+        }
+        else if (typeIn.isa<mlir_ts::ObjectType>())
+        {
+            return mlir::StringAttr::get(context, "object");
+        }
+        else if (typeIn.isa<mlir_ts::ClassType>()) 
+        {
+            return mlir::StringAttr::get(context, "class");
+        }
+        else if (typeIn.isa<mlir_ts::InterfaceType>())
+        {
+            return mlir::StringAttr::get(context, "interface");
+        }
+        else if (typeIn.isa<mlir_ts::OptionalType>())
+        {
+            return mlir::StringAttr::get(context, "optional");
+        }
+        else if (typeIn.isa<mlir_ts::AnyType>())
+        {
+            return mlir::StringAttr::get(context, "any");
+        }
+        else if (typeIn.isa<mlir_ts::UnknownType>())
+        {
+            return mlir::StringAttr::get(context, "unknown");
+        }
+        else if (typeIn.isa<mlir_ts::RefType>())
+        {
+            return mlir::StringAttr::get(context, "ref");
+        }
+        else if (typeIn.isa<mlir_ts::ValueRefType>())
+        {
+            return mlir::StringAttr::get(context, "valueRef");
+        }
+        else if (typeIn.isa<mlir_ts::UnionType>())
+        {
+            return mlir::StringAttr::get(context, "union");
+        }                
+
+        return mlir::StringAttr::get(context, "<uknown>");
+    }
+
     mlir::Attribute convertAttrIntoType(mlir::Attribute attr, mlir::Type destType, mlir::OpBuilder &builder)
     {
         mlir::Type srcType;
