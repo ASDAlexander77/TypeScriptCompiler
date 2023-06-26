@@ -1668,6 +1668,13 @@ class MLIRTypeHelper
             //destTupleFields.push_back({ MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context), mlir_ts::NumberType::get(context) });
             return mlir::success();
         }
+        else if (auto optType = srcType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            // TODO: do not break the order as it is used in Debug info
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName("value", context), optType.getElementType() });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName("hasValue", context), mlir_ts::BooleanType::get(context) });
+            return mlir::success();
+        }
 
         if (noError)
         {
