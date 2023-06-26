@@ -3,6 +3,10 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/WithColor.h"
+#include "llvm/Support/Debug.h"
+
+//#define DEBUG_TYPE "mlir"
+#define DEBUG_TYPE "llvm"
 
 bool compareDiagnostic(const mlir::Diagnostic& left, const mlir::Diagnostic& right)
 {
@@ -24,6 +28,9 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
     llvm::TypeSwitch<mlir::Location>(location)
         .template Case<mlir::UnknownLoc>([&](auto) {
             // nothing todo
+        })
+        .template Case<mlir::NameLoc>([&](auto nameLoc) {
+            printLocation(os, nameLoc.getChildLoc(), path, suppressSeparator);
         })
         .template Case<mlir::FileLineColLoc>([&](auto fileLineColLoc) {
             auto filePath = fileLineColLoc.getFilename().getValue();
@@ -86,7 +93,10 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
                 os << ':' << ' ';
             }
         })        
-        .Default([&](auto type) { llvm_unreachable("not implemented"); });
+        .Default([&](auto loc) { 
+            LLVM_DEBUG(llvm::dbgs() << "not impl location type: " << loc << "\n";);
+            llvm_unreachable("not implemented"); 
+        });
 }
 
 void publishDiagnostic(const mlir::Diagnostic &diag, llvm::StringRef path)

@@ -1503,6 +1503,11 @@ class MLIRTypeHelper
 
     mlir::LogicalResult getFields(mlir::Type srcType, llvm::SmallVector<mlir_ts::FieldInfo> &destTupleFields, bool noError = false)
     {       
+        if (!srcType)
+        {
+            return mlir::failure();
+        }
+
         if (auto constTupleType = srcType.dyn_cast<mlir_ts::ConstTupleType>())
         {
             for (auto &fieldInfo : constTupleType.getFields())
@@ -1535,18 +1540,22 @@ class MLIRTypeHelper
         } 
         else if (auto srcClassType = srcType.dyn_cast<mlir_ts::ClassType>())
         {
-            if (auto srcClassInfo = getClassInfoByFullName(srcClassType.getName().getValue()))
+            for (auto &fieldInfo : srcClassType.getStorageType().cast<mlir_ts::ClassStorageType>().getFields())
             {
-                for (auto &fieldInfo : srcClassInfo->classType.getStorageType().cast<mlir_ts::ClassStorageType>().getFields())
-                {
-                    destTupleFields.push_back(fieldInfo);
-                }       
-                
-                return mlir::success();         
-            }
-
-            return mlir::failure();
+                destTupleFields.push_back(fieldInfo);
+            }       
+            
+            return mlir::success();         
         }         
+        else if (auto srcClassStorageType = srcType.dyn_cast<mlir_ts::ClassStorageType>())
+        {
+            for (auto &fieldInfo : srcClassStorageType.getFields())
+            {
+                destTupleFields.push_back(fieldInfo);
+            }       
+            
+            return mlir::success();            
+        }
         else if (srcType.dyn_cast<mlir_ts::ArrayType>() || srcType.dyn_cast<mlir_ts::ConstArrayType>() || srcType.dyn_cast<mlir_ts::StringType>())
         {
             // TODO: do not break the order as it is used in Debug info
