@@ -144,7 +144,7 @@ class LLVMDebugInfoHelper
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), floatType.getIntOrFloatBitWidth(), dwarf::DW_ATE_float);
             })
             .Case<LLVM::LLVMStructType>([&](auto structType) {  
-                diTypeAttr = getDILLVMStructType(structType, type, file, line, scope);
+                diTypeAttr = getDIStructType(structType, type, file, line, scope);
             })
             .Case<LLVM::LLVMPointerType>([&](auto llvmPointerType) {  
                 MLIRTypeHelper mth(context);
@@ -156,45 +156,6 @@ class LLVMDebugInfoHelper
 
         return diTypeAttr;
     }    
-
-    LLVM::DITypeAttr getDILLVMStructType(LLVM::LLVMStructType structType, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
-    {
-        MLIRTypeHelper mth(context);
-        llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
-        auto hasFields = mlir::succeeded(mth.getFields(type, destTupleFields, true));
-
-        CompositeSizesTrack sizesTrack(llvmtch);
-
-        llvm::SmallVector<LLVM::DINodeAttr> elements;
-        auto index = -1;
-        for (auto llvmElementType : structType.getBody())
-        {
-            index++;
-
-            sizesTrack.nextElementType(llvmElementType);
-
-            // name
-            mlir::Type elementType;
-            StringAttr name = StringAttr::get(context, std::to_string(index));
-            if (hasFields)
-            {
-                auto fieldId = destTupleFields[index].id;
-                if (auto strFieldId = fieldId.dyn_cast_or_null<mlir::StringAttr>())
-                {
-                    name = strFieldId;
-                }
-
-                elementType = destTupleFields[index].type;
-            }
-
-            auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
-            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits);
-            elements.push_back(wrapperDiType);
-        }
-
-        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, MLIRHelper::getAnonymousName(structType, "struct")), 
-            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements);
-    }
 
     LLVM::DITypeAttr getDIType(mlir_ts::AnyType anyType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
@@ -236,6 +197,45 @@ private:
         return LLVM::DIDerivedTypeAttr::get(
             context, dwarf::DW_TAG_pointer_type, StringAttr::get(context, "pointer"), diElementType, 
             sizeInBits, alignInBits, offsetInBits);
+    }
+
+    LLVM::DITypeAttr getDIStructType(LLVM::LLVMStructType structType, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        MLIRTypeHelper mth(context);
+        llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+        auto hasFields = mlir::succeeded(mth.getFields(type, destTupleFields, true));
+
+        CompositeSizesTrack sizesTrack(llvmtch);
+
+        llvm::SmallVector<LLVM::DINodeAttr> elements;
+        auto index = -1;
+        for (auto llvmElementType : structType.getBody())
+        {
+            index++;
+
+            sizesTrack.nextElementType(llvmElementType);
+
+            // name
+            mlir::Type elementType;
+            StringAttr name = StringAttr::get(context, std::to_string(index));
+            if (hasFields)
+            {
+                auto fieldId = destTupleFields[index].id;
+                if (auto strFieldId = fieldId.dyn_cast_or_null<mlir::StringAttr>())
+                {
+                    name = strFieldId;
+                }
+
+                elementType = destTupleFields[index].type;
+            }
+
+            auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
+            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits);
+            elements.push_back(wrapperDiType);
+        }
+
+        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, MLIRHelper::getAnonymousName(structType, "struct")), 
+            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements);
     }
 
     LLVM::DITypeAttr getDIStructType(StringRef name, ArrayRef<std::pair<StringRef, mlir::Type>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
