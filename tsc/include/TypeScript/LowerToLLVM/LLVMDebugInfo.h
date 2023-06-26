@@ -319,7 +319,7 @@ private:
 
             auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, 
-                elementDiType, sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits);
+                elementDiType, sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, 0);
             elements.push_back(wrapperDiType);
         }
 
