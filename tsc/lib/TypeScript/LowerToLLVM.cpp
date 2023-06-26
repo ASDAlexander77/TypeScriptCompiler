@@ -1442,8 +1442,6 @@ struct BoxOpLowering : public TsLlvmPattern<mlir_ts::BoxOp>
     LogicalResult matchAndRewrite(mlir_ts::BoxOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto loc = op->getLoc();
 
         TypeConverterHelper tch(getTypeConverter());

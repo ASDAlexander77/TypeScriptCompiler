@@ -20,8 +20,6 @@ class LLVMDebugInfoHelper
 
     LLVM::DITypeAttr getDIType(mlir::Type llvmType, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        LLVM::DITypeAttr diTypeAttr;
-
         // special case
         if (auto anyType = type.dyn_cast_or_null<mlir_ts::AnyType>())
         {
@@ -37,6 +35,13 @@ class LLVMDebugInfoHelper
             }
         }
 
+        return getDILLVMType(llvmType, type, file, line, scope);
+    }
+
+    LLVM::DITypeAttr getDILLVMType(mlir::Type llvmType, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        LLVM::DITypeAttr diTypeAttr;
+
         mlir::TypeSwitch<mlir::Type>(llvmType)
             .Case<mlir::IntegerType>([&](auto intType) {  
                 auto typeCode = dwarf::DW_ATE_signed;
@@ -47,17 +52,17 @@ class LLVMDebugInfoHelper
                     typeName = "char";
                     typeCode = dwarf::DW_ATE_signed_char;
                 }
-                else if (size == 8)
-                {
-                    LLVM::DIVoidResultTypeAttr::get(context);
-                    return;
-                }                
                 else if (size == 1)
                 {
                     typeName = "bool";
                     typeCode = dwarf::DW_ATE_boolean;
                     size = 8;
                 }
+                else if (size == 8)
+                {
+                    diTypeAttr = LLVM::DIVoidResultTypeAttr::get(context);
+                    return;
+                }                
 
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), size, typeCode);
             })
@@ -71,45 +76,20 @@ class LLVMDebugInfoHelper
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), floatType.getIntOrFloatBitWidth(), dwarf::DW_ATE_float);
             })
             .Case<LLVM::LLVMStructType>([&](auto structType) {  
-                diTypeAttr = getDIType(structType, type, file, line, scope);
+                diTypeAttr = getDILLVMStructType(structType, type, file, line, scope);
             })
             .Case<LLVM::LLVMPointerType>([&](auto llvmPointerType) {  
-                auto sizeInBits = 64;
-                auto alignInBits = 32;
-                auto offsetInBits = 0;
-
-                // TODO: get type of pointer element
-                mlir::Type elementType;
-                if (type)
-                {
-                    if (type.isa<mlir_ts::StringType>())
-                    {
-                        elementType = mlir_ts::CharType::get(context);
-                    }
-                    else if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
-                    {
-                        elementType = classType.getStorageType();
-                    }
-                    else if (auto refType = type.dyn_cast<mlir_ts::RefType>())
-                    {
-                        elementType = refType.getElementType();
-                    }
-                    else if (auto valueRefType = type.dyn_cast<mlir_ts::ValueRefType>())
-                    {
-                        elementType = valueRefType.getElementType();
-                    }
-                }
-
-                diTypeAttr = LLVM::DIDerivedTypeAttr::get(
-                    context, dwarf::DW_TAG_pointer_type, StringAttr::get(context, "pointer"), getDIType(llvmPointerType.getElementType(), elementType, file, line, scope), 
-                    sizeInBits, alignInBits, offsetInBits);
+                MLIRTypeHelper mth(context);
+                diTypeAttr = getDIPointerType(llvmPointerType, mth.getElementType(type), file, line, scope);
             })
-            .Default([&](auto type) { });
+            .Default([&](auto type) { 
+                diTypeAttr = LLVM::DIVoidResultTypeAttr::get(context);
+            });
 
         return diTypeAttr;
-    }
+    }    
 
-    LLVM::DITypeAttr getDIType(LLVM::LLVMStructType structType, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDILLVMStructType(LLVM::LLVMStructType structType, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         auto sizeInBits = 0;
         auto alignInBits = 0;
@@ -153,6 +133,16 @@ class LLVMDebugInfoHelper
         return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, MLIRHelper::getAnonymousName(structType, "struct")), 
             file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizeInBits, alignInBits, elements);
     }
+
+    LLVM::DITypeAttr getDIType(mlir_ts::AnyType anyType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        auto diBodyType = getDIStructType("any", {
+            {"size", mlir::IndexType::get(context)},
+            {"type", mlir_ts::StringType::get(context)},
+        }, file, line, scope);
+
+        return getDIPointerType(diBodyType, file, line, scope);
+    } 
 
     LLVM::DITypeAttr getDIType(mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
@@ -206,42 +196,57 @@ class LLVMDebugInfoHelper
         return diTypeAttr;
     }    
 
-    LLVM::DITypeAttr getDIType(mlir_ts::AnyType anyType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+private:
+
+    LLVM::DITypeAttr getDIPointerType(LLVM::LLVMPointerType llvmPointerType, mlir::Type elementType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        auto intSize = 32;
+        return getDIPointerType(getDIType(llvmPointerType.getElementType(), elementType, file, line, scope), file, line, scope);
+    }
+
+    LLVM::DITypeAttr getDIPointerType(LLVM::DITypeAttr diElementType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        auto sizeInBits = 64;
         auto alignInBits = 32;
+        auto offsetInBits = 0;
+
+        return LLVM::DIDerivedTypeAttr::get(
+            context, dwarf::DW_TAG_pointer_type, StringAttr::get(context, "pointer"), diElementType, 
+            sizeInBits, alignInBits, offsetInBits);
+    }
+
+    LLVM::DITypeAttr getDIStructType(StringRef name, ArrayRef<std::pair<StringRef, mlir::Type>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        auto sizeInBits = 0;
+        auto alignInBits = 0;
+        auto offsetInBits = 0;
 
         MLIRTypeHelper mth(context);
 
-        // size
-        llvm::SmallVector<LLVM::DINodeAttr> anyElements;
+        llvm::SmallVector<LLVM::DINodeAttr> elements;
+        auto index = -1;
+        for (auto field : fields)
+        {
+            index++;
 
-        // size
-        auto sizeType = mlir::IndexType::get(context);
-        auto llvmSizeType = llvmtch.typeConverter.convertType(sizeType);
-        auto diSizeType = getDIType(llvmSizeType, sizeType, file, line, scope);
+            // name
+            StringAttr name = StringAttr::get(context, std::get<0>(field));
 
-        // type
-        auto strType = mlir_ts::StringType::get(context);
-        auto llvmStrType = llvmtch.typeConverter.convertType(strType);
-        auto diStrType = getDIType(llvmStrType, strType, file, line, scope);
+            mlir::Type elementType = std::get<1>(field);
+            auto llvmElementType = llvmtch.typeConverter.convertType(elementType);
+            sizeInBits = llvmtch.getTypeSizeEstimateInBytes(llvmElementType) * 8; // size of element
 
-        // data
-        // skipping it
+            auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
+            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, sizeInBits, alignInBits, offsetInBits);
+            elements.push_back(wrapperDiType);
 
-        auto wrapperTagDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, StringAttr::get(context, "size"), 
-            diSizeType, intSize, alignInBits, 0);
-        anyElements.push_back(wrapperTagDiType);
+            offsetInBits += sizeInBits;
+        }
 
-        auto wrapperUnionDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, StringAttr::get(context, "type"), 
-            diStrType, intSize + llvmtch.getPointerBitwidth(0), alignInBits, intSize);
-        anyElements.push_back(wrapperUnionDiType);
+        sizeInBits = offsetInBits;
 
-        auto diTypeAttr = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, "any"), 
-            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, intSize + llvmtch.getPointerBitwidth(0), alignInBits, anyElements);                                    
-
-        return diTypeAttr;
-    } 
+        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, name), 
+            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizeInBits, alignInBits, elements);        
+    }
 
   private:
     MLIRContext *context;
