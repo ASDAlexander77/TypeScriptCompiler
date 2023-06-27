@@ -45,7 +45,7 @@
 
 #define ENABLE_TYPED_GC true
 
-#define ENABLE_DEBUGINFO_PATCH_INFO true
+//#define ENABLE_DEBUGINFO_PATCH_INFO true
 
 #define ENABLE_JS_BUILTIN_TYPES true
 #define NO_DEFAULT_LIB true

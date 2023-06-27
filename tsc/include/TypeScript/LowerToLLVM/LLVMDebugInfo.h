@@ -174,6 +174,7 @@ class LLVMDebugInfoHelper
         return getDIPointerType(diBodyType, file, line, scope);
     } 
 
+#ifdef ENABLE_DEBUGINFO_PATCH_INFO
     LLVM::DITypeAttr getDIType(mlir_ts::ArrayType arrayType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         llvm::SmallVector<LLVM::DINodeAttr> elements;
@@ -185,6 +186,7 @@ class LLVMDebugInfoHelper
         return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_array_type, StringAttr::get(context, MLIRHelper::getAnonymousName(arrayType.getElementType(), "array")), 
             file, line, scope, elementType, LLVM::DIFlags::Zero, 0, 0, elements);        
     } 
+#endif    
 
     LLVM::DITypeAttr getDIType(mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
