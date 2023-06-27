@@ -38,6 +38,7 @@ set(LIBS
     MLIRTypeScript
     #MLIRTypeScriptGC
     TypeScriptExceptionPass
+    TypeScriptDebugInfoPatchPass
     )
 
 add_llvm_executable(tsc tsc.cpp compile.cpp transform.cpp dump.cpp jit.cpp obj.cpp utils.cpp)

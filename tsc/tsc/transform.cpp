@@ -16,6 +16,9 @@
 #include "TypeScript/Win32ExceptionPass.h"
 #endif
 #endif
+#ifdef ENABLE_DEBUGINFO_PATCH_INFO
+#include "TypeScript/DebugInfoPatchPass.h"
+#endif
 
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -224,6 +227,11 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         llvm::ModulePassManager mpm;
 
         //pb.parsePassPipeline(mpm, "module(function(landing-pad-fix))");
+
+#ifdef ENABLE_DEBUGINFO_PATCH_INFO
+        // debug info patch
+        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::DebugInfoPatchPass()));
+#endif        
 
         // add custom passes
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::LandingPadFixPass()));

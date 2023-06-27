@@ -1,5 +1,6 @@
 add_subdirectory(TypeScript)
 #add_subdirectory(TypeScriptGC)
 add_subdirectory(TypeScriptExceptionPass)
+add_subdirectory(TypeScriptDebugInfoPass)
 add_subdirectory(TypeScriptRuntime)
 add_subdirectory(TypeScriptAsyncRuntime)

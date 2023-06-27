@@ -1,16 +1,9 @@
 #include "TypeScript/Win32ExceptionPass.h"
 
-#include "llvm/Analysis/DomTreeUpdater.h"
-#include "llvm/IR/Dominators.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/PassManager.h"
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/InitializePasses.h"
-#include "llvm/Support/CommandLine.h"
 
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/PostOrderIterator.h"
 
 using namespace llvm;

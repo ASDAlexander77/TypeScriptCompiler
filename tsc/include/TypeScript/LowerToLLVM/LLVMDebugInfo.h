@@ -94,6 +94,13 @@ class LLVMDebugInfoHelper
             return getDIType(anyType, file, line, scope);
         }
 
+#ifdef ENABLE_DEBUGINFO_PATCH_INFO
+        if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
+        {
+            return getDIType(arrayType, file, line, scope);
+        }
+#endif        
+
         if (auto unionType = type.dyn_cast_or_null<mlir_ts::UnionType>())
         {
             MLIRTypeHelper mth(context);
@@ -165,6 +172,18 @@ class LLVMDebugInfoHelper
         }, file, line, scope);
 
         return getDIPointerType(diBodyType, file, line, scope);
+    } 
+
+    LLVM::DITypeAttr getDIType(mlir_ts::ArrayType arrayType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        llvm::SmallVector<LLVM::DINodeAttr> elements;
+
+        auto sizeElement = LLVM::DISubrangeAttr::get(context, IntegerAttr::get(mlir::IntegerType::get(context, 32), 3), IntegerAttr(), IntegerAttr(), IntegerAttr());
+        elements.push_back(sizeElement);
+
+        auto elementType = getDIType(llvmtch.typeConverter.convertType(arrayType.getElementType()), arrayType.getElementType(), file, line, scope);
+        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_array_type, StringAttr::get(context, MLIRHelper::getAnonymousName(arrayType.getElementType(), "array")), 
+            file, line, scope, elementType, LLVM::DIFlags::Zero, 0, 0, elements);        
     } 
 
     LLVM::DITypeAttr getDIType(mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
