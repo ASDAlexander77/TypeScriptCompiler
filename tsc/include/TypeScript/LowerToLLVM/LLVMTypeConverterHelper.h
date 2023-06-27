@@ -22,6 +22,12 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
+static llvm::LLVMContext &getGlobalContext() 
+{
+    static llvm::LLVMContext GlobalContext;
+    return GlobalContext;
+}
+
 class LLVMTypeConverterHelper
 {
   public:
@@ -41,21 +47,15 @@ class LLVMTypeConverterHelper
 
     uint64_t getTypeAllocSizeInBits(mlir::Type type)
     {
-        llvm::LLVMContext llvmContext;
-        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(llvmContext);
-
+        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(getGlobalContext());
         auto llvmType = typeToLLVMIRTranslator.translateType(type);
-
         return  typeConverter.getDataLayout().getTypeAllocSize(llvmType) << 3;
     }
 
     uint64_t getTypeAlignSizeInBits(mlir::Type type)
     {
-        llvm::LLVMContext llvmContext;
-        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(llvmContext);
-
+        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(getGlobalContext());
         auto llvmType = typeToLLVMIRTranslator.translateType(type);
-
         return  typeConverter.getDataLayout().getABITypeAlign(llvmType).value() << 3;
     }    
 
@@ -91,9 +91,7 @@ class LLVMTypeConverterHelper
             return getStructTypeSizeNonAligned(structData);
         }        
 
-        llvm::LLVMContext llvmContext;
-        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(llvmContext);
-
+        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(getGlobalContext());
         auto type = typeToLLVMIRTranslator.translateType(llvmType);
         uint64_t typeSize = typeConverter.getDataLayout().getTypeAllocSize(type);
         
