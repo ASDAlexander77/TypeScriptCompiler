@@ -270,7 +270,7 @@ class MLIRGenImpl
 
             // CU
             unsigned sourceLanguage = llvm::dwarf::DW_LANG_C; 
-            auto producer = builder.getStringAttr("MLIR");
+            auto producer = builder.getStringAttr("TypeScritp Native Compiler");
             auto emissionKind = mlir::LLVM::DIEmissionKind::Full;
             auto compileUnit = mlir::LLVM::DICompileUnitAttr::get(builder.getContext(), sourceLanguage, file, producer, isOptimized, emissionKind);        
 

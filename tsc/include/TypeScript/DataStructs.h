@@ -7,6 +7,7 @@ struct CompileOptions
 {
     bool disableGC;
     bool generateDebugInfo;
+    bool lldbDebugInfo;
     std::string moduleTargetTriple;
 };
 
