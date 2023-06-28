@@ -784,6 +784,11 @@ void testFile(const char *file)
 
         exec(delCmd);
 
+        if (anyDoneMsg)
+        {
+            return std::string();
+        }
+
         if (anyError)
         {
             auto errStr = errors.str();
