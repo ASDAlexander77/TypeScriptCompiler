@@ -122,6 +122,7 @@ class MLIRGenImpl
           path(pathParam)
     {
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
+        const_cast<llvm::SourceMgr &>(sourceMgr).setIncludeDirs({pathParam.str()});
     }
 
     mlir::LogicalResult report(SourceFile module, const std::vector<SourceFile> &includeFiles)
@@ -169,10 +170,10 @@ class MLIRGenImpl
                                                 sourceBuf->getBufferIdentifier(),
                                                 /*line=*/0, /*column=*/0);
 
-        return loadSourceBuf(sourceBuf);
+        return loadSourceBuf(sourceFileLoc, sourceBuf);
     }    
 
-    std::pair<SourceFile, std::vector<SourceFile>> loadSourceBuf(const llvm::MemoryBuffer *sourceBuf)
+    std::pair<SourceFile, std::vector<SourceFile>> loadSourceBuf(mlir::Location location, const llvm::MemoryBuffer *sourceBuf)
     {
         std::vector<SourceFile> includeFiles;
         std::vector<string> filesToProcess;
@@ -191,26 +192,25 @@ class MLIRGenImpl
         while (filesToProcess.size() > 0)
         {
             string includeFileName = filesToProcess.back();
-            std::string includeFileNameChar = wstos(includeFileName);
-            mlir::StringRef refFileName(includeFileNameChar);
-            SmallString<256> fullPath = path;
-            sys::path::append(fullPath, refFileName);
+            SmallString<256> fullPath;
+            auto includeFileNameUtf8 = convertWideToUTF8(includeFileName);
+            sys::path::append(fullPath, includeFileNameUtf8);
 
             filesToProcess.pop_back();
 
-            auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(fullPath);
-            if (std::error_code ec = fileOrErr.getError())
+            std::string ignored;
+            auto id = sourceMgr.AddIncludeFile(std::string(fullPath), SMLoc(), ignored);
+            if (!id)
             {
-                emitError(mlir::UnknownLoc::get(builder.getContext()))
-                    << "Could not open file: '" << refFileName << "' Error:" << ec.message() << "\n";
+                emitError(location, "can't open file: ") << fullPath;
                 continue;
             }
 
-            auto includeSource = fileOrErr.get()->getBuffer();
+            const auto *sourceBuf = sourceMgr.getMemoryBuffer(id);
 
             Parser parser;
             auto includeFile =
-                parser.parseSourceFile(stows(refFileName.str()), stows(includeSource.str()), ScriptTarget::Latest);
+                parser.parseSourceFile(includeFileName, stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
             for (auto refFile : includeFile->referencedFiles)
             {
                 filesToProcess.push_back(refFile.fileName);
@@ -406,6 +406,7 @@ class MLIRGenImpl
         {
             if (failed(mlirGen(includeFile->statements, genContextPartial)))
             {
+                outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
             }
         }
@@ -602,7 +603,7 @@ class MLIRGenImpl
         MLIRValueGuard<bool> vg(declarationMode);
         declarationMode = true;
 
-        auto [importSource, importIncludeFiles] = loadIncludeFile(stringVal);
+        auto [importSource, importIncludeFiles] = loadIncludeFile(loc(importDeclarationAST), stringVal);
 
         if (mlir::failed(showMessages(importSource, importIncludeFiles)))
         {
@@ -19104,11 +19105,10 @@ genContext);
         std::wcerr << std::endl << "end of dump ========================================" << std::endl;
     }
 
-    std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(StringRef fileName)
+    std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(mlir::Location location, StringRef fileName)
     {
-        SmallString<128> fullPath = path;
-        //mlir::StringRef refFileName(sys::path::remove_leading_dotslash(fileName));
-        //sys::path::append(fullPath, refFileName);
+        SmallString<256> fullPath;
+        sys::path::append(fullPath, fileName);
         if (sys::path::extension(fullPath) == "")
         {
             fullPath += ".ts";
@@ -19118,11 +19118,11 @@ genContext);
         auto id = sourceMgr.AddIncludeFile(std::string(fullPath), SMLoc(), ignored);
         if (!id)
         {
-            emitError(mlir::UnknownLoc(), "can't open file: ") << fullPath;
+            emitError(location, "can't open file: ") << fullPath;
         }
 
         const auto *sourceBuf = sourceMgr.getMemoryBuffer(id);
-        return loadSourceBuf(sourceBuf);
+        return loadSourceBuf(location, sourceBuf);
     }
 
     /// The builder is a helper class to create IR inside a function. The builder
