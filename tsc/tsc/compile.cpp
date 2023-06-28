@@ -24,7 +24,7 @@ extern cl::opt<bool> generateDebugInfo;
 extern cl::opt<bool> lldbDebugInfo;
 extern cl::opt<std::string> TargetTriple;
 
-int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &module)
+int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module)
 {
     auto fileName = llvm::StringRef(inputFilename);
 
@@ -46,7 +46,6 @@ int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<
     compileOptions.lldbDebugInfo = lldbDebugInfo;
     compileOptions.moduleTargetTriple = moduleTargetTriple;
 
-    llvm::SourceMgr sourceMgr;
     sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
 
     module = mlirGenFromSource(context, fileName, sourceMgr, compileOptions);

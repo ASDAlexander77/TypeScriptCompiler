@@ -60,7 +60,7 @@ extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableGC;
 
-int runMLIRPasses(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> &module)
+int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module)
 {
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
     mlir::ScopedDiagnosticHandler diagHandler(&context, [&](mlir::Diagnostic &diag) {
@@ -148,8 +148,8 @@ int runMLIRPasses(mlir::MLIRContext &context, mlir::OwningOpRef<mlir::ModuleOp> 
         result = 4;
     }
 
-    auto path = llvm::sys::path::parent_path(inputFilename);
-    printDiagnostics(postponedMessages, path);
+    SourceMgrDiagnosticHandlerEx sourceMgrHandler(sourceMgr, &context);
+    printDiagnostics(sourceMgrHandler, postponedMessages);
     return result;
 }
 

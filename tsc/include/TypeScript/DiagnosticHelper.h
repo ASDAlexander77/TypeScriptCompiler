@@ -5,9 +5,14 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 
-bool compareDiagnostic(const mlir::Diagnostic&, const mlir::Diagnostic&);
-void publishDiagnostic(const mlir::Diagnostic &, llvm::StringRef);
-void printDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &, llvm::StringRef);
+class SourceMgrDiagnosticHandlerEx : public mlir::SourceMgrDiagnosticHandler
+{
+public:
+    SourceMgrDiagnosticHandlerEx(llvm::SourceMgr &mgr, mlir::MLIRContext *ctx);
+    void emit(mlir::Diagnostic &diag);
+};
+
+void printDiagnostics(SourceMgrDiagnosticHandlerEx &, mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &);
 void printLocation(llvm::raw_ostream &, mlir::Location, llvm::StringRef, bool suppressSeparator = false);
 
 #endif // MLIR_DIAGNOSTIC_HELPER_H_

@@ -102,42 +102,7 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
         });
 }
 
-void publishDiagnostic(const mlir::Diagnostic &diag, llvm::StringRef path)
-{
-    auto printMsg = [](llvm::raw_ostream &os, const mlir::Diagnostic &diag, const char *msg) {
-        os << msg;
-        os << diag << '\n';
-        os.flush();
-    };
-
-    switch (diag.getSeverity())
-    {
-    case mlir::DiagnosticSeverity::Note:
-        printLocation(llvm::outs(), diag.getLocation(), path);
-        printMsg(llvm::WithColor::note(llvm::outs()), diag, "");
-        for (auto &note : diag.getNotes())
-        {
-            printLocation(llvm::outs(), note.getLocation(), path);
-            printMsg(llvm::WithColor::note(llvm::outs()), note, "");
-        }
-
-        break;
-    case mlir::DiagnosticSeverity::Warning:
-        printLocation(llvm::outs(), diag.getLocation(), path);
-        printMsg(llvm::WithColor::warning(llvm::outs()), diag, "");
-        break;
-    case mlir::DiagnosticSeverity::Error:
-        printLocation(llvm::errs(), diag.getLocation(), path);
-        printMsg(llvm::WithColor::error(llvm::errs()), diag, "");
-        break;
-    case mlir::DiagnosticSeverity::Remark:
-        printLocation(llvm::outs(), diag.getLocation(), path);
-        printMsg(llvm::WithColor::remark(llvm::outs()), diag, "");
-        break;
-    }
-}
-
-void printDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages, llvm::StringRef path)
+void printDiagnostics(SourceMgrDiagnosticHandlerEx &sourceMgrHandler, mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages)
 {
     for (auto msgIndex = 0; msgIndex < postponedMessages.size(); msgIndex++)
     {
@@ -159,8 +124,7 @@ void printDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &post
 
         if (unique)
         {
-            // we show messages when they metter
-            publishDiagnostic(*diag.get(), path);
+            sourceMgrHandler.emit(*diag.get());
         }
     }
 }    

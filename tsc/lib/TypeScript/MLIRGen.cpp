@@ -85,6 +85,15 @@ using llvm::Twine;
 // TODO: optimize of amount of calls to detect return types and if it is was calculated before then do not run it all
 // the time
 
+SourceMgrDiagnosticHandlerEx::SourceMgrDiagnosticHandlerEx(llvm::SourceMgr &mgr, mlir::MLIRContext *ctx) : mlir::SourceMgrDiagnosticHandler(mgr, ctx)
+{
+}
+
+void SourceMgrDiagnosticHandlerEx::emit(mlir::Diagnostic &diag)
+{
+    emitDiagnostic(diag);
+}
+
 namespace
 {
 
@@ -108,6 +117,7 @@ class MLIRGenImpl
           declarationMode(false),
           tempEntryBlock(nullptr),
           sourceMgr(const_cast<llvm::SourceMgr &>(sourceMgr)),
+          sourceMgrHandler(const_cast<llvm::SourceMgr &>(sourceMgr), &const_cast<mlir::MLIRContext &>(context)),
           fileName(fileNameParam),
           path(pathParam)
     {
@@ -216,10 +226,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult showMessages(SourceFile module, std::vector<SourceFile> includeFiles)
     {
-        mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, builder.getContext());
-
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
-            publishDiagnostic(diag, path);
+            sourceMgrHandler.emit(diag);
         });
 
         if (mlir::failed(report(module, includeFiles)))
@@ -362,7 +370,7 @@ class MLIRGenImpl
         // print errors
         if (notResolved)
         {
-            printDiagnostics(postponedMessages, path);
+            printDiagnostics(sourceMgrHandler, postponedMessages);
         }
 
         postponedMessages.clear();
@@ -472,7 +480,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        printDiagnostics(postponedWarningsMessages, path);
+        printDiagnostics(sourceMgrHandler, postponedWarningsMessages);
 
         return mlir::success();
     }
@@ -19123,6 +19131,8 @@ genContext);
     mlir::OpBuilder builder;
 
     llvm::SourceMgr &sourceMgr;
+
+    SourceMgrDiagnosticHandlerEx sourceMgrHandler;
 
     mlir::FileLineColLoc sourceFileLoc;
 

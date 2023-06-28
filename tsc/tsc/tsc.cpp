@@ -11,6 +11,7 @@
 #include "mlir/Support/DebugCounter.h"
 
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/CodeGen/CommandFlags.h"
 
@@ -27,8 +28,8 @@
 
 namespace cl = llvm::cl;
 
-int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, mlir::OwningOpRef<mlir::ModuleOp> &);
-int runMLIRPasses(mlir::MLIRContext &, mlir::OwningOpRef<mlir::ModuleOp> &);
+int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &);
+int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &);
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp);
@@ -163,12 +164,13 @@ int main(int argc, char **argv)
 
     mlir::OwningOpRef<mlir::ModuleOp> module;
 
-    if (int error = compileTypeScriptFileIntoMLIR(mlirContext, module))
+    llvm::SourceMgr sourceMgr;
+    if (int error = compileTypeScriptFileIntoMLIR(mlirContext, sourceMgr, module))
     {
         return error;
     }
 
-    if (int error = runMLIRPasses(mlirContext, module))
+    if (int error = runMLIRPasses(mlirContext, sourceMgr, module))
     {
         return error;
     }
