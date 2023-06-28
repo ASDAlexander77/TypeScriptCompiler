@@ -282,6 +282,20 @@
                 "moduleLoad": true,
                 "trace": true
             },            
-        }
+        },
+        {
+            "name": "(Windows-cppvsdbg) TypeScriptApp.exe",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "C:\\dev\\TypeScriptCompiler\\docs\\how\\cmake_winapp\\__build\\debug\\Debug\\TypeScriptApp.exe",
+            "symbolSearchPath": "C:\\dev\\TypeScriptCompiler\\docs\\how\\cmake_winapp\\__build\\debug\\Debug\\",
+            "args": [],
+            "stopAtEntry": true,
+            "cwd": "${workspaceRoot}",
+            "logging": {
+                "moduleLoad": true,
+                "trace": true
+            },            
+        }        
     ]
 }

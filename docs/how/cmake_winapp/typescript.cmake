@@ -25,9 +25,10 @@ macro(add_tsc_files subpath)
 	file(GLOB TSC_SRC "${fileSelectPath}/*.${TSExt}")
 
 	if (CMAKE_BUILD_TYPE STREQUAL "Release")
-		set (TS_FLAGS "--opt")
+		set (TS_FLAGS "-opt")
 	else()
-		set (TS_FLAGS "--opt_level=0 --di")
+		set (TS_FLAGS "--opt_level=0")
+		set (TS_FLAGS ${TS_FLAGS} "--di")
 	endif()
 
 	set (TS_FILES)

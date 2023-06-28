@@ -26,10 +26,9 @@ macro(add_tsc_files subpath)
 
 	if (CMAKE_BUILD_TYPE STREQUAL "Release")
 		set (TS_FLAGS "-opt")
-		set (LLC_FLAGS "")
 	else()
-		set (TS_FLAGS "")
-		set (LLC_FLAGS "--experimental-debug-variable-locations")
+		set (TS_FLAGS "--opt_level=0")
+		set (TS_FLAGS ${TS_FLAGS} "--di")
 	endif()
 
 	set (TS_FILES)
@@ -49,8 +48,7 @@ macro(add_tsc_files subpath)
 
 	    add_custom_command(
 		OUTPUT "${obj_file}"
-		#COMMAND ${CMAKE_COMMAND} -E echo "Compiling ${source_file} to ${obj_file}"
-		COMMAND "${TSC_APP}" --emit=obj -o="${obj_file}" ${TS_FLAGS} ${LLC_FLAGS} "${source_file}"
+		COMMAND "${TSC_APP}" --emit=obj -o="${obj_file}" ${TS_FLAGS} "${source_file}"
 		DEPENDS "${source_file}"
 		BYPRODUCTS "${obj_file}"
   		COMMENT "Compiling ${source_file} to ${obj_file}"
