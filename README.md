@@ -9,6 +9,10 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+- Debug information: option `--di` in `tsc`
+```cmd
+tsc --opt_level=0 --di --emit=obj <file>.ts
+```
 
 - Logical Assignments
 ```TypeScript
