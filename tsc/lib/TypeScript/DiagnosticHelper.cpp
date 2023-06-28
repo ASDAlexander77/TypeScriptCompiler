@@ -54,6 +54,9 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
                 os << ':' << ' ';
             }
         })
+        .template Case<mlir::CallSiteLoc>([&](auto callSiteLoc) {
+            printLocation(os, callSiteLoc.getCaller(), path, suppressSeparator);
+        })        
         .template Case<mlir::FusedLoc>([&](auto fusedLoc) {
             auto notFirst = false;
 

@@ -57,6 +57,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -95,23 +96,8 @@ namespace
 class MLIRGenImpl
 {
   public:
-    MLIRGenImpl(const mlir::MLIRContext &context, CompileOptions compileOptions)
-        : builder(&const_cast<mlir::MLIRContext &>(context)), 
-          mth(&const_cast<mlir::MLIRContext &>(context), 
-            std::bind(&MLIRGenImpl::getClassInfoByFullName, this, std::placeholders::_1), 
-            std::bind(&MLIRGenImpl::getGenericClassInfoByFullName, this, std::placeholders::_1), 
-            std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
-            std::bind(&MLIRGenImpl::getGenericInterfaceInfoByFullName, this, std::placeholders::_1)),
-          compileOptions(compileOptions), 
-          declarationMode(false),
-          tempEntryBlock(nullptr)
-    {
-        fileName = "<unknown>";
-        rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
-    }
-
     MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam,
-                const llvm::StringRef &pathParam, CompileOptions compileOptions)
+                const llvm::StringRef &pathParam, const llvm::SourceMgr &sourceMgr, CompileOptions compileOptions)
         : builder(&const_cast<mlir::MLIRContext &>(context)), 
           mth(&const_cast<mlir::MLIRContext &>(context), 
             std::bind(&MLIRGenImpl::getClassInfoByFullName, this, std::placeholders::_1), 
@@ -120,10 +106,11 @@ class MLIRGenImpl
             std::bind(&MLIRGenImpl::getGenericInterfaceInfoByFullName, this, std::placeholders::_1)),
           compileOptions(compileOptions), 
           declarationMode(false),
-          tempEntryBlock(nullptr)
+          tempEntryBlock(nullptr),
+          sourceMgr(const_cast<llvm::SourceMgr &>(sourceMgr)),
+          fileName(fileNameParam),
+          path(pathParam)
     {
-        fileName = fileNameParam;
-        path = pathParam;
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
@@ -165,13 +152,27 @@ class MLIRGenImpl
         return hasAnyError ? mlir::failure() : mlir::success();
     }
 
-    std::pair<SourceFile, std::vector<SourceFile>> loadSourceFile(StringRef fileName, StringRef source)
+    std::pair<SourceFile, std::vector<SourceFile>> loadMainSourceFile()
+    {
+        const auto *sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
+        sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
+                                                sourceBuf->getBufferIdentifier(),
+                                                /*line=*/0, /*column=*/0);
+
+        return loadSourceBuf(sourceBuf);
+    }    
+
+    std::pair<SourceFile, std::vector<SourceFile>> loadSourceBuf(const llvm::MemoryBuffer *sourceBuf)
     {
         std::vector<SourceFile> includeFiles;
         std::vector<string> filesToProcess;
 
+        sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
+                                                sourceBuf->getBufferIdentifier(),
+                                                /*line=*/0, /*column=*/0);
+
         Parser parser;
-        auto sourceFile = parser.parseSourceFile(stows(fileName.str()), stows(source.str()), ScriptTarget::Latest);
+        auto sourceFile = parser.parseSourceFile(stows(fileName.str()), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
         for (auto refFile : sourceFile->referencedFiles)
         {
             filesToProcess.push_back(refFile.fileName);
@@ -213,18 +214,28 @@ class MLIRGenImpl
         return {sourceFile, includeFiles};
     }
 
+    mlir::LogicalResult showMessages(SourceFile module, std::vector<SourceFile> includeFiles)
+    {
+        mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr, builder.getContext());
+
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+            publishDiagnostic(diag, path);
+        });
+
+        if (mlir::failed(report(module, includeFiles)))
+        {
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
     mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles)
     {
+        if (mlir::failed(showMessages(module, includeFiles)))
         {
-            mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
-                publishDiagnostic(diag, path);
-            });
-
-            if (mlir::failed(report(module, includeFiles)))
-            {
-                return nullptr;
-            }
-        }
+            return nullptr;
+        }        
 
         if (mlir::failed(mlirGenCodeGenInit(module)))
         {
@@ -583,18 +594,12 @@ class MLIRGenImpl
         MLIRValueGuard<bool> vg(declarationMode);
         declarationMode = true;
 
-        auto [importSource, importIncludeFiles] = loadFile(stringVal);
+        auto [importSource, importIncludeFiles] = loadIncludeFile(stringVal);
 
+        if (mlir::failed(showMessages(importSource, importIncludeFiles)))
         {
-            mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
-                publishDiagnostic(diag, path);
-            });
-
-            if (mlir::failed(report(importSource, importIncludeFiles)))
-            {
-                return mlir::failure();
-            }
-        }
+            return mlir::failure();
+        }          
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
             mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false)))
@@ -19091,33 +19096,35 @@ genContext);
         std::wcerr << std::endl << "end of dump ========================================" << std::endl;
     }
 
-    std::pair<SourceFile, std::vector<SourceFile>> loadFile(StringRef fileName)
+    std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(StringRef fileName)
     {
-        mlir::StringRef refFileName(sys::path::remove_leading_dotslash(fileName));
         SmallString<128> fullPath = path;
-        sys::path::append(fullPath, refFileName);
+        //mlir::StringRef refFileName(sys::path::remove_leading_dotslash(fileName));
+        //sys::path::append(fullPath, refFileName);
         if (sys::path::extension(fullPath) == "")
         {
             fullPath += ".ts";
         }
 
-        auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(fullPath);
-        if (std::error_code ec = fileOrErr.getError())
+        std::string ignored;
+        auto id = sourceMgr.AddIncludeFile(std::string(fullPath), SMLoc(), ignored);
+        if (!id)
         {
-            emitError(mlir::UnknownLoc::get(builder.getContext()))
-                << "Could not open file: '" << fileName << "' Error:" << ec.message() << "\n";
-            return {SourceFile(), std::vector<SourceFile>()};
+            emitError(mlir::UnknownLoc(), "can't open file: ") << fullPath;
         }
 
-        auto moduleSource = fileOrErr.get()->getBuffer();
-
-        return loadSourceFile(fileName, moduleSource.str());
+        const auto *sourceBuf = sourceMgr.getMemoryBuffer(id);
+        return loadSourceBuf(sourceBuf);
     }
 
     /// The builder is a helper class to create IR inside a function. The builder
     /// is stateful, in particular it keeps an "insertion point": this is where
     /// the next operations will be introduced.
     mlir::OpBuilder builder;
+
+    llvm::SourceMgr &sourceMgr;
+
+    mlir::FileLineColLoc sourceFileLoc;
 
     MLIRTypeHelper mth;
 
@@ -19227,12 +19234,12 @@ namespace typescript
 }
 
 mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
-                                        const llvm::StringRef &source, CompileOptions compileOptions)
+                                        const llvm::SourceMgr &sourceMgr, CompileOptions compileOptions)
 {
 
     auto path = llvm::sys::path::parent_path(fileName);
-    MLIRGenImpl mlirGenImpl(context, fileName, path, compileOptions);
-    auto [sourceFile, includeFiles] = mlirGenImpl.loadSourceFile(fileName, source);
+    MLIRGenImpl mlirGenImpl(context, fileName, path, sourceMgr, compileOptions);
+    auto [sourceFile, includeFiles] = mlirGenImpl.loadMainSourceFile();
     return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
 }
 

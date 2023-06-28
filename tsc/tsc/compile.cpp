@@ -5,6 +5,7 @@
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/TargetParser/Host.h"
 #include "llvm/TargetParser/Triple.h"
@@ -44,7 +45,10 @@ int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, mlir::OwningOpRef<
     compileOptions.generateDebugInfo = generateDebugInfo;
     compileOptions.lldbDebugInfo = lldbDebugInfo;
     compileOptions.moduleTargetTriple = moduleTargetTriple;
-    
-    module = mlirGenFromSource(context, fileName, fileOrErr.get()->getBuffer(), compileOptions);
+
+    llvm::SourceMgr sourceMgr;
+    sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
+
+    module = mlirGenFromSource(context, fileName, sourceMgr, compileOptions);
     return !module ? 1 : 0;
 }

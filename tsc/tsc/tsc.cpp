@@ -162,6 +162,7 @@ int main(int argc, char **argv)
 #endif
 
     mlir::OwningOpRef<mlir::ModuleOp> module;
+
     if (int error = compileTypeScriptFileIntoMLIR(mlirContext, module))
     {
         return error;

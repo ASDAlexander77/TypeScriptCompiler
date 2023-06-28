@@ -6,6 +6,8 @@
 
 #include "TypeScript/DataStructs.h"
 
+#include "llvm/Support/SourceMgr.h"
+
 namespace mlir
 {
 class MLIRContext;
@@ -22,7 +24,7 @@ class StringRef;
 namespace typescript
 {
 ::std::string dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source);
-mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source,
+mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::SourceMgr &sourceMgr,
                                         CompileOptions compileOptions);
 } // namespace typescript
 
