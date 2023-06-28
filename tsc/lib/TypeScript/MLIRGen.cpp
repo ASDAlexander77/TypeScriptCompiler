@@ -7026,11 +7026,14 @@ class MLIRGenImpl
                             builder.getContext(), SmallVector<mlir::Type>{getOpaqueType(), getStringType()},
                             SmallVector<mlir::Type>{getBooleanType()});
 
-                        auto funcPtr = cast(location, instanceOfFuncType, instanceOfPtr, genContext);
+                        // TODO: check result
+                        auto result = cast(location, instanceOfFuncType, instanceOfPtr, genContext);
+                        auto funcPtr = V(result);
 
                         // call methos, we need to send, this, and rtti info
                         auto callResult = builder.create<mlir_ts::CallIndirectOp>(
-                            location, funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
+                            MLIRHelper::getCallSiteLocation(funcPtr, location),
+                            funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
 
                         return callResult.getResult(0);
                     },
@@ -9246,7 +9249,9 @@ class MLIRGenImpl
             }
 
             // default call by name
-            auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcRefValue, operands);
+            auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(
+                MLIRHelper::getCallSiteLocation(funcRefValue, location),
+                funcRefValue, operands);
 
             if (calledFuncType.getResults().size() > 0)
             {
@@ -9889,7 +9894,9 @@ class MLIRGenImpl
                         mlir::FlatSymbolRefAttr::get(builder.getContext(), fullClassStaticFieldName));
 
                     auto callIndirectOp =
-                        builder.create<mlir_ts::CallIndirectOp>(location, funcSymbolOp, mlir::ValueRange{});
+                        builder.create<mlir_ts::CallIndirectOp>(
+                            MLIRHelper::getCallSiteLocation(funcSymbolOp->getLoc(), location),
+                            funcSymbolOp, mlir::ValueRange{});
                     auto typeDescr = callIndirectOp.getResult(0);
 
                     // save value
@@ -10245,7 +10252,9 @@ class MLIRGenImpl
         }
 
         // call
-        auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, callee, operands);
+        auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(
+            MLIRHelper::getCallSiteLocation(callee, location),
+            callee, operands);
         return callIndirectOp.getResult(0);
     }
 

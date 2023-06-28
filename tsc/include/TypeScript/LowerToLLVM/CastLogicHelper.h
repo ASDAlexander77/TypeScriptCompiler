@@ -1007,7 +1007,10 @@ class CastLogicHelper
 
         if (external)
         {
-            auto results = rewriter.create<mlir_ts::CallIndirectOp>(loc, value, ValueRange(objTypeCasted));
+            auto results = rewriter.create<mlir_ts::CallIndirectOp>(
+                MLIRHelper::getCallSiteLocation(value, loc),
+                value, 
+                ValueRange(objTypeCasted));
             return results.getResult(0);
         }
 

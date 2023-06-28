@@ -100,6 +100,18 @@ class MLIRHelper
         return getAnonymousName(loc, ".unk");
     }
 
+    static mlir::Location getCallSiteLocation(mlir::Location callee, mlir::Location caller, bool enable = true)
+    {
+        if (enable)
+            return mlir::CallSiteLoc::get(callee, caller);
+        return caller;
+    }    
+
+    static mlir::Location getCallSiteLocation(mlir::Value callee, mlir::Location caller, bool enable = true)
+    {
+        return getCallSiteLocation(callee.getDefiningOp()->getLoc(), caller, enable);
+    }
+
     static void getAnonymousNameStep(std::stringstream &ssName, mlir::Location loc)
     {
         mlir::TypeSwitch<mlir::LocationAttr>(loc)
@@ -109,6 +121,12 @@ class MLIRHelper
             auto column = loc.getColumn();
             ssName << 'L' << line << 'C' << column;
         })
+        .Case<mlir::NameLoc>([&](auto loc) {
+            getAnonymousNameStep(ssName, loc.getChildLoc());
+        })
+        .Case<mlir::CallSiteLoc>([&](auto loc) {
+            getAnonymousNameStep(ssName, loc.getCaller());
+        })        
         .Case<mlir::FusedLoc>([&](auto loc) {
             for (auto subLoc : loc.getLocations())
             {
