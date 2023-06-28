@@ -198,8 +198,8 @@ class MLIRGenImpl
 
             filesToProcess.pop_back();
 
-            std::string ignored;
-            auto id = sourceMgr.AddIncludeFile(std::string(fullPath), SMLoc(), ignored);
+            std::string actualFilePath;
+            auto id = sourceMgr.AddIncludeFile(std::string(fullPath), SMLoc(), actualFilePath);
             if (!id)
             {
                 emitError(location, "can't open file: ") << fullPath;
@@ -210,7 +210,7 @@ class MLIRGenImpl
 
             Parser parser;
             auto includeFile =
-                parser.parseSourceFile(includeFileName, stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
+                parser.parseSourceFile(ConvertUTF8toWide(actualFilePath), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
             for (auto refFile : includeFile->referencedFiles)
             {
                 filesToProcess.push_back(refFile.fileName);
@@ -404,6 +404,10 @@ class MLIRGenImpl
 
         for (auto includeFile : includeFiles)
         {
+            MLIRValueGuard<llvm::StringRef> vgFileName(fileName); 
+            auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
+            fileName = fileNameUtf8;
+
             if (failed(mlirGen(includeFile->statements, genContextPartial)))
             {
                 outputDiagnostics(postponedMessages, 1);
@@ -453,8 +457,13 @@ class MLIRGenImpl
 
         for (auto includeFile : includeFiles)
         {
+            MLIRValueGuard<llvm::StringRef> vgFileName(fileName); 
+            auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
+            fileName = fileNameUtf8;
+
             if (failed(mlirGen(includeFile->statements, genContext)))
             {
+                outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
             }
         }
