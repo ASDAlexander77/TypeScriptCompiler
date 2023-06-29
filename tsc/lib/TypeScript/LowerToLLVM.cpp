@@ -975,12 +975,14 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         }
 
         // copy attributes over
+        auto skipAttrs = mlir::func::FuncOp::getAttributeNames();
         for (auto attr : funcOp->getAttrs())
         {
             auto name = attr.getName();
-            if (isSkipAttr(name)) 
-                continue;
-            funcAttrs.push_back(name);
+            auto addAttr = 
+                std::find(skipAttrs.begin(), skipAttrs.end(), name) == skipAttrs.end();
+            if (addAttr) 
+                funcAttrs.push_back(name);
         }
 
 #ifdef DISABLE_OPT
@@ -1024,17 +1026,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         rewriter.eraseOp(funcOp);
 
         return success();
-    }
-
-    bool isSkipAttr(StringRef name) const
-    {
-        static llvm::StringMap<bool> funcAttrs {
-            {"function_type", true },
-            {"sym_name", true },
-            {"sym_visibility", true },
-        };
-
-        return funcAttrs[name];        
     }
 };
 

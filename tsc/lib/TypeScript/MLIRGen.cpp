@@ -124,6 +124,7 @@ class MLIRGenImpl
     {
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
         const_cast<llvm::SourceMgr &>(sourceMgr).setIncludeDirs({pathParam.str()});
+        isWindowsMSVCEnvironment = llvm::Triple(compileOptions.moduleTargetTriple).isWindowsMSVCEnvironment();
     }
 
     mlir::LogicalResult report(SourceFile module, const std::vector<SourceFile> &includeFiles)
@@ -167,10 +168,8 @@ class MLIRGenImpl
     std::pair<SourceFile, std::vector<SourceFile>> loadMainSourceFile()
     {
         const auto *sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
-        sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
-                                                sourceBuf->getBufferIdentifier(),
-                                                /*line=*/0, /*column=*/0);
-
+        auto sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
+                    sourceBuf->getBufferIdentifier(), /*line=*/0, /*column=*/0);
         return loadSourceBuf(sourceFileLoc, sourceBuf);
     }    
 
@@ -178,10 +177,6 @@ class MLIRGenImpl
     {
         std::vector<SourceFile> includeFiles;
         std::vector<string> filesToProcess;
-
-        sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
-                                                sourceBuf->getBufferIdentifier(),
-                                                /*line=*/0, /*column=*/0);
 
         Parser parser;
         auto sourceFile = parser.parseSourceFile(stows(fileName.str()), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
@@ -3729,6 +3724,18 @@ class MLIRGenImpl
                     attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
                 }
             }
+        }
+
+        // add modifiers
+        for (auto modifier : functionLikeDeclarationBaseAST->modifiers)
+        {
+            if (modifier == SyntaxKind::ExportKeyword)
+            {
+                 if (isWindowsMSVCEnvironment)
+                {
+                    attrs.push_back({mlir::StringAttr::get(builder.getContext(), "dllexport"), mlir::UnitAttr::get(builder.getContext())});
+                }
+            }            
         }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
@@ -19191,8 +19198,6 @@ genContext);
 
     SourceMgrDiagnosticHandlerEx sourceMgrHandler;
 
-    mlir::FileLineColLoc sourceFileLoc;
-
     MLIRTypeHelper mth;
 
     CompileOptions compileOptions;
@@ -19231,11 +19236,11 @@ genContext);
     Parser parser;
     ts::SourceFile sourceFile;
 
-    std::string label;
-
     bool declarationMode;
 
 private:
+    bool isWindowsMSVCEnvironment;
+    std::string label;
     mlir::Block* tempEntryBlock;
     mlir::ModuleOp tempModule;
     mlir_ts::FuncOp tempFuncOp;

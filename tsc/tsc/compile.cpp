@@ -47,7 +47,7 @@ int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, llvm::SourceMgr &s
     compileOptions.generateDebugInfo = generateDebugInfo;
     compileOptions.lldbDebugInfo = lldbDebugInfo;
     compileOptions.moduleTargetTriple = moduleTargetTriple;
-
+    
     sourceMgr.AddNewSourceBuffer(std::move(*fileOrErr), llvm::SMLoc());
 
     module = mlirGenFromSource(context, fileName, sourceMgr, compileOptions);
