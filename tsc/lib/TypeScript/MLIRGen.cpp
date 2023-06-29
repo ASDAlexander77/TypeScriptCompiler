@@ -59,6 +59,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 //#include "llvm/IR/DebugInfoMetadata.h"
@@ -2774,28 +2775,28 @@ class MLIRGenImpl
     ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(mlir::Location location, int index, mlir::Type type, mlir::Value init, const GenContext &genContext)
     {
         MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index));
-        mlir::Value subInit;
-        TypeSwitch<mlir::Type>(type)
-            .template Case<mlir_ts::ConstTupleType>(
-                [&](auto constTupleType) { subInit = cl.Tuple(constTupleType, true); })
-            .template Case<mlir_ts::TupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
-            .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
-                // TODO: unify it with ElementAccess
-                auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-                                                                    builder.getI32IntegerAttr(index));
-                auto elemRef = builder.create<mlir_ts::ElementRefOp>(
-                    location, mlir_ts::RefType::get(constArrayType.getElementType()), init, constIndex);
-                subInit = builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef);
-            })
-            .template Case<mlir_ts::ArrayType>([&](auto arrayType) {
-                // TODO: unify it with ElementAccess
-                auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-                                                                    builder.getI32IntegerAttr(index));
-                auto elemRef = builder.create<mlir_ts::ElementRefOp>(
-                    location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
-                subInit = builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef);
-            })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+        mlir::Value subInit =
+            TypeSwitch<mlir::Type, mlir::Value>(type)
+                .template Case<mlir_ts::ConstTupleType>(
+                    [&](auto constTupleType) { return cl.Tuple(constTupleType, true); })
+                .template Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType, true); })
+                .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
+                    // TODO: unify it with ElementAccess
+                    auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
+                                                                        builder.getI32IntegerAttr(index));
+                    auto elemRef = builder.create<mlir_ts::ElementRefOp>(
+                        location, mlir_ts::RefType::get(constArrayType.getElementType()), init, constIndex);
+                    return builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef);
+                })
+                .template Case<mlir_ts::ArrayType>([&](auto arrayType) {
+                    // TODO: unify it with ElementAccess
+                    auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
+                                                                        builder.getI32IntegerAttr(index));
+                    auto elemRef = builder.create<mlir_ts::ElementRefOp>(
+                        location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
+                    return builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef);
+                })
+                .Default([&](auto type) { llvm_unreachable("not implemented"); return mlir::Value(); });
 
         if (!subInit)
         {
@@ -6510,49 +6511,89 @@ class MLIRGenImpl
         switch (opCode)
         {
             case SyntaxKind::PlusToken:
-                mlir::TypeSwitch<mlir::Attribute>(valueAttr)
-                    .Case<mlir::IntegerAttr>([&](auto intAttr) {
-                        value = builder.create<mlir_ts::ConstantOp>(
-                            location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), intAttr.getValue()));
-                    })
-                    .Case<mlir::FloatAttr>([&](auto floatAttr) {
-                        value = builder.create<mlir_ts::ConstantOp>(
-                            location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), floatAttr.getValue()));
-                    });
+                value = 
+                    mlir::TypeSwitch<mlir::Attribute, mlir::Value>(valueAttr)
+                        .Case<mlir::IntegerAttr>([&](auto intAttr) {
+                            return builder.create<mlir_ts::ConstantOp>(
+                                location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), intAttr.getValue()));
+                        })
+                        .Case<mlir::FloatAttr>([&](auto floatAttr) {
+                            return builder.create<mlir_ts::ConstantOp>(
+                                location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), floatAttr.getValue()));
+                        })
+                        .Case<mlir::StringAttr>([&](auto strAttr) {
+                            auto floatType = mlir::Float64Type::get(builder.getContext());
+                            APFloat fValue(APFloatBase::IEEEdouble());
+                            if (llvm::errorToBool(fValue.convertFromString(strAttr.getValue(), APFloat::rmNearestTiesToEven).takeError()))
+                            {
+                                fValue = APFloat::getNaN(fValue.getSemantics());
+                            }
+
+                            return V(builder.create<mlir_ts::ConstantOp>(
+                                location, floatType, builder.getFloatAttr(floatType, fValue)));
+                        })
+                        .Default([](auto) {
+                            llvm_unreachable("not implemented");
+                            return mlir::Value();
+                        });                        
                 break;
             case SyntaxKind::MinusToken:
-                mlir::TypeSwitch<mlir::Attribute>(valueAttr)
-                    .Case<mlir::IntegerAttr>([&](auto intAttr) {
-                        value = builder.create<mlir_ts::ConstantOp>(
-                            location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), -intAttr.getValue()));
-                    })
-                    .Case<mlir::FloatAttr>([&](auto floatAttr) {
-                        value = builder.create<mlir_ts::ConstantOp>(
-                            location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), -floatAttr.getValue()));
-                    })
-                    .Default([](auto) {
-                        llvm_unreachable("not implemented");
-                    });
+                value = 
+                    mlir::TypeSwitch<mlir::Attribute, mlir::Value>(valueAttr)
+                        .Case<mlir::IntegerAttr>([&](auto intAttr) {
+                            return builder.create<mlir_ts::ConstantOp>(
+                                location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), -intAttr.getValue()));
+                        })
+                        .Case<mlir::FloatAttr>([&](auto floatAttr) {
+                            return builder.create<mlir_ts::ConstantOp>(
+                                location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), -floatAttr.getValue()));
+                        })
+                        .Case<mlir::StringAttr>([&](auto strAttr) {
+                            auto floatType = mlir::Float64Type::get(builder.getContext());
+                            APFloat fValue(APFloatBase::IEEEdouble());
+                            if (llvm::errorToBool(fValue.convertFromString(strAttr.getValue(), APFloat::rmNearestTiesToEven).takeError()))
+                            {
+                                fValue = APFloat::getNaN(fValue.getSemantics());
+                            }
+
+                            return V(builder.create<mlir_ts::ConstantOp>(
+                                location, floatType, builder.getFloatAttr(floatType, -fValue)));
+                        })                        
+                        .Default([](auto) {
+                            llvm_unreachable("not implemented");
+                            return mlir::Value();
+                        });
                 break;
             case SyntaxKind::TildeToken:
-                mlir::TypeSwitch<mlir::Attribute>(valueAttr)
-                    .Case<mlir::IntegerAttr>([&](auto intAttr) {
-                        value = builder.create<mlir_ts::ConstantOp>(
-                            location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), ~intAttr.getValue()));
-                    })
-                    .Default([](auto) {
-                        llvm_unreachable("not implemented");
-                    });
+                value = 
+                    mlir::TypeSwitch<mlir::Attribute, mlir::Value>(valueAttr)
+                        .Case<mlir::IntegerAttr>([&](auto intAttr) {
+                            return builder.create<mlir_ts::ConstantOp>(
+                                location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), ~intAttr.getValue()));
+                        })
+                        .Case<mlir::StringAttr>([&](auto strAttr) {
+                            auto intType = mlir::IntegerType::get(builder.getContext(), 32);
+                            APInt iValue(32, 0);
+                            iValue = to_integer(strAttr.getValue(), iValue);
+                            return V(builder.create<mlir_ts::ConstantOp>(
+                                location, intType, builder.getIntegerAttr(intType, ~iValue)));
+                        })                         
+                        .Default([](auto) {
+                            llvm_unreachable("not implemented");
+                            return mlir::Value();
+                        });
                 break;
             case SyntaxKind::ExclamationToken:
-                mlir::TypeSwitch<mlir::Attribute>(valueAttr)
-                    .Case<mlir::IntegerAttr>([&](auto intAttr) {
-                        value = builder.create<mlir_ts::ConstantOp>(
-                            location, getBooleanType(), builder.getBoolAttr(!(intAttr.getValue())));
-                    })
-                    .Default([](auto) {
-                        llvm_unreachable("not implemented");
-                    });
+                value = 
+                    mlir::TypeSwitch<mlir::Attribute, mlir::Value>(valueAttr)
+                        .Case<mlir::IntegerAttr>([&](auto intAttr) {
+                            return builder.create<mlir_ts::ConstantOp>(
+                                location, getBooleanType(), builder.getBoolAttr(!(intAttr.getValue())));
+                        })
+                        .Default([](auto) {
+                            llvm_unreachable("not implemented");
+                            return mlir::Value();
+                        });
                 break;
             default:
                 llvm_unreachable("not implemented");
@@ -7231,10 +7272,10 @@ class MLIRGenImpl
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
         if (auto loadOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LoadOp>())
         {
-            mlir::Type destType;
-            TypeSwitch<mlir::Type>(loadOp.getReference().getType())
-                .Case<mlir_ts::RefType>([&](auto refType) { destType = refType.getElementType(); })
-                .Case<mlir_ts::BoundRefType>([&](auto boundRefType) { destType = boundRefType.getElementType(); });
+            mlir::Type destType =
+                TypeSwitch<mlir::Type, mlir::Type>(loadOp.getReference().getType())
+                    .Case<mlir_ts::RefType>([&](auto refType) { return refType.getElementType(); })
+                    .Case<mlir_ts::BoundRefType>([&](auto boundRefType) { return boundRefType.getElementType(); });
 
             assert(destType);
 
@@ -7938,73 +7979,74 @@ class MLIRGenImpl
                                                                   MLIRPropertyAccessCodeLogic &cl,
                                                                   const GenContext &genContext)
     {
-        mlir::Value value;
         auto name = cl.getName();
         auto actualType = objectValue.getType();
-        TypeSwitch<mlir::Type>(actualType)
-            .Case<mlir_ts::EnumType>([&](auto enumType) { value = cl.Enum(enumType); })
-            .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { value = cl.Tuple(constTupleType); })
-            .Case<mlir_ts::TupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
-            .Case<mlir_ts::BooleanType>([&](auto intType) { value = cl.Bool(intType); })
-            .Case<mlir::IntegerType>([&](auto intType) { value = cl.Int(intType); })
-            .Case<mlir::FloatType>([&](auto floatType) { value = cl.Float(floatType); })
-            .Case<mlir_ts::NumberType>([&](auto numberType) { value = cl.Number(numberType); })
-            .Case<mlir_ts::StringType>([&](auto stringType) { value = cl.String(stringType); })
-            .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
-            .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
-            .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
-            .Case<mlir_ts::ObjectType>([&](auto objectType) { value = cl.Object(objectType); })
-            .Case<mlir_ts::SymbolType>([&](auto symbolType) { value = cl.Symbol(symbolType); })
-            .Case<mlir_ts::NamespaceType>([&](auto namespaceType) {
-                auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
-                assert(namespaceInfo);
+        mlir::Value value = 
+            TypeSwitch<mlir::Type, mlir::Value>(actualType)
+                .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
+                .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
+                .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
+                .Case<mlir_ts::BooleanType>([&](auto intType) { return cl.Bool(intType); })
+                .Case<mlir::IntegerType>([&](auto intType) { return cl.Int(intType); })
+                .Case<mlir::FloatType>([&](auto floatType) { return cl.Float(floatType); })
+                .Case<mlir_ts::NumberType>([&](auto numberType) { return cl.Number(numberType); })
+                .Case<mlir_ts::StringType>([&](auto stringType) { return cl.String(stringType); })
+                .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { return cl.Array(arrayType); })
+                .Case<mlir_ts::ArrayType>([&](auto arrayType) { return cl.Array(arrayType); })
+                .Case<mlir_ts::RefType>([&](auto refType) { return cl.Ref(refType); })
+                .Case<mlir_ts::ObjectType>([&](auto objectType) { return cl.Object(objectType); })
+                .Case<mlir_ts::SymbolType>([&](auto symbolType) { return cl.Symbol(symbolType); })
+                .Case<mlir_ts::NamespaceType>([&](auto namespaceType) {
+                    auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
+                    assert(namespaceInfo);
 
-                MLIRNamespaceGuard ng(currentNamespace);
-                currentNamespace = namespaceInfo;
+                    MLIRNamespaceGuard ng(currentNamespace);
+                    currentNamespace = namespaceInfo;
 
-                value = mlirGen(location, name, genContext);
-            })
-            .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
-                value = cl.TupleNoError(classStorageType);
-                if (!value)
-                {
-                    value = ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, true,
-                                         genContext);
-                }
-            })
-            .Case<mlir_ts::ClassType>([&](auto classType) {
-                value = cl.Class(classType);
-                if (!value)
-                {
-                    value =
-                        ClassMembers(location, objectValue, classType.getName().getValue(), name, false, genContext);
-                }
-            })
-            .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
-                value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(),
-                                         genContext);
-            })
-            .Case<mlir_ts::OptionalType>([&](auto optionalType) {
-                // this is needed for conditional access to properties
-                auto elementType = optionalType.getElementType();
-                auto loadedValue = builder.create<mlir_ts::ValueOp>(location, elementType, objectValue);
-                value = mlirGenPropertyAccessExpression(location, loadedValue, name, false, genContext);                
-            })
-            .Case<mlir_ts::UnionType>([&](auto unionType) {
-                // all union types must have the same property
-                // 1) cast to first type
-                auto frontType = mth.getFirstNonNullUnionType(unionType);
-                auto casted = cast(location, frontType, objectValue, genContext);
-                value = mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
-            })
-            .Case<mlir_ts::LiteralType>([&](auto literalType) {
-                auto elementType = literalType.getElementType();
-                auto castedValue = builder.create<mlir_ts::CastOp>(location, elementType, objectValue);
-                value = mlirGenPropertyAccessExpression(location, castedValue, name, false, genContext);
-            })
-            .Default([&](auto type) {
-                LLVM_DEBUG(llvm::dbgs() << "Can't resolve property '" << name << "' of type " << objectValue.getType(););
-            });
+                    return mlirGen(location, name, genContext);
+                })
+                .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
+                    if (auto value = cl.TupleNoError(classStorageType))
+                    {
+                        return value;
+                    }
+
+                    return ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, true, genContext);
+                })
+                .Case<mlir_ts::ClassType>([&](auto classType) {
+                    if (auto value = cl.Class(classType))
+                    {
+                        return value;
+                    }
+
+                    return ClassMembers(location, objectValue, classType.getName().getValue(), name, false, genContext);
+                })
+                .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
+                    return InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(),
+                                            genContext);
+                })
+                .Case<mlir_ts::OptionalType>([&](auto optionalType) {
+                    // this is needed for conditional access to properties
+                    auto elementType = optionalType.getElementType();
+                    auto loadedValue = builder.create<mlir_ts::ValueOp>(location, elementType, objectValue);
+                    return mlirGenPropertyAccessExpression(location, loadedValue, name, false, genContext);                
+                })
+                .Case<mlir_ts::UnionType>([&](auto unionType) {
+                    // all union types must have the same property
+                    // 1) cast to first type
+                    auto frontType = mth.getFirstNonNullUnionType(unionType);
+                    auto casted = cast(location, frontType, objectValue, genContext);
+                    return mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
+                })
+                .Case<mlir_ts::LiteralType>([&](auto literalType) {
+                    auto elementType = literalType.getElementType();
+                    auto castedValue = builder.create<mlir_ts::CastOp>(location, elementType, objectValue);
+                    return mlirGenPropertyAccessExpression(location, castedValue, name, false, genContext);
+                })
+                .Default([&](auto type) {
+                    LLVM_DEBUG(llvm::dbgs() << "Can't resolve property '" << name << "' of type " << objectValue.getType(););
+                    return mlir::Value();
+                });
 
         // extention logic: <obj>.<functionName>(this)
         if (!value)
