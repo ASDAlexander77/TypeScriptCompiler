@@ -162,6 +162,12 @@ int main(int argc, char **argv)
     mlirContext.getOrLoadDialect<mlir::async::AsyncDialect>();
 #endif
 
+#ifdef NDEBUG
+    mlirContext.printOpOnDiagnostic(false);
+#else 
+    mlirContext.printStackTraceOnDiagnostic(true);
+#endif
+
     mlir::OwningOpRef<mlir::ModuleOp> module;
 
     llvm::SourceMgr sourceMgr;
