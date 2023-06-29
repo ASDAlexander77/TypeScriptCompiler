@@ -370,7 +370,7 @@ class MLIRGenImpl
         // print errors
         if (notResolved)
         {
-            printDiagnostics(sourceMgrHandler, postponedMessages);
+            printDiagnostics(sourceMgrHandler, postponedMessages, compileOptions.disableWarnings);
         }
 
         postponedMessages.clear();
@@ -490,7 +490,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        printDiagnostics(sourceMgrHandler, postponedWarningsMessages);
+        printDiagnostics(sourceMgrHandler, postponedWarningsMessages, compileOptions.disableWarnings);
 
         return mlir::success();
     }
@@ -18563,7 +18563,13 @@ genContext);
 
     mlir::Type getRestType(RestTypeNode restTypeNode, const GenContext &genContext)
     {
-        return getConstArrayType(getType(restTypeNode->type, genContext), 0);
+        auto arrayType = getType(restTypeNode->type, genContext);
+        if (!arrayType)
+        {
+            return mlir::Type();
+        }
+
+        return getConstArrayType(arrayType.cast<mlir_ts::ArrayType>().getElementType(), 0);
     }
 
     mlir_ts::AnyType getAnyType()

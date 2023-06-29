@@ -12,7 +12,7 @@ public:
     void emit(mlir::Diagnostic &diag);
 };
 
-void printDiagnostics(SourceMgrDiagnosticHandlerEx &, mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &);
+void printDiagnostics(SourceMgrDiagnosticHandlerEx &, mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &, bool);
 void printLocation(llvm::raw_ostream &, mlir::Location, llvm::StringRef, bool suppressSeparator = false);
 
 #endif // MLIR_DIAGNOSTIC_HELPER_H_

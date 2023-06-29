@@ -59,6 +59,7 @@ extern cl::opt<bool> enableOpt;
 extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableGC;
+extern cl::opt<bool> disableWarnings;
 
 int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module)
 {
@@ -149,7 +150,7 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
     }
 
     SourceMgrDiagnosticHandlerEx sourceMgrHandler(sourceMgr, &context);
-    printDiagnostics(sourceMgrHandler, postponedMessages);
+    printDiagnostics(sourceMgrHandler, postponedMessages, disableWarnings);
     return result;
 }
 

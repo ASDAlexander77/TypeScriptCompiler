@@ -20,6 +20,7 @@ namespace cl = llvm::cl;
 
 extern cl::opt<std::string> inputFilename;
 extern cl::opt<bool> disableGC;
+extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> generateDebugInfo;
 extern cl::opt<bool> lldbDebugInfo;
 extern cl::opt<std::string> TargetTriple;
@@ -42,6 +43,7 @@ int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, llvm::SourceMgr &s
 
     CompileOptions compileOptions;
     compileOptions.disableGC = disableGC;
+    compileOptions.disableWarnings = disableWarnings;
     compileOptions.generateDebugInfo = generateDebugInfo;
     compileOptions.lldbDebugInfo = lldbDebugInfo;
     compileOptions.moduleTargetTriple = moduleTargetTriple;

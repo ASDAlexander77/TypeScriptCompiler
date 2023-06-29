@@ -102,11 +102,16 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
         });
 }
 
-void printDiagnostics(SourceMgrDiagnosticHandlerEx &sourceMgrHandler, mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages)
+void printDiagnostics(SourceMgrDiagnosticHandlerEx &sourceMgrHandler, mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages, bool disableWarnings)
 {
     for (auto msgIndex = 0; msgIndex < postponedMessages.size(); msgIndex++)
     {
         auto &diag = postponedMessages[msgIndex];
+
+        if (disableWarnings && diag->getSeverity() == mlir::DiagnosticSeverity::Warning)
+        {
+            continue;
+        }
 
         // check if unique
         auto unique = true;

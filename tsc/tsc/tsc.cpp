@@ -73,6 +73,7 @@ cl::opt<std::string> objectFilename{"object-filename", cl::Hidden, cl::desc("Dum
 // cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
 cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> generateDebugInfo("di", cl::desc("Generate Debug Infomation"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> lldbDebugInfo("lldb", cl::desc("Debug Infomation for LLDB"), cl::cat(TypeScriptCompilerCategory));
 
