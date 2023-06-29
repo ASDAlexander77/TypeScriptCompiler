@@ -6533,7 +6533,6 @@ class MLIRGenImpl
                                 location, floatType, builder.getFloatAttr(floatType, fValue)));
                         })
                         .Default([](auto) {
-                            llvm_unreachable("not implemented");
                             return mlir::Value();
                         });                        
                 break;
@@ -6560,7 +6559,6 @@ class MLIRGenImpl
                                 location, floatType, builder.getFloatAttr(floatType, -fValue)));
                         })                        
                         .Default([](auto) {
-                            llvm_unreachable("not implemented");
                             return mlir::Value();
                         });
                 break;
@@ -6579,7 +6577,6 @@ class MLIRGenImpl
                                 location, intType, builder.getIntegerAttr(intType, ~iValue)));
                         })                         
                         .Default([](auto) {
-                            llvm_unreachable("not implemented");
                             return mlir::Value();
                         });
                 break;
@@ -6590,8 +6587,11 @@ class MLIRGenImpl
                             return builder.create<mlir_ts::ConstantOp>(
                                 location, getBooleanType(), builder.getBoolAttr(!(intAttr.getValue())));
                         })
+                        .Case<mlir::StringAttr>([&](auto strAttr) {
+                            return builder.create<mlir_ts::ConstantOp>(
+                                location, getBooleanType(), builder.getBoolAttr(!(strAttr.getValue().empty())));
+                        })                         
                         .Default([](auto) {
-                            llvm_unreachable("not implemented");
                             return mlir::Value();
                         });
                 break;
