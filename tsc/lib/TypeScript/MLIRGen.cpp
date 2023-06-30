@@ -3620,6 +3620,8 @@ class MLIRGenImpl
         static llvm::StringMap<bool> funcAttrs {
             {"noinline", true },
             {"optnone", true },
+            {"dllimport", true },
+            {"dllexport", true },
         };
 
         return funcAttrs[name];        

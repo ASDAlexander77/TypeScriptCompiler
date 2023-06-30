@@ -44,8 +44,31 @@ struct ExportFixPassCode
             MadeChange = true;
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! EXPORT Change: " << MadeChange;);
-        LLVM_DEBUG(llvm::dbgs() << "\n!! EXPORT Dump After: ...\n" << F << "\n";);
+        if (F.hasFnAttribute("dllexport"))
+        {
+            F.removeFnAttr("dllexport");
+
+            // set DLLExport
+            if (isWindowsMSVCEnvironment)
+                F.setDLLStorageClass(llvm::GlobalVariable::DLLExportStorageClass);
+            MadeChange = true;
+        }
+
+        if (F.hasFnAttribute("dllimport"))
+        {
+            F.removeFnAttr("dllimport");
+
+            // set DLLExport
+            if (isWindowsMSVCEnvironment)
+                F.setDLLStorageClass(llvm::GlobalVariable::DLLImportStorageClass);
+            MadeChange = true;
+        }
+
+        if (MadeChange)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! EXPORT Change: " << MadeChange;);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! EXPORT Dump After: ...\n" << F << "\n";);
+        }
 
         return MadeChange;
     }
@@ -53,14 +76,15 @@ struct ExportFixPassCode
 
 namespace ts
 {
-    llvm::PreservedAnalyses ExportFixPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
+    llvm::PreservedAnalyses ExportFixPass::run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM)
     {
         ExportFixPassCode LPF{isWindowsMSVCEnvironment};
-        if (!LPF.runOnFunction(F))
+        bool MadeChange = false;
+        for (auto &F : M)
         {
-            return llvm::PreservedAnalyses::all();
+            MadeChange |= LPF.runOnFunction(F);
         }
 
-        return llvm::PreservedAnalyses::none();
+        return MadeChange ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();
     }
 }

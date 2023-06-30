@@ -240,7 +240,7 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
 #ifdef WIN_EXCEPTION        
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::Win32ExceptionPass()));
 #endif
-        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::ExportFixPass(llvm::Triple(m->getTargetTriple()).isWindowsMSVCEnvironment())));
+        mpm.addPass(ts::ExportFixPass(llvm::Triple(m->getTargetTriple()).isWindowsMSVCEnvironment()));
 
         if (*ol == llvm::OptimizationLevel::O0)
             mpm.addPass(pb.buildO0DefaultPipeline(*ol));
