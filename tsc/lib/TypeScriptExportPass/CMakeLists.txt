@@ -4,8 +4,8 @@ set(LLVM_LINK_COMPONENTS
   Support
   )
 
-add_llvm_library(TypeScriptDebugInfoPass
-  DebugInfoPatchPass.cpp
+add_llvm_library(TypeScriptExportPass
+  ExportFixPass.cpp
 
   ADDITIONAL_HEADER_DIRS
 

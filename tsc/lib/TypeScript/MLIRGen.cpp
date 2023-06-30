@@ -124,7 +124,6 @@ class MLIRGenImpl
     {
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
         const_cast<llvm::SourceMgr &>(sourceMgr).setIncludeDirs({pathParam.str()});
-        isWindowsMSVCEnvironment = llvm::Triple(compileOptions.moduleTargetTriple).isWindowsMSVCEnvironment();
     }
 
     mlir::LogicalResult report(SourceFile module, const std::vector<SourceFile> &includeFiles)
@@ -3731,10 +3730,7 @@ class MLIRGenImpl
         {
             if (modifier == SyntaxKind::ExportKeyword)
             {
-                 if (isWindowsMSVCEnvironment)
-                {
-                    attrs.push_back({mlir::StringAttr::get(builder.getContext(), "dllexport"), mlir::UnitAttr::get(builder.getContext())});
-                }
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
             }            
         }
 
@@ -19239,7 +19235,6 @@ genContext);
     bool declarationMode;
 
 private:
-    bool isWindowsMSVCEnvironment;
     std::string label;
     mlir::Block* tempEntryBlock;
     mlir::ModuleOp tempModule;

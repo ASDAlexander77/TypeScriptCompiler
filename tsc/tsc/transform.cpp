@@ -16,6 +16,7 @@
 #include "TypeScript/Win32ExceptionPass.h"
 #endif
 #endif
+#include "TypeScript/ExportFixPass.h"
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
 #include "TypeScript/DebugInfoPatchPass.h"
 #endif
@@ -239,6 +240,7 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
 #ifdef WIN_EXCEPTION        
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::Win32ExceptionPass()));
 #endif
+        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::ExportFixPass(llvm::Triple(m->getTargetTriple()).isWindowsMSVCEnvironment())));
 
         if (*ol == llvm::OptimizationLevel::O0)
             mpm.addPass(pb.buildO0DefaultPipeline(*ol));
