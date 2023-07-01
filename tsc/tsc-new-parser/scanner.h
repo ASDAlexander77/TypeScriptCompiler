@@ -10,6 +10,7 @@
 #include <regex>
 #include <sstream>
 #include <string>
+#include <cstring>
 #include <vector>
 
 #include "config.h"
