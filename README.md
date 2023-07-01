@@ -17,6 +17,7 @@ tsc --opt_level=0 --di --emit=obj <file>.ts
 
 # Planning
 - [x] Migrating to LLVM 16.0.3
+- [ ] Shared libraries (work in progress)
 - [ ] JavaScript Built-in classes library
 
 # Demo 
