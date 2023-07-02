@@ -59,6 +59,8 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -119,7 +121,7 @@ class MLIRGenImpl
           tempEntryBlock(nullptr),
           sourceMgr(const_cast<llvm::SourceMgr &>(sourceMgr)),
           sourceMgrHandler(const_cast<llvm::SourceMgr &>(sourceMgr), &const_cast<mlir::MLIRContext &>(context)),
-          fileName(fileNameParam),
+          mainSourceFileName(fileNameParam),
           path(pathParam)
     {
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
@@ -178,7 +180,7 @@ class MLIRGenImpl
         std::vector<string> filesToProcess;
 
         Parser parser;
-        auto sourceFile = parser.parseSourceFile(stows(fileName.str()), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
+        auto sourceFile = parser.parseSourceFile(stows(mainSourceFileName.str()), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
         for (auto refFile : sourceFile->referencedFiles)
         {
             filesToProcess.push_back(refFile.fileName);
@@ -278,9 +280,9 @@ class MLIRGenImpl
             auto isOptimized = false;
 
             // TODO: in file location helper
-            SmallString<256> FullName(fileName);
+            SmallString<256> FullName(mainSourceFileName);
             sys::path::remove_filename(FullName);
-            auto file = mlir::LLVM::DIFileAttr::get(builder.getContext(), sys::path::filename(fileName), FullName);
+            auto file = mlir::LLVM::DIFileAttr::get(builder.getContext(), sys::path::filename(mainSourceFileName), FullName);
 
             // CU
             unsigned sourceLanguage = llvm::dwarf::DW_LANG_C; 
@@ -296,7 +298,7 @@ class MLIRGenImpl
 
         // We create an empty MLIR module and codegen functions one at a time and
         // add them to the module.
-        theModule = mlir::ModuleOp::create(location, fileName);
+        theModule = mlir::ModuleOp::create(location, mainSourceFileName);
 
         if (!compileOptions.moduleTargetTriple.empty())
         {
@@ -399,9 +401,9 @@ class MLIRGenImpl
 
         for (auto includeFile : includeFiles)
         {
-            MLIRValueGuard<llvm::StringRef> vgFileName(fileName); 
+            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
             auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
-            fileName = fileNameUtf8;
+            mainSourceFileName = fileNameUtf8;
 
             if (failed(mlirGen(includeFile->statements, genContextPartial)))
             {
@@ -452,9 +454,9 @@ class MLIRGenImpl
 
         for (auto includeFile : includeFiles)
         {
-            MLIRValueGuard<llvm::StringRef> vgFileName(fileName); 
+            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
             auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
-            fileName = fileNameUtf8;
+            mainSourceFileName = fileNameUtf8;
 
             if (failed(mlirGen(includeFile->statements, genContext)))
             {
@@ -614,16 +616,47 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, const GenContext &genContext)
+    {
+        // TODO: ...
+        std::string errMsg;
+        if (llvm::sys::DynamicLibrary::LoadLibraryPermanently(filePath.str().c_str(), &errMsg))
+        {
+            emitError(location, errMsg);
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }    
+
     mlir::LogicalResult mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext)
     {
-        auto modulePath = mlirGen(importDeclarationAST->moduleSpecifier, genContext);
-        auto modulePathValue = V(modulePath);
+        auto result = mlirGen(importDeclarationAST->moduleSpecifier, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto modulePath = V(result);
 
-        auto constantOp = modulePathValue.getDefiningOp<mlir_ts::ConstantOp>();
+        auto constantOp = modulePath.getDefiningOp<mlir_ts::ConstantOp>();
         assert(constantOp);
         auto valueAttr = constantOp.getValueAttr().cast<mlir::StringAttr>();
 
         auto stringVal = valueAttr.getValue();
+
+        SmallString<256> fullPath;
+        sys::path::append(fullPath, stringVal);
+        if (sys::path::extension(fullPath) == "")
+        {
+#ifdef WIN32
+            fullPath += ".dll";
+#else
+            fullPath += ".so";
+#endif
+        }
+
+        if (sys::fs::exists(fullPath))
+        {
+            // this is shared lib.
+            return mlirGenImportSharedLib(loc(importDeclarationAST), fullPath, genContext);    
+        }
 
         return mlirGenInclude(loc(importDeclarationAST), stringVal, genContext);
     }
@@ -6532,7 +6565,11 @@ class MLIRGenImpl
                                 location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), floatAttr.getValue()));
                         })
                         .Case<mlir::StringAttr>([&](auto strAttr) {
+#ifdef NUMBER_F64
                             auto floatType = mlir::Float64Type::get(builder.getContext());
+#else
+                            auto floatType = mlir::Float32Type::get(builder.getContext());
+#endif                            
                             APFloat fValue(APFloatBase::IEEEdouble());
                             if (llvm::errorToBool(fValue.convertFromString(strAttr.getValue(), APFloat::rmNearestTiesToEven).takeError()))
                             {
@@ -6558,8 +6595,12 @@ class MLIRGenImpl
                                 location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), -floatAttr.getValue()));
                         })
                         .Case<mlir::StringAttr>([&](auto strAttr) {
+#ifdef NUMBER_F64
                             auto floatType = mlir::Float64Type::get(builder.getContext());
-                            APFloat fValue(APFloatBase::IEEEdouble());
+#else                            
+                            auto floatType = mlir::Float32Type::get(builder.getContext());
+#endif
+                            APFloat fValue(APFloatBase::IEEEdouble());                            
                             if (llvm::errorToBool(fValue.convertFromString(strAttr.getValue(), APFloat::rmNearestTiesToEven).takeError()))
                             {
                                 fValue = APFloat::getNaN(fValue.getSemantics());
@@ -19035,7 +19076,7 @@ genContext);
         auto pos = loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos;
         //return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
         //return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
-        return loc2Fuse(sourceFile, fileName.str(), pos, loc->_end - pos);
+        return loc2Fuse(sourceFile, mainSourceFileName.str(), pos, loc->_end - pos);
     }
 
     mlir::Location loc1(ts::SourceFile sourceFile, std::string fileName, int start, int length)
@@ -19208,7 +19249,7 @@ genContext);
     /// A "module" matches a TypeScript source file: containing a list of functions.
     mlir::ModuleOp theModule;
 
-    mlir::StringRef fileName;
+    mlir::StringRef mainSourceFileName;
 
     mlir::StringRef path;
 
