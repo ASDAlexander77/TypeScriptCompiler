@@ -593,21 +593,12 @@ class MLIRGenImpl
 #endif
     }
 
-    mlir::LogicalResult mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext)
+    mlir::LogicalResult mlirGenInclude(mlir::Location location, StringRef filePath, const GenContext &genContext)
     {
-        auto modulePath = mlirGen(importDeclarationAST->moduleSpecifier, genContext);
-        auto modulePathValue = V(modulePath);
-
-        auto constantOp = modulePathValue.getDefiningOp<mlir_ts::ConstantOp>();
-        assert(constantOp);
-        auto valueAttr = constantOp.getValueAttr().cast<mlir::StringAttr>();
-
-        auto stringVal = valueAttr.getValue();
-
         MLIRValueGuard<bool> vg(declarationMode);
         declarationMode = true;
 
-        auto [importSource, importIncludeFiles] = loadIncludeFile(loc(importDeclarationAST), stringVal);
+        auto [importSource, importIncludeFiles] = loadIncludeFile(location, filePath);
 
         if (mlir::failed(showMessages(importSource, importIncludeFiles)))
         {
@@ -621,6 +612,20 @@ class MLIRGenImpl
         }
 
         return mlir::failure();
+    }
+
+    mlir::LogicalResult mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext)
+    {
+        auto modulePath = mlirGen(importDeclarationAST->moduleSpecifier, genContext);
+        auto modulePathValue = V(modulePath);
+
+        auto constantOp = modulePathValue.getDefiningOp<mlir_ts::ConstantOp>();
+        assert(constantOp);
+        auto valueAttr = constantOp.getValueAttr().cast<mlir::StringAttr>();
+
+        auto stringVal = valueAttr.getValue();
+
+        return mlirGenInclude(loc(importDeclarationAST), stringVal, genContext);
     }
 
     mlir::LogicalResult mlirGenBody(Node body, const GenContext &genContext)
