@@ -620,7 +620,8 @@ class MLIRGenImpl
     {
         // TODO: ...
         std::string errMsg;
-        if (llvm::sys::DynamicLibrary::LoadLibraryPermanently(filePath.str().c_str(), &errMsg))
+        auto dynLib = llvm::sys::DynamicLibrary::getPermanentLibrary(filePath.str().c_str(), &errMsg);
+        if (!dynLib.isValid())
         {
             emitError(location, errMsg);
             return mlir::failure();
@@ -19213,6 +19214,7 @@ genContext);
         std::wcerr << std::endl << "end of dump ========================================" << std::endl;
     }
 
+    // TODO: fix issue with cercular reference of include files
     std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(mlir::Location location, StringRef fileName)
     {
         SmallString<256> fullPath;
