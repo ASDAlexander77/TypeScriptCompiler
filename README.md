@@ -38,7 +38,7 @@ function main()
 ```cmd
 tsc --opt_level=0 --di --emit=obj <file>.ts
 ```
-- [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki#whats-new)
+- [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
 # Planning
 - [x] Migrating to LLVM 16.0.3
