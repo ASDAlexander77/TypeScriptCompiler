@@ -229,8 +229,6 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
     LogicalResult matchAndRewrite(mlir_ts::PrintOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
         TypeConverterHelper tch(getTypeConverter());
@@ -355,6 +353,50 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
     }
 };
 
+class LoadLibraryPermanentlyOpLowering : public TsLlvmPattern<mlir_ts::LoadLibraryPermanentlyOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::LoadLibraryPermanentlyOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::LoadLibraryPermanentlyOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+
+        auto i8PtrTy = th.getI8PtrType();
+
+        auto loadLibraryPermanentlyFuncOp = ch.getOrInsertFunction("LLVMLoadLibraryPermanently", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, loadLibraryPermanentlyFuncOp, ValueRange{transformed.getFilename()});
+
+        return success();
+    }
+};
+
+class SearchForAddressOfSymbolOpLowering : public TsLlvmPattern<mlir_ts::SearchForAddressOfSymbolOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SearchForAddressOfSymbolOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SearchForAddressOfSymbolOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+
+        auto i8PtrTy = th.getI8PtrType();
+
+        auto searchForAddressOfSymbolFuncOp = ch.getOrInsertFunction("LLVMSearchForAddressOfSymbol", th.getFunctionType(i8PtrTy, {i8PtrTy}));
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, searchForAddressOfSymbolFuncOp, ValueRange{transformed.getSymbolName()});
+
+        return success();
+    }
+};
+
 class IsNaNOpLowering : public TsLlvmPattern<mlir_ts::IsNaNOp>
 {
   public:
@@ -364,8 +406,6 @@ class IsNaNOpLowering : public TsLlvmPattern<mlir_ts::IsNaNOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         auto loc = op->getLoc();
-
-        
 
         TypeHelper th(rewriter.getContext());
 
@@ -3183,8 +3223,6 @@ struct UnreachableOpLowering : public TsLlvmPattern<mlir_ts::UnreachableOp>
     LogicalResult matchAndRewrite(mlir_ts::UnreachableOp unreachableOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto loc = unreachableOp.getLoc();
         CodeLogicHelper clh(unreachableOp, rewriter);
 
@@ -3210,8 +3248,6 @@ struct ThrowCallOpLowering : public TsLlvmPattern<mlir_ts::ThrowCallOp>
     LogicalResult matchAndRewrite(mlir_ts::ThrowCallOp throwCallOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeConverterHelper tch(getTypeConverter());
 
         ThrowLogic tl(throwCallOp, rewriter, tch, throwCallOp.getLoc());
@@ -3230,8 +3266,6 @@ struct ThrowUnwindOpLowering : public TsLlvmPattern<mlir_ts::ThrowUnwindOp>
     LogicalResult matchAndRewrite(mlir_ts::ThrowUnwindOp throwUnwindOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeConverterHelper tch(getTypeConverter());
         ThrowLogic tl(throwUnwindOp, rewriter, tch, throwUnwindOp.getLoc());
         tl.logic(transformed.getException(), throwUnwindOp.getException().getType(), throwUnwindOp.getUnwindDest());
@@ -3251,8 +3285,6 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
     LogicalResult matchAndRewrite(mlir_ts::LandingPadOp landingPadOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         Location loc = landingPadOp.getLoc();
         if (!landingPadOp.getCleanup())
         {
@@ -5251,7 +5283,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
 #endif
         ,
-        SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+        SwitchStateInternalOpLowering, LoadLibraryPermanentlyOpLowering, SearchForAddressOfSymbolOpLowering>(
+            typeConverter, &getContext(), &tsLlvmContext);
 
 #ifdef ENABLE_TYPED_GC
     patterns.insert<

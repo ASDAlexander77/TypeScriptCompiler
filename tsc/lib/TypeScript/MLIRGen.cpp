@@ -627,6 +627,8 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        // TODO: for now, we have code in TS to load methods from DLL/Shared libs
+
         return mlir::success();
     }    
 
@@ -16557,6 +16559,7 @@ genContext);
             {"Float128Array", true},
 
             {"TypeOf", true },
+            {"Opague", true }, // to support void*
             {"Readonly", true },
             {"Partial", true },
             {"Required", true },
@@ -16612,6 +16615,7 @@ genContext);
             {"Float32Array", getArrayType(builder.getF32Type())},
             {"Float64Array", getArrayType(builder.getF64Type())},
             {"Float128Array", getArrayType(builder.getF128Type())},
+            {"Opaque", getOpaqueType()},
         };
 
         auto type = embeddedTypes[name];

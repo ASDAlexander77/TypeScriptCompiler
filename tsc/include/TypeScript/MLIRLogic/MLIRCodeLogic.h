@@ -158,7 +158,9 @@ class MLIRCustomMethods
 
     static bool isInternalFunctionName (StringRef functionName)
     {
-        static std::map<std::string, bool> m { {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}};
+        static std::map<std::string, bool> m { 
+            {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }};
         return m[functionName.str()];    
     }
 
@@ -204,30 +206,14 @@ class MLIRCustomMethods
             // switchstate - internal command;
             return mlirGenSwitchState(location, operands, genContext);
         }
-        /*
-        else
-        if (functionName == "#_last_field")
+        else if (functionName == "LoadLibraryPermanently")
         {
-            mlir::TypeSwitch<mlir::Type>(operands.front().getType())
-                .Case<mlir_ts::ConstTupleType>([&](auto tupleType)
-                {
-                    result = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-        builder.getI32IntegerAttr(tupleType.size()));
-                })
-                .Case<mlir_ts::TupleType>([&](auto tupleType)
-                {
-                    result = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-        builder.getI32IntegerAttr(tupleType.size()));
-                })
-                .Default([&](auto type)
-                {
-                    llvm_unreachable("not implemented");
-                    //result = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-        builder.getI32IntegerAttr(-1));
-                });
-
+            return mlirGenLoadLibraryPermanently(location, operands);
         }
-        */
+        else if (functionName == "SearchForAddressOfSymbol")
+        {
+            return mlirGenSearchForAddressOfSymbol(location, operands);
+        }
         else if (!genContext.allowPartialResolve)
         {
             emitError(location) << "no defined function found for '" << functionName << "'";
@@ -429,6 +415,62 @@ class MLIRCustomMethods
 
         return mlir::success();
     }
+
+    mlir::LogicalResult mlirGenLoadLibraryPermanently(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        mlir::Value fileNameValue;
+        for (auto &oper : operands)
+        {
+            if (!oper.getType().isa<mlir_ts::StringType>())
+            {
+                auto strCast =
+                    builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
+                fileNameValue = strCast;
+            }
+            else
+            {
+                fileNameValue = oper;
+            }
+        }
+
+        if (!fileNameValue)
+        {
+            return mlir::failure();
+        }
+
+        auto loadLibraryPermanentlyOp = builder.create<mlir_ts::LoadLibraryPermanentlyOp>(location, mlir::IntegerType::get(builder.getContext(), 32), fileNameValue);
+
+        return mlir::success();
+    }   
+
+    ValueOrLogicalResult mlirGenSearchForAddressOfSymbol(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        mlir::Value symbolNameValue;
+        for (auto &oper : operands)
+        {
+            if (!oper.getType().isa<mlir_ts::StringType>())
+            {
+                auto strCast =
+                    builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
+                symbolNameValue = strCast;
+            }
+            else
+            {
+                symbolNameValue = oper;
+            }
+
+            break;
+        }
+
+        if (!symbolNameValue)
+        {
+            return mlir::failure();
+        }
+
+        auto loadLibraryPermanentlyOp = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, mlir_ts::OpaqueType::get(builder.getContext()), symbolNameValue);
+
+        return V(loadLibraryPermanentlyOp);
+    }     
 };
 
 class MLIRPropertyAccessCodeLogic

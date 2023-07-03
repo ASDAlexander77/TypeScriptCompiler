@@ -110,11 +110,10 @@ function main() {
     // Converting strings to numbers
     print("Converting strings to numbers");
 
-    // TODO: parseInt('101', 2) // 5
-    parseInt('101')
+    assert(parseInt('101', 2) === 5) // 5
 
-    '1.1' + '1.1' // '1.11.1'
-        (+'1.1') + (+'1.1') // 2.2
+    assert(('1.1' + '1.1') === '1.11.1') // '1.11.1'
+    assert(((+'1.1') + (+'1.1')) === 2.2) // 2.2
 
     // Literals
     print("Literals");
