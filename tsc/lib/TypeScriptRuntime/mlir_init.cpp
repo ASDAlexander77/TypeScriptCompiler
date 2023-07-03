@@ -15,6 +15,9 @@ void init_memruntime(llvm::StringMap<void *> &exportSymbols);
 void init_asyncruntime(llvm::StringMap<void *> &exportSymbols);
 void destroy_asyncruntime();
 
+void init_dynamicruntime(llvm::StringMap<void *> &exportSymbols);
+void destroy_dynamicruntime();
+
 // Export symbols for the MLIR runner integration. All other symbols are hidden.
 #ifdef _WIN32
 #define API __declspec(dllexport)
@@ -30,6 +33,7 @@ void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols)
     init_gcruntime(exportSymbols);
     init_memruntime(exportSymbols);
     init_asyncruntime(exportSymbols);
+    init_dynamicruntime(exportSymbols);
 }
 
 extern "C" API void __mlir_runner_destroy()
@@ -37,4 +41,5 @@ extern "C" API void __mlir_runner_destroy()
     destroy_gcruntime();
     //destory_memruntime();
     destroy_asyncruntime();
+    destroy_dynamicruntime();
 }

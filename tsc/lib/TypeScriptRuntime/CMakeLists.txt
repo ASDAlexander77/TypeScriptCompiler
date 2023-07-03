@@ -19,6 +19,7 @@ add_mlir_library(TypeScriptRuntime
   gc.cpp
   MemRuntime.cpp
   AsyncRuntime.cpp  
+  DynamicRuntime.cpp  
   mlir_init.cpp
 
   EXCLUDE_FROM_LIBMLIR
