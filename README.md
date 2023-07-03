@@ -9,6 +9,31 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new 
+- Shared libraries
+``test1`` - shared library file: 
+```TypeScript
+export function test1()
+{
+	print("Hello World!");
+}
+```
+
+- Load shared library
+```TypeScript
+function LoadFunction(dllName: string, funcName: string)
+{
+	LoadLibraryPermanently(dllName);
+	return SearchForAddressOfSymbol(funcName);
+}
+
+let test1: () => void = LoadFunction("./1.dll", "test1");
+
+function main()
+{
+	test1();
+}
+```
+
 - Debug information: option `--di` in `tsc`
 ```cmd
 tsc --opt_level=0 --di --emit=obj <file>.ts
