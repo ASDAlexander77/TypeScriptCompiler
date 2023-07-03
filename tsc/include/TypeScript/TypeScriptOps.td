@@ -2155,7 +2155,7 @@ def TypeScript_GCNewExplicitlyTypedOp : TypeScript_Op<"GCNewExplicitlyTyped"> {
 }
 
 // Shared libraries support
-def TypeScript_LoadLibraryPermanentlyOp : TypeScript_Op<"LoadLibraryPermanentlyOp", [Pure]> {
+def TypeScript_LoadLibraryPermanentlyOp : TypeScript_Op<"LoadLibraryPermanentlyOp"> {
   let description = [{
     Example:
       %1 = ts.load_library_permanently %file_name : i32
@@ -2164,7 +2164,7 @@ def TypeScript_LoadLibraryPermanentlyOp : TypeScript_Op<"LoadLibraryPermanentlyO
   let results = (outs I32:$result);
 }
 
-def TypeScript_SearchForAddressOfSymbolOp : TypeScript_Op<"SearchForAddressOfSymbolOp", [Pure]> {
+def TypeScript_SearchForAddressOfSymbolOp : TypeScript_Op<"SearchForAddressOfSymbolOp"> {
   let description = [{
     Example:
       %1 = ts.search_for_address_of_symbol %symbol_name : ptr

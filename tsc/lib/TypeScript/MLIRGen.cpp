@@ -15749,6 +15749,24 @@ genContext);
             }            
         }
 
+        // opaque to hybrid func
+        if (auto opaqueType = valueType.dyn_cast<mlir_ts::OpaqueType>())
+        {
+            if (auto funcType = type.dyn_cast<mlir_ts::FunctionType>())
+            {
+                return V(builder.create<mlir_ts::CastOp>(location, type, value));
+            }            
+
+            if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
+            {
+                auto funcValue = builder.create<mlir_ts::CastOp>(
+                    location, 
+                    mlir_ts::FunctionType::get(builder.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg()), 
+                    value);
+                return V(builder.create<mlir_ts::CastOp>(location, type, funcValue));
+            }
+        }
+
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
