@@ -2821,10 +2821,11 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
         auto linkage = lch.getLinkage(globalOp);
 
+        LLVM::GlobalOp llvmGlobalOp;
         if (createAsGlobalConstructor)
         {
             // we can't have constant here as we need to initialize it in global construct
-            lch.createUndefGlobalVarIfNew(globalOp.getSymName(), getTypeConverter()->convertType(globalOp.getType()),
+            llvmGlobalOp = lch.createUndefGlobalVarIfNew(globalOp.getSymName(), getTypeConverter()->convertType(globalOp.getType()),
                                           globalOp.getValueAttr(), false /*globalOp.getConstant()*/, linkage);
 
             auto name = globalOp.getSymName().str();
@@ -2834,9 +2835,24 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         }
         else
         {
-            lch.createGlobalVarIfNew(globalOp.getSymName(), getTypeConverter()->convertType(globalOp.getType()),
+            llvmGlobalOp = lch.createGlobalVarIfNew(globalOp.getSymName(), getTypeConverter()->convertType(globalOp.getType()),
                                      globalOp.getValueAttr(), globalOp.getConstant(), globalOp.getInitializerRegion(),
                                      linkage);
+        }
+
+        // copy attributes over
+        if (llvmGlobalOp)
+        {
+            auto attrs = globalOp->getAttrs();
+            if (std::find_if(
+                attrs.begin(), 
+                attrs.end(), 
+                [](auto& attr) { 
+                    return attr.getName() == "export"; 
+                }) != attrs.end())
+            {
+                llvmGlobalOp.setSection("export");
+            }            
         }
 
         rewriter.eraseOp(globalOp);
@@ -2851,8 +2867,6 @@ struct GlobalResultOpLowering : public TsLlvmPattern<mlir_ts::GlobalResultOp>
     LogicalResult matchAndRewrite(mlir_ts::GlobalResultOp globalResultOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         rewriter.replaceOpWithNewOp<mlir::func::ReturnOp>(globalResultOp, transformed.getResults());
         return success();
     }

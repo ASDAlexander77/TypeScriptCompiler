@@ -56,15 +56,16 @@ enum class VariableScope
 
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}
+    VariableClass() : type{VariableType::Const}, isExport{false}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}
+    VariableClass(VariableType type_) : type{type_}, isExport{false}
     {
     }
 
     VariableType type;
+    bool isExport;
 
     inline bool operator==(VariableType type_) const { return type == type_; }
 };

@@ -89,7 +89,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return linkage;
     }
 
-    mlir::LogicalResult createUndefGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst,
+    LLVM::GlobalOp createUndefGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst,
                                                   LLVM::Linkage linkage = LLVM::Linkage::Internal)
     {
         auto loc = op->getLoc();
@@ -115,18 +115,20 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 rewriter.create<LLVM::ReturnOp>(loc, mlir::ValueRange{undefVal});
             }
 
-            return success();
+            return global;
         }
 
-        return failure();
+        return global;
     }
 
-    mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst, mlir::Region &initRegion,
+    LLVM::GlobalOp createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst, mlir::Region &initRegion,
                                              LLVM::Linkage linkage = LLVM::Linkage::Internal)
     {
+        LLVM::GlobalOp global;
+
         if (!type)
         {
-            return mlir::failure();
+            return global;
         }
 
         auto loc = op->getLoc();
@@ -135,7 +137,6 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         TypeHelper th(rewriter);
 
         // Create the global at the entry of the module.
-        LLVM::GlobalOp global;
         if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);
@@ -153,10 +154,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 rewriter.eraseBlock(&global.getInitializer().back());
             }
 
-            return success();
+            return global;
         }
 
-        return failure();
+        return global;
     }
 
     mlir::func::FuncOp createFunctionFromRegion(mlir::Location location, StringRef name, mlir::Region &initRegion, StringRef saveToGlobalName)

@@ -72,6 +72,44 @@ struct ExportFixPassCode
 
         return MadeChange;
     }
+
+    bool runOnGlobal(llvm::GlobalVariable &G)
+    {
+        auto MadeChange = false;
+
+        LLVM_DEBUG(llvm::dbgs() << "\nEXPORT Global: " << G.getName());
+        LLVM_DEBUG(llvm::dbgs() << "\nEXPORT Dump Before: ...\n" << G << "\n";);
+
+        // if (!G.hasLocalLinkage())
+        //     G.setDLLStorageClass(llvm::GlobalVariable::DLLExportStorageClass);
+        
+        if (G.hasSection())
+        {
+            // set DLLExport
+            if (G.getSection() == "export")
+            {
+                if (isWindowsMSVCEnvironment)
+                    G.setDLLStorageClass(llvm::GlobalVariable::DLLExportStorageClass);
+                G.setSection("");
+                MadeChange = true;
+            }
+            else if (G.getSection() == "import")
+            {
+                if (isWindowsMSVCEnvironment)
+                    G.setDLLStorageClass(llvm::GlobalVariable::DLLImportStorageClass);
+                G.setSection("");
+                MadeChange = true;
+            }
+        }
+
+        if (MadeChange)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! EXPORT Change: " << MadeChange;);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! EXPORT Dump After: ...\n" << G << "\n";);
+        }
+
+        return MadeChange;
+    }    
 };
 
 namespace ts
@@ -80,6 +118,12 @@ namespace ts
     {
         ExportFixPassCode LPF{isWindowsMSVCEnvironment};
         bool MadeChange = false;
+
+        for (auto &G : M.globals())
+        {
+            MadeChange |= LPF.runOnGlobal(G);
+        }
+
         for (auto &F : M)
         {
             MadeChange |= LPF.runOnFunction(F);

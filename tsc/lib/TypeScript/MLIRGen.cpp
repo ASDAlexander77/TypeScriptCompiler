@@ -2368,7 +2368,7 @@ class MLIRGenImpl
     struct VariableDeclarationInfo
     {
         VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
-            scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, deleted{false} 
+            scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, deleted{false} 
         {
         };
 
@@ -2424,6 +2424,7 @@ class MLIRGenImpl
             isConst = (varClass == VariableType::Const || varClass == VariableType::ConstRef) &&
                        !genContext.allocateVarsOutsideOfOperation && !genContext.allocateVarsInContextThis;
             isExternal = varClass == VariableType::External;
+            isExport = varClass.isExport;
         }
 
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
@@ -2513,6 +2514,7 @@ class MLIRGenImpl
         bool isGlobal;
         bool isConst;
         bool isExternal;
+        bool isExport;
         bool deleted;
     };
 
@@ -2666,6 +2668,12 @@ class MLIRGenImpl
             {
                 attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("External")});
             }
+
+            // add modifiers
+            if (variableDeclarationInfo.isExport)
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
+            }            
 
             globalOp = builder.create<mlir_ts::GlobalOp>(
                 location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, mlir::Attribute(), attrs);
@@ -3264,10 +3272,21 @@ class MLIRGenImpl
         auto isLet = (variableDeclarationListAST->flags & NodeFlags::Let) == NodeFlags::Let;
         auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
         auto isExternal = (variableDeclarationListAST->flags & NodeFlags::Ambient) == NodeFlags::Ambient;
-        auto varClass = isExternal ? VariableType::External
+        VariableClass varClass = isExternal ? VariableType::External
                         : isLet    ? VariableType::Let
                         : isConst  ? VariableType::Const
                                    : VariableType::Var;
+
+        if (variableDeclarationListAST->parent)
+        {
+            for (auto modifier : variableDeclarationListAST->parent->modifiers)
+            {
+                if (modifier == SyntaxKind::ExportKeyword)
+                {
+                    varClass.isExport = true;
+                }            
+            }
+        }
 
         for (auto &item : variableDeclarationListAST->declarations)
         {
@@ -3282,6 +3301,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(VariableStatement variableStatementAST, const GenContext &genContext)
     {
+        // we need it for support "export" keyword
+        variableStatementAST->declarationList->parent = variableStatementAST;
         return mlirGen(variableStatementAST->declarationList, genContext);
     }
 
