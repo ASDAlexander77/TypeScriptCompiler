@@ -628,6 +628,14 @@ class MLIRGenImpl
         }
 
         // TODO: for now, we have code in TS to load methods from DLL/Shared libs
+        auto addrOfDeclText = dynLib.getAddressOfSymbol("__decl_info");
+        if (!addrOfDeclText)
+        {
+            emitError(location, "missing information about shared library. (reference __decl_info is missing)");
+            return mlir::failure();
+        }
+        
+        auto dataPtr = *(const char**)addrOfDeclText;
 
         return mlir::success();
     }    

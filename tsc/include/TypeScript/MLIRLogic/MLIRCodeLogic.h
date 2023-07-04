@@ -160,7 +160,7 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }};
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }};
         return m[functionName.str()];    
     }
 
@@ -213,6 +213,10 @@ class MLIRCustomMethods
         else if (functionName == "SearchForAddressOfSymbol")
         {
             return mlirGenSearchForAddressOfSymbol(location, operands);
+        }
+        else if (functionName == "LoadReference")
+        {
+            return mlirGenLoadReference(location, operands);
         }
         else if (!genContext.allowPartialResolve)
         {
@@ -471,6 +475,35 @@ class MLIRCustomMethods
 
         return V(loadLibraryPermanentlyOp);
     }     
+
+    ValueOrLogicalResult mlirGenLoadReference(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        mlir::Value refValue;
+        for (auto &oper : operands)
+        {
+            if (oper.getType().isa<mlir_ts::OpaqueType>())
+            {
+                auto opaqueCast =
+                    builder.create<mlir_ts::CastOp>(location, mlir_ts::RefType::get(builder.getContext(), oper.getType()), oper);
+                refValue = opaqueCast;
+            }
+            else
+            {
+                refValue = oper;
+            }
+
+            break;
+        }
+
+        if (!refValue)
+        {
+            return mlir::failure();
+        }
+
+        auto loadedValue = builder.create<mlir_ts::LoadOp>(location, mlir_ts::OpaqueType::get(builder.getContext()), refValue);
+
+        return V(loadedValue);
+    }
 };
 
 class MLIRPropertyAccessCodeLogic
