@@ -33,6 +33,13 @@ template <typename OUT> class Printer
         forEachChildPrint(node);
     }
 
+    template <typename T>
+    void printNodes(NodeArray<T> nodes, const char *open = nullptr, const char *separator = nullptr,
+                              const char *end = nullptr, bool ifAny = false)
+    {
+        forEachChildrenPrint(nodes, open, separator, end, ifAny);
+    }
+
   protected:
     template <typename T>
     void forEachChildrenPrint(NodeArray<T> nodes, const char *open = nullptr, const char *separator = nullptr,
@@ -232,11 +239,15 @@ template <typename OUT> class Printer
         case SyntaxKind::FunctionDeclaration:
         case SyntaxKind::ArrowFunction: {
 
+            forEachChildrenPrint(node->decorators);
+            forEachChildrenPrint(node->modifiers);
+
+            if (!node->decorators.empty() || !node->modifiers.empty())
+                out << " ";
+
             if (kind == SyntaxKind::FunctionExpression || kind == SyntaxKind::FunctionDeclaration)
                 out << "function ";
 
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
             auto functionLikeDeclarationBase = node.as<FunctionLikeDeclarationBase>();
             forEachChildPrint(functionLikeDeclarationBase->asteriskToken);
             forEachChildPrint(functionLikeDeclarationBase->name);
@@ -1107,7 +1118,8 @@ template <typename OUT> class Printer
         case SyntaxKind::NullKeyword:
         case SyntaxKind::StringKeyword:
         case SyntaxKind::NumberKeyword:
-        case SyntaxKind::ThisKeyword: {
+        case SyntaxKind::ThisKeyword:
+        case SyntaxKind::ExportKeyword: {
             out << Scanner::tokenStrings[node->_kind];
             break;
         }

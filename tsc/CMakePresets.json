@@ -177,6 +177,7 @@
     "testPresets": [
         {
             "name": "test-default",
+            "hidden": true,
             "configurePreset": "default",
             "configuration": "Debug",
             "output": {

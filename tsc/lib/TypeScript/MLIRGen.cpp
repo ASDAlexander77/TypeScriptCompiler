@@ -312,6 +312,24 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult createExportGlobalVar(const GenContext &genContext)
+    {
+        if (!exports.rdbuf()->in_avail())
+        {
+            return mlir::success();
+        }
+
+        auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
+            auto litValue = V(mlirGenStringValue(location, convertWideToUTF8(exports.str())));
+            return std::make_pair(litValue.getType(), litValue);
+        };
+
+        VariableClass varClass = VariableType::Var;
+        varClass.isExport = true;
+        registerVariable(mlir::UnknownLoc::get(builder.getContext()), "__decl_info", true, varClass, typeWithInit, genContext);
+        return mlir::success();
+    }    
+
     int processStatements(NodeArray<Statement> statements,
                           mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
                           const GenContext &genContext)
@@ -450,6 +468,8 @@ class MLIRGenImpl
         });
 
         // Process generating here
+        exports.str(S(""));
+        exports.clear();
         GenContext genContext{};
 
         for (auto includeFile : includeFiles)
@@ -470,6 +490,9 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }
+
+        // exports
+        createExportGlobalVar(genContext);
 
         clearTempModule();
 
@@ -655,6 +678,14 @@ class MLIRGenImpl
         {
             // process shared lib declarations
             auto dataPtr = *(const char**)addrOfDeclText;
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: " << dataPtr << "\n";);
+
+            auto importData = ConvertUTF8toWide(dataPtr);
+            if (mlir::failed(parsePartialStatements(importData, genContext)))
+            {
+                assert(false);
+                return mlir::failure();
+            }            
         }
         else
         {
@@ -3311,13 +3342,7 @@ class MLIRGenImpl
 
         if (variableDeclarationListAST->parent)
         {
-            for (auto modifier : variableDeclarationListAST->parent->modifiers)
-            {
-                if (modifier == SyntaxKind::ExportKeyword)
-                {
-                    varClass.isExport = true;
-                }            
-            }
+            varClass.isExport = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
         }
 
         for (auto &item : variableDeclarationListAST->declarations)
@@ -3822,12 +3847,10 @@ class MLIRGenImpl
         }
 
         // add modifiers
-        for (auto modifier : functionLikeDeclarationBaseAST->modifiers)
+        if (hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword))
         {
-            if (modifier == SyntaxKind::ExportKeyword)
-            {
-                attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
-            }            
+            attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
+            addToExport(functionLikeDeclarationBaseAST, funcProto->getReturnType(), genContext);
         }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
@@ -18828,6 +18851,37 @@ genContext);
         return mlir::success();
     }
 
+    void addToExport(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Type returnType, const GenContext &genContext)    
+    {
+        Printer<std::wostream> printer(exports);
+        
+        //printer.printNode(functionLikeDeclarationBaseAST);
+
+        exports << "let ";
+        //  functionLikeDeclarationBaseAST->name
+        printer.printNode(functionLikeDeclarationBaseAST->name);
+        exports << ":";
+        printer.printNodes(functionLikeDeclarationBaseAST->parameters, "(", ", ", ")");
+        exports << "=>";
+        if (functionLikeDeclarationBaseAST->type)
+            printer.printNode(functionLikeDeclarationBaseAST->type);
+        else if (returnType)
+            printType<std::wostream>(exports, returnType);
+        else
+            exports << "void";
+        exports << "=SearchForAddressOfSymbol('";
+        printer.printNode(functionLikeDeclarationBaseAST->name);
+        exports << "');" << std::endl;
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! added to export: \n" << convertWideToUTF8(exports.str()) << "\n";);
+    }
+
+    template <typename T>
+    void printType(T &out, mlir::Type type)
+    {
+        llvm_unreachable("not implemented");
+    }
+
     auto getNamespace() -> StringRef
     {
         if (currentNamespace->fullName.empty())
@@ -19262,16 +19316,21 @@ genContext);
 
     mlir::LogicalResult parsePartialStatements(string src)
     {
+        GenContext emptyContext{};
+        return parsePartialStatements(src, emptyContext);
+    }
+
+    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext)
+    {
         Parser parser;
         auto module = parser.parseSourceFile(S("Temp"), src, ScriptTarget::Latest);
 
         MLIRNamespaceGuard nsGuard(currentNamespace);
         currentNamespace = rootNamespace;
 
-        GenContext emptyContext;
         for (auto statement : module->statements)
         {
-            if (mlir::failed(mlirGen(statement, emptyContext)))
+            if (mlir::failed(mlirGen(statement, genContext)))
             {
                 return mlir::failure();
             }
@@ -19358,6 +19417,8 @@ genContext);
     ts::SourceFile sourceFile;
 
     bool declarationMode;
+
+    stringstream exports;
 
 private:
     std::string label;
