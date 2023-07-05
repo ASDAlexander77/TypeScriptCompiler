@@ -179,8 +179,7 @@
             "name": "test-default",
             "configurePreset": "default",
             "output": {
-                "outputOnFailure": true,
-                "debug": true
+                "outputOnFailure": true
             },
             "execution": {
                 "noTestsAction": "error",
