@@ -179,7 +179,8 @@
             "name": "test-default",
             "configurePreset": "default",
             "output": {
-                "outputOnFailure": true
+                "outputOnFailure": true,
+                "debug": true
             },
             "execution": {
                 "noTestsAction": "error",
@@ -187,54 +188,51 @@
             }
         },
         {
+            "name": "test-linux-default",
+            "hidden": true,
+            "inherits": "test-default",
+            "configurePreset": "test-default",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
             "name": "test-windows-msbuild-debug",
             "configurePreset": "windows-msbuild-debug",
+            "configuration": "Debug",
             "inherits": "test-default"
         },
         {
             "name": "test-windows-msbuild-release",
             "configurePreset": "windows-msbuild-release",
+            "configuration": "Release",
             "inherits": "test-default"
         },
         {
             "name": "test-linux-ninja-gcc-debug",
             "configurePreset": "linux-ninja-gcc-debug",
-            "inherits": "test-default",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
+            "configuration": "Debug",
+            "inherits": "test-linux-default"
         },
         {
             "name": "test-linux-ninja-gcc-release",
             "configurePreset": "linux-ninja-gcc-release",
-            "inherits": "test-default",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
+            "configuration": "Release",
+            "inherits": "test-linux-default"
         },
         {
             "name": "test-linux-ninja-clang-debug",
             "configurePreset": "linux-ninja-clang-debug",
-            "inherits": "test-default",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
+            "configuration": "Debug",
+            "inherits": "test-linux-default"
         },
         {
             "name": "test-linux-ninja-clang-release",
             "configurePreset": "linux-ninja-clang-release",
-            "inherits": "test-default",
-            "condition": {
-                "type": "equals",
-                "lhs": "${hostSystemName}",
-                "rhs": "Linux"
-            }
+            "configuration": "Release",
+            "inherits": "test-linux-default"
         }
     ]
 }
