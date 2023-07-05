@@ -68,14 +68,13 @@
             "generator": "Ninja Multi-Config",
             "displayName": "Ninja Multi-Config",
             "description": "GCC (current) x86_64-linux-gnu",
-            "cacheVariables": {
-            },
+            "cacheVariables": {},
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
                 "rhs": "Linux"
             }
-        },        
+        },
         {
             "name": "linux-ninja-debug",
             "hidden": true,
@@ -85,7 +84,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             }
-        },        
+        },
         {
             "name": "linux-ninja-release",
             "hidden": true,
@@ -95,7 +94,7 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }
-        },        
+        },
         {
             "name": "linux-ninja-gcc-debug",
             "inherits": "linux-ninja-debug",
@@ -177,7 +176,7 @@
     ],
     "testPresets": [
         {
-            "name": "default",
+            "name": "test-default",
             "configurePreset": "default",
             "output": {
                 "outputOnFailure": true
@@ -188,19 +187,54 @@
             }
         },
         {
-            "name": "windows-msbuild",
-            "configurePreset": "windows-msbuild",
-            "inherits": "default"
+            "name": "test-windows-msbuild-debug",
+            "configurePreset": "windows-msbuild-debug",
+            "inherits": "test-default"
         },
         {
-            "name": "linux-ninja",
-            "configurePreset": "linux-ninja",
-            "inherits": "default",
+            "name": "test-windows-msbuild-release",
+            "configurePreset": "windows-msbuild-release",
+            "inherits": "test-default"
+        },
+        {
+            "name": "test-linux-ninja-gcc-debug",
+            "configurePreset": "linux-ninja-gcc-debug",
+            "inherits": "test-default",
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
                 "rhs": "Linux"
-            }            
+            }
+        },
+        {
+            "name": "test-linux-ninja-gcc-release",
+            "configurePreset": "linux-ninja-gcc-release",
+            "inherits": "test-default",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "test-linux-ninja-clang-debug",
+            "configurePreset": "linux-ninja-clang-debug",
+            "inherits": "test-default",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "test-linux-ninja-clang-release",
+            "configurePreset": "linux-ninja-clang-release",
+            "inherits": "test-default",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
         }
     ]
 }
