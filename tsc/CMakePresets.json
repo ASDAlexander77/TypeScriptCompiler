@@ -63,18 +63,77 @@
         },
         {
             "name": "linux-ninja",
+            "hidden": true,
             "inherits": "default",
             "generator": "Ninja Multi-Config",
-            "displayName": "GCC 11.3.0 x86_64-linux-gnu",
-            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",
+            "displayName": "Ninja Multi-Config",
+            "description": "GCC (current) x86_64-linux-gnu",
             "cacheVariables": {
-                "CMAKE_C_COMPILER": "/usr/bin/gcc",
-                "CMAKE_CXX_COMPILER": "/usr/bin/g++"
             },
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
                 "rhs": "Linux"
+            }
+        },        
+        {
+            "name": "linux-ninja-debug",
+            "hidden": true,
+            "inherits": "linux-ninja",
+            "displayName": "Ninja Multi-Config - Debug",
+            "description": "Ninja Multi-Config - Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },        
+        {
+            "name": "linux-ninja-release",
+            "hidden": true,
+            "inherits": "linux-ninja",
+            "displayName": "Ninja Multi-Config - Release",
+            "description": "Ninja Multi-Config - Release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },        
+        {
+            "name": "linux-ninja-gcc-debug",
+            "inherits": "linux-ninja-debug",
+            "displayName": "GCC (current) Debug",
+            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++"
+            }
+        },
+        {
+            "name": "linux-ninja-gcc-release",
+            "inherits": "linux-ninja-release",
+            "displayName": "GCC (current) Release",
+            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++"
+            }
+        },
+        {
+            "name": "linux-ninja-clang-debug",
+            "inherits": "linux-ninja-debug",
+            "displayName": "Clang (current) Debug",
+            "description": "Using compilers: C = /usr/bin/clang, CXX = /usr/bin/clang++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++"
+            }
+        },
+        {
+            "name": "linux-ninja-clang-release",
+            "inherits": "linux-ninja-release",
+            "displayName": "Clang (current) Release",
+            "description": "Using compilers: C = /usr/bin/clang, CXX = /usr/bin/clang++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++"
             }
         }
     ],
@@ -92,15 +151,27 @@
             "configuration": "Release"
         },
         {
-            "name": "linux-ninja-debug",
-            "displayName": "GCC 11.3.0 x86_64-linux-gnu - Debug",
-            "configurePreset": "linux-ninja",
+            "name": "build-linux-ninja-debug",
+            "displayName": "GCC (current) - Debug",
+            "configurePreset": "linux-ninja-gcc-debug",
             "configuration": "Debug"
         },
         {
-            "name": "linux-ninja-release",
-            "displayName": "GCC 11.3.0 x86_64-linux-gnu - Release",
-            "configurePreset": "linux-ninja",
+            "name": "build-linux-ninja-release",
+            "displayName": "GCC (current) - Release",
+            "configurePreset": "linux-ninja-gcc-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "build-linux-ninja-debug",
+            "displayName": "Clang (current) - Debug",
+            "configurePreset": "linux-ninja-clang-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "build-linux-ninja-release",
+            "displayName": "Clang (current) - Release",
+            "configurePreset": "linux-ninja-clang-release",
             "configuration": "Release"
         }
     ],
@@ -120,6 +191,16 @@
             "name": "windows-msbuild",
             "configurePreset": "windows-msbuild",
             "inherits": "default"
+        },
+        {
+            "name": "linux-ninja",
+            "configurePreset": "linux-ninja",
+            "inherits": "default",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }            
         }
     ]
 }
