@@ -627,15 +627,39 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // TODO: for now, we have code in TS to load methods from DLL/Shared libs
-        auto addrOfDeclText = dynLib.getAddressOfSymbol("__decl_info");
-        if (!addrOfDeclText)
+        // load library
+        auto fullInitGlobalFuncName = getFullNamespaceName(MLIRHelper::getAnonymousName(location, ".ll"));
+
         {
-            emitError(location, "missing information about shared library. (reference __decl_info is missing)");
-            return mlir::failure();
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+
+            // create global construct
+            auto funcType = getFunctionType({}, {}, false);
+
+            if (mlir::failed(mlirGenFunctionBody(location, fullInitGlobalFuncName, funcType,
+                [&](const GenContext &genContext) {
+                    auto litValue = mlirGenStringValue(location, filePath.str());
+                    auto strVal = cast(location, getStringType(), litValue, genContext);
+                    builder.create<mlir_ts::LoadLibraryPermanentlyOp>(location, mth.getI32Type(), strVal);
+                    return mlir::success();
+                }, genContext)))
+            {
+                return mlir::failure();
+            }
         }
-        
-        auto dataPtr = *(const char**)addrOfDeclText;
+
+        builder.create<mlir_ts::GlobalConstructorOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName));
+
+        // TODO: for now, we have code in TS to load methods from DLL/Shared libs
+        if (auto addrOfDeclText = dynLib.getAddressOfSymbol("__decl_info"))
+        {
+            // process shared lib declarations
+            auto dataPtr = *(const char**)addrOfDeclText;
+        }
+        else
+        {
+            emitWarning(location, "missing information about shared library. (reference __decl_info is missing)");
+        }
 
         return mlir::success();
     }    
