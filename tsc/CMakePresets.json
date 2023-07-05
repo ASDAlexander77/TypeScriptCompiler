@@ -178,12 +178,14 @@
         {
             "name": "test-default",
             "configurePreset": "default",
+            "configuration": "Debug",
             "output": {
                 "outputOnFailure": true
             },
             "execution": {
                 "noTestsAction": "error",
-                "stopOnFailure": true
+                "stopOnFailure": true,
+                "jobs": 16
             }
         },
         {
