@@ -2725,11 +2725,11 @@ class MLIRTypeHelper
     void printType(T &out, mlir::Type type)
     {
         llvm::TypeSwitch<mlir::Type>(type)
-            .Case<mlir_ts::ArrayType>([&](auto t) {
+            .template Case<mlir_ts::ArrayType>([&](auto t) {
                 printType(out, t.getElementType());
                 out << "[]";
             })
-            .Case<mlir_ts::BoundFunctionType>([&](auto t) {
+            .template Case<mlir_ts::BoundFunctionType>([&](auto t) {
                 out << "(";
                 for (auto subType : t.getInputs())
                 {
@@ -2742,13 +2742,13 @@ class MLIRTypeHelper
                     printType(out, subType);
                 }
             })
-            .Case<mlir_ts::BoundRefType>([&](auto t) {
+            .template Case<mlir_ts::BoundRefType>([&](auto t) {
                 printType(out, t.getElementType());
             })
-            .Case<mlir_ts::ClassType>([&](auto t) {
+            .template Case<mlir_ts::ClassType>([&](auto t) {
                 out << t.getName().getValue().str().c_str();
             })
-            .Case<mlir_ts::ClassStorageType>([&](auto t) {
+            .template Case<mlir_ts::ClassStorageType>([&](auto t) {
                 out << "{";
                 auto first = true;
                 for (auto subType : t.getFields())
@@ -2764,18 +2764,18 @@ class MLIRTypeHelper
 
                 out << "}";                                    
             })
-            .Case<mlir_ts::InterfaceType>([&](auto t) {
+            .template Case<mlir_ts::InterfaceType>([&](auto t) {
                 out << t.getName().getValue().str().c_str();
             })
-            .Case<mlir_ts::ConstArrayType>([&](auto t) {
+            .template Case<mlir_ts::ConstArrayType>([&](auto t) {
                 printType(out, t.getElementType());
                 out << "[]";
             })
-            .Case<mlir_ts::ConstArrayValueType>([&](auto t) {
+            .template Case<mlir_ts::ConstArrayValueType>([&](auto t) {
                 printType(out, t.getElementType());
                 out << "[]";
             })
-            .Case<mlir_ts::ConstTupleType>([&](auto t) {
+            .template Case<mlir_ts::ConstTupleType>([&](auto t) {
                 out << "{";
                 auto first = true;
                 for (auto subType : t.getFields())
@@ -2791,10 +2791,10 @@ class MLIRTypeHelper
 
                 out << "}";
             })
-            .Case<mlir_ts::EnumType>([&](auto t) {
+            .template Case<mlir_ts::EnumType>([&](auto t) {
                 printType(out, t.getElementType());
             })
-            .Case<mlir_ts::FunctionType>([&](auto t) {
+            .template Case<mlir_ts::FunctionType>([&](auto t) {
                 out << "(";
                 for (auto subType : t.getInputs())
                 {
@@ -2807,7 +2807,7 @@ class MLIRTypeHelper
                     printType(out, subType);
                 }
             })
-            .Case<mlir_ts::HybridFunctionType>([&](auto t) {
+            .template Case<mlir_ts::HybridFunctionType>([&](auto t) {
                 out << "(";
                 for (auto subType : t.getInputs())
                 {
@@ -2820,7 +2820,7 @@ class MLIRTypeHelper
                     printType(out, subType);
                 }
             })
-            .Case<mlir_ts::ConstructFunctionType>([&](auto t) {
+            .template Case<mlir_ts::ConstructFunctionType>([&](auto t) {
                 out << "new (";
                 for (auto subType : t.getInputs())
                 {
@@ -2833,23 +2833,23 @@ class MLIRTypeHelper
                     printType(out, subType);
                 }
             })
-            .Case<mlir_ts::InferType>([&](auto t) {
+            .template Case<mlir_ts::InferType>([&](auto t) {
                 out << "infer ";
                 printType(out, t.getElementType());
             })
-            .Case<mlir_ts::LiteralType>([&](auto t) {
+            .template Case<mlir_ts::LiteralType>([&](auto t) {
                 printType(out, t.getElementType());
             })
-            .Case<mlir_ts::OptionalType>([&](auto t) {
+            .template Case<mlir_ts::OptionalType>([&](auto t) {
                 printType(out, t.getElementType());
                 out << " | undefined";
             })
-            .Case<mlir_ts::RefType>([&](auto t) {
+            .template Case<mlir_ts::RefType>([&](auto t) {
                 out << "Reference<";
                 printType(out, t.getElementType());
                 out << ">";
             })
-            .Case<mlir_ts::TupleType>([&](auto t) {
+            .template Case<mlir_ts::TupleType>([&](auto t) {
                 out << "{";
                 auto first = true;
                 for (auto subType : t.getFields())
@@ -2865,7 +2865,7 @@ class MLIRTypeHelper
 
                 out << "}";
             })
-            .Case<mlir_ts::UnionType>([&](auto t) {
+            .template Case<mlir_ts::UnionType>([&](auto t) {
                 auto first = true;
                 for (auto subType : t.getTypes())
                 {
@@ -2878,7 +2878,7 @@ class MLIRTypeHelper
                     first = false;
                 }
             })
-            .Case<mlir_ts::IntersectionType>([&](auto t) {
+            .template Case<mlir_ts::IntersectionType>([&](auto t) {
                 auto first = true;
                 for (auto subType : t.getTypes())
                 {
@@ -2891,10 +2891,10 @@ class MLIRTypeHelper
                     first = false;
                 }
             })
-            .Case<mlir_ts::ValueRefType>([&](auto t) {
+            .template Case<mlir_ts::ValueRefType>([&](auto t) {
                 printType(out, t.getElementType());
             })
-            .Case<mlir_ts::ConditionalType>([&](auto t) {
+            .template Case<mlir_ts::ConditionalType>([&](auto t) {
                 printType(out, t.getCheckType());
                 out << "extends";
                 printType(out, t.getCheckType());
@@ -2903,17 +2903,17 @@ class MLIRTypeHelper
                 out << " : ";
                 printType(out, t.getFalseType());
             })
-            .Case<mlir_ts::IndexAccessType>([&](auto t) {
+            .template Case<mlir_ts::IndexAccessType>([&](auto t) {
                 printType(out, t.getType());
                 out << "[";
                 printType(out, t.getIndexType());
                 out << "]";
             })
-            .Case<mlir_ts::KeyOfType>([&](auto t) {
+            .template Case<mlir_ts::KeyOfType>([&](auto t) {
                 out << "keyof ";
                 printType(out, t.getElementType());
             })
-            .Case<mlir_ts::MappedType>([&](auto t) {
+            .template Case<mlir_ts::MappedType>([&](auto t) {
                 out << "[";
                 printType(out, t.getElementType());
                 out << " of ";
@@ -2922,7 +2922,7 @@ class MLIRTypeHelper
                 printType(out, t.getConstrainType());
                 out << "]";
             })
-            .Case<mlir_ts::TypeReferenceType>([&](auto t) {
+            .template Case<mlir_ts::TypeReferenceType>([&](auto t) {
                 out << "<";
                 for (auto subType : t.getTypes())
                 {
@@ -2931,49 +2931,49 @@ class MLIRTypeHelper
                 }
                 out << ">";
             })
-            .Case<mlir_ts::TypePredicateType>([&](auto t) {
+            .template Case<mlir_ts::TypePredicateType>([&](auto t) {
                 printType(out, t.getElementType());
             })
-            .Case<mlir_ts::ObjectType>([&](auto t) {
+            .template Case<mlir_ts::ObjectType>([&](auto t) {
                 out << "object";
             })
-            .Case<mlir_ts::NeverType>([&](auto) { 
+            .template Case<mlir_ts::NeverType>([&](auto) { 
                 out << "never";
             })
-            .Case<mlir_ts::UnknownType>([&](auto) {
+            .template Case<mlir_ts::UnknownType>([&](auto) {
                 out << "unknown";
             })
-            .Case<mlir_ts::AnyType>([&](auto) {
+            .template Case<mlir_ts::AnyType>([&](auto) {
                 out << "any";
             })
-            .Case<mlir_ts::NumberType>([&](auto) {
+            .template Case<mlir_ts::NumberType>([&](auto) {
                 out << "number";
             })
-            .Case<mlir_ts::StringType>([&](auto) {
+            .template Case<mlir_ts::StringType>([&](auto) {
                 out << "string";
             })
-            .Case<mlir_ts::BooleanType>([&](auto) {
+            .template Case<mlir_ts::BooleanType>([&](auto) {
                 out << "boolean";
             })
-            .Case<mlir_ts::OpaqueType>([&](auto) {
+            .template Case<mlir_ts::OpaqueType>([&](auto) {
                 out << "Opaque";
             })
-            .Case<mlir_ts::VoidType>([&](auto) {
+            .template Case<mlir_ts::VoidType>([&](auto) {
                 out << "void";
             })
-            .Case<mlir_ts::ConstType>([&](auto) {
+            .template Case<mlir_ts::ConstType>([&](auto) {
                 out << "const";
             })
-            .Case<mlir::NoneType>([&](auto) {
+            .template Case<mlir::NoneType>([&](auto) {
                 out << "void";
             })
-            .Case<mlir::IntegerType>([&](auto) {
+            .template Case<mlir::IntegerType>([&](auto) {
                 out << "TypeOf<1>";
             })
-            .Case<mlir::FloatType>([&](auto) {
+            .template Case<mlir::FloatType>([&](auto) {
                 out << "TypeOf<1.0>";
             })
-            .Case<mlir::IndexType>([&](auto) {
+            .template Case<mlir::IndexType>([&](auto) {
                 out << "TypeOf<1>";
             })
             .Default([](mlir::Type t) { 
