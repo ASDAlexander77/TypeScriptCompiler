@@ -2681,6 +2681,10 @@ class MLIRGenImpl
         }
 
         globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
+        if (variableDeclarationInfo.isExport)
+        {
+            addToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
+        }
 
         if (!variableDeclarationInfo.initial)
         {
@@ -2739,7 +2743,7 @@ class MLIRGenImpl
             }            
 
             globalOp = builder.create<mlir_ts::GlobalOp>(
-                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, mlir::Attribute(), attrs);
+                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, mlir::Attribute(), attrs);                
 
             variableDeclarationInfo.globalOp = globalOp;
 
@@ -2758,6 +2762,10 @@ class MLIRGenImpl
                     }
 
                     globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
+                    if (variableDeclarationInfo.isExport)
+                    {
+                        addToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
+                    }
                 }
                 else
                 {
@@ -2775,6 +2783,10 @@ class MLIRGenImpl
         }
 
         globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
+        if (variableDeclarationInfo.isExport)
+        {
+            addToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
+        }
 
         if (variableDeclarationInfo.isExternal)
         {
@@ -16654,6 +16666,7 @@ genContext);
 
             {"TypeOf", true },
             {"Opague", true }, // to support void*
+            {"Reference", true }, // to support dll import
             {"Readonly", true },
             {"Partial", true },
             {"Required", true },
@@ -16724,6 +16737,10 @@ genContext);
                 auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 type = mth.wideStorageType(type);
                 return type;
+            })
+            .Case("Reference", [&] (auto typeArguments, auto genContext) {
+                auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return mlir_ts::RefType::get(type);
             })
             .Case("Readonly", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
             .Case("Partial", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
@@ -18851,6 +18868,24 @@ genContext);
         return mlir::success();
     }
 
+    void addToExport(StringRef name, mlir::Type type, const GenContext &genContext)
+    {
+        Printer<std::wostream> printer(exports);
+        
+        //printer.printNode(functionLikeDeclarationBaseAST);
+
+        auto nameWide = ConvertUTF8toWide(name.str());
+        exports << "let ";
+        exports << nameWide;
+        exports << "=LoadReference(<Reference<";
+        mth.printType<std::wostream>(exports, type);
+        exports << ">>SearchForAddressOfSymbol('";
+        exports << nameWide;
+        exports << "'));" << std::endl;
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! added to export: \n" << convertWideToUTF8(exports.str()) << "\n";);        
+    }
+    
     void addToExport(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Type returnType, const GenContext &genContext)    
     {
         Printer<std::wostream> printer(exports);
@@ -18866,7 +18901,7 @@ genContext);
         if (functionLikeDeclarationBaseAST->type)
             printer.printNode(functionLikeDeclarationBaseAST->type);
         else if (returnType)
-            printType<std::wostream>(exports, returnType);
+            mth.printType<std::wostream>(exports, returnType);
         else
             exports << "void";
         exports << "=SearchForAddressOfSymbol('";
@@ -18874,12 +18909,6 @@ genContext);
         exports << "');" << std::endl;
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! added to export: \n" << convertWideToUTF8(exports.str()) << "\n";);
-    }
-
-    template <typename T>
-    void printType(T &out, mlir::Type type)
-    {
-        llvm_unreachable("not implemented");
     }
 
     auto getNamespace() -> StringRef

@@ -500,8 +500,7 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
-        auto loadedValue = builder.create<mlir_ts::LoadOp>(location, mlir_ts::OpaqueType::get(builder.getContext()), refValue);
-
+        auto loadedValue = builder.create<mlir_ts::LoadOp>(location, refValue.getType().cast<mlir_ts::RefType>().getElementType(), refValue);
         return V(loadedValue);
     }
 };
