@@ -289,7 +289,10 @@ class MLIRTypeIterator
                                   return false;
 
                               return true;
-                          })                                      
+                          })       
+                          .Case<mlir_ts::NamedGenericType>([&](auto t) {
+                              return true;
+                          })                                                             
                           .Case<mlir_ts::ObjectType>([&](auto t) {
                               if (!iterate(t.getStorageType()))
                                   return false;
