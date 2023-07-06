@@ -639,6 +639,72 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    std::string convertSharedLibInfoIntoLang(std::string sharedLibInfo)
+    {
+        auto s = sharedLibInfo;
+        std::stringstream ss; ss << std::endl;
+        std::string delimiter = ss.str();
+
+        std::string recordType;
+        std::string name;
+        std::string type;
+
+        std::stringstream lang;
+
+        // cycle
+        size_t pos = 0;
+        size_t posPrev = 0;
+        std::string token;
+
+        auto number = 0;
+        while ((pos = s.find(delimiter, posPrev)) != std::string::npos)
+        {
+            number++;
+            token = s.substr(posPrev, pos - posPrev);
+            posPrev = pos + 1;
+            switch (number)
+            {
+                case 1:
+                    recordType = token;
+                    break;
+                case 2:
+                    name = token;
+                    break;
+                case 3:
+                    type = token;
+                    
+                    // clear
+                    number = 0;
+                    // process
+
+                    if (recordType == "F")
+                    {
+                        lang << "let ";
+                        lang << name;
+                        lang << ":";
+                        lang << type;
+                        lang << "=SearchForAddressOfSymbol('";
+                        lang << name;
+                        lang << "');" << std::endl;
+                    }
+                    else if (recordType == "G")
+                    {
+                        lang << "let ";
+                        lang << name;
+                        lang << "=LoadReference(<Reference<";
+                        lang << type;
+                        lang << ">>SearchForAddressOfSymbol('";
+                        lang << name;
+                        lang << "'));" << std::endl;
+                    }
+
+                    break;
+            }
+        }
+
+        return lang.str();
+    }
+
     mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, const GenContext &genContext)
     {
         // TODO: ...
@@ -678,9 +744,13 @@ class MLIRGenImpl
         {
             // process shared lib declarations
             auto dataPtr = *(const char**)addrOfDeclText;
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: " << dataPtr << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
 
-            auto importData = ConvertUTF8toWide(dataPtr);
+            auto tsPart = convertSharedLibInfoIntoLang(dataPtr);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib include: \n" << tsPart << "\n";);
+
+            auto importData = ConvertUTF8toWide(tsPart);
             if (mlir::failed(parsePartialStatements(importData, genContext)))
             {
                 assert(false);
@@ -2683,7 +2753,7 @@ class MLIRGenImpl
         globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
         if (variableDeclarationInfo.isExport)
         {
-            addToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
+            addGlobalToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
         }
 
         if (!variableDeclarationInfo.initial)
@@ -2764,7 +2834,7 @@ class MLIRGenImpl
                     globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
                     if (variableDeclarationInfo.isExport)
                     {
-                        addToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
+                        addGlobalToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
                     }
                 }
                 else
@@ -2785,7 +2855,7 @@ class MLIRGenImpl
         globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
         if (variableDeclarationInfo.isExport)
         {
-            addToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
+            addGlobalToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
         }
 
         if (variableDeclarationInfo.isExternal)
@@ -3862,7 +3932,7 @@ class MLIRGenImpl
         if (hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword))
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
-            addToExport(functionLikeDeclarationBaseAST, funcProto->getReturnType(), genContext);
+            addFunctionToExport(funcProto->getName(), funcType, genContext);
         }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
@@ -18868,45 +18938,44 @@ genContext);
         return mlir::success();
     }
 
-    void addToExport(StringRef name, mlir::Type type, const GenContext &genContext)
+    void addGlobalToExport(StringRef name, mlir::Type type, const GenContext &genContext)
     {
         Printer<std::wostream> printer(exports);
         
         //printer.printNode(functionLikeDeclarationBaseAST);
 
-        auto nameWide = ConvertUTF8toWide(name.str());
-        exports << "let ";
-        exports << nameWide;
-        exports << "=LoadReference(<Reference<";
-        mth.printType<std::wostream>(exports, type);
-        exports << ">>SearchForAddressOfSymbol('";
-        exports << nameWide;
-        exports << "'));" << std::endl;
+        // exports << "let ";
+        // exports << name.str().c_str();
+        // exports << "=LoadReference(<Reference<";
+        // mth.printType<std::wostream>(exports, type);
+        // exports << ">>SearchForAddressOfSymbol('";
+        // exports << name.str().c_str();
+        // exports << "'));" << std::endl;
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! added to export: \n" << convertWideToUTF8(exports.str()) << "\n";);        
+        exports << "G" << std::endl << name.str().c_str() << std::endl;
+        mth.printType<std::wostream>(exports, type);
+        exports << std::endl;
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! added to export: \n" << convertWideToUTF8(exports.str()) << "\n";);      
     }
     
-    void addToExport(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir::Type returnType, const GenContext &genContext)    
+    void addFunctionToExport(StringRef name, mlir::Type funcType, const GenContext &genContext)    
     {
         Printer<std::wostream> printer(exports);
         
         //printer.printNode(functionLikeDeclarationBaseAST);
 
-        exports << "let ";
-        //  functionLikeDeclarationBaseAST->name
-        printer.printNode(functionLikeDeclarationBaseAST->name);
-        exports << ":";
-        printer.printNodes(functionLikeDeclarationBaseAST->parameters, "(", ", ", ")");
-        exports << "=>";
-        if (functionLikeDeclarationBaseAST->type)
-            printer.printNode(functionLikeDeclarationBaseAST->type);
-        else if (returnType)
-            mth.printType<std::wostream>(exports, returnType);
-        else
-            exports << "void";
-        exports << "=SearchForAddressOfSymbol('";
-        printer.printNode(functionLikeDeclarationBaseAST->name);
-        exports << "');" << std::endl;
+        // exports << "let ";
+        // exports << name.str().c_str();
+        // exports << ":";
+        // mth.printType<std::wostream>(exports, funcType);
+        // exports << "=SearchForAddressOfSymbol('";
+        // exports << name.str().c_str();
+        // exports << "');" << std::endl;
+
+        exports << "F" << std::endl << name.str().c_str() << std::endl;
+        mth.printType<std::wostream>(exports, funcType);
+        exports << std::endl;
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! added to export: \n" << convertWideToUTF8(exports.str()) << "\n";);
     }

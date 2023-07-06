@@ -2721,6 +2721,73 @@ class MLIRTypeHelper
         return resType;
     }
 
+    template <typename T, typename F>
+    void printFuncType(T &out, F t)
+    {
+        out << "(";
+        for (auto subType : t.getInputs())
+        {
+            printType(out, subType);
+        }
+        out << ") => ";
+
+        if (t.getNumResults() == 0)
+        {
+            out << "void";
+        }
+        else if (t.getNumResults() == 1)
+        {
+            printType(out, t.getResults().front());
+        }
+        else
+        {
+            out << "[";
+            for (auto subType : t.getResults())
+            {
+                printType(out, subType);
+            }
+
+            out << "]";
+        }
+    }
+
+    template <typename T, typename TPL>
+    void printTupleType(T &out, TPL t)
+    {
+        out << "{";
+        auto first = true;
+        for (auto field : t.getFields())
+        {
+            if (!first)
+            {
+                out << ", ";
+            }
+
+            //print(out, field.id);
+
+            printType(out, field.type);
+            first = false;
+        }
+
+        out << "}";        
+    }
+
+    template <typename T, typename U>
+    void printUnionType(T &out, U t, const char *S)
+    {
+        auto first = true;
+        for (auto subType : t.getTypes())
+        {
+            if (!first)
+            {
+                out << S;
+            }
+
+            printType(out, subType);
+            first = false;
+        }        
+    }
+
     template <typename T>
     void printType(T &out, mlir::Type type)
     {
@@ -2730,17 +2797,7 @@ class MLIRTypeHelper
                 out << "[]";
             })
             .Case<mlir_ts::BoundFunctionType>([&](auto t) {
-                out << "(";
-                for (auto subType : t.getInputs())
-                {
-                    printType(out, subType);
-                }
-                out << ") => ";
-
-                for (auto subType : t.getResults())
-                {
-                    printType(out, subType);
-                }
+                printFuncType(out, t);
             })
             .Case<mlir_ts::BoundRefType>([&](auto t) {
                 printType(out, t.getElementType());
@@ -2749,20 +2806,7 @@ class MLIRTypeHelper
                 out << t.getName().getValue().str().c_str();
             })
             .Case<mlir_ts::ClassStorageType>([&](auto t) {
-                out << "{";
-                auto first = true;
-                for (auto subType : t.getFields())
-                {
-                    if (!first)
-                    {
-                        out << ", ";
-                    }
-                    
-                    printType(out, subType.type);
-                    first = false;
-                }
-
-                out << "}";                                    
+                printTupleType(out, t);                                
             })
             .Case<mlir_ts::InterfaceType>([&](auto t) {
                 out << t.getName().getValue().str().c_str();
@@ -2776,62 +2820,20 @@ class MLIRTypeHelper
                 out << "[]";
             })
             .Case<mlir_ts::ConstTupleType>([&](auto t) {
-                out << "{";
-                auto first = true;
-                for (auto subType : t.getFields())
-                {
-                    if (!first)
-                    {
-                        out << ", ";
-                    }
-                    
-                    printType(out, subType.type);
-                    first = false;
-                }
-
-                out << "}";
+                printTupleType(out, t);
             })
             .Case<mlir_ts::EnumType>([&](auto t) {
                 printType(out, t.getElementType());
             })
             .Case<mlir_ts::FunctionType>([&](auto t) {
-                out << "(";
-                for (auto subType : t.getInputs())
-                {
-                    printType(out, subType);
-                }
-                out << ") => ";
-
-                for (auto subType : t.getResults())
-                {
-                    printType(out, subType);
-                }
+                printFuncType(out, t);
             })
             .Case<mlir_ts::HybridFunctionType>([&](auto t) {
-                out << "(";
-                for (auto subType : t.getInputs())
-                {
-                    printType(out, subType);
-                }
-                out << ") => ";
-
-                for (auto subType : t.getResults())
-                {
-                    printType(out, subType);
-                }
+                printFuncType(out, t);
             })
             .Case<mlir_ts::ConstructFunctionType>([&](auto t) {
-                out << "new (";
-                for (auto subType : t.getInputs())
-                {
-                   printType(out, subType);
-                }
-                out << ") => ";
-
-                for (auto subType : t.getResults())
-                {
-                    printType(out, subType);
-                }
+                out << "new ";
+                printFuncType(out, t);
             })
             .Case<mlir_ts::InferType>([&](auto t) {
                 out << "infer ";
@@ -2850,46 +2852,13 @@ class MLIRTypeHelper
                 out << ">";
             })
             .Case<mlir_ts::TupleType>([&](auto t) {
-                out << "{";
-                auto first = true;
-                for (auto subType : t.getFields())
-                {
-                    if (!first)
-                    {
-                        out << ", ";
-                    }
-
-                    printType(out, subType.type);
-                    first = false;
-                }
-
-                out << "}";
+                printTupleType(out, t);
             })
             .Case<mlir_ts::UnionType>([&](auto t) {
-                auto first = true;
-                for (auto subType : t.getTypes())
-                {
-                    if (!first)
-                    {
-                        out << " | ";
-                    }
-
-                    printType(out, subType);
-                    first = false;
-                }
+                printUnionType(out, t, " | ");
             })
             .Case<mlir_ts::IntersectionType>([&](auto t) {
-                auto first = true;
-                for (auto subType : t.getTypes())
-                {
-                    if (!first)
-                    {
-                        out << " & ";
-                    }
-
-                    printType(out, subType);
-                    first = false;
-                }
+                printUnionType(out, t, " & ");
             })
             .Case<mlir_ts::ValueRefType>([&](auto t) {
                 printType(out, t.getElementType());
