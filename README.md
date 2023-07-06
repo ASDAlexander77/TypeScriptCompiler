@@ -10,28 +10,38 @@
 
 # What's new 
 - Shared libraries
-``test1`` - shared library file: 
+``shared.ts`` - shared library file: 
 ```TypeScript
+export const val_num = 2.5;
+export const val_str = "Hello World! - val";
+
 export function test1()
 {
-	print("Hello World!");
+	print("Hello World! test 1");
+}
+
+export function test2()
+{
+	print("Hello World! test 2");
 }
 ```
 
 - Load shared library
 ```TypeScript
-function LoadFunction(dllName: string, funcName: string)
-{
-	LoadLibraryPermanently(dllName);
-	return SearchForAddressOfSymbol(funcName);
-}
-
-let test1: () => void = LoadFunction("./1.dll", "test1");
+import './shared'
 
 function main()
 {
 	test1();
+	test2();
+
+	print(val_str);
+
+	print(val_num);
+
+	print("done.");
 }
+
 ```
 
 - Debug information: option `--di` in `tsc`
