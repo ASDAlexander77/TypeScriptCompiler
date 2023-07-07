@@ -50,4 +50,7 @@
 #define ENABLE_JS_BUILTIN_TYPES true
 #define NO_DEFAULT_LIB true
 
+// seems we can't use appending logic at all
+//#define SHARED_LIB_DECLARATION_INFO_IS_APPENDABLE true
+
 #endif // CONFIG_H_
