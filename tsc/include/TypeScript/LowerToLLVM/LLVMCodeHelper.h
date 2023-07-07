@@ -290,6 +290,86 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return structValue3;
     }
 
+    mlir::Value getArrayValue(mlir::Type originalElementType, mlir::Type llvmElementType, unsigned size,
+                                       ArrayAttr arrayAttr)
+    {
+        auto loc = op->getLoc();
+        auto parentModule = op->getParentOfType<ModuleOp>();
+
+        TypeHelper th(rewriter);
+
+        auto arrayType = th.getArrayType(llvmElementType, size);
+        mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+
+        // dense value
+        auto value = arrayAttr.getValue();
+        if (value.size() == 0/*|| originalElementType.dyn_cast<mlir_ts::AnyType>()*/)
+        {
+            for (auto item : arrayAttr.getValue())
+            {
+                // it must be '[]' empty array
+                assert(false);
+            }
+
+            return arrayVal;
+        }
+        else if (llvmElementType.isIntOrFloat())
+        {
+            llvm_unreachable("it should be process in constant with denseattr value");
+        }
+        else if (originalElementType.dyn_cast<mlir_ts::StringType>())
+        {
+            auto position = 0;
+            for (auto item : arrayAttr.getValue())
+            {
+                auto strValue = item.cast<StringAttr>().getValue().str();
+                auto itemVal = getOrCreateGlobalString(strValue);
+
+                arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
+            }
+
+            return arrayVal;
+        }
+        else if (auto originalArrayType = originalElementType.dyn_cast<mlir_ts::ArrayType>())
+        {
+            // TODO: implement ReadOnlyRTArray; as RTArray may contains ConstArray data (so using not editable memory)
+            auto position = 0;
+            for (auto item : arrayAttr.getValue())
+            {
+                auto arrayValue = item.cast<ArrayAttr>();
+                auto itemVal = getReadOnlyRTArray(loc, originalArrayType, llvmElementType.cast<LLVM::LLVMStructType>(), arrayValue);
+
+                arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
+            }
+
+            return arrayVal;
+        }
+        else if (originalElementType.dyn_cast<mlir_ts::ConstArrayType>())
+        {
+            llvm_unreachable("ConstArrayType must not be used in array, use normal ArrayType (the same way as StringType)");
+        }
+        else if (auto tupleType = originalElementType.dyn_cast<mlir_ts::TupleType>())
+        {
+            MLIRTypeHelper mth(rewriter.getContext());
+            auto position = 0;
+            for (auto item : arrayAttr.getValue())
+            {
+                auto tupleVal = getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(tupleType).cast<mlir_ts::ConstTupleType>(), llvmElementType.cast<LLVM::LLVMStructType>(),
+                                                        item.dyn_cast<ArrayAttr>());
+                arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, MLIRHelper::getStructIndex(rewriter, position++));
+            }
+
+            return arrayVal;
+        }
+        else if (originalElementType.dyn_cast<mlir_ts::ConstTupleType>())
+        {
+            llvm_unreachable("ConstTupleType must not be used in array, use normal TupleType (the same way as StringType)");
+        }            
+
+        LLVM_DEBUG(llvm::dbgs() << "type: "; originalElementType.dump(); llvm::dbgs() << "\n";);
+        llvm_unreachable("array literal is not implemented(1)");
+    }
+
     mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, mlir::Type llvmElementType, unsigned size,
                                        ArrayAttr arrayAttr)
     {
@@ -310,27 +390,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             // dense value
             auto value = arrayAttr.getValue();
-            if (value.size() == 0/*|| originalElementType.dyn_cast<mlir_ts::AnyType>()*/)
-            {
-                seekLast(parentModule.getBody());
-
-                OpBuilder::InsertionGuard guard(rewriter);
-
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
-
-                setStructWritingPoint(global);
-
-                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
-
-                for (auto item : arrayAttr.getValue())
-                {
-                    // it must be '[]' empty array
-                    assert(false);
-                }
-
-                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
-            }
-            else if (llvmElementType.isIntOrFloat())
+            if (value.size() > 0 && llvmElementType.isIntOrFloat())
             {
                 seekLast<DenseElementsAttr>(parentModule.getBody());
 
@@ -339,93 +399,19 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 auto attr = DenseElementsAttr::get(dataType, value);
                 global = rewriter.create<LLVM::GlobalOp>(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, attr);
             }
-            else if (originalElementType.dyn_cast<mlir_ts::StringType>())
-            {
-                seekLast(parentModule.getBody());
-
-                OpBuilder::InsertionGuard guard(rewriter);
-
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
-
-                setStructWritingPoint(global);
-
-                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
-
-                auto position = 0;
-                for (auto item : arrayAttr.getValue())
-                {
-                    auto strValue = item.cast<StringAttr>().getValue().str();
-                    auto itemVal = getOrCreateGlobalString(strValue);
-
-                    arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
-                }
-
-                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
-            }
-            else if (auto originalArrayType = originalElementType.dyn_cast<mlir_ts::ArrayType>())
-            {
-                seekLast(parentModule.getBody());
-
-                OpBuilder::InsertionGuard guard(rewriter);
-
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
-
-                setStructWritingPoint(global);
-
-                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
-
-                // TODO: implement ReadOnlyRTArray; as RTArray may contains ConstArray data (so using not editable memory)
-
-                auto position = 0;
-                for (auto item : arrayAttr.getValue())
-                {
-                    auto arrayValue = item.cast<ArrayAttr>();
-                    auto itemVal = getReadOnlyRTArray(loc, originalArrayType, llvmElementType.cast<LLVM::LLVMStructType>(), arrayValue);
-
-                    arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
-                }
-
-                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
-            }
-            else if (originalElementType.dyn_cast<mlir_ts::ConstArrayType>())
-            {
-                //
-                llvm_unreachable("ConstArrayType must not be used in array, use normal ArrayType (the same way as StringType)");
-            }
-            else if (auto tupleType = originalElementType.dyn_cast<mlir_ts::TupleType>())
-            {
-                seekLast(parentModule.getBody());
-
-                OpBuilder::InsertionGuard guard(rewriter);
-
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
-
-                setStructWritingPoint(global);
-
-                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
-
-                MLIRTypeHelper mth(rewriter.getContext());
-
-                auto position = 0;
-                for (auto item : arrayAttr.getValue())
-                {
-                    auto tupleVal = getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(tupleType).cast<mlir_ts::ConstTupleType>(), llvmElementType.cast<LLVM::LLVMStructType>(),
-                                                          item.dyn_cast<ArrayAttr>());
-                    arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, MLIRHelper::getStructIndex(rewriter, position++));
-                }
-
-                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
-            }
-            else if (originalElementType.dyn_cast<mlir_ts::ConstTupleType>())
-            {
-                //
-                llvm_unreachable("ConstTupleType must not be used in array, use normal TupleType (the same way as StringType)");
-            }            
             else
             {
-                LLVM_DEBUG(llvm::dbgs() << "type: "; originalElementType.dump(); llvm::dbgs() << "\n";);
+                seekLast(parentModule.getBody());
 
-                llvm_unreachable("array literal is not implemented(1)");
+                OpBuilder::InsertionGuard guard(rewriter);
+
+                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
+
+                setStructWritingPoint(global);
+
+                mlir::Value arrayVal = getArrayValue(originalElementType, llvmElementType, size, arrayAttr);
+
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
             }
         }
 

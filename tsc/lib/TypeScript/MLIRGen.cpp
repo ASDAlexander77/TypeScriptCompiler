@@ -320,13 +320,27 @@ class MLIRGenImpl
         }
 
         auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
-            auto litValue = V(mlirGenStringValue(location, convertWideToUTF8(exports.str())));
-            return std::make_pair(litValue.getType(), litValue);
+#if SHARED_LIB_DECLARATION_INFO_IS_APPENDABLE            
+            SmallVector<mlir::Attribute, 4> strs;
+            strs.push_back(getStringAttr(convertWideToUTF8(exports.str())));
+            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), strs);            
+
+            auto arrayValue = V(builder.create<mlir_ts::ConstantOp>(
+                location, mth.getConstArrayValueType(getStringType(), 1), arrayAttr));
+
+            return std::make_pair(arrayValue.getType(), arrayValue);
+#else
+            auto litValue = V(mlirGenStringValue(location, convertWideToUTF8(exports.str()), true));
+            return std::make_pair(litValue.getType(), litValue);            
+#endif            
         };
 
         VariableClass varClass = VariableType::Var;
         varClass.isExport = true;
-        registerVariable(mlir::UnknownLoc::get(builder.getContext()), "__decl_info", true, varClass, typeWithInit, genContext);
+#if SHARED_LIB_DECLARATION_INFO_IS_APPENDABLE        
+        varClass.isAppendingLinkage = true;
+#endif        
+        registerVariable(mlir::UnknownLoc::get(builder.getContext()), SHARED_LIB_DECLARATION_INFO, true, varClass, typeWithInit, genContext);
         return mlir::success();
     }    
 
@@ -740,7 +754,7 @@ class MLIRGenImpl
         builder.create<mlir_ts::GlobalConstructorOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName));
 
         // TODO: for now, we have code in TS to load methods from DLL/Shared libs
-        if (auto addrOfDeclText = dynLib.getAddressOfSymbol("__decl_info"))
+        if (auto addrOfDeclText = dynLib.getAddressOfSymbol(SHARED_LIB_DECLARATION_INFO))
         {
             // process shared lib declarations
             auto dataPtr = *(const char**)addrOfDeclText;
@@ -2558,6 +2572,7 @@ class MLIRGenImpl
                        !genContext.allocateVarsOutsideOfOperation && !genContext.allocateVarsInContextThis;
             isExternal = varClass == VariableType::External;
             isExport = varClass.isExport;
+            isAppendingLinkage = varClass.isAppendingLinkage;
         }
 
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
@@ -2648,6 +2663,7 @@ class MLIRGenImpl
         bool isConst;
         bool isExternal;
         bool isExport;
+        bool isAppendingLinkage;
         bool deleted;
     };
 
@@ -2804,6 +2820,10 @@ class MLIRGenImpl
             if (variableDeclarationInfo.isExternal)
             {
                 attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("External")});
+            }
+            else if (variableDeclarationInfo.isAppendingLinkage)
+            {
+                attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("Appending")});
             }
 
             // add modifiers
@@ -10614,10 +10634,10 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), literalType, attrVal));
     }
 
-    ValueOrLogicalResult mlirGenStringValue(mlir::Location location, std::string text)
+    ValueOrLogicalResult mlirGenStringValue(mlir::Location location, std::string text, bool asString = false)
     {
         auto attrVal = getStringAttr(text);
-        auto literalType = mlir_ts::LiteralType::get(attrVal, getStringType());
+        auto literalType = asString ? (mlir::Type)getStringType() : (mlir::Type)mlir_ts::LiteralType::get(attrVal, getStringType());
         return V(builder.create<mlir_ts::ConstantOp>(location, literalType, attrVal));
     }
 
@@ -18941,16 +18961,7 @@ genContext);
     void addGlobalToExport(StringRef name, mlir::Type type, const GenContext &genContext)
     {
         Printer<std::wostream> printer(exports);
-        
         //printer.printNode(functionLikeDeclarationBaseAST);
-
-        // exports << "let ";
-        // exports << name.str().c_str();
-        // exports << "=LoadReference(<Reference<";
-        // mth.printType<std::wostream>(exports, type);
-        // exports << ">>SearchForAddressOfSymbol('";
-        // exports << name.str().c_str();
-        // exports << "'));" << std::endl;
 
         exports << "G" << std::endl << name.str().c_str() << std::endl;
         mth.printType<std::wostream>(exports, type);
@@ -18962,16 +18973,7 @@ genContext);
     void addFunctionToExport(StringRef name, mlir::Type funcType, const GenContext &genContext)    
     {
         Printer<std::wostream> printer(exports);
-        
         //printer.printNode(functionLikeDeclarationBaseAST);
-
-        // exports << "let ";
-        // exports << name.str().c_str();
-        // exports << ":";
-        // mth.printType<std::wostream>(exports, funcType);
-        // exports << "=SearchForAddressOfSymbol('";
-        // exports << name.str().c_str();
-        // exports << "');" << std::endl;
 
         exports << "F" << std::endl << name.str().c_str() << std::endl;
         mth.printType<std::wostream>(exports, funcType);

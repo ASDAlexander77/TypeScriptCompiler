@@ -47,6 +47,8 @@
 #define SYMBOL_HAS_INSTANCE "hasInstance"
 #define SYMBOL_TO_PRIMITIVE "toPrimitive"
 
+#define SHARED_LIB_DECLARATION_INFO "__decl_info"
+
 #if __LP64__
 #define TRAMPOLINE_SIZE 48
 #else

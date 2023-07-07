@@ -735,6 +735,22 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
     using TsLlvmPattern<mlir_ts::ConstantOp>::TsLlvmPattern;
 
     template <typename T, typename TOp>
+    void getArrayValue(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
+    {
+        LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto elementType = type.template cast<T>().getElementType();
+        auto llvmElementType = tch.convertType(elementType);
+        auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>();
+
+        auto arrayValue =
+            ch.getArrayValue(elementType, llvmElementType, arrayAttr.size(), arrayAttr);
+
+        rewriter.replaceOp(constantOp, arrayValue);
+    }
+
+    template <typename T, typename TOp>
     void getOrCreateGlobalArray(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
     {
         LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
@@ -804,6 +820,15 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         {
             getOrCreateGlobalArray(constantOp, constArrayType, rewriter);
             return success();
+        }
+
+        if (auto constArrayValueType = type.dyn_cast<mlir_ts::ConstArrayValueType>())
+        {
+            if (auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>())
+            {
+                getArrayValue(constantOp, constArrayValueType, rewriter);
+                return success();
+            }
         }
 
         if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
@@ -2783,8 +2808,6 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
     LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto loc = globalOp->getLoc();
 
         LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter());
@@ -2821,7 +2844,6 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         globalOp.getInitializerRegion().walk(visitorAllOps);
 
         auto linkage = lch.getLinkage(globalOp);
-
         LLVM::GlobalOp llvmGlobalOp;
         if (createAsGlobalConstructor)
         {

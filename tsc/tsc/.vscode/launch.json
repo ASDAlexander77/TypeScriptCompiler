@@ -131,7 +131,7 @@
             "args": [
                 "-emit=llvm",
                 "-mlir-disable-threading",
-                "-debug-only=pass",
+                "-debug-only=llvm",
                 "-o=c:/temp/1.ll",
                 "-di",
                 "-lldb",
