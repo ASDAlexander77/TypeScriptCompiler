@@ -150,25 +150,25 @@
             "configuration": "Release"
         },
         {
-            "name": "build-linux-ninja-debug",
+            "name": "build-linux-ninja-gcc-debug",
             "displayName": "GCC (current) - Debug",
             "configurePreset": "linux-ninja-gcc-debug",
             "configuration": "Debug"
         },
         {
-            "name": "build-linux-ninja-release",
+            "name": "build-linux-ninja-gcc-release",
             "displayName": "GCC (current) - Release",
             "configurePreset": "linux-ninja-gcc-release",
             "configuration": "Release"
         },
         {
-            "name": "build-linux-ninja-debug",
+            "name": "build-linux-ninja-clang-debug",
             "displayName": "Clang (current) - Debug",
             "configurePreset": "linux-ninja-clang-debug",
             "configuration": "Debug"
         },
         {
-            "name": "build-linux-ninja-release",
+            "name": "build-linux-ninja-clang-release",
             "displayName": "Clang (current) - Release",
             "configurePreset": "linux-ninja-clang-release",
             "configuration": "Release"
