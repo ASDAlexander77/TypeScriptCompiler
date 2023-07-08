@@ -711,6 +711,13 @@ class MLIRGenImpl
                         lang << name;
                         lang << "'));" << std::endl;
                     }
+                    else if (recordType == "T")
+                    {
+                        lang << "type ";
+                        lang << name;
+                        lang << "=";
+                        lang << type << std::endl;
+                    }
 
                     break;
             }
@@ -12449,6 +12456,8 @@ class MLIRGenImpl
         auto namePtr = MLIRHelper::getName(typeAliasDeclarationAST->name, stringAllocator);
         if (!namePtr.empty())
         {
+            auto hasExportModifier = hasModifier(typeAliasDeclarationAST, SyntaxKind::ExportKeyword);
+
             if (typeAliasDeclarationAST->typeParameters.size() > 0)
             {
                 llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
@@ -12459,6 +12468,18 @@ class MLIRGenImpl
                 }
 
                 getGenericTypeAliasMap().insert({namePtr, {typeParameters, typeAliasDeclarationAST->type}});
+
+                if (hasExportModifier)
+                {
+                    GenContext typeAliasGenContext(genContext);
+                    auto type = getType(typeAliasDeclarationAST->type, typeAliasGenContext);
+                    if (!type)
+                    {
+                        return mlir::failure();
+                    }
+
+                    addTypeToExport(namePtr, type, genContext);
+                }
             }
             else
             {
@@ -12470,6 +12491,11 @@ class MLIRGenImpl
                 }
 
                 getTypeAliasMap().insert({namePtr, type});
+
+                if (hasExportModifier)
+                {
+                    addTypeToExport(namePtr, type, genContext);
+                }
             }
 
             return mlir::success();
@@ -18958,28 +18984,31 @@ genContext);
         return mlir::success();
     }
 
-    void addGlobalToExport(StringRef name, mlir::Type type, const GenContext &genContext)
+    void addToExport(StringRef name, mlir::Type type, const char* recordType, const GenContext &genContext)
     {
         Printer<std::wostream> printer(exports);
         //printer.printNode(functionLikeDeclarationBaseAST);
 
-        exports << "G" << std::endl << name.str().c_str() << std::endl;
+        exports << recordType << std::endl << name.str().c_str() << std::endl;
         mth.printType<std::wostream>(exports, type);
         exports << std::endl;
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! added to export: \n" << convertWideToUTF8(exports.str()) << "\n";);      
     }
+
+    void addGlobalToExport(StringRef name, mlir::Type type, const GenContext &genContext)
+    {
+        addToExport(name, type, "G", genContext);
+    }
     
     void addFunctionToExport(StringRef name, mlir::Type funcType, const GenContext &genContext)    
     {
-        Printer<std::wostream> printer(exports);
-        //printer.printNode(functionLikeDeclarationBaseAST);
+        addToExport(name, funcType, "F", genContext);
+    }
 
-        exports << "F" << std::endl << name.str().c_str() << std::endl;
-        mth.printType<std::wostream>(exports, funcType);
-        exports << std::endl;
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! added to export: \n" << convertWideToUTF8(exports.str()) << "\n";);
+    void addTypeToExport(StringRef name, mlir::Type type, const GenContext &genContext)    
+    {
+        addToExport(name, type, "T", genContext);
     }
 
     auto getNamespace() -> StringRef
