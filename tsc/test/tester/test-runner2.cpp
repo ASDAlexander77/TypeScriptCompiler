@@ -63,9 +63,36 @@
 #define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00funcs_capture.ts"
 #endif
 
+#if WIN32
+#define RUN_CMD ""
+#define BAT_NAME ".bat "
+#else
+#define RUN_CMD "/bin/sh -f ./"
+#define BAT_NAME ".sh "
+#endif
+
 bool jitRun = false;
 bool sharedLibCompiler = false;
 bool opt = true;
+
+void createJitBatchFile()
+{
+    if (exists("jit.bat"))
+    {
+        return;
+    }
+
+    std::ofstream batFile("jit_gc.bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set FILEPATH=%2" << std::endl;
+    batFile << "set TSC_OPTS=%3" << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit %TSC_OPTS% --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll %FILEPATH% 1> %FILENAME%.txt 2> %FILENAME%.err"
+            << std::endl;
+    batFile.close();
+}
 
 void createCompileBatchFile()
 {
@@ -99,98 +126,15 @@ void createCompileBatchFile()
     batFile.close();
 }
 
-void testFile(const char *file)
+void buildJitExecCommand(std::stringstream &ss, std::string fileNameNoExt, const char *file)
 {
-    std::chrono::milliseconds ms =
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+    ss << RUN_CMD << "jit" << BAT_NAME << fileNameNoExt << " " << file;
+    ss << opt ? "--opt" : "--opt_level=0";
+}
 
-    auto fileName = fs::path(file).filename();
-    auto stem = fs::path(file).stem();
-
-    std::stringstream sfn;
-    sfn << stem.generic_string() << ms.count() << ".exe";
-    auto exeFile = sfn.str();
-
-    std::stringstream tfn;
-    tfn << stem.generic_string() << ms.count() << ".txt";
-    auto txtFile = tfn.str();
-
-    std::stringstream efn;
-    efn << stem.generic_string() << ms.count() << ".err";
-    auto errFile = efn.str();
-
-    std::cout << "Test file: " << fileName.generic_string() << " path: " << file << std::endl;
-
-    auto cleanup = [&]() {
-        std::stringstream mask;
-#if WIN32
-        mask << "del " << stem << ms.count() << ".*";
-#else
-        mask << "rm " << stem << ms.count() << ".*";
-#endif
-        auto delCmd = mask.str();
-
-        // read output result
-        std::ifstream infileO;
-        infileO.open(txtFile, std::fstream::in);
-        std::string lineO;
-        auto anyDoneMsg = false;
-        while (std::getline(infileO, lineO))
-        {
-            if (lineO.find("done.") != std::string::npos)
-            {
-                anyDoneMsg = true;
-            }
-        }
-
-        infileO.close();
-
-        // read test result
-        std::ifstream infile;
-        infile.open(errFile, std::fstream::in);
-        std::string line;
-        std::stringstream errors;
-        auto anyError = false;
-        while (std::getline(infile, line))
-        {
-            errors << line << std::endl;
-            anyError = true;
-        }
-
-        infile.close();
-
-        exec(delCmd);
-
-        if (anyDoneMsg)
-        {
-            return std::string();
-        }
-
-        if (anyError)
-        {
-            auto errStr = errors.str();
-            return errStr;
-        }
-
-        if (!anyDoneMsg)
-        {
-            return std::string("no 'done.' msg.");
-        }
-
-        return std::string();
-    };
-
-    // compile
-    std::stringstream ss;
-#if WIN32
-#define RUN_CMD ""
-#define BAT_NAME ".bat "
-#else
-#define RUN_CMD "/bin/sh -f ./"
-#define BAT_NAME ".sh "
-#endif
-
-    ss << RUN_CMD << "compile" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+void buildCompileExecCommand(std::stringstream &ss, std::string fileNameNoExt, const char *file)
+{
+    ss << RUN_CMD << "compile" _D_ << BAT_NAME << fileNameNoExt << " " << file;
     ss << opt ? "--opt" : "--opt_level=0";
     if (sharedLibCompiler)
     {
@@ -199,29 +143,128 @@ void testFile(const char *file)
 #else
         ss << " -shared";
 #endif        
+    }    
+}
+
+std::string buildExecCommand(std::string tempOutputFileNameNoExt, const char *file)
+{
+    std::stringstream ss;
+    if (jitRun)
+    {
+        buildJitExecCommand(ss, tempOutputFileNameNoExt, file);
+    }
+    else
+    {
+        buildCompileExecCommand(ss, tempOutputFileNameNoExt, file);
     }
 
+    return ss.str();
+}
+
+std::string readOutput(std::string fileName)
+{
+    std::stringstream output;
+
+    std::ifstream fileInputStream;
+    fileInputStream.open(fileName, std::fstream::in);
+
+    std::string line;
+    while (std::getline(fileInputStream, line))
+    {
+        output << line << std::endl;
+    }
+
+    fileInputStream.close();    
+
+    return output.str();
+}
+
+void deleteFiles(std::string tempOutputFileNameNoExt)
+{
+    std::stringstream mask;
+#if WIN32
+    mask << "del " << tempOutputFileNameNoExt << ".*";
+#else
+    mask << "rm " << tempOutputFileNameNoExt << ".*";
+#endif
+
+    auto delCmd = mask.str();
+    exec(delCmd);
+}
+
+std::string checkOutputAndCleanup(std::string tempOutputFileNameNoExt)
+{
+    auto txtFile = tempOutputFileNameNoExt + ".txt";
+    auto errFile = tempOutputFileNameNoExt + ".err";
+
+    auto output = readOutput(txtFile);
+    auto errors = readOutput(errFile);
+
+    deleteFiles(tempOutputFileNameNoExt);    
+
+    if (output.find("done.") != std::string::npos)
+    {
+        return std::string();
+    }
+
+    if (!errors.empty())
+    {
+        return errors;
+    }
+
+    return "no 'done.' msg.";
+}
+
+std::string getTempOutputFileNameNoExt(const char *file)
+{
+    std::chrono::milliseconds ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
+
+    auto fileName = fs::path(file).filename();
+    auto stem = fs::path(file).stem();
+
+    std::stringstream fn;
+    fn << stem.generic_string() << ms.count();
+    auto fileNameNoExt = fn.str();
+
+    std::cout << "Test file: " << fileName.generic_string() << " path: " << file << std::endl;
+
+    return fileNameNoExt;
+}
+
+void checkExecOutput(std::string compileResult)
+{
+    auto index = compileResult.find("error:");
+    if (index != std::string::npos)
+    {
+        throw "compile error";
+    }
+
+    index = compileResult.find("failed");
+    if (index != std::string::npos)
+    {
+        throw "run error";
+    }
+}
+
+void checkedExecCommand(std::string batchFileCmd)
+{
     try
     {
-        auto compileResult = exec(ss.str());
-
-        auto index = compileResult.find("error:");
-        if (index != std::string::npos)
-        {
-            throw "compile error";
-        }
-
-        index = compileResult.find("failed");
-        if (index != std::string::npos)
-        {
-            throw "run error";
-        }
+        checkExecOutput(exec(batchFileCmd));
     }
     catch (const std::exception &)
     {
     }
+}
 
-    auto res = cleanup();
+void testFile(const char *file)
+{
+    auto tempOutputFileNameNoExt = getTempOutputFileNameNoExt(file);
+
+    checkedExecCommand(buildExecCommand(tempOutputFileNameNoExt, file));
+
+    auto res = checkOutputAndCleanup(tempOutputFileNameNoExt);
     if (!res.empty())
     {
         throw std::runtime_error(res.c_str());
