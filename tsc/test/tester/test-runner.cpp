@@ -6,7 +6,7 @@
 #define GC_LIB "-lgcmt-lib "
 #endif
 // for Ubuntu 20.04 add -ldl and optionally -rdynamic 
-#define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm -lz -ltinfo"
+#define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm -ltinfo"
 #ifdef WIN32
 #define TYPESCRIPT_LIB "TypeScriptAsyncRuntime.lib "
 #define LLVM_LIBS "LLVMSupport.lib "
