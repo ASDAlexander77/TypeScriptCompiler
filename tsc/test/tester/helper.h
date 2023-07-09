@@ -186,3 +186,21 @@ int runFolder(const char *folder)
 
     return 0;
 }
+
+std::string readOutput(std::string fileName)
+{
+    std::stringstream output;
+
+    std::ifstream fileInputStream;
+    fileInputStream.open(fileName, std::fstream::in);
+
+    std::string line;
+    while (std::getline(fileInputStream, line))
+    {
+        output << line << std::endl;
+    }
+
+    fileInputStream.close();    
+
+    return output.str();
+}

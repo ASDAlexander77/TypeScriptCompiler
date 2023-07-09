@@ -5,11 +5,11 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(Windows) test-runner2.exe - Launch",
+            "name": "(Windows) test-runner.exe - Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/tester/Debug/test-runner2.exe",
-            "args": ["C:\\dev\\TypeScriptCompiler\\tsc\\test\\tester\\tests\\00funcs.ts"],
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/tester/Debug/test-runner.exe",
+            "args": ["-jit", "C:\\dev\\TypeScriptCompiler\\tsc\\test\\tester\\tests\\00funcs.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/tester/Debug/",
             "environment": [],

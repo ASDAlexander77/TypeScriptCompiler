@@ -12468,18 +12468,6 @@ class MLIRGenImpl
                 }
 
                 getGenericTypeAliasMap().insert({namePtr, {typeParameters, typeAliasDeclarationAST->type}});
-
-                if (hasExportModifier)
-                {
-                    GenContext typeAliasGenContext(genContext);
-                    auto type = getType(typeAliasDeclarationAST->type, typeAliasGenContext);
-                    if (!type)
-                    {
-                        return mlir::failure();
-                    }
-
-                    addTypeToExport(namePtr, type, genContext);
-                }
             }
             else
             {
