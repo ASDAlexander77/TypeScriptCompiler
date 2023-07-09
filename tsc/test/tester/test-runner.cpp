@@ -165,7 +165,7 @@ void createCompileBatchFile()
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=obj $TSC_OPTS $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
     batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o " 
-            << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES << std::endl;
+            << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
