@@ -8,9 +8,11 @@
 // for Ubuntu 20.04 add -ldl and optionally -rdynamic 
 #define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm -lz -ltinfo"
 #ifdef WIN32
-#define TYPESCRIPT_LIBS "TypeScriptAsyncRuntime.lib LLVMSupport.lib "
+#define TYPESCRIPT_LIB "TypeScriptAsyncRuntime.lib "
+#define LLVM_LIBS "LLVMSupport.lib "
 #else
-#define TYPESCRIPT_LIBS "-lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle "
+#define TYPESCRIPT_LIB "-lTypeScriptAsyncRuntime "
+#define LLVM_LIBS "-lLLVMSupport -lLLVMDemangle "
 #endif
 
 #ifdef WIN32
@@ -116,7 +118,7 @@ void createCompileBatchFile()
     batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj %TSC_OPTS% %FILEPATH% -o=%FILENAME%.obj" << std::endl;
-    batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " << GC_LIB << TYPESCRIPT_LIBS << CMAKE_C_STANDARD_LIBRARIES
+    batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
