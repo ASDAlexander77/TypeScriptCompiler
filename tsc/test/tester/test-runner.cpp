@@ -58,7 +58,9 @@
 #endif
 
 #ifndef WIN32
+#ifndef TEST_COMPILER
 #error TEST_COMPILER must be provided
+#endif
 #endif
 
 #ifndef TEST_FILE
