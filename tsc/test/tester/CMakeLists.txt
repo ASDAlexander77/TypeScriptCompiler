@@ -356,6 +356,8 @@ add_test(NAME test-compile-disallowLineTerminatorBeforeArrow COMMAND test-runner
 add_test(NAME test-compile-emitDefaultParametersFunctionExpression COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/emitDefaultParametersFunctionExpression.ts")
 add_test(NAME test-compile-logicalAssignment5 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/logicalAssignment5.ts")
 add_test(NAME test-compile-nbody COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/nbody.ts")
+# import tests
+add_test(NAME test-compile-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -631,3 +633,5 @@ add_test(NAME test-jit-disallowLineTerminatorBeforeArrow COMMAND test-runner -ji
 add_test(NAME test-jit-emitDefaultParametersFunctionExpression COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/emitDefaultParametersFunctionExpression.ts")
 add_test(NAME test-jit-logicalAssignment5 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/logicalAssignment5.ts")
 add_test(NAME test-jit-nbody COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/nbody.ts")
+# import tests
+add_test(NAME test-jit-component COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts")
