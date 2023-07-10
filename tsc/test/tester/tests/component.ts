@@ -10,6 +10,6 @@ class MyComponent {
 
 function main()
 {
-	const myComponent = new MyComponent(null);
+	const myComponent = new MyComponent(new Service());
 	print("done.");
 }

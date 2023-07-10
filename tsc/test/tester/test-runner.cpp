@@ -75,6 +75,12 @@
 #define BAT_NAME ".sh "
 #endif
 
+#if WIN32
+#define SHARED_LIB_OPT "/DLL"
+#else
+#define SHARED_LIB_OPT "-shared"
+#endif        
+
 bool jitRun = false;
 bool sharedLibCompiler = false;
 bool opt = true;
@@ -185,27 +191,23 @@ void createBatchFile()
     }
 }
 
-void buildJitExecCommand(std::stringstream &ss, std::string fileNameNoExt, const char *file)
+void buildJitExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
     ss << RUN_CMD << "jit" << BAT_NAME << fileNameNoExt << " " << file;
     ss << " " << (opt ? "--opt" : "--opt_level=0");
 }
 
-void buildCompileExecCommand(std::stringstream &ss, std::string fileNameNoExt, const char *file)
+void buildCompileExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
     ss << RUN_CMD << "compile" << BAT_NAME << fileNameNoExt << " " << file;
     ss << " " << (opt ? "--opt" : "--opt_level=0");
     if (sharedLibCompiler)
     {
-#if WIN32
-        ss << " /DLL";
-#else
-        ss << " -shared";
-#endif        
+        ss << SHARED_LIB_OPT;
     }    
 }
 
-std::string buildExecCommand(std::string tempOutputFileNameNoExt, const char *file)
+std::string buildExecCommand(std::string tempOutputFileNameNoExt, std::string file)
 {
     std::stringstream ss;
     if (jitRun)
@@ -256,21 +258,17 @@ std::string checkOutputAndCleanup(std::string tempOutputFileNameNoExt)
     return "no 'done.' msg.";
 }
 
-std::string getTempOutputFileNameNoExt(const char *file)
+std::string getTempOutputFileNameNoExt(std::string file)
 {
     std::chrono::milliseconds ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 
-    auto fileName = fs::path(file).filename();
-    auto stem = fs::path(file).stem();
+    std::string fileNameNoExt = fs::path(file).stem().string();
+    auto fileNameNoExtWithMs = fileNameNoExt + std::to_string(ms.count());
 
-    std::stringstream fn;
-    fn << stem.generic_string() << ms.count();
-    auto fileNameNoExt = fn.str();
+    std::cout << "Test file: " << fileNameNoExtWithMs << " path: " << file << std::endl;
 
-    std::cout << "Test file: " << fileName.generic_string() << " path: " << file << std::endl;
-
-    return fileNameNoExt;
+    return fileNameNoExtWithMs;
 }
 
 void checkExecOutput(std::string compileResult)
@@ -299,7 +297,7 @@ void checkedExecCommand(std::string batchFileCmd)
     }
 }
 
-void testFile(const char *file)
+void testFile(std::string file)
 {
     auto tempOutputFileNameNoExt = getTempOutputFileNameNoExt(file);
 
@@ -312,9 +310,93 @@ void testFile(const char *file)
     }
 }
 
-const char *readParams(int argc, char **argv)
+void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vector<std::string> &files)
 {
-    const char *filePath = nullptr;
+    auto tsc_opt = opt ? "--opt" : "--opt_level=0";
+    auto linker_opt = sharedLibCompiler ? SHARED_LIB_OPT : "";
+
+#ifdef WIN32
+    std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=" << tempOutputFileNameNoExt << std::endl;
+    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
+    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+    batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "set LLVMLIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
+
+    std::stringstream objs;
+    for (auto &file : files)
+    {
+        auto fileNameWithoutExt = fs::path(file).stem().string();
+        objs << fileNameWithoutExt << ".obj ";
+        batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+    }
+
+    batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << objs.str() << " " << linker_opt << " "
+            << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
+            << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
+            << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
+            << std::endl;
+
+    batFile << "del " << objs.str() << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile.close();
+#else
+    std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
+    batFile << "FILENAME=" << tempOutputFileNameNoExt << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
+    batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
+
+    std::stringstream objs;
+    for (auto &file : files)
+    {
+        auto fileNameWithoutExt = fs::path(file).stem().string();
+        objs << <fileNameWithoutExt << ".obj ";
+        batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " $FILEPATH -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+    }
+
+    batFile << TEST_COMPILER << " -o $FILENAME " << linker_opt << " " << objs.str() 
+            << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
+            << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    
+    batFile << "rm " << objs << std::endl;
+    batFile << "rm $FILENAME" << std::endl;
+    batFile.close();    
+#endif    
+}
+
+std::string buildMultiCompileExecCommand(std::string fileNameNoExt)
+{
+    std::stringstream ss;
+    ss << RUN_CMD << fileNameNoExt << BAT_NAME << fileNameNoExt;
+    return ss.str();
+}
+
+void testMutliFiles(std::vector<std::string> &files)
+{    
+    auto tempOutputFileNameNoExt = getTempOutputFileNameNoExt(*files.begin());
+    createMultiCompileBatchFile(tempOutputFileNameNoExt, files);
+
+    checkedExecCommand(buildMultiCompileExecCommand(tempOutputFileNameNoExt));
+
+    auto res = checkOutputAndCleanup(tempOutputFileNameNoExt);
+    if (!res.empty())
+    {
+        throw std::runtime_error(res.c_str());
+    }    
+}
+
+void readParams(int argc, char **argv, std::vector<std::string> &files)
+{
     auto index = 1;
     for (; index < argc; index++)
     {
@@ -332,20 +414,35 @@ const char *readParams(int argc, char **argv)
         }
         else
         {
-            filePath = argv[index];
+            files.push_back(argv[index]);
         }
     }
-
-    return filePath;
 }
 
 int main(int argc, char **argv)
 {
     try
     {
-        auto filePath = readParams(argc, argv);
-        createBatchFile();
-        testFile(filePath);
+        std::vector<std::string> files;
+        readParams(argc, argv, files);
+        if (files.size() == 1)
+        {
+            createBatchFile();
+            testFile(*files.begin());
+        }
+        else if (files.size() > 1)
+        {
+            if (jitRun)
+            {
+                throw "jit supports 1 file only";    
+            }
+
+            testMutliFiles(files);
+        }
+        else
+        {
+            throw "no file provided";
+        }
     }
     catch (const std::exception &e)
     {

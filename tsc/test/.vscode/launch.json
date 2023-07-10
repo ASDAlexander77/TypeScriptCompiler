@@ -9,7 +9,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/tester/Debug/test-runner.exe",
-            "args": ["-jit", "C:\\dev\\TypeScriptCompiler\\tsc\\test\\tester\\tests\\00funcs.ts"],
+            "args": ["C:\\dev\\TypeScriptCompiler\\tsc\\test\\tester\\tests\\component.ts", "C:\\dev\\TypeScriptCompiler\\tsc\\test\\tester\\tests\\service.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/tester/Debug/",
             "environment": [],
