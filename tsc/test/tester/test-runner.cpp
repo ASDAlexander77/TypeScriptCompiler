@@ -359,7 +359,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     for (auto &file : files)
     {
         auto fileNameWithoutExt = fs::path(file).stem().string();
-        objs << <fileNameWithoutExt << ".o ";
+        objs << fileNameWithoutExt << ".o ";
         batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " $FILEPATH -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
     }
 
@@ -490,7 +490,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << TEST_COMPILER << " -o " << shared_filenameNoExt << " " << linker_opt << " " << shared_objs.str() 
             << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
-    batFile << "rm " << shared_objs << std::endl;
+    batFile << "rm " << shared_objs.str() << std::endl;
 
     if (jitRun)
     {
