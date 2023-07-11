@@ -229,7 +229,7 @@ void deleteFiles(std::string tempOutputFileNameNoExt)
 #endif
 
     auto delCmd = mask.str();
-    //exec(delCmd);
+    exec(delCmd);
 }
 
 std::string checkOutputAndCleanup(std::string tempOutputFileNameNoExt)
@@ -448,7 +448,6 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 #else
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
     batFile << "FILENAME=" << tempOutputFileNameNoExt << std::endl;
-    batFile << "SHARED=" << tempOutputFileNameNoExt << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
@@ -483,7 +482,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     }
 
     batFile << sharedBat.str();
-    batFile << TEST_COMPILER << " -o " << shared_filenameNoExt << " " << linker_opt << " " << shared_objs.str() 
+    batFile << TEST_COMPILER << " " << linker_opt << " -o " << shared_filenameNoExt << ".so " << shared_objs.str() 
             << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "rm " << shared_objs.str() << std::endl;
