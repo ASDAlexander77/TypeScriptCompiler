@@ -110,7 +110,6 @@ void createJitBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "FILEPATH=$2" << std::endl;
     batFile << "TSC_OPTS=$3" << std::endl;
-    batFile << "LLVMPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=jit $TSC_OPTS --shared-libs=../../lib/libTypeScriptRuntime.so $FILEPATH 1> $FILENAME.txt 2> $FILENAME.err"
             << std::endl;
