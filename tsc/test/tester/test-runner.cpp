@@ -365,7 +365,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     
     batFile << "rm " << objs.str() << std::endl;
-    batFile << "rm $FILENAME" << std::endl;
+    //batFile << "rm $FILENAME" << std::endl;
     batFile.close();    
 #endif    
 }
@@ -503,7 +503,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
 
         batFile << "rm " << exec_objs.str() << std::endl;
-        batFile << "rm $FILENAME" << std::endl;
+        //batFile << "rm $FILENAME" << std::endl;
     }
 
     batFile.close();    
