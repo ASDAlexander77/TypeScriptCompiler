@@ -374,7 +374,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 #endif    
 }
 
-void createSharedMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vector<std::string> &files)
+void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector<std::string> &files)
 {
     auto tsc_opt = opt ? "--opt" : "--opt_level=0";
     auto linker_opt = SHARED_LIB_OPT;
@@ -426,17 +426,28 @@ void createSharedMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std:
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
 
-    batFile << execBat.str();
-    batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << exec_objs.str() << " "
-            << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
-            << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
-            << std::endl;
-
     batFile << "del " << shared_objs.str() << std::endl;
-    batFile << "del " << exec_objs.str() << std::endl;
-    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
     batFile << "echo on" << std::endl;
+
+    if (jitRun)
+    {
+        batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll " << *files.begin() << " 1> %FILENAME%.txt 2> %FILENAME%.err"
+                << std::endl;
+    }
+    else
+    {
+        batFile << execBat.str();
+        batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << exec_objs.str() << " "
+                << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
+                << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
+                << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
+                << std::endl;
+
+        batFile << "del " << exec_objs.str() << std::endl;
+
+        batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    }
+
     batFile.close();
 #else
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
@@ -479,17 +490,26 @@ void createSharedMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std:
     batFile << TEST_COMPILER << " -o " << shared_filenameNoExt << " " << linker_opt << " " << shared_objs.str() 
             << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
-    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
-
-    batFile << execBat.str();
-    batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() 
-            << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
-            << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
-    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
-
     batFile << "rm " << shared_objs << std::endl;
-    batFile << "rm " << exec_objs << std::endl;
-    batFile << "rm $FILENAME" << std::endl;
+
+    if (jitRun)
+    {
+        batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so " << *files.begin() << " 1> $FILENAME.txt 2> $FILENAME.err"
+                << std::endl;
+    }
+    else
+    {
+        batFile << execBat.str();
+        batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() 
+                << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
+                << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
+
+        batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+
+        batFile << "rm " << exec_objs << std::endl;
+        batFile << "rm $FILENAME" << std::endl;
+    }
+
     batFile.close();    
 #endif    
 }
@@ -506,10 +526,15 @@ void testMutliFiles(std::vector<std::string> &files)
     auto tempOutputFileNameNoExt = getTempOutputFileNameNoExt(*files.begin());
     if (sharedLibCompiler)
     {
-        createSharedMultiCompileBatchFile(tempOutputFileNameNoExt, files);
+        createSharedMultiBatchFile(tempOutputFileNameNoExt, files);
     }
     else
     {
+        if (jitRun)
+        {
+            throw "not supported";
+        }
+
         createMultiCompileBatchFile(tempOutputFileNameNoExt, files);
     }
 
@@ -559,11 +584,6 @@ int main(int argc, char **argv)
         }
         else if (files.size() > 1)
         {
-            if (jitRun)
-            {
-                throw "jit supports 1 file only";    
-            }
-
             testMutliFiles(files);
         }
         else

@@ -9,7 +9,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/tester/Debug/test-runner.exe",
-            "args": ["-shared", "C:\\dev\\TypeScriptCompiler\\tsc\\test\\tester\\tests\\use_shared.ts", "C:\\dev\\TypeScriptCompiler\\tsc\\test\\tester\\tests\\shared.ts"],
+            "args": ["-shared", "-jit", "C:\\dev\\TypeScriptCompiler\\tsc\\test\\tester\\tests\\use_shared.ts", "C:\\dev\\TypeScriptCompiler\\tsc\\test\\tester\\tests\\shared.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/tester/Debug/",
             "environment": [],

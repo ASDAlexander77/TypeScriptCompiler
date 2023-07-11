@@ -632,8 +632,11 @@ add_test(NAME test-jit-emitDefaultParametersFunctionExpression COMMAND test-runn
 add_test(NAME test-jit-logicalAssignment5 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/logicalAssignment5.ts")
 add_test(NAME test-jit-nbody COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/nbody.ts")
 
-# import tests
-add_test(NAME test-import-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/service.ts")
+# imports support only compile mode
+add_test(NAME test-import-compile-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/service.ts")
 
 # shared libs tests (dlls/dynamics)
 add_test(NAME test-shared-component COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/use_shared.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/shared.ts")
+
+# shared libs tests (dlls/dynamics)
+add_test(NAME test-jit-shared-component COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/use_shared.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/shared.ts")
