@@ -477,7 +477,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             }
         }
 
-        (first ? execBat : sharedBat) << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " $FILEPATH -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        (first ? execBat : sharedBat) << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
 
         first = false;
     }
