@@ -64,10 +64,6 @@
 #endif
 #endif
 
-#ifndef TEST_FILE
-#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00funcs_capture.ts"
-#endif
-
 #if WIN32
 #define RUN_CMD ""
 #define BAT_NAME ".bat "
