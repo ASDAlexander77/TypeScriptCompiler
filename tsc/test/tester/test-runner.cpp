@@ -356,7 +356,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     {
         auto fileNameWithoutExt = fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".o ";
-        batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " $FILEPATH -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
     }
 
     batFile << TEST_COMPILER << " -o $FILENAME " << objs.str() 
@@ -560,9 +560,15 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         {
             opt = false;
         }
-        else
+        else if (exists(argv[index]))
         {
             files.push_back(argv[index]);
+        }
+        else
+        {
+            std::string msg = "unknown param";
+            msg.append(argv[index]);
+            throw msg.c_str();
         }
     }
 }
