@@ -66,10 +66,10 @@
 
 #if WIN32
 #define RUN_CMD ""
-#define BAT_NAME ".bat "
+#define BAT_NAME ".bat"
 #else
 #define RUN_CMD "/bin/sh -f ./"
-#define BAT_NAME ".sh "
+#define BAT_NAME ".sh"
 #endif
 
 #if WIN32
@@ -190,13 +190,13 @@ void createBatchFile()
 
 void buildJitExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
-    ss << RUN_CMD << "jit" << BAT_NAME << fileNameNoExt << " " << file;
+    ss << RUN_CMD << "jit" << BAT_NAME << " " << fileNameNoExt << " " << file;
     ss << " " << (opt ? "--opt" : "--opt_level=0");
 }
 
 void buildCompileExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
-    ss << RUN_CMD << "compile" << BAT_NAME << fileNameNoExt << " " << file;
+    ss << RUN_CMD << "compile" << BAT_NAME << " " << fileNameNoExt << " " << file;
     ss << " " << (opt ? "--opt" : "--opt_level=0");
     if (sharedLibCompiler)
     {
