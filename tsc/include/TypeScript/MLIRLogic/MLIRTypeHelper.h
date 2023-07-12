@@ -2834,6 +2834,9 @@ class MLIRTypeHelper
             .template Case<mlir::StringAttr>([&](auto a) {
                 out << a.str().c_str();
             })
+            .template Case<mlir::FlatSymbolRefAttr>([&](auto a) {
+                out << a.getValue().str().c_str();
+            })            
             .template Case<mlir::IntegerAttr>([&](auto a) {
                 SmallVector<char> Str;
                 a.getValue().toStringUnsigned(Str);
@@ -2956,13 +2959,17 @@ class MLIRTypeHelper
                 out << "]";
             })
             .template Case<mlir_ts::TypeReferenceType>([&](auto t) {
-                out << "<";
-                for (auto subType : t.getTypes())
+                printAttribute(out, t.getName());
+                if (t.getTypes().size() > 0)
                 {
-                    out << ", ";
-                    printType(out, subType);
+                    out << "<";
+                    for (auto subType : t.getTypes())
+                    {
+                        out << ", ";
+                        printType(out, subType);
+                    }
+                    out << ">";
                 }
-                out << ">";
             })
             .template Case<mlir_ts::TypePredicateType>([&](auto t) {
                 printType(out, t.getElementType());

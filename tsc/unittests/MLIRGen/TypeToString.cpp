@@ -129,6 +129,25 @@ TEST_F(TypeToNameTest, func_variadic_name) {
             mlir_ts::StringType::get(getContext())
         }, true);
 
-    test(funcType, "(number, ...any[]) => string");    
+    test(funcType, "(number, ...any[]) => string");
+}
 
+TEST_F(TypeToNameTest, union_names) {
+
+    test(mlir_ts::UnionType::get(
+        getContext(), 
+        {   
+            mlir_ts::NumberType::get(getContext()), 
+            mlir_ts::StringType::get(getContext())
+        }), "number | string");
+}
+
+TEST_F(TypeToNameTest, intersect_names) {
+
+    test(mlir_ts::IntersectionType::get(
+        getContext(), 
+        {   
+            mlir_ts::NumberType::get(getContext()), 
+            mlir_ts::StringType::get(getContext())
+        }), "number & string");
 }
