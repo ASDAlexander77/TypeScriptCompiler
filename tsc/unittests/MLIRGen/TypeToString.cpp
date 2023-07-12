@@ -151,3 +151,44 @@ TEST_F(TypeToNameTest, intersect_names) {
             mlir_ts::StringType::get(getContext())
         }), "number & string");
 }
+
+TEST_F(TypeToNameTest, typeref_names) {
+
+    test(
+        mlir_ts::TypeReferenceType::get(
+            getContext(),
+            mlir::FlatSymbolRefAttr::get(getContext(), "type1"),
+            {   
+            }
+        ), 
+        "type1"
+    );
+
+    test(
+        mlir_ts::TypeReferenceType::get(
+            getContext(),
+            mlir::FlatSymbolRefAttr::get(getContext(), "type1"),
+            {   
+                mlir_ts::NumberType::get(getContext()), 
+                mlir_ts::StringType::get(getContext())
+            }
+        ), 
+        "type1<number, string>"
+    );
+}
+
+TEST_F(TypeToNameTest, interface_name) {
+
+    test(
+        mlir_ts::InterfaceType::get(getContext(), mlir::FlatSymbolRefAttr::get(getContext(), "type1")),
+        "type1"
+    );
+}
+
+TEST_F(TypeToNameTest, class_name) {
+
+    test(
+        mlir_ts::ClassType::get(getContext(), mlir::FlatSymbolRefAttr::get(getContext(), "type1"), mlir_ts::ClassStorageType::get(getContext(), mlir::FlatSymbolRefAttr::get(getContext(), "type1"))),
+        "type1"
+    );
+}

@@ -2963,10 +2963,16 @@ class MLIRTypeHelper
                 if (t.getTypes().size() > 0)
                 {
                     out << "<";
+                    auto first = true;
                     for (auto subType : t.getTypes())
                     {
-                        out << ", ";
+                        if (!first)
+                        {
+                            out << ", ";
+                        }
+
                         printType(out, subType);
+                        first = false;
                     }
                     out << ">";
                 }
