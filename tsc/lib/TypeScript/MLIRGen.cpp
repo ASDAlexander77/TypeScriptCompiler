@@ -286,7 +286,7 @@ class MLIRGenImpl
 
             // CU
             unsigned sourceLanguage = llvm::dwarf::DW_LANG_C; 
-            auto producer = builder.getStringAttr("TypeScritp Native Compiler");
+            auto producer = builder.getStringAttr("TypeScript Native Compiler");
             auto emissionKind = mlir::LLVM::DIEmissionKind::Full;
             auto compileUnit = mlir::LLVM::DICompileUnitAttr::get(builder.getContext(), sourceLanguage, file, producer, isOptimized, emissionKind);        
 
@@ -5300,7 +5300,7 @@ class MLIRGenImpl
         mlirGenReturnValue(location, yieldValue, true, genContext);
 
         std::stringstream label;
-        label << "state" << state;
+        label << GENERATOR_STATELABELPREFIX << state;
         builder.create<mlir_ts::StateLabelOp>(location, label.str());
 
         // TODO: yield value to continue, should be loaded from "next(value)" parameter
@@ -6295,7 +6295,7 @@ class MLIRGenImpl
         label = MLIRHelper::getName(labeledStatementAST->label);
 
         auto kind = (SyntaxKind)labeledStatementAST->statement;
-        if (kind == SyntaxKind::EmptyStatement && StringRef(label).startswith("state"))
+        if (kind == SyntaxKind::EmptyStatement && StringRef(label).startswith(GENERATOR_STATELABELPREFIX))
         {
             builder.create<mlir_ts::StateLabelOp>(location, builder.getStringAttr(label));
             return mlir::success();

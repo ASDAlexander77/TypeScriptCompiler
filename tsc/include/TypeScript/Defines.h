@@ -38,6 +38,7 @@
 #define THIS_ALIAS ".this"
 #define GENERATOR_STEP ".step"
 #define GENERATOR_SWITCHSTATE ".switchstate"
+#define GENERATOR_STATELABELPREFIX ".state"
 
 #define TO_STRING "toString"
 #define SYMBOL_TO_STRING_TAG "toStringTag"
