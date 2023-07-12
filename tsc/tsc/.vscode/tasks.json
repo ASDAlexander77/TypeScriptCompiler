@@ -4,7 +4,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "config CMake",
+            "label": "config TSC",
             "detail": "config_tsc_debug",
             "type": "shell",
             "command": "./config_tsc_debug.bat",
@@ -15,10 +15,25 @@
             }
         },
         {
-            "label": "build CMake",
+            "label": "build TSC",
             "detail": "build_tsc_debug",
             "type": "shell",
             "command": "./build_tsc_debug.bat",
+            "args": [],
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/.."
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "unit test TSC",
+            "detail": "build_tsc_debug-unittests",
+            "type": "shell",
+            "command": "./build_tsc_debug-unittests.bat",
             "args": [],
             "problemMatcher": [],
             "options": {
