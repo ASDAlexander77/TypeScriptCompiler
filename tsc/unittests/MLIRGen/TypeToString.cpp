@@ -48,6 +48,8 @@ public:
 
 TEST_F(TypeToNameTest, basic_names) {
 
+    test(mlir_ts::UndefinedType::get(getContext()), "undefined");
+    test(mlir_ts::NullType::get(getContext()), "null");
     test(mlir_ts::BooleanType::get(getContext()), "boolean");
     test(mlir_ts::NumberType::get(getContext()), "number");
     test(mlir_ts::StringType::get(getContext()), "string");
@@ -79,7 +81,54 @@ TEST_F(TypeToNameTest, tuple_name) {
 TEST_F(TypeToNameTest, tuple_with_names) {
 
     SmallVector<::mlir::typescript::FieldInfo> fields;
+    fields.push_back({ mlir::IntegerAttr::get(mlir::IntegerType::get(getContext(), 32), 1), mlir_ts::NumberType::get(getContext()) });
     fields.push_back({ mlir::StringAttr::get(getContext(), "size"), mlir_ts::NumberType::get(getContext()) });
     fields.push_back({ mlir::StringAttr::get(getContext(), "name"), mlir_ts::StringType::get(getContext()) });
-    test(mlir_ts::TupleType::get(getContext(), fields), "[size:number, name:string]");
+    test(mlir_ts::TupleType::get(getContext(), fields), "[1:number, size:number, name:string]");
+}
+
+TEST_F(TypeToNameTest, optinal_name) {
+
+    test(mlir_ts::OptionalType::get(getContext(), mlir_ts::BooleanType::get(getContext())), "boolean | undefined");
+}
+
+TEST_F(TypeToNameTest, func_name) {
+
+    auto funcTypeVoid = mlir_ts::FunctionType::get(
+        getContext(), 
+        {
+        }, 
+        {
+        }, false);
+
+
+    test(funcTypeVoid, "() => void");
+
+    auto funcType2 = mlir_ts::FunctionType::get(
+        getContext(), 
+        {
+            mlir_ts::NumberType::get(getContext()), 
+            mlir_ts::ArrayType::get(getContext(), mlir_ts::AnyType::get(getContext()))
+        }, 
+        {
+            mlir_ts::StringType::get(getContext())
+        }, false);
+
+    test(funcType2, "(number, any[]) => string");
+}
+
+TEST_F(TypeToNameTest, func_variadic_name) {
+
+    auto funcType = mlir_ts::FunctionType::get(
+        getContext(), 
+        {
+            mlir_ts::NumberType::get(getContext()), 
+            mlir_ts::ArrayType::get(getContext(), mlir_ts::AnyType::get(getContext()))
+        }, 
+        {
+            mlir_ts::StringType::get(getContext())
+        }, true);
+
+    test(funcType, "(number, ...any[]) => string");    
+
 }

@@ -2725,9 +2725,24 @@ class MLIRTypeHelper
     void printFuncType(T &out, F t)
     {
         out << "(";
+        auto first = true;
+        auto size = t.getInputs().size();
+        auto isVar = t.getIsVarArg();
         for (auto subType : t.getInputs())
         {
+            if (!first)
+            {
+                out << ", ";
+            }
+
+            if (isVar && size == 1)
+            {
+                out << "...";
+            }
+
             printType(out, subType);
+            first = false;
+            size --;
         }
         out << ") => ";
 
@@ -2742,9 +2757,16 @@ class MLIRTypeHelper
         else
         {
             out << "[";
+            auto first = true;
             for (auto subType : t.getResults())
             {
+                if (!first)
+                {
+                    out << ", ";
+                }
+
                 printType(out, subType);
+                first = false;
             }
 
             out << "]";
@@ -2812,6 +2834,12 @@ class MLIRTypeHelper
             .template Case<mlir::StringAttr>([&](auto a) {
                 out << a.str().c_str();
             })
+            .template Case<mlir::IntegerAttr>([&](auto a) {
+                SmallVector<char> Str;
+                a.getValue().toStringUnsigned(Str);
+                StringRef strRef(Str.data(), Str.size());
+                out << strRef.str().c_str();
+            })
             .Default([](mlir::Attribute a) { 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Type print is not implemented for : " << a << "\n";);
                 llvm_unreachable("not implemented");
@@ -2822,6 +2850,12 @@ class MLIRTypeHelper
     void printType(T &out, mlir::Type type)
     {
         llvm::TypeSwitch<mlir::Type>(type)
+            .template Case<mlir_ts::NullType>([&](auto t) {
+                out << "null";
+            })
+            .template Case<mlir_ts::UndefinedType>([&](auto t) {
+                out << "undefined";
+            })
             .template Case<mlir_ts::ArrayType>([&](auto t) {
                 printType(out, t.getElementType());
                 out << "[]";
