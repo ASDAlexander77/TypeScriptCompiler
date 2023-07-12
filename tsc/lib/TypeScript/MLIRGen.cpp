@@ -18974,9 +18974,6 @@ genContext);
 
     void addToExport(StringRef name, mlir::Type type, const char* recordType, const GenContext &genContext)
     {
-        Printer<std::wostream> printer(exports);
-        //printer.printNode(functionLikeDeclarationBaseAST);
-
         exports << recordType << std::endl << name.str().c_str() << std::endl;
         mth.printType<std::wostream>(exports, type);
         exports << std::endl;
