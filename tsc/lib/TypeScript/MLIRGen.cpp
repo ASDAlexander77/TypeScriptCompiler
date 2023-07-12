@@ -16179,10 +16179,6 @@ genContext);
         {
             return getUndefinedType();
         }
-        else if (kind == SyntaxKind::UndefinedKeyword)
-        {
-            return getUndefinedType();
-        }
         else if (kind == SyntaxKind::TypePredicate)
         {
             // in runtime it is boolean (it is needed to track types)
