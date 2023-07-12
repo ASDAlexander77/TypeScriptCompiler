@@ -2752,9 +2752,8 @@ class MLIRTypeHelper
     }
 
     template <typename T, typename TPL>
-    void printTupleType(T &out, TPL t)
+    void printFields(T &out, TPL t)
     {
-        out << "{";
         auto first = true;
         for (auto field : t.getFields())
         {
@@ -2763,12 +2762,30 @@ class MLIRTypeHelper
                 out << ", ";
             }
 
-            //print(out, field.id);
+            if (field.id)
+            {
+                printAttribute(out, field.id);
+                out << ":";
+            }
 
             printType(out, field.type);
             first = false;
         }
+    }    
 
+    template <typename T, typename TPL>
+    void printTupleType(T &out, TPL t)
+    {
+        out << "[";
+        printFields(out, t);
+        out << "]";        
+    }
+
+    template <typename T, typename TPL>
+    void printObjectType(T &out, TPL t)
+    {
+        out << "{";
+        printFields(out, t);
         out << "}";        
     }
 
@@ -2786,6 +2803,19 @@ class MLIRTypeHelper
             printType(out, subType);
             first = false;
         }        
+    }
+    
+    template <typename T>
+    void printAttribute(T &out, mlir::Attribute attr)
+    {
+        llvm::TypeSwitch<mlir::Attribute>(attr)
+            .template Case<mlir::StringAttr>([&](auto a) {
+                out << a.str().c_str();
+            })
+            .Default([](mlir::Attribute a) { 
+                LLVM_DEBUG(llvm::dbgs() << "\n!! Type print is not implemented for : " << a << "\n";);
+                llvm_unreachable("not implemented");
+            });
     }
 
     template <typename T>

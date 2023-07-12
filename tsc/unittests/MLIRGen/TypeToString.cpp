@@ -46,6 +46,40 @@ public:
     mlir::MLIRContext context;
 };
 
-TEST_F(TypeToNameTest, bool_name) {
+TEST_F(TypeToNameTest, basic_names) {
+
     test(mlir_ts::BooleanType::get(getContext()), "boolean");
+    test(mlir_ts::NumberType::get(getContext()), "number");
+    test(mlir_ts::StringType::get(getContext()), "string");
+    test(mlir_ts::AnyType::get(getContext()), "any");
+    test(mlir_ts::ObjectType::get(getContext(), mlir_ts::AnyType::get(getContext())), "object");
+    test(mlir_ts::NeverType::get(getContext()), "never");
+    test(mlir_ts::UnknownType::get(getContext()), "unknown");
+    test(mlir_ts::VoidType::get(getContext()), "void");
+    // support types
+    test(mlir_ts::OpaqueType::get(getContext()), "Opaque");
+}
+
+TEST_F(TypeToNameTest, array_name) {
+
+    test(mlir_ts::ArrayType::get(getContext(), mlir_ts::BooleanType::get(getContext())), "boolean[]");
+    test(mlir_ts::ArrayType::get(getContext(), mlir_ts::NumberType::get(getContext())), "number[]");
+    test(mlir_ts::ArrayType::get(getContext(), mlir_ts::StringType::get(getContext())), "string[]");
+    test(mlir_ts::ArrayType::get(getContext(), mlir_ts::AnyType::get(getContext())), "any[]");
+}
+
+TEST_F(TypeToNameTest, tuple_name) {
+
+    SmallVector<::mlir::typescript::FieldInfo> fields;
+    fields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(getContext()) });
+    fields.push_back({ mlir::Attribute(), mlir_ts::StringType::get(getContext()) });
+    test(mlir_ts::TupleType::get(getContext(), fields), "[number, string]");
+}
+
+TEST_F(TypeToNameTest, tuple_with_names) {
+
+    SmallVector<::mlir::typescript::FieldInfo> fields;
+    fields.push_back({ mlir::StringAttr::get(getContext(), "size"), mlir_ts::NumberType::get(getContext()) });
+    fields.push_back({ mlir::StringAttr::get(getContext(), "name"), mlir_ts::StringType::get(getContext()) });
+    test(mlir_ts::TupleType::get(getContext(), fields), "[size:number, name:string]");
 }
