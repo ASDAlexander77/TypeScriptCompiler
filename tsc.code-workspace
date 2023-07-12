@@ -17,6 +17,10 @@
             "path": "./tsc/test"
         },
         {
+            "name": "TypeScript Compiler Unit Tests",
+            "path": "./tsc/unittests"
+        },
+        {
             "name": "TypeScript tsc-opt",
             "path": "./tsc/tsc-opt"
         },

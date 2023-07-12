@@ -112,7 +112,7 @@ if (NOT DEFINED TYPESCRIPT_IGNORE_UNIT_TESTS)
   endif()
   
   add_definitions(-DTYPESCRIPT_INCLUDE_TESTS)
-  add_custom_target(MLIRTypeScriptUnitTests)
+  add_custom_target(MLIRTypeScriptUnitTests ALL)
   if (EXISTS ${MLIRTYPESCRIPT_LLVM_THIRD_PARTY_DIR}/unittest/googletest/include/gtest/gtest.h)
     add_subdirectory(unittests)
   else()
