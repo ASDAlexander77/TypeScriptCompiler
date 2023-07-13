@@ -1927,6 +1927,11 @@ class MLIRTypeHelper
             return false;
         }
 
+        if (srcType == extendType)
+        {
+            return true;
+        }
+
         if (auto neverType = extendType.dyn_cast<mlir_ts::NeverType>())
         {
             // TODO: if extend type is never it should return true
@@ -1945,14 +1950,8 @@ class MLIRTypeHelper
 
         if (auto neverType = srcType.dyn_cast_or_null<mlir_ts::NeverType>())
         {
-            // TODO: if extend type is never it should return true
-            return true;
+            return false;
         }        
-
-        if (srcType == extendType)
-        {
-            return true;
-        }
 
         // to support infer types
         if (auto inferType = extendType.dyn_cast<mlir_ts::InferType>())

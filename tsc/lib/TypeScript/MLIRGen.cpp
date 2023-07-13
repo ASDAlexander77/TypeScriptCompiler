@@ -16484,7 +16484,7 @@ genContext);
                                 : typeParam->hasConstraint() 
                                     ? getType(typeParam->getConstraint(), genContext) 
                                     : mlir::Type());
-             if (!type)
+            if (!type)
             {
                 return {mlir::failure(), anyNamedGenericType};
             }
@@ -18369,6 +18369,8 @@ genContext);
     mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext)
     {
         GenContext genericTypeGenContext(genContext);
+
+        // preparing generic context to resolve types
         if (signature->typeParameters.size())
         {
             llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
