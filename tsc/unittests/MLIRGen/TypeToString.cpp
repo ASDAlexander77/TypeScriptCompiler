@@ -174,7 +174,7 @@ TEST_F(TypeToNameTest, func_name) {
         }
     );
 
-    test(funcType2, "(number, any[]) => string");
+    test(funcType2, "(p0: number, p1: any[]) => string");
 }
 
 TEST_F(TypeToNameTest, func_variadic_name) {
@@ -189,7 +189,7 @@ TEST_F(TypeToNameTest, func_variadic_name) {
         }, 
         true);
 
-    test(funcType, "(number, ...any[]) => string");
+    test(funcType, "(p0: number, ...p1: any[]) => string");
 }
 
 TEST_F(TypeToNameTest, union_names) {

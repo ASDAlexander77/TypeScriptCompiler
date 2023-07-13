@@ -2726,6 +2726,7 @@ class MLIRTypeHelper
     {
         out << "(";
         auto first = true;
+        auto index = 0;
         auto size = t.getInputs().size();
         auto isVar = t.getIsVarArg();
         for (auto subType : t.getInputs())
@@ -2740,8 +2741,11 @@ class MLIRTypeHelper
                 out << "...";
             }
 
+            out << "p" << index << ": ";
+
             printType(out, subType);
             first = false;
+            index ++;
             size --;
         }
         out << ") => ";
