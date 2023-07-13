@@ -18359,7 +18359,7 @@ genContext);
     mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext)
     {
         auto resultType = getType(signature->type, genContext);
-        if (!resultType)
+        if (!resultType && !genContext.allowPartialResolve)
         {
             return mlir::Type();
         }
