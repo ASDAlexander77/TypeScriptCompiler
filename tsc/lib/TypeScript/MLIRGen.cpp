@@ -774,7 +774,7 @@ class MLIRGenImpl
             auto importData = ConvertUTF8toWide(tsPart);
             if (mlir::failed(parsePartialStatements(importData, genContext)))
             {
-                assert(false);
+                //assert(false);
                 return mlir::failure();
             }            
         }
@@ -1830,7 +1830,7 @@ class MLIRGenImpl
     }
 
     std::pair<mlir::LogicalResult, bool> resolveGenericParamFromFunctionCall(mlir::Location location, mlir::Type paramType, mlir::Value argOp, int paramIndex,
-        GenericFunctionInfo::TypePtr functionGenericTypeInfo, bool &anyNamedGenericType,  GenContext &genericTypeGenContext, const GenContext &genContext)
+        GenericFunctionInfo::TypePtr functionGenericTypeInfo, bool &anyNamedGenericType,  GenContext &genericTypeGenContext)
     {
         if (paramType == argOp.getType())
         {
@@ -1838,7 +1838,7 @@ class MLIRGenImpl
         }
 
         StringMap<mlir::Type> inferredTypes;
-        inferType(location, paramType, argOp.getType(), inferredTypes, genContext);
+        inferType(location, paramType, argOp.getType(), inferredTypes, genericTypeGenContext);
         if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
                                                 genericTypeGenContext)))
         {
@@ -1896,15 +1896,14 @@ class MLIRGenImpl
                                                              NodeArray<TypeNode> typeArguments,
                                                              bool skipThisParam,
                                                              bool &anyNamedGenericType,
-                                                             GenContext &genericTypeGenContext,
-                                                             const GenContext &genContext)
+                                                             GenContext &genericTypeGenContext)
     {
         // add provided type arguments, ignoring defaults
         auto typeParams = functionGenericTypeInfo->typeParams;
         if (typeArguments)
         {
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArgumentsNoDefaults(
-                location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
+                location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
             if (mlir::failed(result))
             {
                 return mlir::failure();
@@ -1924,7 +1923,7 @@ class MLIRGenImpl
                 paramInfo->processed = false;
             }
 
-            auto callOpsCount = genContext.callOperands.size();
+            auto callOpsCount = genericTypeGenContext.callOperands.size();
             auto totalProcessed = 0;
             do
             {
@@ -1959,7 +1958,7 @@ class MLIRGenImpl
                         break;
                     }
 
-                    auto argOp = genContext.callOperands[paramIndex];
+                    auto argOp = genericTypeGenContext.callOperands[paramIndex];
 
                     LLVM_DEBUG(llvm::dbgs()
                         << "\n!! resolving param for generic function: '"
@@ -1968,7 +1967,7 @@ class MLIRGenImpl
                     if (!paramInfo->getIsMultiArgsParam())
                     {
                         auto [result, cont] = resolveGenericParamFromFunctionCall(
-                            location, paramType, argOp, paramIndex, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext, genContext);
+                            location, paramType, argOp, paramIndex, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext);
                         if (mlir::succeeded(result))
                         {
                             paramInfo->processed = true;
@@ -1985,7 +1984,7 @@ class MLIRGenImpl
                         struct ArrayInfo arrayInfo{};
                         for (auto varArgIndex = paramIndex; varArgIndex < callOpsCount; varArgIndex++)
                         {
-                            auto argOp = genContext.callOperands[varArgIndex];
+                            auto argOp = genericTypeGenContext.callOperands[varArgIndex];
 
                             accumulateArrayItemType(argOp.getType(), arrayInfo);                            
                         }
@@ -1993,7 +1992,7 @@ class MLIRGenImpl
                         mlir::Type arrayType = getArrayType(arrayInfo.accumulatedArrayElementType);
 
                         StringMap<mlir::Type> inferredTypes;
-                        inferType(location, paramType, arrayType, inferredTypes, genContext);
+                        inferType(location, paramType, arrayType, inferredTypes, genericTypeGenContext);
                         if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
                                                                 genericTypeGenContext, true)))
                         {
@@ -2025,7 +2024,7 @@ class MLIRGenImpl
 
         // add default params if not provided
         auto [resultDefArg, hasAnyNamedGenericType] = zipTypeParametersWithDefaultArguments(
-            location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
+            location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
         if (mlir::failed(resultDefArg))
         {
             return mlir::failure();
@@ -2082,7 +2081,7 @@ class MLIRGenImpl
             {
                 auto result =
                     resolveGenericParamsFromFunctionCall(location, functionGenericTypeInfo, typeArguments,
-                                                         skipThisParam, anyNamedGenericType, genericTypeGenContext, genContext);
+                                                         skipThisParam, anyNamedGenericType, genericTypeGenContext);
                 if (mlir::failed(result))
                 {
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
@@ -12161,6 +12160,9 @@ class MLIRGenImpl
             }
         }    
 
+        if (!isEmbededType(name))
+            emitError(location, "can't find type by name: ") << name;
+
         return mlir::Type();    
     }
 
@@ -16361,10 +16363,10 @@ genContext);
         if (!noExtendTest && typeParam->hasConstraint())
         {
             // we need to add current type into context to be able to use it in resolving "extends" constraints
-            GenContext constaintGenContext(genContext);
-            constaintGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
+            GenContext constraintGenContext(genContext);
+            constraintGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
 
-            auto constraintType = getType(typeParam->getConstraint(), constaintGenContext);
+            auto constraintType = getType(typeParam->getConstraint(), constraintGenContext);
             if (!constraintType)
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
@@ -16478,7 +16480,7 @@ genContext);
                             : (isDefault = true, typeParam->hasDefault() 
                                 ? getType(typeParam->getDefault(), genContext) 
                                 : mlir::Type());
-            if (!type)
+             if (!type)
             {
                 return {mlir::failure(), anyNamedGenericType};
             }
@@ -16543,41 +16545,40 @@ genContext);
         {
             auto &typeParam = typeParams[index];
             auto isDefault = false;
-            auto type = index < argsCount
-                            ? getType(typeArgs[index], genContext)
-                            : (isDefault = true,
-                               typeParam->hasDefault() 
-                                    ? getType(typeParam->getDefault(), genContext) 
-                                    : typeParam->hasConstraint() 
-                                        ? getType(typeParam->getConstraint(), genContext) 
-                                        : mlir::Type());
+            if (index < argsCount)
+            {
+                // we need to process only default values
+                continue;
+            }
+            auto type = typeParam->hasDefault() 
+                            ? getType(typeParam->getDefault(), genContext) 
+                            : typeParam->hasConstraint() 
+                                ? getType(typeParam->getConstraint(), genContext) 
+                                : mlir::Type();
             if (!type)
             {
                 return {mlir::success(), anyNamedGenericType};
             }
 
-            if (isDefault)
+            auto name = typeParam->getName();
+            auto existType = pairs.lookup(name);
+            if (existType.second)
             {
-                auto name = typeParam->getName();
-                auto existType = pairs.lookup(name);
-                if (existType.second)
-                {
-                    // type is resolved
-                    continue;
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! adding default type: " << typeParam->getName() << " type: " << type
-                                    << "\n";);
-
-                auto [result, hasNamedGenericType] =
-                    zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault, genContext);
-                if (mlir::failed(result))
-                {
-                    return {mlir::failure(), anyNamedGenericType};
-                }
-
-                anyNamedGenericType |= hasNamedGenericType;
+                // type is resolved
+                continue;
             }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! adding default type: " << typeParam->getName() << " type: " << type
+                                << "\n";);
+
+            auto [result, hasNamedGenericType] =
+                zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault, genContext);
+            if (mlir::failed(result))
+            {
+                return {mlir::failure(), anyNamedGenericType};
+            }
+
+            anyNamedGenericType |= hasNamedGenericType;
         }
 
         return {mlir::success(), anyNamedGenericType};
@@ -18355,14 +18356,24 @@ genContext);
         return mlir_ts::ExtensionFunctionType::get(builder.getContext(), funcType);
     }
 
-    mlir_ts::FunctionType getSignature(SignatureDeclarationBase signature, const GenContext &genContext)
+    mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext)
     {
         auto resultType = getType(signature->type, genContext);
+        if (!resultType)
+        {
+            return mlir::Type();
+        }
+
         SmallVector<mlir::Type> argTypes;
         auto isVarArg = false;
         for (auto paramItem : signature->parameters)
         {
             auto type = getType(paramItem->type, genContext);
+            if (!type)
+            {
+                return mlir::Type();
+            }
+
             if (paramItem->questionToken)
             {
                 type = getOptionalType(type);
@@ -18377,39 +18388,57 @@ genContext);
         return funcType;
     }
 
-    mlir_ts::HybridFunctionType getFunctionType(SignatureDeclarationBase signature, const GenContext &genContext)
+    mlir::Type getFunctionType(SignatureDeclarationBase signature, const GenContext &genContext)
     {
-        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), getSignature(signature, genContext));
+        auto signatureType = getSignature(signature, genContext);
+        if (!signatureType)
+        {
+            return mlir::Type();
+        }
+
+        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), signatureType.cast<mlir_ts::FunctionType>());
         return funcType;
     }
 
-    mlir_ts::ConstructFunctionType getConstructorType(SignatureDeclarationBase signature, const GenContext &genContext)
+    mlir::Type getConstructorType(SignatureDeclarationBase signature, const GenContext &genContext)
     {
+        auto signatureType = getSignature(signature, genContext);
+        if (!signatureType)
+        {
+            return mlir::Type();
+        }
+
         auto funcType = mlir_ts::ConstructFunctionType::get(
             builder.getContext(), 
-            getSignature(signature, genContext), 
+            signatureType.cast<mlir_ts::FunctionType>(), 
             hasModifier(signature, SyntaxKind::AbstractKeyword));
         return funcType;
     }
 
-    mlir_ts::HybridFunctionType getCallSignature(CallSignatureDeclaration signature, const GenContext &genContext)
+    mlir::Type getCallSignature(CallSignatureDeclaration signature, const GenContext &genContext)
     {
-        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), getSignature(signature, genContext));
+        auto signatureType = getSignature(signature, genContext);
+        if (!signatureType)
+        {
+            return mlir::Type();
+        }
+
+        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), signatureType.cast<mlir_ts::FunctionType>());
         return funcType;
     }
 
-    mlir_ts::FunctionType getConstructSignature(ConstructSignatureDeclaration constructSignature,
+    mlir::Type getConstructSignature(ConstructSignatureDeclaration constructSignature,
                                                 const GenContext &genContext)
     {
         return getSignature(constructSignature, genContext);
     }
 
-    mlir_ts::FunctionType getMethodSignature(MethodSignature methodSignature, const GenContext &genContext)
+    mlir::Type getMethodSignature(MethodSignature methodSignature, const GenContext &genContext)
     {
         return getSignature(methodSignature, genContext);
     }
 
-    mlir_ts::FunctionType getIndexSignature(IndexSignatureDeclaration indexSignature, const GenContext &genContext)
+    mlir::Type getIndexSignature(IndexSignatureDeclaration indexSignature, const GenContext &genContext)
     {
         return getSignature(indexSignature, genContext);
     }
