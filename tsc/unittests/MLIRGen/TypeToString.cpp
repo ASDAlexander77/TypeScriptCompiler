@@ -43,136 +43,181 @@ public:
         return &context;
     }
 
+    template <typename T> T get()
+    {
+        return T::get(getContext());
+    }
+
+    template <typename T, typename E> T getE()
+    {
+        return T::get(getContext(), get<E>());
+    }
+
+    template <typename T> T getTs(::llvm::ArrayRef<mlir::Type> types)
+    {
+        return T::get(
+            getContext(),
+            types
+        );
+    }    
+
+    template <typename T> T getNamedTs(StringRef name, ::llvm::ArrayRef<mlir::Type> types)
+    {
+        return T::get(
+            getContext(),
+            mlir::FlatSymbolRefAttr::get(getContext(), name),
+            types
+        );
+    }    
+
+    template <typename T = mlir_ts::FunctionType> T getF(::llvm::ArrayRef<mlir::Type> types, ::llvm::ArrayRef<mlir::Type> results, bool isVar = false)
+    {
+        return T::get(getContext(), types, results, isVar);    
+    }
+
+    template <typename E> mlir_ts::ArrayType getArray()
+    {
+        return getE<mlir_ts::ArrayType, E>();
+    }
+
+    template <typename E> mlir_ts::OptionalType getOpt()
+    {
+        return getE<mlir_ts::OptionalType, E>();
+    }
+
+    mlir_ts::TupleType getTuple(ArrayRef<::mlir::typescript::FieldInfo> fields)
+    {
+        return mlir_ts::TupleType::get(getContext(), fields);
+    }
+
+    mlir_ts::TypeReferenceType getTypeRef(StringRef name)
+    {
+        return getNamedTs<mlir_ts::TypeReferenceType>(name, {});
+    }
+
+    mlir_ts::TypeReferenceType getTypeRef(StringRef name, ::llvm::ArrayRef<mlir::Type> types)
+    {
+        return getNamedTs<mlir_ts::TypeReferenceType>(name, types);
+    }
+
+    mlir_ts::InterfaceType getInterface(StringRef name)
+    {
+        return mlir_ts::InterfaceType::get(getContext(), mlir::FlatSymbolRefAttr::get(getContext(), name));
+    }
+
+    mlir_ts::ClassType getClass(StringRef name)
+    {
+        return mlir_ts::ClassType::get(getContext(), mlir::FlatSymbolRefAttr::get(getContext(), name), mlir_ts::ClassStorageType::get(getContext(), mlir::FlatSymbolRefAttr::get(getContext(), name)));
+    }
+
     mlir::MLIRContext context;
 };
 
 TEST_F(TypeToNameTest, basic_names) {
 
-    test(mlir_ts::UndefinedType::get(getContext()), "undefined");
-    test(mlir_ts::NullType::get(getContext()), "null");
-    test(mlir_ts::BooleanType::get(getContext()), "boolean");
-    test(mlir_ts::NumberType::get(getContext()), "number");
-    test(mlir_ts::StringType::get(getContext()), "string");
-    test(mlir_ts::AnyType::get(getContext()), "any");
-    test(mlir_ts::ObjectType::get(getContext(), mlir_ts::AnyType::get(getContext())), "object");
-    test(mlir_ts::NeverType::get(getContext()), "never");
-    test(mlir_ts::UnknownType::get(getContext()), "unknown");
-    test(mlir_ts::VoidType::get(getContext()), "void");
+    test(get<mlir_ts::UndefinedType>(), "undefined");
+    test(get<mlir_ts::NullType>(), "null");
+    test(get<mlir_ts::BooleanType>(), "boolean");
+    test(get<mlir_ts::NumberType>(), "number");
+    test(get<mlir_ts::StringType>(), "string");
+    test(get<mlir_ts::AnyType>(), "any");
+    test(getE<mlir_ts::ObjectType, mlir_ts::AnyType>(), "object");
+    test(get<mlir_ts::NeverType>(), "never");
+    test(get<mlir_ts::UnknownType>(), "unknown");
+    test(get<mlir_ts::VoidType>(), "void");
     // support types
-    test(mlir_ts::OpaqueType::get(getContext()), "Opaque");
+    test(get<mlir_ts::OpaqueType>(), "Opaque");
 }
 
 TEST_F(TypeToNameTest, array_name) {
 
-    test(mlir_ts::ArrayType::get(getContext(), mlir_ts::BooleanType::get(getContext())), "boolean[]");
-    test(mlir_ts::ArrayType::get(getContext(), mlir_ts::NumberType::get(getContext())), "number[]");
-    test(mlir_ts::ArrayType::get(getContext(), mlir_ts::StringType::get(getContext())), "string[]");
-    test(mlir_ts::ArrayType::get(getContext(), mlir_ts::AnyType::get(getContext())), "any[]");
+    test(getArray<mlir_ts::BooleanType>(), "boolean[]");
+    test(getArray<mlir_ts::NumberType>(), "number[]");
+    test(getArray<mlir_ts::StringType>(), "string[]");
+    test(getArray<mlir_ts::AnyType>(), "any[]");
 }
 
 TEST_F(TypeToNameTest, tuple_name) {
 
     SmallVector<::mlir::typescript::FieldInfo> fields;
-    fields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(getContext()) });
-    fields.push_back({ mlir::Attribute(), mlir_ts::StringType::get(getContext()) });
-    test(mlir_ts::TupleType::get(getContext(), fields), "[number, string]");
+    fields.push_back({ mlir::Attribute(), get<mlir_ts::NumberType>() });
+    fields.push_back({ mlir::Attribute(), get<mlir_ts::StringType>() });
+    test(getTuple(fields), "[number, string]");
 }
 
 TEST_F(TypeToNameTest, tuple_with_names) {
 
     SmallVector<::mlir::typescript::FieldInfo> fields;
-    fields.push_back({ mlir::IntegerAttr::get(mlir::IntegerType::get(getContext(), 32), 1), mlir_ts::NumberType::get(getContext()) });
-    fields.push_back({ mlir::StringAttr::get(getContext(), "size"), mlir_ts::NumberType::get(getContext()) });
-    fields.push_back({ mlir::StringAttr::get(getContext(), "name"), mlir_ts::StringType::get(getContext()) });
-    test(mlir_ts::TupleType::get(getContext(), fields), "[1:number, size:number, name:string]");
+    fields.push_back({ mlir::IntegerAttr::get(mlir::IntegerType::get(getContext(), 32), 1), get<mlir_ts::NumberType>() });
+    fields.push_back({ mlir::StringAttr::get(getContext(), "size"), get<mlir_ts::NumberType>() });
+    fields.push_back({ mlir::StringAttr::get(getContext(), "name"), get<mlir_ts::StringType>() });
+    test(getTuple(fields), "[1:number, size:number, name:string]");
 }
 
 TEST_F(TypeToNameTest, optinal_name) {
 
-    test(mlir_ts::OptionalType::get(getContext(), mlir_ts::BooleanType::get(getContext())), "boolean | undefined");
+    test(getOpt<mlir_ts::BooleanType>(), "boolean | undefined");
 }
 
 TEST_F(TypeToNameTest, func_name) {
 
-    auto funcTypeVoid = mlir_ts::FunctionType::get(
-        getContext(), 
-        {
-        }, 
-        {
-        }, false);
-
-
+    auto funcTypeVoid = getF({}, {});
     test(funcTypeVoid, "() => void");
 
-    auto funcType2 = mlir_ts::FunctionType::get(
-        getContext(), 
+    auto funcType2 = getF( 
         {
-            mlir_ts::NumberType::get(getContext()), 
-            mlir_ts::ArrayType::get(getContext(), mlir_ts::AnyType::get(getContext()))
+            get<mlir_ts::NumberType>(), 
+            getArray<mlir_ts::AnyType>()
         }, 
         {
-            mlir_ts::StringType::get(getContext())
-        }, false);
+            get<mlir_ts::StringType>()
+        }
+    );
 
     test(funcType2, "(number, any[]) => string");
 }
 
 TEST_F(TypeToNameTest, func_variadic_name) {
 
-    auto funcType = mlir_ts::FunctionType::get(
-        getContext(), 
+    auto funcType = getF(
         {
-            mlir_ts::NumberType::get(getContext()), 
-            mlir_ts::ArrayType::get(getContext(), mlir_ts::AnyType::get(getContext()))
+            get<mlir_ts::NumberType>(), 
+            getArray<mlir_ts::AnyType>()
         }, 
         {
-            mlir_ts::StringType::get(getContext())
-        }, true);
+            get<mlir_ts::StringType>()
+        }, 
+        true);
 
     test(funcType, "(number, ...any[]) => string");
 }
 
 TEST_F(TypeToNameTest, union_names) {
 
-    test(mlir_ts::UnionType::get(
-        getContext(), 
+    test(getTs<mlir_ts::UnionType>(
         {   
-            mlir_ts::NumberType::get(getContext()), 
-            mlir_ts::StringType::get(getContext())
+            get<mlir_ts::NumberType>(), 
+            get<mlir_ts::StringType>()
         }), "number | string");
 }
 
 TEST_F(TypeToNameTest, intersect_names) {
 
-    test(mlir_ts::IntersectionType::get(
-        getContext(), 
+    test(getTs<mlir_ts::IntersectionType>( 
         {   
-            mlir_ts::NumberType::get(getContext()), 
-            mlir_ts::StringType::get(getContext())
+            get<mlir_ts::NumberType>(), 
+            get<mlir_ts::StringType>()
         }), "number & string");
 }
 
 TEST_F(TypeToNameTest, typeref_names) {
 
-    test(
-        mlir_ts::TypeReferenceType::get(
-            getContext(),
-            mlir::FlatSymbolRefAttr::get(getContext(), "type1"),
-            {   
-            }
-        ), 
-        "type1"
-    );
+    test(getTypeRef("type1"), "type1");
 
-    test(
-        mlir_ts::TypeReferenceType::get(
-            getContext(),
-            mlir::FlatSymbolRefAttr::get(getContext(), "type1"),
-            {   
-                mlir_ts::NumberType::get(getContext()), 
-                mlir_ts::StringType::get(getContext())
-            }
-        ), 
+    test(getTypeRef("type1", {   
+                get<mlir_ts::NumberType>(), 
+                get<mlir_ts::StringType>()
+        }),
         "type1<number, string>"
     );
 }
@@ -180,7 +225,7 @@ TEST_F(TypeToNameTest, typeref_names) {
 TEST_F(TypeToNameTest, interface_name) {
 
     test(
-        mlir_ts::InterfaceType::get(getContext(), mlir::FlatSymbolRefAttr::get(getContext(), "type1")),
+        getInterface("type1"),
         "type1"
     );
 }
@@ -188,7 +233,7 @@ TEST_F(TypeToNameTest, interface_name) {
 TEST_F(TypeToNameTest, class_name) {
 
     test(
-        mlir_ts::ClassType::get(getContext(), mlir::FlatSymbolRefAttr::get(getContext(), "type1"), mlir_ts::ClassStorageType::get(getContext(), mlir::FlatSymbolRefAttr::get(getContext(), "type1"))),
+        getClass("type1"),
         "type1"
     );
 }
