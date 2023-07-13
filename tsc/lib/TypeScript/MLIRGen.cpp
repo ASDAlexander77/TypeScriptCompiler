@@ -16445,7 +16445,9 @@ genContext);
                             ? typeArgs[index]
                             : (isDefault = true, typeParam->hasDefault() 
                                 ? getType(typeParam->getDefault(), genContext) 
-                                : mlir::Type());
+                                : typeParam->hasConstraint() 
+                                    ? getType(typeParam->getConstraint(), genContext) 
+                                    : mlir::Type());
             if (!type)
             {
                 return {mlir::failure(), anyNamedGenericType};
@@ -16479,7 +16481,9 @@ genContext);
                             ? getType(typeArgs[index], genContext)
                             : (isDefault = true, typeParam->hasDefault() 
                                 ? getType(typeParam->getDefault(), genContext) 
-                                : mlir::Type());
+                                : typeParam->hasConstraint() 
+                                    ? getType(typeParam->getConstraint(), genContext) 
+                                    : mlir::Type());
              if (!type)
             {
                 return {mlir::failure(), anyNamedGenericType};
@@ -16511,7 +16515,11 @@ genContext);
             auto type = index < argsCount
                             ? getType(typeArgs[index], genContext)
                             : (isDefault = true,
-                               typeParam->hasDefault() ? getType(typeParam->getDefault(), genContext) : mlir::Type());
+                               typeParam->hasDefault() 
+                               ? getType(typeParam->getDefault(), genContext) 
+                               : typeParam->hasConstraint() 
+                                    ? getType(typeParam->getConstraint(), genContext) 
+                                    : mlir::Type());
             if (!type)
             {
                 return {mlir::success(), anyNamedGenericType};
@@ -16554,7 +16562,9 @@ genContext);
                             ? getType(typeParam->getDefault(), genContext) 
                             : typeParam->hasConstraint() 
                                 ? getType(typeParam->getConstraint(), genContext) 
-                                : mlir::Type();
+                                : typeParam->hasConstraint() 
+                                    ? getType(typeParam->getConstraint(), genContext) 
+                                    : mlir::Type();
             if (!type)
             {
                 return {mlir::success(), anyNamedGenericType};
@@ -18358,7 +18368,27 @@ genContext);
 
     mlir::Type getSignature(SignatureDeclarationBase signature, const GenContext &genContext)
     {
-        auto resultType = getType(signature->type, genContext);
+        GenContext genericTypeGenContext(genContext);
+        if (signature->typeParameters.size())
+        {
+            llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
+            if (mlir::failed(
+                    processTypeParameters(signature->typeParameters, typeParameters, genericTypeGenContext)))
+            {
+                return mlir::Type();
+            }
+
+            auto [result, hasAnyNamedGenericType] =
+                zipTypeParametersWithArguments(loc(signature), typeParameters, signature->typeArguments,
+                                               genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
+
+            if (mlir::failed(result))
+            {
+                return mlir::Type();
+            }
+        }
+
+        auto resultType = getType(signature->type, genericTypeGenContext);
         if (!resultType && !genContext.allowPartialResolve)
         {
             return mlir::Type();
@@ -18368,7 +18398,7 @@ genContext);
         auto isVarArg = false;
         for (auto paramItem : signature->parameters)
         {
-            auto type = getType(paramItem->type, genContext);
+            auto type = getType(paramItem->type, genericTypeGenContext);
             if (!type)
             {
                 return mlir::Type();
