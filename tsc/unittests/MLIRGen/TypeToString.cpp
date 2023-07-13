@@ -224,16 +224,10 @@ TEST_F(TypeToNameTest, typeref_names) {
 
 TEST_F(TypeToNameTest, interface_name) {
 
-    test(
-        getInterface("type1"),
-        "type1"
-    );
+    test(getInterface("type1"), "type1");
 }
 
 TEST_F(TypeToNameTest, class_name) {
 
-    test(
-        getClass("type1"),
-        "type1"
-    );
+    test(getClass("type1"), "type1");
 }
