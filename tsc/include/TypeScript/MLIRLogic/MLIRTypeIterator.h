@@ -317,10 +317,13 @@ class MLIRTypeIterator
                           .Case<mlir_ts::BooleanType>([&](auto) {
                               return true;
                           })                          
-                          .Case<mlir_ts::OpaqueType>([&](auto) {
+                          .Case<mlir_ts::UndefinedType>([&](auto) {
                               return true;
                           })                          
                           .Case<mlir_ts::VoidType>([&](auto) {
+                              return true;
+                          })                          
+                          .Case<mlir_ts::OpaqueType>([&](auto) {
                               return true;
                           })                          
                           .Case<mlir_ts::ConstType>([&](auto) {
