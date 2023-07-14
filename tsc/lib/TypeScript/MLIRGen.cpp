@@ -16404,6 +16404,13 @@ genContext);
                     return {mlir::success(), IsGeneric::True};                    
                 }
 
+                if (extendsResult == ExtendsResult::Any)
+                {
+                    pairs.insert({typeParam->getName(), std::make_pair(typeParam, getAnyType())});
+                    LLVM_DEBUG(llvm::dbgs() << "Extends result: any.";);
+                    return {mlir::success(), IsGeneric::False};                    
+                }                
+
                 if (extendsResult == ExtendsResult::Never)
                 {
                     pairs.insert({typeParam->getName(), std::make_pair(typeParam, getNeverType())});

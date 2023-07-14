@@ -1973,11 +1973,27 @@ class MLIRTypeHelper
 
         if (auto anyType = srcType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
+            SmallVector<mlir_ts::InferType> inferTypes;
+            getAllInferTypes(extendType, inferTypes);
+            for (auto inferType : inferTypes)
+            {
+                appendInferTypeToContext(mlir_ts::UnknownType::get(context), inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
+            }
+
+            // TODO: add all infer types in extends to "unknown"
             return ExtendsResult::Any;
         }        
 
         if (auto neverType = srcType.dyn_cast_or_null<mlir_ts::NeverType>())
         {
+            SmallVector<mlir_ts::InferType> inferTypes;
+            getAllInferTypes(extendType, inferTypes);
+            for (auto inferType : inferTypes)
+            {
+                appendInferTypeToContext(mlir_ts::NeverType::get(context), inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
+            }
+
+            // TODO: add all infer types in extends to "never"
             return ExtendsResult::Never;
         }        
 
@@ -2629,6 +2645,22 @@ class MLIRTypeHelper
         );
         return iter.some(type, [](mlir::Type type) { return type && type.isa<mlir_ts::InferType>(); });
     }    
+
+    bool getAllInferTypes(mlir::Type type, SmallVector<mlir_ts::InferType> &inferTypes)
+    {
+        MLIRTypeIteratorLogic iter(
+            getClassInfoByFullName, getGenericClassInfoByFullName, 
+            getInterfaceInfoByFullName, getGenericInterfaceInfoByFullName
+        );
+        return iter.every(type, [&](mlir::Type type) { 
+            if (auto inferType = type.dyn_cast<mlir_ts::InferType>())
+            {
+                inferTypes.push_back(inferType);
+            }
+
+            return !!type; 
+        });
+    }        
     
     void mergeTypes(mlir::ArrayRef<mlir::Type> types, mlir::SmallVector<mlir::Type> &mergedTypes)
     {
