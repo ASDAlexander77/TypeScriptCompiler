@@ -22,10 +22,16 @@ template <typename OUT> class Printer
 {
     OUT &out;
     int ident;
+    bool declarationMode;
 
   public:
-    Printer(OUT &out) : out(out), ident(0)
+    Printer(OUT &out) : out(out), ident(0), declarationMode(false)
     {
+    }
+
+    void setDeclarationMode(bool declarationMode_)
+    {
+        declarationMode = declarationMode_;
     }
 
     void printNode(ts::Node node)
@@ -41,6 +47,29 @@ template <typename OUT> class Printer
     }
 
   protected:
+
+    void printDecorators(ts::Node node)
+    {
+        forEachChildrenPrint(node->decorators);
+    }
+
+    void printModifiersWithMode(ts::Node node)
+    {
+        if (declarationMode)
+        {
+            forEachChildrenPrintFilterWithAppend(node->modifiers, SyntaxKind::ExportKeyword, SyntaxKind::DeclareKeyword);
+        }
+        else
+        {
+            forEachChildrenPrint(node->modifiers);
+        }
+    }
+
+    void printModifiers(ts::Node node)
+    {
+        forEachChildrenPrint(node->modifiers);
+    }
+
     template <typename T>
     void forEachChildrenPrint(NodeArray<T> nodes, const char *open = nullptr, const char *separator = nullptr,
                               const char *end = nullptr, bool ifAny = false)
@@ -53,6 +82,52 @@ template <typename OUT> class Printer
         auto hasAny = false;
         for (auto node : nodes)
         {
+            if (!hasAny && ifAny && open)
+            {
+                printText(open);
+            }
+
+            if (hasAny && separator)
+            {
+                printText(separator);
+            }
+
+            hasAny = true;
+            forEachChildPrint(node);
+        }
+
+        if ((!ifAny || ifAny && hasAny) && end)
+        {
+            printText(end);
+        }
+    }
+
+    template <typename T>
+    void forEachChildrenPrintFilterWithAppend(NodeArray<T> nodes, SyntaxKind filter, SyntaxKind withAppend, const char *open = nullptr, const char *separator = nullptr,
+                              const char *end = nullptr, bool ifAny = false)
+    {
+        if (!ifAny && open)
+        {
+            printText(open);
+        }
+
+        auto hasAny = false;
+        if (withAppend != SyntaxKind::Unknown)
+        {
+            if (!hasAny && ifAny && open)
+            {
+                printText(open);
+            }
+
+            out << Scanner::tokenStrings[withAppend];
+
+            hasAny = true;
+        }
+
+        for (auto node : nodes)
+        {
+            if (node == filter || node == withAppend) continue;
+
             if (!hasAny && ifAny && open)
             {
                 printText(open);
@@ -123,8 +198,8 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::ShorthandPropertyAssignment: {
             auto shorthandPropertyAssignment = node.as<ShorthandPropertyAssignment>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             forEachChildPrint(shorthandPropertyAssignment->name);
             forEachChildPrint(shorthandPropertyAssignment->questionToken);
             forEachChildPrint(shorthandPropertyAssignment->exclamationToken);
@@ -138,14 +213,14 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::Parameter: {
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             auto parameterDeclaration = node.as<ParameterDeclaration>();
             forEachChildPrint(parameterDeclaration->dotDotDotToken);
             forEachChildPrint(parameterDeclaration->name);
             forEachChildPrint(parameterDeclaration->questionToken);
             if (parameterDeclaration->type)
-                out << " : ";
+                out << ": ";
             forEachChildPrint(parameterDeclaration->type);
             if (parameterDeclaration->initializer)
                 out << " = ";
@@ -153,33 +228,37 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::PropertyDeclaration: {
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             auto propertyDeclaration = node.as<PropertyDeclaration>();
             forEachChildPrint(propertyDeclaration->name);
             forEachChildPrint(propertyDeclaration->questionToken);
             forEachChildPrint(propertyDeclaration->exclamationToken);
             if (propertyDeclaration->type)
-                out << " : ";
+                out << ": ";
             forEachChildPrint(propertyDeclaration->type);
-            if (propertyDeclaration->type)
+            if (propertyDeclaration->initializer)
                 out << " = ";
             forEachChildPrint(propertyDeclaration->initializer);
             break;
         }
         case SyntaxKind::PropertySignature: {
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             auto propertySignature = node.as<PropertySignature>();
             forEachChildPrint(propertySignature->name);
             forEachChildPrint(propertySignature->questionToken);
+            if (propertySignature->type)
+                out << ": ";
             forEachChildPrint(propertySignature->type);
+            if (propertySignature->initializer)
+                out << " = ";
             forEachChildPrint(propertySignature->initializer);
             break;
         }
         case SyntaxKind::PropertyAssignment: {
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             auto propertyAssignment = node.as<PropertyAssignment>();
             forEachChildPrint(propertyAssignment->name);
             forEachChildPrint(propertyAssignment->questionToken);
@@ -190,8 +269,8 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::VariableDeclaration: {
             auto variableDeclaration = node.as<VariableDeclaration>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             forEachChildPrint(variableDeclaration->name);
             forEachChildPrint(variableDeclaration->exclamationToken);
             if (variableDeclaration->type)
@@ -203,8 +282,8 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::BindingElement: {
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             auto bindingElement = node.as<BindingElement>();
             forEachChildPrint(bindingElement->dotDotDotToken);
             forEachChildPrint(bindingElement->propertyName);
@@ -219,8 +298,8 @@ template <typename OUT> class Printer
         case SyntaxKind::IndexSignature:
         case SyntaxKind::MethodSignature: {
             auto signatureDeclarationBase = node.as<SignatureDeclarationBase>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             if (kind == SyntaxKind::MethodSignature)
                 forEachChildPrint(signatureDeclarationBase->name);
             if (kind == SyntaxKind::MethodSignature)
@@ -239,8 +318,8 @@ template <typename OUT> class Printer
         case SyntaxKind::FunctionDeclaration:
         case SyntaxKind::ArrowFunction: {
 
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
 
             if (!node->decorators.empty() || !node->modifiers.empty())
                 out << " ";
@@ -534,8 +613,8 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::VariableStatement: {
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             forEachChildPrint(node.as<VariableStatement>()->declarationList);
             break;
         }
@@ -729,8 +808,8 @@ template <typename OUT> class Printer
         case SyntaxKind::ClassDeclaration:
         case SyntaxKind::ClassExpression: {
             auto classLikeDeclaration = node.as<ClassLikeDeclaration>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             out << "class ";
             forEachChildPrint(classLikeDeclaration->name);
             forEachChildrenPrint(classLikeDeclaration->typeParameters, "<", ", ", ">", true);
@@ -740,19 +819,33 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::InterfaceDeclaration: {
             auto interfaceDeclaration = node.as<InterfaceDeclaration>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiersWithMode(node);
+            if (!node->decorators.empty() || !node->modifiers.empty())
+                out << " ";                            
             out << "interface ";
             forEachChildPrint(interfaceDeclaration->name);
             forEachChildrenPrint(interfaceDeclaration->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(interfaceDeclaration->heritageClauses);
-            forEachChildrenPrint(interfaceDeclaration->members);
+
+            newLine();
+            out << "{";
+            incIndent();
+            newLine();
+            
+            forEachChildrenPrint(interfaceDeclaration->members, nullptr, ";\n", ";\n");
+            
+            decIndent();
+            newLine();
+            out << "}";
+            newLine();  
+
             break;
         }
         case SyntaxKind::TypeAliasDeclaration: {
             auto typeAliasDeclaration = node.as<TypeAliasDeclaration>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             out << "type ";
             forEachChildPrint(typeAliasDeclaration->name);
             forEachChildrenPrint(typeAliasDeclaration->typeParameters, "<", ", ", ">", true);
@@ -762,8 +855,8 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::EnumDeclaration: {
             auto enumDeclaration = node.as<EnumDeclaration>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             out << "enum ";
             forEachChildPrint(enumDeclaration->name);
             forEachChildrenPrint(enumDeclaration->members);
@@ -778,8 +871,8 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::ModuleDeclaration: {
             auto moduleDeclaration = node.as<ModuleDeclaration>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             out << "module ";
             forEachChildPrint(moduleDeclaration->name);
             forEachChildPrint(moduleDeclaration->body);
@@ -787,8 +880,8 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::ImportEqualsDeclaration: {
             auto importEqualsDeclaration = node.as<ImportEqualsDeclaration>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             out << "import ";
             forEachChildPrint(importEqualsDeclaration->name);
             out << " = ";
@@ -797,8 +890,8 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::ImportDeclaration: {
             auto importDeclaration = node.as<ImportDeclaration>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             forEachChildPrint(importDeclaration->importClause);
             forEachChildPrint(importDeclaration->moduleSpecifier);
             break;
@@ -832,8 +925,8 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::ExportDeclaration: {
             auto exportDeclaration = node.as<ExportDeclaration>();
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             forEachChildPrint(exportDeclaration->exportClause);
             forEachChildPrint(exportDeclaration->moduleSpecifier);
             break;
@@ -851,8 +944,8 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::ExportAssignment: {
-            forEachChildrenPrint(node->decorators);
-            forEachChildrenPrint(node->modifiers);
+            printDecorators(node);
+            printModifiers(node);
             forEachChildPrint(node.as<ExportAssignment>()->expression);
             break;
         }
@@ -901,7 +994,7 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::MissingDeclaration: {
-            forEachChildrenPrint(node->decorators);
+            printDecorators(node);
             break;
         }
         case SyntaxKind::CommaListExpression: {
@@ -1119,6 +1212,7 @@ template <typename OUT> class Printer
         case SyntaxKind::StringKeyword:
         case SyntaxKind::NumberKeyword:
         case SyntaxKind::ThisKeyword:
+        case SyntaxKind::DeclareKeyword:
         case SyntaxKind::ExportKeyword: {
             out << Scanner::tokenStrings[node->_kind];
             break;
@@ -1137,6 +1231,9 @@ template <typename OUT> class Printer
             out << " " << Scanner::tokenStrings[node->_kind] << " ";
             break;
         }
+        case SyntaxKind::EmptyStatement:
+            newLine();
+            break;
         case SyntaxKind::EndOfFileToken:
             break;
         default:

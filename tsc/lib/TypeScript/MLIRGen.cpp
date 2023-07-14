@@ -318,6 +318,28 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext)
+    {
+        if (!declExports.rdbuf()->in_avail())
+        {
+            return mlir::success();
+        }
+
+        auto declText = convertWideToUTF8(declExports.str());
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);
+
+        auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
+            auto litValue = V(mlirGenStringValue(location, declText, true));
+            return std::make_pair(litValue.getType(), litValue);            
+        };
+
+        VariableClass varClass = VariableType::Var;
+        varClass.isExport = true;
+        registerVariable(mlir::UnknownLoc::get(builder.getContext()), SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
+        return mlir::success();
+    }
+
     mlir::LogicalResult createExportGlobalVar(const GenContext &genContext)
     {
         if (!exports.rdbuf()->in_avail())
@@ -488,6 +510,8 @@ class MLIRGenImpl
         });
 
         // Process generating here
+        declExports.str(S(""));
+        declExports.clear();
         exports.str(S(""));
         exports.clear();
         GenContext genContext{};
@@ -510,8 +534,9 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }
-
+       
         // exports
+        createDeclarationExportGlobalVar(genContext);
         createExportGlobalVar(genContext);
 
         clearTempModule();
@@ -717,13 +742,6 @@ class MLIRGenImpl
                         lang << name;
                         lang << "'));" << std::endl;
                     }
-                    else if (recordType == "T")
-                    {
-                        lang << "type ";
-                        lang << name;
-                        lang << "=";
-                        lang << type << std::endl;
-                    }
 
                     break;
             }
@@ -767,6 +785,20 @@ class MLIRGenImpl
         builder.create<mlir_ts::GlobalConstructorOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName));
 
         // TODO: for now, we have code in TS to load methods from DLL/Shared libs
+        if (auto addrOfDeclText = dynLib.getAddressOfSymbol(SHARED_LIB_DECLARATIONS))
+        {
+            // process shared lib declarations
+            auto dataPtr = *(const char**)addrOfDeclText;
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
+
+            auto importData = ConvertUTF8toWide(dataPtr);
+            if (mlir::failed(parsePartialStatements(importData, genContext)))
+            {
+                //assert(false);
+                return mlir::failure();
+            }            
+        }
+                
         if (auto addrOfDeclText = dynLib.getAddressOfSymbol(SHARED_LIB_DECLARATION_INFO))
         {
             // process shared lib declarations
@@ -12508,7 +12540,7 @@ class MLIRGenImpl
 
                 if (hasExportModifier)
                 {
-                    addTypeToExport(namePtr, type, genContext);
+                    addTypeDeclarationToExport(typeAliasDeclarationAST);
                 }
             }
 
@@ -15061,6 +15093,12 @@ genContext);
             }
 
         } while (notResolved > 0);
+
+        // add to export if any
+        if (auto hasExport = hasModifier(interfaceDeclarationAST, SyntaxKind::ExportKeyword))
+        {
+            addInterfaceDeclarationToExport(interfaceDeclarationAST);
+        }
 
         return mlir::success();
     }
@@ -19119,9 +19157,21 @@ genContext);
         addToExport(name, funcType, "F", genContext);
     }
 
-    void addTypeToExport(StringRef name, mlir::Type type, const GenContext &genContext)    
+    void addDeclarationToExport(ts::Node node)
     {
-        addToExport(name, type, "T", genContext);
+        Printer printer(declExports);
+        printer.setDeclarationMode(true);
+        printer.printNode(node);
+    }
+
+    void addTypeDeclarationToExport(TypeAliasDeclaration typeAliasDeclaration)    
+    {
+        addDeclarationToExport(typeAliasDeclaration);
+    }
+
+    void addInterfaceDeclarationToExport(InterfaceDeclaration interfaceDeclaration)
+    {
+        addDeclarationToExport(interfaceDeclaration);
     }
 
     auto getNamespace() -> StringRef
@@ -19660,6 +19710,7 @@ genContext);
 
     bool declarationMode;
 
+    stringstream declExports;
     stringstream exports;
 
 private:
