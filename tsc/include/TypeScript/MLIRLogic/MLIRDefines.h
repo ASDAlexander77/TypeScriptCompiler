@@ -29,6 +29,20 @@
         return mlir::failure();                                                                                                            \
     }
 
+#define VALIDATE_FUNC_BOOL(calledFuncType)                                                                                                  \
+    (mth.hasReturnTypeFromFuncRef(calledFuncType) && !mth.getReturnTypeFromFuncRef(calledFuncType))
+
+#define VALIDATE_FUNC(calledFuncType, loc)                                                                                                  \
+    if (VALIDATE_FUNC_BOOL(calledFuncType))                                                                                                 \
+    {                                                                                                                                       \
+        if (genContext.allowPartialResolve)                                                                                                 \
+        {                                                                                                                                   \
+            emitError(loc, "function type result is not valid");                                                                            \
+        }                                                                                                                                   \
+                                                                                                                                            \
+        return mlir::failure();                                                                                                             \
+    }            
+
 using VariablePairT = std::pair<mlir::Value, ts::VariableDeclarationDOM::TypePtr>;
 using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 

@@ -640,7 +640,12 @@ class MLIRTypeHelper
         return mlir::Type();
     }
 
-    mlir::ArrayRef<mlir::Type> getReturnsFromFuncRef(mlir::Type funcType)
+    bool hasReturnTypeFromFuncRef(mlir::Type funcType)
+    {
+        return getReturnsFromFuncRef(funcType, true).size() > 0;
+    }
+
+    mlir::ArrayRef<mlir::Type> getReturnsFromFuncRef(mlir::Type funcType, bool noError = false)
     {
         mlir::ArrayRef<mlir::Type> returnTypes;
 
@@ -655,6 +660,11 @@ class MLIRTypeHelper
             .Case<mlir_ts::ConstructFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir_ts::ExtensionFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Default([&](auto type) {
+                if (noError)
+                {
+                    return;
+                }
+
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getReturnTypeFromFuncRef is not implemented for " << type << "\n";);
                 llvm_unreachable("not implemented");
             });

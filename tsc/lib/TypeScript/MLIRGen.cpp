@@ -3337,7 +3337,7 @@ class MLIRGenImpl
         if (item->type)
         {
             type = getType(item->type, genContext);
-            if (!type)
+            if (!type || VALIDATE_FUNC_BOOL(type))
             {
                 return {mlir::Type(), mlir::Value()};
             }
@@ -9571,6 +9571,8 @@ class MLIRGenImpl
                 }
             }
 
+            VALIDATE_FUNC(calledFuncType, location)
+
             // default call by name
             auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(
                 MLIRHelper::getCallSiteLocation(funcRefValue, location),
@@ -10547,6 +10549,8 @@ class MLIRGenImpl
             emitError(location, "is not callable");
             return mlir::failure();
         }
+
+        VALIDATE_FUNC(callee.getType(), location)
 
         auto inputs = mth.getParamsFromFuncRef(callee.getType());
 
