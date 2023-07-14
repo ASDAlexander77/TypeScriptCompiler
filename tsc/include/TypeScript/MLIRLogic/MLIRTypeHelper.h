@@ -1852,6 +1852,17 @@ class MLIRTypeHelper
             return mlir_ts::IndexAccessType::get(srcType, fieldNameLiteralType);
         }
 
+        if (auto anyType = srcType.dyn_cast<mlir_ts::AnyType>())
+        {
+            return anyType;
+        }        
+
+        if (auto unknownType = srcType.dyn_cast<mlir_ts::UnknownType>())
+        {
+            // TODO: but in index type it should return "any"
+            return mlir::Type();
+        }          
+
         llvm_unreachable("not implemented");
     }
 
@@ -1948,9 +1959,14 @@ class MLIRTypeHelper
             return true;
         }
 
+        if (auto anyType = srcType.dyn_cast_or_null<mlir_ts::AnyType>())
+        {
+            return true;
+        }        
+
         if (auto neverType = srcType.dyn_cast_or_null<mlir_ts::NeverType>())
         {
-            return false;
+            return true;
         }        
 
         // to support infer types

@@ -17635,6 +17635,11 @@ genContext);
             return mth.getFieldTypeByIndex(type, indexType);
         }
 
+        if (auto anyType = type.dyn_cast<mlir_ts::AnyType>())
+        {
+            return anyType;
+        }
+
         if (type.isa<mlir_ts::NeverType>())
         {
             return type;
