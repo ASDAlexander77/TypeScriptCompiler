@@ -31,6 +31,12 @@ struct MatchResult
     unsigned index;
 };
 
+enum class ExtendsResult {
+    False,
+    True,
+    Never
+};
+
 class MLIRTypeHelper
 {
     mlir::MLIRContext *context;
@@ -1457,7 +1463,7 @@ class MLIRTypeHelper
         return storeType.isa<mlir_ts::UnionType>();
     }
 
-    bool appendInferTypeToContext(mlir::Type srcType, mlir_ts::InferType inferType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleType = false)
+    ExtendsResult appendInferTypeToContext(mlir::Type srcType, mlir_ts::InferType inferType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleType = false)
     {
         auto name = inferType.getElementType().cast<mlir_ts::NamedGenericType>().getName().getValue();
         auto currentType = srcType;
@@ -1517,7 +1523,7 @@ class MLIRTypeHelper
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! infered type for '" << name << "' = [" << typeParamsWithArgs[name].second << "]\n";);
 
-        return true;        
+        return ExtendsResult::True;        
     }
 
     mlir::Type getAttributeType(mlir::Attribute attr)
@@ -1866,7 +1872,7 @@ class MLIRTypeHelper
         llvm_unreachable("not implemented");
     }
 
-    bool extendsTypeFuncTypes(mlir::Type srcType, mlir::Type extendType,
+    ExtendsResult extendsTypeFuncTypes(mlir::Type srcType, mlir::Type extendType,
         llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, int skipSrcParams = 0)
     {
             auto srcParams = getParamsFromFuncRef(srcType);
@@ -1881,7 +1887,7 @@ class MLIRTypeHelper
             return extendsTypeFuncTypes(srcParams, extParams, extIsVarArgs, srcReturnType, extReturnType, typeParamsWithArgs, skipSrcParams);    
     }
 
-    bool extendsTypeFuncTypes(ArrayRef<mlir::Type> srcParams, ArrayRef<mlir::Type> extParams, bool extIsVarArgs, 
+    ExtendsResult extendsTypeFuncTypes(ArrayRef<mlir::Type> srcParams, ArrayRef<mlir::Type> extParams, bool extIsVarArgs, 
         mlir::Type srcReturnType, mlir::Type extReturnType,
         llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, int skipSrcParams = 0)
     {
@@ -1892,7 +1898,7 @@ class MLIRTypeHelper
             auto extParamType = (index < extParams.size()) ? extParams[index] : extIsVarArgs ? extParams[extParams.size() - 1] : mlir::Type();
             if (!extParamType)
             {
-                return false;
+                return ExtendsResult::False;
             }
 
             auto isIndexAtExtVarArgs = extIsVarArgs && index >= extParams.size() - 1;
@@ -1917,9 +1923,10 @@ class MLIRTypeHelper
                 }
             }
 
-            if (!extendsType(srcParamType, extParamType, typeParamsWithArgs, useTupleWhenMergeTypes))
+            auto extendsResult = extendsType(srcParamType, extParamType, typeParamsWithArgs, useTupleWhenMergeTypes);
+            if (extendsResult != ExtendsResult::True)
             {
-                return false;
+                return extendsResult;
             }
         }      
 
@@ -1928,45 +1935,44 @@ class MLIRTypeHelper
 
     }
 
-    bool extendsType(mlir::Type srcType, mlir::Type extendType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleWhenMergeTypes = false)
+    ExtendsResult extendsType(mlir::Type srcType, mlir::Type extendType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleWhenMergeTypes = false)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! is extending type: [ " << srcType << " ] extend type: [ " << extendType
                                 << " ]\n";);        
 
         if (!extendType)
         {
-            return false;
+            return ExtendsResult::False;
         }
 
         if (srcType == extendType)
         {
-            return true;
+            return ExtendsResult::True;
         }
 
         if (auto neverType = extendType.dyn_cast<mlir_ts::NeverType>())
         {
-            // TODO: if extend type is never it should return true
-            return true;
+            return ExtendsResult::False;
         }        
 
         if (auto unknownType = extendType.dyn_cast<mlir_ts::UnknownType>())
         {
-            return true;
+            return ExtendsResult::True;
         }
 
         if (auto anyType = extendType.dyn_cast<mlir_ts::AnyType>())
         {
-            return true;
+            return ExtendsResult::True;
         }
 
         if (auto anyType = srcType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
-            return true;
+            return ExtendsResult::True;
         }        
 
         if (auto neverType = srcType.dyn_cast_or_null<mlir_ts::NeverType>())
         {
-            return true;
+            return ExtendsResult::Never;
         }        
 
         // to support infer types
@@ -1977,23 +1983,39 @@ class MLIRTypeHelper
 
         if (!srcType)
         {
-            return false;
+            return ExtendsResult::False;
         }        
 
         if (auto unionType = extendType.dyn_cast<mlir_ts::UnionType>())
         {
-            auto pred = [&](auto &item) { return extendsType(srcType, item, typeParamsWithArgs); };
+            auto falseResult = ExtendsResult::False;
+            auto pred = [&](auto &item) { 
+                auto unionExtResult = extendsType(srcType, item, typeParamsWithArgs);
+                if (unionExtResult == ExtendsResult::Never)
+                {
+                    falseResult = unionExtResult;
+                }                
+
+                return unionExtResult == ExtendsResult::True; 
+            };
             auto types = unionType.getTypes();
-            return std::find_if(types.begin(), types.end(), pred) != types.end();
+            return std::find_if(types.begin(), types.end(), pred) != types.end() ? ExtendsResult::True : falseResult;
         }
 
         if (auto tupleType = extendType.dyn_cast<mlir_ts::TupleType>())
         {
+            auto falseResult = ExtendsResult::False;
             auto pred = [&](auto &item) { 
                 if (item.id)
                 {
                     auto fieldType = getFieldTypeByFieldName(srcType, item.id);
-                    return extendsType(fieldType, item.type, typeParamsWithArgs); 
+                    auto fieldExtResult = extendsType(fieldType, item.type, typeParamsWithArgs);
+                    if (fieldExtResult == ExtendsResult::Never)
+                    {
+                        falseResult = fieldExtResult;
+                    }
+
+                    return fieldExtResult == ExtendsResult::True; 
                 }
                 else
                 {
@@ -2001,16 +2023,23 @@ class MLIRTypeHelper
                     llvm_unreachable("not implemented");
                 }
             };
-            return std::all_of(tupleType.getFields().begin(), tupleType.getFields().end(), pred);
+            return std::all_of(tupleType.getFields().begin(), tupleType.getFields().end(), pred) ? ExtendsResult::True : falseResult;
         }
 
         if (auto constTupleType = extendType.dyn_cast<mlir_ts::ConstTupleType>())
         {
+            auto falseResult = ExtendsResult::False;
             auto pred = [&](auto &item) { 
                 if (item.id)
                 {
                     auto fieldType = getFieldTypeByFieldName(srcType, item.id);
-                    return extendsType(fieldType, item.type, typeParamsWithArgs); 
+                    auto fieldExtResult = extendsType(fieldType, item.type, typeParamsWithArgs);
+                    if (fieldExtResult == ExtendsResult::Never)
+                    {
+                        falseResult = fieldExtResult;
+                    }
+
+                    return fieldExtResult == ExtendsResult::True; 
                 }
                 else
                 {
@@ -2018,14 +2047,14 @@ class MLIRTypeHelper
                     llvm_unreachable("not implemented");
                 }
             };
-            return std::all_of(constTupleType.getFields().begin(), constTupleType.getFields().end(), pred);
+            return std::all_of(constTupleType.getFields().begin(), constTupleType.getFields().end(), pred) ? ExtendsResult::True : falseResult;
         }
 
         if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())
         {
             if (auto litExt = extendType.dyn_cast<mlir_ts::LiteralType>())
             {
-                return false;
+                return ExtendsResult::False;
             }
 
             return extendsType(literalType.getElementType(), extendType, typeParamsWithArgs);
@@ -2055,9 +2084,18 @@ class MLIRTypeHelper
 
         if (auto unionType = srcType.dyn_cast<mlir_ts::UnionType>())
         {
-            auto pred = [&](auto &item) { return extendsType(item, extendType, typeParamsWithArgs); };
+            auto falseResult = ExtendsResult::False;
+            auto pred = [&](auto &item) { 
+                auto unionExtResult = extendsType(item, extendType, typeParamsWithArgs);
+                if (unionExtResult == ExtendsResult::Never)
+                {
+                    falseResult = unionExtResult;
+                }                
+
+                return unionExtResult == ExtendsResult::True; 
+            };
             auto types = unionType.getTypes();
-            return std::find_if(types.begin(), types.end(), pred) != types.end();
+            return std::find_if(types.begin(), types.end(), pred) != types.end() ? ExtendsResult::True : falseResult;
         }
 
         // seems it is generic interface
@@ -2092,13 +2130,13 @@ class MLIRTypeHelper
                                     }
                                     else
                                     {
-                                        return false;
+                                        return ExtendsResult::False;
                                     }
                                 }
                             }
 
                             // default behavior - false, because something is different
-                            return false;
+                            return ExtendsResult::False;
                         }
                     }
                 }
@@ -2136,13 +2174,13 @@ class MLIRTypeHelper
                                     }
                                     else
                                     {
-                                        return false;
+                                        return ExtendsResult::False;
                                     }
                                 }
                             }
 
                             // default behavior - false, because something is different
-                            return false;
+                            return ExtendsResult::False;
                         }
                     }
                 }
@@ -2163,7 +2201,7 @@ class MLIRTypeHelper
                     // we have class
                     if (!srcClassInfo->getHasConstructor())
                     {
-                        return false;
+                        return ExtendsResult::False;
                     }
 
                     // find constructor type
@@ -2177,50 +2215,65 @@ class MLIRTypeHelper
                 }
             }
 
-            return false;
+            return ExtendsResult::False;
         }
 
         if (auto ifaceType = srcType.dyn_cast<mlir_ts::InterfaceType>())
         {
             auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
             assert(interfaceInfo);
+            auto falseResult = ExtendsResult::False;
             for (auto extend : interfaceInfo->extends)
             {
-                if (extendsType(extend.second->interfaceType, extendType, typeParamsWithArgs))
+                auto extResult = extendsType(extend.second->interfaceType, extendType, typeParamsWithArgs);
+                if (extResult == ExtendsResult::True)
                 {
-                    return true;
+                    return ExtendsResult::True;
                 }
+
+                if (extResult == ExtendsResult::Never)
+                {
+                    falseResult = ExtendsResult::Never;
+                }                
             }
 
-            return false;
+            return falseResult;
         }
 
         if (auto classType = srcType.dyn_cast<mlir_ts::ClassType>())
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
             assert(classInfo);
+            auto falseResult = ExtendsResult::False;
             for (auto extend : classInfo->baseClasses)
             {
-                if (extendsType(extend->classType, extendType, typeParamsWithArgs))
+                auto extResult = extendsType(extend->classType, extendType, typeParamsWithArgs);
+                if (extResult == ExtendsResult::True)
                 {
-                    return true;
+                    return ExtendsResult::True;
                 }
+
+                if (extResult == ExtendsResult::Never)
+                {
+                    falseResult = ExtendsResult::Never;
+                }                  
             }
 
-            return false;
+            return falseResult;
         }
 
         if (auto objType = extendType.dyn_cast<mlir_ts::ObjectType>())
         {
             if (objType.getStorageType().isa<mlir_ts::AnyType>())
             {
-                return srcType.isa<mlir_ts::TupleType>() || srcType.isa<mlir_ts::ConstTupleType>() || srcType.isa<mlir_ts::ObjectType>();
+                return (srcType.isa<mlir_ts::TupleType>() || srcType.isa<mlir_ts::ConstTupleType>() || srcType.isa<mlir_ts::ObjectType>()) 
+                    ? ExtendsResult::True : ExtendsResult::False;
             }
         }        
 
         // TODO: finish Function Types, etc
         LLVM_DEBUG(llvm::dbgs() << "\n!! extendsType [FLASE]\n";);
-        return false;
+        return ExtendsResult::False;
     }
 
     mlir::Type getFirstNonNullUnionType(mlir_ts::UnionType unionType)

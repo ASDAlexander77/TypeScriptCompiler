@@ -100,6 +100,12 @@ void SourceMgrDiagnosticHandlerEx::emit(mlir::Diagnostic &diag)
 namespace
 {
 
+enum class IsGeneric
+{
+    False,
+    True
+};
+
 /// Implementation of a simple MLIR emission from the TypeScript AST.
 ///
 /// This will emit operations that are specific to the TypeScript language, preserving
@@ -1792,7 +1798,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult appendInferredTypes(mlir::Location location,
                                             llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams,
-                                            StringMap<mlir::Type> &inferredTypes, bool &anyNamedGenericType,
+                                            StringMap<mlir::Type> &inferredTypes, IsGeneric &anyNamedGenericType,
                                             GenContext &genericTypeGenContext,
                                             bool arrayMerge = false)
     {
@@ -1823,14 +1829,17 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            anyNamedGenericType |= hasAnyNamedGenericType;
+            if (hasAnyNamedGenericType == IsGeneric::True)
+            {
+                anyNamedGenericType = hasAnyNamedGenericType;
+            }
         }
 
         return mlir::success();
     }
 
     std::pair<mlir::LogicalResult, bool> resolveGenericParamFromFunctionCall(mlir::Location location, mlir::Type paramType, mlir::Value argOp, int paramIndex,
-        GenericFunctionInfo::TypePtr functionGenericTypeInfo, bool &anyNamedGenericType,  GenContext &genericTypeGenContext)
+        GenericFunctionInfo::TypePtr functionGenericTypeInfo, IsGeneric &anyNamedGenericType,  GenContext &genericTypeGenContext)
     {
         if (paramType == argOp.getType())
         {
@@ -1895,7 +1904,7 @@ class MLIRGenImpl
                                                              GenericFunctionInfo::TypePtr functionGenericTypeInfo,
                                                              NodeArray<TypeNode> typeArguments,
                                                              bool skipThisParam,
-                                                             bool &anyNamedGenericType,
+                                                             IsGeneric &anyNamedGenericType,
                                                              GenContext &genericTypeGenContext)
     {
         // add provided type arguments, ignoring defaults
@@ -1909,7 +1918,10 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            anyNamedGenericType |= hasAnyNamedGenericType;
+            if (hasAnyNamedGenericType == IsGeneric::True)
+            {
+                anyNamedGenericType = hasAnyNamedGenericType;
+            }
         }
 
         // TODO: investigate, in [...].reduce, lambda function does not have funcOp, why?
@@ -2023,14 +2035,17 @@ class MLIRGenImpl
         }
 
         // add default params if not provided
-        auto [resultDefArg, hasAnyNamedGenericType] = zipTypeParametersWithDefaultArguments(
+        auto [resultDefArg, hasNamedGenericType] = zipTypeParametersWithDefaultArguments(
             location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
         if (mlir::failed(resultDefArg))
         {
             return mlir::failure();
         }
 
-        anyNamedGenericType |= hasAnyNamedGenericType;
+        if (hasNamedGenericType == IsGeneric::True)
+        {
+            anyNamedGenericType = hasNamedGenericType;
+        }
 
         // TODO: check if all typeParams are there
         if (genericTypeGenContext.typeParamsWithArgs.size() < typeParams.size())
@@ -2059,7 +2074,7 @@ class MLIRGenImpl
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = functionGenericTypeInfo->elementNamespace;
 
-            auto anyNamedGenericType = false;
+            auto anyNamedGenericType = IsGeneric::False;
 
             // step 1, add type arguments first
             GenContext genericTypeGenContext(genContext);
@@ -2074,7 +2089,10 @@ class MLIRGenImpl
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
-                anyNamedGenericType |= hasAnyNamedGenericType;
+                if (hasAnyNamedGenericType == IsGeneric::True)
+                {
+                    anyNamedGenericType = hasAnyNamedGenericType;
+                }
             }
             else if (genericTypeGenContext.callOperands.size() > 0 ||
                      functionGenericTypeInfo->functionDeclaration->parameters.size() > 0)
@@ -2118,17 +2136,19 @@ class MLIRGenImpl
                        llvm::dbgs() << "\n";);
 
             // revalidate all types
-            if (anyNamedGenericType)
+            if (anyNamedGenericType == IsGeneric::True)
             {
-
-                anyNamedGenericType = false;
+                anyNamedGenericType = IsGeneric::False;
                 for (auto &typeParamWithArg : genericTypeGenContext.typeParamsWithArgs)
                 {
-                    anyNamedGenericType |= mth.isGenericType(std::get<1>(typeParamWithArg.second));
+                    if (mth.isGenericType(std::get<1>(typeParamWithArg.second)))
+                    {
+                        anyNamedGenericType = IsGeneric::True;
+                    }
                 }
             }
 
-            if (!anyNamedGenericType)
+            if (anyNamedGenericType == IsGeneric::False)
             {
                 if (functionGenericTypeInfo->processing)
                 {
@@ -2238,7 +2258,7 @@ class MLIRGenImpl
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
-            if (mlir::failed(result) || (hasAnyNamedGenericType && !allowNamedGenerics))
+            if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics))
             {
                 return {mlir::failure(), mlir::Type()};
             }
@@ -2286,7 +2306,7 @@ class MLIRGenImpl
             auto typeParams = genericInterfaceInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
-            if (mlir::failed(result) || (hasAnyNamedGenericType && !allowNamedGenerics))
+            if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics))
             {
                 return {mlir::failure(), mlir::Type()};
             }
@@ -16340,7 +16360,7 @@ genContext);
         return getType(typeArguments[1], genContext);
     }
 
-    std::pair<mlir::LogicalResult, bool> zipTypeParameterWithArgument(
+    std::pair<mlir::LogicalResult, IsGeneric> zipTypeParameterWithArgument(
         mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
         const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, bool noExtendTest,
         const GenContext &genContext, bool mergeTypes = false, bool arrayMerge = false)
@@ -16351,13 +16371,13 @@ genContext);
         if (isNoneType(type))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed.\n";);
-            return {mlir::failure(), false};
+            return {mlir::failure(), IsGeneric::False};
         }
 
         if (type.isa<mlir_ts::NamedGenericType>())
         {
             pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
-            return {mlir::success(), true};
+            return {mlir::success(), IsGeneric::True};
         }
 
         if (!noExtendTest && typeParam->hasConstraint())
@@ -16370,28 +16390,34 @@ genContext);
             if (!constraintType)
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
-                return {mlir::failure(), false};
+                return {mlir::failure(), IsGeneric::False};
             }
 
-            if (!mth.extendsType(type, constraintType, pairs))
+            auto extendsResult = mth.extendsType(type, constraintType, pairs);
+            if (extendsResult != ExtendsResult::True)
             {
-                LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does not satisfy the constraint "
-                                        << constraintType << ".";);
-
                 // special case when we work with generic type(which are not specialized yet)
                 if (mth.isGenericType(type))
                 {
                     pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
-                    return {mlir::success(), true};                    
+                    LLVM_DEBUG(llvm::dbgs() << "Extends result: " << type << " (because of generic).";);
+                    return {mlir::success(), IsGeneric::True};                    
                 }
 
-                if (type != getNeverType() && type != getAnyType())
+                if (extendsResult == ExtendsResult::Never)
                 {
-                    emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
-                                            << constraintType << ".";
-
-                    return {mlir::failure(), false};
+                    pairs.insert({typeParam->getName(), std::make_pair(typeParam, getNeverType())});
+                    LLVM_DEBUG(llvm::dbgs() << "Extends result: never.";);
+                    return {mlir::success(), IsGeneric::False};                    
                 }
+
+                LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does extend "
+                                        << constraintType << ".";);
+
+                emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
+                                        << constraintType << ".";
+
+                return {mlir::failure(), IsGeneric::False};
             }
         }
 
@@ -16428,14 +16454,14 @@ genContext);
             pairs.insert({name, std::make_pair(typeParam, type)});
         }
 
-        return {mlir::success(), false};
+        return {mlir::success(), IsGeneric::False};
     }
 
-    std::pair<mlir::LogicalResult, bool> zipTypeParametersWithArguments(
+    std::pair<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArguments(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, llvm::ArrayRef<mlir::Type> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
     {
-        auto anyNamedGenericType = false;
+        auto anyNamedGenericType = IsGeneric::False;
         auto argsCount = typeArgs.size();
         for (auto index = 0; index < typeParams.size(); index++)
         {
@@ -16460,18 +16486,21 @@ genContext);
                 return {mlir::failure(), anyNamedGenericType};
             }
 
-            anyNamedGenericType |= hasNamedGenericType;
+            if (hasNamedGenericType == IsGeneric::True)
+            {
+                anyNamedGenericType = hasNamedGenericType;
+            }
         }
 
         return {mlir::success(), anyNamedGenericType};
     }
 
 
-    std::pair<mlir::LogicalResult, bool> zipTypeParametersWithArguments(
+    std::pair<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArguments(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
     {
-        auto anyNamedGenericType = false;
+        auto anyNamedGenericType = IsGeneric::False;
         auto argsCount = typeArgs.size();
         for (auto index = 0; index < typeParams.size(); index++)
         {
@@ -16496,17 +16525,20 @@ genContext);
                 return {mlir::failure(), anyNamedGenericType};
             }
 
-            anyNamedGenericType |= hasNamedGenericType;
+            if (hasNamedGenericType == IsGeneric::True)
+            {
+                anyNamedGenericType = hasNamedGenericType;
+            }
         }
 
         return {mlir::success(), anyNamedGenericType};
     }
 
-    std::pair<mlir::LogicalResult, bool> zipTypeParametersWithArgumentsNoDefaults(
+    std::pair<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArgumentsNoDefaults(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
     {
-        auto anyNamedGenericType = false;
+        auto anyNamedGenericType = IsGeneric::False;
         auto argsCount = typeArgs.size();
         for (auto index = 0; index < typeParams.size(); index++)
         {
@@ -16537,17 +16569,20 @@ genContext);
                 return {mlir::failure(), anyNamedGenericType};
             }
 
-            anyNamedGenericType |= hasNamedGenericType;
+            if (hasNamedGenericType == IsGeneric::True)
+            {
+                anyNamedGenericType = hasNamedGenericType;
+            }
         }
 
         return {mlir::success(), anyNamedGenericType};
     }
 
-    std::pair<mlir::LogicalResult, bool> zipTypeParametersWithDefaultArguments(
+    std::pair<mlir::LogicalResult, IsGeneric> zipTypeParametersWithDefaultArguments(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
     {
-        auto anyNamedGenericType = false;
+        auto anyNamedGenericType = IsGeneric::False;
         auto argsCount = typeArgs ? typeArgs.size() : 0;
         for (auto index = 0; index < typeParams.size(); index++)
         {
@@ -16588,7 +16623,10 @@ genContext);
                 return {mlir::failure(), anyNamedGenericType};
             }
 
-            anyNamedGenericType |= hasNamedGenericType;
+            if (hasNamedGenericType == IsGeneric::True)
+            {
+                anyNamedGenericType = hasNamedGenericType;
+            }
         }
 
         return {mlir::success(), anyNamedGenericType};
@@ -16672,7 +16710,7 @@ genContext);
                     return mlir::Type();
                 }
 
-                if (hasAnyNamedGenericType)
+                if (hasAnyNamedGenericType == IsGeneric::True)
                 {
                     return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
                 }
@@ -17064,7 +17102,7 @@ genContext);
         {
             // TODO: should I use TypeParamsWithArgs from genContext?
             llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> emptyTypeParamsWithArgs;
-            if (llvm::any_of(excludeTypes, [&](mlir::Type type) { return mth.extendsType(item, type, emptyTypeParamsWithArgs); }))
+            if (llvm::any_of(excludeTypes, [&](mlir::Type type) { return mth.extendsType(item, type, emptyTypeParamsWithArgs) == ExtendsResult::True; }))
             {
                 continue;
             }
@@ -17088,7 +17126,7 @@ genContext);
         {
             // TODO: should I use TypeParamsWithArgs from genContext?
             llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> emptyTypeParamsWithArgs;
-            if (llvm::any_of(extractTypes, [&](mlir::Type type) { return mth.extendsType(item, type, emptyTypeParamsWithArgs); }))
+            if (llvm::any_of(extractTypes, [&](mlir::Type type) { return mth.extendsType(item, type, emptyTypeParamsWithArgs) == ExtendsResult::True; }))
             {
                 resTypes.push_back(item);
             }
@@ -17295,7 +17333,13 @@ genContext);
         auto location = loc(conditionalTypeNode);
 
         mlir::Type resType;
-        if (mth.extendsType(checkType, extendsType, typeParamsWithArgs))
+        auto extendsResult = mth.extendsType(checkType, extendsType, typeParamsWithArgs);
+        if (extendsResult == ExtendsResult::Never)
+        {
+            return getNeverType();
+        }
+
+        if (extendsResult == ExtendsResult::True)
         {
             if (inferType)
             {
