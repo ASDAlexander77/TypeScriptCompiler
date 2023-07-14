@@ -34,8 +34,14 @@ struct MatchResult
 enum class ExtendsResult {
     False,
     True,
-    Never
+    Never,
+    Any
 };
+
+inline bool isTrue(ExtendsResult val)
+{
+    return val == ExtendsResult::True || val == ExtendsResult::Any;
+}
 
 class MLIRTypeHelper
 {
@@ -1967,7 +1973,7 @@ class MLIRTypeHelper
 
         if (auto anyType = srcType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
-            return ExtendsResult::True;
+            return ExtendsResult::Any;
         }        
 
         if (auto neverType = srcType.dyn_cast_or_null<mlir_ts::NeverType>())
@@ -1996,7 +2002,7 @@ class MLIRTypeHelper
                     falseResult = unionExtResult;
                 }                
 
-                return unionExtResult == ExtendsResult::True; 
+                return isTrue(unionExtResult); 
             };
             auto types = unionType.getTypes();
             return std::find_if(types.begin(), types.end(), pred) != types.end() ? ExtendsResult::True : falseResult;
@@ -2015,7 +2021,7 @@ class MLIRTypeHelper
                         falseResult = fieldExtResult;
                     }
 
-                    return fieldExtResult == ExtendsResult::True; 
+                    return isTrue(fieldExtResult); 
                 }
                 else
                 {
@@ -2039,7 +2045,7 @@ class MLIRTypeHelper
                         falseResult = fieldExtResult;
                     }
 
-                    return fieldExtResult == ExtendsResult::True; 
+                    return isTrue(fieldExtResult); 
                 }
                 else
                 {
@@ -2092,7 +2098,7 @@ class MLIRTypeHelper
                     falseResult = unionExtResult;
                 }                
 
-                return unionExtResult == ExtendsResult::True; 
+                return isTrue(unionExtResult); 
             };
             auto types = unionType.getTypes();
             return std::find_if(types.begin(), types.end(), pred) != types.end() ? ExtendsResult::True : falseResult;
@@ -2226,9 +2232,9 @@ class MLIRTypeHelper
             for (auto extend : interfaceInfo->extends)
             {
                 auto extResult = extendsType(extend.second->interfaceType, extendType, typeParamsWithArgs);
-                if (extResult == ExtendsResult::True)
+                if (isTrue(extResult))
                 {
-                    return ExtendsResult::True;
+                    return extResult;
                 }
 
                 if (extResult == ExtendsResult::Never)

@@ -17102,7 +17102,7 @@ genContext);
         {
             // TODO: should I use TypeParamsWithArgs from genContext?
             llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> emptyTypeParamsWithArgs;
-            if (llvm::any_of(excludeTypes, [&](mlir::Type type) { return mth.extendsType(item, type, emptyTypeParamsWithArgs) == ExtendsResult::True; }))
+            if (llvm::any_of(excludeTypes, [&](mlir::Type type) { return isTrue(mth.extendsType(item, type, emptyTypeParamsWithArgs)); }))
             {
                 continue;
             }
@@ -17126,7 +17126,7 @@ genContext);
         {
             // TODO: should I use TypeParamsWithArgs from genContext?
             llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> emptyTypeParamsWithArgs;
-            if (llvm::any_of(extractTypes, [&](mlir::Type type) { return mth.extendsType(item, type, emptyTypeParamsWithArgs) == ExtendsResult::True; }))
+            if (llvm::any_of(extractTypes, [&](mlir::Type type) { return isTrue(mth.extendsType(item, type, emptyTypeParamsWithArgs)); }))
             {
                 resTypes.push_back(item);
             }
@@ -17339,7 +17339,7 @@ genContext);
             return getNeverType();
         }
 
-        if (extendsResult == ExtendsResult::True)
+        if (isTrue(extendsResult))
         {
             if (inferType)
             {
@@ -17352,21 +17352,32 @@ genContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [TRUE] = " << resType << "\n";);
 
-            return resType;
+            if (extendsResult != ExtendsResult::Any)
+            {
+                // in case of any we need "union" of true & false
+                return resType;
+            }
         }
 
-        if (!resType)
+        // false case
+        if (inferType)
         {
-            if (inferType)
-            {
-                auto namedGenType = inferType.cast<mlir_ts::NamedGenericType>();
-                auto typeParam = std::make_shared<TypeParameterDOM>(namedGenType.getName().getValue().str());
-                zipTypeParameterWithArgument(location, typeParamsWithArgs, typeParam, checkType, false, genContext, false);
-            }
+            auto namedGenType = inferType.cast<mlir_ts::NamedGenericType>();
+            auto typeParam = std::make_shared<TypeParameterDOM>(namedGenType.getName().getValue().str());
+            zipTypeParameterWithArgument(location, typeParamsWithArgs, typeParam, checkType, false, genContext, false);
+        }
 
-            resType = getType(conditionalTypeNode->falseType, genContext);
+        auto falseType = getType(conditionalTypeNode->falseType, genContext);
 
+        if (extendsResult != ExtendsResult::Any || !resType)
+        {
+            resType = falseType;
             LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [FALSE] = " << resType << "\n";);
+        }
+        else
+        {
+            resType = getUnionType(resType, falseType);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [TRUE | FALSE] = " << resType << "\n";);
         }
 
         return resType;
