@@ -12703,6 +12703,11 @@ class MLIRGenImpl
         // update enum to support req. access
         getEnumsMap()[namePtr].first = storeType;
 
+        if (hasModifier(enumDeclarationAST, SyntaxKind::ExportKeyword))
+        {
+            addEnumDeclarationToExport(enumDeclarationAST);
+        }
+
         return mlir::success();
     }
 
@@ -19172,6 +19177,11 @@ genContext);
     void addInterfaceDeclarationToExport(InterfaceDeclaration interfaceDeclaration)
     {
         addDeclarationToExport(interfaceDeclaration);
+    }
+
+    void addEnumDeclarationToExport(EnumDeclaration enumDeclatation)
+    {
+        addDeclarationToExport(enumDeclatation);
     }
 
     auto getNamespace() -> StringRef

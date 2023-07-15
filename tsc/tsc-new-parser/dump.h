@@ -874,16 +874,19 @@ template <typename OUT> class Printer
         case SyntaxKind::EnumDeclaration: {
             auto enumDeclaration = node.as<EnumDeclaration>();
             printDecorators(node);
-            printModifiers(node);
+            printModifiersWithMode(node);
             out << "enum ";
             forEachChildPrint(enumDeclaration->name);
-            forEachChildrenPrint(enumDeclaration->members);
+            out << "{";
+            forEachChildrenPrint(enumDeclaration->members, nullptr, ", ");
+            out << "}";
             break;
         }
         case SyntaxKind::EnumMember: {
             auto enumMember = node.as<EnumMember>();
             forEachChildPrint(enumMember->name);
-            out << ": ";
+            if (enumMember->initializer)
+                out << " = ";
             forEachChildPrint(enumMember->initializer);
             break;
         }
