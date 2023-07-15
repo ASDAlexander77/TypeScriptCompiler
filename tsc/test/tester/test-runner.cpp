@@ -78,9 +78,10 @@
 #define SHARED_LIB_OPT "-shared"
 #endif        
 
-bool jitRun = false;
-bool sharedLibCompiler = false;
-bool opt = true;
+auto jitRun = false;
+auto sharedLibCompiler = false;
+auto sharedLibCompileTypeCompiler = false;
+auto opt = true;
 
 void createJitBatchFile()
 {
@@ -432,8 +433,13 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     else
     {
         batFile << execBat.str();
-        batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << exec_objs.str() << " "
-                << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
+        batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << exec_objs.str() << " ";
+        if (sharedLibCompileTypeCompiler)
+        {
+            batFile << shared_filenameNoExt << ".lib ";
+        }
+
+        batFile << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
                 << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
                 << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
                 << std::endl;
@@ -494,8 +500,12 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     else
     {
         batFile << execBat.str();
-        batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() 
-                << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
+        batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " "; 
+        if (sharedLibCompileTypeCompiler)
+        {
+            batFile << "-l" << shared_filenameNoExt << " ";
+        }        
+        batFile << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
                 << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
 
         batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
@@ -554,6 +564,10 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         {
             sharedLibCompiler = true;
         }
+        else if (std::string(argv[index]) == "-compile-time")
+        {
+            sharedLibCompileTypeCompiler = true;
+        }
         else if (std::string(argv[index]) == "-noopt")
         {
             opt = false;
@@ -568,6 +582,16 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
             msg.append(argv[index]);
             throw msg.c_str();
         }
+    }
+
+    if (sharedLibCompileTypeCompiler && !sharedLibCompiler)
+    {
+        throw "-compile-time can be used with -shared";
+    }
+
+    if (sharedLibCompileTypeCompiler && jitRun)
+    {
+        throw "-compile-time can't be used with -jit";
     }
 }
 

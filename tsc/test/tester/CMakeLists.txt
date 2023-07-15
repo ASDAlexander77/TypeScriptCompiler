@@ -635,12 +635,15 @@ add_test(NAME test-jit-nbody COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/tes
 # imports support only compile mode
 add_test(NAME test-compile-import-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/service.ts")
 
+# shared libs tests (dlls/compile-time)
+add_test(NAME test-compile-time-shared-decl-emit-type COMMAND test-runner -shared -compile-time "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_compiletime.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
+
 # shared libs tests (dlls/dynamics)
 add_test(NAME test-compile-shared-component COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/use_shared.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/shared.ts")
-add_test(NAME test-compile-decl-emit-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_interface.ts")
-add_test(NAME test-compile-decl-emit-type COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
+add_test(NAME test-compile-shared-decl-emit-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_interface.ts")
+add_test(NAME test-compile-shared-decl-emit-type COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
 
 # shared libs tests (dlls/dynamics)
 add_test(NAME test-jit-shared-component COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/use_shared.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/shared.ts")
-add_test(NAME test-jit-decl-emit-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_interface.ts")
-add_test(NAME test-jit-decl-emit-type COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
+add_test(NAME test-jit-shared-decl-emit-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_interface.ts")
+add_test(NAME test-jit-shared-decl-emit-type COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
