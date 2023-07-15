@@ -1,4 +1,4 @@
-import "./decl";
+import "./decl_type";
 
 function main()
 {

@@ -63,16 +63,25 @@ template <typename OUT> class Printer
         {
             forEachChildrenPrint(node->modifiers);
         }
+
+        printSeparatorForModifiersAndDecorators(node);
     }
 
     void printModifiers(ts::Node node)
     {
         forEachChildrenPrint(node->modifiers);
+        printSeparatorForModifiersAndDecorators(node);
+    }
+
+    void printSeparatorForModifiersAndDecorators(ts::Node node)
+    {
+        if (!node->decorators.empty() || !node->modifiers.empty())
+            out << " ";                                    
     }
 
     template <typename T>
     void forEachChildrenPrint(NodeArray<T> nodes, const char *open = nullptr, const char *separator = nullptr,
-                              const char *end = nullptr, bool ifAny = false)
+                              const char *end = nullptr, bool ifAny = false, const char *afterChild = nullptr)
     {
         if (!ifAny && open)
         {
@@ -94,6 +103,11 @@ template <typename OUT> class Printer
 
             hasAny = true;
             forEachChildPrint(node);
+
+            if (afterChild)
+            {
+                printText(afterChild);    
+            }
         }
 
         if ((!ifAny || ifAny && hasAny) && end)
@@ -360,7 +374,11 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::TypeLiteral: {
-            forEachChildrenPrint(node.as<TypeLiteralNode>()->members);
+            printText("{");
+            newLine();
+            forEachChildrenPrint(node.as<TypeLiteralNode>()->members, nullptr, nullptr, nullptr, false, ";\n");
+            printText("}");
+            newLine();
             break;
         }
         case SyntaxKind::ArrayType: {
@@ -845,7 +863,7 @@ template <typename OUT> class Printer
         case SyntaxKind::TypeAliasDeclaration: {
             auto typeAliasDeclaration = node.as<TypeAliasDeclaration>();
             printDecorators(node);
-            printModifiers(node);
+            printModifiersWithMode(node);
             out << "type ";
             forEachChildPrint(typeAliasDeclaration->name);
             forEachChildrenPrint(typeAliasDeclaration->typeParameters, "<", ", ", ">", true);
