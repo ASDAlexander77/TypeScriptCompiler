@@ -15,6 +15,18 @@
             "environment": [],
             "externalConsole": true,
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },
+        {
+            "name": "(Windows) printer-tester.exe - Launch",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/printer-tester/Debug/printer-tester.exe",
+            "args": ["E:\\Dev3\\TypeScript_Old\\src\\compiler\\binder.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         }
    ]
 }
