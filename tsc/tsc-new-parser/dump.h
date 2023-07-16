@@ -1442,6 +1442,7 @@ template <typename OUT> class Printer
         case SyntaxKind::ObjectKeyword:
         case SyntaxKind::NeverKeyword:
         case SyntaxKind::InKeyword:
+        case SyntaxKind::UnknownKeyword:
         case SyntaxKind::ExportKeyword: {
             assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << Scanner::tokenStrings[node->_kind];
@@ -1461,6 +1462,7 @@ template <typename OUT> class Printer
         case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
         case SyntaxKind::PlusToken:
         case SyntaxKind::PlusPlusToken:
+        case SyntaxKind::PlusEqualsToken:
         case SyntaxKind::AsteriskToken:
         case SyntaxKind::AmpersandToken:
         case SyntaxKind::AmpersandEqualsToken:
