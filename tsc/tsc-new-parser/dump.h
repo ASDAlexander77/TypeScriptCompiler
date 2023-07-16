@@ -239,6 +239,15 @@ template <typename OUT> class Printer
         );
     }
 
+    void printMembersBlock(ts::TypeLiteralNode typeLiteralNode)
+    {
+        printBlockBase(
+            [&]() { 
+                printStatementsLike(typeLiteralNode->members);
+            }
+        );
+    }
+
     template <typename T>
     void forEachChildrenPrint(NodeArray<T> nodes, const char *open = nullptr, const char *separator = nullptr,
                               const char *end = nullptr, bool ifAny = false, const char *afterChild = nullptr)
@@ -356,6 +365,13 @@ template <typename OUT> class Printer
                 out << "\"";
             break;
         }
+        case SyntaxKind::RegularExpressionLiteral: {
+            auto regularExpressionLiteral = node.as<RegularExpressionLiteral>();
+            out << "/";
+            out << regularExpressionLiteral->text;
+            out << "/";
+            break;
+        }        
         case SyntaxKind::QualifiedName: {
             auto qualifiedName = node.as<QualifiedName>();
             forEachChildPrint(qualifiedName->left);
@@ -533,11 +549,7 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::TypeLiteral: {
-            printText("{");
-            newLine();
-            forEachChildrenPrint(node.as<TypeLiteralNode>()->members, nullptr, nullptr, nullptr, false, ";\n");
-            printText("}");
-            newLine();
+            printMembersBlock(node.as<TypeLiteralNode>());
             break;
         }
         case SyntaxKind::ArrayType: {
@@ -549,11 +561,11 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::UnionType: {
-            forEachChildrenPrint(node.as<UnionTypeNode>()->types);
+            forEachChildrenPrint(node.as<UnionTypeNode>()->types, nullptr, " | ");
             break;
         }
         case SyntaxKind::IntersectionType: {
-            forEachChildrenPrint(node.as<IntersectionTypeNode>()->types);
+            forEachChildrenPrint(node.as<IntersectionTypeNode>()->types, nullptr, " & ");
             break;
         }
         case SyntaxKind::ConditionalType: {
@@ -758,7 +770,9 @@ template <typename OUT> class Printer
         case SyntaxKind::ConditionalExpression: {
             auto conditionalExpression = node.as<ConditionalExpression>();
             forEachChildPrint(conditionalExpression->condition);
+            out << " ";
             forEachChildPrint(conditionalExpression->questionToken);
+            out << " ";
             forEachChildPrint(conditionalExpression->whenTrue);
             forEachChildPrint(conditionalExpression->colonToken);
             forEachChildPrint(conditionalExpression->whenFalse);
@@ -1265,6 +1279,10 @@ template <typename OUT> class Printer
             forEachChildPrint(node.as<RestTypeNode>()->type);
             break;
         }
+        case SyntaxKind::ThisType: {
+            out << "this";
+            break;
+        }
         case SyntaxKind::JSDocTypeExpression: {
             forEachChildPrint(node.as<JSDocTypeExpression>()->type);
             break;
@@ -1420,11 +1438,15 @@ template <typename OUT> class Printer
         case SyntaxKind::AnyKeyword:
         case SyntaxKind::VoidKeyword:
         case SyntaxKind::DeclareKeyword:
+        case SyntaxKind::ReadonlyKeyword:
+        case SyntaxKind::ObjectKeyword:
+        case SyntaxKind::NeverKeyword:
+        case SyntaxKind::InKeyword:
         case SyntaxKind::ExportKeyword: {
+            assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << Scanner::tokenStrings[node->_kind];
             break;
         }
-        case SyntaxKind::QuestionToken:
         case SyntaxKind::ColonToken:
         case SyntaxKind::EqualsToken:
         case SyntaxKind::EqualsEqualsToken:
@@ -1439,6 +1461,7 @@ template <typename OUT> class Printer
         case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
         case SyntaxKind::PlusToken:
         case SyntaxKind::PlusPlusToken:
+        case SyntaxKind::AsteriskToken:
         case SyntaxKind::AmpersandToken:
         case SyntaxKind::AmpersandEqualsToken:
         case SyntaxKind::AmpersandAmpersandToken:
@@ -1450,11 +1473,16 @@ template <typename OUT> class Printer
         case SyntaxKind::QuestionQuestionToken:
         case SyntaxKind::QuestionQuestionEqualsToken:
         case SyntaxKind::MinusToken:
-        case SyntaxKind::MinusMinusToken: {
+        case SyntaxKind::MinusMinusToken:
+        case SyntaxKind::PercentToken: {
+            assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << " " << Scanner::tokenStrings[node->_kind] << " ";
             break;
         }
+        case SyntaxKind::DotDotDotToken:
+        case SyntaxKind::QuestionToken:
         case SyntaxKind::QuestionDotToken: {
+            assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << Scanner::tokenStrings[node->_kind];
             break;
         }
