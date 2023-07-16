@@ -120,6 +120,7 @@ template <typename OUT> class Printer
             || node == SyntaxKind::SetAccessor
             || node == SyntaxKind::Constructor
             || node == SyntaxKind::ClassDeclaration
+            || node == SyntaxKind::ModuleDeclaration
             || node == SyntaxKind::InterfaceDeclaration
             || node == SyntaxKind::IfStatement
             || node == SyntaxKind::SwitchStatement
@@ -388,6 +389,7 @@ template <typename OUT> class Printer
         case SyntaxKind::QualifiedName: {
             auto qualifiedName = node.as<QualifiedName>();
             forEachChildPrint(qualifiedName->left);
+            out << ".";
             forEachChildPrint(qualifiedName->right);
             break;
         }
