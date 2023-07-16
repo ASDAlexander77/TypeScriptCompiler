@@ -169,7 +169,7 @@ std::map<string, SyntaxKind> Scanner::textToToken = {{S("abstract"), SyntaxKind:
                                                      {S("."), SyntaxKind::DotToken},
                                                      {S("..."), SyntaxKind::DotDotDotToken},
                                                      {S(";"), SyntaxKind::SemicolonToken},
-                                                     {S("),"), SyntaxKind::CommaToken},
+                                                     {S(","), SyntaxKind::CommaToken},
                                                      {S("<"), SyntaxKind::LessThanToken},
                                                      {S(">"), SyntaxKind::GreaterThanToken},
                                                      {S("<="), SyntaxKind::LessThanEqualsToken},

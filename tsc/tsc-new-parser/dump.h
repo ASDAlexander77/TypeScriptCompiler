@@ -352,6 +352,11 @@ template <typename OUT> class Printer
             out << node.as<NumericLiteral>()->text;
             break;
         }
+        case SyntaxKind::BigIntLiteral: {
+            out << node.as<BigIntLiteral>()->text;
+            out << "n";
+            break;
+        }
         case SyntaxKind::StringLiteral: {
             auto stringLiteral = node.as<StringLiteral>();
             if (stringLiteral->singleQuote)
@@ -1456,12 +1461,17 @@ template <typename OUT> class Printer
         case SyntaxKind::PrivateKeyword:
         case SyntaxKind::SuperKeyword:
         case SyntaxKind::DefaultKeyword:
+        case SyntaxKind::AsyncKeyword:
+        case SyntaxKind::AwaitKeyword:
+        case SyntaxKind::ImportKeyword:
+        case SyntaxKind::BigIntKeyword:
         case SyntaxKind::ExportKeyword: {
             assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << Scanner::tokenStrings[node->_kind];
             break;
         }
         case SyntaxKind::ColonToken:
+        case SyntaxKind::CommaToken:
         case SyntaxKind::EqualsToken:
         case SyntaxKind::EqualsEqualsToken:
         case SyntaxKind::EqualsEqualsEqualsToken:
