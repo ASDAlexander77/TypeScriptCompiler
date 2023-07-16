@@ -57,11 +57,11 @@ template <typename OUT> class Printer
     {
         if (declarationMode)
         {
-            forEachChildrenPrintFilterWithAppend(node->modifiers, SyntaxKind::ExportKeyword, SyntaxKind::DeclareKeyword);
+            forEachChildrenPrintFilterWithAppend(node->modifiers, SyntaxKind::ExportKeyword, SyntaxKind::DeclareKeyword, nullptr, " ");
         }
         else
         {
-            forEachChildrenPrint(node->modifiers);
+            forEachChildrenPrint(node->modifiers, nullptr, " ");
         }
 
         printSeparatorForModifiersAndDecorators(node);
@@ -596,9 +596,7 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::ConditionalExpression: {
             auto conditionalExpression = node.as<ConditionalExpression>();
-            out << "(";
             forEachChildPrint(conditionalExpression->condition);
-            out << ") ";
             forEachChildPrint(conditionalExpression->questionToken);
             forEachChildPrint(conditionalExpression->whenTrue);
             forEachChildPrint(conditionalExpression->colonToken);
@@ -970,15 +968,41 @@ template <typename OUT> class Printer
             forEachChildPrint(node.as<ExportAssignment>()->expression);
             break;
         }
+        case SyntaxKind::TemplateHead: {
+            auto templateHead = node.as<TemplateHead>();
+            out << templateHead->text;
+            break;
+        }
+        case SyntaxKind::TemplateMiddle: {
+            auto templateMiddle = node.as<TemplateMiddle>();
+            out << templateMiddle->text;
+            break;
+        }
+        case SyntaxKind::TemplateTail: {
+            auto templateTail = node.as<TemplateTail>();
+            out << templateTail->text;
+            break;
+        }
+        case SyntaxKind::NoSubstitutionTemplateLiteral: {
+            out << "`";
+            auto noSubstitutionTemplateLiteral = node.as<NoSubstitutionTemplateLiteral>();
+            out << noSubstitutionTemplateLiteral->rawText;
+            out << "`";
+            break;
+        }
         case SyntaxKind::TemplateExpression: {
+            out << "`";
             auto templateExpression = node.as<TemplateExpression>();
             forEachChildPrint(templateExpression->head);
             forEachChildrenPrint(templateExpression->templateSpans);
+            out << "`";
             break;
         }
         case SyntaxKind::TemplateSpan: {
             auto templateSpan = node.as<TemplateSpan>();
+            out << "${";
             forEachChildPrint(templateSpan->expression);
+            out << "}";
             forEachChildPrint(templateSpan->literal);
             break;
         }
@@ -1233,27 +1257,48 @@ template <typename OUT> class Printer
         case SyntaxKind::StringKeyword:
         case SyntaxKind::NumberKeyword:
         case SyntaxKind::ThisKeyword:
+        case SyntaxKind::ConstKeyword:
+        case SyntaxKind::UndefinedKeyword:
+        case SyntaxKind::BooleanKeyword:
+        case SyntaxKind::AnyKeyword:
+        case SyntaxKind::VoidKeyword:
         case SyntaxKind::DeclareKeyword:
         case SyntaxKind::ExportKeyword: {
             out << Scanner::tokenStrings[node->_kind];
             break;
         }
+        case SyntaxKind::QuestionToken:
+        case SyntaxKind::ColonToken:
         case SyntaxKind::EqualsToken:
         case SyntaxKind::EqualsEqualsToken:
+        case SyntaxKind::EqualsEqualsEqualsToken:
+        case SyntaxKind::ExclamationEqualsEqualsToken:
         case SyntaxKind::EqualsGreaterThanToken:
         case SyntaxKind::LessThanToken:
         case SyntaxKind::LessThanEqualsToken:
+        case SyntaxKind::LessThanLessThanToken:
         case SyntaxKind::GreaterThanToken:
         case SyntaxKind::GreaterThanEqualsToken:
+        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
         case SyntaxKind::PlusToken:
         case SyntaxKind::PlusPlusToken:
+        case SyntaxKind::AmpersandToken:
+        case SyntaxKind::AmpersandEqualsToken:
+        case SyntaxKind::AmpersandAmpersandToken:
+        case SyntaxKind::AmpersandAmpersandEqualsToken:
+        case SyntaxKind::BarToken:
+        case SyntaxKind::BarEqualsToken:
+        case SyntaxKind::BarBarToken:
+        case SyntaxKind::BarBarEqualsToken:
+        case SyntaxKind::QuestionQuestionToken:
+        case SyntaxKind::QuestionQuestionEqualsToken:
+        case SyntaxKind::QuestionDotToken:
         case SyntaxKind::MinusToken:
         case SyntaxKind::MinusMinusToken: {
             out << " " << Scanner::tokenStrings[node->_kind] << " ";
             break;
         }
         case SyntaxKind::EmptyStatement:
-            newLine();
             break;
         case SyntaxKind::EndOfFileToken:
             break;

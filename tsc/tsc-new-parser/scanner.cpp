@@ -201,7 +201,7 @@ std::map<string, SyntaxKind> Scanner::textToToken = {{S("abstract"), SyntaxKind:
                                                      {S("?"), SyntaxKind::QuestionToken},
                                                      {S("??"), SyntaxKind::QuestionQuestionToken},
                                                      {S("?."), SyntaxKind::QuestionDotToken},
-                                                     {S("),"), SyntaxKind::ColonToken},
+                                                     {S(":"), SyntaxKind::ColonToken},
                                                      {S("="), SyntaxKind::EqualsToken},
                                                      {S("+="), SyntaxKind::PlusEqualsToken},
                                                      {S("-="), SyntaxKind::MinusEqualsToken},
@@ -217,7 +217,7 @@ std::map<string, SyntaxKind> Scanner::textToToken = {{S("abstract"), SyntaxKind:
                                                      {S("^="), SyntaxKind::CaretEqualsToken},
                                                      {S("||="), SyntaxKind::BarBarEqualsToken},
                                                      {S("&&="), SyntaxKind::AmpersandAmpersandEqualsToken},
-                                                     {S("\?\?="), SyntaxKind::QuestionQuestionEqualsToken},
+                                                     {S("??="), SyntaxKind::QuestionQuestionEqualsToken},
                                                      {S("@"), SyntaxKind::AtToken},
                                                      {S("`"), SyntaxKind::BacktickToken}};
 
@@ -1074,7 +1074,8 @@ auto Scanner::makeReverseMap(std::map<string, SyntaxKind> source) -> std::map<Sy
     for (auto &item : source)
     {
         result[item.second] = item.first;
-    };
+    }
+
     return result;
 }
 
