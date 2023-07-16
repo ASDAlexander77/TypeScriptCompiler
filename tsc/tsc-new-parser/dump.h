@@ -348,6 +348,10 @@ template <typename OUT> class Printer
             out << node.as<Identifier>()->escapedText.c_str();
             break;
         }
+        case SyntaxKind::PrivateIdentifier: {
+            out << "#" << node.as<PrivateIdentifier>()->escapedText.c_str();
+            break;
+        }
         case SyntaxKind::NumericLiteral: {
             out << node.as<NumericLiteral>()->text;
             break;
@@ -1437,6 +1441,10 @@ template <typename OUT> class Printer
             forEachChildPrint(node.as<PartiallyEmittedExpression>()->expression);
             break;
         }
+        case SyntaxKind::SemicolonClassElement: {
+            out << ";";
+            break;
+        }
         case SyntaxKind::TrueKeyword:
         case SyntaxKind::FalseKeyword:
         case SyntaxKind::NullKeyword:
@@ -1466,6 +1474,7 @@ template <typename OUT> class Printer
         case SyntaxKind::ImportKeyword:
         case SyntaxKind::BigIntKeyword:
         case SyntaxKind::SymbolKeyword:
+        case SyntaxKind::InstanceOfKeyword:
         case SyntaxKind::ExportKeyword: {
             assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << Scanner::tokenStrings[node->_kind];
