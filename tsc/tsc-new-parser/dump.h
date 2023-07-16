@@ -116,6 +116,7 @@ template <typename OUT> class Printer
             || node == SyntaxKind::ModuleBlock 
             || node == SyntaxKind::FunctionDeclaration 
             || node == SyntaxKind::ClassDeclaration
+            || node == SyntaxKind::InterfaceDeclaration
             || node == SyntaxKind::IfStatement
             || node == SyntaxKind::SwitchStatement
             || node == SyntaxKind::ForStatement
@@ -146,7 +147,8 @@ template <typename OUT> class Printer
         forEachChildrenPrint(node->modifiers, nullptr, nullptr, nullptr, false, " ");
     }
 
-    bool printStatements(NodeArray<ts::Statement> nodes)
+    template <typename T>
+    bool printStatementsLike(NodeArray<T> nodes)
     {
         isLastStatementBlock = false;
         for (auto node : nodes)
@@ -169,19 +171,34 @@ template <typename OUT> class Printer
         return isLastStatementBlock;
     }
 
-    void printBlock(ts::Block block)
+
+    bool printStatements(NodeArray<ts::Statement> nodes)
+    {
+        return printStatementsLike(nodes);
+    }
+
+    void printBlockBase(std::function<void(void)> bodyFunc)
     {
         newLineWithIntent();
         out << "{";
         incIndent();
         newLine();
         
-        printStatements(block->statements);
+        bodyFunc();
         
         decIndent();
         printIntent();
         out << "}";
-        newLine();            
+        newLine();           
+    }
+
+    void printBlock(ts::Block block)
+    {
+        printBlockBase(
+            [&]() { 
+                printStatements(block->statements);
+            }
+        );
     }
 
     void printClauses(NodeArray<ts::CaseOrDefaultClause> nodes)
@@ -195,17 +212,29 @@ template <typename OUT> class Printer
 
     void printCaseBlock(ts::CaseBlock caseBlock)
     {
-        newLineWithIntent();
-        out << "{";
-        incIndent();
-        newLine();
-        
-        printClauses(caseBlock->clauses);
+        printBlockBase(
+            [&]() { 
+                printClauses(caseBlock->clauses);
+            }
+        );
+    }
 
-        decIndent();
-        printIntent();
-        out << "}";
-        newLine();            
+    void printMembersBlock(ts::InterfaceDeclaration interfaceDeclaration)
+    {
+        printBlockBase(
+            [&]() { 
+                printStatementsLike(interfaceDeclaration->members);
+            }
+        );
+    }
+
+    void printMembersBlock(ts::ClassLikeDeclaration classDeclaration)
+    {
+        printBlockBase(
+            [&]() { 
+                printStatementsLike(classDeclaration->members);
+            }
+        );
     }
 
     template <typename T>
@@ -963,37 +992,23 @@ template <typename OUT> class Printer
         case SyntaxKind::ClassExpression: {
             auto classLikeDeclaration = node.as<ClassLikeDeclaration>();
             printDecorators(node);
-            printModifiers(node);
+            printModifiersWithMode(node);
             out << "class ";
             forEachChildPrint(classLikeDeclaration->name);
             forEachChildrenPrint(classLikeDeclaration->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(classLikeDeclaration->heritageClauses);
-            forEachChildrenPrint(classLikeDeclaration->members);
+            printMembersBlock(classLikeDeclaration);
             break;
         }
         case SyntaxKind::InterfaceDeclaration: {
             auto interfaceDeclaration = node.as<InterfaceDeclaration>();
             printDecorators(node);
             printModifiersWithMode(node);
-            if (!node->decorators.empty() || !node->modifiers.empty())
-                out << " ";                            
             out << "interface ";
             forEachChildPrint(interfaceDeclaration->name);
             forEachChildrenPrint(interfaceDeclaration->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(interfaceDeclaration->heritageClauses);
-
-            newLine();
-            out << "{";
-            incIndent();
-            newLine();
-            
-            forEachChildrenPrint(interfaceDeclaration->members, nullptr, ";\n", ";\n");
-            
-            decIndent();
-            newLine();
-            out << "}";
-            newLine();  
-
+            printMembersBlock(interfaceDeclaration);
             break;
         }
         case SyntaxKind::TypeAliasDeclaration: {
