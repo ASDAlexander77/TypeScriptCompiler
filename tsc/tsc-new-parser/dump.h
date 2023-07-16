@@ -24,8 +24,11 @@ template <typename OUT> class Printer
     int ident;
     bool declarationMode;
 
+    // temp var
+    bool isLastStatementBlock;
+
   public:
-    Printer(OUT &out) : out(out), ident(0), declarationMode(false)
+    Printer(OUT &out) : out(out), ident(0), declarationMode(false), isLastStatementBlock(false)
     {
     }
 
@@ -48,6 +51,79 @@ template <typename OUT> class Printer
 
   protected:
 
+    void printText(const char* text)
+    {
+        if (text)
+        {
+            std::string s(text);
+            auto end = s.length() - 1;
+            if (s.at(end) == '\n')
+            {
+                out << s.substr(0, end).c_str();
+                newLine();
+            }
+            else
+            {
+                out << text;
+            }
+        }
+    }
+
+    void newLine()
+    {
+        out << std::endl;
+    }    
+
+    void  newLineWithIntent()
+    {
+        newLine();
+        printIntent();
+    }
+
+    void printIntent()
+    {
+        for (auto i = 0; i < ident; i++)
+        {
+            out << "\t";
+        }
+    }
+
+    void incIndent()
+    {
+        ident++;
+    }
+
+    void decIndent()
+    {
+        ident--;
+    }
+
+    inline bool isBlock(ts::Node node)
+    {
+        return node == SyntaxKind::Block 
+            || node == SyntaxKind::ModuleBlock;
+    }    
+
+    inline bool isBlockOrStatementWithBlock(ts::Node node)
+    {
+        if (node == SyntaxKind::IfStatement)
+        {
+            auto ifStat = node.as<IfStatement>();
+            return ifStat->elseStatement && isBlock(ifStat->elseStatement) || isBlock(ifStat->thenStatement);
+        }
+
+        return node == SyntaxKind::Block 
+            || node == SyntaxKind::ModuleBlock 
+            || node == SyntaxKind::FunctionDeclaration 
+            || node == SyntaxKind::ClassDeclaration
+            || node == SyntaxKind::IfStatement
+            || node == SyntaxKind::SwitchStatement
+            || node == SyntaxKind::ForStatement
+            || node == SyntaxKind::ForOfStatement
+            || node == SyntaxKind::ForInStatement
+            || node == SyntaxKind::WhileStatement;
+    }
+
     void printDecorators(ts::Node node)
     {
         forEachChildrenPrint(node->decorators);
@@ -61,22 +137,75 @@ template <typename OUT> class Printer
         }
         else
         {
-            forEachChildrenPrint(node->modifiers, nullptr, " ");
+            forEachChildrenPrint(node->modifiers, nullptr, nullptr, nullptr, false, " ");
         }
-
-        printSeparatorForModifiersAndDecorators(node);
     }
 
     void printModifiers(ts::Node node)
     {
-        forEachChildrenPrint(node->modifiers);
-        printSeparatorForModifiersAndDecorators(node);
+        forEachChildrenPrint(node->modifiers, nullptr, nullptr, nullptr, false, " ");
     }
 
-    void printSeparatorForModifiersAndDecorators(ts::Node node)
+    bool printStatements(NodeArray<ts::Statement> nodes)
     {
-        if (!node->decorators.empty() || !node->modifiers.empty())
-            out << " ";                                    
+        isLastStatementBlock = false;
+        for (auto node : nodes)
+        {
+            isLastStatementBlock = false;
+
+            printIntent();
+            forEachChildPrint(node);
+            if (!isBlockOrStatementWithBlock(node))
+            {
+                out << ";";
+                newLine();
+            }
+            else
+            {
+                isLastStatementBlock = true;
+            }
+        }
+
+        return isLastStatementBlock;
+    }
+
+    void printBlock(ts::Block block)
+    {
+        newLineWithIntent();
+        out << "{";
+        incIndent();
+        newLine();
+        
+        printStatements(block->statements);
+        
+        decIndent();
+        printIntent();
+        out << "}";
+        newLine();            
+    }
+
+    void printClauses(NodeArray<ts::CaseOrDefaultClause> nodes)
+    {
+        for (auto node : nodes)
+        {
+            printIntent();
+            forEachChildPrint(node);
+        }
+    }    
+
+    void printCaseBlock(ts::CaseBlock caseBlock)
+    {
+        newLineWithIntent();
+        out << "{";
+        incIndent();
+        newLine();
+        
+        printClauses(caseBlock->clauses);
+
+        decIndent();
+        printIntent();
+        out << "}";
+        newLine();            
     }
 
     template <typename T>
@@ -335,9 +464,6 @@ template <typename OUT> class Printer
             printDecorators(node);
             printModifiers(node);
 
-            if (!node->decorators.empty() || !node->modifiers.empty())
-                out << " ";
-
             if (kind == SyntaxKind::FunctionExpression || kind == SyntaxKind::FunctionDeclaration)
                 out << "function ";
 
@@ -478,8 +604,10 @@ template <typename OUT> class Printer
         case SyntaxKind::PropertyAccessExpression: {
             auto propertyAccessExpression = node.as<PropertyAccessExpression>();
             forEachChildPrint(propertyAccessExpression->expression);
-            forEachChildPrint(propertyAccessExpression->questionDotToken);
-            out << ".";
+            if (propertyAccessExpression->questionDotToken)
+                forEachChildPrint(propertyAccessExpression->questionDotToken);
+            else
+                out << ".";
             forEachChildPrint(propertyAccessExpression->name);
             break;
         }
@@ -609,17 +737,7 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::Block:
         case SyntaxKind::ModuleBlock: {
-            newLine();
-            out << "{";
-            incIndent();
-            newLine();
-            
-            forEachChildrenPrint(node.as<Block>()->statements, nullptr, ";\n", ";\n");
-            
-            decIndent();
-            newLine();
-            out << "}";
-            newLine();            
+            printBlock(node.as<Block>());
             break;
         }
         case SyntaxKind::SourceFile: {
@@ -662,11 +780,34 @@ template <typename OUT> class Printer
             auto ifStatement = node.as<IfStatement>();
             out << "if (";
             forEachChildPrint(ifStatement->expression);
-            out << ") ";
+            out << ")";
+            auto thenIsBlock = isBlockOrStatementWithBlock(ifStatement->thenStatement); 
+            if (!thenIsBlock)
+            {
+                out << " ";
+            }
+
             forEachChildPrint(ifStatement->thenStatement);
             if (ifStatement->elseStatement)
-                out << " else ";
-            forEachChildPrint(ifStatement->elseStatement);
+            {
+                if (!thenIsBlock)
+                {
+                    out << " ";
+                }
+                else
+                {
+                    printIntent();
+                }
+
+                out << "else";
+                if (!isBlock(ifStatement->elseStatement))
+                {
+                    out << " ";
+                }
+
+                forEachChildPrint(ifStatement->elseStatement);
+            }
+
             break;
         }
         case SyntaxKind::DoStatement: {
@@ -680,7 +821,9 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::WhileStatement: {
             auto whileStatement = node.as<WhileStatement>();
+            out << "while (";
             forEachChildPrint(whileStatement->expression);
+            out << ")";
             forEachChildPrint(whileStatement->statement);
             break;
         }
@@ -760,36 +903,31 @@ template <typename OUT> class Printer
             auto switchStatement = node.as<SwitchStatement>();
             out << "switch (";
             forEachChildPrint(switchStatement->expression);
-            out << ") ";
+            out << ")";
             forEachChildPrint(switchStatement->caseBlock);
             break;
         }
         case SyntaxKind::CaseBlock: {
-            newLine();
-            out << "{";
-            incIndent();
-            newLine();
-            
-            forEachChildrenPrint(node.as<CaseBlock>()->clauses);
-            
-            decIndent();
-            newLine();
-            out << "}";
-            newLine();            
-
+            printCaseBlock(node.as<CaseBlock>());
             break;
         }
         case SyntaxKind::CaseClause: {
             auto caseClause = node.as<CaseClause>();
             out << "case ";
             forEachChildPrint(caseClause->expression);
-            out << ": ";
-            forEachChildrenPrint(caseClause->statements);
+            out << ":";
+            newLine();
+            incIndent();
+            printStatements(caseClause->statements);
+            decIndent();
             break;
         }
         case SyntaxKind::DefaultClause: {
-            out << "default: ";
-            forEachChildrenPrint(node.as<DefaultClause>()->statements);
+            out << "default:";
+            newLine();
+            incIndent();
+            printStatements(node.as<DefaultClause>()->statements);
+            decIndent();
             break;
         }
         case SyntaxKind::LabeledStatement: {
@@ -1292,10 +1430,13 @@ template <typename OUT> class Printer
         case SyntaxKind::BarBarEqualsToken:
         case SyntaxKind::QuestionQuestionToken:
         case SyntaxKind::QuestionQuestionEqualsToken:
-        case SyntaxKind::QuestionDotToken:
         case SyntaxKind::MinusToken:
         case SyntaxKind::MinusMinusToken: {
             out << " " << Scanner::tokenStrings[node->_kind] << " ";
+            break;
+        }
+        case SyntaxKind::QuestionDotToken: {
+            out << Scanner::tokenStrings[node->_kind];
             break;
         }
         case SyntaxKind::EmptyStatement:
@@ -1306,43 +1447,6 @@ template <typename OUT> class Printer
             out << "[MISSING " << Scanner::tokenToText[node->_kind] << "]";
             break;
         }
-    }
-
-    void printText(const char* text)
-    {
-        if (text)
-        {
-            std::string s(text);
-            auto end = s.length() - 1;
-            if (s.at(end) == '\n')
-            {
-                out << s.substr(0, end).c_str();
-                newLine();
-            }
-            else
-            {
-                out << text;
-            }
-        }
-    }
-
-    void newLine()
-    {
-        out << std::endl;
-        for (auto i = 0; i < ident; i++)
-        {
-            out << "\t";
-        }
-    }
-
-    void incIndent()
-    {
-        ident++;
-    }
-
-    void decIndent()
-    {
-        ident--;
     }
 };
 

@@ -177,7 +177,7 @@ std::map<string, SyntaxKind> Scanner::textToToken = {{S("abstract"), SyntaxKind:
                                                      {S("=="), SyntaxKind::EqualsEqualsToken},
                                                      {S("!="), SyntaxKind::ExclamationEqualsToken},
                                                      {S("==="), SyntaxKind::EqualsEqualsEqualsToken},
-                                                     {S("!="), SyntaxKind::ExclamationEqualsEqualsToken},
+                                                     {S("!=="), SyntaxKind::ExclamationEqualsEqualsToken},
                                                      {S("=>"), SyntaxKind::EqualsGreaterThanToken},
                                                      {S("+"), SyntaxKind::PlusToken},
                                                      {S("-"), SyntaxKind::MinusToken},
