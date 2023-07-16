@@ -115,6 +115,10 @@ template <typename OUT> class Printer
         return node == SyntaxKind::Block 
             || node == SyntaxKind::ModuleBlock 
             || node == SyntaxKind::FunctionDeclaration 
+            || node == SyntaxKind::MethodDeclaration
+            || node == SyntaxKind::GetAccessor
+            || node == SyntaxKind::SetAccessor
+            || node == SyntaxKind::Constructor
             || node == SyntaxKind::ClassDeclaration
             || node == SyntaxKind::InterfaceDeclaration
             || node == SyntaxKind::IfStatement
@@ -526,6 +530,21 @@ template <typename OUT> class Printer
             if (kind == SyntaxKind::FunctionExpression || kind == SyntaxKind::FunctionDeclaration)
                 out << "function ";
 
+            if (kind == SyntaxKind::Constructor)
+            {
+                out << "constructor";
+            }
+
+            if (kind == SyntaxKind::GetAccessor)
+            {
+                out << "get ";
+            }
+
+            if (kind == SyntaxKind::SetAccessor)
+            {
+                out << "set ";
+            }
+
             forEachChildPrint(functionLikeDeclarationBase->asteriskToken);
             forEachChildPrint(functionLikeDeclarationBase->name);
             forEachChildPrint(functionLikeDeclarationBase->questionToken);
@@ -566,7 +585,9 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::TupleType: {
-            forEachChildrenPrint(node.as<TupleTypeNode>()->elements);
+            out << "[";
+            forEachChildrenPrint(node.as<TupleTypeNode>()->elements, nullptr, ", ");
+            out << "]";
             break;
         }
         case SyntaxKind::UnionType: {
@@ -798,7 +819,7 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::SourceFile: {
             auto sourceFile = node.as<SourceFile>();
-            forEachChildrenPrint(sourceFile->statements, nullptr, "\n", nullptr);
+            printStatements(sourceFile->statements);
             forEachChildPrint(sourceFile->endOfFileToken);
             break;
         }
@@ -1475,6 +1496,7 @@ template <typename OUT> class Printer
         case SyntaxKind::BigIntKeyword:
         case SyntaxKind::SymbolKeyword:
         case SyntaxKind::InstanceOfKeyword:
+        case SyntaxKind::AssertsKeyword:
         case SyntaxKind::ExportKeyword: {
             assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << Scanner::tokenStrings[node->_kind];
