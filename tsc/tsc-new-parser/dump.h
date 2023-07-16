@@ -177,7 +177,7 @@ template <typename OUT> class Printer
         return printStatementsLike(nodes);
     }
 
-    void printBlockBase(std::function<void(void)> bodyFunc)
+    void printBlockBase(std::function<void(void)> bodyFunc, SyntaxKind parent = SyntaxKind::Unknown)
     {
         newLineWithIntent();
         out << "{";
@@ -189,7 +189,8 @@ template <typename OUT> class Printer
         decIndent();
         printIntent();
         out << "}";
-        newLine();           
+        if (parent != SyntaxKind::ArrowFunction && parent != SyntaxKind::FunctionExpression)
+            newLine();           
     }
 
     void printBlock(ts::Block block)
@@ -197,7 +198,8 @@ template <typename OUT> class Printer
         printBlockBase(
             [&]() { 
                 printStatements(block->statements);
-            }
+            },
+            block->parent
         );
     }
 
@@ -490,13 +492,15 @@ template <typename OUT> class Printer
         case SyntaxKind::FunctionDeclaration:
         case SyntaxKind::ArrowFunction: {
 
+            auto functionLikeDeclarationBase = node.as<FunctionLikeDeclarationBase>();
+            functionLikeDeclarationBase->body->parent = functionLikeDeclarationBase;
+
             printDecorators(node);
-            printModifiers(node);
+            printModifiersWithMode(node);
 
             if (kind == SyntaxKind::FunctionExpression || kind == SyntaxKind::FunctionDeclaration)
                 out << "function ";
 
-            auto functionLikeDeclarationBase = node.as<FunctionLikeDeclarationBase>();
             forEachChildPrint(functionLikeDeclarationBase->asteriskToken);
             forEachChildPrint(functionLikeDeclarationBase->name);
             forEachChildPrint(functionLikeDeclarationBase->questionToken);
