@@ -989,6 +989,10 @@ template <typename OUT> class Printer
             forEachChildPrint(node.as<ThrowStatement>()->expression);
             break;
         }
+        case SyntaxKind::DebuggerStatement: {
+            out << "debugger";
+            break;
+        }
         case SyntaxKind::TryStatement: {
             auto tryStatement = node.as<TryStatement>();
             forEachChildPrint(tryStatement->tryBlock);
@@ -1217,7 +1221,9 @@ template <typename OUT> class Printer
             forEachChildrenPrint(node.as<CommaListExpression>()->elements, nullptr, ", ");
             break;
         }
-
+        case SyntaxKind::OmittedExpression: {
+            break;
+        }
         case SyntaxKind::JsxElement: {
             auto jsxElement = node.as<JsxElement>();
             forEachChildPrint(jsxElement->openingElement);
@@ -1443,6 +1449,13 @@ template <typename OUT> class Printer
         case SyntaxKind::NeverKeyword:
         case SyntaxKind::InKeyword:
         case SyntaxKind::UnknownKeyword:
+        case SyntaxKind::AbstractKeyword:
+        case SyntaxKind::StaticKeyword:
+        case SyntaxKind::PublicKeyword:
+        case SyntaxKind::ProtectedKeyword:
+        case SyntaxKind::PrivateKeyword:
+        case SyntaxKind::SuperKeyword:
+        case SyntaxKind::DefaultKeyword:
         case SyntaxKind::ExportKeyword: {
             assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << Scanner::tokenStrings[node->_kind];
@@ -1452,14 +1465,18 @@ template <typename OUT> class Printer
         case SyntaxKind::EqualsToken:
         case SyntaxKind::EqualsEqualsToken:
         case SyntaxKind::EqualsEqualsEqualsToken:
+        case SyntaxKind::ExclamationEqualsToken:
         case SyntaxKind::ExclamationEqualsEqualsToken:
         case SyntaxKind::EqualsGreaterThanToken:
         case SyntaxKind::LessThanToken:
         case SyntaxKind::LessThanEqualsToken:
         case SyntaxKind::LessThanLessThanToken:
+        case SyntaxKind::LessThanLessThanEqualsToken:
         case SyntaxKind::GreaterThanToken:
         case SyntaxKind::GreaterThanEqualsToken:
         case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+        case SyntaxKind::GreaterThanGreaterThanEqualsToken:
+        case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken:
         case SyntaxKind::PlusToken:
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::PlusEqualsToken:
@@ -1476,11 +1493,19 @@ template <typename OUT> class Printer
         case SyntaxKind::QuestionQuestionEqualsToken:
         case SyntaxKind::MinusToken:
         case SyntaxKind::MinusMinusToken:
-        case SyntaxKind::PercentToken: {
+        case SyntaxKind::MinusEqualsToken:
+        case SyntaxKind::AsteriskEqualsToken:
+        case SyntaxKind::SlashToken:
+        case SyntaxKind::SlashEqualsToken:
+        case SyntaxKind::CaretToken:
+        case SyntaxKind::CaretEqualsToken:
+        case SyntaxKind::PercentToken:
+        case SyntaxKind::PercentEqualsToken: {
             assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << " " << Scanner::tokenStrings[node->_kind] << " ";
             break;
         }
+        case SyntaxKind::ExclamationToken:        
         case SyntaxKind::DotDotDotToken:
         case SyntaxKind::QuestionToken:
         case SyntaxKind::QuestionDotToken: {
