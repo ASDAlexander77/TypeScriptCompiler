@@ -45,6 +45,8 @@ int main(int argc, char **argv)
 
     std::string filePath(argv[1]);
 
+    puts(argv[1]);
+
     auto content = readFile(filePath);
 
     Parser parser;
@@ -103,13 +105,11 @@ int main(int argc, char **argv)
                 << std::endl << " new text: " << newContent.substr(newNode->pos, newNode->_end - newNode->pos);
 
                 puts(wstos(s.str()).c_str());
-                puts(argv[1]);
                 puts(" : not equal.");
                 exit(1);
             }
         }
 
-        puts(argv[1]);
         puts(" : equal.");
     }
 

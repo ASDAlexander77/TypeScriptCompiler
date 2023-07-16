@@ -582,6 +582,7 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::ArrayType: {
             forEachChildPrint(node.as<ArrayTypeNode>()->elementType);
+            out << "[]";
             break;
         }
         case SyntaxKind::TupleType: {
@@ -622,7 +623,11 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::TypeOperator: {
-            forEachChildPrint(node.as<TypeOperatorNode>()->type);
+            auto typeOperatorNode = node.as<TypeOperatorNode>();
+            assert(Scanner::tokenStrings[typeOperatorNode->_operator].length() > 0);
+            out << Scanner::tokenStrings[typeOperatorNode->_operator];            
+            out << " ";
+            forEachChildPrint(typeOperatorNode->type);
             break;
         }
         case SyntaxKind::IndexedAccessType: {
@@ -707,9 +712,10 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::NewExpression: {
             auto newExpression = node.as<NewExpression>();
+            out << "new ";
             forEachChildPrint(newExpression->expression);
             forEachChildrenPrint(newExpression->typeArguments, "<", ", ", ">", true);
-            forEachChildrenPrint(newExpression->arguments, nullptr, ", ");
+            forEachChildrenPrint(newExpression->arguments, "(", ", ", ")");
             break;
         }
         case SyntaxKind::TaggedTemplateExpression: {
@@ -1230,6 +1236,7 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::HeritageClause: {
+            out << " extends ";
             forEachChildrenPrint(node.as<HeritageClause>()->types);
             break;
         }
