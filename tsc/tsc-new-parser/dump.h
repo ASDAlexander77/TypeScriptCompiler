@@ -1465,6 +1465,7 @@ template <typename OUT> class Printer
         case SyntaxKind::AwaitKeyword:
         case SyntaxKind::ImportKeyword:
         case SyntaxKind::BigIntKeyword:
+        case SyntaxKind::SymbolKeyword:
         case SyntaxKind::ExportKeyword: {
             assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << Scanner::tokenStrings[node->_kind];
@@ -1485,12 +1486,16 @@ template <typename OUT> class Printer
         case SyntaxKind::GreaterThanToken:
         case SyntaxKind::GreaterThanEqualsToken:
         case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+        case SyntaxKind::GreaterThanGreaterThanToken:
         case SyntaxKind::GreaterThanGreaterThanEqualsToken:
         case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken:
         case SyntaxKind::PlusToken:
         case SyntaxKind::PlusPlusToken:
         case SyntaxKind::PlusEqualsToken:
         case SyntaxKind::AsteriskToken:
+        case SyntaxKind::AsteriskEqualsToken:
+        case SyntaxKind::AsteriskAsteriskToken:
+        case SyntaxKind::AsteriskAsteriskEqualsToken:
         case SyntaxKind::AmpersandToken:
         case SyntaxKind::AmpersandEqualsToken:
         case SyntaxKind::AmpersandAmpersandToken:
@@ -1504,7 +1509,6 @@ template <typename OUT> class Printer
         case SyntaxKind::MinusToken:
         case SyntaxKind::MinusMinusToken:
         case SyntaxKind::MinusEqualsToken:
-        case SyntaxKind::AsteriskEqualsToken:
         case SyntaxKind::SlashToken:
         case SyntaxKind::SlashEqualsToken:
         case SyntaxKind::CaretToken:
