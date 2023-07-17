@@ -1401,6 +1401,17 @@ protected:
             printModifiers(node);
             out << "module ";
             forEachChildPrint(moduleDeclaration->name);
+
+            auto body = moduleDeclaration->body;
+            while (body == SyntaxKind::ModuleDeclaration)
+            {
+                moduleDeclaration = body.as<ModuleDeclaration>();
+                
+                out << ".";
+                forEachChildPrint(moduleDeclaration->name);
+                body = moduleDeclaration->body;
+            }
+
             forEachChildPrint(moduleDeclaration->body);
             break;
         }
@@ -1503,12 +1514,13 @@ protected:
         case SyntaxKind::ExportSpecifier:
         {
             auto exportSpecifier = node.as<ExportSpecifier>();
-            forEachChildPrint(exportSpecifier->propertyName);
-            if (exportSpecifier->name)
+            if (exportSpecifier->propertyName)
             {
+                forEachChildPrint(exportSpecifier->propertyName);
                 out << " as ";
-                forEachChildPrint(exportSpecifier->name);
             }
+             
+            forEachChildPrint(exportSpecifier->name);
 
             break;
         }
