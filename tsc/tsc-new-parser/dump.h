@@ -450,7 +450,7 @@ template <typename OUT> class Printer
             forEachChildPrint(typeParameterDeclaration->name);
             if (typeParameterDeclaration->constraint)
             {
-                out << " extends ";
+                out << ((typeParameterDeclaration->parent == SyntaxKind::MappedType) ? " in " : " extends ");
                 forEachChildPrint(typeParameterDeclaration->constraint);
             }
 
@@ -476,6 +476,7 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::SpreadAssignment: {
             auto spreadAssignment = node.as<SpreadAssignment>();
+            out << "...";
             forEachChildPrint(spreadAssignment->expression);
             break;
         }
@@ -734,10 +735,18 @@ template <typename OUT> class Printer
         case SyntaxKind::MappedType: {
             auto mappedTypeNode = node.as<MappedTypeNode>();
             forEachChildPrint(mappedTypeNode->readonlyToken);
+            out  << "[";
+            mappedTypeNode->typeParameter->parent = mappedTypeNode;
             forEachChildPrint(mappedTypeNode->typeParameter);
             forEachChildPrint(mappedTypeNode->nameType);
+            out << "]";
             forEachChildPrint(mappedTypeNode->questionToken);
-            forEachChildPrint(mappedTypeNode->type);
+            if (mappedTypeNode->type)
+            {
+                out << ": ";
+                forEachChildPrint(mappedTypeNode->type);
+            }
+
             break;
         }
         case SyntaxKind::LiteralType: {
