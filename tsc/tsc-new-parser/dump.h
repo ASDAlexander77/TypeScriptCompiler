@@ -468,7 +468,7 @@ protected:
         }
         case SyntaxKind::PrivateIdentifier:
         {
-            out << "#" << node.as<PrivateIdentifier>()->escapedText.c_str();
+            out << node.as<PrivateIdentifier>()->escapedText.c_str();
             break;
         }
         case SyntaxKind::NumericLiteral:
