@@ -812,9 +812,15 @@ protected:
             auto importTypeNode = node.as<ImportTypeNode>();
             out << "import(";
             forEachChildPrint(importTypeNode->argument);
-            forEachChildPrint(importTypeNode->qualifier);
-            forEachChildrenPrint(importTypeNode->typeArguments, "<", ", ", ">", true);
             out << ")";
+
+            if (importTypeNode->qualifier)
+            {
+                out << ".";
+                forEachChildPrint(importTypeNode->qualifier);
+                forEachChildrenPrint(importTypeNode->typeArguments, "<", ", ", ">", true);
+            }
+
             break;
         }
         case SyntaxKind::ParenthesizedType:
@@ -1336,9 +1342,14 @@ protected:
         {
             auto catchClause = node.as<CatchClause>();
             printIntent();
-            out << "catch (";
-            forEachChildPrint(catchClause->variableDeclaration);
-            out << ")";
+            out << "catch";
+            if (catchClause->variableDeclaration)
+            {
+                out << " (";
+                forEachChildPrint(catchClause->variableDeclaration);
+                out << ")";
+            }
+
             forEachChildPrint(catchClause->block);
             break;
         }
