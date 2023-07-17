@@ -747,7 +747,12 @@ protected:
         case SyntaxKind::TypePredicate:
         {
             auto typePredicateNode = node.as<TypePredicateNode>();
-            forEachChildPrint(typePredicateNode->assertsModifier);
+            if (typePredicateNode->assertsModifier)
+            {
+                forEachChildPrint(typePredicateNode->assertsModifier);
+                out << " ";
+            }
+
             forEachChildPrint(typePredicateNode->parameterName);
             out << " is ";
             forEachChildPrint(typePredicateNode->type);
@@ -886,6 +891,7 @@ protected:
             forEachChildPrint(namedTupleMember->dotDotDotToken);
             forEachChildPrint(namedTupleMember->name);
             forEachChildPrint(namedTupleMember->questionToken);
+            out << ": ";
             forEachChildPrint(namedTupleMember->type);
             break;
         }
