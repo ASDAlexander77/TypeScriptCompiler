@@ -572,9 +572,11 @@ protected:
             forEachChildPrint(propertyDeclaration->name);
             forEachChildPrint(propertyDeclaration->questionToken);
             forEachChildPrint(propertyDeclaration->exclamationToken);
-            if (propertyDeclaration->type)
+            if (propertyDeclaration->type) {
                 out << ": ";
-            forEachChildPrint(propertyDeclaration->type);
+                forEachChildPrint(propertyDeclaration->type);
+            }
+
             if (propertyDeclaration->initializer)
                 out << " = ";
             forEachChildPrint(propertyDeclaration->initializer);
@@ -587,9 +589,11 @@ protected:
             auto propertySignature = node.as<PropertySignature>();
             forEachChildPrint(propertySignature->name);
             forEachChildPrint(propertySignature->questionToken);
-            if (propertySignature->type)
+            if (propertySignature->type) {
                 out << ": ";
-            forEachChildPrint(propertySignature->type);
+                forEachChildPrint(propertySignature->type);
+            }
+
             if (propertySignature->initializer)
                 out << " = ";
             forEachChildPrint(propertySignature->initializer);
@@ -602,9 +606,11 @@ protected:
             auto propertyAssignment = node.as<PropertyAssignment>();
             forEachChildPrint(propertyAssignment->name);
             forEachChildPrint(propertyAssignment->questionToken);
-            if (propertyAssignment->initializer)
+            if (propertyAssignment->initializer) {
                 out << ": ";
-            forEachChildPrint(propertyAssignment->initializer);
+                forEachChildPrint(propertyAssignment->initializer);
+            }
+
             break;
         }
         case SyntaxKind::VariableDeclaration:
@@ -614,12 +620,16 @@ protected:
             printModifiers(node);
             forEachChildPrint(variableDeclaration->name);
             forEachChildPrint(variableDeclaration->exclamationToken);
-            if (variableDeclaration->type)
+            if (variableDeclaration->type) {
                 out << " : ";
-            forEachChildPrint(variableDeclaration->type);
-            if (variableDeclaration->initializer)
+                forEachChildPrint(variableDeclaration->type);
+            }
+
+            if (variableDeclaration->initializer) {
                 out << " = ";
-            forEachChildPrint(variableDeclaration->initializer);
+                forEachChildPrint(variableDeclaration->initializer);
+            }
+
             break;
         }
         case SyntaxKind::BindingElement:
@@ -686,8 +696,12 @@ protected:
             printModifiers(node);
             forEachChildrenPrint(signatureDeclarationBase->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(signatureDeclarationBase->parameters, "[", ", ", "]");
-            out << ": ";
-            forEachChildPrint(signatureDeclarationBase->type);
+            if (signatureDeclarationBase->type)
+            {
+                out << ": ";
+                forEachChildPrint(signatureDeclarationBase->type);
+            }
+
             break;
         }
         case SyntaxKind::MethodDeclaration:
@@ -1607,14 +1621,18 @@ protected:
         case SyntaxKind::TemplateLiteralType:
         {
             auto templateLiteralTypeNode = node.as<TemplateLiteralTypeNode>();
+            out << "`";
             forEachChildPrint(templateLiteralTypeNode->head);
             forEachChildrenPrint(templateLiteralTypeNode->templateSpans);
+            out << "`";
             break;
         }
         case SyntaxKind::TemplateLiteralTypeSpan:
         {
             auto templateLiteralTypeSpan = node.as<TemplateLiteralTypeSpan>();
+            out << "${";
             forEachChildPrint(templateLiteralTypeSpan->type);
+            out << "}";
             forEachChildPrint(templateLiteralTypeSpan->literal);
             break;
         }
