@@ -299,7 +299,7 @@ protected:
         decIndent();
         printIntent();
         out << "}";
-        if (parent != SyntaxKind::ArrowFunction && parent != SyntaxKind::FunctionExpression && parent != SyntaxKind::ClassExpression)
+        if (parent != SyntaxKind::ArrowFunction && parent != SyntaxKind::FunctionExpression && parent != SyntaxKind::ClassExpression && parent != SyntaxKind::ObjectLiteralExpression)
             newLine();
     }
 
@@ -357,6 +357,16 @@ protected:
             {
                 printStatementsLike(enumDeclaration->members, ",");
             });
+    }
+
+    void printProperties(ObjectLiteralExpression objectLiteralExpression)
+    {
+        printBlockBase(
+            [&]()
+            {
+                printStatementsLike(objectLiteralExpression->properties, ",");
+            },
+            SyntaxKind::ObjectLiteralExpression);
     }
 
     template <typename T>
@@ -734,7 +744,8 @@ protected:
         {
 
             auto functionLikeDeclarationBase = node.as<FunctionLikeDeclarationBase>();
-            functionLikeDeclarationBase->body->parent = functionLikeDeclarationBase;
+            if (functionLikeDeclarationBase->body)
+                functionLikeDeclarationBase->body->parent = functionLikeDeclarationBase;
 
             printDecorators(node);
             printModifiersWithMode(node);
@@ -952,9 +963,10 @@ protected:
         }
         case SyntaxKind::ObjectLiteralExpression:
         {
-            out << "{";
-            forEachChildrenPrint(node.as<ObjectLiteralExpression>()->properties, " ", ", ", " ", true);
-            out << "}";
+            // out << "{";
+            // forEachChildrenPrint(node.as<ObjectLiteralExpression>()->properties, " ", ", ", " ", true);
+            // out << "}";
+            printProperties(node.as<ObjectLiteralExpression>());
             break;
         }
         case SyntaxKind::PropertyAccessExpression:
