@@ -112,6 +112,30 @@ template <typename OUT> class Printer
             return ifStat->elseStatement && isBlock(ifStat->elseStatement) || isBlock(ifStat->thenStatement);
         }
 
+        if (node == SyntaxKind::WhileStatement)
+        {
+            auto whileStatement = node.as<WhileStatement>();
+            return isBlock(whileStatement->statement);
+        }
+
+        if (node == SyntaxKind::ForStatement)
+        {
+            auto forStatement = node.as<ForStatement>();
+            return isBlock(forStatement->statement);
+        }
+
+        if (node == SyntaxKind::ForInStatement)
+        {
+            auto forInStatement = node.as<ForInStatement>();
+            return isBlock(forInStatement->statement);
+        }        
+
+        if (node == SyntaxKind::ForOfStatement)
+        {
+            auto forOfStatement = node.as<ForOfStatement>();
+            return isBlock(forOfStatement->statement);
+        }        
+
         return node == SyntaxKind::Block 
             || node == SyntaxKind::ModuleBlock 
             || node == SyntaxKind::FunctionDeclaration 
@@ -123,12 +147,7 @@ template <typename OUT> class Printer
             || node == SyntaxKind::EnumDeclaration
             || node == SyntaxKind::ModuleDeclaration
             || node == SyntaxKind::InterfaceDeclaration
-            || node == SyntaxKind::IfStatement
-            || node == SyntaxKind::SwitchStatement
-            || node == SyntaxKind::ForStatement
-            || node == SyntaxKind::ForOfStatement
-            || node == SyntaxKind::ForInStatement
-            || node == SyntaxKind::WhileStatement;
+            || node == SyntaxKind::SwitchStatement;
     }
 
     void printDecorators(ts::Node node)
@@ -871,11 +890,7 @@ template <typename OUT> class Printer
 
             auto isLet = (variableDeclarationList->flags & NodeFlags::Let) == NodeFlags::Let;
             auto isConst = (variableDeclarationList->flags & NodeFlags::Const) == NodeFlags::Const;
-            auto isExternal = (variableDeclarationList->flags & NodeFlags::Ambient) == NodeFlags::Ambient;
-            auto isVar = !isExternal && !isLet && !isConst;
-
-            if (isExternal)
-                out << "export ";
+            auto isVar = !isLet && !isConst;
             if (isLet)
                 out << "let ";
             if (isConst)
@@ -1173,6 +1188,7 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::NamespaceExportDeclaration: {
+            out << "export as namespace ";
             forEachChildPrint(node.as<NamespaceExportDeclaration>()->name);
             break;
         }
