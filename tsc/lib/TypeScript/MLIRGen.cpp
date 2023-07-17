@@ -19167,6 +19167,9 @@ genContext);
         Printer printer(declExports);
         printer.setDeclarationMode(true);
         printer.printNode(node);
+        declExports << ";\n";
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! added declaration to export: \n" << convertWideToUTF8(declExports.str()) << "\n";);      
     }
 
     void addTypeDeclarationToExport(TypeAliasDeclaration typeAliasDeclaration)    

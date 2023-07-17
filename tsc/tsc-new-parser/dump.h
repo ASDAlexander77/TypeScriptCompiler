@@ -245,7 +245,7 @@ protected:
     {
         if (declarationMode)
         {
-            forEachChildrenPrintFilterWithAppend(node->modifiers, SyntaxKind::ExportKeyword, SyntaxKind::DeclareKeyword, nullptr, " ");
+            forEachChildrenPrintFilterWithAppend(node->modifiers, SyntaxKind::ExportKeyword, SyntaxKind::DeclareKeyword, nullptr, nullptr, nullptr, false, " ");
         }
         else
         {
@@ -402,8 +402,8 @@ protected:
     }
 
     template <typename T>
-    void forEachChildrenPrintFilterWithAppend(NodeArray<T> nodes, SyntaxKind filter, SyntaxKind withAppend, const char *open = nullptr, const char *separator = nullptr,
-                                                const char *end = nullptr, bool ifAny = false)
+    void forEachChildrenPrintFilterWithAppend(NodeArray<T> nodes, SyntaxKind filter, SyntaxKind withAppend = SyntaxKind::Unknown, const char *open = nullptr, const char *separator = nullptr,
+                                                const char *end = nullptr, bool ifAny = false, const char *afterChild = nullptr, const char *beforeChild = nullptr)
     {
         if (!ifAny && open)
         {
@@ -418,7 +418,17 @@ protected:
                 printText(open);
             }
 
+            if (beforeChild)
+            {
+                printText(beforeChild);
+            }
+
             out << Scanner::tokenStrings[withAppend];
+
+            if (afterChild)
+            {
+                printText(afterChild);
+            }               
 
             hasAny = true;
         }
@@ -439,7 +449,17 @@ protected:
             }
 
             hasAny = true;
+            if (beforeChild)
+            {
+                printText(beforeChild);
+            }
+
             forEachChildPrint(node);
+
+            if (afterChild)
+            {
+                printText(afterChild);
+            }            
         }
 
         if ((!ifAny || ifAny && hasAny) && end)
