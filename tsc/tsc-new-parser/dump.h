@@ -104,6 +104,20 @@ template <typename OUT> class Printer
             || node == SyntaxKind::ModuleBlock;
     }    
 
+    inline bool isTypeWithParams(ts::TypeNode typeNode)
+    {
+        if (typeNode == SyntaxKind::FunctionType)
+        {
+            auto signatureBase = typeNode.as<SignatureDeclarationBase>();
+            if (!signatureBase->typeParameters.empty())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     inline bool isBlockOrStatementWithBlock(ts::Node node)
     {
         if (node == SyntaxKind::IfStatement)
@@ -134,6 +148,24 @@ template <typename OUT> class Printer
         {
             auto forOfStatement = node.as<ForOfStatement>();
             return isBlock(forOfStatement->statement);
+        }        
+
+        if (node == SyntaxKind::WithStatement)
+        {
+            auto withStatement = node.as<WithStatement>();
+            return isBlock(withStatement->statement);
+        }    
+
+        if (node == SyntaxKind::TryStatement)
+        {
+            auto tryStatement = node.as<TryStatement>();
+            if (tryStatement->finallyBlock)
+            {
+                return isBlock(tryStatement->finallyBlock);
+            }
+
+            auto catchClause = tryStatement->catchClause.as<CatchClause>();
+            return isBlock(catchClause->block);
         }        
 
         return node == SyntaxKind::Block 
@@ -213,7 +245,7 @@ template <typename OUT> class Printer
         decIndent();
         printIntent();
         out << "}";
-        if (parent != SyntaxKind::ArrowFunction && parent != SyntaxKind::FunctionExpression)
+        if (parent != SyntaxKind::ArrowFunction && parent != SyntaxKind::FunctionExpression && parent != SyntaxKind::ClassExpression)
             newLine();           
     }
 
@@ -254,12 +286,13 @@ template <typename OUT> class Printer
         );
     }
 
-    void printMembersBlock(ts::ClassLikeDeclaration classDeclaration)
+    void printMembersBlock(ts::ClassLikeDeclaration classDeclaration, SyntaxKind parent = SyntaxKind::Unknown)
     {
         printBlockBase(
             [&]() { 
                 printStatementsLike(classDeclaration->members);
-            }
+            },
+            parent
         );
     }
 
@@ -528,11 +561,12 @@ template <typename OUT> class Printer
         case SyntaxKind::FunctionType:
         case SyntaxKind::ConstructorType:
         case SyntaxKind::CallSignature:
-        case SyntaxKind::ConstructSignature:
         case SyntaxKind::MethodSignature: {
             auto signatureDeclarationBase = node.as<SignatureDeclarationBase>();
             printDecorators(node);
             printModifiers(node);
+            if (kind == SyntaxKind::ConstructorType)
+                out << "new ";
             if (kind == SyntaxKind::MethodSignature)
                 forEachChildPrint(signatureDeclarationBase->name);
             if (kind == SyntaxKind::MethodSignature)
@@ -540,6 +574,17 @@ template <typename OUT> class Printer
             forEachChildrenPrint(signatureDeclarationBase->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(signatureDeclarationBase->parameters, "(", ", ", ")");
             out << " => ";
+            forEachChildPrint(signatureDeclarationBase->type);
+            break;
+        }
+        case SyntaxKind::ConstructSignature: {
+            auto signatureDeclarationBase = node.as<SignatureDeclarationBase>();
+            printDecorators(node);
+            printModifiers(node);
+            out << "new ";
+            forEachChildrenPrint(signatureDeclarationBase->typeParameters, "<", ", ", ">", true);
+            forEachChildrenPrint(signatureDeclarationBase->parameters, "(", ", ", ")");
+            out << ": ";
             forEachChildPrint(signatureDeclarationBase->type);
             break;
         }
@@ -779,6 +824,11 @@ template <typename OUT> class Printer
         case SyntaxKind::TypeAssertionExpression: {
             auto typeAssertion = node.as<TypeAssertion>();
             out << "<";
+            if (isTypeWithParams(typeAssertion->type))
+            {
+                out << " ";
+            }
+
             forEachChildPrint(typeAssertion->type);
             out << ">";
             forEachChildPrint(typeAssertion->expression);
@@ -796,9 +846,8 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::TypeOfExpression: {
-            out << "typeof(";
+            out << "typeof ";
             forEachChildPrint(node.as<TypeOfExpression>()->expression);
-            out << ")";
             break;
         }
         case SyntaxKind::VoidExpression: {
@@ -865,6 +914,7 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::SpreadElement: {
+            out << "...";
             forEachChildPrint(node.as<SpreadElement>()->expression);
             break;
         }
@@ -941,9 +991,24 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::DoStatement: {
             auto doStatement = node.as<DoStatement>();
-            out << "do ";
+            auto isBodyBlock = isBlock(doStatement->statement);
+            out << "do";
+            if (!isBodyBlock)
+            {
+                out << " ";
+            }
+
             forEachChildPrint(doStatement->statement);
-            out << " while (";
+            if (isBodyBlock)
+            {
+                printIntent();
+            }
+            else
+            {
+                out << " ";
+            }
+
+            out << "while (";
             forEachChildPrint(doStatement->expression);
             out << ")";
             break;
@@ -993,7 +1058,7 @@ template <typename OUT> class Printer
         case SyntaxKind::ContinueStatement: {
             auto continueStatement = node.as<ContinueStatement>();            
             out << "continue";
-            if (continueStatement)
+            if (continueStatement->label)
             {
                 out << " ";
                 forEachChildPrint(continueStatement->label);
@@ -1024,7 +1089,7 @@ template <typename OUT> class Printer
             auto withStatement = node.as<WithStatement>();
             out << "with (";
             forEachChildPrint(withStatement->expression);
-            out << ") ";
+            out << ")";
             forEachChildPrint(withStatement->statement);
             break;
         }
@@ -1077,14 +1142,24 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::TryStatement: {
             auto tryStatement = node.as<TryStatement>();
+            out << "try";
             forEachChildPrint(tryStatement->tryBlock);
             forEachChildPrint(tryStatement->catchClause);
-            forEachChildPrint(tryStatement->finallyBlock);
+            if (tryStatement->finallyBlock)
+            {
+                printIntent();
+                out << "finally";
+                forEachChildPrint(tryStatement->finallyBlock);
+            }
+
             break;
         }
         case SyntaxKind::CatchClause: {
             auto catchClause = node.as<CatchClause>();
+            printIntent();
+            out << "catch (";
             forEachChildPrint(catchClause->variableDeclaration);
+            out << ")";
             forEachChildPrint(catchClause->block);
             break;
         }
@@ -1101,7 +1176,7 @@ template <typename OUT> class Printer
             forEachChildPrint(classLikeDeclaration->name);
             forEachChildrenPrint(classLikeDeclaration->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(classLikeDeclaration->heritageClauses);
-            printMembersBlock(classLikeDeclaration);
+            printMembersBlock(classLikeDeclaration, kind);
             break;
         }
         case SyntaxKind::InterfaceDeclaration: {
@@ -1167,8 +1242,12 @@ template <typename OUT> class Printer
             printDecorators(node);
             printModifiers(node);
             out << "import ";
-            forEachChildPrint(importDeclaration->importClause);
-            out << " from ";
+            if (importDeclaration->importClause)
+            {
+                forEachChildPrint(importDeclaration->importClause);
+                out << " from ";
+            }
+
             forEachChildPrint(importDeclaration->moduleSpecifier);
             break;
         }
@@ -1202,7 +1281,7 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::NamedImports: {
-            forEachChildrenPrint(node.as<NamedImports>()->elements);
+            forEachChildrenPrint(node.as<NamedImports>()->elements, nullptr, ", ");
             break;
         }
         case SyntaxKind::NamedExports: {
