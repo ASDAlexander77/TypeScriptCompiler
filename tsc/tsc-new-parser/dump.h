@@ -803,15 +803,18 @@ protected:
         }
         case SyntaxKind::InferType:
         {
+            out << "infer ";
             forEachChildPrint(node.as<InferTypeNode>()->typeParameter);
             break;
         }
         case SyntaxKind::ImportType:
         {
             auto importTypeNode = node.as<ImportTypeNode>();
+            out << "import(";
             forEachChildPrint(importTypeNode->argument);
             forEachChildPrint(importTypeNode->qualifier);
             forEachChildrenPrint(importTypeNode->typeArguments, "<", ", ", ">", true);
+            out << ")";
             break;
         }
         case SyntaxKind::ParenthesizedType:
@@ -847,7 +850,13 @@ protected:
             out << "[";
             mappedTypeNode->typeParameter->parent = mappedTypeNode;
             forEachChildPrint(mappedTypeNode->typeParameter);
-            forEachChildPrint(mappedTypeNode->nameType);
+
+            if (mappedTypeNode->nameType)
+            {
+                out << " as ";
+                forEachChildPrint(mappedTypeNode->nameType);
+            }
+
             out << "]";
             forEachChildPrint(mappedTypeNode->questionToken);
             if (mappedTypeNode->type)
@@ -1445,6 +1454,8 @@ protected:
         {
             auto importClause = node.as<ImportClause>();
             forEachChildPrint(importClause->name);
+            if (importClause->name && importClause->namedBindings)
+                out << ", ";
             forEachChildPrint(importClause->namedBindings);
             break;
         }
@@ -1696,6 +1707,7 @@ protected:
         case SyntaxKind::OptionalType:
         {
             forEachChildPrint(node.as<OptionalTypeNode>()->type);
+            out << "?";
             break;
         }
         case SyntaxKind::RestType:
@@ -1895,7 +1907,6 @@ protected:
         case SyntaxKind::ReadonlyKeyword:
         case SyntaxKind::ObjectKeyword:
         case SyntaxKind::NeverKeyword:
-        case SyntaxKind::InKeyword:
         case SyntaxKind::UnknownKeyword:
         case SyntaxKind::AbstractKeyword:
         case SyntaxKind::StaticKeyword:
@@ -1916,6 +1927,7 @@ protected:
             out << Scanner::tokenStrings[node->_kind];
             break;
         }
+        case SyntaxKind::InKeyword:
         case SyntaxKind::InstanceOfKeyword: {
             assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << " " << Scanner::tokenStrings[node->_kind] << " ";
