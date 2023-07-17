@@ -238,7 +238,7 @@ protected:
 
     void printDecorators(ts::Node node)
     {
-        forEachChildrenPrint(node->decorators);
+        forEachChildrenPrint(node->decorators, nullptr, nullptr, nullptr, false, " ", "@");
     }
 
     void printModifiersWithMode(ts::Node node)
@@ -361,7 +361,7 @@ protected:
 
     template <typename T>
     void forEachChildrenPrint(NodeArray<T> nodes, const char *open = nullptr, const char *separator = nullptr,
-                                const char *end = nullptr, bool ifAny = false, const char *afterChild = nullptr)
+                                const char *end = nullptr, bool ifAny = false, const char *afterChild = nullptr, const char *beforeChild = nullptr)
     {
         if (!ifAny && open)
         {
@@ -382,6 +382,11 @@ protected:
             }
 
             hasAny = true;
+            if (beforeChild)
+            {
+                printText(beforeChild);
+            }
+
             forEachChildPrint(node);
 
             if (afterChild)
@@ -623,9 +628,19 @@ protected:
             printModifiers(node);
             auto bindingElement = node.as<BindingElement>();
             forEachChildPrint(bindingElement->dotDotDotToken);
-            forEachChildPrint(bindingElement->propertyName);
+            if (bindingElement->propertyName)
+            {
+                forEachChildPrint(bindingElement->propertyName);
+                out << ": ";
+            }
+
             forEachChildPrint(bindingElement->name);
-            forEachChildPrint(bindingElement->initializer);
+            if (bindingElement->initializer)
+            {
+                out << " = ";
+                forEachChildPrint(bindingElement->initializer);
+            }
+
             break;
         }
         case SyntaxKind::FunctionType:
@@ -827,6 +842,7 @@ protected:
         case SyntaxKind::MappedType:
         {
             auto mappedTypeNode = node.as<MappedTypeNode>();
+            out << "{";
             forEachChildPrint(mappedTypeNode->readonlyToken);
             out << "[";
             mappedTypeNode->typeParameter->parent = mappedTypeNode;
@@ -839,6 +855,8 @@ protected:
                 out << ": ";
                 forEachChildPrint(mappedTypeNode->type);
             }
+
+            out << "}";
 
             break;
         }
@@ -1444,7 +1462,7 @@ protected:
         }
         case SyntaxKind::NamedExports:
         {
-            forEachChildrenPrint(node.as<NamedExports>()->elements);
+            forEachChildrenPrint(node.as<NamedExports>()->elements, "{", ", ", "}");
             break;
         }
         case SyntaxKind::ExportDeclaration:
@@ -1452,17 +1470,33 @@ protected:
             auto exportDeclaration = node.as<ExportDeclaration>();
             printDecorators(node);
             printModifiers(node);
-            out << "export {";
-            forEachChildPrint(exportDeclaration->exportClause);
-            out << " as ";
-            forEachChildPrint(exportDeclaration->moduleSpecifier);
-            out << "}";
+            out << "export ";
+            if (exportDeclaration->exportClause)
+            {
+                forEachChildPrint(exportDeclaration->exportClause);
+            }
+            else
+            {
+                out <<"*";
+            }
+
+            if (exportDeclaration->moduleSpecifier)
+            {
+                out << " from ";
+                forEachChildPrint(exportDeclaration->moduleSpecifier);
+            }
+
             break;
         }
         case SyntaxKind::ImportSpecifier:
         {
             auto importSpecifier = node.as<ImportSpecifier>();
-            forEachChildPrint(importSpecifier->propertyName);
+            if (importSpecifier->propertyName)
+            {
+                forEachChildPrint(importSpecifier->propertyName);
+                out << " as ";
+            }
+             
             forEachChildPrint(importSpecifier->name);
             break;
         }
@@ -1470,7 +1504,12 @@ protected:
         {
             auto exportSpecifier = node.as<ExportSpecifier>();
             forEachChildPrint(exportSpecifier->propertyName);
-            forEachChildPrint(exportSpecifier->name);
+            if (exportSpecifier->name)
+            {
+                out << " as ";
+                forEachChildPrint(exportSpecifier->name);
+            }
+
             break;
         }
         case SyntaxKind::ExportAssignment:
@@ -1649,6 +1688,7 @@ protected:
         }
         case SyntaxKind::RestType:
         {
+            out << "...";
             forEachChildPrint(node.as<RestTypeNode>()->type);
             break;
         }
@@ -1826,7 +1866,6 @@ protected:
         }
         case SyntaxKind::SemicolonClassElement:
         {
-            out << ";";
             break;
         }
         case SyntaxKind::TrueKeyword:
@@ -1858,12 +1897,16 @@ protected:
         case SyntaxKind::ImportKeyword:
         case SyntaxKind::BigIntKeyword:
         case SyntaxKind::SymbolKeyword:
-        case SyntaxKind::InstanceOfKeyword:
         case SyntaxKind::AssertsKeyword:
         case SyntaxKind::ExportKeyword:
         {
             assert(Scanner::tokenStrings[node->_kind].length() > 0);
             out << Scanner::tokenStrings[node->_kind];
+            break;
+        }
+        case SyntaxKind::InstanceOfKeyword: {
+            assert(Scanner::tokenStrings[node->_kind].length() > 0);
+            out << " " << Scanner::tokenStrings[node->_kind] << " ";
             break;
         }
         case SyntaxKind::ColonToken:
