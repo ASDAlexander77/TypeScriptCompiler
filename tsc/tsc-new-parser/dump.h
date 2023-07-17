@@ -179,37 +179,37 @@ protected:
         if (kind == SyntaxKind::IfStatement)
         {
             auto ifStat = node.as<IfStatement>();
-            return ifStat->elseStatement && isBlock(ifStat->elseStatement) || isBlock(ifStat->thenStatement);
+            return ifStat->elseStatement && isBlockOrStatementWithBlock(ifStat->elseStatement) || isBlockOrStatementWithBlock(ifStat->thenStatement);
         }
 
         if (kind == SyntaxKind::WhileStatement)
         {
             auto whileStatement = node.as<WhileStatement>();
-            return isBlock(whileStatement->statement);
+            return isBlockOrStatementWithBlock(whileStatement->statement);
         }
 
         if (kind == SyntaxKind::ForStatement)
         {
             auto forStatement = node.as<ForStatement>();
-            return isBlock(forStatement->statement);
+            return isBlockOrStatementWithBlock(forStatement->statement);
         }
 
         if (kind == SyntaxKind::ForInStatement)
         {
             auto forInStatement = node.as<ForInStatement>();
-            return isBlock(forInStatement->statement);
+            return isBlockOrStatementWithBlock(forInStatement->statement);
         }
 
         if (kind == SyntaxKind::ForOfStatement)
         {
             auto forOfStatement = node.as<ForOfStatement>();
-            return isBlock(forOfStatement->statement);
+            return isBlockOrStatementWithBlock(forOfStatement->statement);
         }
 
         if (kind == SyntaxKind::WithStatement)
         {
             auto withStatement = node.as<WithStatement>();
-            return isBlock(withStatement->statement);
+            return isBlockOrStatementWithBlock(withStatement->statement);
         }
 
         if (kind == SyntaxKind::TryStatement)
@@ -217,11 +217,11 @@ protected:
             auto tryStatement = node.as<TryStatement>();
             if (tryStatement->finallyBlock)
             {
-                return isBlock(tryStatement->finallyBlock);
+                return isBlockOrStatementWithBlock(tryStatement->finallyBlock);
             }
 
             auto catchClause = tryStatement->catchClause.as<CatchClause>();
-            return isBlock(catchClause->block);
+            return isBlockOrStatementWithBlock(catchClause->block);
         }
 
         if (kind == SyntaxKind::LabeledStatement)
@@ -1029,7 +1029,14 @@ protected:
         case SyntaxKind::PrefixUnaryExpression:
         {
             auto prefixUnaryExpression = node.as<PrefixUnaryExpression>();
+
+            if (prefixUnaryExpression->parent == SyntaxKind::PrefixUnaryExpression)
+            {
+                out << " ";
+            }
+
             out << Scanner::tokenStrings[prefixUnaryExpression->_operator];
+            prefixUnaryExpression->operand->parent = prefixUnaryExpression;
             forEachChildPrint(prefixUnaryExpression->operand);
             break;
         }
@@ -1078,7 +1085,14 @@ protected:
         }
         case SyntaxKind::MetaProperty:
         {
-            forEachChildPrint(node.as<MetaProperty>()->name);
+            auto metaProperty = node.as<MetaProperty>();
+            if (metaProperty->keywordToken != SyntaxKind::Unknown)
+            {
+                assert(Scanner::tokenStrings[metaProperty->keywordToken].length() > 0);
+                out << Scanner::tokenStrings[metaProperty->keywordToken] << ".";  
+            }
+
+            forEachChildPrint(metaProperty->name);
             break;
         }
         case SyntaxKind::ConditionalExpression:
@@ -1179,7 +1193,7 @@ protected:
         case SyntaxKind::DoStatement:
         {
             auto doStatement = node.as<DoStatement>();
-            auto isBodyBlock = isBlock(doStatement->statement);
+            auto isBodyBlock = isBlockOrStatementWithBlock(doStatement->statement);
             out << "do";
             if (!isBodyBlock)
             {
