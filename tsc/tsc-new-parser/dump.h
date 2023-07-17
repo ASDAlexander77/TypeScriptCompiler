@@ -1105,7 +1105,7 @@ protected:
             {
                 if (!thenIsBlock)
                 {
-                    out << " ";
+                    out << "; ";
                 }
                 else
                 {
