@@ -175,43 +175,44 @@ protected:
 
     inline bool isBlockOrStatementWithBlock(ts::Node node)
     {
-        if (node == SyntaxKind::IfStatement)
+        auto kind = (SyntaxKind)node;
+        if (kind == SyntaxKind::IfStatement)
         {
             auto ifStat = node.as<IfStatement>();
             return ifStat->elseStatement && isBlock(ifStat->elseStatement) || isBlock(ifStat->thenStatement);
         }
 
-        if (node == SyntaxKind::WhileStatement)
+        if (kind == SyntaxKind::WhileStatement)
         {
             auto whileStatement = node.as<WhileStatement>();
             return isBlock(whileStatement->statement);
         }
 
-        if (node == SyntaxKind::ForStatement)
+        if (kind == SyntaxKind::ForStatement)
         {
             auto forStatement = node.as<ForStatement>();
             return isBlock(forStatement->statement);
         }
 
-        if (node == SyntaxKind::ForInStatement)
+        if (kind == SyntaxKind::ForInStatement)
         {
             auto forInStatement = node.as<ForInStatement>();
             return isBlock(forInStatement->statement);
         }
 
-        if (node == SyntaxKind::ForOfStatement)
+        if (kind == SyntaxKind::ForOfStatement)
         {
             auto forOfStatement = node.as<ForOfStatement>();
             return isBlock(forOfStatement->statement);
         }
 
-        if (node == SyntaxKind::WithStatement)
+        if (kind == SyntaxKind::WithStatement)
         {
             auto withStatement = node.as<WithStatement>();
             return isBlock(withStatement->statement);
         }
 
-        if (node == SyntaxKind::TryStatement)
+        if (kind == SyntaxKind::TryStatement)
         {
             auto tryStatement = node.as<TryStatement>();
             if (tryStatement->finallyBlock)
@@ -223,7 +224,16 @@ protected:
             return isBlock(catchClause->block);
         }
 
-        return node == SyntaxKind::Block || node == SyntaxKind::ModuleBlock || node == SyntaxKind::FunctionDeclaration || node == SyntaxKind::MethodDeclaration || node == SyntaxKind::GetAccessor || node == SyntaxKind::SetAccessor || node == SyntaxKind::Constructor || node == SyntaxKind::ClassDeclaration || node == SyntaxKind::EnumDeclaration || node == SyntaxKind::ModuleDeclaration || node == SyntaxKind::InterfaceDeclaration || node == SyntaxKind::SwitchStatement;
+        if (kind == SyntaxKind::LabeledStatement)
+        {
+            auto labeledStatement = node.as<LabeledStatement>();
+            return isBlockOrStatementWithBlock(labeledStatement->statement);
+        }
+
+        return kind == SyntaxKind::Block || kind == SyntaxKind::ModuleBlock || kind == SyntaxKind::FunctionDeclaration || kind == SyntaxKind::MethodDeclaration 
+            || kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor || kind == SyntaxKind::Constructor || kind == SyntaxKind::ClassDeclaration 
+            || kind == SyntaxKind::EnumDeclaration || kind == SyntaxKind::ModuleDeclaration || kind == SyntaxKind::InterfaceDeclaration 
+            || kind == SyntaxKind::SwitchStatement;
     }
 
     void printDecorators(ts::Node node)
@@ -646,8 +656,12 @@ protected:
                 forEachChildPrint(signatureDeclarationBase->questionToken);
             forEachChildrenPrint(signatureDeclarationBase->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(signatureDeclarationBase->parameters, "(", ", ", ")");
-            out << ": ";
-            forEachChildPrint(signatureDeclarationBase->type);
+            if (signatureDeclarationBase->type)
+            {
+                out << ": ";
+                forEachChildPrint(signatureDeclarationBase->type);
+            }
+
             break;
         }
         case SyntaxKind::IndexSignature:
@@ -1535,7 +1549,7 @@ protected:
         case SyntaxKind::HeritageClause:
         {
             out << " extends ";
-            forEachChildrenPrint(node.as<HeritageClause>()->types);
+            forEachChildrenPrint(node.as<HeritageClause>()->types, nullptr, ", ");
             break;
         }
         case SyntaxKind::ExpressionWithTypeArguments:
