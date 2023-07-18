@@ -837,11 +837,9 @@ class MLIRGenImpl
         auto stringVal = valueAttr.getValue();
 
         SmallString<256> fullPath;
-        sys::path::append(fullPath, stringVal);
-
-#ifndef WIN32
         // rebuild file path
         sys::path::append(fullPath, stringVal);
+#ifndef WIN32
         sys::path::remove_filename(fullPath);
         sys::path::append(fullPath, "lib");
         sys::path::append(fullPath, sys::path::stem(stringVal));
