@@ -63,15 +63,39 @@ protected:
             {
                 out << S('\\');
                 switch(c) {
-                    case S('"'):  out << S('"');  break;
+                    case S('"'):  out << S('"'); break;
                     case S('\\'): out << S('\\'); break;
-                    case S('\t'): out << S('t');  break;
-                    case S('\r'): out << S('r');  break;
-                    case S('\n'): out << S('n');  break;
+                    case S('\t'): out << S('t'); break;
+                    case S('\r'): out << S('r'); break;
+                    case S('\n'): out << S('n'); break;
+
+                    case S('\?'): out << S('?'); break;
+                    case S('\a'): out << S('a'); break;
+                    case S('\b'): out << S('b'); break;
+                    case S('\f'): out << S('f'); break;
+                    case S('\v'): out << S('f'); break;
+
                     default:
                         auto const* const hexdig = S("0123456789ABCDEF");
                         out << S('x');
-                        out << hexdig[c >> 4];
+                        if constexpr (sizeof(c) >= 2)
+                        {
+                            if constexpr (sizeof(c) >= 4)
+                            {
+                                // 32 bit 0xFFFFFFFF
+                                out << hexdig[(c >> 28) & 0xF];
+                                out << hexdig[(c >> 24) & 0xF];
+                                out << hexdig[(c >> 20) & 0xF];
+                                out << hexdig[(c >> 16) & 0xF];
+                            }
+
+                            // 16 bit 0xFFFFF
+                            out << hexdig[(c >> 12) & 0xF];
+                            out << hexdig[(c >> 8) & 0xF];
+                        }
+
+                        // 8 bit 0xFF
+                        out << hexdig[(c >> 4) & 0xF];
                         out << hexdig[c & 0xF];
                 }
             }
@@ -91,15 +115,39 @@ protected:
             {
                 out << S('\\');
                 switch(c) {
-                    case S('\''): out << S('\'');  break;
+                    case S('\''): out << S('\''); break;
                     case S('\\'): out << S('\\'); break;
-                    case S('\t'): out << S('t');  break;
-                    case S('\r'): out << S('r');  break;
-                    case S('\n'): out << S('n');  break;
+                    case S('\t'): out << S('t'); break;
+                    case S('\r'): out << S('r'); break;
+                    case S('\n'): out << S('n'); break;
+
+                    case S('\?'): out << S('?'); break;
+                    case S('\a'): out << S('a'); break;
+                    case S('\b'): out << S('b'); break;
+                    case S('\f'): out << S('f'); break;
+                    case S('\v'): out << S('f'); break;
+
                     default:
                         auto const* const hexdig = S("0123456789ABCDEF");
                         out << S('x');
-                        out << hexdig[c >> 4];
+                        if constexpr (sizeof(c) >= 2)
+                        {
+                            if constexpr (sizeof(c) >= 4)
+                            {
+                                // 32 bit 0xFFFFFFFF
+                                out << hexdig[(c >> 28) & 0xF];
+                                out << hexdig[(c >> 24) & 0xF];
+                                out << hexdig[(c >> 20) & 0xF];
+                                out << hexdig[(c >> 16) & 0xF];
+                            }
+
+                            // 16 bit 0xFFFFF
+                            out << hexdig[(c >> 12) & 0xF];
+                            out << hexdig[(c >> 8) & 0xF];
+                        }
+
+                        // 8 bit 0xFF
+                        out << hexdig[(c >> 4) & 0xF];
                         out << hexdig[c & 0xF];
                 }
             }
@@ -176,6 +224,12 @@ protected:
     inline bool isBlockOrStatementWithBlock(ts::Node node)
     {
         auto kind = (SyntaxKind)node;
+
+        if (kind == SyntaxKind::Block || kind == SyntaxKind::ModuleBlock)
+        {
+            return true;
+        }
+
         if (kind == SyntaxKind::IfStatement)
         {
             auto ifStat = node.as<IfStatement>();
@@ -230,8 +284,20 @@ protected:
             return isBlockOrStatementWithBlock(labeledStatement->statement);
         }
 
-        return kind == SyntaxKind::Block || kind == SyntaxKind::ModuleBlock || kind == SyntaxKind::FunctionDeclaration || kind == SyntaxKind::MethodDeclaration 
-            || kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor || kind == SyntaxKind::Constructor || kind == SyntaxKind::ClassDeclaration 
+        if (kind == SyntaxKind::MethodDeclaration
+            || kind == SyntaxKind::Constructor
+            || kind == SyntaxKind::GetAccessor
+            || kind == SyntaxKind::SetAccessor
+            || kind == SyntaxKind::FunctionExpression
+            || kind == SyntaxKind::FunctionDeclaration
+            || kind == SyntaxKind::ArrowFunction)
+        {
+            auto functionLikeDeclarationBase = node.as<FunctionLikeDeclarationBase>();
+            return isBlockOrStatementWithBlock(functionLikeDeclarationBase->body);
+        }
+
+        return
+            kind == SyntaxKind::ClassDeclaration 
             || kind == SyntaxKind::EnumDeclaration || kind == SyntaxKind::ModuleDeclaration || kind == SyntaxKind::InterfaceDeclaration 
             || kind == SyntaxKind::SwitchStatement;
     }
