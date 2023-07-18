@@ -225,7 +225,7 @@ void deleteFiles(std::string tempOutputFileNameNoExt)
 #if WIN32
     mask << "del " << tempOutputFileNameNoExt << ".*";
 #else
-    //mask << "rm " << tempOutputFileNameNoExt << ".*";
+    mask << "rm " << tempOutputFileNameNoExt << ".*";
 #endif
 
     auto delCmd = mask.str();
