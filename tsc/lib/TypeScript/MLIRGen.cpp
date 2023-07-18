@@ -838,6 +838,15 @@ class MLIRGenImpl
 
         SmallString<256> fullPath;
         sys::path::append(fullPath, stringVal);
+
+#ifndef WIN32
+        // rebuild file path
+        sys::path::append(fullPath, stringVal);
+        sys::path::remove_filename(fullPath);
+        sys::path::append(fullPath, "lib");
+        sys::path::append(fullPath, sys::path::stem(stringVal));
+#endif
+
         if (sys::path::extension(fullPath) == "")
         {
 #ifdef WIN32

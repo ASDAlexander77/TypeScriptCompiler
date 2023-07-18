@@ -504,7 +504,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH ";
         if (sharedLibCompileTypeCompiler)
         {
-            batFile << "-L`pwd` -l" << shared_filenameNoExt << " ";
+            // we need "-Wl,-rpath=" to embed path for compiled shared lib path
+            batFile << "-L`pwd` -Wl,-rpath=`pwd` -l" << shared_filenameNoExt << " ";
         }        
 
         batFile << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
