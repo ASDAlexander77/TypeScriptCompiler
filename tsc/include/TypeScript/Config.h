@@ -25,8 +25,10 @@
 
 #ifdef WIN32
 #define WIN_EXCEPTION 1
+#define WIN_LOADSHAREDLIBS 1
 #else
 #define LINUX_EXCEPTION 1
+#define LINUX_LOADSHAREDLIBS 1
 #endif
 
 #define USE_NEW_AS_METHOD true

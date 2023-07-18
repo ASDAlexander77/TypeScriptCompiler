@@ -837,19 +837,21 @@ class MLIRGenImpl
         auto stringVal = valueAttr.getValue();
 
         SmallString<256> fullPath;
+#ifdef LINUX_LOADSHAREDLIBS
         // rebuild file path
-        sys::path::append(fullPath, stringVal);
-#ifndef WIN32
-        sys::path::remove_filename(fullPath);
-        sys::path::append(fullPath, "lib");
-        sys::path::append(fullPath, sys::path::stem(stringVal));
+        auto fileName = sys::path::filename(stringVal);
+        auto path = stringVal.substr(0, stringVal.size() - fileName.size());
+        fullPath = path;
+        fullPath += "lib";
+        fullPath += fileName;
 #endif
 
         if (sys::path::extension(fullPath) == "")
         {
-#ifdef WIN32
+#ifdef WIN_LOADSHAREDLIBS
             fullPath += ".dll";
-#else
+#endif
+#ifdef LINUX_LOADSHAREDLIBS
             fullPath += ".so";
 #endif
         }
