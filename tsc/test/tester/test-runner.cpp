@@ -501,12 +501,13 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     {
         batFile << execBat.str();
         batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " "; 
+        batFile << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH ";
         if (sharedLibCompileTypeCompiler)
         {
-            batFile << "-L. -l" << shared_filenameNoExt << " ";
+            batFile << "-L`pwd` -l" << shared_filenameNoExt << " ";
         }        
-        batFile << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
-                << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
+
+        batFile << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
 
         batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
 
