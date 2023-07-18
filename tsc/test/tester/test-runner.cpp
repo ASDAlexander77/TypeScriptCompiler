@@ -487,7 +487,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     }
 
     batFile << sharedBat.str();
-    batFile << TEST_COMPILER << " " << linker_opt << " -o " << shared_filenameNoExt << ".so " << shared_objs.str() 
+    batFile << TEST_COMPILER << " " << linker_opt << " -o lib" << shared_filenameNoExt << ".so " << shared_objs.str() 
             << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "rm " << shared_objs.str() << std::endl;
@@ -503,7 +503,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " "; 
         if (sharedLibCompileTypeCompiler)
         {
-            batFile << shared_filenameNoExt << ".o ";
+            batFile << "-l" << shared_filenameNoExt << " ";
         }        
         batFile << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
                 << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
