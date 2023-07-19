@@ -836,7 +836,10 @@ class MLIRGenImpl
 
         auto stringVal = valueAttr.getValue();
 
-        SmallString<256> fullPath;
+        std::string fullPath;
+        fullPath += stringVal;
+#ifdef WIN_LOADSHAREDLIBS
+#endif        
 #ifdef LINUX_LOADSHAREDLIBS
         // rebuild file path
         auto fileName = sys::path::filename(stringVal);
