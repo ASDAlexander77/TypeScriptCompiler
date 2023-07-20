@@ -14678,7 +14678,25 @@ genContext);
             if (isImport)
             {
                 NodeFactory nf(NodeFactoryFlags::None);
-                funcLikeDeclaration->decorators.push_back(nf.createDecorator(nf.createIdentifier(S(DLL_IMPORT))));
+
+                auto hasDllImport = false;
+                for (auto decorator : funcLikeDeclaration->decorators)
+                {
+                    if (decorator->expression == SyntaxKind::Identifier)
+                    {
+                        auto name = MLIRHelper::getName(decorator->expression.as<Node>());
+                        if (name == DLL_IMPORT)
+                        {
+                            hasDllImport = true;
+                            break;
+                        }
+                    }
+                }            
+
+                if (!hasDllImport)
+                {
+                    funcLikeDeclaration->decorators.push_back(nf.createDecorator(nf.createIdentifier(S(DLL_IMPORT))));
+                }
             }
 
             auto [result, funcOp, funcName, isGeneric] =
