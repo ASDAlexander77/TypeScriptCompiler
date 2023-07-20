@@ -50,6 +50,8 @@
 
 #define SHARED_LIB_DECLARATION_INFO "__decl_info"
 #define SHARED_LIB_DECLARATIONS "__decls"
+#define DLL_EXPORT "dllexport"
+#define DLL_IMPORT "dllimport"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

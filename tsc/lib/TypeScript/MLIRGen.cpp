@@ -3911,8 +3911,8 @@ class MLIRGenImpl
         static llvm::StringMap<bool> funcAttrs {
             {"noinline", true },
             {"optnone", true },
-            {"dllimport", true },
-            {"dllexport", true },
+            {DLL_IMPORT, true },
+            {DLL_EXPORT, true },
         };
 
         return funcAttrs[name];        
@@ -10337,7 +10337,6 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(NewExpression newExpression, const GenContext &genContext)
     {
-
         auto location = loc(newExpression);
 
         auto newArray = [&](auto type, auto count) -> ValueOrLogicalResult {
@@ -13063,7 +13062,28 @@ class MLIRGenImpl
             newClassPtr->isDeclaration =
                 declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
             newClassPtr->isStatic = hasModifier(classDeclarationAST, SyntaxKind::StaticKeyword);
+            newClassPtr->isExport = hasModifier(classDeclarationAST, SyntaxKind::ExportKeyword);
+            newClassPtr->isImport = classDeclarationAST->decorators;
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
+
+            // check decorator for class
+            for (auto decorator : classDeclarationAST->decorators)
+            {
+                if (decorator->expression == SyntaxKind::Identifier)
+                {
+                    auto name = MLIRHelper::getName(decorator->expression.as<Node>());
+
+                    if (name == DLL_EXPORT)
+                    {
+                        newClassPtr->isExport = true;
+                    }
+
+                    if (name == DLL_IMPORT)
+                    {
+                        newClassPtr->isImport = true;
+                    }
+                }
+            }            
 
             getClassesMap().insert({namePtr, newClassPtr});
             fullNameClassesMap.insert(fullNamePtr, newClassPtr);
@@ -13582,6 +13602,12 @@ class MLIRGenImpl
 
         ModifiersArray modifiers;
         modifiers->push_back(nf.createToken(SyntaxKind::StaticKeyword));
+
+        if (newClassPtr->isExport || newClassPtr->isImport)
+        {
+            modifiers.push_back(nf.createToken(SyntaxKind::PublicKeyword));
+        }
+
         auto generatedNew = nf.createMethodDeclaration(undefined, modifiers, undefined, nf.createIdentifier(S(NEW_METHOD_NAME)),
                                                        undefined, undefined, undefined, nf.createThisTypeNode(), body);
 
@@ -13627,6 +13653,7 @@ genContext);
             }
 
             auto body = nf.createBlock(statements, /*multiLine*/ false);
+
             auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
             newClassPtr->extraMembers.push_back(generatedConstructor);
         }
@@ -13939,8 +13966,14 @@ genContext);
                                                                nf.createIdentifier(S(INSTANCEOF_PARAM_NAME)), undefined,
                                                                nf.createToken(SyntaxKind::StringKeyword), undefined));
 
+            ModifiersArray modifiers;
+            if (newClassPtr->isExport || newClassPtr->isImport)
+            {
+                modifiers.push_back(nf.createToken(SyntaxKind::PublicKeyword));
+            }
+
             auto instanceOfMethod = nf.createMethodDeclaration(
-                undefined, undefined, undefined, nf.createIdentifier(S(INSTANCEOF_NAME)), undefined, undefined,
+                undefined, modifiers, undefined, nf.createIdentifier(S(INSTANCEOF_NAME)), undefined, undefined,
                 parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
 
             instanceOfMethod->internalFlags |= InternalFlags::ForceVirtual;
@@ -14583,6 +14616,8 @@ genContext);
         auto isConstructor = classMember == SyntaxKind::Constructor;
         auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
         auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
+        auto isExport = newClassPtr->isExport && (isConstructor || hasModifier(classMember, SyntaxKind::PublicKeyword));
+        auto isImport = newClassPtr->isImport && (isConstructor || hasModifier(classMember, SyntaxKind::PublicKeyword));
         auto isForceVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
 #ifdef ALL_METHODS_VIRTUAL
         isForceVirtual |= !isConstructor;
@@ -14632,6 +14667,18 @@ genContext);
 
                 // adding missing statements
                 generateConstructorStatements(classDeclarationAST, isStatic, funcGenContext);
+            }
+
+            if (isExport)
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+                funcLikeDeclaration->modifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+            }
+
+            if (isImport)
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+                funcLikeDeclaration->decorators.push_back(nf.createDecorator(nf.createIdentifier(S(DLL_IMPORT))));
             }
 
             auto [result, funcOp, funcName, isGeneric] =

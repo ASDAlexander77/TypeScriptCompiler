@@ -1,3 +1,4 @@
+#include "TypeScript/Defines.h"
 #include "TypeScript/ExportFixPass.h"
 
 #include "llvm/IR/PatternMatch.h"
@@ -44,9 +45,9 @@ struct ExportFixPassCode
             MadeChange = true;
         }
 
-        if (F.hasFnAttribute("dllexport"))
+        if (F.hasFnAttribute(DLL_EXPORT))
         {
-            F.removeFnAttr("dllexport");
+            F.removeFnAttr(DLL_EXPORT);
 
             // set DLLExport
             if (isWindowsMSVCEnvironment)
@@ -54,9 +55,9 @@ struct ExportFixPassCode
             MadeChange = true;
         }
 
-        if (F.hasFnAttribute("dllimport"))
+        if (F.hasFnAttribute(DLL_IMPORT))
         {
-            F.removeFnAttr("dllimport");
+            F.removeFnAttr(DLL_IMPORT);
 
             // set DLLExport
             if (isWindowsMSVCEnvironment)
