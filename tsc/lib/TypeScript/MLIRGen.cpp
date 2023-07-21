@@ -14612,6 +14612,106 @@ genContext);
         return (vtableRegisteredType) ? mlir::success() : mlir::failure();
     }
 
+    struct ClassMethodMemberInfo
+    {
+        ClassMethodMemberInfo(ClassInfo::TypePtr newClassPtr, ClassElement classMember) : newClassPtr(newClassPtr), classMember(classMember)
+        {
+            isConstructor = classMember == SyntaxKind::Constructor;
+            isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+            isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
+            isExport = newClassPtr->isExport && (isConstructor || hasModifier(classMember, SyntaxKind::PublicKeyword));
+            isImport = newClassPtr->isImport && (isConstructor || hasModifier(classMember, SyntaxKind::PublicKeyword));
+            isForceVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
+    #ifdef ALL_METHODS_VIRTUAL
+            isForceVirtual |= !isConstructor;
+    #endif
+            isVirtual = isForceVirtual;
+
+            if (isFunctionLike())
+            {
+            }
+        };
+
+        bool isFunctionLike()
+        {
+            return classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
+                classMember == SyntaxKind::SetAccessor;
+        }
+
+        std::string getName()
+        {
+            return propertyName.empty() ? methodName : propertyName;
+        }
+
+        StringRef getFuncName()
+        {
+            return funcOp.getName();
+        }
+
+        mlir_ts::FunctionType getFuncType()
+        {
+            return funcOp.getFunctionType();
+        }
+
+        void setFuncOp(mlir_ts::FuncOp funcOp_)
+        {
+            funcOp = funcOp_;
+        }
+
+        void registerClassMethodMember()
+        {
+            auto &methodInfos = newClassPtr->methods;
+
+            if (newClassPtr->getMethodIndex(methodName) < 0)
+            {
+                methodInfos.push_back(
+                    {methodName, getFuncType(), funcOp, isStatic, isAbstract || isVirtual, isAbstract, -1});
+            }
+
+            if (propertyName.size() > 0)
+            {
+                addAccessor();
+            }
+        }
+
+        void addAccessor()
+        {
+            auto &accessorInfos = newClassPtr->accessors;
+
+            auto accessorIndex = newClassPtr->getAccessorIndex(propertyName);
+            if (accessorIndex < 0)
+            {
+                accessorInfos.push_back({propertyName, {}, {}, isStatic, isVirtual, isAbstract});
+                accessorIndex = newClassPtr->getAccessorIndex(propertyName);
+            }
+
+            assert(accessorIndex >= 0);
+
+            if (classMember == SyntaxKind::GetAccessor)
+            {
+                newClassPtr->accessors[accessorIndex].get = funcOp;
+            }
+            else if (classMember == SyntaxKind::SetAccessor)
+            {
+                newClassPtr->accessors[accessorIndex].set = funcOp;
+            }
+        }
+
+        ClassInfo::TypePtr newClassPtr;
+        ClassElement classMember;
+        std::string methodName;
+        std::string propertyName;        
+        bool isConstructor;
+        bool isStatic;
+        bool isAbstract;
+        bool isExport;
+        bool isImport;
+        bool isForceVirtual;
+        bool isVirtual;
+
+        mlir_ts::FuncOp funcOp;
+    };
+
     mlir::LogicalResult mlirGenClassMethodMember(ClassLikeDeclaration classDeclarationAST,
                                                  ClassInfo::TypePtr newClassPtr, ClassElement classMember,
                                                  const GenContext &genContext)
@@ -14623,42 +14723,30 @@ genContext);
 
         auto location = loc(classMember);
 
-        auto &methodInfos = newClassPtr->methods;
         auto &genericMethodInfos = newClassPtr->staticGenericMethods;
 
-        mlir::Value initValue;
-        mlir::Attribute fieldId;
-        mlir::Type type;
-        StringRef memberNamePtr;
+        ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);
 
-        auto isConstructor = classMember == SyntaxKind::Constructor;
-        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-        auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
-        auto isExport = newClassPtr->isExport && (isConstructor || hasModifier(classMember, SyntaxKind::PublicKeyword));
-        auto isImport = newClassPtr->isImport && (isConstructor || hasModifier(classMember, SyntaxKind::PublicKeyword));
-        auto isForceVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
-#ifdef ALL_METHODS_VIRTUAL
-        isForceVirtual |= !isConstructor;
-#endif
-        auto isVirtual = isForceVirtual;
-        if (classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
-            classMember == SyntaxKind::SetAccessor)
+        if (classMethodMemberInfo.isFunctionLike())
         {
             auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
-            std::string methodName;
-            std::string propertyName;
-            getMethodNameOrPropertyName(funcLikeDeclaration, methodName, propertyName, genContext);
+            getMethodNameOrPropertyName(
+                funcLikeDeclaration, 
+                classMethodMemberInfo.methodName, 
+                classMethodMemberInfo.propertyName, 
+                genContext);
 
-            if (methodName.empty())
+            if (classMethodMemberInfo.methodName.empty())
             {
                 llvm_unreachable("not implemented");
                 return mlir::failure();
             }
 
-            if (isAbstract && !newClassPtr->isAbstract)
+            if (classMethodMemberInfo.isAbstract && !newClassPtr->isAbstract)
             {
                 emitError(location) << "Can't use abstract member '" 
-                    << (propertyName.empty() ? methodName : propertyName)<< "' in non-abstract class '" << newClassPtr->fullName << "'";
+                    << classMethodMemberInfo.getName()
+                    << "' in non-abstract class '" << newClassPtr->fullName << "'";
                 return mlir::failure();
             }
 
@@ -14667,9 +14755,9 @@ genContext);
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.thisType = newClassPtr->classType;
-            if (isConstructor)
+            if (classMethodMemberInfo.isConstructor)
             {
-                if (isStatic && !genContext.allowPartialResolve)
+                if (classMethodMemberInfo.isStatic && !genContext.allowPartialResolve)
                 {
                     auto parentModule = theModule;
 
@@ -14684,18 +14772,24 @@ genContext);
                 }
 
                 // adding missing statements
-                generateConstructorStatements(classDeclarationAST, isStatic, funcGenContext);
+                generateConstructorStatements(classDeclarationAST, classMethodMemberInfo.isStatic, funcGenContext);
             }
 
-            if (isExport)
+            if (classMethodMemberInfo.isExport)
             {
                 NodeFactory nf(NodeFactoryFlags::None);
                 funcLikeDeclaration->modifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
             }
 
-            if (isImport)
+            if (classMethodMemberInfo.isImport)
             {
                 MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
+            }
+
+            // process dynamic import
+            if (newClassPtr->isDynamicImport)
+            {
+                return mlirGenClassMethodMemberDynamicImport(classMethodMemberInfo, genContext);
             }
 
             auto [result, funcOp, funcName, isGeneric] =
@@ -14705,18 +14799,20 @@ genContext);
                 return mlir::failure();
             }
 
+            classMethodMemberInfo.setFuncOp(funcOp);
+
             // if funcOp is null, means it is generic
-            if (!funcOp)
+            if (!classMethodMemberInfo.funcOp)
             {
                 // if it is generic - remove virtual flag
-                if (isForceVirtual)
+                if (classMethodMemberInfo.isForceVirtual)
                 {
-                    isVirtual = false;
+                    classMethodMemberInfo.isVirtual = false;
                 }
 
-                if (isStatic || (!isAbstract && !isVirtual))
+                if (classMethodMemberInfo.isStatic || (!classMethodMemberInfo.isAbstract && !classMethodMemberInfo.isVirtual))
                 {
-                    if (newClassPtr->getGenericMethodIndex(methodName) < 0)
+                    if (newClassPtr->getGenericMethodIndex(classMethodMemberInfo.methodName) < 0)
                     {
                         llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
                         if (mlir::failed(
@@ -14726,19 +14822,23 @@ genContext);
                         }
 
                         // TODO: review it, ignore in case of ArrowFunction,
-                        auto [result, funcOp] =
+                        auto [result, funcProto] =
                             getFuncArgTypesOfGenericMethod(funcLikeDeclaration, typeParameters, false, genContext);
                         if (mlir::failed(result))
                         {
                             return mlir::failure();
                         }
 
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! registered generic method: " << methodName
-                                                << ", type: " << funcOp->getFuncType() << "\n";);
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! registered generic method: " << classMethodMemberInfo.methodName
+                                                << ", type: " << funcProto->getFuncType() << "\n";);
 
                         // this is generic method
                         // the main logic will use Global Generic Functions
-                        genericMethodInfos.push_back({methodName, funcOp->getFuncType(), funcOp, isStatic});
+                        genericMethodInfos.push_back({
+                            classMethodMemberInfo.methodName, 
+                            funcProto->getFuncType(), 
+                            funcProto, 
+                            classMethodMemberInfo.isStatic});
                     }
 
                     return mlir::success();
@@ -14749,19 +14849,46 @@ genContext);
             }            
 
             funcLikeDeclaration->processed = true;
-
-            if (newClassPtr->getMethodIndex(methodName) < 0)
-            {
-                methodInfos.push_back(
-                    {methodName, funcOp.getFunctionType(), funcOp, isStatic, isAbstract || isVirtual, isAbstract, -1});
-            }
-
-            if (propertyName.size() > 0)
-            {
-                addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic, isAbstract || isVirtual,
-                            isAbstract);
-            }
+            classMethodMemberInfo.registerClassMethodMember();
         }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassMethodMemberDynamicImport(ClassMethodMemberInfo classMethodMemberInfo, const GenContext &genContext)
+    {
+        auto funcLikeDeclaration = classMethodMemberInfo.classMember.as<FunctionLikeDeclarationBase>();
+
+        auto [funcOp, funcProto, result, isGeneric] =
+            mlirGenFunctionPrototype(funcLikeDeclaration, genContext);
+        if (mlir::failed(result))
+        {
+            // in case of ArrowFunction without params and receiver is generic function as well
+            return mlir::failure();
+        }
+
+        classMethodMemberInfo.setFuncOp(funcOp);
+
+        auto location = loc(funcLikeDeclaration);
+
+        struct VariableDeclarationInfo variableDeclarationInfo(
+            [&](mlir::Location location, const GenContext &context) -> std::pair<mlir::Type, mlir::Value> {
+                // add command to load reference fron DLL
+                auto fullName = V(mlirGenStringValue(location, classMethodMemberInfo.getFuncName().str(), true));
+                auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
+                auto result = cast(location, mlir_ts::RefType::get(classMethodMemberInfo.getFuncType()), referenceToFuncOpaque, genContext);
+                auto referenceToFunc = V(result);
+                return {referenceToFunc.getType(), referenceToFunc};
+            }, std::bind(&MLIRGenImpl::getGlobalsFullNamespaceName, this, std::placeholders::_1));
+
+        variableDeclarationInfo.detectFlags(true, VariableType::Var, genContext);
+        variableDeclarationInfo.setName(classMethodMemberInfo.getFuncName());
+
+        createGlobalVariable(location, variableDeclarationInfo, genContext);
+
+        // no need to generate method in code
+        funcLikeDeclaration->processed = true;
+        classMethodMemberInfo.registerClassMethodMember();
 
         return mlir::success();
     }
@@ -15400,30 +15527,6 @@ genContext);
         }
 
         return mlir::success();
-    }
-
-    void addAccessor(ClassInfo::TypePtr newClassPtr, ClassElement classMember, std::string &propertyName,
-                     mlir_ts::FuncOp funcOp, bool isStatic, bool isVirtual, bool isAbstract)
-    {
-        auto &accessorInfos = newClassPtr->accessors;
-
-        auto accessorIndex = newClassPtr->getAccessorIndex(propertyName);
-        if (accessorIndex < 0)
-        {
-            accessorInfos.push_back({propertyName, {}, {}, isStatic, isVirtual, isAbstract});
-            accessorIndex = newClassPtr->getAccessorIndex(propertyName);
-        }
-
-        assert(accessorIndex >= 0);
-
-        if (classMember == SyntaxKind::GetAccessor)
-        {
-            newClassPtr->accessors[accessorIndex].get = funcOp;
-        }
-        else if (classMember == SyntaxKind::SetAccessor)
-        {
-            newClassPtr->accessors[accessorIndex].set = funcOp;
-        }
     }
 
     mlir::Block* prepareTempModule()
