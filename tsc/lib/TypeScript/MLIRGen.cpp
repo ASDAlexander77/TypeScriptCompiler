@@ -742,6 +742,15 @@ class MLIRGenImpl
                         lang << name;
                         lang << "'));" << std::endl;
                     }
+                    else if (recordType == "M")
+                    {
+                        // skip Method, it should be used in class declaration
+                    }
+                    else
+                    {
+                        // not supported data
+                        assert("wrong data");
+                    }
 
                     break;
             }
@@ -4006,23 +4015,34 @@ class MLIRGenImpl
         attrs.push_back({builder.getIdentifier(TS_GC_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
 #endif
         // add decorations, "noinline, optnone"
-        for (auto decorator : functionLikeDeclarationBaseAST->decorators)
-        {
-            if (decorator->expression == SyntaxKind::Identifier)
+
+        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, [&](std::string name, SmallVector<std::string> args) {
+            if (isFuncAttr(name))
             {
-                auto name = MLIRHelper::getName(decorator->expression.as<Node>());
-                if (isFuncAttr(name))
-                {
-                    attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
-                }
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
             }
-        }
+        });
 
         // add modifiers
         if (hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword))
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
-            addFunctionToExport(funcProto->getName(), funcType, genContext);
+            if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
+                || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
+            {
+                addFunctionToExport(funcProto->getName(), funcType, genContext);
+            }
+            else if (functionLikeDeclarationBaseAST == SyntaxKind::Constructor
+                || functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration
+                || functionLikeDeclarationBaseAST == SyntaxKind::GetAccessor
+                || functionLikeDeclarationBaseAST == SyntaxKind::SetAccessor)
+            {
+                addMethodToExport(funcProto->getName(), funcType, genContext);
+            }        
+            else
+            {
+                assert("not implemented");
+            }
         }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
@@ -13063,27 +13083,25 @@ class MLIRGenImpl
                 declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
             newClassPtr->isStatic = hasModifier(classDeclarationAST, SyntaxKind::StaticKeyword);
             newClassPtr->isExport = hasModifier(classDeclarationAST, SyntaxKind::ExportKeyword);
-            newClassPtr->isImport = classDeclarationAST->decorators;
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             // check decorator for class
-            for (auto decorator : classDeclarationAST->decorators)
-            {
-                if (decorator->expression == SyntaxKind::Identifier)
+            MLIRHelper::iterateDecorators(classDeclarationAST, [&](std::string name, SmallVector<std::string> args) {
+                if (name == DLL_EXPORT)
                 {
-                    auto name = MLIRHelper::getName(decorator->expression.as<Node>());
+                    newClassPtr->isExport = true;
+                }
 
-                    if (name == DLL_EXPORT)
+                if (name == DLL_IMPORT)
+                {
+                    newClassPtr->isImport = true;
+                    // it has parameter, means this is dynamic import, should point to dll path
+                    if (args.size() > 0)
                     {
-                        newClassPtr->isExport = true;
-                    }
-
-                    if (name == DLL_IMPORT)
-                    {
-                        newClassPtr->isImport = true;
+                        newClassPtr->isDynamicImport = true;
                     }
                 }
-            }            
+            });
 
             getClassesMap().insert({namePtr, newClassPtr});
             fullNameClassesMap.insert(fullNamePtr, newClassPtr);
@@ -14677,26 +14695,7 @@ genContext);
 
             if (isImport)
             {
-                NodeFactory nf(NodeFactoryFlags::None);
-
-                auto hasDllImport = false;
-                for (auto decorator : funcLikeDeclaration->decorators)
-                {
-                    if (decorator->expression == SyntaxKind::Identifier)
-                    {
-                        auto name = MLIRHelper::getName(decorator->expression.as<Node>());
-                        if (name == DLL_IMPORT)
-                        {
-                            hasDllImport = true;
-                            break;
-                        }
-                    }
-                }            
-
-                if (!hasDllImport)
-                {
-                    funcLikeDeclaration->decorators.push_back(nf.createDecorator(nf.createIdentifier(S(DLL_IMPORT))));
-                }
+                MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
             }
 
             auto [result, funcOp, funcName, isGeneric] =
@@ -19238,6 +19237,11 @@ genContext);
     {
         addToExport(name, funcType, "F", genContext);
     }
+
+    void addMethodToExport(StringRef name, mlir::Type funcType, const GenContext &genContext)    
+    {
+        addToExport(name, funcType, "M", genContext);
+    }    
 
     void addDeclarationToExport(ts::Node node)
     {

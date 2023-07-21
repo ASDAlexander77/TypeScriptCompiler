@@ -444,6 +444,7 @@ struct ClassInfo
     bool isAbstract;
     bool isExport;
     bool isImport;
+    bool isDynamicImport;
     bool hasRTTI;
     bool fullyProcessedAtEvaluation;
     bool fullyProcessed;
@@ -453,7 +454,7 @@ struct ClassInfo
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
-          hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), hasRTTI(false),
+          hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), isDynamicImport(false), hasRTTI(false),
           fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false),
           processedStorageClass(false), enteredProcessingStorageClass(false)
     {

@@ -8,7 +8,11 @@
 #include "llvm/ADT/SmallPtrSet.h"
 
 #include "parser.h"
+#include "node_factory.h"
 
+#include <functional>
+
+using namespace ts;
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
@@ -232,6 +236,48 @@ class MLIRHelper
     {
         assert(!name.empty());
         return mlir::StringAttr::get(context, name);
+    }
+
+    static void iterateDecorators(Node node, std::function<void(std::string, SmallVector<std::string>)> functor)
+    {
+        for (auto decorator : node->decorators)
+        {
+            SmallVector<std::string> args;
+            Expression expr = decorator->expression;
+            if (expr == SyntaxKind::CallExpression)
+            {
+                auto callExpression = decorator->expression.as<CallExpression>();
+                expr = callExpression->expression;
+                for (auto argExpr : callExpression->arguments)
+                {
+                    args.push_back(MLIRHelper::getName(argExpr.as<Node>()));
+                }
+            }            
+
+            if (expr == SyntaxKind::Identifier)
+            {
+                auto name = MLIRHelper::getName(expr.as<Node>());
+                functor(name, args);
+            }
+        }
+    }
+
+    static void addDecoratorIfNotPresent(Node node, StringRef decoratorName)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+        for (auto decorator : node->decorators)
+        {
+            if (decorator->expression == SyntaxKind::Identifier)
+            {
+                auto name = getName(decorator->expression.as<Node>());
+                if (name == decoratorName)
+                {
+                    return;
+                }
+            }
+        }            
+
+        node->decorators.push_back(nf.createDecorator(nf.createIdentifier(ConvertUTF8toWide(decoratorName.str()))));
     }
 };
 
