@@ -13012,6 +13012,12 @@ class MLIRGenImpl
             newClassPtr->fullyProcessed = true;
         }
 
+        // support dynamic loading
+        if (hasModifier(classDeclarationAST, SyntaxKind::ExportKeyword))
+        {
+            addClassDeclarationToExport(classDeclarationAST);
+        }
+
         return {mlir::success(), newClassPtr->classType.getName().getValue()};
     }
 
@@ -19411,6 +19417,11 @@ genContext);
     void addEnumDeclarationToExport(EnumDeclaration enumDeclatation)
     {
         addDeclarationToExport(enumDeclatation);
+    }
+
+    void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)
+    {
+        addDeclarationToExport(classDeclatation);
     }
 
     auto getNamespace() -> StringRef
