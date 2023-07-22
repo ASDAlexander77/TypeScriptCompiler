@@ -8643,10 +8643,20 @@ class MLIRGenImpl
                     return thisVirtualSymbOp;
                 }
 
-                auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
-                    location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-                return thisSymbOp;
+                if (classInfo->isDynamicImport)
+                {
+                    // need to resolve global variable
+                    auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
+                    return globalFuncVar;
+                }
+                else
+                {
+                    // default call;
+                    auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                        location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                    return thisSymbOp;
+                }
             }
         }
 
@@ -14875,7 +14885,7 @@ genContext);
                 // add command to load reference fron DLL
                 auto fullName = V(mlirGenStringValue(location, classMethodMemberInfo.getFuncName().str(), true));
                 auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
-                auto result = cast(location, mlir_ts::RefType::get(classMethodMemberInfo.getFuncType()), referenceToFuncOpaque, genContext);
+                auto result = cast(location, classMethodMemberInfo.getFuncType(), referenceToFuncOpaque, genContext);
                 auto referenceToFunc = V(result);
                 return {referenceToFunc.getType(), referenceToFunc};
             }, std::bind(&MLIRGenImpl::getGlobalsFullNamespaceName, this, std::placeholders::_1));
@@ -14884,6 +14894,9 @@ genContext);
         variableDeclarationInfo.setName(classMethodMemberInfo.getFuncName());
 
         createGlobalVariable(location, variableDeclarationInfo, genContext);
+
+        auto varDecl = variableDeclarationInfo.createVariableDeclaration(location, genContext);
+        registerVariableDeclaration(location, varDecl, variableDeclarationInfo, false, genContext);
 
         // no need to generate method in code
         funcLikeDeclaration->processed = true;
