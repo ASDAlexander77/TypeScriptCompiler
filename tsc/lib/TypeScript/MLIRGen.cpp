@@ -4024,7 +4024,9 @@ class MLIRGenImpl
         });
 
         // add modifiers
-        if (hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword))
+        auto dllExport = hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword)
+            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport);
+        if (dllExport)
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
             if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
@@ -4615,8 +4617,9 @@ class MLIRGenImpl
         }
 
         // set visibility index
-        if (funcProto->getName() != MAIN_ENTRY_NAME &&
-            !hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword) /* && !funcProto->getNoBody()*/)
+        auto hasExport = hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword)
+            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport);
+        if (!hasExport && funcProto->getName() != MAIN_ENTRY_NAME)
         {
             funcOp.setPrivate();
         }
@@ -14789,21 +14792,20 @@ genContext);
             generateConstructorStatements(classDeclarationAST, classMethodMemberInfo.isStatic, funcGenContext);
         }
 
+        // process dynamic import
+        if (newClassPtr->isDynamicImport)
+        {
+            return mlirGenClassMethodMemberDynamicImport(classMethodMemberInfo, genContext);
+        }
+
         if (classMethodMemberInfo.isExport)
         {
-            NodeFactory nf(NodeFactoryFlags::None);
-            funcLikeDeclaration->modifiers.push_back(nf.createToken(SyntaxKind::ExportKeyword));
+            funcLikeDeclaration->internalFlags |= InternalFlags::DllExport;
         }
 
         if (classMethodMemberInfo.isImport)
         {
             MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
-        }
-
-        // process dynamic import
-        if (newClassPtr->isDynamicImport)
-        {
-            return mlirGenClassMethodMemberDynamicImport(classMethodMemberInfo, genContext);
         }
 
         auto [result, funcOp, funcName, isGeneric] =
@@ -19392,10 +19394,14 @@ genContext);
         addToExport(name, funcType, "M", genContext);
     }    
 
-    void addDeclarationToExport(ts::Node node)
+    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr)
     {
         Printer printer(declExports);
         printer.setDeclarationMode(true);
+
+        if (prefix)
+            declExports << prefix;
+
         printer.printNode(node);
         declExports << ";\n";
 
@@ -19419,7 +19425,7 @@ genContext);
 
     void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)
     {
-        addDeclarationToExport(classDeclatation);
+        addDeclarationToExport(classDeclatation, "@dllimport('.')\n");
     }
 
     auto getNamespace() -> StringRef
