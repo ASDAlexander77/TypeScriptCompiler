@@ -14813,17 +14813,15 @@ genContext);
             return mlir::failure();
         }
 
-        classMethodMemberInfo.setFuncOp(funcOp);
-
-        if (mlir::failed(registerGenericClassMethod(classMethodMemberInfo, genContext)))
+        if (funcOp)
         {
-            return mlir::failure();
+            classMethodMemberInfo.setFuncOp(funcOp);
+            funcLikeDeclaration->processed = true;
+            classMethodMemberInfo.registerClassMethodMember();
+            return mlir::success();
         }
 
-        funcLikeDeclaration->processed = true;
-        classMethodMemberInfo.registerClassMethodMember();
-
-        return mlir::success();
+        return registerGenericClassMethod(classMethodMemberInfo, genContext);
     }
 
     mlir::LogicalResult registerGenericClassMethod(ClassMethodMemberInfo &classMethodMemberInfo, const GenContext &genContext)
