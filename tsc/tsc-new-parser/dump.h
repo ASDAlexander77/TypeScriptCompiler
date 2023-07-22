@@ -207,6 +207,20 @@ protected:
         return node == SyntaxKind::Block || node == SyntaxKind::ModuleBlock;
     }
 
+    inline bool isClassMemeber(SyntaxKind kind)
+    {
+        switch (kind)
+        {
+            case SyntaxKind::MethodDeclaration:
+            case SyntaxKind::Constructor:
+            case SyntaxKind::GetAccessor:
+            case SyntaxKind::SetAccessor:        
+                return true;
+        }
+
+        return false;
+    }
+
     inline bool isTypeWithParams(ts::TypeNode typeNode)
     {
         if (typeNode == SyntaxKind::FunctionType)
@@ -292,6 +306,11 @@ protected:
             || kind == SyntaxKind::FunctionDeclaration
             || kind == SyntaxKind::ArrowFunction)
         {
+            if (declarationMode)
+            {
+                return false;
+            }
+
             auto functionLikeDeclarationBase = node.as<FunctionLikeDeclarationBase>();
             return isBlockOrStatementWithBlock(functionLikeDeclarationBase->body);
         }
@@ -814,7 +833,15 @@ protected:
                 functionLikeDeclarationBase->body->parent = functionLikeDeclarationBase;
 
             printDecorators(node);
-            printModifiersWithMode(node);
+
+            if (declarationMode && isClassMemeber(node))
+            {
+                printModifiers(node);
+            }
+            else
+            {
+                printModifiersWithMode(node);
+            }
 
             if (kind == SyntaxKind::FunctionExpression || kind == SyntaxKind::FunctionDeclaration)
                 out << "function ";
@@ -845,7 +872,11 @@ protected:
             forEachChildPrint(functionLikeDeclarationBase->type);
             if (kind == SyntaxKind::ArrowFunction)
                 forEachChildPrint(node.as<ArrowFunction>()->equalsGreaterThanToken);
-            forEachChildPrint(functionLikeDeclarationBase->body);
+            if (!declarationMode)
+            {
+                forEachChildPrint(functionLikeDeclarationBase->body);
+            }
+
             break;
         }
         case SyntaxKind::TypeReference:

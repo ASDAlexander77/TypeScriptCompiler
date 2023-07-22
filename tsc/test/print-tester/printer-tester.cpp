@@ -39,9 +39,12 @@ int main(int argc, char **argv)
 {
     if (argc <= 1)
     {
-        puts("Usage: print-tester <file path>.ts [compare]?");
+        puts("Usage: print-tester <file path>.ts [compare|declare]?");
         return 0;
     }
+
+    auto declareMode = argc > 1 && std::string(argv[2]) == "declare";
+    auto compareMode = argc > 1 && std::string(argv[2]) == "compare";
 
     std::string filePath(argv[1]);
 
@@ -54,11 +57,11 @@ int main(int argc, char **argv)
 
     stringstream out;
     Printer printer(out);
-    //printer.setDeclarationMode(true);
+    printer.setDeclarationMode(declareMode);
     printer.printNode(sourceFile);
 
     auto newContent = out.str();
-    if (argc <= 2)
+    if (!compareMode)
     {
         puts(wstos(newContent).c_str());
     }
