@@ -19424,11 +19424,6 @@ genContext);
 
     auto getNamespace() -> StringRef
     {
-        if (currentNamespace->fullName.empty())
-        {
-            return "";
-        }
-
         return currentNamespace->fullName;
     }
 
