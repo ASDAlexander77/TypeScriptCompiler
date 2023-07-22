@@ -8656,7 +8656,10 @@ class MLIRGenImpl
                 {
                     // need to resolve global variable
                     auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
-                    return globalFuncVar;
+                    CAST_A(opaqueThisValue, location, getOpaqueType(), effectiveThisValue, genContext);
+                    auto boundMethodValue = builder.create<mlir_ts::CreateBoundFunctionOp>(
+                        location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);
+                    return boundMethodValue;
                 }
                 else
                 {
