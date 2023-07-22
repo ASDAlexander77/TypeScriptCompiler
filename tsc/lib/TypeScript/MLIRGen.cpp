@@ -8593,10 +8593,19 @@ class MLIRGenImpl
                 if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
                 {
 #endif
-                    auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
-                        location, effectiveFuncType,
-                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-                    return symbOp;
+                    if (classInfo->isDynamicImport)
+                    {
+                        // need to resolve global variable
+                        auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
+                        return globalFuncVar;
+                    }
+                    else
+                    {
+                        auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
+                            location, effectiveFuncType,
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                        return symbOp;
+                    }
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
                 }
 
