@@ -19384,6 +19384,12 @@ genContext);
 
     void addGlobalToExport(StringRef name, mlir::Type type, const GenContext &genContext)
     {
+        // TODO: it will be removed in future, we need to ignore class members for now
+        if (name.contains("."))
+        {
+            return;
+        }
+
         addToExport(name, type, "G", genContext);
     }
     
