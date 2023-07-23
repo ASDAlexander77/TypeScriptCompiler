@@ -1,3 +1,5 @@
+// TODO: it seems in Jit mode, LLVM Engine can resolve external references from loading DLLs
+
 #define DEBUG_TYPE "mlir"
 
 #ifdef GC_ENABLE

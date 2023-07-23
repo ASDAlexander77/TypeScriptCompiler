@@ -168,6 +168,8 @@
         },
         "[cmake]": {
             "editor.defaultFormatter": "cheshirekow.cmake-format"
-        }
+        },
+        "typescript.tsc.autoDetect": "off",
+        "npm.autoDetect": "off"
     }
 }
