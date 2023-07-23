@@ -13539,9 +13539,11 @@ class MLIRGenImpl
                 // process static field - register global
                 auto fullClassStaticFieldName =
                     concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
+                VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+                varClass.isExport = newClassPtr->isExport;
+
                 auto staticFieldType = registerVariable(
-                    location, fullClassStaticFieldName, true,
-                    newClassPtr->isDeclaration ? VariableType::External : VariableType::Var,
+                    location, fullClassStaticFieldName, true, varClass,
                     [&](mlir::Location location, const GenContext &genContext) {
                         auto isConst = false;
                         mlir::Type typeInit;
@@ -13745,9 +13747,10 @@ genContext);
         // prevent double generating
         if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
         {
+            VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+            varClass.isExport = newClassPtr->isExport;
             registerVariable(
-                location, fullClassStaticFieldName, true,
-                newClassPtr->isDeclaration ? VariableType::External : VariableType::Var,
+                location, fullClassStaticFieldName, true, varClass,
                 [&](mlir::Location location, const GenContext &genContext) {
                     auto stringType = getStringType();
                     if (newClassPtr->isDeclaration)
