@@ -54,8 +54,15 @@
                 "kind": "test",
                 "isDefault": false
             },
-            "options": {
-                "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
+            "windows": {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
+                }
+            },
+            "linux" : {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug"
+                }
             }
         },
         {
@@ -68,8 +75,15 @@
                 "kind": "test",
                 "isDefault": true
             },
-            "options": {
-                "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
+            "windows": {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
+                }
+            },
+            "linux" : {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug"
+                }
             }
         }
     ]
