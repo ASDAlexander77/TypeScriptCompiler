@@ -8571,8 +8571,6 @@ class MLIRGenImpl
             {
 #endif
                 auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
-                assert(value);
-
                 // load referenced value
                 if (classInfo->isDynamicImport)
                 {
@@ -13863,64 +13861,82 @@ genContext);
         return mlir::success();
     }
 
-    // TODO: merge with mlirGenClassStaticFieldMember
+    // INFO: you can't use standart Static Field declarastion because of RTTI should be declared before used
+    // example: C:/dev/TypeScriptCompiler/tsc/test/tester/tests/dependencies.ts
     mlir::LogicalResult mlirGenCustomRTTI(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                           ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
+        auto &staticFieldInfos = newClassPtr->staticFields;
+
         auto fieldId = MLIRHelper::TupleFieldName(RTTI_NAME, builder.getContext());
 
         // register global
         auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
 
-        // prevent double generating
-        VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
-        varClass.isExport = newClassPtr->isExport;
-        auto staticFieldType = registerVariable(
-            location, fullClassStaticFieldName, true, varClass,
-            [&](mlir::Location location, const GenContext &genContext) {
-                auto stringType = getStringType();
-                if (newClassPtr->isDeclaration)
-                {
-                    return std::make_pair(stringType, mlir::Value());
-                }
+        auto staticFieldType = getStringType();
 
-                mlir::Value init = builder.create<mlir_ts::ConstantOp>(location, stringType,
-                                                                        getStringAttr(newClassPtr->fullName.str()));
-                return std::make_pair(stringType, init);
-            },
-            genContext);
+        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            // prevent double generating
+            VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+            varClass.isExport = newClassPtr->isExport;
+            registerVariable(
+                location, fullClassStaticFieldName, true, varClass,
+                [&](mlir::Location location, const GenContext &genContext) {
+                    if (newClassPtr->isDeclaration)
+                    {
+                        return std::make_pair(staticFieldType, mlir::Value());
+                    }
 
-        auto &staticFieldInfos = newClassPtr->staticFields;
-        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+                    mlir::Value init = builder.create<mlir_ts::ConstantOp>(location, staticFieldType,
+                                                                            getStringAttr(newClassPtr->fullName.str()));
+                    return std::make_pair(staticFieldType, init);
+                },
+                genContext);
+        }
+
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id = fieldId; }))
+        {
+            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+        }
+
 
         return mlir::success();
     }
 
-    // TODO: merge with mlirGenClassStaticFieldMemberDynamicImport
+    // INFO: you can't use standart Static Field declarastion because of RTTI should be declared before used
+    // example: C:/dev/TypeScriptCompiler/tsc/test/tester/tests/dependencies.ts
     mlir::LogicalResult mlirGenCustomRTTIDynamicImport(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                           ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
+        auto &staticFieldInfos = newClassPtr->staticFields;
+
         auto fieldId = MLIRHelper::TupleFieldName(RTTI_NAME, builder.getContext());
 
         // register global
         auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
 
-        // prevent double generating
-        auto staticFieldType = registerVariable(
-            location, fullClassStaticFieldName, true, VariableType::Var,
-            [&](mlir::Location location, const GenContext &genContext)  -> std::pair<mlir::Type, mlir::Value> {
-                auto typeInit = getStringType();
+        auto staticFieldType =  mlir_ts::RefType::get(getStringType());
 
-                auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
-                auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
-                auto result = cast(location, mlir_ts::RefType::get(typeInit), referenceToStaticFieldOpaque, genContext);
-                auto referenceToStaticField = V(result);
-                return {referenceToStaticField.getType(), referenceToStaticField};
-            },
-            genContext);
+        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            // prevent double generating
+            registerVariable(
+                location, fullClassStaticFieldName, true, VariableType::Var,
+                [&](mlir::Location location, const GenContext &genContext)  -> std::pair<mlir::Type, mlir::Value> {
+                    auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
+                    auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
+                    auto result = cast(location, staticFieldType, referenceToStaticFieldOpaque, genContext);
+                    auto referenceToStaticField = V(result);
+                    return {referenceToStaticField.getType(), referenceToStaticField};
+                },
+                genContext);
+        }
 
-        auto &staticFieldInfos = newClassPtr->staticFields;
-        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id = fieldId; }))
+        {
+            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+        }
 
         return mlir::success();
     }
