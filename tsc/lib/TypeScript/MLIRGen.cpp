@@ -13246,7 +13246,11 @@ class MLIRGenImpl
         }
 
 #if ENABLE_RTTI
-        if (!newClassPtr->isStatic)
+        if (newClassPtr->isDynamicImport)
+        {
+            mlirGenCustomRTTIDynamicImport(location, classDeclarationAST, newClassPtr, genContext);
+        }
+        else if (!newClassPtr->isStatic)
         {
             newClassPtr->hasVirtualTable = true;
             mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, genContext);
@@ -13570,7 +13574,7 @@ class MLIRGenImpl
                     },
                     genContext);
 
-                // add command to load reference fron DLL
+                // add command to load reference from DLL
                 auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
                 auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
                 auto result = cast(location, mlir_ts::RefType::get(typeInit), referenceToStaticFieldOpaque, genContext);
@@ -13834,6 +13838,7 @@ genContext);
         return mlir::success();
     }
 
+    // TODO: merge with mlirGenClassStaticFieldMember
     mlir::LogicalResult mlirGenCustomRTTI(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                           ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
@@ -13868,6 +13873,42 @@ genContext);
                          [&](auto staticFld) { return staticFld.id == fieldId; }) == staticFieldInfos.end())
         {
             staticFieldInfos.push_back({fieldId, getStringType(), fullClassStaticFieldName, -1});
+        }
+
+        return mlir::success();
+    }
+
+    // TODO: merge with mlirGenClassStaticFieldMemberDynamicImport
+    mlir::LogicalResult mlirGenCustomRTTIDynamicImport(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                          ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
+        auto fieldId = MLIRHelper::TupleFieldName(RTTI_NAME, builder.getContext());
+
+        // register global
+        auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
+
+        // prevent double generating
+        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            registerVariable(
+                location, fullClassStaticFieldName, true, VariableType::Var,
+                [&](mlir::Location location, const GenContext &genContext)  -> std::pair<mlir::Type, mlir::Value> {
+                    auto typeInit = getStringType();
+
+                    auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
+                    auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
+                    auto result = cast(location, mlir_ts::RefType::get(typeInit), referenceToStaticFieldOpaque, genContext);
+                    auto referenceToStaticField = V(result);
+                    return {referenceToStaticField.getType(), referenceToStaticField};
+                },
+                genContext);
+        }
+
+        auto &staticFieldInfos = newClassPtr->staticFields;
+        if (std::find_if(staticFieldInfos.begin(), staticFieldInfos.end(),
+                         [&](auto staticFld) { return staticFld.id == fieldId; }) == staticFieldInfos.end())
+        {
+            staticFieldInfos.push_back({fieldId, mlir_ts::RefType::get(getStringType()), fullClassStaticFieldName, -1});
         }
 
         return mlir::success();
