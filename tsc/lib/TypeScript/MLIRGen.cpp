@@ -837,6 +837,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(ImportDeclaration importDeclarationAST, const GenContext &genContext)
     {
+        auto location = loc(importDeclarationAST);
+
         auto result = mlirGen(importDeclarationAST->moduleSpecifier, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto modulePath = V(result);
@@ -873,10 +875,10 @@ class MLIRGenImpl
         if (sys::fs::exists(fullPath))
         {
             // this is shared lib.
-            return mlirGenImportSharedLib(loc(importDeclarationAST), fullPath, genContext);    
+            return mlirGenImportSharedLib(location, fullPath, genContext);    
         }
 
-        return mlirGenInclude(loc(importDeclarationAST), stringVal, genContext);
+        return mlirGenInclude(location, stringVal, genContext);
     }
 
     mlir::LogicalResult mlirGenBody(Node body, const GenContext &genContext)
@@ -13449,27 +13451,122 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenClassFieldMember(ClassLikeDeclaration classDeclarationAST,
-                                                ClassInfo::TypePtr newClassPtr, ClassElement classMember,
-                                                SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool staticOnly,
-                                                const GenContext &genContext)
+    mlir::LogicalResult mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
+                                                    PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
-        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-        if (staticOnly != isStatic)
+        auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+
+        auto typeAndInitFlag = evaluateTypeAndInit(propertyDeclaration, genContext);
+        auto type = typeAndInitFlag.first;
+        if (typeAndInitFlag.second)
         {
-            return mlir::success();
+            newClassPtr->hasInitializers = true;
+            type = mth.wideStorageType(type);
         }
 
-        auto location = loc(classMember);
+        LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "");
 
-        MLIRCodeLogic mcl(builder);
+        auto hasType = !!propertyDeclaration->type;
+        if (isNoneType(type))
+        {
+            if (hasType)
+            {
+                return mlir::failure();
+            }
+
+#ifndef ANY_AS_DEFAULT
+            emitError(location)
+                << "type for field '" << fieldId << "' is not provided, field must have type or initializer";
+            return mlir::failure();
+#else
+            emitWarning(location) << "type for field '" << fieldId << "' is any";
+            type = getAnyType();
+#endif
+        }
+
+        fieldInfos.push_back({fieldId, type});
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassStaticFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)
+    {
+        auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+
+        // process static field - register global
+        auto fullClassStaticFieldName =
+            concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
+        VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+        varClass.isExport = newClassPtr->isExport;
+
+        auto staticFieldType = registerVariable(
+            location, fullClassStaticFieldName, true, varClass,
+            [&](mlir::Location location, const GenContext &genContext) {
+                auto isConst = false;
+                mlir::Type typeInit;
+                evaluate(
+                    propertyDeclaration->initializer,
+                    [&](mlir::Value val) {
+                        typeInit = val.getType();
+                        typeInit = mth.wideStorageType(typeInit);
+                        isConst = isConstValue(val);
+                    },
+                    genContext);
+
+                if (!newClassPtr->isDeclaration)
+                {
+                    if (isConst)
+                    {
+                        return getTypeAndInit(propertyDeclaration, genContext);
+                    }
+
+                    newClassPtr->hasStaticInitializers = true;
+                }
+
+                return getTypeOnly(propertyDeclaration, typeInit, genContext);
+            },
+            genContext);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
+        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
 
-        mlir::Value initValue;
-        mlir::Attribute fieldId;
-        mlir::Type type;
+        return mlir::success();
+    }
 
+    mlir::LogicalResult mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
+                                                                      ConstructorDeclaration constructorDeclaration, const GenContext &genContext)
+    {
+        for (auto &parameter : constructorDeclaration->parameters)
+        {
+            auto isPublic = hasModifier(parameter, SyntaxKind::PublicKeyword);
+            auto isProtected = hasModifier(parameter, SyntaxKind::ProtectedKeyword);
+            auto isPrivate = hasModifier(parameter, SyntaxKind::PrivateKeyword);
+
+            if (!(isPublic || isProtected || isPrivate))
+            {
+                continue;
+            }
+
+            auto fieldId = TupleFieldName(parameter->name, genContext);
+
+            auto typeAndInit = getTypeAndInit(parameter, genContext);
+            auto type = typeAndInit.first;
+
+            LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
+            if (isNoneType(type))
+            {
+                return mlir::failure();
+            }
+
+            fieldInfos.push_back({fieldId, type});
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassProcessClassPropertyByFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember)
+    {
+        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
         auto isConstructor = classMember == SyntaxKind::Constructor;
         if (isConstructor)
         {
@@ -13498,110 +13595,50 @@ class MLIRGenImpl
             newClassPtr->hasVirtualTable = true;
         }
 
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassFieldMember(ClassLikeDeclaration classDeclarationAST,
+                                                ClassInfo::TypePtr newClassPtr, ClassElement classMember,
+                                                SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool staticOnly,
+                                                const GenContext &genContext)
+    {
+        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+        if (staticOnly != isStatic)
+        {
+            return mlir::success();
+        }
+
+        auto location = loc(classMember);
+
+        mlirGenClassProcessClassPropertyByFieldMember(newClassPtr, classMember);
+
         if (classMember == SyntaxKind::PropertyDeclaration)
         {
             // property declaration
             auto propertyDeclaration = classMember.as<PropertyDeclaration>();
-            fieldId = TupleFieldName(propertyDeclaration->name, genContext);
-
             if (!isStatic)
             {
-                auto typeAndInitFlag = evaluateTypeAndInit(propertyDeclaration, genContext);
-                type = typeAndInitFlag.first;
-                if (typeAndInitFlag.second)
+                if (mlir::failed(mlirGenClassDataFieldMember(location, newClassPtr, fieldInfos, propertyDeclaration, genContext)))
                 {
-                    newClassPtr->hasInitializers = true;
-                    type = mth.wideStorageType(type);
-                }
-
-                LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "");
-
-                auto hasType = !!propertyDeclaration->type;
-                if (isNoneType(type))
-                {
-                    if (hasType)
-                    {
-                        return mlir::failure();
-                    }
-
-#ifndef ANY_AS_DEFAULT
-                    emitError(loc(propertyDeclaration))
-                        << "type for field '" << fieldId << "' is not provided, field must have type or initializer";
                     return mlir::failure();
-#else
-                    emitWarning(loc(propertyDeclaration)) << "type for field '" << fieldId << "' is any";
-                    type = getAnyType();
-#endif
                 }
-
-                fieldInfos.push_back({fieldId, type});
             }
             else
             {
-                // process static field - register global
-                auto fullClassStaticFieldName =
-                    concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
-                VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
-                varClass.isExport = newClassPtr->isExport;
-
-                auto staticFieldType = registerVariable(
-                    location, fullClassStaticFieldName, true, varClass,
-                    [&](mlir::Location location, const GenContext &genContext) {
-                        auto isConst = false;
-                        mlir::Type typeInit;
-                        evaluate(
-                            propertyDeclaration->initializer,
-                            [&](mlir::Value val) {
-                                typeInit = val.getType();
-                                typeInit = mth.wideStorageType(typeInit);
-                                isConst = isConstValue(val);
-                            },
-                            genContext);
-
-                        if (!newClassPtr->isDeclaration)
-                        {
-                            if (isConst)
-                            {
-                                return getTypeAndInit(propertyDeclaration, genContext);
-                            }
-
-                            newClassPtr->hasStaticInitializers = true;
-                        }
-
-                        return getTypeOnly(propertyDeclaration, typeInit, genContext);
-                    },
-                    genContext);
-
-                staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+                if (mlir::failed(mlirGenClassStaticFieldMember(location, newClassPtr, propertyDeclaration, genContext)))
+                {
+                    return mlir::failure();
+                }
             }
         }
 
         if (classMember == SyntaxKind::Constructor && !isStatic)
         {
             auto constructorDeclaration = classMember.as<ConstructorDeclaration>();
-            for (auto &parameter : constructorDeclaration->parameters)
+            if (mlir::failed(mlirGenClassConstructorPublicDataFieldMembers(location, fieldInfos, constructorDeclaration, genContext)))
             {
-                auto isPublic = hasModifier(parameter, SyntaxKind::PublicKeyword);
-                auto isProtected = hasModifier(parameter, SyntaxKind::ProtectedKeyword);
-                auto isPrivate = hasModifier(parameter, SyntaxKind::PrivateKeyword);
-
-                if (!(isPublic || isProtected || isPrivate))
-                {
-                    continue;
-                }
-
-                fieldId = TupleFieldName(parameter->name, genContext);
-
-                auto typeAndInit = getTypeAndInit(parameter, genContext);
-                type = typeAndInit.first;
-
-                LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
-                if (isNoneType(type))
-                {
-                    return mlir::failure();
-                }
-
-                fieldInfos.push_back({fieldId, type});
+                return mlir::failure();
             }
         }
 
@@ -13796,8 +13833,6 @@ genContext);
         {
             return mlir::success();
         }
-
-        MLIRCodeLogic mcl(builder);
 
         // register global
         auto fullClassStaticFieldName = getTypeDescriptorFieldName(newClassPtr);
