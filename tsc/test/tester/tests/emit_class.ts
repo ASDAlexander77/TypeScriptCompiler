@@ -7,5 +7,9 @@ function main() {
 	const a2 = new Account(2);
 	print(a2.n);
 
+    print(Account.data);
+
+    assert(Account.data == 2)
+
 	print("done.");
 }

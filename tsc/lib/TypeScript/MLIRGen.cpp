@@ -8561,6 +8561,20 @@ class MLIRGenImpl
 #endif
                 auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
                 assert(value);
+
+                // load referenced value
+                if (classInfo->isDynamicImport)
+                {
+                    if (auto valueRefType = value.getType().dyn_cast<mlir_ts::RefType>())
+                    {
+                        value = builder.create<mlir_ts::LoadOp>(location, valueRefType.getElementType(), value);
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+                }
+
                 return value;
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
             }
@@ -13540,12 +13554,11 @@ class MLIRGenImpl
         // process static field - register global
         auto fullClassStaticFieldName =
             concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
-        VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
-        varClass.isExport = newClassPtr->isExport;
-
+        
         auto staticFieldType = registerVariable(
-            location, fullClassStaticFieldName, true, varClass,
-            [&](mlir::Location location, const GenContext &genContext) {
+            location, fullClassStaticFieldName, true, VariableType::Var,
+            [&](mlir::Location location, const GenContext &genContext) -> std::pair<mlir::Type, mlir::Value> {
+                // detect field Type
                 auto isConst = false;
                 mlir::Type typeInit;
                 evaluate(
@@ -13557,17 +13570,12 @@ class MLIRGenImpl
                     },
                     genContext);
 
-                if (!newClassPtr->isDeclaration)
-                {
-                    if (isConst)
-                    {
-                        return getTypeAndInit(propertyDeclaration, genContext);
-                    }
-
-                    newClassPtr->hasStaticInitializers = true;
-                }
-
-                return getTypeOnly(propertyDeclaration, typeInit, genContext);
+                // add command to load reference fron DLL
+                auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
+                auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
+                auto result = cast(location, mlir_ts::RefType::get(typeInit), referenceToStaticFieldOpaque, genContext);
+                auto referenceToStaticField = V(result);
+                return {referenceToStaticField.getType(), referenceToStaticField};
             },
             genContext);
 
