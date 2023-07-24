@@ -7376,13 +7376,11 @@ class MLIRGenImpl
         if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-            auto fullNameClassRtti = concat(classInfo->fullName, RTTI_NAME);
-
             if (resultType.isa<mlir_ts::ClassType>())
             {
                 NodeFactory nf(NodeFactoryFlags::None);
                 NodeArray<Expression> argumentsArray;
-                argumentsArray.push_back(nf.createIdentifier(stows(fullNameClassRtti.str())));
+                argumentsArray.push_back(nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(RTTI_NAME))));
                 return mlirGenCallThisMethod(location, result, INSTANCEOF_NAME, undefined, argumentsArray, genContext);
             }
 
@@ -7410,8 +7408,21 @@ class MLIRGenImpl
                         auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(
                             location, getOpaqueType(), vtablePtr, 0 /*InstanceOf index*/);
 
-                        auto rttiOfClassValue =
-                            resolveFullNameIdentifier(location, fullNameClassRtti, false, genContext);
+                        auto classRefVal = mlirGen(binaryExpressionAST->right, genContext);
+
+                        auto resultRtti = mlirGenPropertyAccessExpression(location, classRefVal, RTTI_NAME, genContext);
+                        auto rttiOfClassValue = V(resultRtti);
+                        if (classInfo->isDynamicImport)
+                        {
+                            if (auto valueRefType = rttiOfClassValue.getType().dyn_cast<mlir_ts::RefType>())
+                            {
+                                rttiOfClassValue = builder.create<mlir_ts::LoadOp>(location, valueRefType.getElementType(), rttiOfClassValue);
+                            }
+                            else
+                            {
+                                llvm_unreachable("not implemented");
+                            }
+                        }
 
                         assert(rttiOfClassValue);
 
@@ -13862,32 +13873,25 @@ genContext);
         auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
 
         // prevent double generating
-        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
-        {
-            VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
-            varClass.isExport = newClassPtr->isExport;
-            registerVariable(
-                location, fullClassStaticFieldName, true, varClass,
-                [&](mlir::Location location, const GenContext &genContext) {
-                    auto stringType = getStringType();
-                    if (newClassPtr->isDeclaration)
-                    {
-                        return std::make_pair(stringType, mlir::Value());
-                    }
+        VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+        varClass.isExport = newClassPtr->isExport;
+        auto staticFieldType = registerVariable(
+            location, fullClassStaticFieldName, true, varClass,
+            [&](mlir::Location location, const GenContext &genContext) {
+                auto stringType = getStringType();
+                if (newClassPtr->isDeclaration)
+                {
+                    return std::make_pair(stringType, mlir::Value());
+                }
 
-                    mlir::Value init = builder.create<mlir_ts::ConstantOp>(location, stringType,
-                                                                           getStringAttr(newClassPtr->fullName.str()));
-                    return std::make_pair(stringType, init);
-                },
-                genContext);
-        }
+                mlir::Value init = builder.create<mlir_ts::ConstantOp>(location, stringType,
+                                                                        getStringAttr(newClassPtr->fullName.str()));
+                return std::make_pair(stringType, init);
+            },
+            genContext);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        if (std::find_if(staticFieldInfos.begin(), staticFieldInfos.end(),
-                         [&](auto staticFld) { return staticFld.id == fieldId; }) == staticFieldInfos.end())
-        {
-            staticFieldInfos.push_back({fieldId, getStringType(), fullClassStaticFieldName, -1});
-        }
+        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
 
         return mlir::success();
     }
@@ -13902,28 +13906,21 @@ genContext);
         auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
 
         // prevent double generating
-        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
-        {
-            registerVariable(
-                location, fullClassStaticFieldName, true, VariableType::Var,
-                [&](mlir::Location location, const GenContext &genContext)  -> std::pair<mlir::Type, mlir::Value> {
-                    auto typeInit = getStringType();
+        auto staticFieldType = registerVariable(
+            location, fullClassStaticFieldName, true, VariableType::Var,
+            [&](mlir::Location location, const GenContext &genContext)  -> std::pair<mlir::Type, mlir::Value> {
+                auto typeInit = getStringType();
 
-                    auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
-                    auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
-                    auto result = cast(location, mlir_ts::RefType::get(typeInit), referenceToStaticFieldOpaque, genContext);
-                    auto referenceToStaticField = V(result);
-                    return {referenceToStaticField.getType(), referenceToStaticField};
-                },
-                genContext);
-        }
+                auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
+                auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
+                auto result = cast(location, mlir_ts::RefType::get(typeInit), referenceToStaticFieldOpaque, genContext);
+                auto referenceToStaticField = V(result);
+                return {referenceToStaticField.getType(), referenceToStaticField};
+            },
+            genContext);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        if (std::find_if(staticFieldInfos.begin(), staticFieldInfos.end(),
-                         [&](auto staticFld) { return staticFld.id == fieldId; }) == staticFieldInfos.end())
-        {
-            staticFieldInfos.push_back({fieldId, mlir_ts::RefType::get(getStringType()), fullClassStaticFieldName, -1});
-        }
+        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
 
         return mlir::success();
     }

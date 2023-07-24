@@ -9,7 +9,11 @@ function main() {
 
     print(Account.data);
 
-    assert(Account.data == 2)
+    assert(Account.data == 2);
+
+    print (a2 instanceof Account);
+
+    assert(a2 instanceof Account);
 
 	print("done.");
 }
