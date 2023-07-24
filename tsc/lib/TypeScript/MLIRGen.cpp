@@ -13900,7 +13900,6 @@ genContext);
             staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
         }
 
-
         return mlir::success();
     }
 
@@ -14717,7 +14716,7 @@ genContext);
     mlir::LogicalResult mlirGenClassVirtualTableDefinition(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                            const GenContext &genContext)
     {
-        if (!newClassPtr->getHasVirtualTable() || newClassPtr->isAbstract)
+        if (!newClassPtr->getHasVirtualTable() || newClassPtr->isAbstract || newClassPtr->isDeclaration)
         {
             return mlir::success();
         }
@@ -19532,6 +19531,11 @@ genContext);
 
     void addToExport(StringRef name, mlir::Type type, const char* recordType, const GenContext &genContext)
     {
+        if (name.starts_with("__decl"))
+        {
+            return;
+        }
+
         exports << recordType << std::endl << name.str().c_str() << std::endl;
         mth.printType<std::wostream>(exports, type);
         exports << std::endl;
