@@ -13533,6 +13533,50 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGenClassStaticFieldMemberDynamicImport(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)
+    {
+        auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+
+        // process static field - register global
+        auto fullClassStaticFieldName =
+            concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
+        VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+        varClass.isExport = newClassPtr->isExport;
+
+        auto staticFieldType = registerVariable(
+            location, fullClassStaticFieldName, true, varClass,
+            [&](mlir::Location location, const GenContext &genContext) {
+                auto isConst = false;
+                mlir::Type typeInit;
+                evaluate(
+                    propertyDeclaration->initializer,
+                    [&](mlir::Value val) {
+                        typeInit = val.getType();
+                        typeInit = mth.wideStorageType(typeInit);
+                        isConst = isConstValue(val);
+                    },
+                    genContext);
+
+                if (!newClassPtr->isDeclaration)
+                {
+                    if (isConst)
+                    {
+                        return getTypeAndInit(propertyDeclaration, genContext);
+                    }
+
+                    newClassPtr->hasStaticInitializers = true;
+                }
+
+                return getTypeOnly(propertyDeclaration, typeInit, genContext);
+            },
+            genContext);
+
+        auto &staticFieldInfos = newClassPtr->staticFields;
+        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+
+        return mlir::success();
+    }    
+
     mlir::LogicalResult mlirGenClassConstructorPublicDataFieldMembers(mlir::Location location, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
                                                                       ConstructorDeclaration constructorDeclaration, const GenContext &genContext)
     {
@@ -13626,7 +13670,14 @@ class MLIRGenImpl
             }
             else
             {
-                if (mlir::failed(mlirGenClassStaticFieldMember(location, newClassPtr, propertyDeclaration, genContext)))
+                if (newClassPtr->isDynamicImport)
+                {
+                    if (mlir::failed(mlirGenClassStaticFieldMemberDynamicImport(location, newClassPtr, propertyDeclaration, genContext)))
+                    {
+                        return mlir::failure();
+                    }
+                }
+                else if (mlir::failed(mlirGenClassStaticFieldMember(location, newClassPtr, propertyDeclaration, genContext)))
                 {
                     return mlir::failure();
                 }
@@ -14938,7 +14989,7 @@ genContext);
 
         auto location = loc(funcLikeDeclaration);
 
-        struct VariableDeclarationInfo variableDeclarationInfo(
+        registerVariable(location, classMethodMemberInfo.getFuncName(), true, VariableType::Var,
             [&](mlir::Location location, const GenContext &context) -> std::pair<mlir::Type, mlir::Value> {
                 // add command to load reference fron DLL
                 auto fullName = V(mlirGenStringValue(location, classMethodMemberInfo.getFuncName().str(), true));
@@ -14946,15 +14997,8 @@ genContext);
                 auto result = cast(location, classMethodMemberInfo.getFuncType(), referenceToFuncOpaque, genContext);
                 auto referenceToFunc = V(result);
                 return {referenceToFunc.getType(), referenceToFunc};
-            }, std::bind(&MLIRGenImpl::getGlobalsFullNamespaceName, this, std::placeholders::_1));
-
-        variableDeclarationInfo.detectFlags(true, VariableType::Var, genContext);
-        variableDeclarationInfo.setName(classMethodMemberInfo.getFuncName());
-
-        createGlobalVariable(location, variableDeclarationInfo, genContext);
-
-        auto varDecl = variableDeclarationInfo.createVariableDeclaration(location, genContext);
-        registerVariableDeclaration(location, varDecl, variableDeclarationInfo, false, genContext);
+            },
+            genContext);
 
         // no need to generate method in code
         funcLikeDeclaration->processed = true;
