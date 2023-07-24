@@ -761,7 +761,7 @@ class MLIRGenImpl
         return lang.str();
     }
 
-    mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, const GenContext &genContext)
+    mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, bool dynamic, const GenContext &genContext)
     {
         // TODO: ...
         std::string errMsg;
@@ -798,8 +798,15 @@ class MLIRGenImpl
         // TODO: for now, we have code in TS to load methods from DLL/Shared libs
         if (auto addrOfDeclText = dynLib.getAddressOfSymbol(SHARED_LIB_DECLARATIONS))
         {
+            std::string result;
             // process shared lib declarations
             auto dataPtr = *(const char**)addrOfDeclText;
+            if (dynamic)
+            {
+                result = MLIRHelper::replaceAll(dataPtr, "@dllimport", "@dllimport('.')");
+                dataPtr = result.c_str();
+            }
+
             LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
 
             auto importData = ConvertUTF8toWide(dataPtr);
@@ -874,8 +881,10 @@ class MLIRGenImpl
 
         if (sys::fs::exists(fullPath))
         {
+            auto dynamic = MLIRHelper::hasDecorator(importDeclarationAST, "dynamic");
+
             // this is shared lib.
-            return mlirGenImportSharedLib(location, fullPath, genContext);    
+            return mlirGenImportSharedLib(location, fullPath, dynamic, genContext);    
         }
 
         return mlirGenInclude(location, stringVal, genContext);
@@ -19602,7 +19611,7 @@ genContext);
 
     void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)
     {
-        addDeclarationToExport(classDeclatation, "@dllimport('.')\n");
+        addDeclarationToExport(classDeclatation, "@dllimport\n");
     }
 
     auto getNamespace() -> StringRef

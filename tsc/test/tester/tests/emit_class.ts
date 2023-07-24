@@ -1,3 +1,4 @@
+@dynamic
 import './decl_class';
 
 function main() {

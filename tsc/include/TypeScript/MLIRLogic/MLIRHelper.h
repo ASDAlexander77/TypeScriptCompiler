@@ -11,6 +11,7 @@
 #include "node_factory.h"
 
 #include <functional>
+#include <string>
 
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
@@ -238,6 +239,31 @@ class MLIRHelper
         return mlir::StringAttr::get(context, name);
     }
 
+    static bool hasDecorator(Node node, const char* decoratorStr)
+    {
+        for (auto decorator : node->decorators)
+        {
+            SmallVector<std::string> args;
+            Expression expr = decorator->expression;
+            if (expr == SyntaxKind::CallExpression)
+            {
+                auto callExpression = decorator->expression.as<CallExpression>();
+                expr = callExpression->expression;
+            }            
+
+            if (expr == SyntaxKind::Identifier)
+            {
+                auto name = MLIRHelper::getName(expr.as<Node>());
+                if (name == decoratorStr)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     static void iterateDecorators(Node node, std::function<void(std::string, SmallVector<std::string>)> functor)
     {
         for (auto decorator : node->decorators)
@@ -278,6 +304,27 @@ class MLIRHelper
         }            
 
         node->decorators.push_back(nf.createDecorator(nf.createIdentifier(ConvertUTF8toWide(decoratorName.str()))));
+    }
+
+    static std::string replaceAll(const char* source, const char* oldStr, const char* newStr)
+    {
+        std::string result;
+        result.append(source);
+
+        // cycle
+        size_t pos = 0;
+        size_t posPrev = 0;
+        std::string token;
+        size_t oldLen = std::string(oldStr).length();
+        size_t newLen = std::string(newStr).length();
+
+        while ((pos = result.find(oldStr, posPrev)) != std::string::npos)
+        {
+            result.replace(pos, oldLen, newStr);
+            posPrev = pos + newLen;
+        }
+
+        return result;
     }
 };
 
