@@ -10278,6 +10278,11 @@ class MLIRGenImpl
             }
 
             auto newOp = NewClassInstanceAsMethodCallOp(location, classInfo, methodCallWay, genContext);
+            if (!newOp)
+            {
+                return mlir::failure();
+            }
+
             if (methodCallWay)
             {
                 // evaluate constructor
@@ -14959,7 +14964,9 @@ genContext);
         }
 
         // process dynamic import
-        if (newClassPtr->isDynamicImport)
+        // TODO: why ".new" is virtual method?
+        if (newClassPtr->isDynamicImport 
+            && (classMethodMemberInfo.isStatic || classMethodMemberInfo.isConstructor || classMethodMemberInfo.methodName == NEW_METHOD_NAME))
         {
             return mlirGenClassMethodMemberDynamicImport(classMethodMemberInfo, genContext);
         }
