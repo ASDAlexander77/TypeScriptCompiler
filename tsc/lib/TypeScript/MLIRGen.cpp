@@ -8637,6 +8637,13 @@ class MLIRGenImpl
                 auto vtableAccess =
                     mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
 
+                if (!vtableAccess)
+                {
+                    emitError(location,"") << "class '" << classInfo->fullName << "' missing 'virtual table'";
+                }
+
+                EXIT_IF_FAILED_OR_NO_VALUE(vtableAccess)                    
+
                 assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
 
                 auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
@@ -8663,6 +8670,13 @@ class MLIRGenImpl
 
                     auto vtableAccess =
                         mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
+
+                    if (!vtableAccess)
+                    {
+                        emitError(location,"") << "class '" << classInfo->fullName << "' missing 'virtual table'";
+                    }
+
+                    EXIT_IF_FAILED_OR_NO_VALUE(vtableAccess)
 
                     assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
 
