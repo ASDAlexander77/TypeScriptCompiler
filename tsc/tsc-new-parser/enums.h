@@ -538,6 +538,7 @@ enum class InternalFlags : number
     SuppressConstructorCall = 1 << 5,
     ThisArgAlias = 1 << 6,
     DllExport = 1 << 7,
+    DllImport = 1 << 8,
 };
 
 ENUM_OPS(InternalFlags)

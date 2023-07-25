@@ -342,38 +342,6 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult createExportGlobalVar(const GenContext &genContext)
-    {
-        if (!exports.rdbuf()->in_avail())
-        {
-            return mlir::success();
-        }
-
-        auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
-#if SHARED_LIB_DECLARATION_INFO_IS_APPENDABLE            
-            SmallVector<mlir::Attribute, 4> strs;
-            strs.push_back(getStringAttr(convertWideToUTF8(exports.str())));
-            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), strs);            
-
-            auto arrayValue = V(builder.create<mlir_ts::ConstantOp>(
-                location, mth.getConstArrayValueType(getStringType(), 1), arrayAttr));
-
-            return std::make_pair(arrayValue.getType(), arrayValue);
-#else
-            auto litValue = V(mlirGenStringValue(location, convertWideToUTF8(exports.str()), true));
-            return std::make_pair(litValue.getType(), litValue);            
-#endif            
-        };
-
-        VariableClass varClass = VariableType::Var;
-        varClass.isExport = true;
-#if SHARED_LIB_DECLARATION_INFO_IS_APPENDABLE        
-        varClass.isAppendingLinkage = true;
-#endif        
-        registerVariable(mlir::UnknownLoc::get(builder.getContext()), SHARED_LIB_DECLARATION_INFO, true, varClass, typeWithInit, genContext);
-        return mlir::success();
-    }    
-
     int processStatements(NodeArray<Statement> statements,
                           mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
                           const GenContext &genContext)
@@ -539,7 +507,6 @@ class MLIRGenImpl
        
         // exports
         createDeclarationExportGlobalVar(genContext);
-        createExportGlobalVar(genContext);
 
         clearTempModule();
 
@@ -671,6 +638,10 @@ class MLIRGenImpl
         declarationMode = true;
 
         auto [importSource, importIncludeFiles] = loadIncludeFile(location, filePath);
+        if (!importSource)
+        {
+            return mlir::failure();
+        }
 
         if (mlir::failed(showMessages(importSource, importIncludeFiles)))
         {
@@ -684,81 +655,6 @@ class MLIRGenImpl
         }
 
         return mlir::failure();
-    }
-
-    std::string convertSharedLibInfoIntoLang(std::string sharedLibInfo)
-    {
-        auto s = sharedLibInfo;
-        std::stringstream ss; ss << std::endl;
-        std::string delimiter = ss.str();
-
-        std::string recordType;
-        std::string name;
-        std::string type;
-
-        std::stringstream lang;
-
-        // cycle
-        size_t pos = 0;
-        size_t posPrev = 0;
-        std::string token;
-
-        auto number = 0;
-        while ((pos = s.find(delimiter, posPrev)) != std::string::npos)
-        {
-            number++;
-            token = s.substr(posPrev, pos - posPrev);
-            posPrev = pos + 1;
-            switch (number)
-            {
-                case 1:
-                    recordType = token;
-                    break;
-                case 2:
-                    name = token;
-                    break;
-                case 3:
-                    type = token;
-                    
-                    // clear
-                    number = 0;
-                    // process
-
-                    if (recordType == "F")
-                    {
-                        lang << "let ";
-                        lang << name;
-                        lang << ":";
-                        lang << type;
-                        lang << "=SearchForAddressOfSymbol('";
-                        lang << name;
-                        lang << "');" << std::endl;
-                    }
-                    else if (recordType == "G")
-                    {
-                        lang << "let ";
-                        lang << name;
-                        lang << "=LoadReference(<Reference<";
-                        lang << type;
-                        lang << ">>SearchForAddressOfSymbol('";
-                        lang << name;
-                        lang << "'));" << std::endl;
-                    }
-                    else if (recordType == "M")
-                    {
-                        // skip Method, it should be used in class declaration
-                    }
-                    else
-                    {
-                        // not supported data
-                        assert("wrong data");
-                    }
-
-                    break;
-            }
-        }
-
-        return lang.str();
     }
 
     mlir::LogicalResult mlirGenImportSharedLib(mlir::Location location, StringRef filePath, bool dynamic, const GenContext &genContext)
@@ -803,6 +699,7 @@ class MLIRGenImpl
             auto dataPtr = *(const char**)addrOfDeclText;
             if (dynamic)
             {
+                // TODO: use option variable instead of "this hack"
                 result = MLIRHelper::replaceAll(dataPtr, "@dllimport", "@dllimport('.')");
                 dataPtr = result.c_str();
             }
@@ -816,27 +713,9 @@ class MLIRGenImpl
                 return mlir::failure();
             }            
         }
-                
-        if (auto addrOfDeclText = dynLib.getAddressOfSymbol(SHARED_LIB_DECLARATION_INFO))
-        {
-            // process shared lib declarations
-            auto dataPtr = *(const char**)addrOfDeclText;
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
-
-            auto tsPart = convertSharedLibInfoIntoLang(dataPtr);
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib include: \n" << tsPart << "\n";);
-
-            auto importData = ConvertUTF8toWide(tsPart);
-            if (mlir::failed(parsePartialStatements(importData, genContext)))
-            {
-                //assert(false);
-                return mlir::failure();
-            }            
-        }
         else
         {
-            emitWarning(location, "missing information about shared library. (reference __decl_info is missing)");
+            emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");
         }
 
         return mlir::success();
@@ -1209,7 +1088,7 @@ class MLIRGenImpl
             // declaration
             return mlirGen(statementAST.as<ClassDeclaration>(), genContext);
         }
-        else if (kind == SyntaxKind::InterfaceDeclaration)
+        else if (kind == SyntaxKind::InterfaceDeclaration) 
         {
             // declaration
             return mlirGen(statementAST.as<InterfaceDeclaration>(), genContext);
@@ -2862,10 +2741,12 @@ class MLIRGenImpl
         }
 
         globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
+        /*
         if (variableDeclarationInfo.isExport)
         {
             addGlobalToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
         }
+        */
 
         if (!variableDeclarationInfo.initial)
         {
@@ -2952,10 +2833,6 @@ class MLIRGenImpl
                     }
 
                     globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
-                    if (variableDeclarationInfo.isExport)
-                    {
-                        addGlobalToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
-                    }
                 }
                 else
                 {
@@ -2967,17 +2844,12 @@ class MLIRGenImpl
         }
 
         // it is not global scope (for example 'var' in function)
-        if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext)))
+        if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext))) 
         {
             return mlir::failure();
         }
 
         globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
-        if (variableDeclarationInfo.isExport)
-        {
-            addGlobalToExport(variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
-        }
-
         if (variableDeclarationInfo.isExternal)
         {
             // all is done here
@@ -3545,6 +3417,10 @@ class MLIRGenImpl
         if (variableDeclarationListAST->parent)
         {
             varClass.isExport = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
+            if (varClass.isExport)
+            {
+                addDeclarationToExport(variableDeclarationListAST->parent, "@dllimport\n");
+            }
         }
 
         for (auto &item : variableDeclarationListAST->declarations)
@@ -4053,19 +3929,15 @@ class MLIRGenImpl
             if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
                 || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
             {
-                addFunctionToExport(funcProto->getName(), funcType, genContext);
+                //addDeclarationToExport(funcProto->getName(), funcType, genContext);
+                addFunctionDeclarationToExport(functionLikeDeclarationBaseAST);
             }
-            else if (functionLikeDeclarationBaseAST == SyntaxKind::Constructor
-                || functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration
-                || functionLikeDeclarationBaseAST == SyntaxKind::GetAccessor
-                || functionLikeDeclarationBaseAST == SyntaxKind::SetAccessor)
-            {
-                addMethodToExport(funcProto->getName(), funcType, genContext);
-            }        
-            else
-            {
-                assert("not implemented");
-            }
+        }
+
+        auto dllImport = ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllImport) == InternalFlags::DllImport);
+        if (dllImport)
+        {
+            attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
         }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
@@ -14997,7 +14869,8 @@ genContext);
 
         if (classMethodMemberInfo.isImport)
         {
-            MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
+            funcLikeDeclaration->internalFlags |= InternalFlags::DllImport;
+            //MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
         }
 
         auto [result, funcOp, funcName, isGeneric] =
@@ -19555,41 +19428,6 @@ genContext);
         return mlir::success();
     }
 
-    void addToExport(StringRef name, mlir::Type type, const char* recordType, const GenContext &genContext)
-    {
-        if (name.starts_with("__decl"))
-        {
-            return;
-        }
-
-        exports << recordType << std::endl << name.str().c_str() << std::endl;
-        mth.printType<std::wostream>(exports, type);
-        exports << std::endl;
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! added to export: \n" << convertWideToUTF8(exports.str()) << "\n";);      
-    }
-
-    void addGlobalToExport(StringRef name, mlir::Type type, const GenContext &genContext)
-    {
-        // TODO: it will be removed in future, we need to ignore class members for now
-        if (name.contains("."))
-        {
-            return;
-        }
-
-        addToExport(name, type, "G", genContext);
-    }
-    
-    void addFunctionToExport(StringRef name, mlir::Type funcType, const GenContext &genContext)    
-    {
-        addToExport(name, funcType, "F", genContext);
-    }
-
-    void addMethodToExport(StringRef name, mlir::Type funcType, const GenContext &genContext)    
-    {
-        addToExport(name, funcType, "M", genContext);
-    }    
-
     void addDeclarationToExport(ts::Node node, const char* prefix = nullptr)
     {
         Printer printer(declExports);
@@ -19617,6 +19455,11 @@ genContext);
     void addEnumDeclarationToExport(EnumDeclaration enumDeclatation)
     {
         addDeclarationToExport(enumDeclatation);
+    }
+
+    void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase)
+    {
+        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n");
     }
 
     void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)
@@ -20100,6 +19943,7 @@ genContext);
         if (!id)
         {
             emitError(location, "can't open file: ") << fullPath;
+            return {SourceFile(), {}};
         }
 
         const auto *sourceBuf = sourceMgr.getMemoryBuffer(id);
