@@ -2867,15 +2867,29 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         if (llvmGlobalOp)
         {
             auto attrs = globalOp->getAttrs();
-            if (std::find_if(
-                attrs.begin(), 
-                attrs.end(), 
-                [](auto& attr) { 
-                    return attr.getName() == "export"; 
-                }) != attrs.end())
+
+            for (auto &attr : attrs)
             {
-                llvmGlobalOp.setSection("export");
-            }            
+                if (attr.getName() == "export")
+                {
+                    llvmGlobalOp.setSection("export");
+                }
+
+                if (attr.getName() == "import")
+                {
+                    llvmGlobalOp.setSection("import");
+                }
+
+                if (attr.getName() == DLL_EXPORT)
+                {
+                    llvmGlobalOp.setSection(DLL_EXPORT);
+                }
+
+                if (attr.getName() == DLL_IMPORT)
+                {
+                    llvmGlobalOp.setSection(DLL_IMPORT);
+                }
+            }
         }
 
         rewriter.eraseOp(globalOp);

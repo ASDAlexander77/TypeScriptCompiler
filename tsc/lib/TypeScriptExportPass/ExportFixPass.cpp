@@ -87,14 +87,14 @@ struct ExportFixPassCode
         if (G.hasSection())
         {
             // set DLLExport
-            if (G.getSection() == "export")
+            if (G.getSection() == "export" || G.getSection() == DLL_EXPORT)
             {
                 if (isWindowsMSVCEnvironment)
                     G.setDLLStorageClass(llvm::GlobalVariable::DLLExportStorageClass);
                 G.setSection("");
                 MadeChange = true;
             }
-            else if (G.getSection() == "import")
+            else if (G.getSection() == "import" || G.getSection() == DLL_IMPORT)
             {
                 if (isWindowsMSVCEnvironment)
                     G.setDLLStorageClass(llvm::GlobalVariable::DLLImportStorageClass);

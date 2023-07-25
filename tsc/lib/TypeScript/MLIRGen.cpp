@@ -881,7 +881,8 @@ class MLIRGenImpl
 
         if (sys::fs::exists(fullPath))
         {
-            auto dynamic = MLIRHelper::hasDecorator(importDeclarationAST, "dynamic");
+            //auto dynamic = MLIRHelper::hasDecorator(importDeclarationAST, "dynamic");
+            auto dynamic = !MLIRHelper::hasDecorator(importDeclarationAST, "static");
 
             // this is shared lib.
             return mlirGenImportSharedLib(location, fullPath, dynamic, genContext);    
@@ -2607,7 +2608,7 @@ class MLIRGenImpl
     struct VariableDeclarationInfo
     {
         VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
-            scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, deleted{false} 
+            scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, deleted{false} 
         {
         };
 
@@ -2664,6 +2665,7 @@ class MLIRGenImpl
                        !genContext.allocateVarsOutsideOfOperation && !genContext.allocateVarsInContextThis;
             isExternal = varClass == VariableType::External;
             isExport = varClass.isExport;
+            isImport = varClass.isImport;
             isAppendingLinkage = varClass.isAppendingLinkage;
         }
 
@@ -2755,6 +2757,7 @@ class MLIRGenImpl
         bool isConst;
         bool isExternal;
         bool isExport;
+        bool isImport;
         bool isAppendingLinkage;
         bool deleted;
     };
@@ -2923,6 +2926,11 @@ class MLIRGenImpl
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
             }            
+
+            if (variableDeclarationInfo.isImport)
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
+            }  
 
             globalOp = builder.create<mlir_ts::GlobalOp>(
                 location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, mlir::Attribute(), attrs);                
@@ -13553,6 +13561,7 @@ class MLIRGenImpl
             concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
         VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
         varClass.isExport = newClassPtr->isExport;
+        varClass.isImport = newClassPtr->isImport;
 
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, varClass,
@@ -13894,6 +13903,7 @@ genContext);
             // prevent double generating
             VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
             varClass.isExport = newClassPtr->isExport;
+            varClass.isImport = newClassPtr->isImport;
             registerVariable(
                 location, fullClassStaticFieldName, true, varClass,
                 [&](mlir::Location location, const GenContext &genContext) {
