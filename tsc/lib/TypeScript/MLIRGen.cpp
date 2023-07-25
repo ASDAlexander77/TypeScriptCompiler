@@ -4398,6 +4398,27 @@ class MLIRGenImpl
         return {mlir::success(), name};
     }
 
+    bool registerFunctionOp(FunctionPrototypeDOM::TypePtr funcProto, mlir_ts::FuncOp funcOp)
+    {
+        auto name = funcProto->getNameWithoutNamespace();
+        if (!getFunctionMap().count(name))
+        {
+            getFunctionMap().insert({name, funcOp});
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << " function name: " << funcProto->getName()
+                                    << " num inputs:" << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs()
+                                    << "\n";);
+
+            return true;
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! re-reg. func: " << name << " type:" << funcOp.getFunctionType() << " function name: " << funcProto->getName()
+                                << " num inputs:" << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs()
+                                << "\n";);
+
+        return false;
+    }
+
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionLikeDeclaration(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
@@ -4451,6 +4472,22 @@ class MLIRGenImpl
             return {result, funcOp, funcProto->getName().str(), isGeneric};
         }
 
+        // check decorator for class
+        auto dynamicImport = false;
+        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, [&](std::string name, SmallVector<std::string> args) {
+            if (name == DLL_IMPORT && args.size() > 0)
+            {
+                dynamicImport = true;
+            }
+        });
+
+        if (dynamicImport)
+        {
+            // TODO: we do not need to register funcOp as we need to reference global variables
+            auto result = mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, genContext);
+            return {result, funcOp, funcProto->getName().str(), false};
+        }
+
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.funcOp = funcOp;
@@ -4474,23 +4511,7 @@ class MLIRGenImpl
         }
 
         // register function to be able to call it if used in recursive call
-        auto name = funcProto->getNameWithoutNamespace();
-        if (!getFunctionMap().count(name))
-        {
-            getFunctionMap().insert({name, funcOp});
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << " function name: " << funcProto->getName()
-                                    << " num inputs:" << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs()
-                                    << "\n";);
-        }
-        else
-        {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getFunctionType() << " num inputs:"
-                                    << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
-
-            // TODO: here if function body is generated you can skip it
-            //theModule.lookupSymbol(funcOp->getName());
-        }
+        registerFunctionOp(funcProto, funcOp);
 
         // generate body
         auto resultFromBody = mlir::failure();
@@ -4538,6 +4559,22 @@ class MLIRGenImpl
 
         return {mlir::success(), funcOp, funcProto->getName().str(), false};
     }
+
+    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, mlir_ts::FuncOp funcOp, const GenContext &genContext)
+    {
+        registerVariable(location, funcOp.getName(), true, VariableType::Var,
+            [&](mlir::Location location, const GenContext &context) -> std::pair<mlir::Type, mlir::Value> {
+                // add command to load reference fron DLL
+                auto fullName = V(mlirGenStringValue(location, funcOp.getName().str(), true));
+                auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
+                auto result = cast(location, funcOp.getFunctionType(), referenceToFuncOpaque, genContext);
+                auto referenceToFunc = V(result);
+                return {referenceToFunc.getType(), referenceToFunc};
+            },
+            genContext);
+
+        return mlir::success();
+    }    
 
     mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, FunctionPrototypeDOM::TypePtr funcProto,
                                              const GenContext &genContext)
@@ -11549,7 +11586,7 @@ class MLIRGenImpl
             funcLikeDecl->parent = objectLiteral;
 
             mlir::OpBuilder::InsertionGuard guard(builder);
-            auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
+            mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
         };
 
         // add all fields
@@ -14962,23 +14999,15 @@ genContext);
         classMethodMemberInfo.setFuncOp(funcOp);
 
         auto location = loc(funcLikeDeclaration);
+        if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, genContext)))
+        {
+            // no need to generate method in code
+            funcLikeDeclaration->processed = true;
+            classMethodMemberInfo.registerClassMethodMember();
+            return mlir::success();
+        }
 
-        registerVariable(location, classMethodMemberInfo.getFuncName(), true, VariableType::Var,
-            [&](mlir::Location location, const GenContext &context) -> std::pair<mlir::Type, mlir::Value> {
-                // add command to load reference fron DLL
-                auto fullName = V(mlirGenStringValue(location, classMethodMemberInfo.getFuncName().str(), true));
-                auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
-                auto result = cast(location, classMethodMemberInfo.getFuncType(), referenceToFuncOpaque, genContext);
-                auto referenceToFunc = V(result);
-                return {referenceToFunc.getType(), referenceToFunc};
-            },
-            genContext);
-
-        // no need to generate method in code
-        funcLikeDeclaration->processed = true;
-        classMethodMemberInfo.registerClassMethodMember();
-
-        return mlir::success();
+        return mlir::failure();
     }
 
     mlir::LogicalResult createGlobalConstructor(ClassElement classMember, const GenContext &genContext)
