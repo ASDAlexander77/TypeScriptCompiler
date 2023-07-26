@@ -3386,8 +3386,7 @@ class MLIRGenImpl
 
                 if (mlir::failed(mlirGenFunctionBody(location, fullInitGlobalFuncName, funcType,
                     [&](const GenContext &genContext) {
-                        auto valClassForConstruct = VariableType::Var;
-                        return processDeclaration(item, valClassForConstruct, initFunc, genContext, true);
+                        return processDeclaration(item, valClassItem, initFunc, genContext, true);
                     }, genContext)))
                 {
                     return mlir::failure();

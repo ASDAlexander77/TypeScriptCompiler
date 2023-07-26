@@ -69,6 +69,8 @@ struct VariableClass
     bool isImport;
     bool isAppendingLinkage;
 
+    inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
+
     inline bool operator==(VariableType type_) const { return type == type_; }
 };
 
