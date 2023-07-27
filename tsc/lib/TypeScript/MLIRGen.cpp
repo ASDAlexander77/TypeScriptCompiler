@@ -707,7 +707,7 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
 
             auto importData = ConvertUTF8toWide(dataPtr);
-            if (mlir::failed(parsePartialStatements(importData, genContext)))
+            if (mlir::failed(parsePartialStatements(importData, genContext, false)))
             {
                 //assert(false);
                 return mlir::failure();
@@ -4483,7 +4483,7 @@ class MLIRGenImpl
         if (dynamicImport)
         {
             // TODO: we do not need to register funcOp as we need to reference global variables
-            auto result = mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, genContext);
+            auto result = mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, funcProto->getNameWithoutNamespace(), genContext);
             return {result, funcOp, funcProto->getName().str(), false};
         }
 
@@ -4559,12 +4559,12 @@ class MLIRGenImpl
         return {mlir::success(), funcOp, funcProto->getName().str(), false};
     }
 
-    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, mlir_ts::FuncOp funcOp, const GenContext &genContext)
+    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, mlir_ts::FuncOp funcOp, StringRef dllFuncName, const GenContext &genContext)
     {
         registerVariable(location, funcOp.getName(), true, VariableType::Var,
             [&](mlir::Location location, const GenContext &context) -> std::pair<mlir::Type, mlir::Value> {
                 // add command to load reference fron DLL
-                auto fullName = V(mlirGenStringValue(location, funcOp.getName().str(), true));
+                auto fullName = V(mlirGenStringValue(location, dllFuncName.str(), true));
                 auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
                 auto result = cast(location, funcOp.getFunctionType(), referenceToFuncOpaque, genContext);
                 auto referenceToFunc = V(result);
@@ -14998,7 +14998,7 @@ genContext);
         classMethodMemberInfo.setFuncOp(funcOp);
 
         auto location = loc(funcLikeDeclaration);
-        if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, genContext)))
+        if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, funcProto->getNameWithoutNamespace(), genContext)))
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
@@ -19928,13 +19928,14 @@ genContext);
         return parsePartialStatements(src, emptyContext);
     }
 
-    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext)
+    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true)
     {
         Parser parser;
         auto module = parser.parseSourceFile(S("Temp"), src, ScriptTarget::Latest);
 
         MLIRNamespaceGuard nsGuard(currentNamespace);
-        currentNamespace = rootNamespace;
+        if (useRootNamesapce)
+            currentNamespace = rootNamespace;
 
         for (auto statement : module->statements)
         {
