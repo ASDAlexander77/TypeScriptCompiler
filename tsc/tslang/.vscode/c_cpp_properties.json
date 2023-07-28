@@ -5,9 +5,10 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
-                "${workspaceFolder}/../../3rdParty/llvm/debug/include",
-                "${workspaceFolder}/../../__build/tsc/include",
-                "${workspaceFolder}/../tsc-new-parser"
+                "${workspaceFolder}/../../3rdParty/llvm/x64/debug/include",
+                "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/include",
+                "${workspaceFolder}/../tsc-new-parser",
+                "C:/dev/TypeScriptCompiler/tsc/include"
             ],
             "defines": [
                 "_DEBUG",
@@ -17,11 +18,12 @@
             "windowsSdkVersion": "10.0.18362.0",
             "cStandard": "c17",
             "cppStandard": "c++17",
-            "intelliSenseMode": "msvc-x64"
+            "intelliSenseMode": "msvc-x64",
+            "configurationProvider": "ms-vscode.cmake-tools"
         },
         {
             "name": "Linux",
-            "includePath": [                
+            "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
                 "${workspaceFolder}/../../3rdParty/llvm/debug/include",
@@ -31,13 +33,13 @@
             "defines": [
                 "_DEBUG",
                 "UNICODE",
-                "_UNICODE"                
+                "_UNICODE"
             ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "clang-x64"
-          }
+        }
     ],
     "version": 4
 }
