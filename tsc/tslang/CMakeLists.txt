@@ -23,12 +23,15 @@ macro(add_tslang_tool name)
 endmacro()
 
 # find Clang
-message(STATUS "LLVM_BINARY_DIR is ${LLVM_BINARY_DIR}")
-
-find_package(Clang PATHS "${LLVM_BINARY_DIR}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+find_package(Clang REQUIRED PATHS "${CLANG_DIR_ABSOLUTE}" NO_DEFAULT_PATH)
 if (NOT Clang_FOUND)
     message(FATAL_ERROR "Failed to find Clang")
 endif()
+
+message(STATUS "CLANG_CMAKE_DIR is ${CLANG_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CLANG_CMAKE_DIR}")
+
+include(AddClang)
 
 # Set your project compile flags.
 link_directories(${LLVM_LIBRARY_DIR})
