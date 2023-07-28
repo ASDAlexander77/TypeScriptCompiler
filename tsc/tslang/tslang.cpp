@@ -1,4 +1,5 @@
 #include "clang/Driver/Driver.h"
+#include "TypeScript/TypeScriptLang/TextDiagnosticPrinter.h"
 #include "clang/Basic/Diagnostic.h"
 #include "clang/Basic/DiagnosticIDs.h"
 #include "clang/Basic/DiagnosticOptions.h"
@@ -58,7 +59,7 @@ int main(int argc, char **argv)
     llvm::InitLLVM x(argc, argv);
     llvm::SmallVector<const char *, 256> args(argv, argv + argc);
 
-    clang::driver::ParsedClangName targetandMode("flang", "--driver-mode=flang");
+    clang::driver::ParsedClangName targetandMode("tslang", "--driver-mode=tslang");
     std::string driverPath = getExecutablePath(args[0]);
 
     llvm::BumpPtrAllocator a;
@@ -74,7 +75,7 @@ int main(int argc, char **argv)
         if (llvm::StringRef(args[1]).startswith("-cc1"))
         {
             llvm::errs() << "error: unknown integrated tool '" << args[1] << "'. "
-                         << "Valid tools include '-fc1'.\n";
+                         << "Valid tools include '-tsc'.\n";
             return 1;
         }
 
@@ -85,19 +86,20 @@ int main(int argc, char **argv)
     // Create DiagnosticsEngine for the compiler driver
     auto diagOpts = createAndPopulateDiagOpts(args);
     llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs> diagID(new clang::DiagnosticIDs());
-    auto *diagClient = new clang::IgnoringDiagConsumer();
+    auto *diagClient = new typescript::tslang::TextDiagnosticPrinter(llvm::errs(), &*diagOpts);
+
+    diagClient->setPrefix(
+        std::string(llvm::sys::path::stem(getExecutablePath(args[0]))));
 
     clang::DiagnosticsEngine diags(diagID, &*diagOpts, diagClient);
 
     // Prepare the driver
     clang::driver::Driver theDriver(driverPath,
                                     llvm::sys::getDefaultTargetTriple(), diags,
-                                    "flang LLVM compiler");
+                                    "tslang LLVM compiler");
     theDriver.setTargetAndMode(targetandMode);
-    std::unique_ptr<clang::driver::Compilation> c(
-        theDriver.BuildCompilation(args));
-    llvm::SmallVector<std::pair<int, const clang::driver::Command *>, 4>
-        failingCommands;
+    std::unique_ptr<clang::driver::Compilation> c(theDriver.BuildCompilation(args));
+    llvm::SmallVector<std::pair<int, const clang::driver::Command *>, 4> failingCommands;
 
     // Run the driver
     int res = 1;
