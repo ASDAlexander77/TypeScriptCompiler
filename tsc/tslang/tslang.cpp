@@ -83,6 +83,23 @@ int main(int argc, char **argv)
         // ...
     }
 
+    // Specify Visual Studio C runtime library. “static” and “static_dbg” correspond to the cl flags /MT and /MTd which use the multithread, 
+    // static version. “dll” and “dll_dbg” correspond to the cl flags /MD and /MDd which use the multithread, dll version. <arg> must be ‘static’, ‘static_dbg’, ‘dll’ or ‘dll_dbg’.    
+    //args.insert(args.begin() + 1, "-nodefaultlibs");
+    //args.insert(args.begin() + 1, "-fms-omit-default-lib=dll");
+    //args.insert(args.begin() + 1, "-fms-runtime-lib=static_dbg");
+    
+    args.insert(args.begin() + 1, "-Wl,-nodefaultlib:libcmt");
+    args.insert(args.begin() + 1, "-oa1.exe");
+    args.insert(args.begin() + 1, "-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
+    args.insert(args.begin() + 1, "-LC:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib");    
+    args.insert(args.begin() + 1, "-LC:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib");    
+    // system
+    args.insert(args.begin() + 1, "-luser32");    
+    args.insert(args.begin() + 1, "-lgcmt-lib");
+    args.insert(args.begin() + 1, "-lTypeScriptAsyncRuntime");
+    args.insert(args.begin() + 1, "-lLLVMSupport");
+
     // Create DiagnosticsEngine for the compiler driver
     auto diagOpts = createAndPopulateDiagOpts(args);
     llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs> diagID(new clang::DiagnosticIDs());
@@ -97,9 +114,14 @@ int main(int argc, char **argv)
     clang::driver::Driver theDriver(driverPath,
                                     llvm::sys::getDefaultTargetTriple(), diags,
                                     "tslang LLVM compiler");
+
     theDriver.setTargetAndMode(targetandMode);
     std::unique_ptr<clang::driver::Compilation> c(theDriver.BuildCompilation(args));
     llvm::SmallVector<std::pair<int, const clang::driver::Command *>, 4> failingCommands;
+
+#ifndef _NDEBUG
+    c->getJobs().Print(llvm::errs(), "\n", /*Quote=*/false);
+#endif    
 
     // Run the driver
     int res = 1;
