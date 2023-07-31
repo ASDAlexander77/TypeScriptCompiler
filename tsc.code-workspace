@@ -21,10 +21,6 @@
             "path": "./tsc/unittests"
         },
         {
-            "name": "TypeScript tslang",
-            "path": "./tsc/tslang"
-        },
-        {
             "name": "TypeScript New Parser",
             "path": "./tsc/tsc-new-parser"
         }

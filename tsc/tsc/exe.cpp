@@ -57,7 +57,8 @@ int buildExe(int argc, char **argv)
 {
     // Initialize variables to call the driver
     llvm::InitLLVM x(argc, argv);
-    llvm::SmallVector<const char *, 256> args(argv, argv + argc);
+    //llvm::SmallVector<const char *, 256> args(argv, argv + argc);
+    llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
 
     clang::driver::ParsedClangName targetandMode("tslang", "--driver-mode=tslang");
     std::string driverPath = getExecutablePath(args[0]);
@@ -92,45 +93,48 @@ int buildExe(int argc, char **argv)
     auto win = true;
     auto shared = false;
     
+    auto shiftArgIndex = 1;
+
+    args.insert(args.begin() + shiftArgIndex, "C:\\temp\\1.obj");
     if (win)
     {
-        args.insert(args.begin() + 1, "-Wl,-nodefaultlib:libcmt");
+        args.insert(args.begin() + shiftArgIndex, "-Wl,-nodefaultlib:libcmt");
     }
 
     if (shared)
     {
-        args.insert(args.begin() + 1, "-shared");
-        args.insert(args.begin() + 1, "-oliba1.so");
+        args.insert(args.begin() + shiftArgIndex, "-shared");
+        args.insert(args.begin() + shiftArgIndex, "-oliba1.so");
         if (!win)
         {
             // added search path
-            args.insert(args.begin() + 1, "-Wl,-rpath=.");
+            args.insert(args.begin() + shiftArgIndex, "-Wl,-rpath=.");
         }
     }
     else
     {
-        args.insert(args.begin() + 1, "-oa1.exe");
+        args.insert(args.begin() + shiftArgIndex, "-oa1.exe");
     }
 
-    args.insert(args.begin() + 1, "-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
-    args.insert(args.begin() + 1, "-LC:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib");    
-    args.insert(args.begin() + 1, "-LC:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib");    
+    args.insert(args.begin() + shiftArgIndex, "-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
+    args.insert(args.begin() + shiftArgIndex, "-LC:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib");    
+    args.insert(args.begin() + shiftArgIndex, "-LC:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib");    
 
     // system
     if (win)
     {
-        args.insert(args.begin() + 1, "-luser32");    
+        args.insert(args.begin() + shiftArgIndex, "-luser32");    
         if (shared)
         {
             // needed to resolve DLL ref
-            args.insert(args.begin() + 1, "-lmsvcrt");
+            args.insert(args.begin() + shiftArgIndex, "-lmsvcrt");
         }
     }
 
     // tsc libs
-    args.insert(args.begin() + 1, "-lgcmt-lib");
-    args.insert(args.begin() + 1, "-lTypeScriptAsyncRuntime");
-    args.insert(args.begin() + 1, "-lLLVMSupport");
+    args.insert(args.begin() + shiftArgIndex, "-lgcmt-lib");
+    args.insert(args.begin() + shiftArgIndex, "-lTypeScriptAsyncRuntime");
+    args.insert(args.begin() + shiftArgIndex, "-lLLVMSupport");
 
     // Create DiagnosticsEngine for the compiler driver
     auto diagOpts = createAndPopulateDiagOpts(args);

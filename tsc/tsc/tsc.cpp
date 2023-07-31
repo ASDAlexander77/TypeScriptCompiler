@@ -52,9 +52,13 @@ cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desi
                                        cl::values(clEnumValN(DumpByteCode, "bc", "output LLVM ByteCode dump")),
                                        cl::values(clEnumValN(DumpObj, "obj", "output Object file")),
                                        cl::values(clEnumValN(DumpAssembly, "asm", "output LLVM Assembly file")),
-                                       cl::values(clEnumValN(BuildExe, "exe", "build Executable file")),
 #ifdef WIN32                                       
-                                       cl::values(clEnumValN(BuildDll, "dll", "output Dynamic Link Library (.dll) file")),
+                                       cl::values(clEnumValN(BuildExe, "exe", "build Executable (.exe) file")),
+#else                                       
+                                       cl::values(clEnumValN(BuildExe, "exe", "build Executable file")),
+#endif
+#ifdef WIN32                                       
+                                       cl::values(clEnumValN(BuildDll, "dll", "build Dynamic Link Library (.dll) file")),
 #else                                       
                                        cl::values(clEnumValN(BuildDll, "dll", "build Shared library (.so/.dylib) file")),
 #endif
