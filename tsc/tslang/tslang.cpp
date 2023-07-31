@@ -88,14 +88,46 @@ int main(int argc, char **argv)
     //args.insert(args.begin() + 1, "-nodefaultlibs");
     //args.insert(args.begin() + 1, "-fms-omit-default-lib=dll");
     //args.insert(args.begin() + 1, "-fms-runtime-lib=static_dbg");
+
+    auto win = true;
+    auto shared = false;
     
-    args.insert(args.begin() + 1, "-Wl,-nodefaultlib:libcmt");
-    args.insert(args.begin() + 1, "-oa1.exe");
+    if (win)
+    {
+        args.insert(args.begin() + 1, "-Wl,-nodefaultlib:libcmt");
+    }
+
+    if (shared)
+    {
+        args.insert(args.begin() + 1, "-shared");
+        args.insert(args.begin() + 1, "-oliba1.so");
+        if (!win)
+        {
+            // added search path
+            args.insert(args.begin() + 1, "-Wl,-rpath=.");
+        }
+    }
+    else
+    {
+        args.insert(args.begin() + 1, "-oa1.exe");
+    }
+
     args.insert(args.begin() + 1, "-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
     args.insert(args.begin() + 1, "-LC:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib");    
     args.insert(args.begin() + 1, "-LC:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib");    
+
     // system
-    args.insert(args.begin() + 1, "-luser32");    
+    if (win)
+    {
+        args.insert(args.begin() + 1, "-luser32");    
+        if (shared)
+        {
+            // needed to resolve DLL ref
+            args.insert(args.begin() + 1, "-lmsvcrt");
+        }
+    }
+
+    // tsc libs
     args.insert(args.begin() + 1, "-lgcmt-lib");
     args.insert(args.begin() + 1, "-lTypeScriptAsyncRuntime");
     args.insert(args.begin() + 1, "-lLLVMSupport");
