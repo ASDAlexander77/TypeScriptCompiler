@@ -33,6 +33,7 @@ int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp);
+int buildExe(int, char **);
 int runJit(int, char **, mlir::ModuleOp);
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
@@ -51,6 +52,12 @@ cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desi
                                        cl::values(clEnumValN(DumpByteCode, "bc", "output LLVM ByteCode dump")),
                                        cl::values(clEnumValN(DumpObj, "obj", "output Object file")),
                                        cl::values(clEnumValN(DumpAssembly, "asm", "output LLVM Assembly file")),
+                                       cl::values(clEnumValN(BuildExe, "exe", "build Executable file")),
+#ifdef WIN32                                       
+                                       cl::values(clEnumValN(BuildDll, "dll", "output Dynamic Link Library (.dll) file")),
+#else                                       
+                                       cl::values(clEnumValN(BuildDll, "dll", "build Shared library (.so/.dylib) file")),
+#endif
                                        cl::values(clEnumValN(RunJIT, "jit", "JIT code and run it by invoking main function")), 
                                        cl::cat(TypeScriptCompilerCategory));
 
@@ -199,6 +206,20 @@ int main(int argc, char **argv)
     if (emitAction == Action::DumpObj || emitAction == Action::DumpAssembly)
     {
         return dumpObjOrAssembly(argc, argv, *module);
+    }
+
+    if (emitAction == Action::BuildExe || emitAction == Action::BuildDll)
+    {
+        enum Action actualEmitAction = emitAction;
+        emitAction = Action::DumpObj;
+        auto result = dumpObjOrAssembly(argc, argv, *module);
+        if (result != 0)
+        {
+            return result;
+        }
+
+        emitAction = actualEmitAction;
+        return buildExe(argc, argv);
     }
 
     // Otherwise, we must be running the jit.

@@ -8,7 +8,9 @@ set(LLVM_LINK_COMPONENTS
     AllTargetsInfos
     # end - Obj/ASM
     Core
+    Option
     Support
+    TargetParser    
     nativecodegen
     native
     OrcJIT
@@ -19,6 +21,8 @@ get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 set(LIBS
     ${dialect_libs}
     ${conversion_libs}
+    clangDriver
+    clangBasic    
     MLIRAnalysis
     MLIRCallInterfaces
     MLIRCastInterfaces
@@ -42,7 +46,7 @@ set(LIBS
     TypeScriptExportPass
     )
 
-add_llvm_executable(tsc tsc.cpp compile.cpp transform.cpp dump.cpp jit.cpp obj.cpp utils.cpp)
+add_llvm_executable(tsc tsc.cpp compile.cpp transform.cpp dump.cpp jit.cpp obj.cpp exe.cpp TextDiagnostic.cpp TextDiagnosticPrinter.cpp utils.cpp)
 
 llvm_update_compile_flags(tsc)
 target_link_libraries(tsc PRIVATE ${LIBS})

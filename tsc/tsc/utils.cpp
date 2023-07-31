@@ -73,6 +73,40 @@ std::unique_ptr<llvm::ToolOutputFile> getOutputStream()
                 case DumpAssembly:
                     outputFilename += ".s";
                     break;
+                case BuildDll:
+                    {
+                        llvm::Triple TheTriple;
+                        std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+                        if (!TargetTriple.empty())
+                        {
+                            targetTriple = llvm::Triple::normalize(TargetTriple);
+                        }
+                        
+                        TheTriple = llvm::Triple(targetTriple);
+
+                        outputFilename += (TheTriple.getOS() == llvm::Triple::Win32) ? ".dll" : ".so";
+                        if ((TheTriple.getOS() != llvm::Triple::Win32))
+                        {
+                            outputFilename.insert(0, "lib");
+                        }
+                    }
+
+                    break;
+                case BuildExe:
+                    {
+                        llvm::Triple TheTriple;
+                        std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+                        if (!TargetTriple.empty())
+                        {
+                            targetTriple = llvm::Triple::normalize(TargetTriple);
+                        }
+                        
+                        TheTriple = llvm::Triple(targetTriple);
+    
+                        outputFilename += (TheTriple.getOS() == llvm::Triple::Win32) ? ".exe" : "";
+                    }
+
+                    break;
                 case RunJIT:
                     outputFilename = "-";
                     break;

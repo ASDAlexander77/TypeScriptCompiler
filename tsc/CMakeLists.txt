@@ -60,9 +60,18 @@ message(STATUS "CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE was ${CMAKE_VS_PLATF
 set(CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE "x64")
 
 find_package(MLIR REQUIRED CONFIG)
+if (NOT MLIR_FOUND)
+    message(FATAL_ERROR "Failed to find MLIR")
+endif()
 
-message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
-message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+find_package(Clang REQUIRED PATHS "${CLANG_DIR_ABSOLUTE}" NO_DEFAULT_PATH)
+if (NOT Clang_FOUND)
+    message(FATAL_ERROR "Failed to find Clang")
+endif()
+
+message(STATUS "Using MLIRConfig.cmake in: ${MLIR_CMAKE_DIR}")
+message(STATUS "Using LLVMConfig.cmake in: ${LLVM_CMAKE_DIR}")
+message(STATUS "Using ClangConfig.cmake in: ${CLANG_CMAKE_DIR}")
 
 set(LLVM_RUNTIME_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/bin)
 set(LLVM_LIBRARY_OUTPUT_INTDIR ${CMAKE_BINARY_DIR}/lib)
@@ -75,12 +84,15 @@ set(LLVM_ENABLE_PIC "ON")
 
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CLANG_CMAKE_DIR}")
 include(TableGen)
 include(AddLLVM)
+include(AddClang)
 include(AddMLIR)
 include(HandleLLVMOptions)
 
 include_directories(${LLVM_INCLUDE_DIRS})
+include_directories(${CLANG_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_BINARY_DIR}/include)

@@ -9,5 +9,7 @@ enum Action
     DumpByteCode,
     DumpObj,
     DumpAssembly,
+    BuildExe,
+    BuildDll,
     RunJIT
 };
