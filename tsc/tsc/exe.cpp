@@ -64,6 +64,26 @@ static void ExpandResponseFiles(llvm::StringSaver &saver,
     }
 }
 
+std::string getGCLibPath()
+{
+    return "C:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug";
+}
+
+std::string getLLVMLibPath()
+{
+    return "C:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib";
+}
+
+std::string getTscLibPath()
+{
+    return "C:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib";
+}
+
+std::string getLibsPathOpt(std::string path)
+{
+    return "-L" + path;
+}
+
 int buildExe(int argc, char **argv, std::string objFileName)
 {
     // Initialize variables to call the driver
@@ -110,6 +130,13 @@ int buildExe(int argc, char **argv, std::string objFileName)
     //args.insert(args.begin() + 1, "-fms-omit-default-lib=dll");
     //args.insert(args.begin() + 1, "-fms-runtime-lib=static_dbg");
 
+    std::string gcLibPathOpt;
+    std::string tscLibPathOpt;
+    std::string llvmLibPathOpt;
+
+    auto isLLVMLibNeeded = true;
+    auto isTscLibNeeded = true;
+
     auto win = (TheTriple.getOS() == llvm::Triple::Win32);
     auto shared = emitAction == BuildDll;
     
@@ -138,11 +165,22 @@ int buildExe(int argc, char **argv, std::string objFileName)
 
     if (!disableGC)
     {
-        args.push_back("-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
+        gcLibPathOpt = getLibsPathOpt(getGCLibPath());
+        args.push_back(gcLibPathOpt.c_str());    
+    }
+    
+    // add logic to detect if libs are used and needed
+    if (isLLVMLibNeeded)
+    {
+        llvmLibPathOpt = getLibsPathOpt(getLLVMLibPath());
+        args.push_back(llvmLibPathOpt.c_str());    
     }
 
-    args.push_back("-LC:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib");    
-    args.push_back("-LC:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib");    
+    if (isTscLibNeeded)
+    {
+        tscLibPathOpt = getLibsPathOpt(getTscLibPath());
+        args.push_back(tscLibPathOpt.c_str());    
+    }
 
     // system
     if (win)
@@ -161,8 +199,15 @@ int buildExe(int argc, char **argv, std::string objFileName)
         args.push_back("-lgcmt-lib");
     }
 
-    args.push_back("-lTypeScriptAsyncRuntime");
-    args.push_back("-lLLVMSupport");
+    if (isTscLibNeeded)
+    {
+        args.push_back("-lTypeScriptAsyncRuntime");
+    }
+
+    if (isLLVMLibNeeded)
+    {
+        args.push_back("-lLLVMSupport");
+    }
 
     // Create DiagnosticsEngine for the compiler driver
     auto diagOpts = createAndPopulateDiagOpts(args);
