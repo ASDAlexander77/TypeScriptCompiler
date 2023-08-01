@@ -107,7 +107,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     //args.insert(args.begin() + 1, "-fms-omit-default-lib=dll");
     //args.insert(args.begin() + 1, "-fms-runtime-lib=static_dbg");
 
-    auto win = true;
+    auto win = (TheTriple.getOS() == llvm::Triple::Win32);
     auto shared = false;
     
     auto shiftArgIndex = 1;
