@@ -126,7 +126,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     //llvm::SmallVector<const char *, 256> args(argv, argv + argc);
     llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
 
-    clang::driver::ParsedClangName targetandMode("tslang", "--driver-mode=tslang");
+    clang::driver::ParsedClangName targetandMode("tsc", "--driver-mode=tsc");
     std::string driverPath = getExecutablePath(args[0]);
 
     llvm::BumpPtrAllocator a;
@@ -270,7 +270,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     // Prepare the driver
     clang::driver::Driver theDriver(driverPath,
                                     targetTriple, diags,
-                                    "tslang LLVM compiler");
+                                    "tsc LLVM compiler");
 
     theDriver.setTargetAndMode(targetandMode);
     std::unique_ptr<clang::driver::Compilation> c(theDriver.BuildCompilation(args));
