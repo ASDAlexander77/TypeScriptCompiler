@@ -101,6 +101,8 @@ int buildExe(int argc, char **argv, std::string objFileName)
         targetTriple = llvm::Triple::normalize(TargetTriple);
     }
 
+    TheTriple = llvm::Triple(targetTriple);
+
     // Specify Visual Studio C runtime library. “static” and “static_dbg” correspond to the cl flags /MT and /MTd which use the multithread, 
     // static version. “dll” and “dll_dbg” correspond to the cl flags /MD and /MDd which use the multithread, dll version. <arg> must be ‘static’, ‘static_dbg’, ‘dll’ or ‘dll_dbg’.    
     //args.insert(args.begin() + 1, "-nodefaultlibs");
@@ -110,12 +112,10 @@ int buildExe(int argc, char **argv, std::string objFileName)
     auto win = (TheTriple.getOS() == llvm::Triple::Win32);
     auto shared = false;
     
-    auto shiftArgIndex = 1;
-
-    args.insert(args.begin() + shiftArgIndex, objFileName.c_str());
+    args.push_back(objFileName.c_str());
     if (win)
     {
-        args.insert(args.begin() + shiftArgIndex, "-Wl,-nodefaultlib:libcmt");
+        args.push_back("-Wl,-nodefaultlib:libcmt");
     }
 
     if (outputFilename.empty())
@@ -124,36 +124,36 @@ int buildExe(int argc, char **argv, std::string objFileName)
     }
 
     std::string resultFile = "-o" + outputFilename;
-    args.insert(args.begin() + shiftArgIndex, resultFile.c_str());
+    args.push_back(resultFile.c_str());
     if (shared)
     {
-        args.insert(args.begin() + shiftArgIndex, "-shared");
+        args.push_back("-shared");
         if (!win)
         {
             // added search path
-            args.insert(args.begin() + shiftArgIndex, "-Wl,-rpath=.");
+            args.push_back("-Wl,-rpath=.");
         }
     }
 
-    args.insert(args.begin() + shiftArgIndex, "-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
-    args.insert(args.begin() + shiftArgIndex, "-LC:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib");    
-    args.insert(args.begin() + shiftArgIndex, "-LC:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib");    
+    args.push_back("-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
+    args.push_back("-LC:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib");    
+    args.push_back("-LC:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib");    
 
     // system
     if (win)
     {
-        args.insert(args.begin() + shiftArgIndex, "-luser32");    
+        args.push_back("-luser32");    
         if (shared)
         {
             // needed to resolve DLL ref
-            args.insert(args.begin() + shiftArgIndex, "-lmsvcrt");
+            args.push_back("-lmsvcrt");
         }
     }
 
     // tsc libs
-    args.insert(args.begin() + shiftArgIndex, "-lgcmt-lib");
-    args.insert(args.begin() + shiftArgIndex, "-lTypeScriptAsyncRuntime");
-    args.insert(args.begin() + shiftArgIndex, "-lLLVMSupport");
+    args.push_back("-lgcmt-lib");
+    args.push_back("-lTypeScriptAsyncRuntime");
+    args.push_back("-lLLVMSupport");
 
     // Create DiagnosticsEngine for the compiler driver
     auto diagOpts = createAndPopulateDiagOpts(args);
