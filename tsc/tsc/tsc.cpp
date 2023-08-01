@@ -33,7 +33,7 @@ int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &);
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp);
-int dumpObjOrAssembly(int, char **, enum Action, mlir::ModuleOp);
+int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp);
 int buildExe(int, char **, std::string);
 int runJit(int, char **, mlir::ModuleOp);
@@ -217,7 +217,7 @@ int main(int argc, char **argv)
     if (emitAction == Action::BuildExe || emitAction == Action::BuildDll)
     {
         auto tempOutputFile = getDefaultOutputFileName(Action::DumpObj);
-        auto result = dumpObjOrAssembly(argc, argv, Action::DumpObj, *module);
+        auto result = dumpObjOrAssembly(argc, argv, Action::DumpObj, tempOutputFile, *module);
         if (result != 0)
         {
             return result;

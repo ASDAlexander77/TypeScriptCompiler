@@ -120,13 +120,8 @@ std::string getDefaultOutputFileName()
     return getDefaultOutputFileName(emitAction);
 }
 
-std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action emitAction)
+std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action emitAction, std::string outputFilename)
 {
-    if (outputFilename.empty())
-    {
-        outputFilename = getDefaultOutputFileName();
-    }
-
     // Open the file.
     std::error_code EC;
     llvm::sys::fs::OpenFlags openFlags = llvm::sys::fs::OF_None;
@@ -143,4 +138,14 @@ std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action emitAction)
     }
 
     return FDOut;
+}
+
+std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action emitAction)
+{
+    if (outputFilename.empty())
+    {
+        outputFilename = getDefaultOutputFileName(emitAction);
+    }
+
+    return getOutputStream(emitAction, outputFilename);
 }

@@ -12,10 +12,15 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/VirtualFileSystem.h"
 
+#include "TypeScript/TypeScriptCompiler/Defines.h"
+
 namespace cl = llvm::cl;
 
+extern cl::opt<enum Action> emitAction;
 extern cl::opt<std::string> outputFilename;
 extern cl::opt<std::string> TargetTriple;
+
+std::string getDefaultOutputFileName(enum Action);
 
 using llvm::StringRef;
 
@@ -111,6 +116,11 @@ int buildExe(int argc, char **argv, std::string objFileName)
     if (win)
     {
         args.insert(args.begin() + shiftArgIndex, "-Wl,-nodefaultlib:libcmt");
+    }
+
+    if (outputFilename.empty())
+    {
+        outputFilename = getDefaultOutputFileName(emitAction);
     }
 
     std::string resultFile = "-o" + outputFilename;
