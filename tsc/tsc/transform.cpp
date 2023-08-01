@@ -252,13 +252,13 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         std::unique_ptr<llvm::ToolOutputFile> FDOut;
         if (emitAction == Action::DumpLLVMIR)
         {
-            FDOut = GetOutputStream();
+            FDOut = GetOutputStream(emitAction);
             mpm.addPass(llvm::PrintModulePass(FDOut ? FDOut->os() : llvm::errs()));
         }
 
         if (emitAction == Action::DumpByteCode)
         {
-            FDOut = GetOutputStream();
+            FDOut = GetOutputStream(emitAction);
             mpm.addPass(llvm::BitcodeWriterPass(FDOut ? FDOut->os() : llvm::errs()));
         }
 #endif        

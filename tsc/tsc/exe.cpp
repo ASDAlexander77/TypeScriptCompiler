@@ -12,6 +12,11 @@
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/VirtualFileSystem.h"
 
+namespace cl = llvm::cl;
+
+extern cl::opt<std::string> outputFilename;
+extern cl::opt<std::string> TargetTriple;
+
 using llvm::StringRef;
 
 std::string getExecutablePath(const char *argv0)
@@ -53,7 +58,7 @@ static void ExpandResponseFiles(llvm::StringSaver &saver,
     }
 }
 
-int buildExe(int argc, char **argv)
+int buildExe(int argc, char **argv, std::string objFileName)
 {
     // Initialize variables to call the driver
     llvm::InitLLVM x(argc, argv);
@@ -84,6 +89,13 @@ int buildExe(int argc, char **argv)
         // ...
     }
 
+    llvm::Triple TheTriple;
+    std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+    if (!TargetTriple.empty())
+    {
+        targetTriple = llvm::Triple::normalize(TargetTriple);
+    }
+
     // Specify Visual Studio C runtime library. “static” and “static_dbg” correspond to the cl flags /MT and /MTd which use the multithread, 
     // static version. “dll” and “dll_dbg” correspond to the cl flags /MD and /MDd which use the multithread, dll version. <arg> must be ‘static’, ‘static_dbg’, ‘dll’ or ‘dll_dbg’.    
     //args.insert(args.begin() + 1, "-nodefaultlibs");
@@ -95,25 +107,22 @@ int buildExe(int argc, char **argv)
     
     auto shiftArgIndex = 1;
 
-    args.insert(args.begin() + shiftArgIndex, "C:\\temp\\1.obj");
+    args.insert(args.begin() + shiftArgIndex, objFileName.c_str());
     if (win)
     {
         args.insert(args.begin() + shiftArgIndex, "-Wl,-nodefaultlib:libcmt");
     }
 
+    std::string resultFile = "-o" + outputFilename;
+    args.insert(args.begin() + shiftArgIndex, resultFile.c_str());
     if (shared)
     {
         args.insert(args.begin() + shiftArgIndex, "-shared");
-        args.insert(args.begin() + shiftArgIndex, "-oliba1.so");
         if (!win)
         {
             // added search path
             args.insert(args.begin() + shiftArgIndex, "-Wl,-rpath=.");
         }
-    }
-    else
-    {
-        args.insert(args.begin() + shiftArgIndex, "-oa1.exe");
     }
 
     args.insert(args.begin() + shiftArgIndex, "-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
@@ -148,7 +157,7 @@ int buildExe(int argc, char **argv)
 
     // Prepare the driver
     clang::driver::Driver theDriver(driverPath,
-                                    llvm::sys::getDefaultTargetTriple(), diags,
+                                    targetTriple, diags,
                                     "tslang LLVM compiler");
 
     theDriver.setTargetAndMode(targetandMode);

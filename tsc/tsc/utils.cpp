@@ -18,100 +18,113 @@ extern cl::opt<enum Action> emitAction;
 // obj
 extern cl::opt<std::string> TargetTriple;
 
-std::unique_ptr<llvm::ToolOutputFile> getOutputStream()
+std::string getDefaultOutputFileName(enum Action emitAction)
 {
-    // If we don't yet have an output filename, make one.
+    if (inputFilename == "-")
+    {
+        return "-";
+    }
+
+    std::string fileNameResult;
+
+    // If InputFilename ends in .bc or .ll, remove it.
+    llvm::StringRef IFN = inputFilename;
+    if (IFN.endswith(".ts"))
+        fileNameResult = std::string(IFN.drop_back(3));
+    else if (IFN.endswith(".mlir"))
+        fileNameResult = std::string(IFN.drop_back(5));
+    else
+        fileNameResult = std::string(IFN);
+
+    switch (emitAction)
+    {
+        case None:
+            fileNameResult = "-";
+            break;
+        case DumpAST:
+            fileNameResult += ".txt";
+            break;
+        case DumpMLIR:
+        case DumpMLIRAffine:
+        case DumpMLIRLLVM:
+            fileNameResult += ".mlir";
+            break;
+        case DumpLLVMIR:
+            fileNameResult += ".ll";
+            break;
+        case DumpByteCode:
+            fileNameResult += ".bc";
+            break;
+        case DumpObj:
+            {
+                llvm::Triple TheTriple;
+                std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+                if (!TargetTriple.empty())
+                {
+                    targetTriple = llvm::Triple::normalize(TargetTriple);
+                }
+                
+                TheTriple = llvm::Triple(targetTriple);
+
+                fileNameResult += (TheTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o";
+            }
+
+            break;
+        case DumpAssembly:
+            fileNameResult += ".s";
+            break;
+        case BuildDll:
+            {
+                llvm::Triple TheTriple;
+                std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+                if (!TargetTriple.empty())
+                {
+                    targetTriple = llvm::Triple::normalize(TargetTriple);
+                }
+                
+                TheTriple = llvm::Triple(targetTriple);
+
+                fileNameResult += (TheTriple.getOS() == llvm::Triple::Win32) ? ".dll" : ".so";
+                if ((TheTriple.getOS() != llvm::Triple::Win32))
+                {
+                    fileNameResult.insert(0, "lib");
+                }
+            }
+
+            break;
+        case BuildExe:
+            {
+                llvm::Triple TheTriple;
+                std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+                if (!TargetTriple.empty())
+                {
+                    targetTriple = llvm::Triple::normalize(TargetTriple);
+                }
+                
+                TheTriple = llvm::Triple(targetTriple);
+
+                fileNameResult += (TheTriple.getOS() == llvm::Triple::Win32) ? ".exe" : "";
+            }
+
+            break;
+        case RunJIT:
+            fileNameResult = "-";
+            break;
+    }
+
+    return fileNameResult;
+}
+
+std::string getDefaultOutputFileName()
+{
+    return getDefaultOutputFileName(emitAction);
+}
+
+std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action emitAction)
+{
     if (outputFilename.empty())
     {
-        if (inputFilename == "-")
-            outputFilename = "-";
-        else
-        {
-            // If InputFilename ends in .bc or .ll, remove it.
-            llvm::StringRef IFN = inputFilename;
-            if (IFN.endswith(".ts"))
-                outputFilename = std::string(IFN.drop_back(3));
-            else if (IFN.endswith(".mlir"))
-                outputFilename = std::string(IFN.drop_back(5));
-            else
-                outputFilename = std::string(IFN);
-
-            switch (emitAction)
-            {
-                case None:
-                    outputFilename = "-";
-                    break;
-                case DumpAST:
-                    outputFilename += ".txt";
-                    break;
-                case DumpMLIR:
-                case DumpMLIRAffine:
-                case DumpMLIRLLVM:
-                    outputFilename += ".mlir";
-                    break;
-                case DumpLLVMIR:
-                    outputFilename += ".ll";
-                    break;
-                case DumpByteCode:
-                    outputFilename += ".bc";
-                    break;
-                case DumpObj:
-                    {
-                        llvm::Triple TheTriple;
-                        std::string targetTriple = llvm::sys::getDefaultTargetTriple();
-                        if (!TargetTriple.empty())
-                        {
-                            targetTriple = llvm::Triple::normalize(TargetTriple);
-                        }
-                        
-                        TheTriple = llvm::Triple(targetTriple);
-
-                        outputFilename += (TheTriple.getOS() == llvm::Triple::Win32) ? ".obj" : ".o";
-                    }
-
-                    break;
-                case DumpAssembly:
-                    outputFilename += ".s";
-                    break;
-                case BuildDll:
-                    {
-                        llvm::Triple TheTriple;
-                        std::string targetTriple = llvm::sys::getDefaultTargetTriple();
-                        if (!TargetTriple.empty())
-                        {
-                            targetTriple = llvm::Triple::normalize(TargetTriple);
-                        }
-                        
-                        TheTriple = llvm::Triple(targetTriple);
-
-                        outputFilename += (TheTriple.getOS() == llvm::Triple::Win32) ? ".dll" : ".so";
-                        if ((TheTriple.getOS() != llvm::Triple::Win32))
-                        {
-                            outputFilename.insert(0, "lib");
-                        }
-                    }
-
-                    break;
-                case BuildExe:
-                    {
-                        llvm::Triple TheTriple;
-                        std::string targetTriple = llvm::sys::getDefaultTargetTriple();
-                        if (!TargetTriple.empty())
-                        {
-                            targetTriple = llvm::Triple::normalize(TargetTriple);
-                        }
-                        
-                        TheTriple = llvm::Triple(targetTriple);
-    
-                        outputFilename += (TheTriple.getOS() == llvm::Triple::Win32) ? ".exe" : "";
-                    }
-
-                    break;
-                case RunJIT:
-                    outputFilename = "-";
-                    break;
-            }
-        }
+        outputFilename = getDefaultOutputFileName();
     }
 
     // Open the file.

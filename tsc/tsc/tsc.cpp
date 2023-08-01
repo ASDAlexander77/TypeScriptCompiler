@@ -28,12 +28,14 @@
 
 namespace cl = llvm::cl;
 
+std::string getDefaultOutputFileName(enum Action);
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &);
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp);
+int dumpObjOrAssembly(int, char **, enum Action, mlir::ModuleOp);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp);
-int buildExe(int, char **);
+int buildExe(int, char **, std::string);
 int runJit(int, char **, mlir::ModuleOp);
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
@@ -214,16 +216,14 @@ int main(int argc, char **argv)
 
     if (emitAction == Action::BuildExe || emitAction == Action::BuildDll)
     {
-        enum Action actualEmitAction = emitAction;
-        emitAction = Action::DumpObj;
-        auto result = dumpObjOrAssembly(argc, argv, *module);
+        auto tempOutputFile = getDefaultOutputFileName(Action::DumpObj);
+        auto result = dumpObjOrAssembly(argc, argv, Action::DumpObj, *module);
         if (result != 0)
         {
             return result;
         }
 
-        emitAction = actualEmitAction;
-        return buildExe(argc, argv);
+        return buildExe(argc, argv, tempOutputFile);
     }
 
     // Otherwise, we must be running the jit.
