@@ -18,6 +18,7 @@ namespace cl = llvm::cl;
 
 extern cl::opt<enum Action> emitAction;
 extern cl::opt<std::string> outputFilename;
+extern cl::opt<bool> disableGC;
 extern cl::opt<std::string> TargetTriple;
 
 std::string getDefaultOutputFileName(enum Action);
@@ -110,10 +111,10 @@ int buildExe(int argc, char **argv, std::string objFileName)
     //args.insert(args.begin() + 1, "-fms-runtime-lib=static_dbg");
 
     auto win = (TheTriple.getOS() == llvm::Triple::Win32);
-    auto shared = false;
+    auto shared = emitAction == BuildDll;
     
     args.push_back(objFileName.c_str());
-    if (win)
+    if (win && !disableGC)
     {
         args.push_back("-Wl,-nodefaultlib:libcmt");
     }
@@ -135,7 +136,11 @@ int buildExe(int argc, char **argv, std::string objFileName)
         }
     }
 
-    args.push_back("-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
+    if (!disableGC)
+    {
+        args.push_back("-LC:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug");    
+    }
+
     args.push_back("-LC:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib");    
     args.push_back("-LC:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib");    
 
@@ -151,7 +156,11 @@ int buildExe(int argc, char **argv, std::string objFileName)
     }
 
     // tsc libs
-    args.push_back("-lgcmt-lib");
+    if (!disableGC)
+    {    
+        args.push_back("-lgcmt-lib");
+    }
+
     args.push_back("-lTypeScriptAsyncRuntime");
     args.push_back("-lLLVMSupport");
 
