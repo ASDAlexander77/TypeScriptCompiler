@@ -10,7 +10,9 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/VirtualFileSystem.h"
+#include "llvm/Support/Path.h"
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
@@ -20,6 +22,9 @@ extern cl::opt<enum Action> emitAction;
 extern cl::opt<std::string> outputFilename;
 extern cl::opt<bool> disableGC;
 extern cl::opt<std::string> TargetTriple;
+extern cl::opt<std::string> gclibpath;
+extern cl::opt<std::string> llvmlibpath;
+extern cl::opt<std::string> tsclibpath;
 
 std::string getDefaultOutputFileName(enum Action);
 
@@ -64,24 +69,54 @@ static void ExpandResponseFiles(llvm::StringSaver &saver,
     }
 }
 
-std::string getGCLibPath()
+std::string getGCLibPath(std::string driverPath)
 {
-    return "C:/dev/TypeScriptCompiler/3rdParty/gc/x64/debug";
+    if (!gclibpath.empty())
+    {
+        return gclibpath;
+    }
+
+    if (std::optional<std::string> gcLibEnvValue = llvm::sys::Process::GetEnv("GC_LIB_PATH")) 
+    {
+        return gcLibEnvValue.value();
+    }    
+
+    return "";    
 }
 
-std::string getLLVMLibPath()
+std::string getLLVMLibPath(std::string driverPath)
 {
-    return "C:/dev/TypeScriptCompiler/3rdParty/llvm/x64/debug/lib";
+    if (!llvmlibpath.empty())
+    {
+        return llvmlibpath;
+    }
+
+    if (std::optional<std::string> llvmLibEnvValue = llvm::sys::Process::GetEnv("LLVM_LIB_PATH")) 
+    {
+        return llvmLibEnvValue.value();
+    }    
+
+    return "";    
 }
 
-std::string getTscLibPath()
+std::string getTscLibPath(std::string driverPath)
 {
-    return "C:/dev/TypeScriptCompiler/__build/tsc/windows-msbuild-debug/lib";
+    if (!tsclibpath.empty())
+    {
+        return tsclibpath;
+    }
+
+    if (std::optional<std::string> tscLibEnvValue = llvm::sys::Process::GetEnv("TSC_LIB_PATH")) 
+    {
+        return tscLibEnvValue.value();
+    }   
+
+    return "";    
 }
 
 std::string getLibsPathOpt(std::string path)
 {
-    return "-L" + path;
+    return path.empty() ? path : "-L" + path;
 }
 
 int buildExe(int argc, char **argv, std::string objFileName)
@@ -165,21 +200,30 @@ int buildExe(int argc, char **argv, std::string objFileName)
 
     if (!disableGC)
     {
-        gcLibPathOpt = getLibsPathOpt(getGCLibPath());
-        args.push_back(gcLibPathOpt.c_str());    
+        gcLibPathOpt = getLibsPathOpt(getGCLibPath(driverPath));
+        if (!gcLibPathOpt.empty())
+        {
+            args.push_back(gcLibPathOpt.c_str());    
+        }
     }
     
     // add logic to detect if libs are used and needed
     if (isLLVMLibNeeded)
     {
-        llvmLibPathOpt = getLibsPathOpt(getLLVMLibPath());
-        args.push_back(llvmLibPathOpt.c_str());    
+        llvmLibPathOpt = getLibsPathOpt(getLLVMLibPath(driverPath));
+        if (!llvmLibPathOpt.empty())
+        {
+            args.push_back(llvmLibPathOpt.c_str());    
+        }
     }
 
     if (isTscLibNeeded)
     {
-        tscLibPathOpt = getLibsPathOpt(getTscLibPath());
-        args.push_back(tscLibPathOpt.c_str());    
+        tscLibPathOpt = getLibsPathOpt(getTscLibPath(driverPath));
+        if (!tscLibPathOpt.empty())
+        {
+            args.push_back(tscLibPathOpt.c_str());    
+        }
     }
 
     // system
@@ -207,6 +251,10 @@ int buildExe(int argc, char **argv, std::string objFileName)
     if (isLLVMLibNeeded)
     {
         args.push_back("-lLLVMSupport");
+        if (!win)
+        {
+            args.push_back("-lLLVMDemangle");
+        }
     }
 
     // Create DiagnosticsEngine for the compiler driver
@@ -215,7 +263,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     auto *diagClient = new typescript::tslang::TextDiagnosticPrinter(llvm::errs(), &*diagOpts);
 
     diagClient->setPrefix(
-        std::string(llvm::sys::path::stem(getExecutablePath(args[0]))));
+        std::string(llvm::sys::path::stem(driverPath)));
 
     clang::DiagnosticsEngine diags(diagID, &*diagOpts, diagClient);
 
