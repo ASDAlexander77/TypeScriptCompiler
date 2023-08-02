@@ -261,7 +261,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     {
         args.push_back("-frtti");
         args.push_back("-fexceptions");
-        args.push_back("-lstd++");
+        args.push_back("-lstdc++");
         args.push_back("-lm");
         args.push_back("-lpthread");
         args.push_back("-ltinfo");
