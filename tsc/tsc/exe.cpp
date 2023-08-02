@@ -176,7 +176,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     auto shared = emitAction == BuildDll;
     
     args.push_back(objFileName.c_str());
-    if (win && !disableGC)
+    if (win && (!disableGC || shared))
     {
         args.push_back("-Wl,-nodefaultlib:libcmt");
     }
