@@ -28,16 +28,20 @@
 
 namespace cl = llvm::cl;
 
+std::string getDefaultOutputFileName(enum Action);
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &);
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp);
+int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp);
+int buildExe(int, char **, std::string);
 int runJit(int, char **, mlir::ModuleOp);
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
 cl::OptionCategory TypeScriptCompilerDebugCategory("JIT Debug Options");
+cl::OptionCategory TypeScriptCompilerBuildCategory("Executable/Shared library Build Options(used in -emit=BuildExe amd -emit=BuildDll)");
 
 cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<std::string> outputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
@@ -51,6 +55,16 @@ cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desi
                                        cl::values(clEnumValN(DumpByteCode, "bc", "output LLVM ByteCode dump")),
                                        cl::values(clEnumValN(DumpObj, "obj", "output Object file")),
                                        cl::values(clEnumValN(DumpAssembly, "asm", "output LLVM Assembly file")),
+#ifdef WIN32                                       
+                                       cl::values(clEnumValN(BuildExe, "exe", "build Executable (.exe) file")),
+#else                                       
+                                       cl::values(clEnumValN(BuildExe, "exe", "build Executable file")),
+#endif
+#ifdef WIN32                                       
+                                       cl::values(clEnumValN(BuildDll, "dll", "build Dynamic Link Library (.dll) file")),
+#else                                       
+                                       cl::values(clEnumValN(BuildDll, "dll", "build Shared library (.so/.dylib) file")),
+#endif
                                        cl::values(clEnumValN(RunJIT, "jit", "JIT code and run it by invoking main function")), 
                                        cl::cat(TypeScriptCompilerCategory));
 
@@ -60,7 +74,7 @@ cl::opt<int> optLevel{"opt_level", cl::desc("Optimization level"), cl::ZeroOrMor
 cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::ZeroOrMore, cl::value_desc("value"), cl::init(0), cl::cat(TypeScriptCompilerCategory)};
 
 // dump obj
-cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dynamically"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
+cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dynamically. (used in --emit=jit)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
                                    cl::cat(TypeScriptCompilerCategory)};
 
 cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called (default=main)"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
@@ -76,6 +90,10 @@ cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(
 cl::opt<bool> disableWarnings("nowarn", cl::desc("Disable Warnings"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> generateDebugInfo("di", cl::desc("Generate Debug Infomation"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> lldbDebugInfo("lldb", cl::desc("Debug Infomation for LLDB"), cl::cat(TypeScriptCompilerCategory));
+
+cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gcmt-lib.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
+cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. Should point to file 'LLVMSupport.lib' and 'LLVMDemangle' in linux or LLVM_LIB_PATH environmental variable"), cl::value_desc("llvmlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
+cl::opt<std::string> tsclibpath("tsc-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'ypeScriptAsyncRuntime.lib' or TSC_LIB_PATH environmental variable"), cl::value_desc("tsclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 
 static void TscPrintVersion(llvm::raw_ostream &OS) {
   OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
@@ -134,7 +152,7 @@ int main(int argc, char **argv)
     
     // End - Register for Obj/ASM
 
-    cl::HideUnrelatedOptions({&TypeScriptCompilerCategory, &TypeScriptCompilerDebugCategory, &ObjOrAssemblyCategory});
+    cl::HideUnrelatedOptions({&TypeScriptCompilerCategory, &TypeScriptCompilerDebugCategory, &TypeScriptCompilerBuildCategory, &ObjOrAssemblyCategory});
     HideUnrelatedOptionsButVisibleForHidden(SubCommand::getTopLevel());
 
     // Register the Target and CPU printer for --version.
@@ -199,6 +217,18 @@ int main(int argc, char **argv)
     if (emitAction == Action::DumpObj || emitAction == Action::DumpAssembly)
     {
         return dumpObjOrAssembly(argc, argv, *module);
+    }
+
+    if (emitAction == Action::BuildExe || emitAction == Action::BuildDll)
+    {
+        auto tempOutputFile = getDefaultOutputFileName(Action::DumpObj);
+        auto result = dumpObjOrAssembly(argc, argv, Action::DumpObj, tempOutputFile, *module);
+        if (result != 0)
+        {
+            return result;
+        }
+
+        return buildExe(argc, argv, tempOutputFile);
     }
 
     // Otherwise, we must be running the jit.

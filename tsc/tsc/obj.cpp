@@ -33,8 +33,10 @@ extern cl::opt<enum Action> emitAction;
 extern cl::opt<bool> enableOpt;
 extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
+extern cl::opt<std::string> outputFilename;
 
-std::unique_ptr<llvm::ToolOutputFile> getOutputStream();
+std::string getDefaultOutputFileName(enum Action);
+std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action, std::string);
 int registerMLIRDialects(mlir::ModuleOp);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int);
 
@@ -242,7 +244,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     return 0;
 }
 
-int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
+int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string outputFile, mlir::ModuleOp module)
 {
     registerMLIRDialects(module);
 
@@ -285,7 +287,7 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     bool HasError = false;
     Context.setDiagnosticHandler(std::make_unique<LLCDiagnosticHandler>(&HasError));
 
-    auto FDOut = getOutputStream();
+    auto FDOut = getOutputStream(emitAction, outputFile);
     if (!FDOut)
     {
         return -1;
@@ -320,7 +322,6 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     }
 
     auto fileFormat = emitAction == DumpObj ? llvm::CGFT_ObjectFile : emitAction == DumpAssembly ? llvm::CGFT_AssemblyFile : llvm::CGFT_Null;
-
     if (llvm::mc::getExplicitRelaxAll() && /*llvm::codegen::getFileType()*/ fileFormat != llvm::CGFT_ObjectFile)
     {
         llvm::WithColor::warning(llvm::errs(), "tsc") << ": warning: ignoring -mc-relax-all because filetype != obj";
@@ -378,4 +379,10 @@ int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
     }
 
     return 0;
+}
+
+int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module)
+{
+    std::string fileOutput = outputFilename.empty() ? getDefaultOutputFileName(emitAction) : outputFilename;
+    return dumpObjOrAssembly(argc, argv, emitAction, fileOutput, module);
 }

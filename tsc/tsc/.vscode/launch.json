@@ -8,7 +8,7 @@
             "name": "(Windows) tsc.exe - DUMP",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=ast",
                 "C:/temp/1.ts"
@@ -144,10 +144,25 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
+            "name": "(Linux) ./tsc - LLVM",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
+            "args": [
+                "-emit=llvm",
+                "/mnt/c/temp/1.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },
+        {
             "name": "(Windows) tsc.exe - BC",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=bc",
                 "-opt",
@@ -164,7 +179,7 @@
             "name": "(Windows) tsc.exe - OBJ",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=obj",
                 "-opt",
@@ -181,7 +196,7 @@
             "name": "(Windows) tsc.exe - ASM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=asm",
                 "-opt",
@@ -197,20 +212,39 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },                 
         {
-            "name": "(Linux) ./tsc - LLVM",
-            "type": "cppdbg",
+            "name": "(Windows) tsc.exe - EXE",
+            "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
-                "-emit=llvm",
-                "/mnt/c/temp/1.ts"
+                "-emit=exe",
+                "-opt",
+                "-o=c:/temp/1.exe",
+                "C:/temp/1.ts"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },
+        },      
+        {
+            "name": "(Windows) tsc.exe - DLL",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "args": [
+                "-emit=exe",
+                "-opt",
+                "-o=c:/temp/1.dll",
+                "C:/temp/1.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },      
         {
             "name": "(Windows) tsc.exe - JIT",
             "type": "cppvsdbg",
@@ -233,7 +267,7 @@
             "name": "(Windows) tsc.exe - JIT-OBJ",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=jit",
                 "-nogc",
@@ -248,19 +282,19 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
-            "name": "(Windows) CMake",
+            "name": "(Windows) tslang.exe",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${command:cmake.launchTargetPath}",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tslang.exe",
             "args": [
-                "-emit=mlir",
-                "C:/temp/1.ts"
+                "C:/temp/MLIR_to_exe/1.obj"
             ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
+            "cwd": "C:/temp/MLIR_to_exe",
             "environment": [],
-            "console": "externalTerminal"
-        },
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },        
         {
             "name": "(Windows-CodeLLDB) 1.exe",
             "type": "lldb",
