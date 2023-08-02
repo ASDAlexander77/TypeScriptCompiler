@@ -13,6 +13,10 @@ if(POLICY CMP0077)
   cmake_policy(SET CMP0077 NEW)
 endif()
 
+if(POLICY CMP0116)
+  cmake_policy(SET CMP0116 NEW)
+endif()
+
 project(tsc LANGUAGES CXX C)
 
 find_program(CCACHE_FOUND ccache)
