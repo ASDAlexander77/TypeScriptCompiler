@@ -1546,8 +1546,6 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
     LogicalResult matchAndRewrite(mlir_ts::CreateUnionInstanceOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto loc = op->getLoc();
 
         TypeHelper th(rewriter);
@@ -4932,9 +4930,17 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8));
     });
 
-    converter.addConversion([&](mlir_ts::SymbolType type) { return mlir::IntegerType::get(m.getContext(), 32); });
+    converter.addConversion([&](mlir_ts::SymbolType type) { 
+        return  LLVM::LLVMStructType::getOpaque("Symbol", type.getContext()); 
+     });
 
-    converter.addConversion([&](mlir_ts::UndefinedType type) { return mlir::IntegerType::get(m.getContext(), 1); });
+    converter.addConversion([&](mlir_ts::UndefinedType type) { 
+        auto identStruct = LLVM::LLVMStructType::getIdentified(type.getContext(), UNDEFINED_NAME);
+        SmallVector<mlir::Type> undefBodyTypes;
+        undefBodyTypes.push_back(mlir::IntegerType::get(m.getContext(), 1));
+        identStruct.setBody(undefBodyTypes, false);
+        return identStruct;
+    });
 
     converter.addConversion([&](mlir_ts::ClassStorageType type) {
         auto identStruct = LLVM::LLVMStructType::getIdentified(type.getContext(), type.getName().getValue());
