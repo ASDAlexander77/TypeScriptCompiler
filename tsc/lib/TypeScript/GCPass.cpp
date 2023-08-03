@@ -49,9 +49,9 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 
     void runOnModule() override
     {
-        auto f = getModule();
+        auto m = getModule();
 
-        f.walk([&](mlir::Operation *op) {
+        m.walk([&](mlir::Operation *op) {
             if (auto funcOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(op))
             {
                 auto symbolAttr = funcOp->getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName());
@@ -94,11 +94,18 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         });
     }
 
-    bool mapName(StringRef name, StringRef &newName)
+    bool mapName(StringRef name, StringRef modeName, StringRef &newName)
     {
         if (name == "malloc" || name == "calloc")
         {
-            newName = "GC_malloc";
+            if (modeName == "atomic")
+            {
+                newName = "GC_malloc_atomic";    
+            }
+            else
+            {
+                newName = "GC_malloc";
+            }
         }
         else if (name == "aligned_alloc")
         {
@@ -127,7 +134,10 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
     void renameFunction(StringRef name, LLVM::LLVMFuncOp funcOp)
     {
         StringRef newName;
-        if (!mapName(name, newName))
+        StringRef modeAttrValue;
+
+        // this is function declaration
+        if (!mapName(name, modeAttrValue, newName))
         {
             return;
         }
@@ -138,18 +148,39 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
     void renameCall(StringRef name, LLVM::CallOp callOp)
     {
         StringRef newName;
-        if (!mapName(name, newName))
+        StringRef modeAttrValue;
+
+        if (auto modeAttr = callOp->getAttr("mode").dyn_cast_or_null<mlir::StringAttr>())
+        {
+            modeAttrValue = modeAttr.getValue();
+        }
+
+        if (!mapName(name, modeAttrValue, newName))
         {
             return;
+        }
+
+        if (modeAttrValue == "atomic")
+        {
+            injectAtomicDeclaration(callOp);
         }
 
         callOp.setCalleeAttr(::mlir::FlatSymbolRefAttr::get(callOp->getContext(), newName));
     }
 
+    void injectAtomicDeclaration(LLVM::CallOp memSetCallOp)
+    {
+        ConversionPatternRewriter rewriter(memSetCallOp.getContext());
+
+        TypeHelper th(memSetCallOp.getContext());
+        LLVMCodeHelper ch(memSetCallOp, rewriter, nullptr);
+        auto i8PtrTy = th.getI8PtrType();
+        auto gcInitFuncOp = ch.getOrInsertFunction("GC_malloc_atomic", th.getFunctionType(th.getI8PtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
+    }
+
     void injectInit(LLVM::LLVMFuncOp funcOp)
     {
         ConversionPatternRewriter rewriter(funcOp.getContext());
-        rewriter.setInsertionPointToStart(&funcOp.getBody().front());
 
         TypeHelper th(rewriter.getContext());
         LLVMCodeHelper ch(funcOp, rewriter, nullptr);

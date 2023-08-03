@@ -29,6 +29,11 @@ void *_mlir__GC_malloc(size_t size)
     return GC_MALLOC(size);
 }
 
+void *_mlir__GC_malloc_atomic(size_t size)
+{
+    return GC_MALLOC_ATOMIC(size);
+}
+
 void *_mlir__GC_memalign(size_t align, size_t size)
 {
     return GC_memalign(align, size);

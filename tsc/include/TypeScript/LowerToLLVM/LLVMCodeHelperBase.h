@@ -15,7 +15,8 @@ namespace typescript
 enum class MemoryAllocSet
 {
     None,
-    Zero
+    Zero,
+    Atomic
 };
 
 template <typename T>
@@ -239,7 +240,7 @@ class LLVMCodeHelperBase
         return _MemoryFree<int>(ptrValue);
     }
 
-    template <typename T> mlir::Value _MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero)
+    template <typename T> mlir::Value _MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet memAllocMode)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -257,9 +258,14 @@ class LLVMCodeHelperBase
         }
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectiveSize});
+        if (memAllocMode == MemoryAllocSet::Atomic)
+        {
+            callResults->setAttr("mode", rewriter.getStringAttr("atomic"));
+        }
+
         auto ptr = callResults.getResult();
 
-        if (zero == MemoryAllocSet::Zero)
+        if (memAllocMode == MemoryAllocSet::Zero)
         {
             auto memsetFuncOp = getOrInsertFunction("memset", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getI32Type(), th.getIndexType()}));
             auto const0 = clh.createI32ConstantOf(0);

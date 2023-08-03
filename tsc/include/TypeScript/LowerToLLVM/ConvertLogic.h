@@ -51,7 +51,7 @@ class ConvertLogic
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
         auto base = clh.createI32ConstantOf(10);
 
         return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{value, newStringValue, base}).getResult();
@@ -67,7 +67,7 @@ class ConvertLogic
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
         auto base = clh.createI32ConstantOf(10);
 
         return rewriter.create<LLVM::CallOp>(loc, _i64toaFuncOp, ValueRange{value, newStringValue, base}).getResult();
@@ -83,7 +83,7 @@ class ConvertLogic
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
         auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), in);
         auto precision = clh.createI32ConstantOf(16);
 
@@ -104,7 +104,7 @@ class ConvertLogic
 
         auto bufferSizeValue = clh.createI32ConstantOf(buffSize);
         // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
 
         auto opHash = std::hash<std::string>{}(format);
 
