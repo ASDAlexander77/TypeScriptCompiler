@@ -4692,11 +4692,13 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // TODO: put into MLIRCodeLogicHelper
     ValueOrLogicalResult optionalValueOrUndefinedExpression(mlir::Location location, mlir::Value condValue, Expression expression, const GenContext &genContext)
     {
         return optionalValueOrUndefined(location, condValue, [&](auto genContext) { return mlirGen(expression, genContext); }, genContext);
     }
 
+    // TODO: put into MLIRCodeLogicHelper
     ValueOrLogicalResult optionalValueOrUndefined(mlir::Location location, mlir::Value condValue, 
         std::function<ValueOrLogicalResult(const GenContext &)> exprFunc, const GenContext &genContext)
     {
@@ -4716,6 +4718,7 @@ class MLIRGenImpl
             genContext);
     }
 
+    // TODO: put into MLIRCodeLogicHelper
     ValueOrLogicalResult anyOrUndefined(mlir::Location location, mlir::Value condValue, 
         std::function<ValueOrLogicalResult(const GenContext &)> exprFunc, const GenContext &genContext)
     {
@@ -4735,6 +4738,7 @@ class MLIRGenImpl
             genContext);
     }
 
+    // TODO: put into MLIRCodeLogicHelper
     ValueOrLogicalResult conditionalValue(mlir::Location location, mlir::Value condValue, 
         std::function<ValueOrLogicalResult(const GenContext &)> trueValue, 
         std::function<ValueOrLogicalResult(mlir::Type trueValueType, const GenContext &)> falseValue, 
@@ -4764,6 +4768,7 @@ class MLIRGenImpl
         return ValueOrLogicalResult(ifOp.getResults().front());        
     }    
 
+    // TODO: put into MLIRCodeLogicHelper
     ValueOrLogicalResult optionalValueOrDefault(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
     {
         auto optionalValueOrDefaultOp = builder.create<mlir_ts::OptionalValueOrDefaultOp>(

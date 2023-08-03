@@ -140,6 +140,58 @@ class MLIRCodeLogic
     }
 };
 
+class MLIRCodeLogicHelper
+{
+    mlir::OpBuilder &builder;
+    mlir::Location location;
+
+  public:
+    MLIRCodeLogicHelper(mlir::OpBuilder &builder, mlir::Location location) : builder(builder), location(location)
+    {
+    }
+
+    mlir::Value conditionalExpression(mlir::Type type, mlir::Value condition,
+                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> thenBuilder,
+                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> elseBuilder)
+    {
+        // ts.if
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, type, condition, true);
+
+        // then block
+        auto &thenRegion = ifOp.getThenRegion();
+
+        builder.setInsertionPointToStart(&thenRegion.back());
+
+        mlir::Value value = thenBuilder(builder, location);
+        builder.create<mlir_ts::ResultOp>(location, value);
+
+        // else block
+        auto &elseRegion = ifOp.getElseRegion();
+
+        builder.setInsertionPointToStart(&elseRegion.back());
+
+        mlir::Value elseValue = elseBuilder(builder, location);
+        builder.create<mlir_ts::ResultOp>(location, elseValue);
+
+        builder.setInsertionPointAfter(ifOp);
+
+        return ifOp.getResults().front();
+    }
+
+    void seekLast(mlir::Block *block)
+    {
+        // find last string
+        auto lastUse = [&](mlir::Operation *op) {
+            if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
+            {
+                builder.setInsertionPointAfter(globalOp);
+            }
+        };
+
+        block->walk(lastUse);
+    }
+};
+
 class MLIRCustomMethods
 {
     mlir::OpBuilder &builder;
@@ -233,9 +285,30 @@ class MLIRCustomMethods
         {
             if (!oper.getType().isa<mlir_ts::StringType>())
             {
-                auto strCast =
-                    builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
-                vals.push_back(strCast);
+                if (oper.getType().isa<mlir_ts::OptionalType>())
+                {
+                    auto hasValue = builder.create<mlir_ts::HasValueOp>(location, mlir_ts::BooleanType::get(builder.getContext()), oper);
+                    MLIRCodeLogicHelper mclh(builder, location);
+
+                    auto strType = mlir_ts::StringType::get(builder.getContext());
+                    auto optValue = mclh.conditionalExpression(
+                        strType, hasValue,
+                        [&](mlir::OpBuilder &builder, mlir::Location location) {
+                            return builder.create<mlir_ts::CastOp>(location, strType, oper);
+                        },
+                        [&](mlir::OpBuilder &builder, mlir::Location location) {
+                            return builder.create<mlir_ts::ConstantOp>(
+                                location, strType, builder.getStringAttr(UNDEFINED_NAME));
+                        });
+
+                    vals.push_back(optValue);
+                }
+                else
+                {
+                    auto strCast =
+                        builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
+                    vals.push_back(strCast);
+                }
             }
             else
             {
@@ -990,58 +1063,6 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
         auto value = mcl.GetReferenceOfLoadOp(expression);
         return value;
-    }
-};
-
-class MLIRCodeLogicHelper
-{
-    mlir::OpBuilder &builder;
-    mlir::Location &location;
-
-  public:
-    MLIRCodeLogicHelper(mlir::OpBuilder &builder, mlir::Location &location) : builder(builder), location(location)
-    {
-    }
-
-    mlir::Value conditionalExpression(mlir::Type type, mlir::Value condition,
-                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> thenBuilder,
-                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> elseBuilder)
-    {
-        // ts.if
-        auto ifOp = builder.create<mlir_ts::IfOp>(location, type, condition, true);
-
-        // then block
-        auto &thenRegion = ifOp.getThenRegion();
-
-        builder.setInsertionPointToStart(&thenRegion.back());
-
-        mlir::Value value = thenBuilder(builder, location);
-        builder.create<mlir_ts::ResultOp>(location, value);
-
-        // else block
-        auto &elseRegion = ifOp.getElseRegion();
-
-        builder.setInsertionPointToStart(&elseRegion.back());
-
-        mlir::Value elseValue = elseBuilder(builder, location);
-        builder.create<mlir_ts::ResultOp>(location, elseValue);
-
-        builder.setInsertionPointAfter(ifOp);
-
-        return ifOp.getResults().front();
-    }
-
-    void seekLast(mlir::Block *block)
-    {
-        // find last string
-        auto lastUse = [&](mlir::Operation *op) {
-            if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
-            {
-                builder.setInsertionPointAfter(globalOp);
-            }
-        };
-
-        block->walk(lastUse);
     }
 };
 
