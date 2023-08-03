@@ -18958,6 +18958,40 @@ genContext);
         return mth.getUnionType(types);
     }
 
+    mlir::LogicalResult processIntersectionType(InterfaceInfo::TypePtr newInterfaceInfo, mlir::Type type, bool conditional = false)
+    {
+        if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            auto srcInterfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
+            assert(srcInterfaceInfo);
+            newInterfaceInfo->extends.push_back({-1, srcInterfaceInfo});
+        }
+        else if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+        {
+            mergeInterfaces(newInterfaceInfo, tupleType, conditional);
+        }
+        else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
+        {
+            mergeInterfaces(newInterfaceInfo, mth.removeConstType(constTupleType).cast<mlir_ts::TupleType>(), conditional);
+        }              
+        else if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            for (auto type : unionType.getTypes())
+            {
+                if (mlir::failed(processIntersectionType(newInterfaceInfo, type, true)))
+                {
+                    return mlir::failure();
+                }
+            }            
+        }              
+        else
+        {
+            return mlir::failure();
+        }      
+
+        return mlir::success();
+    }
+
     mlir::Type getIntersectionType(IntersectionTypeNode intersectionTypeNode, const GenContext &genContext)
     {
         mlir_ts::InterfaceType baseInterfaceType;
@@ -19023,21 +19057,10 @@ genContext);
                 // merge all interfaces;
                 for (auto type : types)
                 {
-                    if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
+                    if (mlir::failed(processIntersectionType(newInterfaceInfo, type)))
                     {
-                        auto srcInterfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
-                        assert(srcInterfaceInfo);
-                        newInterfaceInfo->extends.push_back({-1, srcInterfaceInfo});
-                        continue;
-                    }
-                    else if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
-                    {
-                        mergeInterfaces(newInterfaceInfo, tupleType);
-                    }
-                    else
-                    {
-                        // no intersection
-                        return getNeverType();
+                        emitWarning(loc(intersectionTypeNode), "Intersection can't be resolved.");
+                        return getIntersectionType(types);
                     }
                 }
             }
@@ -19298,12 +19321,12 @@ genContext);
         return interfaceInfo;
     }
 
-    mlir::LogicalResult mergeInterfaces(InterfaceInfo::TypePtr dest, mlir_ts::TupleType src)
+    mlir::LogicalResult mergeInterfaces(InterfaceInfo::TypePtr dest, mlir_ts::TupleType src, bool conditional = false)
     {
         // TODO: use it to merge with TupleType
         for (auto &item : src.getFields())
         {
-            dest->fields.push_back({item.id, item.type, false, dest->getNextVTableMemberIndex()});
+            dest->fields.push_back({item.id, item.type, item.isConditional || conditional, dest->getNextVTableMemberIndex()});
         }
 
         return mlir::success();
