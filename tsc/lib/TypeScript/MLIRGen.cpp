@@ -2867,12 +2867,11 @@ class MLIRGenImpl
         return createGlobalVariableUndefinedInitialization(location, globalOp, variableDeclarationInfo);
     }    
 
-    mlir::LogicalResult isGlobalGenericLambda(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
+    mlir::LogicalResult isGlobalConstLambda(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
     {
         if (variableDeclarationInfo.isConst 
             && variableDeclarationInfo.initial 
-            && mth.isAnyFunctionType(variableDeclarationInfo.type) 
-            && mth.isGenericType(variableDeclarationInfo.type))
+            && mth.isAnyFunctionType(variableDeclarationInfo.type))
         {
             return mlir::success();
         }
@@ -2935,7 +2934,7 @@ class MLIRGenImpl
         {
             createGlobalVariable(location, variableDeclarationInfo, genContext);
 
-            if (mlir::succeeded(isGlobalGenericLambda(location, variableDeclarationInfo, genContext)))
+            if (mlir::succeeded(isGlobalConstLambda(location, variableDeclarationInfo, genContext)))
             {
                 variableDeclarationInfo.globalOp->erase();
                 variableDeclarationInfo.deleted = true;
