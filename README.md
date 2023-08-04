@@ -142,47 +142,20 @@ Hello World!
 ## Compile as Binary Executable
 
 ### On Windows
-- with Garbage collection
 
-File ``tsc-compile-gc.bat``
+File ``tsc-compile.bat``
 ```cmd
 set FILENAME=%1
-set LLVMEXEPATH=C:/dev/TypeScriptCompiler/3rdParty/llvm/release/bin
-set LLVMLIBPATH=C:/dev/TypeScriptCompiler/3rdParty/llvm/release/lib
-set TSCLIBPATH=C:/dev/TypeScriptCompiler/__build/tsc-release/lib
-set TSCEXEPATH=C:/dev/TypeScriptCompiler/__build/tsc-release/bin
-set GCLIBPATH=C:/dev/TypeScriptCompiler/3rdParty/gc/Release
-set LIBPATH="C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.35.32215/lib/x64"
-set SDKPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/um/x64"
-set UCRTPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/ucrt/x64"
-%TSCEXEPATH%\tsc.exe --opt --emit=obj C:\temp\%FILENAME%.ts -o=%FILENAME%.o
-%LLVMEXEPATH%\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%LLVMLIBPATH% /libpath:%GCLIBPATH% /libpath:%TSCLIBPATH% msvcrt.lib ucrt.lib kernel32.lib user32.lib gcmt-lib.lib TypeScriptAsyncRuntime.lib LLVMSupport.lib
+set GC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\release\Debug
+set LLVM_LIB_PATH=C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\release\Debug\lib
+set TSC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\lib
+set TSCEXEPATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\bin
+%TSCEXEPATH%\tsc.exe --opt --emit=exe %FILENAME%.ts
 ```
 Compile 
 ```cmd
-tsc-compile-gc.bat hello
+tsc-compile.bat hello
 ```
-
-- without Garbage collection
-
-File ``tsc-compile-nogc.bat``
-```cmd
-set FILENAME=%1
-set LLVMEXEPATH=C:/dev/TypeScriptCompiler/3rdParty/llvm/release/bin
-set LLVMLIBPATH=C:/dev/TypeScriptCompiler/3rdParty/llvm/release/lib
-set TSCLIBPATH=C:/dev/TypeScriptCompiler/__build/tsc-release/lib
-set TSCEXEPATH=C:/dev/TypeScriptCompiler/__build/tsc-release/bin
-set LIBPATH="C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Tools/MSVC/14.35.32215/lib/x64"
-set SDKPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/um/x64"
-set UCRTPATH="C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/ucrt/x64"
-%TSCEXEPATH%\tsc.exe --opt -nogc --emit=obj C:\temp\%FILENAME%.ts -o=%FILENAME%.o
-%LLVMEXEPATH%\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH% msvcrt.lib ucrt.lib kernel32.lib user32.lib TypeScriptAsyncRuntime.lib LLVMSupport.lib
-```
-Compile 
-```cmd
-tsc-compile-nogc.bat hello
-```
-
 
 Run
 ```
@@ -195,38 +168,19 @@ Hello World!
 ```
 
 ### On Linux (Ubuntu 20.04 and 22.04)
-- with Garbage collection
 
-File ``tsc-compile-gc.sh``
-```cmd
+File ``tsc-compile.sh``
+```bash
 FILENAME=$1
-TSCEXEPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/bin
-TSCLIBPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/lib
-LLVMLIBPATH=/home/dev/TypeScriptCompiler/3rdParty/llvm-ninja/release/lib
-GCLIBPATH=/home/dev/TypeScriptCompiler/3rdParty/gc/release
-$TSCEXEPATH/tsc --emit=obj --opt -relocation-model=pic $FILENAME.ts -o=$FILENAME.o
-gcc -o $FILENAME -L$LLVMLIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o -lgcmt-lib -lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle -frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo -ldl
+export TSC_LIB_PATH=~/dev/TypeScriptCompiler/__build/tsc/linux-ninja-gcc-release/lib
+export LLVM_LIB_PATH=~/dev/TypeScriptCompiler/3rdParty/llvm/release/lib
+export GC_LIB_PATH=~/dev/TypeScriptCompiler/3rdParty/gc/release
+TSCEXEPATH=~/dev/TypeScriptCompiler/__build/tsc/linux-ninja-gcc-release/bin
+$TSCEXEPATH/tsc --emit=exe $FILENAME.ts --relocation-model=pic
 ```
 Compile 
-```cmd
-sh -f tsc-compile-gc.sh hello
-```
-
-- without Garbage collection
-
-File ``tsc-compile-nogc.sh``
-```cmd
-FILENAME=$1
-TSCEXEPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/bin
-TSCLIBPATH=/home/dev/TypeScriptCompiler/__build/tsc-ninja-release/lib
-LLVMEXEPATH=/home/dev/TypeScriptCompiler/3rdParty/llvm-ninja/release/bin
-LLVMLIBPATH=/home/dev/TypeScriptCompiler/3rdParty/llvm-ninja/release/lib
-$TSCEXEPATH/tsc --emit=obj --opt -nogc -relocation-model=pic $FILENAME.ts -o=$FILENAME.o
-gcc -o $FILENAME -L$LLVMLIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o -lTypeScriptAsyncRuntime -lLLVMSupport -lLLVMDemangle -frtti -fexceptions -lstdc++ -lm -lpthread -ltinfo -ldl
-```
-Compile 
-```cmd
-sh -f tsc-compile-nogc.sh hello
+```bash
+sh -f tsc-compile.sh hello
 ```
 
 Run
@@ -247,7 +201,7 @@ echo "check if your LLC support WebAssembly by running command: llc.exe --versio
 rem set %LLVM% and %TSCBIN%
 set LLVMPATH=%LLVM%\llvm\release\bin
 set TSCPATH=%TSCBIN%\tsc\bin
-%TSCPATH%\tsc.exe -nogc --emit=obj --opt --mtriple=wasm32-unknown-unknown %FILENAME%.ts -o=%FILENAME%.ll
+%TSCPATH%\tsc.exe -nogc --emit=obj --opt --mtriple=wasm32-unknown-unknown %FILENAME%.ts -o=%FILENAME%.o
 %LLVMPATH%\wasm-ld.exe %FILENAME%.o -o %FILENAME%.wasm --no-entry --export-all --allow-undefined
 ```
 Compile 
@@ -256,7 +210,7 @@ tsc-compile-wasm.bat hello
 ```
 
 Run ``run.html``
-```
+```html
 <!DOCTYPE html>
 <html>
   <head></head>
@@ -298,13 +252,13 @@ Run ``run.html``
 
 First, precompile dependencies
 
-```
+```cmd
 prepare_3rdParty.bat 
 ```
 
 To build ``TSC`` binaries:
 
-```
+```cmd
 cd tsc
 config_tsc_debug.bat
 build_tsc_debug.bat
@@ -314,14 +268,14 @@ build_tsc_debug.bat
 
 First, precompile dependencies
 
-```
+```bash
 chmod +x *.sh
 ./prepare_3rdParty.sh
 ```
 
 To build ``TSC`` binaries:
 
-```
+```bash
 cd tsc
 chmod +x *.sh
 ./config_tsc_debug.sh
