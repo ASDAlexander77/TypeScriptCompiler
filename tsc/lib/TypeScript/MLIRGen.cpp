@@ -2678,7 +2678,7 @@ class MLIRGenImpl
         {
             return mlir::success();
         }
-        
+
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
         // this is 'let', if 'let' is func, it should be HybridFunction
@@ -2708,12 +2708,6 @@ class MLIRGenImpl
         auto type = variableDeclarationInfo.type;
 
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
-
-        // this is 'let', if 'let' is func, it should be HybridFunction
-        if (auto funcType = actualType.dyn_cast<mlir_ts::FunctionType>())
-        {
-            actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
-        }
 
         variableDeclarationInfo.setType(actualType);
 
