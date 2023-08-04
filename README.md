@@ -17,7 +17,7 @@ function main()
     let b = 11; // ok
     b = 10; // ok
 
-	print("done.");
+    print("done.");
 }
 
 ```
