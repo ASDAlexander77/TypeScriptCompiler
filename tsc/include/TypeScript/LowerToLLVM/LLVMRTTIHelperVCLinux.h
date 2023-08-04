@@ -94,7 +94,13 @@ class LLVMRTTIHelperVCLinux
 
     void setType(mlir::Type type)
     {
-        mlir::TypeSwitch<mlir::Type>(MLIRHelper::stripLiteralType(type))
+        auto normalizedType = MLIRHelper::stripLiteralType(type);
+        if (auto enumType = normalizedType.dyn_cast<mlir_ts::EnumType>())
+        {
+            normalizedType = enumType.getElementType();
+        }
+
+        mlir::TypeSwitch<mlir::Type>(normalizedType)
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {

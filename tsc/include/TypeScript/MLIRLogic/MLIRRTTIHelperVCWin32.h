@@ -135,7 +135,14 @@ class MLIRRTTIHelperVCWin32
             return false;
         }
 
-        llvm::TypeSwitch<mlir::Type>(mth.stripLiteralType(type))
+        auto normalizedType = mth.stripLiteralType(type);
+        if (auto enumType = normalizedType.dyn_cast<mlir_ts::EnumType>())
+        {
+            normalizedType = enumType.getElementType();
+        }
+
+        auto result = true;
+        llvm::TypeSwitch<mlir::Type>(normalizedType)
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {
@@ -143,7 +150,7 @@ class MLIRRTTIHelperVCWin32
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    result = false;
                 }
             })
             .Case<mlir::FloatType>([&](auto floatType) {
@@ -158,7 +165,7 @@ class MLIRRTTIHelperVCWin32
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    result = false;
                 }
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) {
@@ -181,10 +188,10 @@ class MLIRRTTIHelperVCWin32
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "...throw type: " << type << "\n";);
-                llvm_unreachable("not implemented");
+                result = false;
             });
 
-        return true;
+        return result;
     }
 
     bool setType(mlir::Type type)
@@ -246,12 +253,12 @@ class MLIRRTTIHelperVCWin32
         block->walk(lastUse);
     }
 
-    void setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
+    bool setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
         if (!setType(type, resolveClassInfo))
         {
             // no type provided
-            return;
+            return false;
         }
 
         mlir::OpBuilder::InsertionGuard guard(rewriter);
@@ -276,6 +283,8 @@ class MLIRRTTIHelperVCWin32
 
         // _TI1N
         throwInfo(loc);
+
+        return true;
     }
 
     mlir::LogicalResult typeInfo(mlir::Location loc)

@@ -572,7 +572,7 @@ class MLIRTypeHelper
     // TODO: review virtual calls
     bool isNoneType(mlir::Type type)
     {
-        return !type || type == mlir::NoneType::get(context);
+        return !type || type.isa<mlir::NoneType>();
     }
 
     bool isVirtualFunctionType(mlir::Value actualFuncRefValue) 

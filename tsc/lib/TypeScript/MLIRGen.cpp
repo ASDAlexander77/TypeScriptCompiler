@@ -2587,7 +2587,13 @@ class MLIRGenImpl
 
             if (type.isa<mlir_ts::VoidType>())
             {
-                emitError(location) << "variable '" << variableName << "' can't be void type";
+                emitError(location) << "variable '" << variableName << "' can't be 'void' type";
+                return mlir::failure();
+            }
+
+            if (type.isa<mlir_ts::NeverType>())
+            {
+                emitError(location) << "variable '" << variableName << "' can't be 'never' type";
                 return mlir::failure();
             }
 
@@ -3341,7 +3347,7 @@ class MLIRGenImpl
         }
 
 #ifndef ANY_AS_DEFAULT
-        if (isNoneType(item->type) && !item->initializer && !isExternal)
+        if (mth.isNoneType(item->type) && !item->initializer && !isExternal)
         {
             auto name = MLIRHelper::getName(item->name);
             emitError(loc(item)) << "type of variable '" << name
@@ -3586,14 +3592,14 @@ class MLIRGenImpl
 
                     // TODO: set type if not provided
                     isOptional = true;
-                    if (isNoneType(type))
+                    if (mth.isNoneType(type))
                     {
                         type = evalType;
                     }
                 }
             }
 
-            if (isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
+            if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
             {
                 type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
 
@@ -3603,13 +3609,13 @@ class MLIRGenImpl
             }
 
             // in case of binding
-            if (isNoneType(type) && isBindingPattern)
+            if (mth.isNoneType(type) && isBindingPattern)
             {
                 type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
                 LLVM_DEBUG(dbgs() << "\n!! binding param " << namePtr << " is type " << type << "");
             }
 
-            if (isNoneType(type))
+            if (mth.isNoneType(type))
             {
                 if (!typeParameter && !initializer)
                 {
@@ -3632,6 +3638,18 @@ class MLIRGenImpl
                     emitError(loc(typeParameter)) << "can't resolve type for parameter '" << namePtr << "'";
                     return {mlir::failure(), isGenericTypes, params};
                 }
+            }
+
+            if (type.isa<mlir_ts::VoidType>())
+            {
+                emitError(loc(typeParameter), "'Void' can't be used as parameter type");
+                return {mlir::failure(), isGenericTypes, params};
+            }
+
+            if (type.isa<mlir_ts::NeverType>())
+            {
+                emitError(loc(typeParameter), "'Never' can't be used as parameter type");
+                return {mlir::failure(), isGenericTypes, params};
             }
 
             if (isBindingPattern)
@@ -3747,7 +3765,7 @@ class MLIRGenImpl
         for (const auto &param : params)
         {
             auto paramType = param->getType();
-            if (isNoneType(paramType))
+            if (mth.isNoneType(paramType))
             {
                 return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
             }
@@ -3869,7 +3887,7 @@ class MLIRGenImpl
                     auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
                         ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
                         : mlir::Type();
-                    if (retTypeFromReceiver && !isNoneType(retTypeFromReceiver))
+                    if (retTypeFromReceiver && !mth.isNoneType(retTypeFromReceiver))
                     {
                         funcProto->setReturnType(retTypeFromReceiver);
                         LLVM_DEBUG(llvm::dbgs()
@@ -4017,7 +4035,7 @@ class MLIRGenImpl
 
                 auto &passResult = genContextWithPassResult.passResult;
                 if (passResult->functionReturnTypeShouldBeProvided 
-                    && isNoneType(passResult->functionReturnType))
+                    && mth.isNoneType(passResult->functionReturnType))
                 {
                     // has return value but type is not provided yet
                     genContextWithPassResult.clean();
@@ -5392,7 +5410,7 @@ class MLIRGenImpl
             auto type = expressionValue.getType();
             LLVM_DEBUG(dbgs() << "\n!! processing return type: " << type << "");
 
-            if (isNoneType(type))
+            if (mth.isNoneType(type))
             {
                 return mlir::success();
             }
@@ -6630,8 +6648,13 @@ class MLIRGenImpl
 #else
             MLIRRTTIHelperVCLinux rtti(builder, theModule);
 #endif
-            rtti.setRTTIForType(location, exception.getType(),
-                                [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); });
+            if (!rtti.setRTTIForType(
+                location, exception.getType(), 
+                [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); }))
+            {
+                emitError(location, "Not supported type in throw");
+                return mlir::failure();
+            }
         }
 
         return mlir::success();
@@ -6695,6 +6718,7 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(&tryOp.getCatches().front());
         if (catchClause && catchClause->block)
         {
+            auto location = loc(catchClause->block);
             if (!varName.empty())
             {
                 MLIRCodeLogic mcl(builder);
@@ -6709,8 +6733,14 @@ class MLIRGenImpl
 #else
                     MLIRRTTIHelperVCLinux rtti(builder, theModule);
 #endif
-                    rtti.setRTTIForType(location, varInfo.getType(),
-                                        [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); });
+                    if (!rtti.setRTTIForType(
+                        location, 
+                        varInfo.getType(),
+                        [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); }))
+                    {
+                        emitError(location, "Not supported type in catch");
+                        return mlir::failure();
+                    }
                 }
             }
 
@@ -7293,7 +7323,7 @@ class MLIRGenImpl
 
         // TODO: should it be mlirGen?
         auto type = getTypeByTypeName(binaryExpressionAST->right, genContext);
-        if (isNoneType(type))
+        if (mth.isNoneType(type))
         {
             emitError(location, "type of instanceOf can't be resolved.");
             return mlir::failure();
@@ -9456,7 +9486,7 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Conditional call, return type: " << resultType << "\n";);
 
-            auto hasReturn = !isNoneType(resultType) && resultType != getVoidType();
+            auto hasReturn = !mth.isNoneType(resultType) && resultType != getVoidType();
             auto ifOp = hasReturn
                             ? builder.create<mlir_ts::IfOp>(location, getOptionalType(resultType), condValue, true)
                             : builder.create<mlir_ts::IfOp>(location, condValue, false);
@@ -13442,7 +13472,7 @@ class MLIRGenImpl
         LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "");
 
         auto hasType = !!propertyDeclaration->type;
-        if (isNoneType(type))
+        if (mth.isNoneType(type))
         {
             if (hasType)
             {
@@ -13567,7 +13597,7 @@ class MLIRGenImpl
             auto type = typeAndInit.first;
 
             LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
-            if (isNoneType(type))
+            if (mth.isNoneType(type))
             {
                 return mlir::failure();
             }
@@ -15478,7 +15508,7 @@ genContext);
             type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
         }
 
-        if (isNoneType(type))
+        if (mth.isNoneType(type))
         {
             LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " FAILED\n");
             return mlir::failure();
@@ -16732,7 +16762,7 @@ genContext);
         LLVM_DEBUG(llvm::dbgs() << "\n!! assigning generic type: " << typeParam->getName() << " type: " << type
                                 << "\n";);
 
-        if (isNoneType(type))
+        if (mth.isNoneType(type))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed.\n";);
             return {mlir::failure(), IsGeneric::False};
@@ -18223,7 +18253,7 @@ genContext);
                                     << " \n\t\tconstraint item: " << typeParamItem << ", \n\t\tname: " << nameType
                                     << "] \n\ttype: " << type << "\n";);
 
-            if (isNoneType(nameType) || nameType.isa<mlir_ts::NeverType>())
+            if (mth.isNoneType(nameType) || nameType.isa<mlir_ts::NeverType>())
             {
                 // filterting out
                 LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... filtered.\n";);
@@ -18318,16 +18348,6 @@ genContext);
     mlir_ts::CharType getCharType()
     {
         return mlir_ts::CharType::get(builder.getContext());
-    }
-
-    bool isNoneType(mlir::Type type)
-    {
-        return !type || type == builder.getNoneType();
-    }
-
-    bool isNotNoneType(mlir::Type type)
-    {
-        return !isNoneType(type);
     }
 
     mlir_ts::EnumType getEnumType()
