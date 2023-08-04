@@ -3355,7 +3355,13 @@ class MLIRGenImpl
                 }
                 else if (type != init.getType())
                 {
-                    init = cast(loc(initializer), type, init, genContext);
+                    auto result = cast(loc(initializer), type, init, genContext);
+                    if (result.failed())
+                    {
+                        return {mlir::Type(), mlir::Value(), TypeProvided::No};
+                    }
+
+                    init = V(result);
                 }
             }
         }
