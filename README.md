@@ -9,6 +9,19 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new 
+- Literal Type Widening
+```TypeScript
+function main()
+{
+    let a: 10 = 11; // error
+    let b = 11; // ok
+    b = 10; // ok
+
+	print("done.");
+}
+
+```
+
 - Shared libraries
 ``shared.ts`` - shared library file: 
 ```TypeScript
@@ -26,33 +39,15 @@ export function test2()
 }
 ```
 
-- Load shared library
-```TypeScript
-import './shared'
-
-function main()
-{
-	test1();
-	test2();
-
-	print(val_str);
-
-	print(val_num);
-
-	print("done.");
-}
-
-```
-
-- Debug information: option `--di` in `tsc`
+- Build option `--emit=exe` in `tsc` to generate executable file
 ```cmd
-tsc --opt_level=0 --di --emit=obj <file>.ts
+tsc --opt --emit=exe <file>.ts
 ```
 - [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
 # Planning
-- [x] Migrating to LLVM 16.0.3
-- [ ] Shared libraries (work in progress)
+- [ ] Migrating to LLVM 16.0.6
+- [x] Shared libraries
 - [ ] JavaScript Built-in classes library
 
 # Demo 
