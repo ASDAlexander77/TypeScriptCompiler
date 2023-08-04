@@ -2947,6 +2947,12 @@ class MLIRGenImpl
             }
         }
 
+        if (!variableDeclarationInfo.type)
+        {
+            emitError(location) << "type of variable '" << variableDeclarationInfo.variableName << "' is not valid";
+            return variableDeclarationInfo.type;
+        }
+
 #ifndef NDEBUG
         variableDeclarationInfo.printDebugInfo();
 #endif
@@ -18808,7 +18814,7 @@ genContext);
         return getTupleType(types);
     }
 
-    mlir_ts::TupleType getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+    mlir::Type getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
     {
         return mlir_ts::TupleType::get(builder.getContext(), fieldInfos);
     }
