@@ -3654,13 +3654,15 @@ class MLIRGenImpl
 
             if (isBindingPattern)
             {
-                params.push_back(std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, isMultiArgs,
-                                                                    initializer, arg->name));
+                params.push_back(
+                    std::make_shared<FunctionParamDOM>(
+                        namePtr, type, loc(arg), isOptional, isMultiArgs, initializer, arg->name));
             }
             else
             {
                 params.push_back(
-                    std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, isMultiArgs, initializer));
+                    std::make_shared<FunctionParamDOM>(
+                        namePtr, type, loc(arg), isOptional, isMultiArgs, initializer));
             }
 
             index++;
@@ -17472,9 +17474,14 @@ genContext);
 
     mlir::Type NonNullableTypes(mlir::Type type)
     {
+        if (mth.isGenericType(type))
+        {
+            return type;
+        }
+
         SmallPtrSet<mlir::Type, 2> types;
 
-        MLIRHelper::loadTypes(types, type);
+        MLIRHelper::flatUnionTypes(types, type);
 
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
@@ -17490,13 +17497,19 @@ genContext);
         return getUnionType(resTypes);
     }
 
+    // TODO: remove using those types as there issue with generic types
     mlir::Type ExcludeTypes(mlir::Type type, mlir::Type exclude)
     {
+        if (mth.isGenericType(type) || mth.isGenericType(exclude))
+        {
+            return getAnyType();
+        }
+
         SmallPtrSet<mlir::Type, 2> types;
         SmallPtrSet<mlir::Type, 2> excludeTypes;
 
-        MLIRHelper::loadTypes(types, type);
-        MLIRHelper::loadTypes(excludeTypes, exclude);
+        MLIRHelper::flatUnionTypes(types, type);
+        MLIRHelper::flatUnionTypes(excludeTypes, exclude);
 
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
@@ -17516,11 +17529,16 @@ genContext);
 
     mlir::Type ExtractTypes(mlir::Type type, mlir::Type extract)
     {
+        if (mth.isGenericType(type) || mth.isGenericType(extract))
+        {
+            return getAnyType();
+        }
+
         SmallPtrSet<mlir::Type, 2> types;
         SmallPtrSet<mlir::Type, 2> extractTypes;
 
-        MLIRHelper::loadTypes(types, type);
-        MLIRHelper::loadTypes(extractTypes, extract);
+        MLIRHelper::flatUnionTypes(types, type);
+        MLIRHelper::flatUnionTypes(extractTypes, extract);
 
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
@@ -17578,6 +17596,11 @@ genContext);
         {
             return mlir::Type();
         }
+
+        if (mth.isGenericType(type))
+        {
+            return getAnyType();
+        }        
 
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {

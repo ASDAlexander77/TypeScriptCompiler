@@ -329,6 +329,9 @@ class MLIRTypeIterator
                           .Case<mlir_ts::ConstType>([&](auto) {
                               return true;
                           })                          
+                          .Case<mlir_ts::SymbolType>([&](auto) {
+                              return true;
+                          })                          
                           .Case<mlir::NoneType>([&](auto) {
                               return true;
                           })                          

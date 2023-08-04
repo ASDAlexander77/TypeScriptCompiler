@@ -203,7 +203,7 @@ class MLIRHelper
         }
     }
 
-    static void loadTypes(mlir::SmallPtrSet<mlir::Type, 2> &types, mlir::Type type)
+    static void flatUnionTypes(mlir::SmallPtrSet<mlir::Type, 2> &types, mlir::Type type)
     {
         if (!type)
         {
