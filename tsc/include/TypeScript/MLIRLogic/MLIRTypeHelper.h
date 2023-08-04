@@ -2330,7 +2330,6 @@ class MLIRTypeHelper
 
         bool isUndefined;
         bool isNullable;
-        bool isNever;
         bool isAny;
         mlir::SmallPtrSet<mlir::Type, 2> types;
         mlir::SmallPtrSet<mlir::Type, 2> literalTypes;
@@ -2358,7 +2357,6 @@ class MLIRTypeHelper
 
         if (type.isa<mlir_ts::NeverType>())
         {
-            unionContext.isNever = true;
             return mlir::success();
         }
 
@@ -2523,7 +2521,6 @@ class MLIRTypeHelper
 
             if (type.isa<mlir_ts::NeverType>())
             {
-                unionContext.isNever = true;
                 continue;
             }
 
@@ -2544,11 +2541,6 @@ class MLIRTypeHelper
         if (unionContext.isAny)
         {
             return mlir_ts::AnyType::get(context);
-        }
-
-        if (unionContext.isNever)
-        {
-            return mlir_ts::NeverType::get(context);
         }
 
         for (auto type : types)

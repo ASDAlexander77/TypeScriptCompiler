@@ -49,9 +49,17 @@ function main3()
     cb2(20, 2);
 }
 
+type NeverIsRemoved = string | never | number;
+
+function main4() {
+    let a: NeverIsRemoved = "asd";
+    print(a);
+}
+
 function main() {
     main1();
     main2();
     main3();
+    main4();
     print("done.")
 }

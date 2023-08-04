@@ -18972,11 +18972,6 @@ genContext);
             return getAnyType();
         }
 
-        if (unionContext.isNever)
-        {
-            return getNeverType();
-        }
-
         return mth.getUnionTypeMergeTypes(unionContext, false, false);
     }
 
