@@ -2674,6 +2674,11 @@ class MLIRGenImpl
             variableDeclarationInfo.setInitial(castedValue);
         }
 
+        if (variableDeclarationInfo.isConst)
+        {
+            return mlir::success();
+        }
+        
         auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
         // this is 'let', if 'let' is func, it should be HybridFunction
@@ -2692,6 +2697,28 @@ class MLIRGenImpl
 
         return mlir::success();
     }
+
+    mlir::LogicalResult adjustGlobalVariableType(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
+    {
+        if (variableDeclarationInfo.isConst)
+        {
+            return mlir::success();
+        }
+
+        auto type = variableDeclarationInfo.type;
+
+        auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
+
+        // this is 'let', if 'let' is func, it should be HybridFunction
+        if (auto funcType = actualType.dyn_cast<mlir_ts::FunctionType>())
+        {
+            actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
+        }
+
+        variableDeclarationInfo.setType(actualType);
+
+        return mlir::success();
+    }    
    
     mlir::LogicalResult createLocalVariable(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
     {
@@ -2761,6 +2788,11 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }
+
+        if (mlir::failed(adjustGlobalVariableType(location, variableDeclarationInfo, genContext)))
+        {
+            return mlir::failure();
+        }        
 
         globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
         /*
@@ -2854,6 +2886,11 @@ class MLIRGenImpl
                         return mlir::failure();
                     }
 
+                    if (mlir::failed(adjustGlobalVariableType(location, variableDeclarationInfo, genContext)))
+                    {
+                        return mlir::failure();
+                    }                      
+
                     globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
                 }
                 else
@@ -2870,6 +2907,11 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }
+
+        if (mlir::failed(adjustGlobalVariableType(location, variableDeclarationInfo, genContext)))
+        {
+            return mlir::failure();
+        }  
 
         globalOp.setTypeAttr(mlir::TypeAttr::get(variableDeclarationInfo.type));
         if (variableDeclarationInfo.isExternal)
