@@ -229,9 +229,13 @@ class MLIRRTTIHelperVCLinux
         block->walk(lastUse);
     }
 
-    void setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
+    bool setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
-        setType(type, resolveClassInfo);
+        if (!setType(type, resolveClassInfo))
+        {
+            // no type provided
+            return false;
+        }
 
         mlir::OpBuilder::InsertionGuard guard(rewriter);
 
@@ -264,6 +268,8 @@ class MLIRRTTIHelperVCLinux
 
             index++;
         }
+
+        return true;
     }
 
     mlir::LogicalResult typeInfoValue(mlir::Location loc, StringRef name)
