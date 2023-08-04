@@ -108,6 +108,15 @@ enum class IsGeneric
     True
 };
 
+enum class TypeProvided
+{
+    No,
+    Yes
+};
+
+typedef std::tuple<mlir::Type, mlir::Value, TypeProvided> TypeValueInitType;
+typedef std::function<TypeValueInitType(mlir::Location, const GenContext &)> TypeValueInitFuncType;
+
 /// Implementation of a simple MLIR emission from the TypeScript AST.
 ///
 /// This will emit operations that are specific to the TypeScript language, preserving
@@ -333,7 +342,7 @@ class MLIRGenImpl
 
         auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
             auto litValue = V(mlirGenStringValue(location, declText, true));
-            return std::make_pair(litValue.getType(), litValue);            
+            return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);            
         };
 
         VariableClass varClass = VariableType::Var;
@@ -2492,7 +2501,7 @@ class MLIRGenImpl
         };
 
         VariableDeclarationInfo(
-            std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func_, 
+            TypeValueInitFuncType func_, 
             std::function<StringRef(StringRef)> getFullNamespaceName_) : VariableDeclarationInfo() 
         {
             getFullNamespaceName = getFullNamespaceName_;
@@ -2518,6 +2527,11 @@ class MLIRGenImpl
         {
             initial = initial_;
         }             
+
+        void setIsTypeProvided(TypeProvided typeProvided_)
+        {
+            typeProvided = typeProvided_;
+        }
 
         void setExternal(bool isExternal_)
         {
@@ -2574,7 +2588,7 @@ class MLIRGenImpl
 
         mlir::LogicalResult getVariableTypeAndInit(mlir::Location location, const GenContext &genContext)
         {
-            auto [type, init] = func(location, genContext);
+            auto [type, init, typeProvided] = func(location, genContext);
             if (!type)
             {
                 if (!genContext.allowPartialResolve)
@@ -2600,6 +2614,7 @@ class MLIRGenImpl
             assert(type);
             setType(type);
             setInitial(init);
+            setIsTypeProvided(typeProvided);
 
             return mlir::success();
         }    
@@ -2625,12 +2640,13 @@ class MLIRGenImpl
             LLVM_DEBUG(dbgs() << "\n!! variable = " << fullName << " type: " << type << "\n";);
         }
 
-        std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func;
+        TypeValueInitFuncType func;
         std::function<StringRef(StringRef)> getFullNamespaceName;
 
         StringRef variableName;
         StringRef fullName;
         mlir::Value initial;
+        TypeProvided typeProvided;
         mlir::Type type;
         mlir::Value storage;
         mlir_ts::GlobalOp globalOp;
@@ -2658,7 +2674,7 @@ class MLIRGenImpl
             variableDeclarationInfo.setInitial(castedValue);
         }
 
-        auto actualType = mth.wideStorageType(type);
+        auto actualType = variableDeclarationInfo.typeProvided == TypeProvided::Yes ? type : mth.wideStorageType(type);
 
         // this is 'let', if 'let' is func, it should be HybridFunction
         if (auto funcType = actualType.dyn_cast<mlir_ts::FunctionType>())
@@ -2918,7 +2934,7 @@ class MLIRGenImpl
     }
 
     mlir::Type registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
-                                std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func, const GenContext &genContext, bool showWarnings = false)
+                                TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false)
     {
         struct VariableDeclarationInfo variableDeclarationInfo(
             func, std::bind(&MLIRGenImpl::getGlobalsFullNamespaceName, this, std::placeholders::_1));
@@ -2999,12 +3015,13 @@ class MLIRGenImpl
 
     mlir::LogicalResult processDeclarationArrayBindingPattern(mlir::Location location, ArrayBindingPattern arrayBindingPattern,
                                                VariableClass varClass,
-                                               std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func,
+                                               TypeValueInitFuncType func,
                                                const GenContext &genContext)
     {
-        auto [typeRef, initRef] = func(location, genContext);
+        auto [typeRef, initRef, typeProvidedRef] = func(location, genContext);
         mlir::Type type = typeRef;
         mlir::Value init = initRef;
+        //TypeProvided typeProvided = typeProvidedRef;
 
         auto index = 0;
         for (auto arrayBindingElement : arrayBindingPattern->elements)
@@ -3013,11 +3030,11 @@ class MLIRGenImpl
                 auto result = processDeclarationArrayBindingPatternSubPath(location, index, type, init, genContext);
                 if (result.failed_or_no_value()) 
                 {
-                    return std::make_pair(mlir::Type(), mlir::Value()); 
+                    return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No); 
                 }
 
                 auto value = V(result);
-                return std::make_pair(value.getType(), value); 
+                return std::make_tuple(value.getType(), value, TypeProvided::No); 
             };
 
             if (mlir::failed(processDeclaration(
@@ -3158,12 +3175,13 @@ class MLIRGenImpl
 
     mlir::LogicalResult processDeclarationObjectBindingPattern(mlir::Location location, ObjectBindingPattern objectBindingPattern,
                                                 VariableClass varClass,
-                                                std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func,
+                                                TypeValueInitFuncType func,
                                                 const GenContext &genContext)
     {
-        auto [typeRef, initRef] = func(location, genContext);
+        auto [typeRef, initRef, typeProvidedRef] = func(location, genContext);
         mlir::Type type = typeRef;
         mlir::Value init = initRef;
+        //TypeProvided typeProvided = typeProvidedRef;
 
         auto index = 0;
         for (auto objectBindingElement : objectBindingPattern->elements)
@@ -3176,11 +3194,11 @@ class MLIRGenImpl
                     : processDeclarationObjectBindingPatternSubPath(location, objectBindingElement, type, init, genContext);
                 if (result.failed_or_no_value()) 
                 {
-                    return std::make_pair(mlir::Type(), mlir::Value()); 
+                    return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No); 
                 }                    
 
                 auto value = V(result);
-                return std::make_pair(value.getType(), value); 
+                return std::make_tuple(value.getType(), value, TypeProvided::No); 
             };
 
             // nested obj, objectBindingElement->propertyName -> name
@@ -3205,7 +3223,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult processDeclarationName(DeclarationName name, VariableClass varClass,
-                            std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func, const GenContext &genContext, bool showWarnings = false)
+                            TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false)
     {
         auto location = loc(name);
 
@@ -3238,7 +3256,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult processDeclaration(NamedDeclaration item, VariableClass varClass,
-                            std::function<std::pair<mlir::Type, mlir::Value>(mlir::Location, const GenContext &)> func, const GenContext &genContext, bool showWarnings = false)
+                            TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false)
     {
         if (item == SyntaxKind::OmittedExpression)
         {
@@ -3249,27 +3267,31 @@ class MLIRGenImpl
     }
 
     template <typename ItemTy>
-    std::pair<mlir::Type, mlir::Value> getTypeOnly(ItemTy item, mlir::Type defaultType, const GenContext &genContext)
+    TypeValueInitType getTypeOnly(ItemTy item, mlir::Type defaultType, const GenContext &genContext)
     {
         // type
+        auto typeProvided = TypeProvided::No;
         mlir::Type type = defaultType;
         if (item->type)
         {
             type = getType(item->type, genContext);
+            typeProvided = TypeProvided::Yes;
         }
 
-        return std::make_pair(type, mlir::Value());
+        return std::make_tuple(type, mlir::Value(), typeProvided);
     }
 
     template <typename ItemTy>
-    std::pair<mlir::Type, bool> evaluateTypeAndInit(ItemTy item, const GenContext &genContext)
+    std::tuple<mlir::Type, bool, bool> evaluateTypeAndInit(ItemTy item, const GenContext &genContext)
     {
         // type
         auto hasInit = false;
+        auto typeProvided = false;
         mlir::Type type;
         if (item->type)
         {
             type = getType(item->type, genContext);
+            typeProvided = true;
         }
 
         // init
@@ -3283,21 +3305,24 @@ class MLIRGenImpl
             }
         }
 
-        return std::make_pair(type, hasInit);
+        return std::make_tuple(type, hasInit, typeProvided);
     }
 
     template <typename ItemTy>
-    std::pair<mlir::Type, mlir::Value> getTypeAndInit(ItemTy item, const GenContext &genContext)
+    std::tuple<mlir::Type, mlir::Value, TypeProvided> getTypeAndInit(ItemTy item, const GenContext &genContext)
     {
         // type
+        auto typeProvided = TypeProvided::No;
         mlir::Type type;
         if (item->type)
         {
             type = getType(item->type, genContext);
             if (!type || VALIDATE_FUNC_BOOL(type))
             {
-                return {mlir::Type(), mlir::Value()};
+                return {mlir::Type(), mlir::Value(), TypeProvided::No};
             }
+
+            typeProvided = TypeProvided::Yes;
         }
 
         // init
@@ -3315,7 +3340,7 @@ class MLIRGenImpl
             auto result = mlirGen(initializer, genContextWithTypeReceiver);
             if (result.failed())
             {
-                return {mlir::Type(), mlir::Value()};
+                return {mlir::Type(), mlir::Value(), TypeProvided::No};
             }
 
             init = V(result);
@@ -3324,6 +3349,9 @@ class MLIRGenImpl
                 if (!type)
                 {
                     type = init.getType();
+
+                    // we need to widen type here
+                    type = mth.stripLiteralType(type);
                 }
                 else if (type != init.getType())
                 {
@@ -3339,7 +3367,7 @@ class MLIRGenImpl
         }
 #endif
 
-        return std::make_pair(type, init);
+        return std::make_tuple(type, init, typeProvided);
     }
 
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext)
@@ -3365,8 +3393,8 @@ class MLIRGenImpl
         auto initFunc = [&](mlir::Location location, const GenContext &genContext) {
             if (declarationMode)
             {
-                auto [t, b] = evaluateTypeAndInit(item, genContext);
-                return std::make_pair(t, mlir::Value());
+                auto [t, b, p] = evaluateTypeAndInit(item, genContext);
+                return std::make_tuple(t, mlir::Value(), p ? TypeProvided::Yes : TypeProvided::No);
             }
 
             return getTypeAndInit(item, genContext);
@@ -4587,13 +4615,13 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, mlir_ts::FuncOp funcOp, StringRef dllFuncName, const GenContext &genContext)
     {
         registerVariable(location, funcOp.getName(), true, VariableType::Var,
-            [&](mlir::Location location, const GenContext &context) -> std::pair<mlir::Type, mlir::Value> {
+            [&](mlir::Location location, const GenContext &context) -> TypeValueInitType {
                 // add command to load reference fron DLL
                 auto fullName = V(mlirGenStringValue(location, dllFuncName.str(), true));
                 auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
                 auto result = cast(location, funcOp.getFunctionType(), referenceToFuncOpaque, genContext);
                 auto referenceToFunc = V(result);
-                return {referenceToFunc.getType(), referenceToFunc};
+                return {referenceToFunc.getType(), referenceToFunc, TypeProvided::No};
             },
             genContext);
 
@@ -4929,7 +4957,7 @@ class MLIRGenImpl
                 auto location = loc(bindingPattern);
                 auto val = resolveIdentifier(location, param->getName(), genContext);
                 assert(val);
-                auto initFunc = [&](mlir::Location, const GenContext &) { return std::make_pair(val.getType(), val); };
+                auto initFunc = [&](mlir::Location, const GenContext &) { return std::make_tuple(val.getType(), val, TypeProvided::No); };
 
                 if (bindingPattern == SyntaxKind::ArrayBindingPattern)
                 {
@@ -5566,9 +5594,9 @@ class MLIRGenImpl
         return 
             !!registerVariable(
                 location, parameterName, false, VariableType::Const,
-                [&](mlir::Location, const GenContext &) -> std::pair<mlir::Type, mlir::Value>
+                [&](mlir::Location, const GenContext &) -> TypeValueInitType
                 {
-                    return {safeType, castedValue};
+                    return {safeType, castedValue, TypeProvided::Yes};
                 },
                 genContext) ? mlir::success() : mlir::failure();        
     }    
@@ -9181,8 +9209,8 @@ class MLIRGenImpl
         auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
         registerVariable(
             location, varName, false, VariableType::Let,
-            [&](mlir::Location, const GenContext &) -> std::pair<mlir::Type, mlir::Value> {
-                return {getBooleanType(), initVal};
+            [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                return {getBooleanType(), initVal, TypeProvided::No};
             },
             genContext);
 
@@ -9234,8 +9262,8 @@ class MLIRGenImpl
         auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
         registerVariable(
             location, varName, false, VariableType::Let,
-            [&](mlir::Location, const GenContext &) -> std::pair<mlir::Type, mlir::Value> {
-                return {getBooleanType(), initVal};
+            [&](mlir::Location, const GenContext &) -> TypeValueInitType {
+                return {getBooleanType(), initVal, TypeProvided::No};
             },
             genContext);
 
@@ -13469,9 +13497,8 @@ class MLIRGenImpl
     {
         auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
 
-        auto typeAndInitFlag = evaluateTypeAndInit(propertyDeclaration, genContext);
-        auto type = typeAndInitFlag.first;
-        if (typeAndInitFlag.second)
+        auto [type, init, typeProvided] = evaluateTypeAndInit(propertyDeclaration, genContext);
+        if (init)
         {
             newClassPtr->hasInitializers = true;
             type = mth.wideStorageType(type);
@@ -13557,7 +13584,7 @@ class MLIRGenImpl
         
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, VariableType::Var,
-            [&](mlir::Location location, const GenContext &genContext) -> std::pair<mlir::Type, mlir::Value> {
+            [&](mlir::Location location, const GenContext &genContext) -> TypeValueInitType {
                 // detect field Type
                 auto isConst = false;
                 mlir::Type typeInit;
@@ -13575,7 +13602,7 @@ class MLIRGenImpl
                 auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
                 auto result = cast(location, mlir_ts::RefType::get(typeInit), referenceToStaticFieldOpaque, genContext);
                 auto referenceToStaticField = V(result);
-                return {referenceToStaticField.getType(), referenceToStaticField};
+                return {referenceToStaticField.getType(), referenceToStaticField, TypeProvided::No};
             },
             genContext);
 
@@ -13601,8 +13628,7 @@ class MLIRGenImpl
 
             auto fieldId = TupleFieldName(parameter->name, genContext);
 
-            auto typeAndInit = getTypeAndInit(parameter, genContext);
-            auto type = typeAndInit.first;
+            auto [type, init, typeProvided] = getTypeAndInit(parameter, genContext);
 
             LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
             if (mth.isNoneType(type))
@@ -13859,12 +13885,12 @@ genContext);
                 [&](mlir::Location location, const GenContext &genContext) {
                     if (newClassPtr->isDeclaration)
                     {
-                        return std::make_pair(staticFieldType, mlir::Value());
+                        return std::make_tuple(staticFieldType, mlir::Value(), TypeProvided::Yes);
                     }
 
                     mlir::Value init = builder.create<mlir_ts::ConstantOp>(location, staticFieldType,
                                                                             getStringAttr(newClassPtr->fullName.str()));
-                    return std::make_pair(staticFieldType, init);
+                    return std::make_tuple(staticFieldType, init, TypeProvided::Yes);
                 },
                 genContext);
         }
@@ -13896,12 +13922,12 @@ genContext);
             // prevent double generating
             registerVariable(
                 location, fullClassStaticFieldName, true, VariableType::Var,
-                [&](mlir::Location location, const GenContext &genContext)  -> std::pair<mlir::Type, mlir::Value> {
+                [&](mlir::Location location, const GenContext &genContext)  -> TypeValueInitType {
                     auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
                     auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
                     auto result = cast(location, staticFieldType, referenceToStaticFieldOpaque, genContext);
                     auto referenceToStaticField = V(result);
-                    return {referenceToStaticField.getType(), referenceToStaticField};
+                    return {referenceToStaticField.getType(), referenceToStaticField, TypeProvided::Yes};
                 },
                 genContext);
         }
@@ -13945,7 +13971,7 @@ genContext);
                 [&](mlir::Location location, const GenContext &genContext) {
                     auto init =
                         builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), mth.getI64AttrValue(0));
-                    return std::make_pair(init.getType(), init);
+                    return std::make_tuple(init.getType(), init, TypeProvided::Yes);
                 },
                 genContext);
         }
@@ -14343,7 +14369,7 @@ genContext);
                     fieldIndex++;
                 }
 
-                return std::pair<mlir::Type, mlir::Value>{virtTuple, vtableValue};
+                return TypeValueInitType{virtTuple, vtableValue, TypeProvided::Yes};
             },
             genContext);
 
@@ -14455,7 +14481,7 @@ genContext);
                             emitError(location) << "can't find reference for field: " << methodOrField.fieldInfo.id
                                                 << " in interface: " << newInterfacePtr->interfaceType
                                                 << " for class: " << newClassPtr->classType;
-                            return std::pair<mlir::Type, mlir::Value>{mlir::Type(), mlir::Value()};
+                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                         }
 
                         // insert &(null)->field
@@ -14478,7 +14504,7 @@ genContext);
                     fieldIndex++;
                 }
 
-                return std::pair<mlir::Type, mlir::Value>{virtTuple, vtableValue};
+                return TypeValueInitType{virtTuple, vtableValue, TypeProvided::Yes};
             },
             genContext);
 
@@ -14719,7 +14745,7 @@ genContext);
                 auto virtTuple = getVirtualTableType(virtualTable);
                 if (newClassPtr->isDeclaration)
                 {
-                    return std::pair<mlir::Type, mlir::Value>{virtTuple, mlir::Value()};
+                    return TypeValueInitType{virtTuple, mlir::Value(), TypeProvided::Yes};
                 }
 
                 mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
@@ -14736,7 +14762,7 @@ genContext);
 
                         if (!interfaceVTableValue)
                         {
-                            return std::pair<mlir::Type, mlir::Value>{mlir::Type(), mlir::Value()};
+                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                         }
 
                         auto interfaceVTableValueAsAny =
@@ -14754,7 +14780,7 @@ genContext);
                             if (vtRecord.methodInfo.isAbstract)
                             {
                                 emitError(location) << "Abstract method '" << vtRecord.methodInfo.name <<  "' is not implemented in '" << newClassPtr->name << "'";
-                                return std::pair<mlir::Type, mlir::Value>{mlir::Type(), mlir::Value()}; 
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No}; 
                             }
 
                             methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
@@ -14776,7 +14802,7 @@ genContext);
                     }
                 }
 
-                return std::pair<mlir::Type, mlir::Value>{virtTuple, vtableValue};
+                return TypeValueInitType{virtTuple, vtableValue, TypeProvided::Yes};
             },
             genContext);
 
@@ -15560,8 +15586,7 @@ genContext);
 
             fieldId = TupleFieldName(propertySignature->name, genContext);
 
-            auto typeAndInit = getTypeAndInit(propertySignature, genContext);
-            type = typeAndInit.first;
+            auto [type, init, typeProvided] = getTypeAndInit(propertySignature, genContext);
             if (!type)
             {
                 return mlir::failure();
@@ -16076,6 +16101,18 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! cast [" << valueType << "] -> [" << type << "]"
                                 << "\n";);
+
+        if (auto litType = type.dyn_cast<mlir_ts::LiteralType>())
+        {
+            if (auto valLitType = valueType.dyn_cast<mlir_ts::LiteralType>())
+            {
+                if (litType.getValue() != valLitType.getValue())
+                {
+                    emitError(location, "can't cast from literal type: '") << valLitType.getValue() << "' to '" << litType.getValue() << "'";
+                    return mlir::failure(); 
+                }
+            }
+        }
 
         // class to string
         if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
