@@ -3349,9 +3349,6 @@ class MLIRGenImpl
                 if (!type)
                 {
                     type = init.getType();
-
-                    // we need to widen type here
-                    type = mth.stripLiteralType(type);
                 }
                 else if (type != init.getType())
                 {
