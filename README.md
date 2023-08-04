@@ -248,35 +248,49 @@ Run ``run.html``
 ```
 
 ## Build
+
 ### On Windows
+
+#### Requirements:
+
+- ``Visual Studio 2022``
+- 512GB of free space on disk
+
 
 First, precompile dependencies
 
 ```cmd
+cd TypeScriptCompiler
 prepare_3rdParty.bat 
 ```
 
 To build ``TSC`` binaries:
 
 ```cmd
-cd tsc
+cd TypeScriptCompiler\tsc
 config_tsc_debug.bat
 build_tsc_debug.bat
 ```
 
 ### On Linux (Ubuntu 20.04 and 22.04)
+#### Requirements:
+
+- ``GCC`` or ``Clang``
+- 512GB of free space on disk
+- sudo apt-get install ``libtinfo-dev``
 
 First, precompile dependencies
 
 ```bash
 chmod +x *.sh
+cd ~/TypeScriptCompiler
 ./prepare_3rdParty.sh
 ```
 
 To build ``TSC`` binaries:
 
 ```bash
-cd tsc
+cd ~/TypeScriptCompiler/tsc
 chmod +x *.sh
 ./config_tsc_debug.sh
 ./build_tsc_debug.sh
