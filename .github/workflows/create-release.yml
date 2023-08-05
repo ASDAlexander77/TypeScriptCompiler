@@ -62,13 +62,11 @@ jobs:
       - name: Download 3rd party - LLVM
         continue-on-error: true
         shell: pwsh
-        if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.zip') == ''
-        run: Invoke-WebRequest -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip"
+        run: if (-Not Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip") { Invoke-WebRequest -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
-        if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.zip') != ''
-        run: Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force
+        run: if (Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip") { Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force }
         shell: pwsh
 
       - name: Download 3rd party source - GC
@@ -207,15 +205,18 @@ jobs:
       - name: Download 3rd party - LLVM
         continue-on-error: true
         shell: sh
-        if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.tgz') == ''
-        run: curl -L https://www.dropbox.com/s/q5hpkp5hasj6cvc/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release.tgz
+        run:
+	  if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
+	    curl -L https://www.dropbox.com/s/q5hpkp5hasj6cvc/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release.tgz
+	  fi
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
         shell: sh
-        if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.tgz') != ''
-        run: file llvm_${{ env.LLVM_VERSION }}_release.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release.tgz -C ./3rdParty/llvm/
-        #run: file llvm_${{ env.LLVM_VERSION }}_release.tgz; unzip llvm_${{ env.LLVM_VERSION }}_release.tgz -d ./3rdParty/llvm/
+        run: 
+	  if test -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
+	    file llvm_${{ env.LLVM_VERSION }}_release.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release.tgz -C ./3rdParty/llvm/
+	  fi
 
       - name: Download 3rd party source - GC
         continue-on-error: true
@@ -360,15 +361,18 @@ jobs:
       - name: Download 3rd party - LLVM
         continue-on-error: true
         shell: sh
-        if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.tgz') == ''
-        run: curl -L https://www.dropbox.com/s/9vr0dabs0doimej/llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
+        run: 
+	  if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
+	    curl -L https://www.dropbox.com/s/9vr0dabs0doimej/llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
+	  fi
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
         shell: sh
-        if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz') != ''
-        run: file llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz -C ./3rdParty/llvm/
-        #run: file llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz; unzip llvm_${{ env.LLVM_VERSION }}_release.tgz -d ./3rdParty/llvm/
+        run:
+	  if test -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
+	    file llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz -C ./3rdParty/llvm/
+	  fi
 
       - name: Download 3rd party source - GC
         continue-on-error: true
