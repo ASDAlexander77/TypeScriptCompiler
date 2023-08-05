@@ -62,7 +62,7 @@ jobs:
       - name: Download 3rd party - LLVM
         continue-on-error: true
         shell: pwsh
-        run: if (-Not Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip") { Invoke-WebRequest -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
+        run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
