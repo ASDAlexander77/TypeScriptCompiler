@@ -148,7 +148,7 @@ jobs:
 
       - name: Create Zip of Windows Asset
         working-directory: ${{github.workspace}}/__build
-        run: Get-ChildItem -Path .\tsc\msbuild\x64\release\bin\tsc.exe, .\tsc\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc-lib.lib, ..\3rdParty\llvm\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\release\bin\wasm-ld.exe | Compress-Archive -DestinationPath ..\tsc.zip
+        run: Get-ChildItem -Path .\tsc\msbuild\x64\release\bin\tsc.exe, .\tsc\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc-lib.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe | Compress-Archive -DestinationPath ..\tsc.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
