@@ -148,7 +148,7 @@ jobs:
 
       - name: Create Zip of Windows Asset
         working-directory: ${{github.workspace}}/__build
-        run: Get-ChildItem -Path .\tsc\msbuild\x64\release\bin\tsc.exe, .\tsc\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc-lib.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe | Compress-Archive -DestinationPath ..\tsc.zip
+        run: Get-ChildItem -Path .\tsc\msbuild\x64\release\bin\tsc.exe, .\tsc\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gcmt-lib.lib, .\tsc\msbuild\x64\release\bin\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe | Compress-Archive -DestinationPath ..\tsc.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
@@ -302,7 +302,7 @@ jobs:
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
-        run: tar -czvhf ../tsc.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgc-lib.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a
+        run: tar -czvhf ../tsc.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgcmt-lib.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v2
@@ -455,7 +455,7 @@ jobs:
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
-        run: tar -czvhf ../tsc-ub20.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgc-lib.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a 
+        run: tar -czvhf ../tsc-ub20.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgcmt-lib.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a 
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v2
