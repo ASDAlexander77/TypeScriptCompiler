@@ -72,24 +72,20 @@ jobs:
       - name: Download 3rd party source - GC
         continue-on-error: true
         shell: pwsh
-        if: hashFiles('gc-8.0.4.tar.gz') == ''
         run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
 
       - name: Download 3rd party source - GC:Atomic_ops
         continue-on-error: true
         shell: pwsh
-        if: hashFiles('libatomic_ops-7.6.10.tar.gz') == ''
         run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
 
       - name: UnZip 3rd party source - GC
         continue-on-error: false
-        if: hashFiles('gc-8.0.4.tar.gz') != ''
         run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
         shell: pwsh
 
       - name: UnZip 3rd party source - GC:Atomic_ops
         continue-on-error: false
-        if: hashFiles('libatomic_ops-7.6.10.tar.gz') != ''
         run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
         shell: pwsh
 
@@ -221,25 +217,21 @@ jobs:
       - name: Download 3rd party source - GC
         continue-on-error: true
         shell: sh
-        if: hashFiles('gc-8.0.4.tar.gz') == ''
         run: curl -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
 
       - name: Download 3rd party source - GC:Atomic_ops
         continue-on-error: true
         shell: sh
-        if: hashFiles('libatomic_ops-7.6.10.tar.gz') == ''
         run: curl -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
 
       - name: UnZip 3rd party source - GC
         continue-on-error: false
         shell: sh
-        if: hashFiles('gc-8.0.4.tar.gz') != ''
         run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
 
       - name: UnZip 3rd party source - GC:Atomic_ops
         continue-on-error: false
         shell: sh
-        if: hashFiles('libatomic_ops-7.6.10.tar.gz') != ''
         run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
 
       - name: Copy Atomic_ops to GC
@@ -377,31 +369,27 @@ jobs:
       - name: Download 3rd party source - GC
         continue-on-error: true
         shell: sh
-        if: hashFiles('gc-8.0.4.tar.gz') == ''
         run: curl -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
 
       - name: Download 3rd party source - GC:Atomic_ops
         continue-on-error: true
         shell: sh
-        if: hashFiles('libatomic_ops-7.6.10.tar.gz') == ''
         run: curl -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
 
       - name: UnZip 3rd party source - GC
         continue-on-error: false
         shell: sh
-        if: hashFiles('gc-8.0.4.tar.gz') != ''
         run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
 
       - name: UnZip 3rd party source - GC:Atomic_ops
         continue-on-error: false
         shell: sh
-        if: hashFiles('libatomic_ops-7.6.10.tar.gz') != ''
         run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
 
       - name: Copy Atomic_ops to GC
         continue-on-error: false
         shell: sh
-        run:  cp -a ./3rdParty/libatomic_ops-7.6.10/ ./3rdParty/gc-8.0.4/libatomic_ops/
+        run: cp -a ./3rdParty/libatomic_ops-7.6.10/ ./3rdParty/gc-8.0.4/libatomic_ops/
 
       - name: Copy fixes to GC
         continue-on-error: false

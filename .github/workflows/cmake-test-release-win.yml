@@ -64,36 +64,30 @@ jobs:
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: pwsh
-      if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.zip') == ''
-      run: Invoke-WebRequest -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip"
+      run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
-      if: hashFiles('llvm_${{ env.LLVM_VERSION }}_release.zip') != ''
-      run: Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force
+      run: if (Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip") { Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force }
       shell: pwsh
 
     - name: Download 3rd party source - GC
       continue-on-error: true
       shell: pwsh
-      if: hashFiles('gc-8.0.4.tar.gz') == ''
       run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
 
     - name: Download 3rd party source - GC:Atomic_ops
       continue-on-error: true
       shell: pwsh
-      if: hashFiles('libatomic_ops-7.6.10.tar.gz') == ''
       run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
 
     - name: UnZip 3rd party source - GC
       continue-on-error: false
-      if: hashFiles('gc-8.0.4.tar.gz') != ''
       run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
       shell: pwsh
 
     - name: UnZip 3rd party source - GC:Atomic_ops
       continue-on-error: false
-      if: hashFiles('libatomic_ops-7.6.10.tar.gz') != ''
       run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
       shell: pwsh
 
