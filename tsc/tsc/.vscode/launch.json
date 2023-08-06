@@ -246,6 +246,24 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },      
         {
+            "name": "(Windows) tsc.exe - WASM",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "args": [
+                "-emit=exe",
+                "-opt",
+                "-o=c:/temp/1.wasm",
+                "-mtriple=wasm32-unknown-unknown",
+                "C:/temp/1.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },           
+        {
             "name": "(Windows) tsc.exe - JIT",
             "type": "cppvsdbg",
             "request": "launch",

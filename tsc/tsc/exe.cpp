@@ -172,9 +172,19 @@ int buildExe(int argc, char **argv, std::string objFileName)
     auto isLLVMLibNeeded = true;
     auto isTscLibNeeded = true;
 
-    auto win = (TheTriple.getOS() == llvm::Triple::Win32);
+    auto os = TheTriple.getOS();
+    auto arch = TheTriple.getArch();
+    auto win = os == llvm::Triple::Win32;
+    // TODO: temp solution
+    auto wasm = arch == llvm::Triple::wasm32 || arch == llvm::Triple::wasm64;
     auto shared = emitAction == BuildDll;
     
+    if (wasm)
+    {
+        isLLVMLibNeeded = false;
+        isTscLibNeeded = false;        
+    }
+
     args.push_back(objFileName.c_str());
     if (win && shared)
     {
@@ -257,7 +267,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
         }
     }
 
-    if (!win)
+    if (!win && !wasm)
     {
         args.push_back("-frtti");
         args.push_back("-fexceptions");
