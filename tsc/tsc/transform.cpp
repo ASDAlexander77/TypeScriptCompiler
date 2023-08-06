@@ -20,6 +20,7 @@
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
 #include "TypeScript/DebugInfoPatchPass.h"
 #endif
+#include "TypeScript/AliasPass.h"
 
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -240,7 +241,18 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
 #ifdef WIN_EXCEPTION        
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::Win32ExceptionPass()));
 #endif
-        mpm.addPass(ts::ExportFixPass(llvm::Triple(m->getTargetTriple()).isWindowsMSVCEnvironment()));
+        llvm::Triple triple(m->getTargetTriple());
+        mpm.addPass(ts::ExportFixPass(triple.isWindowsMSVCEnvironment()));
+
+        if (triple.getArch() == llvm::Triple::ArchType::wasm32)
+        {
+            mpm.addPass(ts::AliasPass(true, 32));
+        }
+
+        if (triple.getArch() == llvm::Triple::ArchType::wasm64)
+        {
+            mpm.addPass(ts::AliasPass(true, 64));
+        }
 
         if (*ol == llvm::OptimizationLevel::O0)
             mpm.addPass(pb.buildO0DefaultPipeline(*ol));
