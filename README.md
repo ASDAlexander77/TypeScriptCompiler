@@ -214,37 +214,46 @@ Run ``run.html``
 ```html
 <!DOCTYPE html>
 <html>
-  <head></head>
-  <body>
+<head></head>
+<body>
     <script type="module">
         let buffer;
+
+        const endOf = (arg) => {
+            while (buffer[arg] != 0) arg++;
+            return arg;
+        };
+
+        const strOf = (arg) => String.fromCharCode(...buffer.slice(arg, endOf(arg)));
 
         const config = {
             env: {
                 memory_base: 0,
                 table_base: 0,
-                memory : new WebAssembly.Memory({ initial: 256}),
+                memory: new WebAssembly.Memory({ initial: 256 }),
                 table: new WebAssembly.Table({
                     initial: 0,
                     element: 'anyfunc',
-                })
-            }
+                }),
+                _assert: (msg, file, line) => console.assert(false, strOf(msg), "file", strOf(file), "line", line),
+                puts: (arg) => console.log(strOf(arg)),
+            },
         };
 
         fetch("./hello.wasm")
-            .then(response =>{
+            .then(response => {
                 return response.arrayBuffer();
             })
             .then(bytes => {
-                return WebAssembly.instantiate(bytes, config); 
+                return WebAssembly.instantiate(bytes, config);
             })
-            .then(results => { 
-                let { main } =  results.instance.exports;
+            .then(results => {
+                let { main } = results.instance.exports;
                 buffer = new Uint8Array(results.instance.exports.memory.buffer);
                 main();
             });
     </script>
-  </body>
+</body>
 </html>
 ```
 
