@@ -103,7 +103,12 @@ std::string getDefaultOutputFileName(enum Action emitAction)
                 
                 TheTriple = llvm::Triple(targetTriple);
 
-                fileNameResult += (TheTriple.getOS() == llvm::Triple::Win32) ? ".exe" : "";
+                fileNameResult += 
+                    (TheTriple.getOS() == llvm::Triple::Win32) 
+                        ? ".exe" 
+                        : (TheTriple.getArch() == llvm::Triple::wasm32 || TheTriple.getArch() == llvm::Triple::wasm64) 
+                            ? ".wasm" 
+                            : "";
             }
 
             break;
