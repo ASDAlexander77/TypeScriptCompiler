@@ -254,7 +254,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     args.push_back(objFileName.c_str());
     if (win && shared)
     {
-        args.push_back("-Wl,-nodefaultlib:libcmt");
+        //args.push_back("-Wl,-nodefaultlib:libcmt");
     }
 
     if (outputFilename.empty())
@@ -373,6 +373,12 @@ int buildExe(int argc, char **argv, std::string objFileName)
 
     theDriver.setTargetAndMode(targetandMode);
     std::unique_ptr<clang::driver::Compilation> c(theDriver.BuildCompilation(args));
+
+    if (win && shared)
+    {
+        //args.push_back("-Wl,-nodefaultlib:libcmt");
+        removeCommandArgs(c.get(), {"defaultlib:libcmt"});
+    }
 
     if (wasm)
     {
