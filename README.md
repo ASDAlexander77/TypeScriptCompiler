@@ -240,13 +240,7 @@ Run ``run.html``
             },
         };
 
-        fetch("./hello.wasm")
-            .then(response => {
-                return response.arrayBuffer();
-            })
-            .then(bytes => {
-                return WebAssembly.instantiate(bytes, config);
-            })
+        WebAssembly.instantiateStreaming(fetch("./hello.wasm"), config)
             .then(results => {
                 let { main } = results.instance.exports;
                 buffer = new Uint8Array(results.instance.exports.memory.buffer);
