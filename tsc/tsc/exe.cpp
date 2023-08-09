@@ -278,6 +278,13 @@ int buildExe(int argc, char **argv, std::string objFileName)
         args.push_back("-ldl");
     }
 
+    if (wasm)
+    {
+        // EMCC
+        args.push_back("--sysroot=C:/utils/emsdk/upstream/emscripten/cache/sysroot");
+        args.push_back("-lcompiler_rt");
+    }
+
     // Create DiagnosticsEngine for the compiler driver
     auto diagOpts = createAndPopulateDiagOpts(args);
     llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs> diagID(new clang::DiagnosticIDs());
@@ -295,6 +302,32 @@ int buildExe(int argc, char **argv, std::string objFileName)
 
     theDriver.setTargetAndMode(targetandMode);
     std::unique_ptr<clang::driver::Compilation> c(theDriver.BuildCompilation(args));
+
+    if (wasm)
+    {
+        // add args "--no-entry" "--export-all" "--allow-undefined"
+        // we need to remove libclang_rt.builtins-wasm32.a
+        for (auto &job : c->getJobs())
+        {
+            auto replace = false;
+            llvm::opt::ArgStringList newArgs;
+            for (auto arg : job.getArguments())
+            {
+                if (StringRef(arg).contains("clang_rt.builtins")/*|| StringRef(arg).contains("crt1")*/)
+                {
+                    replace = true;
+                    continue;
+                }
+                newArgs.push_back(arg);
+            }
+
+            if (replace)
+            {
+                job.replaceArguments(newArgs);
+            }
+        }
+    }
+
     llvm::SmallVector<std::pair<int, const clang::driver::Command *>, 4> failingCommands;
 
 #ifndef _NDEBUG

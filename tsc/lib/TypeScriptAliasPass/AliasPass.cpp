@@ -31,7 +31,7 @@ struct AliasPassCode
             if (!F.isDeclaration() 
                 && F.arg_size() == 0 
                 && !F.isVarArg() 
-                /*&& F.getReturnType()->isIntegerTy(intSize)*/) {
+                && F.getReturnType()->isIntegerTy(intSize)) {
                 auto *GA = llvm::GlobalAlias::create("__main_void", &F);
                 GA->setVisibility(llvm::GlobalValue::HiddenVisibility);
 
