@@ -162,6 +162,9 @@
             "editor.defaultFormatter": "cheshirekow.cmake-format"
         },
         "typescript.tsc.autoDetect": "off",
-        "npm.autoDetect": "off"
+        "npm.autoDetect": "off",
+        "[html]": {
+            "editor.defaultFormatter": "vscode.html-language-features"
+        }
     }
 }
