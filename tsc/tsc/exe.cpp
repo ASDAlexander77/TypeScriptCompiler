@@ -25,6 +25,7 @@ extern cl::opt<std::string> TargetTriple;
 extern cl::opt<std::string> gclibpath;
 extern cl::opt<std::string> llvmlibpath;
 extern cl::opt<std::string> tsclibpath;
+extern cl::opt<std::string> emsdksysrootpath;
 
 std::string getDefaultOutputFileName(enum Action);
 
@@ -114,9 +115,73 @@ std::string getTscLibPath(std::string driverPath)
     return "";    
 }
 
+std::string getEMSDKSysRootPath(std::string driverPath)
+{
+    if (!emsdksysrootpath.empty())
+    {
+        return emsdksysrootpath;
+    }
+
+    if (std::optional<std::string> emsdksysrootpathEnvValue = llvm::sys::Process::GetEnv("EMSDK_SYSROOT_PATH")) 
+    {
+        return emsdksysrootpathEnvValue.value();
+    }   
+
+    return "";    
+}
+
+std::string concatIfNotEmpty(const char *prefix, std::string path)
+{
+    return path.empty() ? path : prefix + path;
+}
+
 std::string getLibsPathOpt(std::string path)
 {
-    return path.empty() ? path : "-L" + path;
+    return concatIfNotEmpty("-L", path);
+}
+
+void addCommandArgs(clang::driver::Compilation *c, llvm::ArrayRef<const char*> cmdParts)
+{
+    for (auto &job : c->getJobs())
+    {
+        llvm::opt::ArgStringList newArgs;
+        for (auto arg : job.getArguments())
+        {
+            newArgs.push_back(arg);
+        }
+
+        for (auto newCmdArg : cmdParts)
+        {
+            newArgs.push_back(newCmdArg);
+        }
+
+        job.replaceArguments(newArgs);
+        break;
+    }
+}
+
+void removeCommandArgs(clang::driver::Compilation *c, llvm::ArrayRef<const char*> cmdParts)
+{
+    for (auto &job : c->getJobs())
+    {
+        auto replace = false;
+        llvm::opt::ArgStringList newArgs;
+        for (auto arg : job.getArguments())
+        {
+            StringRef argStr(arg);
+            if (llvm::any_of(cmdParts, [argStr](auto &cmdPart) { return argStr.contains(cmdPart); }))
+            {
+                replace = true;
+                continue;
+            }
+            newArgs.push_back(arg);
+        }
+
+        if (replace)
+        {
+            job.replaceArguments(newArgs);
+        }
+    }
 }
 
 int buildExe(int argc, char **argv, std::string objFileName)
@@ -168,6 +233,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     std::string gcLibPathOpt;
     std::string tscLibPathOpt;
     std::string llvmLibPathOpt;
+    std::string emsdkSysRootPathOpt;
 
     auto isLLVMLibNeeded = true;
     auto isTscLibNeeded = true;
@@ -175,8 +241,8 @@ int buildExe(int argc, char **argv, std::string objFileName)
     auto os = TheTriple.getOS();
     auto arch = TheTriple.getArch();
     auto win = os == llvm::Triple::Win32;
-    // TODO: temp solution
     auto wasm = arch == llvm::Triple::wasm32 || arch == llvm::Triple::wasm64;
+    auto emscripten = os == llvm::Triple::Emscripten;
     auto shared = emitAction == BuildDll;
     
     if (wasm)
@@ -278,10 +344,15 @@ int buildExe(int argc, char **argv, std::string objFileName)
         args.push_back("-ldl");
     }
 
-    if (wasm)
+    if (wasm && emscripten)
     {
-        // EMCC
-        args.push_back("--sysroot=C:/utils/emsdk/upstream/emscripten/cache/sysroot");
+        //args.push_back("--sysroot=C:/utils/emsdk/upstream/emscripten/cache/sysroot");
+        emsdkSysRootPathOpt = concatIfNotEmpty("--sysroot=", getEMSDKSysRootPath(driverPath));
+        if (!emsdkSysRootPathOpt.empty())
+        {
+            args.push_back(emsdkSysRootPathOpt.c_str());
+        }
+
         args.push_back("-lcompiler_rt");
     }
 
@@ -305,26 +376,14 @@ int buildExe(int argc, char **argv, std::string objFileName)
 
     if (wasm)
     {
-        // add args "--no-entry" "--export-all" "--allow-undefined"
-        // we need to remove libclang_rt.builtins-wasm32.a
-        for (auto &job : c->getJobs())
+        if (emscripten)
         {
-            auto replace = false;
-            llvm::opt::ArgStringList newArgs;
-            for (auto arg : job.getArguments())
-            {
-                if (StringRef(arg).contains("clang_rt.builtins")/*|| StringRef(arg).contains("crt1")*/)
-                {
-                    replace = true;
-                    continue;
-                }
-                newArgs.push_back(arg);
-            }
-
-            if (replace)
-            {
-                job.replaceArguments(newArgs);
-            }
+            removeCommandArgs(c.get(), {"clang_rt.builtins"});
+        }
+        else
+        {
+            removeCommandArgs(c.get(), {"crt1.o", "-lc", "clang_rt.builtins"});
+            addCommandArgs(c.get(), {"--no-entry", "--export-all", "--allow-undefined"});
         }
     }
 

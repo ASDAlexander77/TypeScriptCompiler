@@ -275,6 +275,7 @@
                 "--nogc",
                 "-o=c:/temp/1.wasm",
                 "-mtriple=wasm32-pc-emscripten",
+                "--sysroot=C:/utils/emsdk/upstream/emscripten/cache/sysroot",
                 "C:/temp/1.ts"
             ],
             "stopAtEntry": false,
