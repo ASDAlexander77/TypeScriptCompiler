@@ -148,8 +148,8 @@ Hello World!
 File ``tsc-compile.bat``
 ```cmd
 set FILENAME=%1
-set GC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\release\Debug
-set LLVM_LIB_PATH=C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\release\Debug\lib
+set GC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\release\Release
+set LLVM_LIB_PATH=C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\release\Release\lib
 set TSC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\lib
 set TSCEXEPATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\bin
 %TSCEXEPATH%\tsc.exe --opt --emit=exe %FILENAME%.ts
@@ -199,12 +199,11 @@ Hello World!
 ### On Windows
 File ``tsc-compile-wasm.bat``
 ```cmd
-echo "check if your LLC support WebAssembly by running command: llc.exe --version --triple"
-rem set %LLVM% and %TSCBIN%
-set LLVMPATH=%LLVM%\llvm\release\bin
-set TSCPATH=%TSCBIN%\tsc\bin
-%TSCPATH%\tsc.exe -nogc --emit=obj --opt --mtriple=wasm32-unknown-unknown %FILENAME%.ts -o=%FILENAME%.o
-%LLVMPATH%\wasm-ld.exe %FILENAME%.o -o %FILENAME%.wasm --no-entry --export-all --allow-undefined
+set FILENAME=%1
+set GC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\release\Release
+set LLVM_LIB_PATH=C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\release\Release\lib
+set TSC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\lib
+C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\bin\tsc.exe --emit=exe --nogc -mtriple=wasm32-unknown-unknown %FILENAME%.ts
 ```
 Compile 
 ```cmd
@@ -270,8 +269,8 @@ To build ``TSC`` binaries:
 
 ```cmd
 cd TypeScriptCompiler\tsc
-config_tsc_debug.bat
-build_tsc_debug.bat
+config_tsc_release.bat
+build_tsc_release.bat
 ```
 
 ### On Linux (Ubuntu 20.04 and 22.04)
@@ -294,6 +293,6 @@ To build ``TSC`` binaries:
 ```bash
 cd ~/TypeScriptCompiler/tsc
 chmod +x *.sh
-./config_tsc_debug.sh
-./build_tsc_debug.sh
+./config_tsc_release.sh
+./build_tsc_release.sh
 ```
