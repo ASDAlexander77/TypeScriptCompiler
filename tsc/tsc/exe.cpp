@@ -26,6 +26,7 @@ extern cl::opt<std::string> gclibpath;
 extern cl::opt<std::string> llvmlibpath;
 extern cl::opt<std::string> tsclibpath;
 extern cl::opt<std::string> emsdksysrootpath;
+extern cl::opt<bool> enableOpt;
 
 std::string getDefaultOutputFileName(enum Action);
 
@@ -309,7 +310,14 @@ int buildExe(int argc, char **argv, std::string objFileName)
         if (shared)
         {
             // needed to resolve DLL ref
-            args.push_back("-lmsvcrt");
+            if (enableOpt)
+            {
+                args.push_back("-lmsvcrt");
+            }
+            else
+            {
+                args.push_back("-lmsvcrtd");
+            }
         }
     }
 
