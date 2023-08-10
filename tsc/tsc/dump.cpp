@@ -68,12 +68,11 @@ int dumpLLVMIR(mlir::ModuleOp module)
                 llvmModule->setModuleFlag(llvm::Module::Warning, "CodeView", 0);
             }
         }
-    }
+    } 
 
     // Initialize LLVM targets.
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
-    mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());
 
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
     if (auto err = optPipeline(llvmModule.get()))

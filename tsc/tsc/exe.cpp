@@ -374,7 +374,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     theDriver.setTargetAndMode(targetandMode);
     std::unique_ptr<clang::driver::Compilation> c(theDriver.BuildCompilation(args));
 
-    if (win && shared)
+    if (win && (shared || !disableGC))
     {
         //args.push_back("-Wl,-nodefaultlib:libcmt");
         removeCommandArgs(c.get(), {"defaultlib:libcmt"});

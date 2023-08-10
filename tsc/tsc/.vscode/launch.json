@@ -133,6 +133,7 @@
                 "-mlir-disable-threading",
                 "-debug-only=llvm",
                 "-o=c:/temp/1.ll",
+                "--mtriple=wasm32-unknown-unknown",
                 "-di",
                 "-lldb",
                 "C:/temp/1.ts"
