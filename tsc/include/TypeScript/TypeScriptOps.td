@@ -1046,7 +1046,7 @@ def TypeScript_AllocaOp : TypeScript_Op<"Alloca", []> {
   );
 
   let results = (outs
-    Res<TypeScript_AnyRefLike, "", [MemAlloc]>:$reference
+    Res<TypeScript_AnyRefLike, "", [MemAlloc<AutomaticAllocationScopeResource>]>:$reference
   );
 
   let assemblyFormat = "`(` $count `)` attr-dict `:` type($reference)";
@@ -2084,12 +2084,12 @@ def TypeScript_PopOp : TypeScript_Op<"Pop"> {
 
 def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
   let arguments = (ins TypeScript_ArrayLike:$op);
-  let results = (outs I32:$result);
+  let results = (outs Index:$result);
 }
 
 def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {
   let arguments = (ins TypeScript_String:$op);
-  let results = (outs I32:$result);
+  let results = (outs Index:$result);
 }
 
 def TypeScript_StringConcatOp : TypeScript_Op<"StringConcat"> {
