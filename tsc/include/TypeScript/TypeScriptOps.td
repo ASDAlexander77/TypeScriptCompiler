@@ -1042,7 +1042,7 @@ def TypeScript_AllocaOp : TypeScript_Op<"Alloca", []> {
   }];
 
   let arguments = (ins
-    I64:$count
+    Index:$count
   );
 
   let results = (outs
@@ -2143,7 +2143,7 @@ def TypeScript_NoOp : TypeScript_Op<"noop", [Pure]> {
 def TypeScript_GCMakeDescriptorOp : TypeScript_Op<"GCMakeDescriptor"> {
   let summary = "GC make descriptor operation";
 
-  let arguments = (ins TypeScript_Ref:$typeBitmap, I64:$sizeOfBitmapInElements);
+  let arguments = (ins TypeScript_Ref:$typeBitmap, Index:$sizeOfBitmapInElements);
   let results = (outs I64:$descr);
 }
 
