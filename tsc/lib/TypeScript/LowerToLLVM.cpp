@@ -425,8 +425,6 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
     LogicalResult matchAndRewrite(mlir_ts::SizeOfOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
 

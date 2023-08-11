@@ -261,9 +261,15 @@ class LLVMCodeHelperBase
         auto mallocFuncOp = getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {llvmIndexType}));
 
         auto effectiveSize = sizeOfAlloc;
-        if (effectiveSize.getType() != llvmIndexType)
+
+        if (effectiveSize.getType() != th.getIndexType() && effectiveSize.getType() != llvmIndexType)
         {
-            effectiveSize = castLogic<int>(effectiveSize, llvmIndexType, op, rewriter, tch);
+            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch);
+        }
+
+        if (effectiveSize.getType() == th.getIndexType())
+        {
+            effectiveSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, effectiveSize);
         }
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectiveSize});
@@ -304,9 +310,14 @@ class LLVMCodeHelperBase
         auto mallocFuncOp = getOrInsertFunction("realloc", th.getFunctionType(i8PtrTy, {i8PtrTy, llvmIndexType}));
 
         auto effectiveSize = sizeOfAlloc;
-        if (effectiveSize.getType() != llvmIndexType)
+        if (effectiveSize.getType() != th.getIndexType() && effectiveSize.getType() != llvmIndexType)
         {
-            effectiveSize = castLogic<int>(effectiveSize, llvmIndexType, op, rewriter, tch);
+            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch);
+        }
+
+        if (effectiveSize.getType() == th.getIndexType())
+        {
+            effectiveSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, effectiveSize);
         }
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectivePtrValue, effectiveSize});
