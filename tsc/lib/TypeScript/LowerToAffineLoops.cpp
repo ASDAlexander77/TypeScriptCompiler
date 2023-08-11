@@ -1872,9 +1872,11 @@ void TypeScriptToAffineLoweringModulePass::runOnOperation()
 
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,
 /// for a subset of the TypeScript IR.
-std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineTSFuncPass()
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineTSFuncPass(bool isJit)
 {
-    return std::make_unique<TypeScriptToAffineLoweringTSFuncPass>();
+    auto ptr = std::make_unique<TypeScriptToAffineLoweringTSFuncPass>();
+    ptr.get()->tsContext.isJit = isJit;
+    return ptr;
 }
 
 std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineFuncPass()
@@ -1882,9 +1884,7 @@ std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineFuncPass()
     return std::make_unique<TypeScriptToAffineLoweringFuncPass>();
 }
 
-std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineModulePass(bool isJit)
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineModulePass()
 {
-    auto ptr = std::make_unique<TypeScriptToAffineLoweringModulePass>();
-    ptr.get()->tsContext.isJit = isJit;
-    return ptr;
+    return std::make_unique<TypeScriptToAffineLoweringModulePass>();
 }
