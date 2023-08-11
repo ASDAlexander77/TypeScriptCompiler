@@ -175,7 +175,7 @@ class MLIRTypeHelper
 
     mlir::Type getIndexType()
     {
-        return getI64Type();
+        return mlir::IndexType::get(context);
     }
 
     mlir::Type getStructIndexType()
