@@ -411,7 +411,7 @@ class MLIRCustomMethods
 
     mlir::Value mlirGenSizeOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
-        auto sizeOfValue = builder.create<mlir_ts::SizeOfOp>(location, builder.getI64Type(),
+        auto sizeOfValue = builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(),
                                                              mlir::TypeAttr::get(operands.front().getType()));
 
         return sizeOfValue;
