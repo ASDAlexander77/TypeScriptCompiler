@@ -10,6 +10,7 @@ struct CompileOptions
     bool generateDebugInfo;
     bool lldbDebugInfo;
     std::string moduleTargetTriple;
+    int sizeBits;
 };
 
 #endif // DATASTRUCT_H_

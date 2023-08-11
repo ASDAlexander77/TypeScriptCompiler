@@ -16,6 +16,8 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
+CompileOptions &getCompileOptions();
+
 class TypeHelper
 {
     MLIRContext *context;
@@ -69,15 +71,14 @@ class TypeHelper
         return FloatType::getF64(context);
     }
 
+    mlir::Type getIndexType()
+    {
+        return IndexType::get(context);
+    }
+
     mlir::IntegerAttr getStructIndexAttrValue(int32_t value)
     {
         return IntegerAttr::get(getI32Type(), APInt(32, value));
-    }
-
-    mlir::Type getIndexType()
-    {
-        return getI64Type();
-        //return IndexType::get(context);
     }
 
     IntegerAttr getIndexAttrValue(int64_t value)

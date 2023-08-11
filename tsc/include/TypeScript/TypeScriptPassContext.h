@@ -21,6 +21,7 @@ struct TSContext
     mlir::DenseMap<Operation *, Operation *> parentTryOp;
     mlir::DenseMap<Operation *, mlir::Block *> landingBlockOf;
     mlir::Block *returnBlock;
+    bool isJit;
 };
 
 struct TSFunctionContext

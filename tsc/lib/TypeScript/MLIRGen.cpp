@@ -50,6 +50,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/Dialect/DLTI/DLTI.h"
 #include "mlir/IR/Diagnostics.h"
 #ifdef ENABLE_ASYNC
 #include "mlir/Dialect/Async/IR/Async.h"
@@ -322,6 +323,10 @@ class MLIRGenImpl
             theModule->setAttr(
                 mlir::LLVM::LLVMDialect::getTargetTripleAttrName(), 
                 builder.getStringAttr(compileOptions.moduleTargetTriple));
+
+            // DataLayout for IndexType
+            auto indexSize = mlir::DataLayoutEntryAttr::get(builder.getIndexType(), builder.getI32IntegerAttr(compileOptions.sizeBits));
+            theModule->setAttr("dlti.dl_spec", mlir::DataLayoutSpecAttr::get(builder.getContext(), {indexSize}));
         }
 
         builder.setInsertionPointToStart(theModule.getBody());

@@ -45,6 +45,11 @@ class LLVMTypeConverterHelper
         return typeConverter.getPointerBitwidth(addressSpace);
     }
 
+    mlir::Type getConvertedIndexType()
+    {
+        return typeConverter.getIndexType();
+    }
+
     uint64_t getTypeAllocSizeInBits(mlir::Type type)
     {
         LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(getGlobalContext());

@@ -1776,17 +1776,17 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE FUNC DUMP: \n" << function << "\n";);
 
     // We only lower the main function as we expect that all other functions have been inlined.
-    // if (function.getName() == "main")
-    // {
-    //     auto voidType = mlir_ts::VoidType::get(function.getContext());
-    //     // Verify that the given main has no inputs and results.
-    //     if (function.getNumArguments() ||
-    //         llvm::any_of(function.getFunctionType().getResults(), [&](mlir::Type type) { return type != voidType; }))
-    //     {
-    //         function.emitError("expected 'main' to have 0 inputs and 0 results");
-    //         return signalPassFailure();
-    //     }
-    // }
+    if (tsContext.isJit && function.getName() == "main")
+    {
+        auto voidType = mlir_ts::VoidType::get(function.getContext());
+        // Verify that the given main has no inputs and results.
+        if (function.getNumArguments() ||
+            llvm::any_of(function.getFunctionType().getResults(), [&](mlir::Type type) { return type != voidType; }))
+        {
+            function.emitError("expected 'main' to have 0 inputs and 0 results");
+            return signalPassFailure();
+        }
+    }
 
     // The first thing to define is the conversion target. This will define the
     // final target for this lowering.
@@ -1882,7 +1882,9 @@ std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineFuncPass()
     return std::make_unique<TypeScriptToAffineLoweringFuncPass>();
 }
 
-std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineModulePass()
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineModulePass(bool isJit)
 {
-    return std::make_unique<TypeScriptToAffineLoweringModulePass>();
+    auto ptr = std::make_unique<TypeScriptToAffineLoweringModulePass>();
+    ptr.get()->tsContext.isJit = isJit;
+    return ptr;
 }

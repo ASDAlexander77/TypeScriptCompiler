@@ -140,6 +140,9 @@ class LLVMCodeHelperBase
         auto parentModule = op->getParentOfType<ModuleOp>();
 
         TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
@@ -156,7 +159,7 @@ class LLVMCodeHelperBase
 
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
+        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(0));
         return rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrType(), globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
     }
 
@@ -196,10 +199,13 @@ class LLVMCodeHelperBase
     mlir::Value MemoryAlloc(mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         TypeHelper th(rewriter);
+        TypeConverterHelper tch(typeConverter);
+
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto loc = op->getLoc();
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, storageType);
         return MemoryAlloc(sizeOfTypeValue, zero);
     }
 
@@ -246,15 +252,17 @@ class LLVMCodeHelperBase
         TypeConverterHelper tch(typeConverter);
         CodeLogicHelper clh(op, rewriter);
 
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
         auto loc = op->getLoc();
 
         auto i8PtrTy = th.getI8PtrType();
-        auto mallocFuncOp = getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {th.getIndexType()}));
+        auto mallocFuncOp = getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {llvmIndexType}));
 
         auto effectiveSize = sizeOfAlloc;
-        if (effectiveSize.getType() != th.getIndexType())
+        if (effectiveSize.getType() != llvmIndexType)
         {
-            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch);
+            effectiveSize = castLogic<int>(effectiveSize, llvmIndexType, op, rewriter, tch);
         }
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectiveSize});
@@ -267,7 +275,7 @@ class LLVMCodeHelperBase
 
         if (memAllocMode == MemoryAllocSet::Zero)
         {
-            auto memsetFuncOp = getOrInsertFunction("memset", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getI32Type(), th.getIndexType()}));
+            auto memsetFuncOp = getOrInsertFunction("memset", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getI32Type(), llvmIndexType}));
             auto const0 = clh.createI32ConstantOf(0);
             rewriter.create<LLVM::CallOp>(loc, memsetFuncOp, ValueRange{ptr, const0, effectiveSize});
         }
@@ -280,6 +288,8 @@ class LLVMCodeHelperBase
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
 
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
         auto loc = op->getLoc();
 
         auto i8PtrTy = th.getI8PtrType();
@@ -290,12 +300,12 @@ class LLVMCodeHelperBase
             effectivePtrValue = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
         }
 
-        auto mallocFuncOp = getOrInsertFunction("realloc", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getIndexType()}));
+        auto mallocFuncOp = getOrInsertFunction("realloc", th.getFunctionType(i8PtrTy, {i8PtrTy, llvmIndexType}));
 
         auto effectiveSize = sizeOfAlloc;
-        if (effectiveSize.getType() != th.getIndexType())
+        if (effectiveSize.getType() != llvmIndexType)
         {
-            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch);
+            effectiveSize = castLogic<int>(effectiveSize, llvmIndexType, op, rewriter, tch);
         }
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectivePtrValue, effectiveSize});

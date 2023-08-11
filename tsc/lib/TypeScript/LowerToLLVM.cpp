@@ -5025,6 +5025,10 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return mlir::Type();
     }); 
 
+    converter.addConversion([&](mlir::IndexType type) {
+        return converter.getIndexType();
+    }); 
+
     /*
     converter.addSourceMaterialization(
         [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {

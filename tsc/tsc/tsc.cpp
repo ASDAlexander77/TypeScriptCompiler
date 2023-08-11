@@ -177,6 +177,7 @@ int main(int argc, char **argv)
     mlirContext.getOrLoadDialect<mlir::math::MathDialect>();
     mlirContext.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
     mlirContext.getOrLoadDialect<mlir::func::FuncDialect>();
+    mlirContext.getOrLoadDialect<mlir::DLTIDialect>();
     mlirContext.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 #ifdef ENABLE_ASYNC
     mlirContext.getOrLoadDialect<mlir::async::AsyncDialect>();
