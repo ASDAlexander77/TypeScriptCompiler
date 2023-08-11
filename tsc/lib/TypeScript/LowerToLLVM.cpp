@@ -1911,6 +1911,8 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
 
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
         auto loc = createTupleOp.getLoc();
         auto tupleType = createTupleOp.getType().cast<mlir_ts::TupleType>();
 
@@ -1918,7 +1920,7 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
                                                              rewriter.getBoolAttr(false));
 
         // set values here
-        mlir::Value zero = clh.createIndexConstantOf(0);
+        mlir::Value zero = clh.createIndexConstantOf(llvmIndexType, 0);
         auto index = 0;
         for (auto itemPair : llvm::zip(transformed.getItems(), createTupleOp.getItems()))
         {
@@ -2030,7 +2032,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         auto llvmPtrElementType = th.getPointerType(llvmElementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        auto newCountAsIndexType = clh.createIndexConstantOf(createArrayOp.getItems().size());
+        auto newCountAsIndexType = clh.createIndexConstantOf(llvmIndexType, createArrayOp.getItems().size());
 
         auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
@@ -2040,7 +2042,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
 
         auto allocated = ch.MemoryAllocBitcast(llvmPtrElementType, multSizeOfTypeValue);
 
-        mlir::Value index = clh.createIndexConstantOf(0);
+        mlir::Value index = clh.createIndexConstantOf(llvmIndexType, 0);
         auto next = false;
         mlir::Value value1;
         for (auto item : transformed.getItems())
@@ -2049,7 +2051,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
             {
                 if (!value1)
                 {
-                    value1 = clh.createIndexConstantOf(1);
+                    value1 = clh.createIndexConstantOf(llvmIndexType, 1);
                 }
 
                 index = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{index, value1});
@@ -2217,7 +2219,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
 
         auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
 
-        auto incSize = clh.createIndexConstantOf(transformed.getItems().size());
+        auto incSize = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
         auto newCountAsIndexType =
             rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
 
@@ -2241,7 +2243,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
             {
                 if (!value1)
                 {
-                    value1 = clh.createIndexConstantOf(1);
+                    value1 = clh.createIndexConstantOf(llvmIndexType, 1);
                 }
 
                 index = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{index, value1});
@@ -2314,7 +2316,7 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
 
         auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
 
-        auto incSize = clh.createIndexConstantOf(1);
+        auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
         auto newCountAsIndexType =
             rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
 
@@ -4666,8 +4668,6 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
     LogicalResult matchAndRewrite(mlir_ts::GCNewExplicitlyTypedOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         LLVMCodeHelper ch(op, rewriter, getTypeConverter());
         CodeLogicHelper clh(op, rewriter);
         TypeConverterHelper tch(getTypeConverter());

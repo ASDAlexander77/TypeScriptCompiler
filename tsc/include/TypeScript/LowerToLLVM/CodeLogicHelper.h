@@ -92,9 +92,9 @@ class CodeLogicHelper
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF64Type(), rewriter.getF64FloatAttr(value));
     }
 
-    mlir::Value createIndexConstantOf(int64_t value)
+    mlir::Value createIndexConstantOf(mlir::Type llvmIndexType, int64_t value)
     {
-        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));
+        return rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, rewriter.getIntegerAttr(llvmIndexType, value));
     }
 
     mlir::Value createStructIndexConstantOf(int32_t value)
