@@ -447,7 +447,7 @@ def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf"> {
   }];
 
   let arguments = (ins TypeAttr:$type);
-  let results = (outs I64:$size);
+  let results = (outs Index:$size);
 }
 
 def TypeScript_NewOp : TypeScript_Op<"New"> {
