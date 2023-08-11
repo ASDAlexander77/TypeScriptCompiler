@@ -31,6 +31,7 @@ class AnyLogic
     Location loc;
 
   protected:
+    mlir::Type indexType;
     mlir::Type llvmIndexType;
     mlir::Type valuePtrType;
 
@@ -38,7 +39,8 @@ class AnyLogic
     AnyLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc)
         : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(loc)
     {
-        llvmIndexType = tch.convertType(th.getIndexType());
+        indexType = th.getIndexType();
+        llvmIndexType = tch.convertType(indexType);
         valuePtrType = th.getI8PtrType();
     }
 
@@ -66,7 +68,8 @@ class AnyLogic
         auto memValue = ch.MemoryAllocBitcast(dataWithSizeTypePtr, dataWithSizeType);
 
         // set value size
-        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, llvmStorageType);
+        auto sizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, indexType, llvmStorageType);
+        auto size = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeMLIR);
 
         auto zero = clh.createI32ConstantOf(0);
         auto one = clh.createI32ConstantOf(1);

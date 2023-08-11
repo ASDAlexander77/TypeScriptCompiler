@@ -205,7 +205,8 @@ class LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, storageType);
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
         return MemoryAlloc(sizeOfTypeValue, zero);
     }
 
