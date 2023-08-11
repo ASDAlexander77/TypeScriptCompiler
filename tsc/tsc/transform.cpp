@@ -100,10 +100,10 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         optPM2.addPass(mlir::typescript::createLowerToAffineFuncPass());
         optPM2.addPass(mlir::createCanonicalizerPass());
 
-        pm.addPass(mlir::typescript::createLowerToAffineModulePass());
+        pm.addPass(mlir::typescript::createLowerToAffineModulePass(emitAction == Action::RunJIT));
         pm.addPass(mlir::createCanonicalizerPass());
 #else        
-        pm.addPass(mlir::typescript::createLowerToAffineModulePass());
+        pm.addPass(mlir::typescript::createLowerToAffineModulePass(emitAction == Action::RunJIT));
         pm.addPass(mlir::createCanonicalizerPass());
 
         mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
