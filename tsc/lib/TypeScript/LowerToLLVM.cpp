@@ -440,8 +440,9 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
             .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { stripPtr = true; })
             .Default([&](auto type) { });
 
-        mlir::Type llvmStorageType = tch.convertType(storageType);
+        auto llvmStorageType = tch.convertType(storageType);
         mlir::Type llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
         if (stripPtr)
         {
             llvmStorageTypePtr = llvmStorageType;
@@ -452,11 +453,11 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
         LLVM_DEBUG(llvm::dbgs() << "\n!! size of - storage type: [" << storageType << "] llvm storage type: ["
                                 << llvmStorageType << "] llvm ptr: [" << llvmStorageTypePtr << "]\n";);
 
-        auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(1));
+        auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 1));
         auto sizeOfSetAddr =
             rewriter.create<LLVM::GEPOp>(loc, llvmStorageTypePtr, nullPtrToTypeValue, ArrayRef<mlir::Value>({cst1}));
 
-        rewriter.replaceOpWithNewOp<LLVM::PtrToIntOp>(op, th.getIndexType(), sizeOfSetAddr);
+        rewriter.replaceOpWithNewOp<LLVM::PtrToIntOp>(op, llvmIndexType, sizeOfSetAddr);
 
         return success();
     }
@@ -2027,12 +2028,13 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
 
         auto llvmElementType = tch.convertType(elementType);
         auto llvmPtrElementType = th.getPointerType(llvmElementType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto newCountAsIndexType = clh.createIndexConstantOf(createArrayOp.getItems().size());
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, storageType);
         auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, newCountAsIndexType});
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
         auto allocated = ch.MemoryAllocBitcast(llvmPtrElementType, multSizeOfTypeValue);
 
@@ -2048,7 +2050,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
                     value1 = clh.createIndexConstantOf(1);
                 }
 
-                index = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), ValueRange{index, value1});
+                index = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{index, value1});
             }
 
             // save new element
@@ -2143,6 +2145,7 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
 
         auto arrayType = newArrOp.getType();
         auto elementType = arrayType.getElementType();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         mlir::Type storageType;
         mlir::TypeSwitch<mlir::Type>(elementType)
@@ -2153,10 +2156,10 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         auto llvmElementType = tch.convertType(elementType);
         auto llvmPtrElementType = th.getPointerType(llvmElementType);
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
-        auto countAsIndexType = rewriter.create<mlir_ts::CastOp>(loc, th.getIndexType(), transformed.getCount());
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, storageType);
+        auto countAsIndexType = rewriter.create<mlir_ts::CastOp>(loc, llvmIndexType, transformed.getCount());
         auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, countAsIndexType});
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, countAsIndexType});
 
         auto allocated = ch.MemoryAllocBitcast(llvmPtrElementType, multSizeOfTypeValue);
 
@@ -2194,6 +2197,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
         auto elementType = arrayType.getElementType();
         auto llvmElementType = tch.convertType(elementType);
         auto llvmPtrElementType = th.getPointerType(llvmElementType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto ind0 = clh.createI32ConstantOf(0);
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(llvmPtrElementType), transformed.getOp(),
@@ -2205,15 +2209,15 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
                                                               ValueRange{ind0, ind1});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
 
-        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, th.getIndexType(), countAsI32Type);
+        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
 
         auto incSize = clh.createIndexConstantOf(transformed.getItems().size());
         auto newCountAsIndexType =
-            rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), ValueRange{countAsIndexType, incSize});
+            rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, elementType);
         auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, newCountAsIndexType});
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
         auto allocated = ch.MemoryReallocBitcast(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
 
@@ -2232,7 +2236,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
                     value1 = clh.createIndexConstantOf(1);
                 }
 
-                index = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), ValueRange{index, value1});
+                index = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{index, value1});
             }
 
             // save new element
@@ -2282,6 +2286,7 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
         auto elementType = arrayType.getElementType();
         auto llvmElementType = tch.convertType(elementType);
         auto llvmPtrElementType = th.getPointerType(llvmElementType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         mlir::Type storageType;
         mlir::TypeSwitch<mlir::Type>(popOp.getOp().getType())
@@ -2299,20 +2304,20 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
                                                               ValueRange{ind0, ind1});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
 
-        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, th.getIndexType(), countAsI32Type);
+        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
 
         auto incSize = clh.createIndexConstantOf(1);
         auto newCountAsIndexType =
-            rewriter.create<LLVM::SubOp>(loc, th.getIndexType(), ValueRange{countAsIndexType, incSize});
+            rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
 
         // load last element
         auto offset =
             rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, currentPtr, ValueRange{newCountAsIndexType});
         auto loadedElement = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, offset);
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, storageType);
         auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, newCountAsIndexType});
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
         auto allocated = ch.MemoryReallocBitcast(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
 
@@ -2964,11 +2969,12 @@ struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfC
         
 
         TypeHelper th(rewriter);
+        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
 
         auto loc = addressOfConstStringOp->getLoc();
         auto globalPtr =
             rewriter.create<LLVM::AddressOfOp>(loc, th.getI8PtrType(), addressOfConstStringOp.getGlobalName());
-        auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(0));
+        auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
         rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getI8PtrType(), globalPtr,
                                                  ArrayRef<mlir::Value>({cst0, cst0}));
 
@@ -3231,6 +3237,7 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
         LLVMCodeHelper ch(memoryCopyOp, rewriter, getTypeConverter());
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(memoryCopyOp, rewriter);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto copyMemFuncOp = ch.getOrInsertFunction(
             "llvm.memcpy.p0.p0.i64", th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(),
@@ -3242,11 +3249,11 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
 
         auto llvmSrcType = tch.convertType(memoryCopyOp.getSrc().getType());
         auto srcValueType = llvmSrcType.cast<LLVM::LLVMPointerType>().getElementType();
-        auto srcSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), srcValueType);
+        auto srcSize = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, srcValueType);
 
         auto llvmDstType = tch.convertType(memoryCopyOp.getDst().getType());
         auto dstValueType = llvmDstType.cast<LLVM::LLVMPointerType>().getElementType();
-        auto dstSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), dstValueType);
+        auto dstSize = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, dstValueType);
 
         auto cmpVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, srcSize, dstSize);
         auto minSize = rewriter.create<LLVM::SelectOp>(loc, cmpVal, srcSize, dstSize);
@@ -3829,6 +3836,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(interfaceSymbolRefOp, rewriter);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto fieldLLVMTypeRef = tch.convertType(interfaceSymbolRefOp.getType());
 
@@ -3857,9 +3865,9 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         {
             auto calcFieldTotalAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
                 // BoundRef
-                auto p1 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), thisVal);
-                auto p2 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), methodOrFieldPtr);
-                auto padded = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), p1, p2);
+                auto p1 = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, thisVal);
+                auto p2 = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, methodOrFieldPtr);
+                auto padded = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, p1, p2);
                 auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, padded);
 
                 // no need to BoundRef
@@ -4653,13 +4661,15 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
 
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
         auto loc = op.getLoc();
 
         mlir::Type storageType = op.getInstance().getType();
 
         auto resultType = tch.convertType(op.getType());
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, storageType);
 
         auto i8PtrTy = th.getI8PtrType();
 

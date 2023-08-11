@@ -81,9 +81,9 @@ class TypeHelper
         return IntegerAttr::get(getI32Type(), APInt(32, value));
     }
 
-    IntegerAttr getIndexAttrValue(int64_t value)
+    IntegerAttr getIndexAttrValue(mlir::Type llvmIndexType, int64_t value)
     {
-        return IntegerAttr::get(getIndexType(), APInt(64, value));
+        return IntegerAttr::get(llvmIndexType, APInt(64, value));
     }
 
     mlir::Type getLLVMBoolType()

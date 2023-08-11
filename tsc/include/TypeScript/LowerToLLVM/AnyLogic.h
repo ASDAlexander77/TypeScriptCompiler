@@ -31,20 +31,20 @@ class AnyLogic
     Location loc;
 
   protected:
-    mlir::Type sizeType;
-    mlir::Type typeOfValueType;
+    mlir::Type llvmIndexType;
+    mlir::Type valuePtrType;
 
   public:
     AnyLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc)
         : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(loc)
     {
-        sizeType = th.getIndexType();
-        typeOfValueType = th.getI8PtrType();
+        llvmIndexType = tch.convertType(th.getIndexType());
+        valuePtrType = th.getI8PtrType();
     }
 
     LLVM::LLVMStructType getStorageType(mlir::Type llvmStorageType)
     {
-        return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {sizeType, typeOfValueType, llvmStorageType}, false);
+        return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, valuePtrType, llvmStorageType}, false);
     }
 
     mlir::Value castToAny(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType)
@@ -66,16 +66,16 @@ class AnyLogic
         auto memValue = ch.MemoryAllocBitcast(dataWithSizeTypePtr, dataWithSizeType);
 
         // set value size
-        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, sizeType, llvmStorageType);
+        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, llvmIndexType, llvmStorageType);
 
         auto zero = clh.createI32ConstantOf(0);
         auto one = clh.createI32ConstantOf(1);
         auto two = clh.createI32ConstantOf(2);
 
-        auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(sizeType), memValue, ValueRange{zero, zero});
+        auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmIndexType), memValue, ValueRange{zero, zero});
         rewriter.create<LLVM::StoreOp>(loc, size, ptrSize);
 
-        auto typeOfStr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(typeOfValueType), memValue, ValueRange{zero, one});
+        auto typeOfStr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(valuePtrType), memValue, ValueRange{zero, one});
         rewriter.create<LLVM::StoreOp>(loc, typeOfValue, typeOfStr);
 
         // set actual value

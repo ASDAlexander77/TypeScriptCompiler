@@ -244,10 +244,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto parentModule = op->getParentOfType<ModuleOp>();
 
         TypeHelper th(rewriter);
+        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
 
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, type, name);
-        mlir::Value cstIdx = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(index));
+        mlir::Value cstIdx = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, index));
         return rewriter.create<LLVM::GEPOp>(loc, globalPtr.getType(), globalPtr, ArrayRef<mlir::Value>({cstIdx}));
     }
 
@@ -377,6 +378,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto parentModule = op->getParentOfType<ModuleOp>();
 
         TypeHelper th(rewriter);
+        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
 
         auto pointerType = LLVM::LLVMPointerType::get(llvmElementType);
         auto arrayType = th.getArrayType(llvmElementType, size);
@@ -417,7 +419,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
+        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
         return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
     }
 
@@ -577,6 +579,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto parentModule = op->getParentOfType<ModuleOp>();
 
         TypeHelper th(rewriter);
+        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
 
         auto pointerType = LLVM::LLVMPointerType::get(llvmStructType);
 
@@ -599,7 +602,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
+        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
         return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0}));
     }
 

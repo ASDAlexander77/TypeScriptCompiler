@@ -30,14 +30,12 @@ class ConvertLogic
     Location loc;
 
   protected:
-    mlir::Type sizeType;
     mlir::Type typeOfValueType;
 
   public:
     ConvertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc)
         : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(loc)
     {
-        sizeType = th.getIndexType();
         typeOfValueType = th.getI8PtrType();
     }
 
