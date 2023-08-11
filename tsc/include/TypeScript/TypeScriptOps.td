@@ -2084,12 +2084,12 @@ def TypeScript_PopOp : TypeScript_Op<"Pop"> {
 
 def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
   let arguments = (ins TypeScript_ArrayLike:$op);
-  let results = (outs Index:$result);
+  let results = (outs I32:$result);
 }
 
 def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {
   let arguments = (ins TypeScript_String:$op);
-  let results = (outs Index:$result);
+  let results = (outs I32:$result);
 }
 
 def TypeScript_StringConcatOp : TypeScript_Op<"StringConcat"> {
