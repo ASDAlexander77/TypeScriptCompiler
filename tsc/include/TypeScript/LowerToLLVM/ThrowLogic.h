@@ -120,7 +120,7 @@ class ThrowLogic
     {
         mlir::Type exceptionType = origType;
 
-        LLVMRTTIHelperVCLinux rttih(op, rewriter, typeConverter);
+        LLVMRTTIHelperVCLinux rttih(op, rewriter, typeConverter, compileOptions);
         rttih.setType(exceptionType);
 
         if (rttih.isRethrow())

@@ -3573,7 +3573,7 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
         Location loc = compareCatchTypeOp.getLoc();
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(compareCatchTypeOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(compareCatchTypeOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(compareCatchTypeOp, rewriter);
 
         auto i8PtrTy = th.getI8PtrType();
@@ -3608,7 +3608,7 @@ struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
         Location loc = beginCatchOp.getLoc();
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(beginCatchOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(beginCatchOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(beginCatchOp, rewriter);
 
         auto i8PtrTy = th.getI8PtrType();
@@ -3673,7 +3673,7 @@ struct EndCatchOpLowering : public TsLlvmPattern<mlir_ts::EndCatchOp>
         Location loc = endCatchOp.getLoc();
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(endCatchOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(endCatchOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto endCatchFuncName = "__cxa_end_catch";
         auto endCatchFunc =

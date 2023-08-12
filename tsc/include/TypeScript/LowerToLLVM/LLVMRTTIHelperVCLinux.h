@@ -36,8 +36,8 @@ class LLVMRTTIHelperVCLinux
     SmallVector<std::string> types;
 
   public:
-    LLVMRTTIHelperVCLinux(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
-        : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter),
+    LLVMRTTIHelperVCLinux(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter, CompileOptions compileOptions)
+        : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter, compileOptions),
           clh(op, rewriter), classType(false), rethrow(false)
     {
     }
