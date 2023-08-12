@@ -175,21 +175,21 @@ class LLVMCodeHelperBase
         return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
     }
 
-    LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
+    LLVM::LLVMFuncOp getOrInsertFunction(mlir::Location loc, ModuleOp parentModule, const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
     {
-        auto parentModule = op->getParentOfType<ModuleOp>();
-
         if (auto funcOp = parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
         {
             return funcOp;
         }
 
-        auto loc = op->getLoc();
-
-        // Insert the printf function into the body of the parent module.
         PatternRewriter::InsertionGuard insertGuard(rewriter);
         rewriter.setInsertionPointToStart(parentModule.getBody());
         return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
+    }    
+
+    LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
+    {
+        return getOrInsertFunction(op->getLoc(), op->getParentOfType<ModuleOp>(), name, llvmFnType);
     }
 
     mlir::Value MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
@@ -259,7 +259,9 @@ class LLVMCodeHelperBase
         auto loc = op->getLoc();
 
         auto i8PtrTy = th.getI8PtrType();
-        auto mallocFuncOp = getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {llvmIndexType}));
+        auto mallocFuncOp = getOrInsertFunction(
+            compileOptions.isWasm ? "ts_malloc" : "malloc", 
+            th.getFunctionType(i8PtrTy, {llvmIndexType}));
 
         auto effectiveSize = sizeOfAlloc;
 
@@ -308,7 +310,9 @@ class LLVMCodeHelperBase
             effectivePtrValue = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
         }
 
-        auto mallocFuncOp = getOrInsertFunction("realloc", th.getFunctionType(i8PtrTy, {i8PtrTy, llvmIndexType}));
+        auto mallocFuncOp = getOrInsertFunction(
+            compileOptions.isWasm ? "ts_realloc" : "realloc", 
+            th.getFunctionType(i8PtrTy, {i8PtrTy, llvmIndexType}));
 
         auto effectiveSize = sizeOfAlloc;
         if (effectiveSize.getType() != th.getIndexType() && effectiveSize.getType() != llvmIndexType)
@@ -334,7 +338,9 @@ class LLVMCodeHelperBase
 
         auto i8PtrTy = th.getI8PtrType();
 
-        auto freeFuncOp = getOrInsertFunction("free", th.getFunctionType(th.getVoidType(), {i8PtrTy}));
+        auto freeFuncOp = getOrInsertFunction(
+            compileOptions.isWasm ? "ts_free" : "free", 
+            th.getFunctionType(th.getVoidType(), {i8PtrTy}));
 
         auto casted = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
 

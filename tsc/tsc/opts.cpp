@@ -36,6 +36,7 @@ CompileOptions prepareOptions()
     compileOptions.lldbDebugInfo = lldbDebugInfo;
     compileOptions.moduleTargetTriple = moduleTargetTriple;
     compileOptions.sizeBits = 32;
+    compileOptions.isWasm = TheTriple.getArch() == llvm::Triple::wasm64 || TheTriple.getArch() == llvm::Triple::wasm32;
     if (
         TheTriple.getArch() == llvm::Triple::UnknownArch
         || TheTriple.getArch() == llvm::Triple::aarch64        // AArch64 (little endian): aarch64

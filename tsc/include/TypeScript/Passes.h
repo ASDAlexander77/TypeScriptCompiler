@@ -11,6 +11,7 @@ class Pass;
 
 namespace typescript
 {
+    
 /// Create a pass for lowering to operations in the `Affine` and `Std` dialects,
 /// for a subset of the TypeScript IR (e.g. WhileOp etc).
 std::unique_ptr<mlir::Pass> createLowerToAffineTSFuncPass(bool);
@@ -27,6 +28,8 @@ std::unique_ptr<mlir::Pass> createRelocateConstantPass();
 
 /// GC Pass to replace malloc, realloc, free with GC_malloc, GC_realloc, GC_free
 std::unique_ptr<mlir::Pass> createGCPass(CompileOptions);
+/// MemAlloc Pass to replace ts_malloc, ts_realloc, ts_free
+std::unique_ptr<mlir::Pass> createMemAllocPass(CompileOptions);
 
 } // end namespace typescript
 } // end namespace mlir

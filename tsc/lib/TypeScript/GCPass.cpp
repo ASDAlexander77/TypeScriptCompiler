@@ -7,6 +7,7 @@
 #include "TypeScript/TypeScriptFunctionPass.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptPassContext.h"
+#include "TypeScript/ModulePass.h"
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
@@ -14,34 +15,12 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/raw_ostream.h"
 
 using namespace ::typescript;
 namespace mlir_ts = mlir::typescript;
 
 namespace
 {
-
-class ModulePass : public OperationPass<mlir::ModuleOp>
-{
-  public:
-    using OperationPass<mlir::ModuleOp>::OperationPass;
-
-    /// The polymorphic API that runs the pass over the currently held function.
-    virtual void runOnModule() = 0;
-
-    /// The polymorphic API that runs the pass over the currently held operation.
-    void runOnOperation() final
-    {
-        runOnModule();
-    }
-
-    /// Return the current function being transformed.
-    mlir::ModuleOp getModule()
-    {
-        return this->getOperation();
-    }
-};
 
 class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 {

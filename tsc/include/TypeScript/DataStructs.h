@@ -11,6 +11,7 @@ struct CompileOptions
     bool lldbDebugInfo;
     std::string moduleTargetTriple;
     int sizeBits;
+    bool isWasm;
 };
 
 #endif // DATASTRUCT_H_
