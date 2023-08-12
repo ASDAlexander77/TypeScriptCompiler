@@ -32,8 +32,8 @@ class DefaultLogic
     Location loc;
 
   public:
-    DefaultLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc)
-        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(loc)
+    DefaultLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions compileOptions)
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
     {
     }
 

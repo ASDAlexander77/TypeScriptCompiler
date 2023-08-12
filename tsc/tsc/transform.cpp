@@ -44,12 +44,13 @@
 #endif
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
+#include "TypeScript/DataStructs.h"
 
 #define ENABLE_CUSTOM_PASSES 1
 #define ENABLE_OPT_PASSES 1
-//#define SAVE_VIA_PASS 1
-// TODO: if you uncomment it you will have exception in test 00try_finally.ts error: empty block: expect at least a terminator
-//#define AFFINE_MODULE_PASS 1
+// #define SAVE_VIA_PASS 1
+//  TODO: if you uncomment it you will have exception in test 00try_finally.ts error: empty block: expect at least a terminator
+// #define AFFINE_MODULE_PASS 1
 
 #define DEBUG_TYPE "tsc"
 
@@ -63,12 +64,11 @@ extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableGC;
 extern cl::opt<bool> disableWarnings;
 
-int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module)
+int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions compileOptions)
 {
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
-    mlir::ScopedDiagnosticHandler diagHandler(&context, [&](mlir::Diagnostic &diag) {
-        postponedMessages.emplace_back(new mlir::Diagnostic(std::move(diag)));
-    });
+    mlir::ScopedDiagnosticHandler diagHandler(&context, [&](mlir::Diagnostic &diag)
+                                              { postponedMessages.emplace_back(new mlir::Diagnostic(std::move(diag))); });
 
     mlir::PassManager pm(&context);
     // Apply any generic pass manager command line options and run the pipeline.
@@ -100,10 +100,10 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         optPM2.addPass(mlir::typescript::createLowerToAffineFuncPass());
         optPM2.addPass(mlir::createCanonicalizerPass());
 
-        pm.addPass(mlir::typescript::createLowerToAffineModulePass());
+        pm.addPass(mlir::typescript::createLowerToAffineModulePass(compileOptions));
         pm.addPass(mlir::createCanonicalizerPass());
-#else        
-        pm.addPass(mlir::typescript::createLowerToAffineModulePass());
+#else
+        pm.addPass(mlir::typescript::createLowerToAffineModulePass(compileOptions));
         pm.addPass(mlir::createCanonicalizerPass());
 
         mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
@@ -138,10 +138,10 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
 #ifdef ENABLE_ASYNC
         pm.addPass(mlir::createConvertAsyncToLLVMPass());
 #endif
-        pm.addPass(mlir::typescript::createLowerToLLVMPass());
+        pm.addPass(mlir::typescript::createLowerToLLVMPass(compileOptions));
         if (!disableGC)
         {
-            pm.addPass(mlir::typescript::createGCPass());
+            pm.addPass(mlir::typescript::createGCPass(compileOptions));
         }
     }
 
@@ -203,9 +203,10 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
 }
 
 std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(
-        llvm::Optional<unsigned> mbOptLevel, llvm::Optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine)
+    llvm::Optional<unsigned> mbOptLevel, llvm::Optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine)
 {
-    return [mbOptLevel, mbSizeLevel, targetMachine](llvm::Module *m) -> llvm::Error {
+    return [mbOptLevel, mbSizeLevel, targetMachine](llvm::Module *m) -> llvm::Error
+    {
         llvm::Optional<llvm::OptimizationLevel> ol = mapToLevel(mbOptLevel.value(), mbSizeLevel.value());
         if (!ol)
         {
@@ -213,7 +214,7 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
                 llvm::formatv("invalid optimization/size level {0}/{1}", mbOptLevel.value(), mbSizeLevel.value()).str(),
                 llvm::inconvertibleErrorCode());
         }
-        
+
         llvm::LoopAnalysisManager lam;
         llvm::FunctionAnalysisManager fam;
         llvm::CGSCCAnalysisManager cgam;
@@ -229,16 +230,16 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
 
         llvm::ModulePassManager mpm;
 
-        //pb.parsePassPipeline(mpm, "module(function(landing-pad-fix))");
+        // pb.parsePassPipeline(mpm, "module(function(landing-pad-fix))");
 
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
         // debug info patch
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::DebugInfoPatchPass()));
-#endif        
+#endif
 
         // add custom passes
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::LandingPadFixPass()));
-#ifdef WIN_EXCEPTION        
+#ifdef WIN_EXCEPTION
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::Win32ExceptionPass()));
 #endif
         llvm::Triple triple(m->getTargetTriple());
@@ -259,7 +260,6 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         else
             mpm.addPass(pb.buildPerModuleDefaultPipeline(*ol));
 
-
 #ifdef SAVE_VIA_PASS
         std::unique_ptr<llvm::ToolOutputFile> FDOut;
         if (emitAction == Action::DumpLLVMIR)
@@ -273,7 +273,7 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
             FDOut = GetOutputStream(emitAction);
             mpm.addPass(llvm::BitcodeWriterPass(FDOut ? FDOut->os() : llvm::errs()));
         }
-#endif        
+#endif
 
         mpm.run(*m, mam);
 
@@ -282,7 +282,7 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         {
             FDOut->keep();
         }
-#endif        
+#endif
 
         return llvm::Error::success();
     };
@@ -292,13 +292,13 @@ std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int op
 {
 #ifdef ENABLE_CUSTOM_PASSES
     auto optPipeline = makeCustomPassesWithOptimizingTransformer(
-        /*optLevel=*/enableOpt ? optLevel : 0, 
+        /*optLevel=*/enableOpt ? optLevel : 0,
         /*sizeLevel=*/enableOpt ? sizeLevel : 0,
         /*targetMachine=*/nullptr);
 #else
     // An optimization pipeline to use within the execution engine.
     auto optPipeline = mlir::makeOptimizingTransformer(
-        /*optLevel=*/enableOpt ? optLevel : 0, 
+        /*optLevel=*/enableOpt ? optLevel : 0,
         /*sizeLevel=*/enableOpt ? sizeLevel : 0,
         /*targetMachine=*/nullptr);
 #endif

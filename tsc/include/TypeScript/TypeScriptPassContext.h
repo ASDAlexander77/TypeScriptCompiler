@@ -1,5 +1,6 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
+#include "TypeScript/DataStructs.h"
 
 #include "mlir/IR/PatternMatch.h"
 
@@ -14,6 +15,10 @@ struct TSContext
 {
     TSContext() = default;
 
+    // options
+    CompileOptions compileOptions;
+    bool isJit;
+
     // name, break, continue
     mlir::DenseMap<Operation *, mlir::Block *> jumps;
     mlir::DenseMap<Operation *, mlir::Value> catchOpData;
@@ -21,7 +26,6 @@ struct TSContext
     mlir::DenseMap<Operation *, Operation *> parentTryOp;
     mlir::DenseMap<Operation *, mlir::Block *> landingBlockOf;
     mlir::Block *returnBlock;
-    bool isJit;
 };
 
 struct TSFunctionContext

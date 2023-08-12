@@ -31,7 +31,8 @@ namespace typescript
 class LLVMCodeHelper : public LLVMCodeHelperBase
 {
   public:
-    LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter) : LLVMCodeHelperBase(op, rewriter, typeConverter)
+    LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter, CompileOptions compileOptions) 
+        : LLVMCodeHelperBase(op, rewriter, typeConverter, compileOptions)
     {
     }
 

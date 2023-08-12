@@ -27,10 +27,11 @@ class UndefLogicHelper
     Operation *op;
     PatternRewriter &rewriter;
     LLVMTypeConverter &typeConverter;
+    CompileOptions compileOptions;
 
   public:
-    UndefLogicHelper(Operation *op, PatternRewriter &rewriter, LLVMTypeConverter &typeConverter)
-        : op(op), rewriter(rewriter), typeConverter(typeConverter)
+    UndefLogicHelper(Operation *op, PatternRewriter &rewriter, LLVMTypeConverter &typeConverter, CompileOptions compileOptions)
+        : op(op), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
     {
     }
 
@@ -115,7 +116,7 @@ class UndefLogicHelper
                 {
                     auto casted = rewriter.create<mlir_ts::CastOp>(loc, t2, val1);
                     return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, val2.getType(), casted, casted.getType(),
-                                                                       rewriter, typeConverter);
+                                                                       rewriter, typeConverter, compileOptions);
                 }
                 else
                 {
@@ -142,9 +143,9 @@ class UndefLogicHelper
 };
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value UndefTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
+mlir::Value UndefTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter, CompileOptions compileOptions)
 {
-    UndefLogicHelper olh(binOp, builder, typeConverter);
+    UndefLogicHelper olh(binOp, builder, typeConverter, compileOptions);
     auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode);
     return value;
 }

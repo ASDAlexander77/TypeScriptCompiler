@@ -6,6 +6,7 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptFunctionPass.h"
 #include "TypeScript/Passes.h"
+#include "TypeScript/TypeScriptPassContext.h"
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
@@ -46,6 +47,8 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 {
   public:
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(GCPass)
+
+    TSContext tsContext;
 
     void runOnModule() override
     {
@@ -173,7 +176,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         ConversionPatternRewriter rewriter(memSetCallOp.getContext());
 
         TypeHelper th(memSetCallOp.getContext());
-        LLVMCodeHelper ch(memSetCallOp, rewriter, nullptr);
+        LLVMCodeHelper ch(memSetCallOp, rewriter, nullptr, tsContext.compileOptions);
         auto i8PtrTy = th.getI8PtrType();
         auto gcInitFuncOp = ch.getOrInsertFunction("GC_malloc_atomic", th.getFunctionType(th.getI8PtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
     }
@@ -183,7 +186,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         ConversionPatternRewriter rewriter(funcOp.getContext());
 
         TypeHelper th(rewriter.getContext());
-        LLVMCodeHelper ch(funcOp, rewriter, nullptr);
+        LLVMCodeHelper ch(funcOp, rewriter, nullptr, tsContext.compileOptions);
         auto i8PtrTy = th.getI8PtrType();
         auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
         rewriter.create<LLVM::CallOp>(funcOp->getLoc(), gcInitFuncOp, ValueRange{});
@@ -212,7 +215,9 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 } // end anonymous namespace
 
 /// Create pass.
-std::unique_ptr<mlir::Pass> mlir_ts::createGCPass()
+std::unique_ptr<mlir::Pass> mlir_ts::createGCPass(CompileOptions compileOptions)
 {
-    return std::make_unique<GCPass>();
+    auto ptr = std::make_unique<GCPass>();
+    ptr.get()->tsContext.compileOptions = compileOptions;
+    return ptr;
 }

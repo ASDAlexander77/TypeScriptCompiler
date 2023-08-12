@@ -33,6 +33,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/IR/DIBuilder.h"
 
+#include "TypeScript/TypeScriptPassContext.h"
 #include "TypeScript/LowerToLLVMLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMDebugInfo.h"
 
@@ -55,6 +56,7 @@ struct TsLlvmContext
 {
     TsLlvmContext() = default;
 
+    CompileOptions compileOptions;
     bool debugEnabled;
 };
 
@@ -214,10 +216,8 @@ class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
     LogicalResult matchAndRewrite(mlir_ts::AssertOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeConverterHelper tch(getTypeConverter());
-        AssertLogic al(op, rewriter, tch, op->getLoc());
+        AssertLogic al(op, rewriter, tch, op->getLoc(), tsLlvmContext->compileOptions);
         return al.logic(transformed.getArg(), op.getMsg().str());
     }
 };
@@ -230,10 +230,10 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
-        CastLogicHelper castLogic(op, rewriter, tch);
+        CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
 
         auto loc = op->getLoc();
 
@@ -299,7 +299,7 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
         
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         // Insert the `atoi` declaration if necessary.
         auto i8PtrTy = th.getI8PtrType();
@@ -334,7 +334,7 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
         
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto loc = op->getLoc();
 
@@ -364,7 +364,7 @@ class LoadLibraryPermanentlyOpLowering : public TsLlvmPattern<mlir_ts::LoadLibra
         
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto i8PtrTy = th.getI8PtrType();
 
@@ -386,7 +386,7 @@ class SearchForAddressOfSymbolOpLowering : public TsLlvmPattern<mlir_ts::SearchF
         
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto i8PtrTy = th.getI8PtrType();
 
@@ -491,7 +491,7 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
         
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto loc = op->getLoc();
         auto i8PtrTy = th.getI8PtrType();
@@ -518,7 +518,7 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
 
         TypeHelper th(rewriter);
         CodeLogicHelper clh(op, rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto loc = op->getLoc();
 
@@ -580,7 +580,7 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
 
         TypeHelper th(rewriter);
         CodeLogicHelper clh(op, rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
 
         auto loc = op->getLoc();
@@ -703,7 +703,7 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
 
         TypeHelper th(rewriter);
         CodeLogicHelper clh(op, rewriter);
-        LLVMCodeHelper ch(op, rewriter, typeConverter);
+        LLVMCodeHelper ch(op, rewriter, typeConverter, tsLlvmContext->compileOptions);
 
         auto loc = op->getLoc();
 
@@ -736,7 +736,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
     template <typename T, typename TOp>
     void getArrayValue(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
     {
-        LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
         auto elementType = type.template cast<T>().getElementType();
@@ -752,7 +752,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
     template <typename T, typename TOp>
     void getOrCreateGlobalArray(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
     {
-        LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
         auto elementType = type.template cast<T>().getElementType();
@@ -770,7 +770,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
     {
         auto location = constantOp->getLoc();
 
-        LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
         auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>();
@@ -804,7 +804,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         if (type.isa<mlir_ts::StringType>())
         {
-            LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
+            LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
             auto strValue = constantOp.getValue().cast<StringAttr>().getValue().str();
             auto txtCst = ch.getOrCreateGlobalString(strValue);
@@ -1029,9 +1029,9 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         if (funcOp.getPersonality().has_value() && funcOp.getPersonality().value())
         {
 #if WIN_EXCEPTION
-            LLVMRTTIHelperVCWin32 rttih(funcOp, rewriter, typeConverter);
+            LLVMRTTIHelperVCWin32 rttih(funcOp, rewriter, typeConverter, tsLlvmContext->compileOptions);
 #else
-            LLVMRTTIHelperVCLinux rttih(funcOp, rewriter, typeConverter);
+            LLVMRTTIHelperVCLinux rttih(funcOp, rewriter, typeConverter, tsLlvmContext->compileOptions);
 #endif
             rttih.setPersonality(newFuncOp);
 
@@ -1445,7 +1445,7 @@ struct DialectCastOpLowering : public TsLlvmPattern<mlir_ts::DialectCastOp>
         auto in = transformed.getIn();
         auto resType = op.getRes().getType();
 
-        CastLogicHelper castLogic(op, rewriter, tch);
+        CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
         auto [result, converted] = castLogic.dialectCast(in, in.getType(), resType);
         if (!converted)
         {
@@ -1477,7 +1477,7 @@ struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
         auto in = transformed.getIn();
         auto resType = op.getRes().getType();
 
-        CastLogicHelper castLogic(op, rewriter, tch);
+        CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
         // in case of Union we need mlir_ts::UnionType value
         auto result = castLogic.cast(op.getIn().getType().isa<mlir_ts::UnionType>() ? op.getIn() : in, op.getIn().getType(), resType);
         if (!result)
@@ -1504,7 +1504,7 @@ struct BoxOpLowering : public TsLlvmPattern<mlir_ts::BoxOp>
 
         auto in = transformed.getIn();
 
-        AnyLogic al(op, rewriter, tch, loc);
+        AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
         auto result = al.castToAny(in, transformed.getTypeInfo(), in.getType());
 
         rewriter.replaceOp(op, result);
@@ -1529,7 +1529,7 @@ struct UnboxOpLowering : public TsLlvmPattern<mlir_ts::UnboxOp>
         auto in = transformed.getIn();
         auto resType = op.getRes().getType();
 
-        AnyLogic al(op, rewriter, tch, loc);
+        AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
         auto result = al.UnboxAny(in, tch.convertType(resType));
 
         rewriter.replaceOp(op, result);
@@ -1552,7 +1552,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         CodeLogicHelper clh(op, rewriter);
         MLIRTypeHelper mth(rewriter.getContext());
 
-        CastLogicHelper castLogic(op, rewriter, tch);
+        CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
 
         auto in = transformed.getIn();
 
@@ -1627,7 +1627,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
             auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, false);
 
             // TODO: should not cast anything
-            CastLogicHelper castLogic(op, rewriter, tch);
+            CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
             auto casted = castLogic.castLLVMTypes(transformed.getIn(), transformed.getIn().getType(), unionPartialType,
                                                   unionPartialType);
             if (!casted)
@@ -1692,7 +1692,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
     {
         
 
-        LLVMCodeHelper ch(varOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(varOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
 
@@ -1829,7 +1829,7 @@ struct AllocaOpLowering : public TsLlvmPattern<mlir_ts::AllocaOp>
     {
         
 
-        LLVMCodeHelper ch(varOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(varOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
 
@@ -1869,7 +1869,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
     {
         
 
-        LLVMCodeHelper ch(newOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(newOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(newOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
@@ -1904,7 +1904,7 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
     {
         
 
-        LLVMCodeHelper ch(createTupleOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(createTupleOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(createTupleOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
@@ -1942,7 +1942,7 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
             // TODO: Op should ensure that in ops types are equal result types
             if (llvmDestValueType != llvmValueType)
             {
-                CastLogicHelper castLogic(createTupleOp, rewriter, tch);
+                CastLogicHelper castLogic(createTupleOp, rewriter, tch, tsLlvmContext->compileOptions);
                 itemValue =
                     castLogic.cast(itemValue, itemOrig.getType(), llvmValueType, destItemType, llvmDestValueType);
                 if (!itemValue)
@@ -2010,7 +2010,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
     {
         
 
-        LLVMCodeHelper ch(createArrayOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(createArrayOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(createArrayOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
@@ -2093,7 +2093,7 @@ struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
     {
         
 
-        LLVMCodeHelper ch(newEmptyArrOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(newEmptyArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(newEmptyArrOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
@@ -2138,7 +2138,7 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
     {
         
 
-        LLVMCodeHelper ch(newArrOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(newArrOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(newArrOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
@@ -2192,7 +2192,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
     {
         
 
-        LLVMCodeHelper ch(pushOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(pushOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(pushOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
@@ -2283,7 +2283,7 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
     {
         
 
-        LLVMCodeHelper ch(popOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(popOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(popOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
@@ -2351,7 +2351,7 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
     {
         
 
-        LLVMCodeHelper ch(deleteOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(deleteOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         if (mlir::failed(ch.MemoryFree(transformed.getReference())))
         {
@@ -2526,16 +2526,14 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
                         mlir::Type leftTypeOrig, mlir::Value right, mlir::Type rightTypeOrig,
                         PatternRewriter &builder) const
     {
-        return LogicOp<arith::CmpIOp, arith::CmpIPredicate, v1, arith::CmpFOp, arith::CmpFPredicate, v2>(logicalBinaryOp, op, left, leftTypeOrig,
-                                                                             right, rightTypeOrig, builder,
-                                                                             *(LLVMTypeConverter *)getTypeConverter());
+        return LogicOp<arith::CmpIOp, arith::CmpIPredicate, v1, arith::CmpFOp, arith::CmpFPredicate, v2>(
+            logicalBinaryOp, op, left, leftTypeOrig, right, rightTypeOrig, builder, *(LLVMTypeConverter *)getTypeConverter(),
+            tsLlvmContext->compileOptions);
     }
 
     LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp logicalBinaryOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto op = (SyntaxKind)logicalBinaryOp.getOpCode();
 
         auto op1 = transformed.getOperand1();
@@ -2719,7 +2717,7 @@ struct ElementRefOpLowering : public TsLlvmPattern<mlir_ts::ElementRefOp>
     {
         
 
-        LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto addr = ch.GetAddressOfArrayElement(elementOp.getResult().getType(), elementOp.getArray().getType(),
                                                 transformed.getArray(), transformed.getIndex());
@@ -2737,7 +2735,7 @@ struct PointerOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::PointerOffsetR
     {
         
 
-        LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto addr = ch.GetAddressOfPointerOffset(elementOp.getResult().getType(), elementOp.getRef().getType(),
                                                 transformed.getRef(), transformed.getIndex());
@@ -2796,7 +2794,7 @@ struct PropertyRefOpLowering : public TsLlvmPattern<mlir_ts::PropertyRefOp>
 
         assert(propertyRefOp.getPosition() != -1);
 
-        LLVMCodeHelper ch(propertyRefOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(propertyRefOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto addr =
             ch.GetAddressOfStructElement(propertyRefOp.getType(), transformed.getObjectRef(), propertyRefOp.getPosition());
@@ -2823,7 +2821,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
     {
         auto loc = globalOp->getLoc();
 
-        LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter());
+        LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto createAsGlobalConstructor = false;
         // TODO: we need to write correct attributes to Ops and detect which ops should be in GlobalConstructor
@@ -2931,7 +2929,7 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
     {
         
 
-        LLVMCodeHelper lch(addressOfOp, rewriter, getTypeConverter());
+        LLVMCodeHelper lch(addressOfOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
         auto actualType = addressOfOp.getType();
@@ -3027,7 +3025,7 @@ struct OptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalOp>
                                     << " optional type: " << llvmBoxedType << "\n";);
 
             // cast value to box
-            CastLogicHelper castLogic(optionalOp, rewriter, tch);
+            CastLogicHelper castLogic(optionalOp, rewriter, tch, tsLlvmContext->compileOptions);
             value = castLogic.cast(value, valueOrigType, valueLLVMType, boxedType, llvmBoxedType);
             if (!value)
             {
@@ -3082,7 +3080,7 @@ struct ValueOptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalValueOp>
                                     << " optional type: " << llvmBoxedType << "\n";);
 
             // cast value to box
-            CastLogicHelper castLogic(createOptionalOp, rewriter, tch);
+            CastLogicHelper castLogic(createOptionalOp, rewriter, tch, tsLlvmContext->compileOptions);
             value = castLogic.cast(value, valueOrigType, valueLLVMType, boxedType, llvmBoxedType);
             if (!value)
             {
@@ -3117,7 +3115,7 @@ struct UndefOptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalUndefOp>
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(undefOptionalOp, rewriter);
-        DefaultLogic dl(undefOptionalOp, rewriter, tch, loc);
+        DefaultLogic dl(undefOptionalOp, rewriter, tch, loc, tsLlvmContext->compileOptions);
 
         auto boxedType = undefOptionalOp.getRes().getType().cast<mlir_ts::OptionalType>().getElementType();
         auto llvmBoxedType = tch.convertType(boxedType);
@@ -3196,7 +3194,7 @@ struct SafeValueOpLowering : public TsLlvmPattern<mlir_ts::ValueOrDefaultOp>
 
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
-        DefaultLogic dl(safeValueOp, rewriter, tch, loc);
+        DefaultLogic dl(safeValueOp, rewriter, tch, loc, tsLlvmContext->compileOptions);
 
         auto valueType = safeValueOp.getRes().getType();
         auto llvmValueType = tch.convertType(valueType);
@@ -3244,7 +3242,7 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
         auto loc = memoryCopyOp->getLoc();
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(memoryCopyOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(memoryCopyOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(memoryCopyOp, rewriter);
         auto llvmIndexType = tch.convertType(th.getIndexType());
@@ -3318,7 +3316,7 @@ struct ThrowCallOpLowering : public TsLlvmPattern<mlir_ts::ThrowCallOp>
     {
         TypeConverterHelper tch(getTypeConverter());
 
-        ThrowLogic tl(throwCallOp, rewriter, tch, throwCallOp.getLoc());
+        ThrowLogic tl(throwCallOp, rewriter, tch, throwCallOp.getLoc(), tsLlvmContext->compileOptions);
         tl.logic(transformed.getException(), throwCallOp.getException().getType(), nullptr);
 
         rewriter.eraseOp(throwCallOp);
@@ -3335,7 +3333,7 @@ struct ThrowUnwindOpLowering : public TsLlvmPattern<mlir_ts::ThrowUnwindOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeConverterHelper tch(getTypeConverter());
-        ThrowLogic tl(throwUnwindOp, rewriter, tch, throwUnwindOp.getLoc());
+        ThrowLogic tl(throwUnwindOp, rewriter, tch, throwUnwindOp.getLoc(), tsLlvmContext->compileOptions);
         tl.logic(transformed.getException(), throwUnwindOp.getException().getType(), throwUnwindOp.getUnwindDest());
 
         rewriter.eraseOp(throwUnwindOp);
@@ -3405,7 +3403,7 @@ struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
         Location loc = beginCatchOp.getLoc();
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(beginCatchOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(beginCatchOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(beginCatchOp, rewriter);
 
         auto i8PtrTy = th.getI8PtrType();
@@ -3435,7 +3433,7 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         Location loc = saveCatchVarOp.getLoc();
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(saveCatchVarOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(saveCatchVarOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto ptr = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrType(), transformed.getVarStore());
 
@@ -3465,7 +3463,7 @@ struct EndCatchOpLowering : public TsLlvmPattern<mlir_ts::EndCatchOp>
         Location loc = endCatchOp.getLoc();
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(endCatchOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(endCatchOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto endCatchFuncName = "__cxa_end_catch";
         auto endCatchFunc =
@@ -3502,7 +3500,7 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
         Location loc = endCleanupOp.getLoc();
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(endCleanupOp, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(endCleanupOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(endCleanupOp, rewriter);
 
         auto endCatchFuncName = "__cxa_end_catch";
@@ -4188,7 +4186,7 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(getMethodOp, rewriter);
-        CastLogicHelper castLogic(getMethodOp, rewriter, tch);
+        CastLogicHelper castLogic(getMethodOp, rewriter, tch, tsLlvmContext->compileOptions);
 
         auto origType = getMethodOp.getBoundFunc().getType();
 
@@ -4264,7 +4262,7 @@ struct TypeOfAnyOpLowering : public TsLlvmPattern<mlir_ts::TypeOfAnyOp>
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! TypeOf: " << typeOfAnyOp.getValue() << "\n";);
 
-        AnyLogic al(typeOfAnyOp, rewriter, tch, loc);
+        AnyLogic al(typeOfAnyOp, rewriter, tch, loc, tsLlvmContext->compileOptions);
         auto typeOfValue = al.getTypeOfAny(transformed.getValue());
 
         rewriter.replaceOp(typeOfAnyOp, ValueRange{typeOfValue});
@@ -4283,7 +4281,7 @@ class DebuggerOpLowering : public TsLlvmPattern<mlir_ts::DebuggerOp>
         
 
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
         auto loc = op->getLoc();
@@ -4472,7 +4470,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
         
 
         TypeHelper th(rewriter.getContext());
-        LLVMCodeHelper lch(globalConstructorOp, rewriter, getTypeConverter());
+        LLVMCodeHelper lch(globalConstructorOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(globalConstructorOp, rewriter);
 
         mlir::Location loc = globalConstructorOp->getLoc();
@@ -4647,7 +4645,7 @@ class GCMakeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::GCMakeDescripto
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto i64PtrTy = th.getPointerType(th.getI64Type());
 
@@ -4666,7 +4664,7 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
     LogicalResult matchAndRewrite(mlir_ts::GCNewExplicitlyTypedOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(op, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
@@ -5100,6 +5098,8 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
     }
 
     void runOnOperation() final;
+
+    TSContext tsContext;    
 };
 
 } // end anonymous namespace
@@ -5337,6 +5337,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext{};
+    tsLlvmContext.compileOptions = tsContext.compileOptions;
     patterns.insert<
         AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
         AssertOpLowering, CastOpLowering, ConstantOpLowering, OptionalOpLowering, ValueOptionalOpLowering, UndefOptionalOpLowering,
@@ -5407,7 +5408,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
 /// Create a pass for lowering operations the remaining `TypeScript` operations, as
 /// well as `Affine` and `Std`, to the LLVM dialect for codegen.
-std::unique_ptr<mlir::Pass> mlir::typescript::createLowerToLLVMPass()
+std::unique_ptr<mlir::Pass> mlir::typescript::createLowerToLLVMPass(CompileOptions compileOptions)
 {
-    return std::make_unique<TypeScriptToLLVMLoweringPass>();
+    auto ptr = std::make_unique<TypeScriptToLLVMLoweringPass>();
+    ptr.get()->tsContext.compileOptions = compileOptions;
+    return ptr;
 }

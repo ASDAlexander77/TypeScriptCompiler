@@ -1884,7 +1884,9 @@ std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineFuncPass()
     return std::make_unique<TypeScriptToAffineLoweringFuncPass>();
 }
 
-std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineModulePass()
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineModulePass(CompileOptions compileOptions)
 {
-    return std::make_unique<TypeScriptToAffineLoweringModulePass>();
+    auto ptr = std::make_unique<TypeScriptToAffineLoweringModulePass>();
+    ptr.get()->tsContext.compileOptions = compileOptions;
+    return ptr;
 }

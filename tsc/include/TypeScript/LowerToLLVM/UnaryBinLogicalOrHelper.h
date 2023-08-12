@@ -18,10 +18,10 @@ namespace typescript
 {
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value OptionalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter);
+mlir::Value OptionalTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, LLVMTypeConverter &, CompileOptions);
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value UndefTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter);
+mlir::Value UndefTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, LLVMTypeConverter &, CompileOptions);
 
 template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
 void UnaryOp(UnaryOpTy &unaryOp, mlir::Value oper, PatternRewriter &builder)
@@ -80,7 +80,7 @@ LogicalResult BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, Pattern
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
 mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Type leftType, mlir::Value right, mlir::Type rightType,
-                    PatternRewriter &builder, LLVMTypeConverter &typeConverter)
+                    PatternRewriter &builder, LLVMTypeConverter &typeConverter, CompileOptions compileOptions)
 {
     auto loc = binOp->getLoc();
 
@@ -88,11 +88,11 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
     if (leftType.isa<mlir_ts::OptionalType>() || rightType.isa<mlir_ts::OptionalType>())
     {
-        return OptionalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter);
+        return OptionalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
     else if (leftType.isa<mlir_ts::UndefinedType>() || rightType.isa<mlir_ts::UndefinedType>())
     {
-        return UndefTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter);
+        return UndefTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
     else if (leftType.isIntOrIndex() || leftType.dyn_cast<mlir_ts::BooleanType>())
     {
@@ -176,10 +176,10 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     {
         // TODO, extract array pointer to compare
         TypeHelper th(builder);
-        LLVMCodeHelper ch(binOp, builder, &typeConverter);
+        LLVMCodeHelper ch(binOp, builder, &typeConverter, compileOptions);
         TypeConverterHelper tch(&typeConverter);
 
-        CastLogicHelper castLogic(binOp, builder, tch);
+        CastLogicHelper castLogic(binOp, builder, tch, compileOptions);
 
         auto leftArrayPtrValue =
             left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::NullOp>()

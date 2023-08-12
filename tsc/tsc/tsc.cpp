@@ -23,14 +23,16 @@
 #include "llvm/InitializePasses.h"
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
+#include "TypeScript/DataStructs.h"
 
 #define DEBUG_TYPE "tsc"
 
 namespace cl = llvm::cl;
 
+CompileOptions prepareOptions();
 std::string getDefaultOutputFileName(enum Action);
-int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &);
-int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &);
+int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions);
+int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions);
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp);
@@ -189,15 +191,16 @@ int main(int argc, char **argv)
     mlirContext.printStackTraceOnDiagnostic(true);
 #endif
 
-    mlir::OwningOpRef<mlir::ModuleOp> module;
+    auto compileOptions = prepareOptions();
 
     llvm::SourceMgr sourceMgr;
-    if (int error = compileTypeScriptFileIntoMLIR(mlirContext, sourceMgr, module))
+    mlir::OwningOpRef<mlir::ModuleOp> module;
+    if (int error = compileTypeScriptFileIntoMLIR(mlirContext, sourceMgr, module, compileOptions))
     {
         return error;
     }
 
-    if (int error = runMLIRPasses(mlirContext, sourceMgr, module))
+    if (int error = runMLIRPasses(mlirContext, sourceMgr, module, compileOptions))
     {
         return error;
     }

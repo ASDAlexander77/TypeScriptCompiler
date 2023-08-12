@@ -35,12 +35,13 @@ class CastLogicHelper
     LLVMCodeHelperBase ch;
     CodeLogicHelper clh;
     Location loc;
+    CompileOptions compileOptions;
     bool external;
 
   public:
-    CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch)
-        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(op->getLoc()),
-          external(false)
+    CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, CompileOptions compileOptions)
+        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(op->getLoc()),
+          compileOptions(compileOptions), external(false)
     {
     }
 
@@ -798,19 +799,19 @@ class CastLogicHelper
 
     mlir::Value castI32ToString(mlir::Value in)
     {
-        ConvertLogic cl(op, rewriter, tch, loc);
+        ConvertLogic cl(op, rewriter, tch, loc, compileOptions);
         return cl.intToString(in);
     }
 
     mlir::Value castI64ToString(mlir::Value in)
     {
-        ConvertLogic cl(op, rewriter, tch, loc);
+        ConvertLogic cl(op, rewriter, tch, loc, compileOptions);
         return cl.int64ToString(in);
     }
 
     mlir::Value castF32orF64ToString(mlir::Value in)
     {
-        ConvertLogic cl(op, rewriter, tch, loc);
+        ConvertLogic cl(op, rewriter, tch, loc, compileOptions);
         return cl.f32OrF64ToString(in);
     }
 
@@ -1050,9 +1051,9 @@ class CastLogicHelper
 };
 
 template <typename T>
-mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch)
+mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch, CompileOptions compileOptions)
 {
-    CastLogicHelper castLogic(op, rewriter, tch);
+    CastLogicHelper castLogic(op, rewriter, tch, compileOptions);
     return castLogic.cast(size, size.getType(), sizeType);
 }
 

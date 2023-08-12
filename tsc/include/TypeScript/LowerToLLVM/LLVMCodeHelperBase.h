@@ -20,7 +20,7 @@ enum class MemoryAllocSet
 };
 
 template <typename T>
-mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch);
+mlir::Value castLogic(mlir::Value, mlir::Type, mlir::Operation *, PatternRewriter &, TypeConverterHelper, CompileOptions);
 
 class LLVMCodeHelperBase
 {
@@ -28,10 +28,11 @@ class LLVMCodeHelperBase
     mlir::Operation *op;
     PatternRewriter &rewriter;
     TypeConverter *typeConverter;
+    CompileOptions compileOptions;
 
   public:
-    LLVMCodeHelperBase(mlir::Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter)
-        : op(op), rewriter(rewriter), typeConverter(typeConverter)
+    LLVMCodeHelperBase(mlir::Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter, CompileOptions compileOptions)
+        : op(op), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
     {
     }
 
@@ -264,7 +265,7 @@ class LLVMCodeHelperBase
 
         if (effectiveSize.getType() != th.getIndexType() && effectiveSize.getType() != llvmIndexType)
         {
-            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch);
+            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch, compileOptions);
         }
 
         if (effectiveSize.getType() == th.getIndexType())
@@ -312,7 +313,7 @@ class LLVMCodeHelperBase
         auto effectiveSize = sizeOfAlloc;
         if (effectiveSize.getType() != th.getIndexType() && effectiveSize.getType() != llvmIndexType)
         {
-            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch);
+            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch, compileOptions);
         }
 
         if (effectiveSize.getType() == th.getIndexType())

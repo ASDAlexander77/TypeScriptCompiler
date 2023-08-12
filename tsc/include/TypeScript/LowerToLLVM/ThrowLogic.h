@@ -29,11 +29,12 @@ class ThrowLogic
     CodeLogicHelper clh;
     Location loc;
     mlir::TypeConverter &typeConverter;
+    CompileOptions compileOptions;
 
   public:
-    ThrowLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc)
-        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(loc),
-          typeConverter(tch.typeConverter)
+    ThrowLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions compileOptions)
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
+          typeConverter(tch.typeConverter), compileOptions(compileOptions)
     {
     }
 
@@ -51,7 +52,7 @@ class ThrowLogic
     {
         mlir::Type exceptionType = origType;
 
-        LLVMRTTIHelperVCWin32 rttih(op, rewriter, typeConverter);
+        LLVMRTTIHelperVCWin32 rttih(op, rewriter, typeConverter, compileOptions);
         rttih.setType(exceptionType);
 
         auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
