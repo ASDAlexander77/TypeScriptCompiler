@@ -11,7 +11,7 @@ using namespace PatternMatch;
 
 struct MemAllocFixPassCode
 {
-    DebugInfoPatchPassCode()
+    MemAllocFixPassCode()
     {
     }
 
@@ -32,13 +32,13 @@ struct MemAllocFixPassCode
             }
         }        
 
-        for (auto &DDI : workSet)
+        for (auto &CI : workSet)
         {
             // TODO: ...
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! DI PATCH Change: " << MadeChange;);
-        LLVM_DEBUG(llvm::dbgs() << "\n!! DI PATCH Dump After: ...\n" << F << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! MEM ALLOC Change: " << MadeChange;);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! MEM ALLOC Dump After: ...\n" << F << "\n";);
 
         return MadeChange;
     }
@@ -48,8 +48,8 @@ namespace ts
 {
     llvm::PreservedAnalyses MemAllocFixPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
     {
-        MemAllocFixPassCode LPF{};
-        if (!LPF.runOnFunction(F))
+        MemAllocFixPassCode MAFP{};
+        if (!MAFP.runOnFunction(F))
         {
             return llvm::PreservedAnalyses::all();
         }

@@ -4,7 +4,7 @@ set(LLVM_LINK_COMPONENTS
   Support
   )
 
-add_llvm_library(TypeScriptMemAllocFixPass
+add_llvm_library(TypeScriptMemAllocPass
   MemAllocFixPass.cpp
 
   ADDITIONAL_HEADER_DIRS

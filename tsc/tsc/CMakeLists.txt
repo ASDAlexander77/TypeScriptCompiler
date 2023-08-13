@@ -45,6 +45,7 @@ set(LIBS
     TypeScriptDebugInfoPass
     TypeScriptExportPass
     TypeScriptAliasPass
+    TypeScriptMemAllocPass
     )
 
 add_llvm_executable(tsc tsc.cpp compile.cpp transform.cpp dump.cpp jit.cpp obj.cpp exe.cpp TextDiagnostic.cpp TextDiagnosticPrinter.cpp utils.cpp opts.cpp)

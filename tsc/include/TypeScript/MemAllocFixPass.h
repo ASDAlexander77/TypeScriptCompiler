@@ -9,11 +9,10 @@ namespace ts
     class MemAllocFixPass : public llvm::PassInfoMixin<MemAllocFixPass>
     {
     private:
-        size_t intSize;
+        int intSize;
 
     public:
-        MemAllocFixPass(size_t intSize) : intSize(intSize) {
-        }
+        MemAllocFixPass(int intSize) : intSize(intSize) {}
 
         llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &AM);
 
