@@ -248,8 +248,8 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
 
         if (compileOptions.isWasm)
         {
-            mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::MemAllocFixPass(compileOptions.sizeBits)));
-            mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::AliasPass(true, compileOptions.sizeBits)));
+            mpm.addPass(ts::MemAllocFixPass(compileOptions.sizeBits));
+            mpm.addPass(ts::AliasPass(true, compileOptions.sizeBits));
         }
 
         if (*ol == llvm::OptimizationLevel::O0)

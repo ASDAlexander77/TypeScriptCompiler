@@ -51,14 +51,16 @@ struct AliasPassCode
 
 namespace ts
 {
-    llvm::PreservedAnalyses AliasPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
+    llvm::PreservedAnalyses AliasPass::run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM)
     {
-        AliasPassCode LPF{isWasm, intSize};
-        if (!LPF.runOnFunction(F))
+        AliasPassCode AP{isWasm, intSize};
+        bool MadeChange = false;
+
+        for (auto &F : M)
         {
-            return llvm::PreservedAnalyses::all();
+            MadeChange |= AP.runOnFunction(F);
         }
 
-        return llvm::PreservedAnalyses::none();
+        return MadeChange ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();        
     }    
 }

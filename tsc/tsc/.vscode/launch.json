@@ -273,7 +273,7 @@
             "args": [
                 "-emit=exe",
                 "-mlir-disable-threading",
-                "-debug-only=llvm",                
+                "-debug-only=pass",                
                 "--nogc",
                 "-o=c:/temp/1.wasm",
                 "-mtriple=wasm32-pc-emscripten",

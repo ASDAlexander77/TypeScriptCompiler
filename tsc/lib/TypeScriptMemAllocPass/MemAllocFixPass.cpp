@@ -22,12 +22,22 @@ struct MemAllocFixPassCode
         LLVM_DEBUG(llvm::dbgs() << "\nMEM ALLOC PATCH Function: " << F.getName());
         LLVM_DEBUG(llvm::dbgs() << "\nMEM ALLOC Dump Before: ...\n" << F << "\n";);
 
+        if (F.empty())
+        {
+            StringRef newName;
+            if (!mapName(F.getName(), newName))
+            {
+                F.setName("malloc");
+                return true;
+            }
+        }
+
         llvm::SmallVector<llvm::CallInst *> workSet;
         for (auto &I : instructions(F))
         {
-            if (auto *DDI = dyn_cast<CallInst>(&I))
+            if (auto *CI = dyn_cast<CallInst>(&I))
             {
-                workSet.push_back(DDI);
+                workSet.push_back(CI);
                 continue;
             }
         }        
@@ -35,6 +45,7 @@ struct MemAllocFixPassCode
         for (auto &CI : workSet)
         {
             // TODO: ...
+            LLVM_DEBUG(llvm::dbgs() << "\n!! call name: " << CI->getValueName(););
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! MEM ALLOC Change: " << MadeChange;);
@@ -42,18 +53,43 @@ struct MemAllocFixPassCode
 
         return MadeChange;
     }
+
+    bool mapName(StringRef name, StringRef &newName)
+    {
+        if (name == "ts_malloc")
+        {
+            newName = "malloc";
+        }
+        else if (name == "ts_realloc")
+        {
+            newName = "realloc";
+        }
+        else if (name == "ts_free")
+        {
+            newName = "free";
+        }
+        else
+        {
+            return false;
+        }
+
+        return true;
+    }    
 };
 
 namespace ts
 {
-    llvm::PreservedAnalyses MemAllocFixPass::run(llvm::Function &F, llvm::FunctionAnalysisManager &AM)
+    
+    llvm::PreservedAnalyses MemAllocFixPass::run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM)
     {
         MemAllocFixPassCode MAFP{};
-        if (!MAFP.runOnFunction(F))
+        bool MadeChange = false;
+
+        for (auto &F : M)
         {
-            return llvm::PreservedAnalyses::all();
+            MadeChange |= MAFP.runOnFunction(F);
         }
 
-        return llvm::PreservedAnalyses::none();
+        return MadeChange ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all();     
     }
 }

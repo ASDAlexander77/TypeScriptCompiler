@@ -14,7 +14,7 @@ namespace ts
     public:
         MemAllocFixPass(int intSize) : intSize(intSize) {}
 
-        llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &AM);
+        llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM);
 
         static bool isRequired()
         {
