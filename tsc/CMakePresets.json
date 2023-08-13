@@ -24,7 +24,7 @@
             "generator": "Visual Studio 17 2022",
             "displayName": "Visual Studio Professional 2022 - x86_amd64",
             "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
-            "toolset": "host=x86",
+            "toolset": "host=x64",
             "architecture": "x64",
             "cacheVariables": {
                 "CMAKE_C_COMPILER": "cl.exe",

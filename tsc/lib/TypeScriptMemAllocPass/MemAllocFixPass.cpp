@@ -25,28 +25,28 @@ struct MemAllocFixPassCode
         if (F.empty())
         {
             StringRef newName;
-            if (!mapName(F.getName(), newName))
+            if (mapName(F.getName(), newName))
             {
-                F.setName("malloc");
+                F.setName(newName);
                 return true;
             }
         }
 
-        llvm::SmallVector<llvm::CallInst *> workSet;
-        for (auto &I : instructions(F))
-        {
-            if (auto *CI = dyn_cast<CallInst>(&I))
-            {
-                workSet.push_back(CI);
-                continue;
-            }
-        }        
+        // llvm::SmallVector<llvm::CallBase *> workSet;
+        // for (auto &I : instructions(F))
+        // {
+        //     if (auto *CI = dyn_cast<CallBase>(&I))
+        //     {
+        //         workSet.push_back(CI);
+        //         continue;
+        //     }
+        // }        
 
-        for (auto &CI : workSet)
-        {
-            // TODO: ...
-            LLVM_DEBUG(llvm::dbgs() << "\n!! call name: " << CI->getValueName(););
-        }
+        // for (auto &CI : workSet)
+        // {
+        //     // TODO: ...
+        //     LLVM_DEBUG(llvm::dbgs() << "\n!! call called func name: " << CI->getCalledFunction()->getName(););
+        // }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! MEM ALLOC Change: " << MadeChange;);
         LLVM_DEBUG(llvm::dbgs() << "\n!! MEM ALLOC Dump After: ...\n" << F << "\n";);
@@ -79,12 +79,34 @@ struct MemAllocFixPassCode
 
 namespace ts
 {
+    inline bool isToBeRemoved(StringRef name)
+    {
+        return (name == "malloc" || name == "realloc" || name == "free");
+    }      
     
     llvm::PreservedAnalyses MemAllocFixPass::run(llvm::Module &M, llvm::ModuleAnalysisManager &MAM)
     {
         MemAllocFixPassCode MAFP{};
         bool MadeChange = false;
 
+        // remove first
+        llvm::SmallVector<Function *> removeSet;
+        for (auto &F : M)
+        {
+            if (F.empty() && isToBeRemoved(F.getName()))
+            {
+                removeSet.push_back(&F);
+            }
+        }
+
+        for (auto f : removeSet)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! MEM ALLOC removing: " << *f;);
+            MadeChange = true;
+            f->eraseFromParent();
+        }
+
+        // process not removed
         for (auto &F : M)
         {
             MadeChange |= MAFP.runOnFunction(F);
