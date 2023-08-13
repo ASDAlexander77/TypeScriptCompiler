@@ -34,11 +34,11 @@ std::string getDefaultOutputFileName(enum Action);
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions);
 int dumpAST();
-int dumpLLVMIR(mlir::ModuleOp);
-int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp);
-int dumpObjOrAssembly(int, char **, mlir::ModuleOp);
+int dumpLLVMIR(mlir::ModuleOp, CompileOptions);
+int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions);
+int dumpObjOrAssembly(int, char **, mlir::ModuleOp, CompileOptions);
 int buildExe(int, char **, std::string);
-int runJit(int, char **, mlir::ModuleOp);
+int runJit(int, char **, mlir::ModuleOp, CompileOptions);
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
@@ -216,18 +216,18 @@ int main(int argc, char **argv)
     // Check to see if we are compiling to LLVM IR.
     if (emitAction == Action::DumpLLVMIR || emitAction == Action::DumpByteCode)
     {
-        return dumpLLVMIR(*module);
+        return dumpLLVMIR(*module, compileOptions);
     }
 
     if (emitAction == Action::DumpObj || emitAction == Action::DumpAssembly)
     {
-        return dumpObjOrAssembly(argc, argv, *module);
+        return dumpObjOrAssembly(argc, argv, *module, compileOptions);
     }
 
     if (emitAction == Action::BuildExe || emitAction == Action::BuildDll)
     {
         auto tempOutputFile = getDefaultOutputFileName(Action::DumpObj);
-        auto result = dumpObjOrAssembly(argc, argv, Action::DumpObj, tempOutputFile, *module);
+        auto result = dumpObjOrAssembly(argc, argv, Action::DumpObj, tempOutputFile, *module, compileOptions);
         if (result != 0)
         {
             return result;
@@ -239,7 +239,7 @@ int main(int argc, char **argv)
     // Otherwise, we must be running the jit.
     if (emitAction == Action::RunJIT)
     {
-        return runJit(argc, argv, *module);
+        return runJit(argc, argv, *module, compileOptions);
     }
 
     llvm::WithColor::error(llvm::errs(), "tsc") << "No action specified (parsing only?), use -emit=<action>\n";

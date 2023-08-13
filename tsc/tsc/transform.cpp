@@ -20,6 +20,7 @@
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
 #include "TypeScript/DebugInfoPatchPass.h"
 #endif
+#include "TypeScript/MemAllocFixPass.h"
 #include "TypeScript/AliasPass.h"
 
 #include "mlir/IR/MLIRContext.h"
@@ -143,10 +144,6 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         {
             pm.addPass(mlir::typescript::createGCPass(compileOptions));
         }
-        else if (compileOptions.isWasm)
-        {
-            pm.addPass(mlir::typescript::createMemAllocPass(compileOptions));
-        }
     }
 
     auto result = 0;
@@ -207,9 +204,9 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
 }
 
 std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(
-    llvm::Optional<unsigned> mbOptLevel, llvm::Optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine)
+    llvm::Optional<unsigned> mbOptLevel, llvm::Optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine, CompileOptions compileOptions)
 {
-    return [mbOptLevel, mbSizeLevel, targetMachine](llvm::Module *m) -> llvm::Error
+    return [mbOptLevel, mbSizeLevel, targetMachine, compileOptions](llvm::Module *m) -> llvm::Error
     {
         llvm::Optional<llvm::OptimizationLevel> ol = mapToLevel(mbOptLevel.value(), mbSizeLevel.value());
         if (!ol)
@@ -249,14 +246,10 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
         llvm::Triple triple(m->getTargetTriple());
         mpm.addPass(ts::ExportFixPass(triple.isWindowsMSVCEnvironment()));
 
-        if (triple.getArch() == llvm::Triple::ArchType::wasm32)
+        if (compileOptions.isWasm)
         {
-            mpm.addPass(ts::AliasPass(true, 32));
-        }
-
-        if (triple.getArch() == llvm::Triple::ArchType::wasm64)
-        {
-            mpm.addPass(ts::AliasPass(true, 64));
+            //mpm.addPass(ts::MemAllocFixPass(compileOptions.sizeBits));
+            mpm.addPass(ts::AliasPass(true, compileOptions.sizeBits));
         }
 
         if (*ol == llvm::OptimizationLevel::O0)
@@ -292,13 +285,14 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
     };
 }
 
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int optLevel, int sizeLevel)
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int optLevel, int sizeLevel, CompileOptions compileOptions)
 {
 #ifdef ENABLE_CUSTOM_PASSES
     auto optPipeline = makeCustomPassesWithOptimizingTransformer(
         /*optLevel=*/enableOpt ? optLevel : 0,
         /*sizeLevel=*/enableOpt ? sizeLevel : 0,
-        /*targetMachine=*/nullptr);
+        /*targetMachine=*/nullptr,
+        compileOptions);
 #else
     // An optimization pipeline to use within the execution engine.
     auto optPipeline = mlir::makeOptimizingTransformer(

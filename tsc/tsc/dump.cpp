@@ -30,7 +30,7 @@ extern cl::opt<bool> lldbDebugInfo;
 
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action);
 int registerMLIRDialects(mlir::ModuleOp);
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int);
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions);
 
 int dumpAST()
 {
@@ -46,7 +46,7 @@ int dumpAST()
     return 0;
 }
 
-int dumpLLVMIR(mlir::ModuleOp module)
+int dumpLLVMIR(mlir::ModuleOp module, CompileOptions compileOptions)
 {
     registerMLIRDialects(module);
 
@@ -74,7 +74,7 @@ int dumpLLVMIR(mlir::ModuleOp module)
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
-    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
+    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
     if (auto err = optPipeline(llvmModule.get()))
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to optimize LLVM IR " << err << "\n";

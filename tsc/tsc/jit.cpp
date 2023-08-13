@@ -1,3 +1,5 @@
+#include "TypeScript/DataStructs.h"
+
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinOps.h"
 
@@ -26,9 +28,9 @@ extern cl::opt<std::string> inputFilename;
 extern cl::opt<std::string> TargetTriple;
 
 int registerMLIRDialects(mlir::ModuleOp);
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int);
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions);
 
-int runJit(int argc, char **argv, mlir::ModuleOp module)
+int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions compileOptions)
 {
     // Print a stack trace if we signal out.
     llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
@@ -43,7 +45,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module)
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
-    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel);
+    auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
 
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
