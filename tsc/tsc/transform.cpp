@@ -143,6 +143,10 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         {
             pm.addPass(mlir::typescript::createGCPass(compileOptions));
         }
+        else if (compileOptions.isWasm)
+        {
+            pm.addPass(mlir::typescript::createMemAllocPass(compileOptions));
+        }
     }
 
     auto result = 0;

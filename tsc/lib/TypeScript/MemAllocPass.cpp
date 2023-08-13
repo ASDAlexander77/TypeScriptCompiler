@@ -117,10 +117,11 @@ class MemAllocPass : public mlir::PassWrapper<MemAllocPass, ModulePass>
         TypeHelper th(context);
         LLVMCodeHelper ch(m, rewriter, nullptr, tsContext.compileOptions);
         auto i8PtrTy = th.getI8PtrType();
+        auto sizeTy = tsContext.compileOptions.sizeBits == 64 ? th.getI64Type() : th.getI32Type();
         auto loc = mlir::UnknownLoc::get(context);
-        ch.getOrInsertFunction(loc, m, "malloc", th.getFunctionType(th.getI8PtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
-        ch.getOrInsertFunction(loc, m, "realloc", th.getFunctionType(th.getI8PtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
-        ch.getOrInsertFunction(loc, m, "free", th.getFunctionType(th.getI8PtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
+        ch.getOrInsertFunction(loc, m, "malloc", th.getFunctionType(i8PtrTy, mlir::ArrayRef<mlir::Type>{sizeTy}));
+        ch.getOrInsertFunction(loc, m, "realloc", th.getFunctionType(i8PtrTy, mlir::ArrayRef<mlir::Type>{i8PtrTy, sizeTy}));
+        ch.getOrInsertFunction(loc, m, "free", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{i8PtrTy}));
     }
 };
 } // end anonymous namespace
