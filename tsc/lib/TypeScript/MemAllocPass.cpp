@@ -33,6 +33,9 @@ class MemAllocPass : public mlir::PassWrapper<MemAllocPass, ModulePass>
     {
         auto m = getModule();
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Module: " << m.getName(););
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Dump Before: ...\n" << m << "\n";);        
+
         m.walk([&](mlir::Operation *op) {
             if (auto funcOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(op))
             {
@@ -45,6 +48,12 @@ class MemAllocPass : public mlir::PassWrapper<MemAllocPass, ModulePass>
                 auto name = std::string(symbolAttr.getValue());
                 if (!funcOp.getBody().empty())
                 {
+                    return;
+                }
+
+                if (name == "malloc" || name == "free")
+                {
+                    funcOp->erase();
                     return;
                 }
 
@@ -62,6 +71,10 @@ class MemAllocPass : public mlir::PassWrapper<MemAllocPass, ModulePass>
                 renameCall(name, callOp);
             }
         });
+
+        injectDeclarations(m, m.getContext());
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Dump After: ...\n" << m << "\n";);    
     }
 
     bool mapName(StringRef name, StringRef &newName)
