@@ -14,8 +14,8 @@ namespace typescript
     
 /// Create a pass for lowering to operations in the `Affine` and `Std` dialects,
 /// for a subset of the TypeScript IR (e.g. WhileOp etc).
-std::unique_ptr<mlir::Pass> createLowerToAffineTSFuncPass(bool);
-std::unique_ptr<mlir::Pass> createLowerToAffineFuncPass();
+std::unique_ptr<mlir::Pass> createLowerToAffineTSFuncPass(CompileOptions);
+std::unique_ptr<mlir::Pass> createLowerToAffineFuncPass(CompileOptions);
 std::unique_ptr<mlir::Pass> createLowerToAffineModulePass(CompileOptions);
 
 /// Create a pass for lowering operations the remaining `TypeScript` operations, as

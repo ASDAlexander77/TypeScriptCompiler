@@ -91,14 +91,14 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
 
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
-        optPM.addPass(mlir::typescript::createLowerToAffineTSFuncPass(emitAction == Action::RunJIT));
+        optPM.addPass(mlir::typescript::createLowerToAffineTSFuncPass(compileOptions));
         optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
 
         mlir::OpPassManager &optPM2 = pm.nest<mlir::func::FuncOp>();
 
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
-        optPM2.addPass(mlir::typescript::createLowerToAffineFuncPass());
+        optPM2.addPass(mlir::typescript::createLowerToAffineFuncPass(compileOptions));
         optPM2.addPass(mlir::createCanonicalizerPass());
 
         pm.addPass(mlir::typescript::createLowerToAffineModulePass(compileOptions));

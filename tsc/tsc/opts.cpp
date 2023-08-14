@@ -5,6 +5,7 @@
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/TargetParser/Host.h"
 
+#include "TypeScript/TypeScriptCompiler/Defines.h"
 #include "TypeScript/DataStructs.h"
 
 #define DEBUG_TYPE "tsc"
@@ -12,6 +13,7 @@
 namespace cl = llvm::cl;
 
 extern cl::opt<std::string> inputFilename;
+extern cl::opt<enum Action> emitAction;
 extern cl::opt<bool> disableGC;
 extern cl::opt<bool> disableWarnings;
 extern cl::opt<bool> generateDebugInfo;
@@ -30,6 +32,7 @@ CompileOptions prepareOptions()
     auto TheTriple = llvm::Triple(moduleTargetTriple);
 
     CompileOptions compileOptions;
+    compileOptions.isJit = emitAction == Action::RunJIT;
     compileOptions.disableGC = disableGC;
     compileOptions.disableWarnings = disableWarnings;
     compileOptions.generateDebugInfo = generateDebugInfo;

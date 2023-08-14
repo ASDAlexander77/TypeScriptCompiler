@@ -54,9 +54,9 @@ namespace
 {
 struct TsLlvmContext
 {
-    TsLlvmContext() = default;
+    TsLlvmContext(CompileOptions& compileOptions) : compileOptions(compileOptions), debugEnabled(false) {};
 
-    CompileOptions compileOptions;
+    CompileOptions& compileOptions;
     bool debugEnabled;
 };
 
@@ -5087,6 +5087,12 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
 {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TypeScriptToLLVMLoweringPass)
 
+    TSContext tsContext;    
+
+    TypeScriptToLLVMLoweringPass(CompileOptions &compileOptions) : tsContext(compileOptions)
+    {
+    }
+
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<
@@ -5098,8 +5104,6 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
     }
 
     void runOnOperation() final;
-
-    TSContext tsContext;    
 };
 
 } // end anonymous namespace
@@ -5336,8 +5340,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 #endif
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
-    TsLlvmContext tsLlvmContext{};
-    tsLlvmContext.compileOptions = tsContext.compileOptions;
+    TsLlvmContext tsLlvmContext{tsContext.compileOptions};
     patterns.insert<
         AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
         AssertOpLowering, CastOpLowering, ConstantOpLowering, OptionalOpLowering, ValueOptionalOpLowering, UndefOptionalOpLowering,
@@ -5410,7 +5413,5 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 /// well as `Affine` and `Std`, to the LLVM dialect for codegen.
 std::unique_ptr<mlir::Pass> mlir::typescript::createLowerToLLVMPass(CompileOptions compileOptions)
 {
-    auto ptr = std::make_unique<TypeScriptToLLVMLoweringPass>();
-    ptr.get()->tsContext.compileOptions = compileOptions;
-    return ptr;
+    return std::make_unique<TypeScriptToLLVMLoweringPass>(compileOptions);
 }

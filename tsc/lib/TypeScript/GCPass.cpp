@@ -29,6 +29,10 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 
     TSContext tsContext;
 
+    GCPass(CompileOptions &compileOptions) : tsContext(compileOptions)
+    {
+    }
+
     void runOnModule() override
     {
         auto m = getModule();
@@ -196,7 +200,5 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 /// Create pass.
 std::unique_ptr<mlir::Pass> mlir_ts::createGCPass(CompileOptions compileOptions)
 {
-    auto ptr = std::make_unique<GCPass>();
-    ptr.get()->tsContext.compileOptions = compileOptions;
-    return ptr;
+    return std::make_unique<GCPass>(compileOptions);
 }

@@ -5,6 +5,7 @@
 
 struct CompileOptions
 {
+    bool isJit;
     bool disableGC;
     bool disableWarnings;
     bool generateDebugInfo;

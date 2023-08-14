@@ -1567,6 +1567,12 @@ struct TypeScriptToAffineLoweringTSFuncPass : public PassWrapper<TypeScriptToAff
 {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TypeScriptToAffineLoweringTSFuncPass)
 
+    TSContext tsContext;
+
+    TypeScriptToAffineLoweringTSFuncPass(CompileOptions &compileOptions) : tsContext(compileOptions)
+    {
+    }
+
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<arith::ArithDialect>();
@@ -1575,8 +1581,6 @@ struct TypeScriptToAffineLoweringTSFuncPass : public PassWrapper<TypeScriptToAff
     }
 
     void runOnFunction() final;
-
-    TSContext tsContext;
 };
 } // end anonymous namespace.
 
@@ -1586,6 +1590,12 @@ struct TypeScriptToAffineLoweringFuncPass : public PassWrapper<TypeScriptToAffin
 {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TypeScriptToAffineLoweringFuncPass)
 
+    TSContext tsContext;
+
+    TypeScriptToAffineLoweringFuncPass(CompileOptions &compileOptions) : tsContext(compileOptions)
+    {
+    }
+
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<arith::ArithDialect>();
@@ -1595,7 +1605,6 @@ struct TypeScriptToAffineLoweringFuncPass : public PassWrapper<TypeScriptToAffin
 
     void runOnOperation() final;
 
-    TSContext tsContext;
 };
 } // end anonymous namespace.
 
@@ -1605,6 +1614,12 @@ struct TypeScriptToAffineLoweringModulePass : public PassWrapper<TypeScriptToAff
 {
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TypeScriptToAffineLoweringModulePass)
 
+    TSContext tsContext;
+
+    TypeScriptToAffineLoweringModulePass(CompileOptions &compileOptions) : tsContext(compileOptions)
+    {
+    }
+
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<arith::ArithDialect>();
@@ -1613,8 +1628,6 @@ struct TypeScriptToAffineLoweringModulePass : public PassWrapper<TypeScriptToAff
     }
 
     void runOnOperation() final;
-
-    TSContext tsContext;
 };
 } // end anonymous namespace.
 
@@ -1776,7 +1789,7 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE FUNC DUMP: \n" << function << "\n";);
 
     // We only lower the main function as we expect that all other functions have been inlined.
-    if (tsContext.isJit && function.getName() == "main")
+    if (tsContext.compileOptions.isJit && function.getName() == "main")
     {
         auto voidType = mlir_ts::VoidType::get(function.getContext());
         // Verify that the given main has no inputs and results.
@@ -1872,21 +1885,17 @@ void TypeScriptToAffineLoweringModulePass::runOnOperation()
 
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,
 /// for a subset of the TypeScript IR.
-std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineTSFuncPass(bool isJit)
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineTSFuncPass(CompileOptions compileOptions)
 {
-    auto ptr = std::make_unique<TypeScriptToAffineLoweringTSFuncPass>();
-    ptr.get()->tsContext.isJit = isJit;
-    return ptr;
+    return std::make_unique<TypeScriptToAffineLoweringTSFuncPass>(compileOptions);
 }
 
-std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineFuncPass()
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineFuncPass(CompileOptions compileOptions)
 {
-    return std::make_unique<TypeScriptToAffineLoweringFuncPass>();
+    return std::make_unique<TypeScriptToAffineLoweringFuncPass>(compileOptions);
 }
 
 std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineModulePass(CompileOptions compileOptions)
 {
-    auto ptr = std::make_unique<TypeScriptToAffineLoweringModulePass>();
-    ptr.get()->tsContext.compileOptions = compileOptions;
-    return ptr;
+    return std::make_unique<TypeScriptToAffineLoweringModulePass>(compileOptions);
 }

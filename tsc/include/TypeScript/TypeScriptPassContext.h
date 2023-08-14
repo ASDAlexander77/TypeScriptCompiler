@@ -13,11 +13,10 @@ namespace
 
 struct TSContext
 {
-    TSContext() = default;
+    TSContext(CompileOptions &compileOptions) : compileOptions(compileOptions), jumps(), catchOpData(), unwind(), parentTryOp(), landingBlockOf(), returnBlock(nullptr) {};
 
     // options
-    CompileOptions compileOptions;
-    bool isJit;
+    CompileOptions &compileOptions;
 
     // name, break, continue
     mlir::DenseMap<Operation *, mlir::Block *> jumps;
