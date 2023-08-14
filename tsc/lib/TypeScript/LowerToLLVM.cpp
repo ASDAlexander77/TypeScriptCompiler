@@ -519,23 +519,25 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         TypeHelper th(rewriter);
         CodeLogicHelper clh(op, rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
 
         auto loc = op->getLoc();
 
         // TODO implement str concat
         auto i8PtrTy = th.getI8PtrType();
         auto i8PtrPtrTy = th.getI8PtrPtrType();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(rewriter.getI64Type(), {i8PtrTy}));
+        auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(llvmIndexType, {i8PtrTy}));
         auto strcpyFuncOp = ch.getOrInsertFunction("strcpy", th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));
         auto strcatFuncOp = ch.getOrInsertFunction("strcat", th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));
 
-        mlir::Value size = clh.createI64ConstantOf(1);
+        mlir::Value size = clh.createIndexConstantOf(llvmIndexType, 1);
         // calc size
         for (auto oper : transformed.getOps())
         {
             auto size1 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, oper);
-            size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, size1.getResult()});
+            size = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{size, size1.getResult()});
         }
 
         auto allocInStack = op.getAllocInStack().has_value() && op.getAllocInStack().value();
