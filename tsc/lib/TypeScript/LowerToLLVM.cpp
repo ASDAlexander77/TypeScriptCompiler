@@ -5411,7 +5411,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
 /// Create a pass for lowering operations the remaining `TypeScript` operations, as
 /// well as `Affine` and `Std`, to the LLVM dialect for codegen.
-std::unique_ptr<mlir::Pass> mlir::typescript::createLowerToLLVMPass(CompileOptions compileOptions)
+std::unique_ptr<mlir::Pass> mlir::typescript::createLowerToLLVMPass(CompileOptions &compileOptions)
 {
     return std::make_unique<TypeScriptToLLVMLoweringPass>(compileOptions);
 }
