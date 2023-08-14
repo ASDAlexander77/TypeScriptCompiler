@@ -20,7 +20,7 @@ enum class MemoryAllocSet
 };
 
 template <typename T>
-mlir::Value castLogic(mlir::Value, mlir::Type, mlir::Operation *, PatternRewriter &, TypeConverterHelper, CompileOptions);
+mlir::Value castLogic(mlir::Value, mlir::Type, mlir::Operation *, PatternRewriter &, TypeConverterHelper, CompileOptions&);
 
 class LLVMCodeHelperBase
 {
@@ -28,10 +28,10 @@ class LLVMCodeHelperBase
     mlir::Operation *op;
     PatternRewriter &rewriter;
     TypeConverter *typeConverter;
-    CompileOptions compileOptions;
+    CompileOptions &compileOptions;
 
   public:
-    LLVMCodeHelperBase(mlir::Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter, CompileOptions compileOptions)
+    LLVMCodeHelperBase(mlir::Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
     {
     }

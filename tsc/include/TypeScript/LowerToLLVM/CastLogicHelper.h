@@ -35,11 +35,11 @@ class CastLogicHelper
     LLVMCodeHelperBase ch;
     CodeLogicHelper clh;
     Location loc;
-    CompileOptions compileOptions;
+    CompileOptions &compileOptions;
     bool external;
 
   public:
-    CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, CompileOptions compileOptions)
+    CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(op->getLoc()),
           compileOptions(compileOptions), external(false)
     {
@@ -1051,7 +1051,7 @@ class CastLogicHelper
 };
 
 template <typename T>
-mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch, CompileOptions compileOptions)
+mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch, CompileOptions &compileOptions)
 {
     CastLogicHelper castLogic(op, rewriter, tch, compileOptions);
     return castLogic.cast(size, size.getType(), sizeType);

@@ -31,14 +31,14 @@ namespace cl = llvm::cl;
 
 CompileOptions prepareOptions();
 std::string getDefaultOutputFileName(enum Action);
-int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions);
-int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions);
+int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
+int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int dumpAST();
-int dumpLLVMIR(mlir::ModuleOp, CompileOptions);
-int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions);
-int dumpObjOrAssembly(int, char **, mlir::ModuleOp, CompileOptions);
+int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
+int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
+int dumpObjOrAssembly(int, char **, mlir::ModuleOp, CompileOptions&);
 int buildExe(int, char **, std::string);
-int runJit(int, char **, mlir::ModuleOp, CompileOptions);
+int runJit(int, char **, mlir::ModuleOp, CompileOptions&);
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");

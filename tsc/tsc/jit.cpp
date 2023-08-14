@@ -28,9 +28,9 @@ extern cl::opt<std::string> inputFilename;
 extern cl::opt<std::string> TargetTriple;
 
 int registerMLIRDialects(mlir::ModuleOp);
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions);
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
 
-int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions compileOptions)
+int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     // Print a stack trace if we signal out.
     llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);

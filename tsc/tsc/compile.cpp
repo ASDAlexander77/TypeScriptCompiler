@@ -25,7 +25,7 @@ extern cl::opt<bool> generateDebugInfo;
 extern cl::opt<bool> lldbDebugInfo;
 extern cl::opt<std::string> TargetTriple;
 
-int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions compileOptions)
+int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
 {
     auto fileName = llvm::StringRef(inputFilename);
 

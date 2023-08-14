@@ -29,10 +29,10 @@ class ThrowLogic
     CodeLogicHelper clh;
     Location loc;
     mlir::TypeConverter &typeConverter;
-    CompileOptions compileOptions;
+    CompileOptions &compileOptions;
 
   public:
-    ThrowLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions compileOptions)
+    ThrowLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
           typeConverter(tch.typeConverter), compileOptions(compileOptions)
     {

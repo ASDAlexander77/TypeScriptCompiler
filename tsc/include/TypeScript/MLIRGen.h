@@ -25,7 +25,7 @@ namespace typescript
 {
 ::std::string dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source);
 mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::SourceMgr &sourceMgr,
-                                        CompileOptions compileOptions);
+                                        CompileOptions &compileOptions);
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_MLIRGEN_H_

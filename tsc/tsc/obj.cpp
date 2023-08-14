@@ -39,7 +39,7 @@ extern cl::opt<std::string> outputFilename;
 std::string getDefaultOutputFileName(enum Action);
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action, std::string);
 int registerMLIRDialects(mlir::ModuleOp);
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions);
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
 
 static llvm::codegen::RegisterCodeGenFlags CGF;
 
@@ -245,7 +245,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     return 0;
 }
 
-int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string outputFile, mlir::ModuleOp module, CompileOptions compileOptions)
+int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string outputFile, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     registerMLIRDialects(module);
 
@@ -382,7 +382,7 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
     return 0;
 }
 
-int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module, CompileOptions compileOptions)
+int dumpObjOrAssembly(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     std::string fileOutput = outputFilename.empty() ? getDefaultOutputFileName(emitAction) : outputFilename;
     return dumpObjOrAssembly(argc, argv, emitAction, fileOutput, module, compileOptions);

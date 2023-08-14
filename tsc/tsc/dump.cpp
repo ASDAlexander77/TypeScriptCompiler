@@ -30,7 +30,7 @@ extern cl::opt<bool> lldbDebugInfo;
 
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action);
 int registerMLIRDialects(mlir::ModuleOp);
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions);
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
 
 int dumpAST()
 {
@@ -46,7 +46,7 @@ int dumpAST()
     return 0;
 }
 
-int dumpLLVMIR(mlir::ModuleOp module, CompileOptions compileOptions)
+int dumpLLVMIR(mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     registerMLIRDialects(module);
 

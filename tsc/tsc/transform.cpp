@@ -65,7 +65,7 @@ extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> disableGC;
 extern cl::opt<bool> disableWarnings;
 
-int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions compileOptions)
+int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
 {
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
     mlir::ScopedDiagnosticHandler diagHandler(&context, [&](mlir::Diagnostic &diag)
@@ -204,7 +204,7 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
 }
 
 std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(
-    llvm::Optional<unsigned> mbOptLevel, llvm::Optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine, CompileOptions compileOptions)
+    llvm::Optional<unsigned> mbOptLevel, llvm::Optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine, CompileOptions &compileOptions)
 {
     return [mbOptLevel, mbSizeLevel, targetMachine, compileOptions](llvm::Module *m) -> llvm::Error
     {
@@ -285,7 +285,7 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
     };
 }
 
-std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int optLevel, int sizeLevel, CompileOptions compileOptions)
+std::function<llvm::Error(llvm::Module *)> getTransformer(bool enableOpt, int optLevel, int sizeLevel, CompileOptions &compileOptions)
 {
 #ifdef ENABLE_CUSTOM_PASSES
     auto optPipeline = makeCustomPassesWithOptimizingTransformer(

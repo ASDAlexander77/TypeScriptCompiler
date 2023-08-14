@@ -127,7 +127,7 @@ class MLIRGenImpl
 {
   public:
     MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam,
-                const llvm::StringRef &pathParam, const llvm::SourceMgr &sourceMgr, CompileOptions compileOptions)
+                const llvm::StringRef &pathParam, const llvm::SourceMgr &sourceMgr, CompileOptions &compileOptions)
         : builder(&const_cast<mlir::MLIRContext &>(context)), 
           mth(&const_cast<mlir::MLIRContext &>(context), 
             std::bind(&MLIRGenImpl::getClassInfoByFullName, this, std::placeholders::_1), 
@@ -20142,7 +20142,7 @@ genContext);
 
     MLIRTypeHelper mth;
 
-    CompileOptions compileOptions;
+    CompileOptions &compileOptions;
 
     /// A "module" matches a TypeScript source file: containing a list of functions.
     mlir::ModuleOp theModule;
@@ -20250,7 +20250,7 @@ namespace typescript
 }
 
 mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
-                                        const llvm::SourceMgr &sourceMgr, CompileOptions compileOptions)
+                                        const llvm::SourceMgr &sourceMgr, CompileOptions &compileOptions)
 {
 
     auto path = llvm::sys::path::parent_path(fileName);

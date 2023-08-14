@@ -36,7 +36,7 @@ class AssertLogic
     mlir::Type typeOfValueType;
 
   public:
-    AssertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions compileOptions)
+    AssertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
     {
         sizeType = th.getIndexType();

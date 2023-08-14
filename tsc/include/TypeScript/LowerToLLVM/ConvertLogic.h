@@ -33,7 +33,7 @@ class ConvertLogic
     mlir::Type typeOfValueType;
 
   public:
-    ConvertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions compileOptions)
+    ConvertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
     {
         typeOfValueType = th.getI8PtrType();

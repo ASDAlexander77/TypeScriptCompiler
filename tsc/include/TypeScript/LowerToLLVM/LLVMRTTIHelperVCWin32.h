@@ -43,7 +43,7 @@ class LLVMRTTIHelperVCWin32
     std::string catchableTypeInfoArrayRef;
     std::string throwInfoRef;
 
-    LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter, CompileOptions compileOptions)
+    LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter, compileOptions)
     {
         // setI32AsCatchType();
