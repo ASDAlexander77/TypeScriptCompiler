@@ -393,7 +393,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
         if (emscripten)
         {
             removeCommandArgs(c.get(), {"clang_rt.builtins"});
-            addCommandArgs(c.get(), {"-ldlmalloc"});
+            addCommandArgs(c.get(), {"-ldlmalloc", "-lstandalonewasm"});
         }
         else
         {
