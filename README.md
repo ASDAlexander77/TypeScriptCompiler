@@ -214,40 +214,51 @@ Run ``run.html``
 ```html
 <!DOCTYPE html>
 <html>
+
 <head></head>
+
 <body>
     <script type="module">
         let buffer;
+        let heap;
 
-        const endOf = (arg) => {
-            while (buffer[arg] != 0) arg++;
-            return arg;
-        };
+        let heap_base, heap_end, stack_low, stack_high;
 
+        const endOf = (arg) => { while (buffer[arg] != 0) arg++; return arg; };
         const strOf = (arg) => String.fromCharCode(...buffer.slice(arg, endOf(arg)));
+        const copy = (dst, src) => { while (buffer[src] != 0) buffer[dst++] = buffer[src++]; return dst; };
+        const append = (dst, src) => copy(endOf(dst), src);
+
+        const envObj = {
+            memory_base: 0,
+            table_base: 0,
+            memory: new WebAssembly.Memory({ initial: 256 }),
+            table: new WebAssembly.Table({
+                initial: 0,
+                element: 'anyfunc',
+            }),
+            _assert: (msg, file, line) => console.assert(false, strOf(msg), "file", strOf(file), "line", line),
+            puts: (arg) => console.log(strOf(arg)),
+            strcpy: copy,
+            strcat: append,
+            strlen: (arg) => endOf(arg) - arg,
+            malloc: (arg) => heap += arg,
+        }
 
         const config = {
-            env: {
-                memory_base: 0,
-                table_base: 0,
-                memory: new WebAssembly.Memory({ initial: 256 }),
-                table: new WebAssembly.Table({
-                    initial: 0,
-                    element: 'anyfunc',
-                }),
-                _assert: (msg, file, line) => console.assert(false, strOf(msg), "file", strOf(file), "line", line),
-                puts: (arg) => console.log(strOf(arg)),
-            },
+            env: envObj,
         };
 
         WebAssembly.instantiateStreaming(fetch("./hello.wasm"), config)
             .then(results => {
-                let { main } = results.instance.exports;
+                let { main, __heap_base, __heap_end, __stack_low, __stack_high } = results.instance.exports;
                 buffer = new Uint8Array(results.instance.exports.memory.buffer);
+                heap = heap_base = __heap_base, heap_end = __heap_end, stack_low = __stack_low, stack_high = __stack_high;
                 main();
             });
     </script>
 </body>
+
 </html>
 ```
 
