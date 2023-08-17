@@ -18,6 +18,87 @@ extern cl::opt<enum Action> emitAction;
 // obj
 extern cl::opt<std::string> TargetTriple;
 
+std::string getDefaultExt(enum Action emitAction)
+{
+    std::string ext;
+
+    switch (emitAction)
+    {
+        case None:
+        case RunJIT:
+            break;
+        case DumpAST:
+            ext = "txt";
+            break;
+        case DumpMLIR:
+        case DumpMLIRAffine:
+        case DumpMLIRLLVM:
+            ext = "mlir";
+            break;
+        case DumpLLVMIR:
+            ext = "ll";
+            break;
+        case DumpByteCode:
+            ext = "bc";
+            break;
+        case DumpObj:
+            {
+                llvm::Triple TheTriple;
+                std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+                if (!TargetTriple.empty())
+                {
+                    targetTriple = llvm::Triple::normalize(TargetTriple);
+                }
+                
+                TheTriple = llvm::Triple(targetTriple);
+
+                ext = (TheTriple.getOS() == llvm::Triple::Win32) ? "obj" : "o";
+            }
+
+            break;
+        case DumpAssembly:
+            ext = "s";
+            break;
+        case BuildDll:
+            {
+                llvm::Triple TheTriple;
+                std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+                if (!TargetTriple.empty())
+                {
+                    targetTriple = llvm::Triple::normalize(TargetTriple);
+                }
+                
+                TheTriple = llvm::Triple(targetTriple);
+
+                ext = (TheTriple.getOS() == llvm::Triple::Win32) ? "dll" : "so";
+            }
+
+            break;
+        case BuildExe:
+            {
+                llvm::Triple TheTriple;
+                std::string targetTriple = llvm::sys::getDefaultTargetTriple();
+                if (!TargetTriple.empty())
+                {
+                    targetTriple = llvm::Triple::normalize(TargetTriple);
+                }
+                
+                TheTriple = llvm::Triple(targetTriple);
+
+                ext = 
+                    (TheTriple.getOS() == llvm::Triple::Win32) 
+                        ? "exe" 
+                        : (TheTriple.getArch() == llvm::Triple::wasm32 || TheTriple.getArch() == llvm::Triple::wasm64) 
+                            ? "wasm" 
+                            : "";
+            }
+
+            break;
+    }
+
+    return ext;    
+}
+
 std::string getDefaultOutputFileName(enum Action emitAction)
 {
     if (inputFilename == "-")

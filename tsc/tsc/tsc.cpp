@@ -13,6 +13,8 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/WithColor.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/CodeGen/CommandFlags.h"
 
 // Obj/ASM
@@ -31,6 +33,7 @@ namespace cl = llvm::cl;
 
 CompileOptions prepareOptions();
 std::string getDefaultOutputFileName(enum Action);
+std::string getDefaultExt(enum Action);
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int dumpAST();
@@ -110,6 +113,18 @@ void HideUnrelatedOptionsButVisibleForHidden(cl::SubCommand &Sub) {
         if (I.second->getOptionHiddenFlag() == cl::ReallyHidden)
             I.second->setHiddenFlag(cl::Hidden/*cl::ReallyHidden*/);
     }
+}
+
+std::string GetTemporaryPath(llvm::StringRef Prefix, llvm::StringRef Suffix)
+{
+    llvm::SmallString<256> Path;
+    auto EC = llvm::sys::fs::createTemporaryFile(Prefix, Suffix, Path);
+    if (EC)
+    {
+        return "";
+    }
+
+    return std::string(Path.str());
 }
 
 int main(int argc, char **argv)
@@ -226,7 +241,10 @@ int main(int argc, char **argv)
 
     if (emitAction == Action::BuildExe || emitAction == Action::BuildDll)
     {
-        auto tempOutputFile = getDefaultOutputFileName(Action::DumpObj);
+        auto defaultFilePath = getDefaultOutputFileName(Action::DumpObj);
+        auto fileName = llvm::sys::path::stem(defaultFilePath);
+        auto ext = getDefaultExt(Action::DumpObj);
+        auto tempOutputFile = GetTemporaryPath(fileName, ext);
         auto result = dumpObjOrAssembly(argc, argv, Action::DumpObj, tempOutputFile, *module, compileOptions);
         if (result != 0)
         {
