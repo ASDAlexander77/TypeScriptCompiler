@@ -492,15 +492,24 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
 
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
 
         auto loc = op->getLoc();
         auto i8PtrTy = th.getI8PtrType();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(th.getI64Type(), {i8PtrTy}));
+        auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(llvmIndexType, {i8PtrTy}));
 
         // calc size
-        auto size = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, transformed.getOp());
-        rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, th.getI32Type(), size.getResult());
+        if (th.getI32Type() != llvmIndexType)
+        {
+            auto size = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, transformed.getOp());
+            rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, th.getI32Type(), size.getResult());
+        }
+        else
+        {
+            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, strlenFuncOp, transformed.getOp());
+        }
 
         return success();
     }
@@ -3250,8 +3259,10 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto copyMemFuncOp = ch.getOrInsertFunction(
-            "llvm.memcpy.p0.p0.i64", th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(),
-                                                                               th.getI64Type(), th.getLLVMBoolType()}));
+            llvmIndexType.getIntOrFloatBitWidth() == 32 
+                ? "llvm.memcpy.p0.p0.i32" 
+                : "llvm.memcpy.p0.p0.i64", 
+            th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(), llvmIndexType, th.getLLVMBoolType()}));
 
         mlir::SmallVector<mlir::Value, 4> values;
         values.push_back(clh.castToI8Ptr(transformed.getDst()));

@@ -285,6 +285,7 @@ class LLVMCodeHelperBase
 
         if (memAllocMode == MemoryAllocSet::Zero)
         {
+            // TODO: replace with @llvm.memset.p0.i64 & @llvm.memset.p0.i32
             auto memsetFuncOp = getOrInsertFunction("memset", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getI32Type(), llvmIndexType}));
             auto const0 = clh.createI32ConstantOf(0);
             rewriter.create<LLVM::CallOp>(loc, memsetFuncOp, ValueRange{ptr, const0, effectiveSize});
