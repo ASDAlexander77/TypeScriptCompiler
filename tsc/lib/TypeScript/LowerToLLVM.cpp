@@ -2276,7 +2276,10 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
-        auto newCountAsI32Type = rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType);
+        auto newCountAsI32Type = 
+            newCountAsIndexType.getType() != th.getI32Type()
+                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType)
+                : (mlir::Value) newCountAsIndexType;
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
@@ -2344,7 +2347,10 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
-        auto newCountAsI32Type = rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType);
+        auto newCountAsI32Type = 
+            newCountAsIndexType.getType() != th.getI32Type()
+                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType)
+                : (mlir::Value) newCountAsIndexType;
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
