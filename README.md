@@ -220,18 +220,21 @@ Run ``run.html``
 <body>
     <script type="module">
         let buffer;
+        let buffer32;
+        let buffer64;
+        let bufferF32;
         let heap;
 
         let heap_base, heap_end, stack_low, stack_high;
 
         const endOf = (arg) => { while (buffer[arg] != 0) arg++; return arg; };
         const strOf = (arg) => String.fromCharCode(...buffer.slice(arg, endOf(arg)));
-        const copy = (dst, src) => { while (buffer[src] != 0) buffer[dst++] = buffer[src++]; return dst; };
+        const copy = (dst, src) => { while (buffer[src] != 0) buffer[dst++] = buffer[src++]; buffer[dst] = 0; return dst; };
         const append = (dst, src) => copy(endOf(dst), src);
+        const cmp = (a, b) => { while (buffer[a] != 0) {if (buffer[a] != buffer[b]) break; a++; b++; } return buffer[a] - buffer[b]; };
+        const prn = (s, a) => { for (let i = 0; i < s.length; i++) buffer[a++] = s.charCodeAt(i); buffer[a] = 0; return a; };
 
         const envObj = {
-            memory_base: 0,
-            table_base: 0,
             memory: new WebAssembly.Memory({ initial: 256 }),
             table: new WebAssembly.Table({
                 initial: 0,
@@ -241,8 +244,23 @@ Run ``run.html``
             puts: (arg) => console.log(strOf(arg)),
             strcpy: copy,
             strcat: append,
+            strcmp: cmp,
             strlen: (arg) => endOf(arg) - arg,
             malloc: (arg) => heap += arg,
+            atoi: (arg, rdx) => parseInt(strOf(arg), rdx),
+            atof: (arg) => parseFloat(strOf(arg)),
+            sprintf_s: (sbuffer, sizeOfBuffer, format, ...args) => {
+                const formatStr = strOf(format);
+                switch (formatStr)
+                {
+                    case "%d": prn(buffer32[args[0]>>2].toString(), sbuffer); break;
+                    case "%g": prn(bufferF32[args[0]>>2].toString(), sbuffer); break;
+                    case "%llu": prn(buffer64[args[0]>>3].toString(), sbuffer); break;                                        
+                    default: return 1;
+                }
+            
+                return 0;
+            },
         }
 
         const config = {
@@ -253,6 +271,9 @@ Run ``run.html``
             .then(results => {
                 let { main, __heap_base, __heap_end, __stack_low, __stack_high } = results.instance.exports;
                 buffer = new Uint8Array(results.instance.exports.memory.buffer);
+                buffer32 = new Uint32Array(results.instance.exports.memory.buffer);
+                buffer64 = new BigUint64Array(results.instance.exports.memory.buffer);
+                bufferF32 = new Float32Array(results.instance.exports.memory.buffer);
                 heap = heap_base = __heap_base, heap_end = __heap_end, stack_low = __stack_low, stack_high = __stack_high;
                 main();
             });
