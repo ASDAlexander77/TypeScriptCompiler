@@ -2074,7 +2074,7 @@ def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [Pure,
 
 def TypeScript_PushOp : TypeScript_Op<"Push"> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
-  let results = (outs I64:$new_size);
+  let results = (outs I32:$new_size);
 }
 
 def TypeScript_PopOp : TypeScript_Op<"Pop"> {

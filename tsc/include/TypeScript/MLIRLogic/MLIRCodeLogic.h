@@ -444,7 +444,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value sizeOfValue =
-            builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), thisValueLoaded, mlir::ValueRange{castedValues});
+            builder.create<mlir_ts::PushOp>(location, builder.getI32Type(), thisValueLoaded, mlir::ValueRange{castedValues});
 
         return sizeOfValue;
     }    

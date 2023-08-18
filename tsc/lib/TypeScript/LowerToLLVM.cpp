@@ -2201,8 +2201,6 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
     LogicalResult matchAndRewrite(mlir_ts::PushOp pushOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         LLVMCodeHelper ch(pushOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(pushOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
@@ -2286,7 +2284,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
-        rewriter.replaceOp(pushOp, ValueRange{newCountAsIndexType});
+        rewriter.replaceOp(pushOp, ValueRange{newCountAsI32Type});
         return success();
     }
 };
