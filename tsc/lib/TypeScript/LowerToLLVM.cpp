@@ -2226,7 +2226,10 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
                                                               ValueRange{ind0, ind1});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
 
-        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
+        auto countAsIndexType = 
+            llvmIndexType != countAsI32Type.getType()
+            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type)
+            : (mlir::Value) countAsI32Type;
 
         auto incSize = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
         auto newCountAsIndexType =
