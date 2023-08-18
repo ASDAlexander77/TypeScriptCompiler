@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+
+<head></head>
+
+<body>
+    <script type="module" async>
+        function run_wasm(paths) {
+
+            const path = paths.shift();
+
+            console.log(`running: ${path}... left ${paths.length}\n`);
+            let output = "";
+
+            let buffer;
+            let buffer32;
+            let buffer64;
+            let bufferF32;
+            let heap;
+
+            let heap_base, heap_end, stack_low, stack_high;
+
+            const endOf = (addr) => { while (buffer[addr] != 0) { addr++; if (addr > heap_end) throw "out of memory boundary"; }; return addr; };
+            const strOf = (addr) => String.fromCharCode(...buffer.slice(addr, endOf(addr)));
+            const copy = (dst, src) => { while (buffer[src] != 0) buffer[dst++] = buffer[src++]; buffer[dst] = 0; return dst; };
+            const append = (dst, src) => copy(endOf(dst), src);
+            const cmp = (addrL, addrR) => { while (buffer[addrL] != 0) { if (buffer[addrL] != buffer[addrR]) break; addrL++; addrR++; } return buffer[addrL] - buffer[addrR]; };
+            const prn = (str, addr) => { for (let i = 0; i < str.length; i++) buffer[addr++] = str.charCodeAt(i); buffer[addr] = 0; return addr; };
+            const clear = (addr, size, val) => { for (let i = 0; i < size; i++) buffer[addr++] = val; };
+            const alloc = (size) => { if ((heap + size) > heap_end) throw "out of memory"; return heap += size; };
+
+            const envObj = {
+                memory: new WebAssembly.Memory({ initial: 256 }),
+                table: new WebAssembly.Table({
+                    initial: 0,
+                    element: 'anyfunc',
+                }),
+                fmod: (arg1, arg2) => arg1 % arg2,
+                sqrt: (arg1) => Math.sqrt(arg1),
+                floor: (arg1) => Math.floor(arg1),
+                pow: (arg1, arg2) => Math.pow(arg1, arg2),
+                fabs: (arg1) => Math.abs(arg1),
+                _assert: (msg, file, line) => console.assert(false, strOf(msg), "file", strOf(file), "line", line, " DBG:", path),
+                puts: (arg) => output += strOf(arg) + '\n',
+                strcpy: copy,
+                strcat: append,
+                strcmp: cmp,
+                strlen: (addr) => endOf(addr) - addr,
+                malloc: alloc,
+                realloc: (addr, size) => { copy(heap, addr); return alloc(size); },
+                free: (addr) => 0,
+                memset: (addr, size, val) => clear(addr, size, val),
+                atoi: (addr, rdx) => parseInt(strOf(addr), rdx),
+                atof: (addr) => parseFloat(strOf(addr)),
+                sprintf_s: (addr, sizeOfBuffer, format, ...args) => {
+                    const formatStr = strOf(format);
+                    switch (formatStr) {
+                        case "%d": prn(buffer32[args[0] >> 2].toString(), addr); break;
+                        case "%g": prn(bufferF32[args[0] >> 2].toString(), addr); break;
+                        case "%llu": prn(buffer64[args[0] >> 3].toString(), addr); break;
+                        default: return 1;
+                    }
+
+                    return 0;
+                },
+            }
+
+            const config = {
+                env: envObj,
+            };
+
+            WebAssembly.instantiateStreaming(fetch(path), config)
+                .then(results => {
+                    let { main, __heap_base, __heap_end, __stack_low, __stack_high } = results.instance.exports;
+                    buffer = new Uint8Array(results.instance.exports.memory.buffer);
+                    buffer32 = new Uint32Array(results.instance.exports.memory.buffer);
+                    buffer64 = new BigUint64Array(results.instance.exports.memory.buffer);
+                    bufferF32 = new Float32Array(results.instance.exports.memory.buffer);
+                    heap = heap_base = __heap_base, heap_end = __heap_end, stack_low = __stack_low, stack_high = __stack_high;
+
+                    try
+                    {
+                        main();
+
+                        console.log(`...running: ${path} done.`);
+                        console.log(output);
+                        console.log(`<<END>>`);
+                    }
+                    catch (e)
+                    {
+                        console.log(`...running: ${path} ERROR.`);
+                        console.log(output);
+                        console.error(e);
+                        console.log(`<<END>>`);
+                    }
+                    
+                    if (paths.length > 0) run_wasm(paths);
+                });
+        }
+
+        const response = await fetch("./wasm");
+        const data = await response.text();
+
+        const regex = /\"(\w+\.wasm)\"/gm;
+        let found;
+        const paths = [];
+        while ((found = regex.exec(data)) !== null) {
+            paths.push("./wasm/" + found[1]);
+        }
+
+        if (paths.length > 0) run_wasm(paths);
+
+    </script>
+</body>
+
+</html>
