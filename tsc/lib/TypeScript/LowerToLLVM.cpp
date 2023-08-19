@@ -5336,9 +5336,18 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // doing more complicated lowerings, involving loop region arguments.
     mlir::DataLayout dl(m);
     LowerToLLVMOptions options(&getContext(), dl);
+    if (tsContext.compileOptions.isWasm && tsContext.compileOptions.sizeBits == 32)
+    {
+        options.dataLayout.reset("e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-f128:64-n32:64-S128-ni:1:10:20");
+    }
+
     options.allocLowering = LowerToLLVMOptions::AllocLowering::AlignedAlloc;
     DataLayoutAnalysis analysis(m);
     LLVMTypeConverter typeConverter(&getContext(), options, &analysis);
+
+#ifndef NDEBUG
+    auto ptrWidth = typeConverter.getPointerBitwidth();
+#endif
 
     // Now that the conversion target has been defined, we need to provide the
     // patterns used for lowering. At this point of the compilation process, we
