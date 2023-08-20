@@ -227,12 +227,55 @@ Run ``run.html``
 
         let heap_base, heap_end, stack_low, stack_high;
 
-        const endOf = (arg) => { while (buffer[arg] != 0) arg++; return arg; };
-        const strOf = (arg) => String.fromCharCode(...buffer.slice(arg, endOf(arg)));
-        const copy = (dst, src) => { while (buffer[src] != 0) buffer[dst++] = buffer[src++]; buffer[dst] = 0; return dst; };
-        const append = (dst, src) => copy(endOf(dst), src);
-        const cmp = (a, b) => { while (buffer[a] != 0) {if (buffer[a] != buffer[b]) break; a++; b++; } return buffer[a] - buffer[b]; };
-        const prn = (s, a) => { for (let i = 0; i < s.length; i++) buffer[a++] = s.charCodeAt(i); buffer[a] = 0; return a; };
+        const allocated = [];
+
+        const allocatedSize = (addr) => {
+            return allocated["" + addr];
+        };
+
+        const setAllocatedSize = (addr, newSize) => {
+            allocated["" + addr] = newSize;
+        };            
+
+        const expand = (addr, newSize) => {
+
+            const end = addr + allocatedSize(addr);
+            const newEnd = addr + newSize;
+
+            for (const allocatedAddr in allocated)
+            {
+                const beginAllocatedAddr = parseInt(allocatedAddr);
+                const endAllocatedAddr = beginAllocatedAddr + allocated[allocatedAddr];
+                if (beginAllocatedAddr != addr && addr <= newEnd && newEnd >= allocatedAddr)
+                {
+                    return false;
+                }
+            }
+            
+            setAllocatedSize(addr, newSize);
+            return true;
+        };
+
+        const endOf = (addr) => { while (buffer[addr] != 0) { addr++; if (addr > heap_end) throw "out of memory boundary"; }; return addr; };
+        const strOf = (addr) => String.fromCharCode(...buffer.slice(addr, endOf(addr)));
+        const copyStr = (dst, src) => { while (buffer[src] != 0) buffer[dst++] = buffer[src++]; buffer[dst] = 0; return dst; };
+        const ncopy = (dst, src, count) => { while (count-- > 0) buffer[dst++] = buffer[src++]; return dst; };
+        const append = (dst, src) => copyStr(endOf(dst), src);
+        const cmp = (addrL, addrR) => { while (buffer[addrL] != 0) { if (buffer[addrL] != buffer[addrR]) break; addrL++; addrR++; } return buffer[addrL] - buffer[addrR]; };
+        const prn = (str, addr) => { for (let i = 0; i < str.length; i++) buffer[addr++] = str.charCodeAt(i); buffer[addr] = 0; return addr; };
+        const clear = (addr, size, val) => { for (let i = 0; i < size; i++) buffer[addr++] = val; };
+        const alloc = (size) => { if ((heap + size) > heap_end) throw "out of memory"; setAllocatedSize(heap, size); return heap += size; };
+        const free = (addr) => delete allocated["" + addr];
+        const realloc = (addr, size) => { 
+            if (!expand(addr, size)) { 
+                const newAddr = alloc(size); 
+                ncopy(newAddr, addr, allocatedSize(addr)); 
+                free(addr);
+                return newAddr; 
+            } 
+
+            return addr;
+        }
 
         const envObj = {
             memory: new WebAssembly.Memory({ initial: 256 }),
@@ -240,25 +283,32 @@ Run ``run.html``
                 initial: 0,
                 element: 'anyfunc',
             }),
-            _assert: (msg, file, line) => console.assert(false, strOf(msg), "file", strOf(file), "line", line),
-            puts: (arg) => console.log(strOf(arg)),
-            strcpy: copy,
+            fmod: (arg1, arg2) => arg1 % arg2,
+            sqrt: (arg1) => Math.sqrt(arg1),
+            floor: (arg1) => Math.floor(arg1),
+            pow: (arg1, arg2) => Math.pow(arg1, arg2),
+            fabs: (arg1) => Math.abs(arg1),
+            _assert: (msg, file, line) => console.assert(false, strOf(msg), "file", strOf(file), "line", line, " DBG:", path),
+            puts: (arg) => output += strOf(arg) + '\n',
+            strcpy: copyStr,
             strcat: append,
             strcmp: cmp,
-            strlen: (arg) => endOf(arg) - arg,
-            malloc: (arg) => heap += arg,
-            atoi: (arg, rdx) => parseInt(strOf(arg), rdx),
-            atof: (arg) => parseFloat(strOf(arg)),
-            sprintf_s: (sbuffer, sizeOfBuffer, format, ...args) => {
+            strlen: (addr) => endOf(addr) - addr,
+            malloc: alloc,
+            realloc: realloc,
+            free: free,
+            memset: (addr, size, val) => clear(addr, size, val),
+            atoi: (addr, rdx) => parseInt(strOf(addr), rdx),
+            atof: (addr) => parseFloat(strOf(addr)),
+            sprintf_s: (addr, sizeOfBuffer, format, ...args) => {
                 const formatStr = strOf(format);
-                switch (formatStr)
-                {
-                    case "%d": prn(buffer32[args[0]>>2].toString(), sbuffer); break;
-                    case "%g": prn(bufferF32[args[0]>>2].toString(), sbuffer); break;
-                    case "%llu": prn(buffer64[args[0]>>3].toString(), sbuffer); break;                                        
+                switch (formatStr) {
+                    case "%d": prn(buffer32[args[0] >> 2].toString(), addr); break;
+                    case "%g": prn(bufferF32[args[0] >> 2].toString(), addr); break;
+                    case "%llu": prn(buffer64[args[0] >> 3].toString(), addr); break;
                     default: return 1;
                 }
-            
+
                 return 0;
             },
         }
