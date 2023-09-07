@@ -11,6 +11,7 @@
 #include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
+#include "TypeScript/LowerToLLVM/LocationHelper.h"
 
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 
@@ -56,14 +57,9 @@ class AssertLogic
     {
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
-        auto line = 0;
-        auto column = 0;
-        auto fileName = StringRef("");
-        mlir::TypeSwitch<LocationAttr>(loc).Case<FileLineColLoc>([&](FileLineColLoc loc) {
-            fileName = loc.getFilename();
-            line = loc.getLine();
-            column = loc.getColumn();
-        });
+        LLVMLocationHelper lh;
+
+        auto [fileName, line] = lh.getLineAndFile(loc);
 
         // Insert the `_assert` declaration if necessary.
         auto i8PtrTy = th.getI8PtrType();
@@ -115,14 +111,9 @@ class AssertLogic
     {
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
-        auto line = 0;
-        auto column = 0;
-        auto fileName = StringRef("");
-        mlir::TypeSwitch<mlir::LocationAttr>(loc).Case<mlir::FileLineColLoc>([&](FileLineColLoc loc) {
-            fileName = loc.getFilename();
-            line = loc.getLine();
-            column = loc.getColumn();
-        });
+        LLVMLocationHelper lh;
+
+        auto [fileName, line] = lh.getLineAndFile(loc);
 
         // Insert the `_assert` declaration if necessary.
         auto i8PtrTy = th.getI8PtrType();

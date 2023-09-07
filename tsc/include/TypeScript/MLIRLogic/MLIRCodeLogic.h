@@ -335,9 +335,18 @@ class MLIRCustomMethods
             {
                 auto param2 = operands[opIndex];
                 auto constantOp = dyn_cast<mlir_ts::ConstantOp>(param2.getDefiningOp());
-                if (constantOp && constantOp.getType().isa<mlir_ts::StringType>())
+                if (constantOp)
                 {
-                    msg = constantOp.getValue().cast<mlir::StringAttr>().getValue();
+                    auto type = constantOp.getType();
+                    if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+                    {
+                        type = literalType.getElementType();
+                    }
+
+                    if (type.isa<mlir_ts::StringType>())
+                    {
+                        msg = constantOp.getValue().cast<mlir::StringAttr>().getValue();
+                    }
                 }
 
                 param2.getDefiningOp()->erase();
