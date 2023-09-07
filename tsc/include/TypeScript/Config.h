@@ -22,6 +22,7 @@
 
 #define NUMBER_F64 1
 #define ANY_AS_DEFAULT 1
+#define UNION_TYPE_PACKED true
 
 #ifdef WIN32
 #define WIN_EXCEPTION 1

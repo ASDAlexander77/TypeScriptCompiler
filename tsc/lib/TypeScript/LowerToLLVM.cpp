@@ -1574,7 +1574,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         mlir::SmallVector<mlir::Type> types;
         types.push_back(i8PtrTy);
         types.push_back(valueType);
-        auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, false);
+        auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, UNION_TYPE_PACKED);
         if (!mth.isUnionTypeNeedsTag(op.getType().cast<mlir_ts::UnionType>()))
         {
             // this is union of tuples, no need to add Tag to it
@@ -1635,7 +1635,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
             mlir::SmallVector<mlir::Type> types;
             types.push_back(i8PtrTy);
             types.push_back(valueType);
-            auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, false);
+            auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, UNION_TYPE_PACKED);
 
             // TODO: should not cast anything
             CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
@@ -5051,7 +5051,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
             return convertedTypes.front();
         }
 
-        mlir::Type structType = LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+        mlir::Type structType = LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, UNION_TYPE_PACKED);
         return structType;
     });
 
