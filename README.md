@@ -246,7 +246,7 @@ Run ``run.html``
             {
                 const beginAllocatedAddr = parseInt(allocatedAddr);
                 const endAllocatedAddr = beginAllocatedAddr + allocated[allocatedAddr];
-                if (beginAllocatedAddr != addr && addr < beginAllocatedAddr && newEnd > beginAllocatedAddr)
+                if (beginAllocatedAddr != addr && addr < beginAllocatedAddr && newEnd > endAllocatedAddr)
                 {
                     return false;
                 }
