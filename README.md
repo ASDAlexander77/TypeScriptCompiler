@@ -222,7 +222,7 @@ Run ``run.html``
         let buffer;
         let buffer32;
         let buffer64;
-        let bufferF32;
+        let bufferF64;
         let heap;
 
         let heap_base, heap_end, stack_low, stack_high;
@@ -264,7 +264,7 @@ Run ``run.html``
         const cmp = (addrL, addrR) => { while (buffer[addrL] != 0) { if (buffer[addrL] != buffer[addrR]) break; addrL++; addrR++; } return buffer[addrL] - buffer[addrR]; };
         const prn = (str, addr) => { for (let i = 0; i < str.length; i++) buffer[addr++] = str.charCodeAt(i); buffer[addr] = 0; return addr; };
         const clear = (addr, size, val) => { for (let i = 0; i < size; i++) buffer[addr++] = val; };
-        const alloc = (size) => { if ((heap + size) > heap_end) throw "out of memory"; setAllocatedSize(heap, size); return heap += size; };
+        const alloc = (size) => { if ((heap + size) > heap_end) throw "out of memory"; setAllocatedSize(heap, size); const heapCurrent = heap; heap += size; return heapCurrent; };
         const free = (addr) => delete allocated["" + addr];
         const realloc = (addr, size) => { 
             if (!expand(addr, size)) { 
@@ -304,7 +304,7 @@ Run ``run.html``
                 const formatStr = strOf(format);
                 switch (formatStr) {
                     case "%d": prn(buffer32[args[0] >> 2].toString(), addr); break;
-                    case "%g": prn(bufferF32[args[0] >> 2].toString(), addr); break;
+                    case "%g": prn(bufferF64[args[0] >> 3].toString(), addr); break;
                     case "%llu": prn(buffer64[args[0] >> 3].toString(), addr); break;
                     default: return 1;
                 }
@@ -323,7 +323,7 @@ Run ``run.html``
                 buffer = new Uint8Array(results.instance.exports.memory.buffer);
                 buffer32 = new Uint32Array(results.instance.exports.memory.buffer);
                 buffer64 = new BigUint64Array(results.instance.exports.memory.buffer);
-                bufferF32 = new Float32Array(results.instance.exports.memory.buffer);
+                bufferF64 = new Float64Array(results.instance.exports.memory.buffer);
                 heap = heap_base = __heap_base, heap_end = __heap_end, stack_low = __stack_low, stack_high = __stack_high;
                 main();
             });
