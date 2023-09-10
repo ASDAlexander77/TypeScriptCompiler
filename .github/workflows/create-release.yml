@@ -334,7 +334,7 @@ jobs:
         id: cache-3rd-party-binary-llvm-release
         uses: actions/cache@v2
         with:
-          path: llvm_${{ env.LLVM_VERSION }}_release.tgz
+          path: llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
           key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-ub20-${{ env.CACHE_VERSION }}
 
       - name: Retrieve version
@@ -354,7 +354,7 @@ jobs:
         continue-on-error: true
         shell: sh
         run: |
-            if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
+            if test ! -f "llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz"; then
                 curl -L https://www.dropbox.com/s/9vr0dabs0doimej/llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
             fi
 
@@ -362,7 +362,7 @@ jobs:
         continue-on-error: false
         shell: sh
         run: |
-            if test -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
+            if test -f "llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz"; then
                 file llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz -C ./3rdParty/llvm/
             fi
 
