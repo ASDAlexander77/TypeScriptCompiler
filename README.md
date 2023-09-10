@@ -253,6 +253,7 @@ Run ``run.html``
             }
             
             setAllocatedSize(addr, newSize);
+            if (addr + newSize > heap) heap = addr + newSize;
             return true;
         };
 
@@ -288,7 +289,7 @@ Run ``run.html``
             floor: (arg1) => Math.floor(arg1),
             pow: (arg1, arg2) => Math.pow(arg1, arg2),
             fabs: (arg1) => Math.abs(arg1),
-            _assert: (msg, file, line) => console.assert(false, strOf(msg), "file", strOf(file), "line", line, " DBG:", path),
+            _assert: (msg, file, line) => console.assert(false, strOf(msg), "| file:", strOf(file), "| line:", line, " DBG:", path),
             puts: (arg) => output += strOf(arg) + '\n',
             strcpy: copyStr,
             strcat: append,
@@ -319,13 +320,21 @@ Run ``run.html``
 
         WebAssembly.instantiateStreaming(fetch("./hello.wasm"), config)
             .then(results => {
-                let { main, __heap_base, __heap_end, __stack_low, __stack_high } = results.instance.exports;
+                const { main, __wasm_call_ctors, __heap_base, __heap_end, __stack_low, __stack_high } = results.instance.exports;
                 buffer = new Uint8Array(results.instance.exports.memory.buffer);
                 buffer32 = new Uint32Array(results.instance.exports.memory.buffer);
                 buffer64 = new BigUint64Array(results.instance.exports.memory.buffer);
                 bufferF64 = new Float64Array(results.instance.exports.memory.buffer);
                 heap = heap_base = __heap_base, heap_end = __heap_end, stack_low = __stack_low, stack_high = __stack_high;
-                main();
+                try
+                {
+                    if (__wasm_call_ctors) __wasm_call_ctors();
+                    main();
+                }
+                catch (e)
+                {
+                    console.error(e);
+                }
             });
     </script>
 </body>
