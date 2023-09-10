@@ -4825,7 +4825,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
             convertedTypes.push_back(converter.convertType(subType.type));
         }
 
-        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, TUPLE_TYPE_PACKED);
     });
 
     converter.addConversion([&](mlir_ts::TupleType type) {
@@ -4835,7 +4835,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
             convertedTypes.push_back(converter.convertType(subType.type));
         }
 
-        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, TUPLE_TYPE_PACKED);
     });
 
     converter.addConversion([&](mlir_ts::BoundRefType type) {

@@ -22,6 +22,8 @@
 
 #define NUMBER_F64 1
 #define ANY_AS_DEFAULT 1
+// somehow it will error if set to true
+#define TUPLE_TYPE_PACKED false
 #define UNION_TYPE_PACKED true
 
 #ifdef WIN32
