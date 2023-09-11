@@ -314,7 +314,7 @@ Run ``run.html``
                     case "%d": prn(buffer32[args[0] >> 2].toString(), addr); break;
                     case "%g": prn(bufferF64[args[0] >> 3].toString(), addr); break;
                     case "%llu": prn(buffer64[args[0] >> 3].toString(), addr); break;
-                    default: return 1;
+                    default: throw "not implemented"; 
                 }
 
                 return 0;
