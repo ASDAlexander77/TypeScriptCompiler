@@ -3915,7 +3915,9 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 
                 LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
 
-                auto negative1 = clh.createI64ConstantOf(-1);
+                auto negative1 = tsLlvmContext->compileOptions.sizeBits == 32 
+                    ? clh.createI32ConstantOf(-1) 
+                    : clh.createI64ConstantOf(-1);
                 auto intPtrType = llvmtch.getIntPtrType(0);
                 auto methodOrFieldIntPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
                 auto condVal =
