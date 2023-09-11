@@ -1388,6 +1388,11 @@ class MLIRTypeHelper
                 return canWideTypeWithoutDataLoss(srcOptionalType.getElementType(), optionalType.getElementType());
             }
 
+            if (auto undefType = srcType.dyn_cast<mlir_ts::UndefinedType>())
+            {
+                return true;
+            }
+
             return canWideTypeWithoutDataLoss(srcType, optionalType.getElementType());
         }
 

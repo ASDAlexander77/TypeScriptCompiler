@@ -4805,7 +4805,9 @@ class MLIRGenImpl
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto value = V(result);
                 auto optValue = 
-                    builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                    value.getType().isa<mlir_ts::OptionalType>()
+                        ? value
+                        : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
                 return ValueOrLogicalResult(optValue); 
             }, 
             [&](mlir::Type trueValueType, auto genContext) { 
@@ -8335,7 +8337,9 @@ class MLIRGenImpl
             }
 
             auto optValue =
-                builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                value.getType().isa<mlir_ts::OptionalType>()
+                    ? value 
+                    : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
             // else
@@ -19506,6 +19510,11 @@ genContext);
         {
             return mlir::Type();
         }
+
+        if (type.isa<mlir_ts::OptionalType>())
+        {
+            return type;
+        }        
 
         return mlir_ts::OptionalType::get(type);
     }
