@@ -235,25 +235,25 @@ Run ``run.html``
 
         const setAllocatedSize = (addr, newSize) => {
             allocated["" + addr] = newSize;
-        };            
+        };
 
         const expand = (addr, newSize) => {
 
-            const end = addr + allocatedSize(addr);
-            const newEnd = addr + newSize;
+            const aligned_newSize = newSize + (4 - (newSize % 4))
 
-            for (const allocatedAddr in allocated)
-            {
+            const end = addr + allocatedSize(addr);
+            const newEnd = addr + aligned_newSize;
+
+            for (const allocatedAddr in allocated) {
                 const beginAllocatedAddr = parseInt(allocatedAddr);
                 const endAllocatedAddr = beginAllocatedAddr + allocated[allocatedAddr];
-                if (beginAllocatedAddr != addr && addr < endAllocatedAddr && newEnd > beginAllocatedAddr)
-                {
+                if (beginAllocatedAddr != addr && addr < endAllocatedAddr && newEnd > beginAllocatedAddr) {
                     return false;
                 }
             }
-            
-            setAllocatedSize(addr, newSize);
-            if (addr + newSize > heap) heap = addr + newSize;
+
+            setAllocatedSize(addr, aligned_newSize);
+            if (addr + aligned_newSize > heap) heap = addr + aligned_newSize;
             return true;
         };
 
@@ -265,15 +265,22 @@ Run ``run.html``
         const cmp = (addrL, addrR) => { while (buffer[addrL] != 0) { if (buffer[addrL] != buffer[addrR]) break; addrL++; addrR++; } return buffer[addrL] - buffer[addrR]; };
         const prn = (str, addr) => { for (let i = 0; i < str.length; i++) buffer[addr++] = str.charCodeAt(i); buffer[addr] = 0; return addr; };
         const clear = (addr, size, val) => { for (let i = 0; i < size; i++) buffer[addr++] = val; };
-        const alloc = (size) => { if ((heap + size) > heap_end) throw "out of memory"; setAllocatedSize(heap, size); const heapCurrent = heap; heap += size; return heapCurrent; };
+        const aligned_alloc = (size) => { 
+            const aligned_size = size + (4 - (size % 4)); 
+            if ((heap + aligned_size) > heap_end) throw "out of memory"; 
+            setAllocatedSize(heap, aligned_size); 
+            const heapCurrent = heap; 
+            heap += aligned_size; 
+            return heapCurrent; 
+        };
         const free = (addr) => delete allocated["" + addr];
-        const realloc = (addr, size) => { 
-            if (!expand(addr, size)) { 
-                const newAddr = alloc(size); 
-                ncopy(newAddr, addr, allocatedSize(addr)); 
+        const realloc = (addr, size) => {
+            if (!expand(addr, size)) {
+                const newAddr = aligned_alloc(size);
+                ncopy(newAddr, addr, allocatedSize(addr));
                 free(addr);
-                return newAddr; 
-            } 
+                return newAddr;
+            }
 
             return addr;
         }
@@ -295,7 +302,7 @@ Run ``run.html``
             strcat: append,
             strcmp: cmp,
             strlen: (addr) => endOf(addr) - addr,
-            malloc: alloc,
+            malloc: aligned_alloc,
             realloc: realloc,
             free: free,
             memset: (addr, size, val) => clear(addr, size, val),
