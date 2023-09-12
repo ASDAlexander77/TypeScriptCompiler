@@ -2377,6 +2377,10 @@ class MLIRTypeHelper
             {
                 unionContext.types.insert(optionalType.getElementType());
             }
+            else
+            {
+                unionContext.types.insert(optionalType);
+            }
 
             return mlir::success();
         }
