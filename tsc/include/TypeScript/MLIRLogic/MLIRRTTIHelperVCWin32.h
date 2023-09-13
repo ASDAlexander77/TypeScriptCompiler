@@ -53,70 +53,70 @@ class MLIRRTTIHelperVCWin32
 
     void setF32AsCatchType()
     {
-        types.push_back({F32Type::typeName, F32Type::typeInfoRef, F32Type::catchableTypeInfoRef});
+        types.push_back({windows::F32Type::typeName, windows::F32Type::typeInfoRef, windows::F32Type::catchableTypeInfoRef});
 
-        catchableTypeInfoArrayRef = F32Type::catchableTypeInfoArrayRef;
-        throwInfoRef = F32Type::throwInfoRef;
+        catchableTypeInfoArrayRef = windows::F32Type::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::F32Type::throwInfoRef;
     }
 
     void setF64AsCatchType()
     {
-        types.push_back({F64Type::typeName, F64Type::typeInfoRef, F64Type::catchableTypeInfoRef});
+        types.push_back({windows::F64Type::typeName, windows::F64Type::typeInfoRef, windows::F64Type::catchableTypeInfoRef});
 
-        catchableTypeInfoArrayRef = F64Type::catchableTypeInfoArrayRef;
-        throwInfoRef = F64Type::throwInfoRef;
+        catchableTypeInfoArrayRef = windows::F64Type::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::F64Type::throwInfoRef;
     }
 
     void setI32AsCatchType()
     {
-        types.push_back({I32Type::typeName, I32Type::typeInfoRef, I32Type::catchableTypeInfoRef});
+        types.push_back({windows::I32Type::typeName, windows::I32Type::typeInfoRef, windows::I32Type::catchableTypeInfoRef});
 
-        catchableTypeInfoArrayRef = I32Type::catchableTypeInfoArrayRef;
-        throwInfoRef = I32Type::throwInfoRef;
+        catchableTypeInfoArrayRef = windows::I32Type::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::I32Type::throwInfoRef;
     }
 
     void setStringTypeAsCatchType()
     {
-        types.push_back({StringType::typeName, StringType::typeInfoRef, StringType::catchableTypeInfoRef});
-        types.push_back({StringType::typeName2, StringType::typeInfoRef2, StringType::catchableTypeInfoRef2});
+        types.push_back({windows::StringType::typeName, windows::StringType::typeInfoRef, windows::StringType::catchableTypeInfoRef});
+        types.push_back({windows::StringType::typeName2, windows::StringType::typeInfoRef2, windows::StringType::catchableTypeInfoRef2});
 
-        catchableTypeInfoArrayRef = StringType::catchableTypeInfoArrayRef;
-        throwInfoRef = StringType::throwInfoRef;
+        catchableTypeInfoArrayRef = windows::StringType::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::StringType::throwInfoRef;
     }
 
     void setI8PtrAsCatchType()
     {
-        types.push_back({I8PtrType::typeName, I8PtrType::typeInfoRef, I8PtrType::catchableTypeInfoRef});
+        types.push_back({windows::I8PtrType::typeName, windows::I8PtrType::typeInfoRef, windows::I8PtrType::catchableTypeInfoRef});
 
-        catchableTypeInfoArrayRef = I8PtrType::catchableTypeInfoArrayRef;
-        throwInfoRef = I8PtrType::throwInfoRef;
+        catchableTypeInfoArrayRef = windows::I8PtrType::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::I8PtrType::throwInfoRef;
     }
 
     void setClassTypeAsCatchType(ArrayRef<StringRef> names)
     {
         for (auto name : names)
         {
-            types.push_back({join(name, ClassType::typeName, ClassType::typeNameSuffix),
-                             join(name, ClassType::typeInfoRef, ClassType::typeInfoRefSuffix),
-                             join(name, ClassType::catchableTypeInfoRef, ClassType::catchableTypeInfoRefSuffix)});
+            types.push_back({join(name, windows::ClassType::typeName, windows::ClassType::typeNameSuffix),
+                             join(name, windows::ClassType::typeInfoRef, windows::ClassType::typeInfoRefSuffix),
+                             join(name, windows::ClassType::catchableTypeInfoRef, windows::ClassType::catchableTypeInfoRefSuffix)});
         }
 
-        types.push_back({ClassType::typeName2, ClassType::typeInfoRef2, ClassType::catchableTypeInfoRef2});
+        types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2});
 
-        catchableTypeInfoArrayRef = ClassType::catchableTypeInfoArrayRef;
-        throwInfoRef = ClassType::throwInfoRef;
+        catchableTypeInfoArrayRef = windows::ClassType::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::ClassType::throwInfoRef;
     }
 
     void setClassTypeAsCatchType(StringRef name)
     {
-        types.push_back({join(name, ClassType::typeName, ClassType::typeNameSuffix),
-                         join(name, ClassType::typeInfoRef, ClassType::typeInfoRefSuffix),
-                         join(name, ClassType::catchableTypeInfoRef, ClassType::catchableTypeInfoRefSuffix)});
+        types.push_back({join(name, windows::ClassType::typeName, windows::ClassType::typeNameSuffix),
+                         join(name, windows::ClassType::typeInfoRef, windows::ClassType::typeInfoRefSuffix),
+                         join(name, windows::ClassType::catchableTypeInfoRef, windows::ClassType::catchableTypeInfoRefSuffix)});
 
-        types.push_back({ClassType::typeName2, ClassType::typeInfoRef2, ClassType::catchableTypeInfoRef2});
+        types.push_back({windows::ClassType::typeName2, windows::ClassType::typeInfoRef2, windows::ClassType::catchableTypeInfoRef2});
 
-        catchableTypeInfoArrayRef = ClassType::catchableTypeInfoArrayRef;
-        throwInfoRef = ClassType::throwInfoRef;
+        catchableTypeInfoArrayRef = windows::ClassType::catchableTypeInfoArrayRef;
+        throwInfoRef = windows::ClassType::throwInfoRef;
     }
 
     std::string join(StringRef name, const char *prefix, const char *suffix)
@@ -289,7 +289,7 @@ class MLIRRTTIHelperVCWin32
 
     mlir::LogicalResult typeInfo(mlir::Location loc)
     {
-        auto name = typeInfoExtRef;
+        auto name = windows::typeInfoExtRef;
         if (parentModule.lookupSymbol<mlir_ts::GlobalOp>(name))
         {
             return mlir::failure();
@@ -353,7 +353,7 @@ class MLIRRTTIHelperVCWin32
             mlir::Value structVal = rewriter.create<mlir_ts::UndefOp>(loc, rttiTypeDescriptor2Ty);
 
             auto itemValue1 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getRefType(mth.getOpaqueType()),
-                                                                   mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoExtRef));
+                                                                   mlir::FlatSymbolRefAttr::get(rewriter.getContext(), windows::typeInfoExtRef));
             setStructValue(loc, structVal, itemValue1, 0);
 
             auto itemValue2 = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
@@ -374,7 +374,7 @@ class MLIRRTTIHelperVCWin32
 
     mlir::LogicalResult imageBase(mlir::Location loc)
     {
-        auto name = imageBaseRef;
+        auto name = windows::imageBaseRef;
         if (parentModule.lookupSymbol<mlir_ts::GlobalOp>(name))
         {
             return mlir::failure();
@@ -430,7 +430,7 @@ class MLIRRTTIHelperVCWin32
             auto rttiTypeDescriptor2IntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), rttiTypeDescriptor2PtrValue);
 
             auto imageBasePtrValue = rewriter.create<mlir_ts::ConstantOp>(
-                loc, mth.getOpaqueType(), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+                loc, mth.getOpaqueType(), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), windows::imageBaseRef));
             auto imageBaseIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), imageBasePtrValue);
 
             // sub
@@ -475,7 +475,7 @@ class MLIRRTTIHelperVCWin32
         auto rttiCatchableTypeIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), rttiCatchableTypePtrValue);
 
         auto imageBasePtrValue = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getOpaqueType(),
-                                                                      mlir::FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+                                                                      mlir::FlatSymbolRefAttr::get(rewriter.getContext(), windows::imageBaseRef));
         auto imageBaseIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), imageBasePtrValue);
 
         // sub
@@ -595,7 +595,7 @@ class MLIRRTTIHelperVCWin32
         auto rttiCatchableArrayTypeIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), rttiCatchableArrayTypePtrValue);
 
         auto imageBasePtrValue = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getOpaqueType(),
-                                                                      mlir::FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+                                                                      mlir::FlatSymbolRefAttr::get(rewriter.getContext(), windows::imageBaseRef));
         auto imageBaseIntValue = rewriter.create<mlir_ts::CastOp>(loc, mth.getI64Type(), imageBasePtrValue);
 
         // sub

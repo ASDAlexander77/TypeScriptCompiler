@@ -4,6 +4,9 @@
 namespace typescript
 {
 
+namespace windows
+{
+
 constexpr const auto *typeInfoExtRef = "??_7type_info@@6B@";
 constexpr const auto *imageBaseRef = "__ImageBase";
 
@@ -71,6 +74,8 @@ constexpr const auto *catchableTypeInfoArrayRefSuffix = "@@";
 constexpr const auto *throwInfoRef = "_TI2PEAV";
 constexpr const auto *throwInfoRefSuffix = "@@";
 } // namespace ClassType
+
+} // namespace windows
 
 } // namespace typescript
 

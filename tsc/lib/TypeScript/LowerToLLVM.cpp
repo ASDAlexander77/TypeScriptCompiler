@@ -1039,11 +1039,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         if (funcOp.getPersonality().has_value() && funcOp.getPersonality().value())
         {
-#if WIN_EXCEPTION
-            LLVMRTTIHelperVCWin32 rttih(funcOp, rewriter, typeConverter, tsLlvmContext->compileOptions);
-#else
-            LLVMRTTIHelperVCLinux rttih(funcOp, rewriter, typeConverter, tsLlvmContext->compileOptions);
-#endif
+            LLVMRTTIHelperVC rttih(funcOp, rewriter, typeConverter, tsLlvmContext->compileOptions);
             rttih.setPersonality(newFuncOp);
 
             funcAttrs.push_back(ATTR("noinline"));

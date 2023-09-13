@@ -20,11 +20,7 @@
 
 #include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 
-#ifdef WIN_EXCEPTION
-#include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
-#else
-#include "TypeScript/MLIRLogic/MLIRRTTIHelperVCLinux.h"
-#endif
+#include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
 #include "TypeScript/VisitorAST.h"
 
 #include "TypeScript/DOM.h"
@@ -6725,11 +6721,7 @@ class MLIRGenImpl
 
         if (!genContext.allowPartialResolve)
         {
-#ifdef WIN_EXCEPTION
-            MLIRRTTIHelperVCWin32 rtti(builder, theModule);
-#else
-            MLIRRTTIHelperVCLinux rtti(builder, theModule);
-#endif
+            MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
             if (!rtti.setRTTIForType(
                 location, exception.getType(), 
                 [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); }))

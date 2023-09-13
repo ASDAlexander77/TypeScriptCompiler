@@ -49,27 +49,27 @@ class LLVMRTTIHelperVCLinux
 
     void setF32AsCatchType()
     {
-        types.push_back({F32Type::typeName});
+        types.push_back({linux::F32Type::typeName});
     }
 
     void setF64AsCatchType()
     {
-        types.push_back({F64Type::typeName});
+        types.push_back({linux::F64Type::typeName});
     }
 
     void setI32AsCatchType()
     {
-        types.push_back({I32Type::typeName});
+        types.push_back({linux::I32Type::typeName});
     }
 
     void setStringTypeAsCatchType()
     {
-        types.push_back({StringType::typeName});
+        types.push_back({linux::StringType::typeName});
     }
 
     void setI8PtrAsCatchType()
     {
-        types.push_back({I8PtrType::typeName});
+        types.push_back({linux::I8PtrType::typeName});
     }
 
     void setClassTypeAsCatchType(StringRef name)

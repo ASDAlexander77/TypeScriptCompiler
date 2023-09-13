@@ -3,6 +3,10 @@
 
 namespace typescript
 {
+
+namespace linux
+{
+
 namespace F32Type
 {
 constexpr const auto *typeName = "_ZTId";
@@ -40,6 +44,8 @@ constexpr const auto *classTypeInfoName = "_ZTVN10__cxxabiv117__class_type_infoE
 constexpr const auto *singleInheritanceClassTypeInfoName = "_ZTVN10__cxxabiv120__si_class_type_infoE";
 constexpr const auto *pointerTypeInfoName = "_ZTVN10__cxxabiv119__pointer_type_infoE";
 } // namespace ClassType
+
+} // namespace linux
 
 } // namespace typescript
 

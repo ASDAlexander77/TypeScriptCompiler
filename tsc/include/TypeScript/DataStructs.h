@@ -13,6 +13,7 @@ struct CompileOptions
     std::string moduleTargetTriple;
     int sizeBits;
     bool isWasm;
+    bool isWindows;
 };
 
 #endif // DATASTRUCT_H_

@@ -22,6 +22,8 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
+using namespace windows;
+
 class LLVMRTTIHelperVCWin32
 {
     struct TypeNames

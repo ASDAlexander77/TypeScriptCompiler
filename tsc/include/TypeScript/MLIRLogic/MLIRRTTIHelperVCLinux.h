@@ -59,27 +59,27 @@ class MLIRRTTIHelperVCLinux
 
     void setF32AsCatchType()
     {
-        types.push_back({F32Type::typeName, TypeInfo::Value, -1});
+        types.push_back({linux::F32Type::typeName, TypeInfo::Value, -1});
     }
 
     void setF64AsCatchType()
     {
-        types.push_back({F64Type::typeName, TypeInfo::Value, -1});
+        types.push_back({linux::F64Type::typeName, TypeInfo::Value, -1});
     }
 
     void setI32AsCatchType()
     {
-        types.push_back({I32Type::typeName, TypeInfo::Value, -1});
+        types.push_back({linux::I32Type::typeName, TypeInfo::Value, -1});
     }
 
     void setStringTypeAsCatchType()
     {
-        types.push_back({StringType::typeName, TypeInfo::Value, -1});
+        types.push_back({linux::StringType::typeName, TypeInfo::Value, -1});
     }
 
     void setI8PtrAsCatchType()
     {
-        types.push_back({I8PtrType::typeName, TypeInfo::Value, -1});
+        types.push_back({linux::I8PtrType::typeName, TypeInfo::Value, -1});
     }
 
     void setClassTypeAsCatchType(ArrayRef<StringRef> names)
@@ -384,11 +384,11 @@ class MLIRRTTIHelperVCLinux
         switch (ti)
         {
         case TypeInfo::SingleInheritance_ClassTypeInfo:
-            return ClassType::singleInheritanceClassTypeInfoName;
+            return linux::ClassType::singleInheritanceClassTypeInfoName;
         case TypeInfo::Pointer_TypeInfo:
-            return ClassType::pointerTypeInfoName;
+            return linux::ClassType::pointerTypeInfoName;
         case TypeInfo::ClassTypeInfo:
-            return ClassType::classTypeInfoName;
+            return linux::ClassType::classTypeInfoName;
         default:
             llvm_unreachable("not implemented");
         }
