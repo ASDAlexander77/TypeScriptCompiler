@@ -3358,7 +3358,7 @@ struct ThrowUnwindOpLowering : public TsLlvmPattern<mlir_ts::ThrowUnwindOp>
     }
 };
 
-#ifdef WIN_EXCEPTION
+namespace windows {
 
 struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
 {
@@ -3553,8 +3553,9 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
     }
 };
 
-#else
+} // namespace windows
 
+namespace linux {
 struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
 {
     using TsLlvmPattern<mlir_ts::LandingPadOp>::TsLlvmPattern;
@@ -3741,7 +3742,7 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
     }
 };
 
-#endif
+} // namespace linux
 
 struct VTableOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::VTableOffsetRefOp>
 {
@@ -5383,14 +5384,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
         LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
         GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
-        UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering,
-        SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering,
-        SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering,
-        NoOpLowering,
-        /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, ExtractInterfaceVTableOpLowering,
-        BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,
-        GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering, BodyInternalOpLowering,
-        BodyResultInternalOpLowering
+        UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
+        ReturnInternalOpLowering, NoOpLowering, /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, 
+        ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,
+        GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering, BodyInternalOpLowering, BodyResultInternalOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
         ,
         SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
@@ -5398,6 +5395,25 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ,
         SwitchStateInternalOpLowering, LoadLibraryPermanentlyOpLowering, SearchForAddressOfSymbolOpLowering>(
             typeConverter, &getContext(), &tsLlvmContext);
+
+    if (tsLlvmContext.compileOptions.isWindows)
+    {
+        using namespace windows;
+
+        patterns.insert<
+            LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering,
+            SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering>(
+                typeConverter, &getContext(), &tsLlvmContext);        
+    }
+    else
+    {
+        using namespace linux;
+
+        patterns.insert<
+            LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering,
+            SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering>(
+                typeConverter, &getContext(), &tsLlvmContext);        
+    }
 
 #ifdef ENABLE_TYPED_GC
     patterns.insert<
