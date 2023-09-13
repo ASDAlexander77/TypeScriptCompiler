@@ -78,6 +78,24 @@ class MLIRRTTIHelperVC
         return false;
     }    
 
+    mlir::Value throwInfoPtrValue(mlir::Location loc)
+    {
+        if (isWasm)
+        {
+            llvm_unreachable("not implemented");
+        }
+        else if (isWindows)
+        {
+            return rttiWin.throwInfoPtrValue(loc);
+        }
+        else
+        {
+            return rttiLinux.throwInfoPtrValue(loc);
+        }
+
+        return mlir::Value();
+    }
+
     mlir::Value typeInfoPtrValue(mlir::Location loc)
     {
         if (isWasm)

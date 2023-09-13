@@ -12,9 +12,7 @@
 #endif
 #ifdef ENABLE_EXCEPTIONS
 #include "TypeScript/LandingPadFixPass.h"
-#ifdef WIN_EXCEPTION
 #include "TypeScript/Win32ExceptionPass.h"
-#endif
 #endif
 #include "TypeScript/ExportFixPass.h"
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
@@ -240,9 +238,11 @@ std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransfo
 
         // add custom passes
         mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::LandingPadFixPass()));
-#ifdef WIN_EXCEPTION
-        mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::Win32ExceptionPass()));
-#endif
+        if (compileOptions.isWindows)
+        {
+            mpm.addPass(llvm::createModuleToFunctionPassAdaptor(ts::Win32ExceptionPass()));
+        }
+
         llvm::Triple triple(m->getTargetTriple());
         mpm.addPass(ts::ExportFixPass(triple.isWindowsMSVCEnvironment()));
 

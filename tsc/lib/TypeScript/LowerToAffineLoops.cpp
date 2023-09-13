@@ -1083,13 +1083,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             auto landingPadOp = rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(),
                                                                        rewriter.getBoolAttr(false), ValueRange{catch1});
 
-#ifndef WIN_EXCEPTION
-            if (rttih.hasType())
+            if (!tsContext->compileOptions.isWindows 
+                && rttih.hasType())
             {
                 cmpValue = rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp,
                                                                         rttih.throwInfoPtrValue(loc));
             }
-#endif
 
             // catch: begin catch
             auto beginCatchCallInfo = rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadOp);
