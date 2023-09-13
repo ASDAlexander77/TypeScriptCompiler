@@ -30,24 +30,34 @@ class ThrowLogic
     Location loc;
     mlir::TypeConverter &typeConverter;
     CompileOptions &compileOptions;
+    bool isWasm;
+    bool isWindows;
 
   public:
     ThrowLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
-          typeConverter(tch.typeConverter), compileOptions(compileOptions)
+          typeConverter(tch.typeConverter), compileOptions(compileOptions), isWasm(compileOptions.isWasm), isWindows(compileOptions.isWindows)
     {
     }
 
     mlir::LogicalResult logic(mlir::Value exceptionValue, mlir::Type origType, mlir::Block *unwind)
     {
-#ifdef WIN_EXCEPTION
-        return logicWin32(exceptionValue, origType, unwind);
-#else
-        return logicUnix(exceptionValue, origType, unwind);
-#endif
+        if (isWasm)
+        {
+            llvm_unreachable("not implemented");
+        }
+        else if (isWindows)
+        {
+            return logicWin32(exceptionValue, origType, unwind);
+        }
+        else
+        {
+            return logicUnix(exceptionValue, origType, unwind);
+        }
+
+        return mlir::failure();
     }
 
-#ifdef WIN_EXCEPTION
     mlir::LogicalResult logicWin32(mlir::Value exceptionValue, mlir::Type origType, mlir::Block *unwind)
     {
         mlir::Type exceptionType = origType;
@@ -115,7 +125,7 @@ class ThrowLogic
 
         return success();
     }
-#else
+
     mlir::LogicalResult logicUnix(mlir::Value exceptionValue, mlir::Type origType, mlir::Block *unwind)
     {
         mlir::Type exceptionType = origType;
@@ -225,7 +235,6 @@ class ThrowLogic
 
         return success();
     }
-#endif
 };
 } // namespace typescript
 

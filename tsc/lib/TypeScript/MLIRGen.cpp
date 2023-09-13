@@ -6802,11 +6802,7 @@ class MLIRGenImpl
 
                 if (!genContext.allowPartialResolve)
                 {
-#ifdef WIN_EXCEPTION
-                    MLIRRTTIHelperVCWin32 rtti(builder, theModule);
-#else
-                    MLIRRTTIHelperVCLinux rtti(builder, theModule);
-#endif
+                    MLIRRTTIHelperVC rtti(builder, theModule, compileOptions);
                     if (!rtti.setRTTIForType(
                         location, 
                         varInfo.getType(),
