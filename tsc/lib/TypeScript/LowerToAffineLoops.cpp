@@ -8,11 +8,7 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptPassContext.h"
 
-#ifdef WIN_EXCEPTION
-#include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
-#else
-#include "TypeScript/MLIRLogic/MLIRRTTIHelperVCLinux.h"
-#endif
+#include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
@@ -911,12 +907,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto parentTryOp = tsContext->parentTryOp[tryOp.getOperation()];
         mlir::Block *parentTryOpLandingPad = parentTryOp ? tsContext->landingBlockOf[parentTryOp] : nullptr;
 
-#ifdef WIN_EXCEPTION
-        MLIRRTTIHelperVCWin32 rttih(rewriter, module);
-#else
-        MLIRRTTIHelperVCLinux rttih(rewriter, module);
-#endif
-
+        MLIRRTTIHelperVC rttih(rewriter, module, tsContext->compileOptions);
         auto i8PtrTy = mth.getOpaqueType();
 
         // find catch var

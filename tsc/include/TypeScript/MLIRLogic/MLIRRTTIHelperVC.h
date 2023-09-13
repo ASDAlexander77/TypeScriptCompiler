@@ -14,10 +14,13 @@ class MLIRRTTIHelperVC
     mlir::ModuleOp &parentModule;    
     bool isWasm;
     bool isWindows;
+    MLIRRTTIHelperVCWin32 rttiWin;
+    MLIRRTTIHelperVCLinux rttiLinux;
 
   public:
     MLIRRTTIHelperVC(mlir::OpBuilder &rewriter, mlir::ModuleOp &parentModule, CompileOptions &compileOptions) 
-        : rewriter(rewriter), parentModule(parentModule), isWasm(compileOptions.isWasm), isWindows(compileOptions.isWindows)
+        : rewriter(rewriter), parentModule(parentModule), isWasm(compileOptions.isWasm), isWindows(compileOptions.isWindows), 
+          rttiWin(rewriter, parentModule), rttiLinux(rewriter, parentModule)
     {
     }
 
@@ -29,17 +32,87 @@ class MLIRRTTIHelperVC
         }
         else if (isWindows)
         {
-            MLIRRTTIHelperVCWin32 rtti(rewriter, parentModule);
-            return rtti.setRTTIForType(loc, type, resolveClassInfo);
+            return rttiWin.setRTTIForType(loc, type, resolveClassInfo);
         }
         else
         {
-            MLIRRTTIHelperVCLinux rtti(rewriter, parentModule);
-            return rtti.setRTTIForType(loc, type, resolveClassInfo);
+            return rttiLinux.setRTTIForType(loc, type, resolveClassInfo);
         }
 
         return false;
     }
+
+    bool hasType()
+    {
+        if (isWasm)
+        {
+            llvm_unreachable("not implemented");
+        }
+        else if (isWindows)
+        {
+            return rttiWin.hasType();
+        }
+        else
+        {
+            return rttiLinux.hasType();
+        }
+
+        return false;
+    } 
+
+    bool setType(mlir::Type type)
+    {
+        if (isWasm)
+        {
+            llvm_unreachable("not implemented");
+        }
+        else if (isWindows)
+        {
+            return rttiWin.setType(type);
+        }
+        else
+        {
+            return rttiLinux.setType(type);
+        }
+
+        return false;
+    }    
+
+    mlir::Value typeInfoPtrValue(mlir::Location loc)
+    {
+        if (isWasm)
+        {
+            llvm_unreachable("not implemented");
+        }
+        else if (isWindows)
+        {
+            return rttiWin.typeInfoPtrValue(loc);
+        }
+        else
+        {
+            return rttiLinux.typeInfoPtrValue(loc);
+        }
+
+        return mlir::Value();
+    } 
+
+    mlir_ts::TupleType getLandingPadType()
+    {
+        if (isWasm)
+        {
+            llvm_unreachable("not implemented");
+        }
+        else if (isWindows)
+        {
+            return rttiWin.getLandingPadType();
+        }
+        else
+        {
+            return rttiLinux.getLandingPadType();
+        }
+
+        llvm_unreachable("not implemented");
+    } 
 };
 } // namespace typescript
 
