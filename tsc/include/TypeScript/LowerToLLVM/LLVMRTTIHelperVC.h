@@ -27,11 +27,7 @@ class LLVMRTTIHelperVC
 
     LogicalResult setPersonality(mlir::func::FuncOp newFuncOp)
     {
-        if (isWasm)
-        {
-            llvm_unreachable("not implemented");
-        }
-        else if (isWindows)
+        if (isWindows)
         {
             LLVMRTTIHelperVCWin32 rtti(op, rewriter, typeConverter, compileOptions);
             return rtti.setPersonality(newFuncOp);

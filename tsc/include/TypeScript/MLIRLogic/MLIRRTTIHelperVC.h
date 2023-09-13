@@ -26,11 +26,7 @@ class MLIRRTTIHelperVC
 
     bool setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
-        if (isWasm)
-        {
-            llvm_unreachable("not implemented");
-        }
-        else if (isWindows)
+        if (isWindows)
         {
             return rttiWin.setRTTIForType(loc, type, resolveClassInfo);
         }
@@ -44,11 +40,7 @@ class MLIRRTTIHelperVC
 
     bool hasType()
     {
-        if (isWasm)
-        {
-            llvm_unreachable("not implemented");
-        }
-        else if (isWindows)
+        if (isWindows)
         {
             return rttiWin.hasType();
         }
@@ -62,11 +54,7 @@ class MLIRRTTIHelperVC
 
     bool setType(mlir::Type type)
     {
-        if (isWasm)
-        {
-            llvm_unreachable("not implemented");
-        }
-        else if (isWindows)
+        if (isWindows)
         {
             return rttiWin.setType(type);
         }
@@ -80,11 +68,7 @@ class MLIRRTTIHelperVC
 
     mlir::Value throwInfoPtrValue(mlir::Location loc)
     {
-        if (isWasm)
-        {
-            llvm_unreachable("not implemented");
-        }
-        else if (isWindows)
+        if (isWindows)
         {
             return rttiWin.throwInfoPtrValue(loc);
         }
@@ -98,11 +82,7 @@ class MLIRRTTIHelperVC
 
     mlir::Value typeInfoPtrValue(mlir::Location loc)
     {
-        if (isWasm)
-        {
-            llvm_unreachable("not implemented");
-        }
-        else if (isWindows)
+        if (isWindows)
         {
             return rttiWin.typeInfoPtrValue(loc);
         }
@@ -116,11 +96,7 @@ class MLIRRTTIHelperVC
 
     mlir_ts::TupleType getLandingPadType()
     {
-        if (isWasm)
-        {
-            llvm_unreachable("not implemented");
-        }
-        else if (isWindows)
+        if (isWindows)
         {
             return rttiWin.getLandingPadType();
         }

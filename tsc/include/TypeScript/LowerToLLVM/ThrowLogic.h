@@ -42,11 +42,7 @@ class ThrowLogic
 
     mlir::LogicalResult logic(mlir::Value exceptionValue, mlir::Type origType, mlir::Block *unwind)
     {
-        if (isWasm)
-        {
-            llvm_unreachable("not implemented");
-        }
-        else if (isWindows)
+        if (isWindows)
         {
             return logicWin32(exceptionValue, origType, unwind);
         }
