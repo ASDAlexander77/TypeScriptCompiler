@@ -1140,10 +1140,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             rewriter.setInsertionPointToStart(finallyBlockForCleanup);
 
-#ifndef WIN_EXCEPTION
-            if (!parentTryOpLandingPad)
+            if (tsContext->compileOptions.isWindows)
             {
-#endif
                 auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
                     loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
                 auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
@@ -1155,40 +1153,54 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     unwindDests.push_back(parentTryOpLandingPad);
                 }
 
-#ifndef WIN_EXCEPTION
-                if (catchHasOps)
-                {
-                    rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
-                    rewriter.create<mlir_ts::EndCatchOp>(loc);
-                }
-#endif
-
                 auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
                 rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(yieldOpFinally, landingPadCleanupOp, unwindDests);
-#ifndef WIN_EXCEPTION
             }
             else
             {
-                auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
-                    loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
-                auto beginCleanupCallInfo =
-                    rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
+                if (!parentTryOpLandingPad)
+                {
+                    auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                        loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
+                    auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
 
-                // We do not need EndCatch as throw will redirect execution anyway
-                // rethrow
-                rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
-                auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+                    rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
+                    mlir::SmallVector<mlir::Block *> unwindDests;
+                    if (parentTryOpLandingPad)
+                    {
+                        unwindDests.push_back(parentTryOpLandingPad);
+                    }
 
-                auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
-                auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(yieldOpFinally, nullVal);
-                tsContext->unwind[throwOp] = parentTryOpLandingPad;
+                    if (catchHasOps)
+                    {
+                        rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
+                        rewriter.create<mlir_ts::EndCatchOp>(loc);
+                    }
+
+                    auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
+                    rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(yieldOpFinally, landingPadCleanupOp, unwindDests);
+                }
+                else
+                {
+                    auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                        loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
+                    auto beginCleanupCallInfo =
+                        rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
+
+                    // We do not need EndCatch as throw will redirect execution anyway
+                    // rethrow
+                    rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
+                    auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+
+                    auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
+                    auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(yieldOpFinally, nullVal);
+                    tsContext->unwind[throwOp] = parentTryOpLandingPad;
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER INSERT CLEANUP AS CATCH: TRY OP DUMP: \n"
+                                        << *tryOp->getParentOp() << "\n";);
+                // cleanup end
             }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER INSERT CLEANUP AS CATCH: TRY OP DUMP: \n"
-                                    << *tryOp->getParentOp() << "\n";);
-#endif
-
-            // cleanup end
         }
 
         if (catchHasOps)
