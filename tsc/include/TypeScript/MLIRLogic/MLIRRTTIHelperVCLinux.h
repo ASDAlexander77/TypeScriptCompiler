@@ -72,6 +72,11 @@ class MLIRRTTIHelperVCLinux
         types.push_back({linux::I32Type::typeName, TypeInfo::Value, -1});
     }
 
+    void setI64AsCatchType()
+    {
+        types.push_back({linux::I64Type::typeName, TypeInfo::Value, -1});
+    }
+
     void setStringTypeAsCatchType()
     {
         types.push_back({linux::StringType::typeName, TypeInfo::Value, -1});
@@ -121,9 +126,14 @@ class MLIRRTTIHelperVCLinux
 
         llvm::TypeSwitch<mlir::Type>(mth.stripLiteralType(type))
             .Case<mlir::IntegerType>([&](auto intType) {
-                if (intType.getIntOrFloatBitWidth() == 32)
+                auto width = intType.getIntOrFloatBitWidth();
+                if (width == 32)
                 {
                     setI32AsCatchType();
+                }
+                else if (width == 64)
+                {
+                    setI64AsCatchType();
                 }
                 else
                 {

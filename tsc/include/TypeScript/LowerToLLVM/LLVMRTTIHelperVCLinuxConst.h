@@ -22,6 +22,11 @@ namespace I32Type
 constexpr const auto *typeName = "_ZTIi";
 } // namespace I32Type
 
+namespace I64Type
+{
+constexpr const auto *typeName = "_ZTIx";
+} // namespace I64Type
+
 namespace ConstStringType
 {
 constexpr const auto *typeName = "_ZTIPKc";

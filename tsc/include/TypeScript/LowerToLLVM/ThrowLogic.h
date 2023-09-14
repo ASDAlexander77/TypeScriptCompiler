@@ -145,16 +145,20 @@ class ThrowLogic
 
         auto allocExceptFuncName = "__cxa_allocate_exception";
 
-        auto cxxAllocException = ch.getOrInsertFunction(allocExceptFuncName, th.getFunctionType(i8PtrTy, {th.getI64Type()}));
+        auto sizeType = compileOptions.sizeBits == 32 ? th.getI32Type() : th.getI64Type();
+
+        auto cxxAllocException = ch.getOrInsertFunction(allocExceptFuncName, th.getFunctionType(i8PtrTy, {sizeType}));
 
         auto throwFuncName = "__cxa_throw";
 
         auto cxxThrowException = ch.getOrInsertFunction(throwFuncName, th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, i8PtrTy}));
 
-        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getI64Type(), exceptionType);
+        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), exceptionType);
+
+        mlir::Value sizeAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, sizeType, size);
 
         auto callInfo = rewriter.create<LLVM::CallOp>(
-            loc, TypeRange{i8PtrTy}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), allocExceptFuncName), ValueRange{size});
+            loc, TypeRange{i8PtrTy}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), allocExceptFuncName), ValueRange{sizeAsLLVMType});
 
         auto value = callInfo.getResult();
 
