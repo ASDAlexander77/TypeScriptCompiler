@@ -64,7 +64,7 @@ jobs:
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: pwsh
-      run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
+      run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
@@ -74,12 +74,12 @@ jobs:
     - name: Download 3rd party source - GC
       continue-on-error: true
       shell: pwsh
-      run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
+      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
 
     - name: Download 3rd party source - GC:Atomic_ops
       continue-on-error: true
       shell: pwsh
-      run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
+      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
 
     - name: UnZip 3rd party source - GC
       continue-on-error: false
