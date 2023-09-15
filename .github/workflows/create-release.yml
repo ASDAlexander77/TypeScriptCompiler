@@ -203,7 +203,7 @@ jobs:
         shell: sh
         run: |
             if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
-                curl -L https://www.dropbox.com/s/q5hpkp5hasj6cvc/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release.tgz
+                curl --insecure -L https://www.dropbox.com/s/q5hpkp5hasj6cvc/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release.tgz
             fi
 
       - name: UnZip 3rd party - LLVM
@@ -217,12 +217,12 @@ jobs:
       - name: Download 3rd party source - GC
         continue-on-error: true
         shell: sh
-        run: curl -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
+        run: curl --insecure -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
 
       - name: Download 3rd party source - GC:Atomic_ops
         continue-on-error: true
         shell: sh
-        run: curl -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
+        run: curl --insecure -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
 
       - name: UnZip 3rd party source - GC
         continue-on-error: false
@@ -355,7 +355,7 @@ jobs:
         shell: sh
         run: |
             if test ! -f "llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz"; then
-                curl -L https://www.dropbox.com/s/9vr0dabs0doimej/llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
+                curl --insecure -L https://www.dropbox.com/s/9vr0dabs0doimej/llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
             fi
 
       - name: UnZip 3rd party - LLVM
@@ -369,12 +369,12 @@ jobs:
       - name: Download 3rd party source - GC
         continue-on-error: true
         shell: sh
-        run: curl -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
+        run: curl --insecure -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
 
       - name: Download 3rd party source - GC:Atomic_ops
         continue-on-error: true
         shell: sh
-        run: curl -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
+        run: curl --insecure -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
 
       - name: UnZip 3rd party source - GC
         continue-on-error: false
