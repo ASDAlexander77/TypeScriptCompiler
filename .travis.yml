@@ -1,0 +1,17 @@
+os: windows
+language: cpp
+git:
+  submodules: false
+before_script:
+#  - choco install python --pre 
+  - wget -O llvm_13_release.zip -q https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1
+  - pwd
+  - dir
+  - mkdir -p __build/llvm/release
+  - mkdir -p __build/tsc-release
+  - mkdir -p 3rdParty/llvm/
+  - unzip -q ./llvm_13_release.zip -d ./3rdParty/llvm/
+script:
+  - cd __build/tsc-release
+  - cmake ../../tsc -G "Visual Studio 15 2017" -A x64 -DCMAKE_BUILD_TYPE=Release -Wno-dev
+  - cmake --build . --config Release -j 8

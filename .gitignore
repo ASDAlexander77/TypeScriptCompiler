@@ -1,0 +1,13 @@
+__build
+build
+3rdParty/*
+!3rdParty/llvm-project
+.vs
+.antlr
+tsc/out
+tsc/Testing
+tsc/Testing/Temporary/*
+package-lock.json
+node_modules
+gc-*
+libatomic_ops-*

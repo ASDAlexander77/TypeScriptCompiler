@@ -1,0 +1,240 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 17,
+        "patch": 3
+    },
+    "configurePresets": [
+        {
+            "name": "default",
+            "hidden": true,
+            "displayName": "Default Config",
+            "description": "Default build",
+            "binaryDir": "${sourceDir}/../__build/tsc/${presetName}",
+            "cacheVariables": {
+                "CMAKE_INSTALL_PREFIX": "${sourceDir}/../__build/install/${presetName}",
+                "TSC_PACKAGE_VERSION": "$env{TSC_PACKAGE_VERSION}"
+            }
+        },
+        {
+            "name": "windows-msbuild",
+            "hidden": true,
+            "inherits": "default",
+            "generator": "Visual Studio 17 2022",
+            "displayName": "Visual Studio Professional 2022 - x86_amd64",
+            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
+            "toolset": "host=x64",
+            "architecture": "x64",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            },
+            "vendor": {
+                "microsoft.com/VisualStudioSettings/CMake/1.0": {
+                    "hostOS": [
+                        "Windows"
+                    ]
+                }
+            }
+        },
+        {
+            "name": "windows-msbuild-debug",
+            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Debug",
+            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
+            "inherits": "windows-msbuild",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "windows-msbuild-release",
+            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Release",
+            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
+            "inherits": "windows-msbuild",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "linux-ninja",
+            "hidden": true,
+            "inherits": "default",
+            "generator": "Ninja Multi-Config",
+            "displayName": "Ninja Multi-Config",
+            "description": "GCC (current) x86_64-linux-gnu",
+            "cacheVariables": {},
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "linux-ninja-debug",
+            "hidden": true,
+            "inherits": "linux-ninja",
+            "displayName": "Ninja Multi-Config - Debug",
+            "description": "Ninja Multi-Config - Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "linux-ninja-release",
+            "hidden": true,
+            "inherits": "linux-ninja",
+            "displayName": "Ninja Multi-Config - Release",
+            "description": "Ninja Multi-Config - Release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "linux-ninja-gcc-debug",
+            "inherits": "linux-ninja-debug",
+            "displayName": "GCC (current) Debug",
+            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++"
+            }
+        },
+        {
+            "name": "linux-ninja-gcc-release",
+            "inherits": "linux-ninja-release",
+            "displayName": "GCC (current) Release",
+            "description": "Using compilers: C = /usr/bin/gcc, CXX = /usr/bin/g++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/g++"
+            }
+        },
+        {
+            "name": "linux-ninja-clang-debug",
+            "inherits": "linux-ninja-debug",
+            "displayName": "Clang (current) Debug",
+            "description": "Using compilers: C = /usr/bin/clang, CXX = /usr/bin/clang++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++"
+            }
+        },
+        {
+            "name": "linux-ninja-clang-release",
+            "inherits": "linux-ninja-release",
+            "displayName": "Clang (current) Release",
+            "description": "Using compilers: C = /usr/bin/clang, CXX = /usr/bin/clang++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "/usr/bin/clang",
+                "CMAKE_CXX_COMPILER": "/usr/bin/clang++"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "build-windows-msbuild-debug",
+            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Debug",
+            "configurePreset": "windows-msbuild-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "build-windows-msbuild-release",
+            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Release",
+            "configurePreset": "windows-msbuild-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "build-linux-ninja-gcc-debug",
+            "displayName": "GCC (current) - Debug",
+            "configurePreset": "linux-ninja-gcc-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "build-linux-ninja-gcc-release",
+            "displayName": "GCC (current) - Release",
+            "configurePreset": "linux-ninja-gcc-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "build-linux-ninja-clang-debug",
+            "displayName": "Clang (current) - Debug",
+            "configurePreset": "linux-ninja-clang-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "build-linux-ninja-clang-release",
+            "displayName": "Clang (current) - Release",
+            "configurePreset": "linux-ninja-clang-release",
+            "configuration": "Release"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "test-default",
+            "hidden": true,
+            "configurePreset": "default",
+            "configuration": "Debug",
+            "output": {
+                "outputOnFailure": true
+            },
+            "execution": {
+                "noTestsAction": "error",
+                "stopOnFailure": true,
+                "jobs": 16
+            }
+        },
+        {
+            "name": "test-linux-default",
+            "hidden": true,
+            "inherits": "test-default",
+            "configurePreset": "test-default",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            }
+        },
+        {
+            "name": "test-windows-msbuild-debug",
+            "configurePreset": "windows-msbuild-debug",
+            "configuration": "Debug",
+            "inherits": "test-default"
+        },
+        {
+            "name": "test-windows-msbuild-release",
+            "configurePreset": "windows-msbuild-release",
+            "configuration": "Release",
+            "inherits": "test-default"
+        },
+        {
+            "name": "test-linux-ninja-gcc-debug",
+            "configurePreset": "linux-ninja-gcc-debug",
+            "configuration": "Debug",
+            "inherits": "test-linux-default"
+        },
+        {
+            "name": "test-linux-ninja-gcc-release",
+            "configurePreset": "linux-ninja-gcc-release",
+            "configuration": "Release",
+            "inherits": "test-linux-default"
+        },
+        {
+            "name": "test-linux-ninja-clang-debug",
+            "configurePreset": "linux-ninja-clang-debug",
+            "configuration": "Debug",
+            "inherits": "test-linux-default"
+        },
+        {
+            "name": "test-linux-ninja-clang-release",
+            "configurePreset": "linux-ninja-clang-release",
+            "configuration": "Release",
+            "inherits": "test-linux-default"
+        }
+    ]
+}

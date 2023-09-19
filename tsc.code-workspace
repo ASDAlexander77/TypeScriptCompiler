@@ -1,0 +1,170 @@
+{
+    "folders": [
+        {
+            "name": "TypeScript Compiler Source (Lib)",
+            "path": "./tsc/lib"
+        },
+        {
+            "name": "TypeScript Compiler Include",
+            "path": "./tsc/include"
+        },
+        {
+            "name": "TypeScript Compiler",
+            "path": "./tsc/tsc"
+        },
+        {
+            "name": "TypeScript Compiler Tests",
+            "path": "./tsc/test"
+        },
+        {
+            "name": "TypeScript Compiler Unit Tests",
+            "path": "./tsc/unittests"
+        },
+        {
+            "name": "TypeScript New Parser",
+            "path": "./tsc/tsc-new-parser"
+        }
+    ],
+    "settings": {
+        "editor.detectIndentation": false,
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "files.exclude": {
+            "**/__build": true,
+            "**/__build_*": true,
+            "**/.vs": true,
+            "**/*.csproj": true,
+            "**/*.sln": true,
+            "**/bin": true,
+            "**/build": true,
+            "**/node_modules": true,
+            "**/obj": true,
+            "**/out": true,
+            "3rdParty": true,
+            ".vscode": true,
+            ".vs": true
+        },
+        "files.associations": {
+            "memory": "cpp",
+            "iterator": "cpp",
+            "*.inc": "cpp",
+            "xstring": "cpp",
+            "string": "cpp",
+            "iostream": "cpp",
+            "stdexcept": "cpp",
+            "vector": "cpp",
+            "iosfwd": "cpp",
+            "algorithm": "cpp",
+            "array": "cpp",
+            "atomic": "cpp",
+            "bit": "cpp",
+            "bitset": "cpp",
+            "cctype": "cpp",
+            "chrono": "cpp",
+            "cinttypes": "cpp",
+            "clocale": "cpp",
+            "cmath": "cpp",
+            "codecvt": "cpp",
+            "compare": "cpp",
+            "complex": "cpp",
+            "concepts": "cpp",
+            "condition_variable": "cpp",
+            "csignal": "cpp",
+            "cstdarg": "cpp",
+            "cstddef": "cpp",
+            "cstdint": "cpp",
+            "cstdio": "cpp",
+            "cstdlib": "cpp",
+            "cstring": "cpp",
+            "ctime": "cpp",
+            "cwchar": "cpp",
+            "deque": "cpp",
+            "exception": "cpp",
+            "fstream": "cpp",
+            "functional": "cpp",
+            "future": "cpp",
+            "initializer_list": "cpp",
+            "iomanip": "cpp",
+            "ios": "cpp",
+            "istream": "cpp",
+            "limits": "cpp",
+            "list": "cpp",
+            "locale": "cpp",
+            "map": "cpp",
+            "mutex": "cpp",
+            "new": "cpp",
+            "numeric": "cpp",
+            "ostream": "cpp",
+            "queue": "cpp",
+            "random": "cpp",
+            "ratio": "cpp",
+            "set": "cpp",
+            "shared_mutex": "cpp",
+            "sstream": "cpp",
+            "stack": "cpp",
+            "stop_token": "cpp",
+            "streambuf": "cpp",
+            "system_error": "cpp",
+            "thread": "cpp",
+            "tuple": "cpp",
+            "type_traits": "cpp",
+            "typeinfo": "cpp",
+            "unordered_map": "cpp",
+            "unordered_set": "cpp",
+            "utility": "cpp",
+            "xfacet": "cpp",
+            "xhash": "cpp",
+            "xiosbase": "cpp",
+            "xlocale": "cpp",
+            "xlocbuf": "cpp",
+            "xlocinfo": "cpp",
+            "xlocmes": "cpp",
+            "xlocmon": "cpp",
+            "xlocnum": "cpp",
+            "xloctime": "cpp",
+            "xmemory": "cpp",
+            "xstddef": "cpp",
+            "xtr1common": "cpp",
+            "xtree": "cpp",
+            "xutility": "cpp",
+            "coroutine": "cpp",
+            "resumable": "cpp",
+            "variant": "cpp",
+            "filesystem": "cpp",
+            "*.def": "cpp",
+            "regex": "cpp",
+            "optional": "cpp",
+            "*.rh": "cpp",
+            "forward_list": "cpp",
+            "charconv": "cpp",
+            "format": "cpp",
+            "ranges": "cpp",
+            "span": "cpp"
+        },
+        "cmake.sourceDirectory": "${workspaceFolder}/..",
+        "cmake.useCMakePresets": "always",
+        "C_Cpp.codeAnalysis.clangTidy.headerFilter": ".*",
+        "editor.defaultFormatter": "xaver.clang-format",
+        "[cpp]": {
+            "editor.defaultFormatter": "ms-vscode.cpptools"
+        },
+        "[json]": {
+            "editor.defaultFormatter": "vscode.json-language-features"
+        },
+        "[jsonc]": {
+            "editor.defaultFormatter": "vscode.json-language-features"
+        },
+        "git.openRepositoryInParentFolders": "always",
+        "[typescript]": {
+            "editor.defaultFormatter": "vscode.typescript-language-features"
+        },
+        "[cmake]": {
+            "editor.defaultFormatter": "cheshirekow.cmake-format"
+        },
+        "typescript.tsc.autoDetect": "off",
+        "npm.autoDetect": "off",
+        "[html]": {
+            "editor.defaultFormatter": "vscode.html-language-features"
+        }
+    }
+}

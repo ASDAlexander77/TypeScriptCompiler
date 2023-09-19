@@ -1,0 +1,145 @@
+name: Test - Release - Windows
+
+on:
+#  push:
+#    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    # 8:30 and 18:30 UTC:
+#    - cron:  '30 8,18 * * *'
+    - cron:  '30 18 * * 1'
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+  CACHE_VERSION: v6
+  LLVM_VERSION: 16
+  
+jobs:
+  build:
+    # The CMake configure and build commands are platform agnostic and should work equally
+    # well on Windows or Mac.  You can convert this to a matrix build if you need
+    # cross-platform coverage.
+    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
+    runs-on: windows-2022
+
+    steps:
+#    - name: check disk space
+#      run: Get-PSDrive
+#      shell: pwsh
+
+    - uses: actions/checkout@v2
+
+    - name: Cache Build 3rd Party
+      id: cache-3rd-party
+      uses: actions/cache@v2
+      with:
+        path: __build/llvm
+        key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
+
+    - name: Cache 3rd Party binaries
+      id: cache-3rd-party-binary
+      uses: actions/cache@v2
+      with:
+        path: 3rdParty
+        key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
+
+    - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
+      id: cache-3rd-party-binary-llvm-release
+      uses: actions/cache@v2
+      with:
+        path: llvm_${{ env.LLVM_VERSION }}_release.zip
+        key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
+
+    - name: Delete __Build TS folders
+      continue-on-error: true
+      run: if (Test-Path -Path ".\__build\tsc\msbuild\x64\release") { Remove-Item -Recurse -Force ".\__build\tsc\msbuild\x64\release" }
+      shell: pwsh
+
+    - name: Create __Build Folders
+      run: if (!(Test-Path -Path ".\__build\tsc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\llvm\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
+      shell: pwsh
+
+    - name: Download 3rd party - LLVM
+      continue-on-error: true
+      shell: pwsh
+      run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
+
+    - name: UnZip 3rd party - LLVM
+      continue-on-error: false
+      run: if (Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip") { Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force }
+      shell: pwsh
+
+    - name: Download 3rd party source - GC
+      continue-on-error: true
+      shell: pwsh
+      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
+
+    - name: Download 3rd party source - GC:Atomic_ops
+      continue-on-error: true
+      shell: pwsh
+      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
+
+    - name: UnZip 3rd party source - GC
+      continue-on-error: false
+      run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
+      shell: pwsh
+
+    - name: UnZip 3rd party source - GC:Atomic_ops
+      continue-on-error: false
+      run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
+      shell: pwsh
+
+    - name: Copy Atomic_ops to GC
+      continue-on-error: false
+      run:  xcopy  /E /H /C /I /Y ".\3rdParty\libatomic_ops-7.6.10" ".\3rdParty\gc-8.0.4\libatomic_ops"
+      shell: pwsh
+
+    - name: Copy fixes to GC
+      continue-on-error: false
+      run: xcopy  /E /H /C /I /Y ".\docs\fix\gc" ".\3rdParty\gc-8.0.4"
+      shell: pwsh
+
+    - name: Configure GC
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
+      run: cmake ../../../../../3rdParty/gc-8.0.4 -G "Visual Studio 17 2022" -A x64 -Wno-dev -Denable_threads=ON -Denable_cplusplus=OFF
+      shell: pwsh
+
+    - name: Build GC
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
+      run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
+      shell: pwsh
+
+    - name: Copy GC
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
+      run:  xcopy /E /H /C /I /Y .\${{ env.BUILD_TYPE }}\ ..\..\..\..\..\3rdParty\gc\x64\release\
+      shell: pwsh
+
+    - name: List GC files
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/3rdParty/gc/x64/release
+      run:  dir
+      shell: pwsh
+
+    - name: Configure
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+      run: cmake ../../../../../tsc -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
+      shell: pwsh
+
+    - name: Build
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+      run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
+      shell: pwsh
+
+    - name: Test
+      working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+      # Execute tests defined by the CMake configuration.  
+      # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+      run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+      shell: pwsh

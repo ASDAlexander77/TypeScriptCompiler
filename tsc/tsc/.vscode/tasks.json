@@ -1,0 +1,90 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "config TSC",
+            "detail": "config_tsc_debug",
+            "type": "shell",
+            "command": "./config_tsc_debug.bat",
+            "args": [],
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/.."
+            }
+        },
+        {
+            "label": "build TSC",
+            "detail": "build_tsc_debug",
+            "type": "shell",
+            "command": "./build_tsc_debug.bat",
+            "args": [],
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/.."
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "unit test TSC",
+            "detail": "build_tsc_debug-unittests",
+            "type": "shell",
+            "command": "./build_tsc_debug-unittests.bat",
+            "args": [],
+            "problemMatcher": [],
+            "options": {
+                "cwd": "${workspaceFolder}/.."
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "CTest - All",
+            "type": "shell",
+            "command": "ctest -C Debug -j16 --output-on-failure",
+            "problemMatcher": [],
+            "detail": "CMake CTest - run all",
+            "group": {
+                "kind": "test",
+                "isDefault": false
+            },
+            "windows": {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
+                }
+            },
+            "linux" : {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug"
+                }
+            }
+        },
+        {
+            "label": "CTest - Failed",
+            "type": "shell",
+            "command": "ctest -C Debug -j16 --rerun-failed --output-on-failure",
+            "problemMatcher": [],
+            "detail": "CMake CTest - rerun failed",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "windows": {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
+                }
+            },
+            "linux" : {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug"
+                }
+            }
+        }
+    ]
+}

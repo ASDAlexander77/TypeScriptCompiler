@@ -1,0 +1,11 @@
+compilers:
+  tsc-native:
+    type: tarballs
+    dir: tsc-{name}
+    untar_dir: tsc-ninja-release
+    compression: gz
+    check_exe: bin/tsc --version
+    url: https://github.com/ASDAlexander77/TypeScriptCompiler/releases/download/v{name}/tsc.tar.gz
+    targets:
+      - 0.0-pre-alpha20
+

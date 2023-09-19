@@ -1,0 +1,538 @@
+name: Create Release/Upload Asset
+
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+    - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+  CACHE_VERSION: v6
+  LLVM_VERSION: 16
+
+jobs:
+  build_on_windows:
+    name: Create/Upload Release Asset (Windows)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Build project # This would actually build your project, using zip for an example artifact
+        run: echo 'SELECTED_COLOR=green Build project (Windows)' >> "$GITHUB_OUTPUT"
+
+      - name: Cache Build 3rd Party
+        id: cache-3rd-party
+        uses: actions/cache@v2
+        with:
+          path: __build/llvm
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
+
+      - name: Cache 3rd Party binaries
+        id: cache-3rd-party-binary
+        uses: actions/cache@v2
+        with:
+          path: 3rdParty
+          key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
+
+      - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
+        id: cache-3rd-party-binary-llvm-release
+        uses: actions/cache@v2
+        with:
+          path: llvm_${{ env.LLVM_VERSION }}_release.zip
+          key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
+
+      - name: Retrieve version
+        run: echo "TAG_NAME=$(git describe --abbrev=0 --tags)" >> "$GITHUB_OUTPUT"
+        id: version
+        #shell: pwsh
+        shell: bash
+
+      - name: Delete __Build TS folders
+        continue-on-error: true
+        run: if (Test-Path -Path ".\__build\tsc\msbuild\x64\release") { Remove-Item -Recurse -Force ".\__build\tsc\msbuild\x64\release" }
+        shell: pwsh
+
+      - name: Create __Build Folders
+        run: if (!(Test-Path -Path ".\__build\tsc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\llvm\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
+        shell: pwsh
+      
+      - name: Download 3rd party - LLVM
+        continue-on-error: true
+        shell: pwsh
+        run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
+
+      - name: UnZip 3rd party - LLVM
+        continue-on-error: false
+        run: if (Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip") { Expand-Archive -Path "llvm_${{ env.LLVM_VERSION }}_release.zip" -DestinationPath "3rdParty\llvm\x64" -Force }
+        shell: pwsh
+
+      - name: Download 3rd party source - GC
+        continue-on-error: true
+        shell: pwsh
+        run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
+
+      - name: Download 3rd party source - GC:Atomic_ops
+        continue-on-error: true
+        shell: pwsh
+        run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
+
+      - name: UnZip 3rd party source - GC
+        continue-on-error: false
+        run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
+        shell: pwsh
+
+      - name: UnZip 3rd party source - GC:Atomic_ops
+        continue-on-error: false
+        run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
+        shell: pwsh
+
+      - name: Create gc-8.0.4\libatomic_ops Folders
+        run: if (!(Test-Path -Path ".\3rdParty\gc-8.0.4\libatomic_ops")) { New-Item -ItemType Directory -Force -Path ".\3rdParty\gc-8.0.4\libatomic_ops" };
+        shell: pwsh
+
+      - name: Copy Atomic_ops to GC
+        continue-on-error: false
+        run:  xcopy  /E /H /C /I /Y ".\3rdParty\libatomic_ops-7.6.10" ".\3rdParty\gc-8.0.4\libatomic_ops"
+        shell: pwsh
+
+      - name: Copy fixes to GC
+        continue-on-error: false
+        run: xcopy  /E /H /C /I /Y ".\docs\fix\gc" ".\3rdParty\gc-8.0.4"
+        shell: pwsh
+
+      - name: Configure GC
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
+        run: cmake ../../../../../3rdParty/gc-8.0.4 -G "Visual Studio 17 2022" -A x64 -Wno-dev -Denable_threads=ON -Denable_cplusplus=OFF
+        shell: pwsh
+
+      - name: Build GC
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
+        run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
+        shell: pwsh
+
+      - name: Copy GC
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
+        run:  xcopy /E /H /C /I /Y .\${{ env.BUILD_TYPE }}\ ..\..\..\..\..\3rdParty\gc\x64\release\
+        shell: pwsh
+
+      - name: Configure
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+        run: cmake ../../../../../tsc -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
+        shell: pwsh
+
+      - name: Build
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+        run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
+        shell: pwsh
+
+      - name: Test
+        working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+        # Execute tests defined by the CMake configuration.  
+        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+        run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+        shell: pwsh
+
+      - name: Create Zip of Windows Asset
+        working-directory: ${{github.workspace}}/__build
+        run: Get-ChildItem -Path .\tsc\msbuild\x64\release\bin\tsc.exe, .\tsc\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gcmt-lib.lib, .\tsc\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe | Compress-Archive -DestinationPath ..\tsc.zip
+        shell: pwsh
+
+      - name: Archive Zip of Windows Asset
+        uses: actions/upload-artifact@v2
+        with:
+          name: tsc-windows-asset
+          path: tsc.zip
+          retention-days: 1          
+  
+  build_on_linux:
+    name: Create/Upload Release Asset (Ubuntu 22.04)
+
+    # The CMake configure and build commands are platform agnostic and should work equally
+    # well on Windows or Mac.  You can convert this to a matrix build if you need
+    # cross-platform coverage.
+    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache Build 3rd Party
+        id: cache-3rd-party
+        uses: actions/cache@v2
+        with:
+          path: __build/llvm/ninja
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
+
+      - name: Cache 3rd Party binaries
+        id: cache-3rd-party-binary
+        uses: actions/cache@v2
+        with:
+          path: 3rdParty
+          key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
+
+      - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
+        id: cache-3rd-party-binary-llvm-release
+        uses: actions/cache@v2
+        with:
+          path: llvm_${{ env.LLVM_VERSION }}_release.tgz
+          key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
+
+      - name: Retrieve version
+        run: echo "TAG_NAME=$(git describe --abbrev=0 --tags)" >> $GITHUB_OUTPUT
+        id: version
+
+      - name: Delete __Build TS folders
+        continue-on-error: true
+        run: rm -R ./__build/tsc/ninja/release
+        shell: sh
+
+      - name: Create __Build Folders
+        run: mkdir -p ./__build/tsc/ninja/release; mkdir -p ./__build/gc/ninja/release
+        shell: sh
+      
+      - name: Download 3rd party - LLVM
+        continue-on-error: true
+        shell: sh
+        run: |
+            if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
+                curl --insecure -L https://www.dropbox.com/s/q5hpkp5hasj6cvc/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release.tgz
+            fi
+
+      - name: UnZip 3rd party - LLVM
+        continue-on-error: false
+        shell: sh
+        run:  |
+            if test -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
+                file llvm_${{ env.LLVM_VERSION }}_release.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release.tgz -C ./3rdParty/llvm/
+            fi
+
+      - name: Download 3rd party source - GC
+        continue-on-error: true
+        shell: sh
+        run: curl --insecure -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
+
+      - name: Download 3rd party source - GC:Atomic_ops
+        continue-on-error: true
+        shell: sh
+        run: curl --insecure -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
+
+      - name: UnZip 3rd party source - GC
+        continue-on-error: false
+        shell: sh
+        run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
+
+      - name: UnZip 3rd party source - GC:Atomic_ops
+        continue-on-error: false
+        shell: sh
+        run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
+
+      - name: Copy Atomic_ops to GC
+        continue-on-error: false
+        shell: sh
+        run:  cp -a ./3rdParty/libatomic_ops-7.6.10/ ./3rdParty/gc-8.0.4/libatomic_ops/
+
+      - name: Copy fixes to GC
+        continue-on-error: false
+        shell: sh
+        run: cp -ar ./docs/fix/gc/* ./3rdParty/gc-8.0.4/
+
+      - name: Install Ninja
+        continue-on-error: false
+        shell: sh
+        run: sudo apt install ninja-build
+
+  #    - name: Install Clang 12
+  #      continue-on-error: false
+  #      shell: sh
+  #      run: sudo apt install clang-12
+
+      - name: Configure GC
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gc/ninja/release
+        shell: sh
+        run: cmake ../../../../3rdParty/gc-8.0.4 -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../../../3rdParty/gc/release -Denable_threads=ON -Denable_cplusplus=OFF
+
+      - name: Build GC
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gc/ninja/release
+        shell: sh
+        run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
+
+      - name: Copy GC
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gc/ninja/release
+        shell: sh
+        run: mkdir -p ../../../../3rdParty/gc/release/; cp ./lib* ../../../../3rdParty/gc/release/
+
+      - name: Configure
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tsc/ninja/release
+        shell: sh
+        run: cmake ../../../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
+
+      - name: Build
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tsc/ninja/release
+        shell: sh
+        run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 4
+
+      - name: Test
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tsc/ninja/release
+        shell: sh
+        # Execute tests defined by the CMake configuration.  
+        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+        run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+        
+      - name: Create Tar.GZ of Linux Asset
+        working-directory: ${{github.workspace}}/__build
+        shell: sh
+        run: tar -czvhf ../tsc.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgcmt-lib.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a
+
+      - name: Archive Tar.GZ of Linux Asset
+        uses: actions/upload-artifact@v2
+        with:
+          name: tsc-linux-asset
+          path: tsc.tar.gz
+          retention-days: 1   
+
+  build_on_linux_ub20:
+    name: Create/Upload Release Asset (Ubuntu 20.04)
+
+    # The CMake configure and build commands are platform agnostic and should work equally
+    # well on Windows or Mac.  You can convert this to a matrix build if you need
+    # cross-platform coverage.
+    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
+    runs-on: ubuntu-20.04
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Cache Build 3rd Party
+        id: cache-3rd-party
+        uses: actions/cache@v2
+        with:
+          path: __build/llvm/ninja
+          key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-ub20-${{ env.CACHE_VERSION }}
+
+      - name: Cache 3rd Party binaries
+        id: cache-3rd-party-binary
+        uses: actions/cache@v2
+        with:
+          path: 3rdParty
+          key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-ub20-${{ env.CACHE_VERSION }}
+
+      - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
+        id: cache-3rd-party-binary-llvm-release
+        uses: actions/cache@v2
+        with:
+          path: llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
+          key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-ub20-${{ env.CACHE_VERSION }}
+
+      - name: Retrieve version
+        run: echo "TAG_NAME=$(git describe --abbrev=0 --tags)" >> $GITHUB_OUTPUT
+        id: version
+
+      - name: Delete __Build TS folders
+        continue-on-error: true
+        run: rm -R ./__build/tsc/ninja/release
+        shell: sh
+
+      - name: Create __Build Folders
+        run: mkdir -p ./__build/tsc/ninja/release; mkdir -p ./__build/gc/ninja/release
+        shell: sh
+      
+      - name: Download 3rd party - LLVM
+        continue-on-error: true
+        shell: sh
+        run: |
+            if test ! -f "llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz"; then
+                curl --insecure -L https://www.dropbox.com/s/9vr0dabs0doimej/llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
+            fi
+
+      - name: UnZip 3rd party - LLVM
+        continue-on-error: false
+        shell: sh
+        run: |
+            if test -f "llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz"; then
+                file llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz; mkdir -p ./3rdParty/llvm; tar -xf llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz -C ./3rdParty/llvm/
+            fi
+
+      - name: Download 3rd party source - GC
+        continue-on-error: true
+        shell: sh
+        run: curl --insecure -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
+
+      - name: Download 3rd party source - GC:Atomic_ops
+        continue-on-error: true
+        shell: sh
+        run: curl --insecure -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
+
+      - name: UnZip 3rd party source - GC
+        continue-on-error: false
+        shell: sh
+        run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
+
+      - name: UnZip 3rd party source - GC:Atomic_ops
+        continue-on-error: false
+        shell: sh
+        run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
+
+      - name: Copy Atomic_ops to GC
+        continue-on-error: false
+        shell: sh
+        run: cp -a ./3rdParty/libatomic_ops-7.6.10/ ./3rdParty/gc-8.0.4/libatomic_ops/
+
+      - name: Copy fixes to GC
+        continue-on-error: false
+        shell: sh
+        run: cp -ar ./docs/fix/gc/* ./3rdParty/gc-8.0.4/
+
+      - name: Install Ninja
+        continue-on-error: false
+        shell: sh
+        run: sudo apt install ninja-build
+
+  #    - name: Install Clang 12
+  #      continue-on-error: false
+  #      shell: sh
+  #      run: sudo apt install clang-12
+
+      - name: Configure GC
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gc/ninja/release
+        shell: sh
+        run: cmake ../../../../3rdParty/gc-8.0.4 -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../../../3rdParty/gc/release -Denable_threads=ON -Denable_cplusplus=OFF
+
+      - name: Build GC
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gc/ninja/release
+        shell: sh
+        run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
+
+      - name: Copy GC
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/gc/ninja/release
+        shell: sh
+        run: mkdir -p ../../../../3rdParty/gc/release/; cp ./lib* ../../../../3rdParty/gc/release/
+
+      - name: Configure
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tsc/ninja/release
+        shell: sh
+        run: cmake ../../../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
+
+      - name: Build
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tsc/ninja/release
+        shell: sh
+        run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 4
+
+      - name: Test
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/__build/tsc/ninja/release
+        shell: sh
+        # Execute tests defined by the CMake configuration.  
+        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
+        run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+        
+      - name: Create Tar.GZ of Linux Asset
+        working-directory: ${{github.workspace}}/__build
+        shell: sh
+        run: tar -czvhf ../tsc-ub20.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgcmt-lib.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a 
+
+      - name: Archive Tar.GZ of Linux Asset
+        uses: actions/upload-artifact@v2
+        with:
+          name: tsc-linux-asset-ub20
+          path: tsc-ub20.tar.gz
+          retention-days: 1   
+
+  create_release:
+    needs: [build_on_windows, build_on_linux, build_on_linux_ub20]
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: true
+          prerelease: true
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+
+  deploy_windows_asset:
+    needs: create_release
+    name: Upload Release (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Download Release Asset from Store
+        uses: actions/download-artifact@v2
+        with:
+          name: tsc-windows-asset
+
+      - name: Upload Release Asset (Windows)
+        id: upload-release-asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          asset_path: ./tsc.zip
+          asset_name: tsc.zip
+          asset_content_type: application/zip
+
+  deploy_linux_asset:
+    needs: create_release
+    name: Upload Release (Ubuntu 22.04)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Release Asset from Store
+        uses: actions/download-artifact@v2
+        with:
+          name: tsc-linux-asset
+
+      - name: Upload Release Asset (Ubuntu 22.04)
+        id: upload-release-asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          asset_path: ./tsc.tar.gz
+          asset_name: tsc.tar.gz
+          asset_content_type: application/tar+gzip
+
+  deploy_linux_asset_ub20:
+    needs: create_release
+    name: Upload Release (Ubuntu 20.04)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Release Asset from Store
+        uses: actions/download-artifact@v2
+        with:
+          name: tsc-linux-asset-ub20
+
+      - name: Upload Release Asset (Ubuntu 20.04)
+        id: upload-release-asset-ub20 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          asset_path: ./tsc-ub20.tar.gz
+          asset_name: tsc-ub20.tar.gz
+          asset_content_type: application/tar+gzip
