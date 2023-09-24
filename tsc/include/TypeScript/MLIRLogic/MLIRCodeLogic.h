@@ -196,9 +196,11 @@ class MLIRCustomMethods
 {
     mlir::OpBuilder &builder;
     mlir::Location &location;
+    CompileOptions &compileOptions;
 
   public:
-    MLIRCustomMethods(mlir::OpBuilder &builder, mlir::Location &location) : builder(builder), location(location)
+    MLIRCustomMethods(mlir::OpBuilder &builder, mlir::Location &location, CompileOptions &compileOptions) 
+        : builder(builder), location(location), compileOptions(compileOptions)
     {
     }
 
@@ -208,13 +210,28 @@ class MLIRCustomMethods
         return o[objectName.str()];    
     }
 
-    static bool isInternalFunctionName (StringRef functionName)
+    static bool isInternalFunctionName (CompileOptions &compileOptions, StringRef functionName)
+    {
+        return compileOptions.enableBuiltins 
+            ? isInternalFunctionNameBuiltin(functionName) 
+            : isInternalFunctionNameNoBuiltin(functionName);
+    }
+
+    static bool isInternalFunctionNameBuiltin (StringRef functionName)
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
             {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }};
         return m[functionName.str()];    
-    }
+    }    
+
+    static bool isInternalFunctionNameNoBuiltin (StringRef functionName)
+    {
+        static std::map<std::string, bool> m { 
+            {"print", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }};
+        return m[functionName.str()];    
+    }   
 
     ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, const GenContext &genContext)
     {
@@ -228,16 +245,16 @@ class MLIRCustomMethods
             // assert - internal command;
             return mlirGenAssert(location, operands);
         }
-        else if (functionName == "parseInt")
+        else if (compileOptions.enableBuiltins && functionName == "parseInt")
         {
             // assert - internal command;
             return mlirGenParseInt(location, operands);
         }
-        else if (functionName == "parseFloat")
+        else if (compileOptions.enableBuiltins && functionName == "parseFloat")
         {
             return mlirGenParseFloat(location, operands);
         }
-        else if (functionName == "isNaN")
+        else if (compileOptions.enableBuiltins && functionName == "isNaN")
         {
             return mlirGenIsNaN(location, operands);
         }

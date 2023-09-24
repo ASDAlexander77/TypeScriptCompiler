@@ -20,6 +20,7 @@ extern cl::opt<bool> generateDebugInfo;
 extern cl::opt<bool> lldbDebugInfo;
 extern cl::opt<std::string> TargetTriple;
 extern cl::opt<enum Exports> exportAction;
+extern cl::opt<bool> enableBuiltins;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -35,6 +36,7 @@ CompileOptions prepareOptions()
     CompileOptions compileOptions;
     compileOptions.isJit = emitAction == Action::RunJIT;
     compileOptions.disableGC = disableGC;
+    compileOptions.enableBuiltins = enableBuiltins;
     compileOptions.disableWarnings = disableWarnings;
     compileOptions.exportOpt = exportAction;
     compileOptions.generateDebugInfo = generateDebugInfo;
