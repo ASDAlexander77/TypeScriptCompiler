@@ -9597,7 +9597,7 @@ class MLIRGenImpl
             }
 
             // resolve function
-            MLIRCustomMethods cm(builder, location);
+            MLIRCustomMethods cm(builder, location, compileOptions);
             return cm.callMethod(functionName, operands, genContext);
         }
 
@@ -11443,7 +11443,7 @@ class MLIRGenImpl
 
     ValueOrLogicalResult createDynamicArrayFromArrayLiteral(mlir::Location location, ArrayRef<ArrayElement> values, struct ArrayInfo arrayInfo, const GenContext &genContext)
     {
-        MLIRCustomMethods cm(builder, location);
+        MLIRCustomMethods cm(builder, location, compileOptions);
         SmallVector<mlir::Value> emptyArrayValues;
         auto arrType = getArrayType(arrayInfo.arrayElementType);
         auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(location, arrType, emptyArrayValues);
@@ -12624,7 +12624,7 @@ class MLIRGenImpl
             return value;
         }
 
-        if (MLIRCustomMethods::isInternalFunctionName(name))
+        if (MLIRCustomMethods::isInternalFunctionName(compileOptions, name))
         {
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                 location, builder.getNoneType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
@@ -17325,8 +17325,13 @@ genContext);
 
         return mlir::Type();
     }
-    
+
     bool isEmbededType(mlir::StringRef name)
+    {
+        return compileOptions.enableBuiltins ? isEmbededTypeWithBuiltins(name) : isEmbededTypeWithNoBuiltins(name);
+    }
+    
+    bool isEmbededTypeWithBuiltins(mlir::StringRef name)
     {
         static llvm::StringMap<bool> embeddedTypes {
             {"TemplateStringsArray", true },
@@ -17385,7 +17390,40 @@ genContext);
         return type;
     }
 
+    bool isEmbededTypeWithNoBuiltins(mlir::StringRef name)
+    {
+        static llvm::StringMap<bool> embeddedTypes {
+            {"TemplateStringsArray", true },
+            {"const", true },
+#ifdef ENABLE_JS_BUILTIN_TYPES
+            {"Number", true },
+            {"Object", true },
+            {"String", true },
+            {"Boolean", true },
+            {"Function", true },
+#endif
+
+            {"TypeOf", true },
+            {"Opague", true }, // to support void*
+            {"Reference", true }, // to support dll import
+            {"ThisType", true },
+#ifdef ENABLE_JS_BUILTIN_TYPES
+            {"Awaited", true },
+            {"Promise", true },
+#endif            
+            {"Array", true }
+        };
+
+        auto type = embeddedTypes[name];
+        return type;
+    }
+
     mlir::Type getEmbeddedType(mlir::StringRef name)
+    {
+        return compileOptions.enableBuiltins ? getEmbeddedTypeBuiltins(name) : getEmbeddedTypeNoBuiltins(name);
+    }
+
+    mlir::Type getEmbeddedTypeBuiltins(mlir::StringRef name)
     {
         static llvm::StringMap<mlir::Type> embeddedTypes {
             {"TemplateStringsArray", getArrayType(getStringType()) },
@@ -17416,7 +17454,34 @@ genContext);
         return type;
     }
 
+    mlir::Type getEmbeddedTypeNoBuiltins(mlir::StringRef name)
+    {
+        static llvm::StringMap<mlir::Type> embeddedTypes {
+            {"TemplateStringsArray", getArrayType(getStringType()) },
+            {"const",getConstType() },
+#ifdef ENABLE_JS_BUILTIN_TYPES
+            {"Number", getNumberType() },
+            {"Object", getObjectType(getAnyType()) },
+            {"String", getStringType()},
+            {"Boolean", getBooleanType()},
+            {"Function", getFunctionType({getArrayType(getAnyType())}, {getAnyType()}, true)},
+#endif
+            {"Opaque", getOpaqueType()},
+        };
+
+        auto type = embeddedTypes[name];
+        return type;
+    }    
+
     mlir::Type getEmbeddedTypeWithParam(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
+                                        const GenContext &genContext)
+    {
+        return compileOptions.enableBuiltins 
+            ? getEmbeddedTypeWithParamBuiltins(name, typeArguments, genContext) 
+            : getEmbeddedTypeWithParamNoBuiltins(name, typeArguments, genContext);
+    }
+
+    mlir::Type getEmbeddedTypeWithParamBuiltins(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
                                         const GenContext &genContext)
     {
         auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
@@ -17532,7 +17597,40 @@ genContext);
         return translate(typeArguments, genContext);
     }
 
+    mlir::Type getEmbeddedTypeWithParamNoBuiltins(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
+                                        const GenContext &genContext)
+    {
+        auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
+            .Case("TypeOf", [&] (auto typeArguments, auto genContext) {
+                auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                type = mth.wideStorageType(type);
+                return type;
+            })
+            .Case("Reference", [&] (auto typeArguments, auto genContext) {
+                auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return mlir_ts::RefType::get(type);
+            })
+            .Case("ThisType", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
+            .Case("Array", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return getArrayType(elemnentType);
+            })
+            .Default([] (auto, auto) {
+                return mlir::Type();
+            });
+
+        return translate(typeArguments, genContext);
+    }
+
     mlir::Type getEmbeddedTypeWithManyParams(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
+                                             const GenContext &genContext)
+    {
+        return compileOptions.enableBuiltins 
+            ? getEmbeddedTypeWithManyParamsBuiltins(name, typeArguments, genContext) 
+            : mlir::Type();
+    }
+
+    mlir::Type getEmbeddedTypeWithManyParamsBuiltins(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
                                              const GenContext &genContext)
     {
         auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
