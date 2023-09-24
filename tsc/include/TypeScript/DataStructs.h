@@ -9,6 +9,7 @@ struct CompileOptions
 {
     bool isJit;
     bool disableGC;
+    bool enableBuiltins;
     bool disableWarnings;
     bool generateDebugInfo;
     bool lldbDebugInfo;
