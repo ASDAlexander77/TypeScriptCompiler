@@ -71,6 +71,7 @@ cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desi
                                        cl::values(clEnumValN(BuildDll, "dll", "build Shared library (.so/.dylib) file")),
 #endif
                                        cl::values(clEnumValN(RunJIT, "jit", "JIT code and run it by invoking main function")), 
+                                       cl::init(RunJIT),
                                        cl::cat(TypeScriptCompilerCategory));
 
 cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations"), cl::init(false), cl::cat(TypeScriptCompilerCategory), cl::cat(TypeScriptCompilerCategory)};
@@ -105,6 +106,8 @@ cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. S
 cl::opt<std::string> tsclibpath("tsc-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'TypeScriptAsyncRuntime.lib' or TSC_LIB_PATH environmental variable"), cl::value_desc("tsclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> emsdksysrootpath("emsdk-sysroot-path", cl::desc("TypeScript Compiler Runtime library path. Should point to dir '<...>/emsdk/upstream/emscripten/cache/sysroot' or EMSDK_SYSROOT_PATH environmental variable. (used when '-mtriple=wasm32-pc-emscripten')"), cl::value_desc("emsdksysrootpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::list<std::string> libs{"lib", cl::desc("Libraries to link statically. (used in --emit=exe)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
+
+cl::opt<bool> enableBuiltins("builtins", cl::desc("Builtin functionality (needed if Default lib is not provided)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
 
 static void TscPrintVersion(llvm::raw_ostream &OS) {
   OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
