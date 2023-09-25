@@ -40,13 +40,13 @@ int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp, CompileOptions&);
-int buildExe(int, char **, std::string);
+int buildExe(int, char **, std::string, CompileOptions&);
 int runJit(int, char **, mlir::ModuleOp, CompileOptions&);
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
 cl::OptionCategory TypeScriptCompilerDebugCategory("JIT Debug Options");
-cl::OptionCategory TypeScriptCompilerBuildCategory("Executable/Shared library Build Options(used in -emit=BuildExe amd -emit=BuildDll)");
+cl::OptionCategory TypeScriptCompilerBuildCategory("Executable/Shared library Build Options(used in -emit=BuildExe and -emit=BuildDll)");
 
 cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<std::string> outputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
@@ -107,6 +107,7 @@ cl::opt<std::string> tsclibpath("tsc-lib-path", cl::desc("TypeScript Compiler Ru
 cl::opt<std::string> emsdksysrootpath("emsdk-sysroot-path", cl::desc("TypeScript Compiler Runtime library path. Should point to dir '<...>/emsdk/upstream/emscripten/cache/sysroot' or EMSDK_SYSROOT_PATH environmental variable. (used when '-mtriple=wasm32-pc-emscripten')"), cl::value_desc("emsdksysrootpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::list<std::string> libs{"lib", cl::desc("Libraries to link statically. (used in --emit=exe)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
 
+cl::opt<bool> noDefaultLib("no-default-lib", cl::desc("Disable loading default lib"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> enableBuiltins("builtins", cl::desc("Builtin functionality (needed if Default lib is not provided)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
 
 static void TscPrintVersion(llvm::raw_ostream &OS) {
@@ -259,7 +260,7 @@ int main(int argc, char **argv)
             return result;
         }
 
-        return buildExe(argc, argv, tempOutputFile);
+        return buildExe(argc, argv, tempOutputFile, compileOptions);
     }
 
     // Otherwise, we must be running the jit.

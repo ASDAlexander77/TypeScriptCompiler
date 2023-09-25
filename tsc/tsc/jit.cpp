@@ -52,6 +52,15 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     // engine. Otherwise we'll pass library directly to the execution engine.
     mlir::SmallVector<mlir::SmallString<256>, 4> libPaths;
 
+    if (!compileOptions.noDefaultLib)
+    {
+#if WIN32        
+        clSharedLibs.push_back("jslib/dll/lib.dll");
+#else
+        clSharedLibs.push_back("jslib/dll/liblib.so");
+#endif        
+    }      
+
     // Use absolute library path so that gdb can find the symbol table.
     transform(clSharedLibs, std::back_inserter(libPaths), [](std::string libPath) {
         mlir::SmallString<256> absPath(libPath.begin(), libPath.end());

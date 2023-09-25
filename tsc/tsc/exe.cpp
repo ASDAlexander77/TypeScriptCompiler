@@ -14,6 +14,7 @@
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/Path.h"
 
+#include "TypeScript/DataStructs.h"
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
 namespace cl = llvm::cl;
@@ -191,7 +192,7 @@ void removeCommandArgs(clang::driver::Compilation *c, llvm::ArrayRef<const char*
     }
 }
 
-int buildExe(int argc, char **argv, std::string objFileName)
+int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &compileOptions)
 {
     // Initialize variables to call the driver
     llvm::InitLLVM x(argc, argv);
@@ -241,6 +242,7 @@ int buildExe(int argc, char **argv, std::string objFileName)
     std::string tscLibPathOpt;
     std::string llvmLibPathOpt;
     std::string emsdkSysRootPathOpt;
+    std::string defaultLibPathOpt;
 
     auto isLLVMLibNeeded = true;
     auto isTscLibNeeded = true;
@@ -296,6 +298,15 @@ int buildExe(int argc, char **argv, std::string objFileName)
     {
         args.push_back(lib.c_str());
     }
+
+    if (!compileOptions.noDefaultLib)
+    {
+        defaultLibPathOpt = getLibOpt(shared ? "jslib/dll/lib" : "jslib/lib/lib");
+        if (!defaultLibPathOpt.empty())
+        {
+            args.push_back(defaultLibPathOpt.c_str());    
+        }        
+    }    
 
     if (!disableGC)
     {

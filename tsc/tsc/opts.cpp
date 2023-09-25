@@ -21,6 +21,7 @@ extern cl::opt<bool> lldbDebugInfo;
 extern cl::opt<std::string> TargetTriple;
 extern cl::opt<enum Exports> exportAction;
 extern cl::opt<bool> enableBuiltins;
+extern cl::opt<bool> noDefaultLib;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -37,6 +38,7 @@ CompileOptions prepareOptions()
     compileOptions.isJit = emitAction == Action::RunJIT;
     compileOptions.disableGC = disableGC;
     compileOptions.enableBuiltins = enableBuiltins;
+    compileOptions.noDefaultLib = noDefaultLib;
     compileOptions.disableWarnings = disableWarnings;
     compileOptions.exportOpt = exportAction;
     compileOptions.generateDebugInfo = generateDebugInfo;
