@@ -185,16 +185,31 @@ class MLIRGenImpl
         const auto *sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
         auto sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
                     sourceBuf->getBufferIdentifier(), /*line=*/0, /*column=*/0);
-        return loadSourceBuf(sourceFileLoc, sourceBuf);
+        return loadSourceBuf(sourceFileLoc, sourceBuf, true);
     }    
 
-    std::pair<SourceFile, std::vector<SourceFile>> loadSourceBuf(mlir::Location location, const llvm::MemoryBuffer *sourceBuf)
+    std::pair<SourceFile, std::vector<SourceFile>> loadSourceBuf(mlir::Location location, const llvm::MemoryBuffer *sourceBuf, bool isMain = false)
     {
         std::vector<SourceFile> includeFiles;
         std::vector<string> filesToProcess;
 
         Parser parser;
         auto sourceFile = parser.parseSourceFile(stows(mainSourceFileName.str()), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
+
+        // add default lib
+        if (isMain)
+        {
+            if (sourceFile->hasNoDefaultLib)
+            {
+                compileOptions.noDefaultLib = true;
+            }
+
+            if (!compileOptions.noDefaultLib)
+            {
+                filesToProcess.push_back(S("jslib/lib.d.ts"));
+            }
+        }
+
         for (auto refFile : sourceFile->referencedFiles)
         {
             filesToProcess.push_back(refFile.fileName);
