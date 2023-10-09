@@ -217,6 +217,10 @@ int main(int argc, char **argv)
 
     auto compileOptions = prepareOptions();
 
+    // TODO: temp hack
+    std::string fullPath = "jslib/";
+    compileOptions.noDefaultLib = llvm::sys::fs::exists(fullPath);
+
     llvm::SourceMgr sourceMgr;
     mlir::OwningOpRef<mlir::ModuleOp> module;
     if (int error = compileTypeScriptFileIntoMLIR(mlirContext, sourceMgr, module, compileOptions))
