@@ -219,7 +219,7 @@ int main(int argc, char **argv)
 
     // TODO: temp hack
     std::string fullPath = "jslib/";
-    compileOptions.noDefaultLib = llvm::sys::fs::exists(fullPath);
+    compileOptions.noDefaultLib = !llvm::sys::fs::exists(fullPath);
 
     llvm::SourceMgr sourceMgr;
     mlir::OwningOpRef<mlir::ModuleOp> module;
