@@ -61,9 +61,10 @@ static cl::opt<std::string>
                              "'none' means that all ELF features can be used, "
                              "regardless of binutils support"), cl::cat(ObjOrAssemblyCategory));
 
-static cl::opt<bool>
-    NoIntegratedAssembler("no-integrated-as", cl::Hidden,
-                      cl::desc("Disable integrated assembler"), cl::cat(ObjOrAssemblyCategory));
+// TODO: find out why we can't add our 1
+// static cl::opt<bool>
+//     NoIntegratedAssembler("no-integrated-as", cl::Hidden,
+//                       cl::desc("Disable integrated assembler"), cl::cat(ObjOrAssemblyCategory));
 
 static cl::opt<bool>
     PreserveComments("preserve-as-comments", cl::Hidden,
@@ -152,7 +153,9 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     auto InitializeOptions = [&](const llvm::Triple &TheTriple) {
         Options = llvm::codegen::InitTargetOptionsFromCodeGenFlags(TheTriple);
         Options.BinutilsVersion = llvm::TargetMachine::parseBinutilsVersion(BinutilsVersion);
-        Options.DisableIntegratedAS = NoIntegratedAssembler;
+        Options.DisableIntegratedAS = false;
+        // TODO: investigate
+        //Options.DisableIntegratedAS = NoIntegratedAssembler;
         Options.MCOptions.ShowMCEncoding = ShowMCEncoding;
         Options.MCOptions.AsmVerbose = AsmVerbose;
         Options.MCOptions.PreserveAsmComments = PreserveComments;
