@@ -3,7 +3,6 @@
 #include "mlir/Target/LLVMIR/Export.h"
 
 // for dump obj
-#include "llvm/ADT/Triple.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/CodeGen/CommandFlags.h"

@@ -8,7 +8,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Support/DebugCounter.h"
+#include "mlir/Debug/Counter.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/SourceMgr.h"
@@ -146,7 +146,7 @@ int main(int argc, char **argv)
     mlir::registerMLIRContextCLOptions();
     mlir::registerPassManagerCLOptions();
     mlir::registerDefaultTimingManagerCLOptions();
-    mlir::DebugCounter::registerCLOptions();
+    mlir::tracing::DebugCounter::registerCLOptions();
 
     // Register for Obj/ASM
     // Initialize targets first, so that --version shows registered targets.
@@ -169,7 +169,7 @@ int main(int argc, char **argv)
     llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(*Registry);
     llvm::initializeExpandReductionsPass(*Registry);
     llvm::initializeExpandVectorPredicationPass(*Registry);
-    llvm::initializeHardwareLoopsPass(*Registry);
+    llvm::initializeHardwareLoopsLegacyPass(*Registry);
     llvm::initializeTransformUtils(*Registry);
     llvm::initializeReplaceWithVeclibLegacyPass(*Registry);
     llvm::initializeTLSVariableHoistLegacyPassPass(*Registry);

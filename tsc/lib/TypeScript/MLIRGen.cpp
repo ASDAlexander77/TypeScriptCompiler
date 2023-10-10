@@ -54,6 +54,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
@@ -6996,7 +6997,7 @@ class MLIRGenImpl
                         .Case<mlir::StringAttr>([&](auto strAttr) {
                             auto intType = mlir::IntegerType::get(builder.getContext(), 32);
                             APInt iValue(32, 0);
-                            iValue = to_integer(strAttr.getValue(), iValue);
+                            iValue = llvm::to_integer(strAttr.getValue(), iValue);
                             return V(builder.create<mlir_ts::ConstantOp>(
                                 location, intType, builder.getIntegerAttr(intType, ~iValue)));
                         })                         

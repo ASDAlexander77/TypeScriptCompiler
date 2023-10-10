@@ -172,7 +172,7 @@ int registerMLIRDialects(mlir::ModuleOp module)
     return 0;
 }
 
-static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsigned sizeLevel)
+static std::optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsigned sizeLevel)
 {
     switch (optLevel)
     {
@@ -202,11 +202,11 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
 }
 
 std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(
-    llvm::Optional<unsigned> mbOptLevel, llvm::Optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine, CompileOptions &compileOptions)
+    std::optional<unsigned> mbOptLevel, std::optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine, CompileOptions &compileOptions)
 {
     return [mbOptLevel, mbSizeLevel, targetMachine, compileOptions](llvm::Module *m) -> llvm::Error
     {
-        llvm::Optional<llvm::OptimizationLevel> ol = mapToLevel(mbOptLevel.value(), mbSizeLevel.value());
+        std::optional<llvm::OptimizationLevel> ol = mapToLevel(mbOptLevel.value(), mbSizeLevel.value());
         if (!ol)
         {
             return llvm::make_error<llvm::StringError>(

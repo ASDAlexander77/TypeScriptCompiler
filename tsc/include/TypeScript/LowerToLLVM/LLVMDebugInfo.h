@@ -135,7 +135,8 @@ class LLVMDebugInfoHelper
                 }
                 else if (size == 8)
                 {
-                    diTypeAttr = LLVM::DIVoidResultTypeAttr::get(context);
+                    // TODO: review it
+                    //diTypeAttr = LLVM::DIVoidResultTypeAttr::get(context);
                     return;
                 }                
 
@@ -158,7 +159,8 @@ class LLVMDebugInfoHelper
                 diTypeAttr = getDIPointerType(llvmPointerType, mth.getElementType(type), file, line, scope);
             })
             .Default([&](auto type) { 
-                diTypeAttr = LLVM::DIVoidResultTypeAttr::get(context);
+                // TODO: review it                
+                //diTypeAttr = LLVM::DIVoidResultTypeAttr::get(context);
             });
 
         return diTypeAttr;
