@@ -3,6 +3,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 
 #include "mlir/InitAllDialects.h"
+#include "mlir/InitAllExtensions.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -195,8 +196,11 @@ int main(int argc, char **argv)
     }
 
     // If we aren't dumping the AST, then we are compiling with/to MLIR.
+    mlir::DialectRegistry registry;
+    //mlir::func::registerAllExtensions(registry);
+    registerAllExtensions(registry);
 
-    mlir::MLIRContext mlirContext;
+    mlir::MLIRContext mlirContext(registry);
     // Load our Dialect in this MLIR Context.
     mlirContext.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
     mlirContext.getOrLoadDialect<mlir::arith::ArithDialect>();
