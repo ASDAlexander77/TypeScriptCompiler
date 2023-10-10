@@ -143,12 +143,14 @@ class CastLogicHelper
         auto isInString = inType.dyn_cast<mlir_ts::StringType>();
         if (isInString && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
         {
-            return rewriter.create<mlir_ts::ParseIntOp>(loc, resLLVMType, in);
+            auto castIntOp = rewriter.create<mlir_ts::ParseIntOp>(loc, resType, in);
+            return rewriter.create<mlir_ts::DialectCastOp>(loc, resLLVMType, castIntOp);
         }
 
         if (isInString && (resLLVMType.isF32() || resLLVMType.isF64()))
         {
-            return rewriter.create<mlir_ts::ParseFloatOp>(loc, resLLVMType, in);
+            auto castNumberOp = rewriter.create<mlir_ts::ParseFloatOp>(loc, resType, in);
+            return rewriter.create<mlir_ts::DialectCastOp>(loc, resLLVMType, castNumberOp);
         }
 
         // array to ref of element
