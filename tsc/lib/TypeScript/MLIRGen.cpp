@@ -10814,7 +10814,12 @@ class MLIRGenImpl
         auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(
             MLIRHelper::getCallSiteLocation(callee, location),
             callee, operands);
-        return callIndirectOp.getResult(0);
+        if (callIndirectOp.getNumResults() > 0)
+        {
+            return callIndirectOp.getResult(0);
+        }
+
+        return mlir::success();
     }
 
     ValueOrLogicalResult mlirGen(NullLiteral nullLiteral, const GenContext &genContext)
