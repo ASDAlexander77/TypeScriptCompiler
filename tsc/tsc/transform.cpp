@@ -26,6 +26,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 
@@ -138,6 +139,7 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         pm.addPass(mlir::createConvertAsyncToLLVMPass());
 #endif
         pm.addPass(mlir::typescript::createLowerToLLVMPass(compileOptions));
+        pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
         if (!disableGC)
         {
             pm.addPass(mlir::typescript::createGCPass(compileOptions));
@@ -158,6 +160,7 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
 int registerMLIRDialects(mlir::ModuleOp module)
 {
     // Register the translation to LLVM IR with the MLIR context.
+    mlir::registerBuiltinDialectTranslation(*module->getContext());
     mlir::registerLLVMDialectTranslation(*module->getContext());
     mlir::typescript::registerTypeScriptDialectTranslation(*module->getContext());
 
