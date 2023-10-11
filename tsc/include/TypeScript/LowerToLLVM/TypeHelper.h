@@ -101,6 +101,11 @@ class TypeHelper
         return LLVM::LLVMPointerType::get(getI8Type());
     }
 
+    LLVM::LLVMPointerType getPtrType()
+    {
+        return LLVM::LLVMPointerType::get(context);
+    }
+
     LLVM::LLVMPointerType getI8PtrPtrType()
     {
         return LLVM::LLVMPointerType::get(LLVM::LLVMPointerType::get(getI8Type()));
