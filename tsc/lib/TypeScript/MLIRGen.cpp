@@ -9103,7 +9103,7 @@ class MLIRGenImpl
         auto expression = V(result);
 
         // default access <array>[index]
-        if (!conditinalAccess)
+        if (!conditinalAccess || conditinalAccess && expression.getType().isa<mlir_ts::OptionalType>())
         {
             auto result2 = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result2)
@@ -9120,7 +9120,8 @@ class MLIRGenImpl
                 EXIT_IF_FAILED_OR_NO_VALUE(result2)
                 auto argumentExpression = V(result2);
 
-                auto result3 = mlirGenElementAccess(location, expression, argumentExpression, conditinalAccess, genContext);
+                // conditinalAccess should be false here
+                auto result3 = mlirGenElementAccess(location, expression, argumentExpression, false, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result3)
                 auto value = V(result3);
 
