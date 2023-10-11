@@ -45,11 +45,11 @@
             }
         },
         {
-            "label": "CTest - All",
+            "label": "CTest - All - Debug",
             "type": "shell",
             "command": "ctest -C Debug -j16 --output-on-failure",
             "problemMatcher": [],
-            "detail": "CMake CTest - run all",
+            "detail": "CMake CTest - run all - Debug",
             "group": {
                 "kind": "test",
                 "isDefault": false
@@ -59,18 +59,18 @@
                     "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
                 }
             },
-            "linux" : {
+            "linux": {
                 "options": {
                     "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug"
                 }
             }
         },
         {
-            "label": "CTest - Failed",
+            "label": "CTest - Failed - Debug",
             "type": "shell",
             "command": "ctest -C Debug -j16 --rerun-failed --output-on-failure",
             "problemMatcher": [],
-            "detail": "CMake CTest - rerun failed",
+            "detail": "CMake CTest - rerun failed - Debug",
             "group": {
                 "kind": "test",
                 "isDefault": true
@@ -80,11 +80,53 @@
                     "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
                 }
             },
-            "linux" : {
+            "linux": {
                 "options": {
                     "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug"
                 }
             }
-        }
+        },
+        {
+            "label": "CTest - All - Release",
+            "type": "shell",
+            "command": "ctest -C Release -j16 --output-on-failure",
+            "problemMatcher": [],
+            "detail": "CMake CTest - run all - Release",
+            "group": {
+                "kind": "test",
+                "isDefault": false
+            },
+            "windows": {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-release"
+                }
+            },
+            "linux": {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-release"
+                }
+            }
+        },
+        {
+            "label": "CTest - Failed - Release",
+            "type": "shell",
+            "command": "ctest -C Release -j16 --rerun-failed --output-on-failure",
+            "problemMatcher": [],
+            "detail": "CMake CTest - rerun failed - Release",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "windows": {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-release"
+                }
+            },
+            "linux": {
+                "options": {
+                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-release"
+                }
+            }
+        }        
     ]
 }
