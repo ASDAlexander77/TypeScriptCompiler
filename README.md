@@ -48,7 +48,7 @@ tsc --opt --emit=exe <file>.ts
 - [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
 # Planning
-- [x] Migrating to LLVM 16.0.6
+- [ ] Migrating to LLVM 17.0.2
 - [x] Shared libraries
 - [ ] JavaScript Built-in classes library
 
