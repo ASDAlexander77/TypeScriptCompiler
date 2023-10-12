@@ -15,7 +15,7 @@ env:
   BUILD_TYPE: Release
   CACHE_VERSION: v7
   LLVM_VERSION: 17
-  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/ux7mfco64i5fvsev50ali/llvm_17_release.zip?dl=1"
+  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/ux7mfco64i5fvsev50ali/llvm_17_release.zip?rlkey=o03vi1skezj4me9qh20rsxu93&dl=1"
   
 jobs:
   build:
