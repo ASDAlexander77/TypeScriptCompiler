@@ -11,9 +11,9 @@ env:
   BUILD_TYPE: Release
   CACHE_VERSION: v7
   LLVM_VERSION: 17
-  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/ux7mfco64i5fvsev50ali/llvm_17_release.zip?rlkey=o03vi1skezj4me9qh20rsxu93&dl=1"
-  LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/dp89m4ngxhc9wsxylo5qb/llvm_17_release.tgz?rlkey=o03vi1skezj4me9qh20rsxu93%26dl=1"
-  LLVM_UB20_TARGZFILE: "https://www.dropbox.com/scl/fi/yxfwjbni0pbgitekcgryt/llvm_17_release_UB20.tgz?rlkey=o03vi1skezj4me9qh20rsxu93%26dl=1"
+  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/ux7mfco64i5fvsev50ali/llvm_17_release.zip?rlkey=ijghbwhpsuoome38pc4fmzt3a&dl=1"
+  LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/dp89m4ngxhc9wsxylo5qb/llvm_17_release.tgz?rlkey=o03vi1skezj4me9qh20rsxu93&dl=1"
+  LLVM_UB20_TARGZFILE: "https://www.dropbox.com/scl/fi/yxfwjbni0pbgitekcgryt/llvm_17_release_UB20.tgz?rlkey=cwh0gqvx5ymejwjzgvth0w4ww&dl=1"
 
 jobs:
   build_on_windows:
@@ -206,7 +206,7 @@ jobs:
         shell: sh
         run: |
             if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
-                curl --insecure -L ${{ env.LLVM_TARGZFILE }} --output llvm_${{ env.LLVM_VERSION }}_release.tgz
+                curl --insecure -L "${{ env.LLVM_TARGZFILE }}" --output llvm_${{ env.LLVM_VERSION }}_release.tgz
             fi
 
       - name: UnZip 3rd party - LLVM
@@ -358,7 +358,7 @@ jobs:
         shell: sh
         run: |
             if test ! -f "llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz"; then
-                curl --insecure -L ${{ env.LLVM_UB20_TARGZFILE }} --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
+                curl --insecure -L "${{ env.LLVM_UB20_TARGZFILE }}" --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
             fi
 
       - name: UnZip 3rd party - LLVM
