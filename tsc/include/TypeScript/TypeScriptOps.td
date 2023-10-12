@@ -260,6 +260,18 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
     /// executed.
     ArrayRef<Type> getCallableResults() { return getFunctionType().getResults(); }
 
+    /// Returns the argument attributes for all callable region arguments or
+    /// null if there are none.
+    ArrayAttr getCallableArgAttrs() {
+        return getArgAttrs().value_or(nullptr);
+    }
+
+    /// Returns the result attributes for all callable region results or
+    /// null if there are none.
+    ArrayAttr getCallableResAttrs() {
+        return getResAttrs().value_or(nullptr);
+    }
+
     //===------------------------------------------------------------------===//
     // RegionKindInterface Methods
     //===------------------------------------------------------------------===//
@@ -385,7 +397,7 @@ def TypeScript_ParseIntOp : TypeScript_Op<"parseInt"> {
   }];
 
   let arguments = (ins AnyType:$arg, Optional<I32>:$base);
-  let results = (outs I32:$res);
+  let results = (outs AnyInteger:$res);
 }
 
 def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
@@ -620,6 +632,8 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
 
     /// Return the callee of this operation.
     CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
+
+    void setCalleeFromCallable(CallInterfaceCallable callee) { (*this)->setAttr("callee", callee.get<SymbolRefAttr>()); }
   }];
 
   let assemblyFormat = [{
@@ -677,6 +691,10 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
 
     /// Return the callee of this operation.
     CallInterfaceCallable getCallableForCallee() { return getCallee(); }
+
+    void setCalleeFromCallable(CallInterfaceCallable callee) {
+      setOperand(0, callee.get<Value>());
+    }
   }];
 
   let hasCanonicalizer = 1;
@@ -766,6 +784,8 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
 
     /// Return the callee of this operation.
     CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
+
+    void setCalleeFromCallable(CallInterfaceCallable callee) { (*this)->setAttr("callee", callee.get<SymbolRefAttr>()); }
   }];
 
   let assemblyFormat = [{
@@ -801,6 +821,10 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
 
     /// Return the callee of this operation.
     CallInterfaceCallable getCallableForCallee() { return getOperand(0); }
+
+    void setCalleeFromCallable(CallInterfaceCallable callee) {
+      setOperand(0, callee.get<Value>());
+    }    
   }];
 
   let assemblyFormat = [{
@@ -837,6 +861,10 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
 
     /// Return the callee of this operation.
     CallInterfaceCallable getCallableForCallee() { return getCallee(); }
+
+    void setCalleeFromCallable(CallInterfaceCallable callee) {
+      setOperand(0, callee.get<Value>());
+    }    
   }];
 
   let assemblyFormat = [{
@@ -1643,7 +1671,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
   let regions = (region SizedRegion<1>:$cond, AnyRegion:$body);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
+    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
     mlir::Region &getLoopBody() { return getBody(); }    
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) 
@@ -1672,7 +1700,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
   let regions = (region AnyRegion:$body, SizedRegion<1>:$cond);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
+    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
     mlir::Region &getLoopBody() { return getBody(); }
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) 
@@ -1698,7 +1726,7 @@ def TypeScript_ForOp : TypeScript_Op<"For",
   let regions = (region SizedRegion<1>:$cond, AnyRegion:$body, SizedRegion<1>:$incr);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
+    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
     mlir::Region &getLoopBody() { return getBody(); }
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) || isEmpty(getCond()) 
@@ -1841,7 +1869,7 @@ def TypeScript_TryOp : TypeScript_Op<"Try",
   let regions = (region AnyRegion:$body, AnyRegion:$catches, AnyRegion:$finallyBlock);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
+    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
   }];
 
   let assemblyFormat = "$body $catches $finallyBlock attr-dict";
@@ -2051,7 +2079,7 @@ def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",
       [{ attr-dict `->` type($results) `:` $body }];
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(Optional<unsigned int> index);
+    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
 
     Region &getBodyRegion() {
       return getOperation()->getRegion(0);

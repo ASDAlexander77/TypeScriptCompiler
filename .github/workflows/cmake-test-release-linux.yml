@@ -13,8 +13,9 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v6
-  LLVM_VERSION: 16
+  CACHE_VERSION: v7
+  LLVM_VERSION: 17
+  LLVM_17_TARGZFILE: "https://www.dropbox.com/scl/fi/dp89m4ngxhc9wsxylo5qb/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1"
 
 jobs:
   build:
@@ -66,7 +67,7 @@ jobs:
       shell: sh
       run: |
         if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
-            curl --insecure -L https://www.dropbox.com/s/q5hpkp5hasj6cvc/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release.tgz
+            curl --insecure -L ${{ env.LLVM_17_TARGZFILE }} --output llvm_${{ env.LLVM_VERSION }}_release.tgz
         fi
 
     - name: UnZip 3rd party - LLVM

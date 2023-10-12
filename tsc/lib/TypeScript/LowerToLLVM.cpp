@@ -238,9 +238,10 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
         auto loc = op->getLoc();
 
         auto i8PtrType = th.getI8PtrType();
+        auto ptrType = th.getPtrType();
 
         // Get a symbol reference to the printf function, inserting it if necessary.
-        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(rewriter.getI32Type(), i8PtrType, false));
+        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(rewriter.getI32Type(), ptrType, false));
 
         auto strType = mlir_ts::StringType::get(rewriter.getContext());
 
@@ -270,14 +271,16 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
                 rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values, rewriter.getBoolAttr(true));
 
             mlir::Value valueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(strType), result);
+            mlir::Value valueAsPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, valueAsLLVMType);
 
-            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsLLVMType);
+            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsPtr);
 
             rewriter.create<LLVM::StackRestoreOp>(loc, stack);
         }
         else
         {
-            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, values.front());
+            mlir::Value valueAsPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, values.front());
+            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsPtr);
         }
 
         // Notify the rewriter that this operation has been removed.
@@ -4185,7 +4188,7 @@ struct GetThisOpLowering : public TsLlvmPattern<mlir_ts::GetThisOp>
 
         auto thisValCasted = rewriter.create<LLVM::BitcastOp>(loc, llvmThisType, thisVal);
 
-        rewriter.replaceOp(getThisOp, {thisValCasted});
+        rewriter.replaceOp(getThisOp, thisValCasted);
 
         return success();
     }
@@ -4860,7 +4863,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
 
         LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
-        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, result);
+        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, false, result);
         auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
         return llvmPtrType;
     });
@@ -4881,7 +4884,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
 
         LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
-        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, result);
+        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, false, result);
         auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
         return llvmPtrType;
     });
@@ -4902,7 +4905,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
 
         LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
-        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, result);
+        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, false, result);
         auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
         // return llvmPtrType;
 
@@ -4928,7 +4931,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
 
         LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
-        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, result);
+        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, false, result);
         auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
         // return llvmPtrType;
 
@@ -5069,7 +5072,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     /*
     converter.addSourceMaterialization(
-        [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {
+        [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> std::optional<mlir::Value> {
             if (inputs.size() != 1)
                 return std::nullopt;
 
@@ -5080,7 +5083,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
             //return inputs[0];
         });
     converter.addTargetMaterialization(
-        [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> Optional<mlir::Value> {
+        [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> std::optional<mlir::Value> {
             if (inputs.size() != 1)
                 return std::nullopt;
 

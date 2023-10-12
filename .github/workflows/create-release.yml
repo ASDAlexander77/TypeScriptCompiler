@@ -9,8 +9,11 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v6
-  LLVM_VERSION: 16
+  CACHE_VERSION: v7
+  LLVM_VERSION: 17
+  LLVM_17_ZIPFILE: "https://www.dropbox.com/scl/fi/ux7mfco64i5fvsev50ali/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1"
+  LLVM_17_TARGZFILE: "https://www.dropbox.com/scl/fi/dp89m4ngxhc9wsxylo5qb/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1"
+  LLVM_17_UB20_TARGZFILE: "https://www.dropbox.com/scl/fi/yxfwjbni0pbgitekcgryt/llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz?dl=1"
 
 jobs:
   build_on_windows:
@@ -62,7 +65,7 @@ jobs:
       - name: Download 3rd party - LLVM
         continue-on-error: true
         shell: pwsh
-        run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
+        run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -SkipCertificateCheck -Uri "${{ env.LLVM_17_ZIPFILE }}" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
 
       - name: UnZip 3rd party - LLVM
         continue-on-error: false
@@ -203,7 +206,7 @@ jobs:
         shell: sh
         run: |
             if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
-                curl --insecure -L https://www.dropbox.com/s/q5hpkp5hasj6cvc/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release.tgz
+                curl --insecure -L ${{ env.LLVM_17_TARGZFILE }} --output llvm_${{ env.LLVM_VERSION }}_release.tgz
             fi
 
       - name: UnZip 3rd party - LLVM
@@ -355,7 +358,7 @@ jobs:
         shell: sh
         run: |
             if test ! -f "llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz"; then
-                curl --insecure -L https://www.dropbox.com/s/9vr0dabs0doimej/llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz?dl=1 --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
+                curl --insecure -L ${{ env.LLVM_17_UB20_TARGZFILE }} --output llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
             fi
 
       - name: UnZip 3rd party - LLVM

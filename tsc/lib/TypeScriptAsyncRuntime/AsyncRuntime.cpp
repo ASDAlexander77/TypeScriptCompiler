@@ -14,6 +14,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#define MLIR_ASYNC_RUNTIME_EXPORT
 #include "mlir/ExecutionEngine/AsyncRuntime.h"
 
 #ifdef MLIR_ASYNCRUNTIME_DEFINE_FUNCTIONS

@@ -54,6 +54,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
@@ -4864,6 +4865,7 @@ class MLIRGenImpl
     }
 
     // TODO: put into MLIRCodeLogicHelper
+    // TODO: we have a lot of IfOp - create 1 logic for conditional values
     ValueOrLogicalResult conditionalValue(mlir::Location location, mlir::Value condValue, 
         std::function<ValueOrLogicalResult(const GenContext &)> trueValue, 
         std::function<ValueOrLogicalResult(mlir::Type trueValueType, const GenContext &)> falseValue, 
@@ -6996,7 +6998,7 @@ class MLIRGenImpl
                         .Case<mlir::StringAttr>([&](auto strAttr) {
                             auto intType = mlir::IntegerType::get(builder.getContext(), 32);
                             APInt iValue(32, 0);
-                            iValue = to_integer(strAttr.getValue(), iValue);
+                            iValue = llvm::to_integer(strAttr.getValue(), iValue);
                             return V(builder.create<mlir_ts::ConstantOp>(
                                 location, intType, builder.getIntegerAttr(intType, ~iValue)));
                         })                         
@@ -9094,15 +9096,46 @@ class MLIRGenImpl
     {
         auto location = loc(elementAccessExpression);
 
+        auto conditinalAccess = !!elementAccessExpression->questionDotToken;
+
         auto result = mlirGen(elementAccessExpression->expression.as<Expression>(), genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expression = V(result);
 
-        auto result2 = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(result2)
-        auto argumentExpression = V(result2);
+        // default access <array>[index]
+        if (!conditinalAccess || conditinalAccess && expression.getType().isa<mlir_ts::OptionalType>())
+        {
+            auto result2 = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result2)
+            auto argumentExpression = V(result2);
 
-        return mlirGenElementAccess(location, expression, argumentExpression, !!elementAccessExpression->questionDotToken, genContext);
+            return mlirGenElementAccess(location, expression, argumentExpression, conditinalAccess, genContext);
+        }
+
+        // <array>?.[index] access
+        CAST_A(condValue, location, getBooleanType(), expression, genContext);
+        return conditionalValue(location, condValue, 
+            [&](auto genContext) { 
+                auto result2 = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result2)
+                auto argumentExpression = V(result2);
+
+                // conditinalAccess should be false here
+                auto result3 = mlirGenElementAccess(location, expression, argumentExpression, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result3)
+                auto value = V(result3);
+
+                auto optValue = 
+                    value.getType().isa<mlir_ts::OptionalType>()
+                        ? value
+                        : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+                return ValueOrLogicalResult(optValue); 
+            }, 
+            [&](mlir::Type trueValueType, auto genContext) { 
+                auto optUndefValue = builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType);
+                return ValueOrLogicalResult(optUndefValue); 
+            }, 
+            genContext);
     }
 
     ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext)
@@ -10813,7 +10846,12 @@ class MLIRGenImpl
         auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(
             MLIRHelper::getCallSiteLocation(callee, location),
             callee, operands);
-        return callIndirectOp.getResult(0);
+        if (callIndirectOp.getNumResults() > 0)
+        {
+            return callIndirectOp.getResult(0);
+        }
+
+        return mlir::success();
     }
 
     ValueOrLogicalResult mlirGen(NullLiteral nullLiteral, const GenContext &genContext)

@@ -13,8 +13,9 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v6
-  LLVM_VERSION: 16
+  CACHE_VERSION: v7
+  LLVM_VERSION: 17
+  LLVM_17_ZIPFILE: "https://www.dropbox.com/scl/fi/ux7mfco64i5fvsev50ali/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1"
   
 jobs:
   build:
@@ -64,7 +65,7 @@ jobs:
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: pwsh
-      run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.dropbox.com/s/zgs37sk9lz3tquu/llvm_${{ env.LLVM_VERSION }}_release.zip?dl=1" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
+      run: if (!(Test-Path -Path "llvm_${{ env.LLVM_VERSION }}_release.zip")) { Invoke-WebRequest -SkipCertificateCheck -Uri "${{ env.LLVM_17_ZIPFILE }}" -OutFile "llvm_${{ env.LLVM_VERSION }}_release.zip" }
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false

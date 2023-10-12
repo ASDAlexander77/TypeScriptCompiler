@@ -1275,7 +1275,7 @@ static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op, Region
     mlir::Block *block = &region.front();
     Operation *terminator = block->getTerminator();
     ValueRange results = terminator->getOperands();
-    rewriter.mergeBlockBefore(block, op, blockArgs);
+    rewriter.inlineBlockBefore(block, op, blockArgs);
     rewriter.replaceOp(op, results);
     rewriter.eraseOp(terminator);
 }
@@ -1285,7 +1285,7 @@ static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op, Region
 /// during the flow of control. `operands` is a set of optional attributes that
 /// correspond to a constant value for each operand, or null if that operand is
 /// not a constant.
-void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
+void mlir_ts::IfOp::getSuccessorRegions(std::optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
 {
     // The `then` and the `else` region branch back to the parent operation.
     if (index)
@@ -1305,7 +1305,7 @@ void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attri
     bool condition;
     if (auto condAttr = operands.front().dyn_cast_or_null<IntegerAttr>())
     {
-        condition = condAttr.getValue().isOneValue();
+        condition = condAttr.getValue().isOne();
     }
     else
     {
@@ -1323,14 +1323,14 @@ void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attri
 // WhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::WhileOp::getSuccessorEntryOperands(Optional<unsigned int> index)
+OperandRange mlir_ts::WhileOp::getSuccessorEntryOperands(std::optional<unsigned int> index)
 {
     assert((!index || *index == 0) && "WhileOp is expected to branch only to the first region");
 
     return getInits();
 }
 
-void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
+void mlir_ts::WhileOp::getSuccessorRegions(std::optional<unsigned> index, ArrayRef<Attribute> operands,
                                            SmallVectorImpl<RegionSuccessor> &regions)
 {
     (void)operands;
@@ -1356,7 +1356,7 @@ void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<At
 // DoWhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(Optional<unsigned int> index)
+OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(std::optional<unsigned int> index)
 {
     // TODO: review it
     assert((!index || *index == 1) && "DoWhileOp is expected to branch only to the first region");
@@ -1364,7 +1364,7 @@ OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(Optional<unsigned int
     return getInits();
 }
 
-void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
+void mlir_ts::DoWhileOp::getSuccessorRegions(std::optional<unsigned> index, ArrayRef<Attribute> operands,
                                              SmallVectorImpl<RegionSuccessor> &regions)
 {
     (void)operands;
@@ -1391,14 +1391,14 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<
 // ForOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::ForOp::getSuccessorEntryOperands(Optional<unsigned int> index)
+OperandRange mlir_ts::ForOp::getSuccessorEntryOperands(std::optional<unsigned int> index)
 {
     assert((!index || *index == 0) && "ForOp is expected to branch only to the first region");
 
     return getInits();
 }
 
-void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
+void mlir_ts::ForOp::getSuccessorRegions(std::optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
 {
     (void)operands;
 
@@ -1425,7 +1425,7 @@ void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attr
 // SwitchOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::SwitchOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
+void mlir_ts::SwitchOp::getSuccessorRegions(std::optional<unsigned> index, ArrayRef<Attribute> operands,
                                             SmallVectorImpl<RegionSuccessor> &regions)
 {
     regions.push_back(RegionSuccessor(&getCasesRegion()));
@@ -1573,14 +1573,14 @@ void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type t
 // TryOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::TryOp::getSuccessorEntryOperands(Optional<unsigned int> index)
+OperandRange mlir_ts::TryOp::getSuccessorEntryOperands(std::optional<unsigned int> index)
 {
     assert((!index || *index < 3) && "TryOp is expected to branch only into 3 regions");
 
     return getOperation()->getOperands();
 }
 
-void mlir_ts::TryOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
+void mlir_ts::TryOp::getSuccessorRegions(std::optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
 {
     regions.push_back(RegionSuccessor(&getCatches()));
     regions.push_back(RegionSuccessor(&getFinallyBlock()));
@@ -1590,7 +1590,7 @@ void mlir_ts::TryOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attr
 // LabelOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::LabelOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
+void mlir_ts::LabelOp::getSuccessorRegions(std::optional<unsigned> index, ArrayRef<Attribute> operands,
                                            SmallVectorImpl<RegionSuccessor> &regions)
 {
     regions.push_back(RegionSuccessor(&getLabelRegion()));
@@ -1618,14 +1618,14 @@ void mlir_ts::LabelOp::addMergeBlock()
 // BodyInternalOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::BodyInternalOp::getSuccessorEntryOperands(Optional<unsigned int> index)
+OperandRange mlir_ts::BodyInternalOp::getSuccessorEntryOperands(std::optional<unsigned int> index)
 {
     assert((!index || *index == 0) && "BodyInternalOp is expected to branch only to the first region");
 
     return getODSOperands(0);
 }
 
-void mlir_ts::BodyInternalOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
+void mlir_ts::BodyInternalOp::getSuccessorRegions(std::optional<unsigned> index, ArrayRef<Attribute> operands,
                                                   SmallVectorImpl<RegionSuccessor> &regions)
 {
     regions.push_back(RegionSuccessor(&getBody()));

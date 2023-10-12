@@ -464,7 +464,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             auto llvmType = typesRange[position];
 
             // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
-            auto itemValue = rewriter.create<mlir::arith::ConstantOp>(loc, llvmType, item);
+            auto itemValue = rewriter.create<mlir::arith::ConstantOp>(loc, llvmType, cast<mlir::TypedAttr>(item));
             structVal = rewriter.create<LLVM::InsertValueOp>(loc, structVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
         }
 

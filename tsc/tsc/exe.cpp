@@ -418,7 +418,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     if (win && (shared || !disableGC))
     {
         //args.push_back("-Wl,-nodefaultlib:libcmt");
-        removeCommandArgs(c.get(), {"defaultlib:libcmt"});
+        //removeCommandArgs(c.get(), {"defaultlib:libcmt"});
     }
 
     if (wasm)

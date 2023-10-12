@@ -26,6 +26,7 @@
 #include "mlir/Pass/PassManager.h"
 #include "mlir/InitAllDialects.h"
 #include "mlir/InitAllPasses.h"
+#include "mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 
@@ -138,6 +139,7 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         pm.addPass(mlir::createConvertAsyncToLLVMPass());
 #endif
         pm.addPass(mlir::typescript::createLowerToLLVMPass(compileOptions));
+        pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
         if (!disableGC)
         {
             pm.addPass(mlir::typescript::createGCPass(compileOptions));
@@ -158,6 +160,7 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
 int registerMLIRDialects(mlir::ModuleOp module)
 {
     // Register the translation to LLVM IR with the MLIR context.
+    mlir::registerBuiltinDialectTranslation(*module->getContext());
     mlir::registerLLVMDialectTranslation(*module->getContext());
     mlir::typescript::registerTypeScriptDialectTranslation(*module->getContext());
 
@@ -172,7 +175,7 @@ int registerMLIRDialects(mlir::ModuleOp module)
     return 0;
 }
 
-static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsigned sizeLevel)
+static std::optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, unsigned sizeLevel)
 {
     switch (optLevel)
     {
@@ -202,11 +205,11 @@ static llvm::Optional<llvm::OptimizationLevel> mapToLevel(unsigned optLevel, uns
 }
 
 std::function<llvm::Error(llvm::Module *)> makeCustomPassesWithOptimizingTransformer(
-    llvm::Optional<unsigned> mbOptLevel, llvm::Optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine, CompileOptions &compileOptions)
+    std::optional<unsigned> mbOptLevel, std::optional<unsigned> mbSizeLevel, llvm::TargetMachine *targetMachine, CompileOptions &compileOptions)
 {
     return [mbOptLevel, mbSizeLevel, targetMachine, compileOptions](llvm::Module *m) -> llvm::Error
     {
-        llvm::Optional<llvm::OptimizationLevel> ol = mapToLevel(mbOptLevel.value(), mbSizeLevel.value());
+        std::optional<llvm::OptimizationLevel> ol = mapToLevel(mbOptLevel.value(), mbSizeLevel.value());
         if (!ol)
         {
             return llvm::make_error<llvm::StringError>(

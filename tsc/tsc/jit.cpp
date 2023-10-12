@@ -129,7 +129,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         for (auto &exportSymbol : exportSymbols)
         {
             LLVM_DEBUG(llvm::dbgs() << "loading symbol: " << exportSymbol.getKey() << "\n";);
-            symbolMap[interner(exportSymbol.getKey())] = llvm::JITEvaluatedSymbol::fromPointer(exportSymbol.getValue());
+            symbolMap[interner(exportSymbol.getKey())] = { llvm::orc::ExecutorAddr::fromPtr(exportSymbol.getValue()), llvm::JITSymbolFlags::Exported };
         }
 
         if (!disableGC && symbolMap.count(interner("GC_init")) == 0)

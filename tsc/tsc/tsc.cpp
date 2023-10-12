@@ -3,12 +3,13 @@
 #include "TypeScript/TypeScriptDialect.h"
 
 #include "mlir/InitAllDialects.h"
+#include "mlir/InitAllExtensions.h"
 #include "mlir/InitAllPasses.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/Pass/PassManager.h"
-#include "mlir/Support/DebugCounter.h"
+#include "mlir/Debug/Counter.h"
 
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/SourceMgr.h"
@@ -146,7 +147,7 @@ int main(int argc, char **argv)
     mlir::registerMLIRContextCLOptions();
     mlir::registerPassManagerCLOptions();
     mlir::registerDefaultTimingManagerCLOptions();
-    mlir::DebugCounter::registerCLOptions();
+    mlir::tracing::DebugCounter::registerCLOptions();
 
     // Register for Obj/ASM
     // Initialize targets first, so that --version shows registered targets.
@@ -169,7 +170,7 @@ int main(int argc, char **argv)
     llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(*Registry);
     llvm::initializeExpandReductionsPass(*Registry);
     llvm::initializeExpandVectorPredicationPass(*Registry);
-    llvm::initializeHardwareLoopsPass(*Registry);
+    llvm::initializeHardwareLoopsLegacyPass(*Registry);
     llvm::initializeTransformUtils(*Registry);
     llvm::initializeReplaceWithVeclibLegacyPass(*Registry);
     llvm::initializeTLSVariableHoistLegacyPassPass(*Registry);
@@ -195,8 +196,11 @@ int main(int argc, char **argv)
     }
 
     // If we aren't dumping the AST, then we are compiling with/to MLIR.
+    mlir::DialectRegistry registry;
+    //mlir::func::registerAllExtensions(registry);
+    registerAllExtensions(registry);
 
-    mlir::MLIRContext mlirContext;
+    mlir::MLIRContext mlirContext(registry);
     // Load our Dialect in this MLIR Context.
     mlirContext.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
     mlirContext.getOrLoadDialect<mlir::arith::ArithDialect>();

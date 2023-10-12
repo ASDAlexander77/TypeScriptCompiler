@@ -595,6 +595,8 @@ def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage", [IsMutable]> {
     LogicalResult setFields(::llvm::ArrayRef<::mlir::typescript::FieldInfo> newFields);
   }];
 
+  let storageClass = "ClassStorageTypeStorage";
+  let storageNamespace = "mlir::typescript::detail";
   let genStorageClass = 0;
 }
 
