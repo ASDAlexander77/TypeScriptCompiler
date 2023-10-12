@@ -15,7 +15,7 @@ env:
   BUILD_TYPE: Release
   CACHE_VERSION: v7
   LLVM_VERSION: 17
-  LLVM_17_TARGZFILE: "https://www.dropbox.com/scl/fi/dp89m4ngxhc9wsxylo5qb/llvm_${{ env.LLVM_VERSION }}_release.tgz?dl=1"
+  LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/dp89m4ngxhc9wsxylo5qb/llvm_17_release.tgz?dl=1"
 
 jobs:
   build:
@@ -67,7 +67,7 @@ jobs:
       shell: sh
       run: |
         if test ! -f "llvm_${{ env.LLVM_VERSION }}_release.tgz"; then
-            curl --insecure -L ${{ env.LLVM_17_TARGZFILE }} --output llvm_${{ env.LLVM_VERSION }}_release.tgz
+            curl --insecure -L ${{ env.LLVM_TARGZFILE }} --output llvm_${{ env.LLVM_VERSION }}_release.tgz
         fi
 
     - name: UnZip 3rd party - LLVM
