@@ -9,8 +9,8 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new 
-- CPU supported list:
-  Added ``ARM`` and ``AArch64``
+- Migrated to LLVM 17.0.2
+
 - Literal Type Widening
 ```TypeScript
 function main()
@@ -48,7 +48,7 @@ tsc --opt --emit=exe <file>.ts
 - [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
 # Planning
-- [ ] Migrating to LLVM 17.0.2
+- [x] Migrating to LLVM 17.0.2
 - [x] Shared libraries
 - [ ] JavaScript Built-in classes library
 
