@@ -1636,7 +1636,7 @@ auto Scanner::isIdentifierText(safe_string &name, ScriptTarget languageVersion, 
     return true;
 }
 
-auto Scanner::error(DiagnosticMessage message, number errPos, number length) -> void
+auto Scanner::error(DiagnosticMessage message, number errPos, number length, string arg0) -> void
 {
     if (errPos < 0)
     {
@@ -1647,7 +1647,7 @@ auto Scanner::error(DiagnosticMessage message, number errPos, number length) -> 
     {
         auto oldPos = pos;
         pos = errPos;
-        onError(message, length);
+        onError(message, length, arg0);
         pos = oldPos;
     }
 }
@@ -1703,10 +1703,46 @@ auto Scanner::scanNumberFragment() -> string
     return result + text.substring(start, pos);
 }
 
-auto Scanner::scanNumber() -> ScanResult
+auto Scanner::scanNumber() -> SyntaxKind
 {
     auto start = pos;
-    auto mainFragment = scanNumberFragment();
+    string mainFragment;
+    if (text[pos] == CharacterCodes::_0) {
+        pos++;
+        if (text[pos] == CharacterCodes::_) {
+            tokenFlags |= TokenFlags::ContainsSeparator | TokenFlags::ContainsInvalidSeparator;
+            error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+            // treat it as a normal number literal
+            pos--;
+            mainFragment = scanNumberFragment();
+        }
+        // Separators are not allowed in the below cases
+        else if (!scanDigits()) {
+            // NonOctalDecimalIntegerLiteral, emit error later
+            // Separators in decimal and exponent parts are still allowed according to the spec
+            tokenFlags |= TokenFlags::ContainsLeadingZero;
+            mainFragment = tokenValue;
+        }
+        else if (tokenValue.empty()) {
+            // a single zero
+            mainFragment = S("0");
+        }
+        else {
+            // LegacyOctalIntegerLiteral
+            tokenValue = to_number_base(tokenValue, 8);
+            tokenFlags |= TokenFlags::Octal;
+            auto withMinus = token == SyntaxKind::MinusToken;
+            // TODO: finish it
+            string literal = (withMinus ? S("-") : S("")) + S("0o") + tokenValue;
+            if (withMinus) start--;
+            error(data::DiagnosticMessage(Diagnostics::Octal_literals_are_not_allowed_Use_the_syntax_0), start, pos - start, literal);
+            return SyntaxKind::NumericLiteral;
+        }
+    }
+    else {
+        mainFragment = scanNumberFragment();
+    }
+
     string decimalFragment;
     string scientificFragment;
     if (text[pos] == CharacterCodes::dot)

@@ -100,17 +100,9 @@ static void error(string msg)
     std::wcerr << msg;
 }
 
-struct ScanResult
-{
-    ScanResult() = default;
-
-    SyntaxKind kind;
-    string value;
-};
-
 template <typename T, typename U> using cb_type = std::function<U(number, number, SyntaxKind, boolean, T, U)>;
 
-using ErrorCallback = std::function<void(DiagnosticMessage, number)>;
+using ErrorCallback = std::function<void(DiagnosticMessage, number, string)>;
 
 template <typename T> auto identity(T x, number i) -> T
 {
@@ -574,11 +566,11 @@ class Scanner
     auto isIdentifierText(safe_string &name, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard)
         -> boolean;
 
-    auto error(DiagnosticMessage message, number errPos = -1, number length = 0) -> void;
+    auto error(DiagnosticMessage message, number errPos = -1, number length = 0, string arg0 = "") -> void;
 
     auto scanNumberFragment() -> string;
 
-    auto scanNumber() -> ScanResult;
+    auto scanNumber() -> SyntaxKind;
 
     auto checkForIdentifierStartAfterNumericLiteral(number numericStart, bool isScientific = false) -> void;
 
