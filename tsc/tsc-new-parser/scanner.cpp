@@ -1496,7 +1496,7 @@ auto Scanner::isConflictMarkerTrivia(safe_string &text, number pos) -> boolean
     return false;
 }
 
-auto Scanner::scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number)> error)
+auto Scanner::scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number, string)> error)
     -> number
 {
     if (error)
@@ -2046,7 +2046,7 @@ auto Scanner::scanTemplateAndSetTokenValue(boolean shouldEmitInvalidEscapeError)
     return resultingToken;
 }
 
-string fromCharCode(int code)
+inline string fromCharCode(int code)
 {
     string s;
     s.push_back(code);
@@ -2414,29 +2414,42 @@ auto Scanner::checkBigIntSuffix() -> SyntaxKind
 
 auto Scanner::scan() -> SyntaxKind
 {
-    startPos = pos;
+    fullStartPos = pos;
     tokenFlags = TokenFlags::None;
     auto asteriskSeen = false;
     while (true)
     {
-        tokenPos = pos;
+        tokenStart = pos;
         if (pos >= end)
         {
             return token = SyntaxKind::EndOfFileToken;
         }
-        auto ch = codePointAt(text, pos);
 
-        // Special handling for shebang
-        if (ch == CharacterCodes::hash && pos == 0 && isShebangTrivia(text, pos))
-        {
-            pos = scanShebangTrivia(text, pos);
-            if (_skipTrivia)
-            {
-                continue;
+        auto ch = codePointAt(text, pos);
+        if (pos == 0) {
+            // If a file wasn't valid text at all, it will usually be apparent at
+            // position 0 because UTF-8 decode will fail and produce U+FFFD.
+            // If that happens, just issue one error and refuse to try to scan further;
+            // this is likely a binary file that cannot be parsed
+            if (ch == CharacterCodes::replacementCharacter) {
+                // Jump to the end of the file and fail.
+                error(_E(Diagnostics::File_appears_to_be_binary));
+                pos = end;
+                return token = SyntaxKind::NonTextFileMarkerTrivia;
             }
-            else
+
+            // Special handling for shebang
+            if (ch == CharacterCodes::hash && isShebangTrivia(text, pos))
             {
-                return token = SyntaxKind::ShebangTrivia;
+                pos = scanShebangTrivia(text, pos);
+                if (_skipTrivia)
+                {
+                    continue;
+                }
+                else
+                {
+                    return token = SyntaxKind::ShebangTrivia;
+                }
             }
         }
 
@@ -2514,7 +2527,7 @@ auto Scanner::scan() -> SyntaxKind
             tokenValue = scanString();
             return token = SyntaxKind::StringLiteral;
         case CharacterCodes::backtick:
-            return token = scanTemplateAndSetTokenValue(/* isTaggedTemplate */ false);
+            return token = scanTemplateAndSetTokenValue(/*shouldEmitInvalidEscapeError*/ false);
         case CharacterCodes::percent:
             if (text[pos + 1] == CharacterCodes::equals)
             {
@@ -2592,7 +2605,7 @@ auto Scanner::scan() -> SyntaxKind
         case CharacterCodes::dot:
             if (isDigit(text[pos + 1]))
             {
-                tokenValue = scanNumber().value;
+                scanNumber();
                 return token = SyntaxKind::NumericLiteral;
             }
             if (text[pos + 1] == CharacterCodes::dot && text[pos + 2] == CharacterCodes::dot)
@@ -2617,7 +2630,7 @@ auto Scanner::scan() -> SyntaxKind
                 }
 
                 commentDirectives =
-                    appendIfCommentDirective(commentDirectives, text.substring(tokenPos, pos), commentDirectiveRegExSingleLine, tokenPos);
+                    appendIfCommentDirective(commentDirectives, text.substring(tokenStart, pos), commentDirectiveRegExSingleLine, tokenStart);
 
                 if (_skipTrivia)
                 {
@@ -2632,13 +2645,10 @@ auto Scanner::scan() -> SyntaxKind
             if (text[pos + 1] == CharacterCodes::asterisk)
             {
                 pos += 2;
-                if (text[pos] == CharacterCodes::asterisk && text[pos + 1] != CharacterCodes::slash)
-                {
-                    tokenFlags |= TokenFlags::PrecedingJSDocComment;
-                }
+                auto isJSDoc = text[pos] == CharacterCodes::asterisk && text[pos + 1] != CharacterCodes::slash;
 
                 auto commentClosed = false;
-                auto lastLineStart = tokenPos;
+                auto lastLineStart = tokenStart;
                 while (pos < end)
                 {
                     auto ch = text[pos];
@@ -2658,6 +2668,10 @@ auto Scanner::scan() -> SyntaxKind
                         tokenFlags |= TokenFlags::PrecedingLineBreak;
                     }
                 }
+
+                if (isJSDoc && shouldParseJSDoc()) {
+                    tokenFlags |= TokenFlags::PrecedingJSDocComment;
+                }                
 
                 commentDirectives = appendIfCommentDirective(commentDirectives, text.substring(lastLineStart, pos),
                                                              commentDirectiveRegExMultiLine, lastLineStart);
@@ -2729,16 +2743,6 @@ auto Scanner::scan() -> SyntaxKind
                 tokenFlags |= TokenFlags::OctalSpecifier;
                 return token = checkBigIntSuffix();
             }
-            // Try to parse as an octal
-            if (pos + 1 < end && isOctalDigit(text[pos + 1]))
-            {
-                tokenValue = to_string_val(scanOctalDigits());
-                tokenFlags |= TokenFlags::Octal;
-                return token = SyntaxKind::NumericLiteral;
-            }
-        // This fall-through is a deviation from the EcmaScript grammar. The grammar says that a leading zero
-        // can only be followed by an octal digit, a dot, or the end of the number literal. However, we are being
-        // permissive and allowing decimal digits of the form 08* and 09* (which many browsers also do).
         // falls through
         case CharacterCodes::_1:
         case CharacterCodes::_2:
@@ -2749,10 +2753,7 @@ auto Scanner::scan() -> SyntaxKind
         case CharacterCodes::_7:
         case CharacterCodes::_8:
         case CharacterCodes::_9: {
-            auto res = scanNumber();
-            token = res.kind;
-            tokenValue = res.value;
-            return token;
+            return token = scanNumber();
         }
         case CharacterCodes::colon:
             pos++;
@@ -2764,7 +2765,7 @@ auto Scanner::scan() -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 if (_skipTrivia)
                 {
                     continue;
@@ -2798,7 +2799,7 @@ auto Scanner::scan() -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 if (_skipTrivia)
                 {
                     continue;
@@ -2827,7 +2828,7 @@ auto Scanner::scan() -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 if (_skipTrivia)
                 {
                     continue;
@@ -2875,7 +2876,7 @@ auto Scanner::scan() -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 if (_skipTrivia)
                 {
                     continue;
@@ -2939,22 +2940,41 @@ auto Scanner::scan() -> SyntaxKind
                 pos++;
                 return token = SyntaxKind::Unknown;
             }
-            pos++;
-            if (isIdentifierStart(ch = text[pos], languageVersion))
-            {
+
+            auto charAfterHash = codePointAt(text, pos + 1);
+            if (charAfterHash == CharacterCodes::backslash) {
                 pos++;
-                while (pos < end && isIdentifierPart(ch = text[pos], languageVersion))
-                    pos++;
-                tokenValue = text.substring(tokenPos, pos);
-                if (ch == CharacterCodes::backslash)
-                {
-                    tokenValue += scanIdentifierParts();
+                auto extendedCookedChar = peekExtendedUnicodeEscape();
+                if ((int)extendedCookedChar >= 0 && isIdentifierStart(extendedCookedChar, languageVersion)) {
+                    pos += 3;
+                    tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
+                    tokenValue = S("#") + scanExtendedUnicodeEscape() + scanIdentifierParts();
+                    return token = SyntaxKind::PrivateIdentifier;
                 }
+
+                auto cookedChar = peekUnicodeEscape();
+                if ((int)cookedChar >= 0 && isIdentifierStart(cookedChar, languageVersion)) {
+                    pos += 6;
+                    tokenFlags |= TokenFlags::UnicodeEscape;
+                    tokenValue = S("#") + fromCharCode((int)cookedChar) + scanIdentifierParts();
+                    return token = SyntaxKind::PrivateIdentifier;
+                }
+                pos--;
+            }
+
+            if (isIdentifierStart(charAfterHash, languageVersion)) {
+                pos++;
+                // We're relying on scanIdentifier's behavior and adjusting the token kind after the fact.
+                // Notably absent from this block is the fact that calling a function named "scanIdentifier",
+                // but identifiers don't include '#', and that function doesn't deal with it at all.
+                // This works because 'scanIdentifier' tries to reuse source characters and builds up substrings;
+                // however, it starts at the 'tokenPos' which includes the '#', and will "accidentally" prepend the '#' for us.
+                scanIdentifier(charAfterHash, languageVersion);
             }
             else
             {
                 tokenValue = S("#");
-                error(_E(Diagnostics::Invalid_character));
+                error(_E(Diagnostics::Invalid_character), pos++, charSize(ch));
             }
             return token = SyntaxKind::PrivateIdentifier;
         default:
@@ -2974,8 +2994,9 @@ auto Scanner::scan() -> SyntaxKind
                 pos += charSize(ch);
                 continue;
             }
-            error(_E(Diagnostics::Invalid_character));
-            pos += charSize(ch);
+            auto size = charSize(ch);
+            error(_E(Diagnostics::Invalid_character), pos, size);
+            pos += size;
             return token = SyntaxKind::Unknown;
         }
     }

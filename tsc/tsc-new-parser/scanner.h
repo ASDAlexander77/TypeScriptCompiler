@@ -566,7 +566,7 @@ class Scanner
     auto isIdentifierText(safe_string &name, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard)
         -> boolean;
 
-    auto error(DiagnosticMessage message, number errPos = -1, number length = 0, string arg0 = "") -> void;
+    auto error(DiagnosticMessage message, number errPos = -1, number length = 0, string arg0 = S("")) -> void;
 
     auto scanNumberFragment() -> string;
 

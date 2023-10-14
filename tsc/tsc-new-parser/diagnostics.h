@@ -1583,6 +1583,7 @@ namespace ts
         static DiagnosticMessageStore Decimals_with_leading_zeros_are_not_allowed = {1489, DiagnosticCategory::Error, S("Decimals_with_leading_zeros_are_not_allowed_1489"), S("Decimals with leading zeros are not allowed.")};
         static DiagnosticMessageStore Octal_escape_sequences_are_not_allowed_Use_the_syntax_0 = {1487, DiagnosticCategory::Error, S("Octal_escape_sequences_are_not_allowed_Use_the_syntax_0_1487"), S("Octal escape sequences are not allowed. Use the syntax '{0}'.")};
         static DiagnosticMessageStore Escape_sequence_0_is_not_allowed = {1488, DiagnosticCategory::Error, S("Escape_sequence_0_is_not_allowed_1488"), S("Escape sequence '{0}' is not allowed.")};
+        static DiagnosticMessageStore File_appears_to_be_binary = {1490, DiagnosticCategory::Error, S("File_appears_to_be_binary_1490"), S("File appears to be binary.")};
     }
 
 } // namespace ts

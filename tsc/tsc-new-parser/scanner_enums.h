@@ -16,6 +16,9 @@ enum class SyntaxKind : number {
     // We detect and provide better error recovery when we encounter a git merge marker.  This
     // allows us to edit files with git-conflict markers in them in a much more pleasant manner.
     ConflictMarkerTrivia,
+    // If a file is actually binary, with any luck, we'll get U+FFFD REPLACEMENT CHARACTER
+    // in position zero and can just skip what is surely a doomed parse.
+    NonTextFileMarkerTrivia,
     // Literals
     NumericLiteral,
     BigIntLiteral,
@@ -74,6 +77,8 @@ enum class SyntaxKind : number {
     QuestionQuestionToken,
     /** Only the JSDoc scanner produces BacktickToken. The normal scanner produces NoSubstitutionTemplateLiteral and related kinds. */
     BacktickToken,
+    /** Only the JSDoc scanner produces HashToken. The normal scanner produces PrivateIdentifier. */
+    HashToken,
     // Assignments
     EqualsToken,
     PlusEqualsToken,
@@ -94,6 +99,11 @@ enum class SyntaxKind : number {
     // Identifiers and PrivateIdentifiers
     Identifier,
     PrivateIdentifier,
+    /**
+     * Only the special JSDoc comment text scanner produces JSDocCommentTextTokes. One of these tokens spans all text after a tag comment's start and before the next @
+     * @internal
+     */
+    JSDocCommentTextToken,
     // Reserved words
     BreakKeyword,
     CaseKeyword,
@@ -145,8 +155,8 @@ enum class SyntaxKind : number {
     AbstractKeyword,
     AccessorKeyword,
     AsKeyword,
-    AssertKeyword,
     AssertsKeyword,
+    AssertKeyword,
     AnyKeyword,
     AsyncKeyword,
     AwaitKeyword,
@@ -195,6 +205,7 @@ enum class SyntaxKind : number {
     PropertyDeclaration,
     MethodSignature,
     MethodDeclaration,
+    ClassStaticBlockDeclaration,
     Constructor,
     GetAccessor,
     SetAccessor,
@@ -260,6 +271,7 @@ enum class SyntaxKind : number {
     NonNullExpression,
     MetaProperty,
     SyntheticExpression,
+    SatisfiesExpression,
 
     // Misc
     TemplateSpan,
@@ -323,12 +335,19 @@ enum class SyntaxKind : number {
     JsxAttributes,
     JsxSpreadAttribute,
     JsxExpression,
+    JsxNamespacedName,
 
     // Clauses
     CaseClause,
     DefaultClause,
     HeritageClause,
     CatchClause,
+
+    ImportAttributes,
+    ImportAttribute,
+    /** @deprecated */ AssertClause = ImportAttributes,
+    /** @deprecated */ AssertEntry = ImportAttribute,
+    /** @deprecated */ ImportTypeAssertionContainer,
 
     // Property assignments
     PropertyAssignment,
@@ -338,21 +357,22 @@ enum class SyntaxKind : number {
     // Enum
     EnumMember,
     // Unparsed
-    UnparsedPrologue,
-    UnparsedPrepend,
-    UnparsedText,
-    UnparsedInternalText,
-    UnparsedSyntheticReference,
+    /** @deprecated */ UnparsedPrologue,
+    /** @deprecated */ UnparsedPrepend,
+    /** @deprecated */ UnparsedText,
+    /** @deprecated */ UnparsedInternalText,
+    /** @deprecated */ UnparsedSyntheticReference,
 
     // Top-level nodes
     SourceFile,
     Bundle,
-    UnparsedSource,
-    InputFiles,
+    /** @deprecated */ UnparsedSource,
+    /** @deprecated */ InputFiles,
 
     // JSDoc nodes
     JSDocTypeExpression,
     JSDocNameReference,
+    JSDocMemberName, // C#p
     JSDocAllType, // The * type
     JSDocUnknownType, // The ? type
     JSDocNullableType,
@@ -361,9 +381,15 @@ enum class SyntaxKind : number {
     JSDocFunctionType,
     JSDocVariadicType,
     JSDocNamepathType, // https://jsdoc.app/about-namepaths.html
-    JSDocComment,
+    JSDoc,
+    /** @deprecated Use SyntaxKind.JSDoc */
+    JSDocComment = JSDoc,
+    JSDocText,
     JSDocTypeLiteral,
     JSDocSignature,
+    JSDocLink,
+    JSDocLinkCode,
+    JSDocLinkPlain,
     JSDocTag,
     JSDocAugmentsTag,
     JSDocImplementsTag,
@@ -374,7 +400,9 @@ enum class SyntaxKind : number {
     JSDocPrivateTag,
     JSDocProtectedTag,
     JSDocReadonlyTag,
+    JSDocOverrideTag,
     JSDocCallbackTag,
+    JSDocOverloadTag,
     JSDocEnumTag,
     JSDocParameterTag,
     JSDocReturnTag,
@@ -384,6 +412,8 @@ enum class SyntaxKind : number {
     JSDocTypedefTag,
     JSDocSeeTag,
     JSDocPropertyTag,
+    JSDocThrowsTag,
+    JSDocSatisfiesTag,
 
     // Synthesized list
     SyntaxList,
@@ -392,15 +422,10 @@ enum class SyntaxKind : number {
     NotEmittedStatement,
     PartiallyEmittedExpression,
     CommaListExpression,
-    MergeDeclarationMarker,
-    EndOfDeclarationMarker,
     SyntheticReferenceExpression,
 
     // Enum value count
     Count,
-
-    // Array type
-    /* @internal */ Array,
 
     // Markers
     FirstAssignment = EqualsToken,
@@ -431,11 +456,11 @@ enum class SyntaxKind : number {
     LastStatement = DebuggerStatement,
     FirstNode = QualifiedName,
     FirstJSDocNode = JSDocTypeExpression,
-    LastJSDocNode = JSDocPropertyTag,
+    LastJSDocNode = JSDocSatisfiesTag,
     FirstJSDocTagNode = JSDocTag,
-    LastJSDocTagNode = JSDocPropertyTag,
-    /* @internal */ FirstContextualKeyword = AbstractKeyword,
-    /* @internal */ LastContextualKeyword = OfKeyword,
+    LastJSDocTagNode = JSDocSatisfiesTag,
+    /** @internal */ FirstContextualKeyword = AbstractKeyword,
+    /** @internal */ LastContextualKeyword = OfKeyword,
 };
 
 inline static bool operator !(SyntaxKind rhs)
@@ -474,11 +499,8 @@ enum class CharacterCodes : number {
     mathematicalSpace = 0x205F,
     ogham = 0x1680,
 
-    _startOfSurrogate = 0xD800,
-    _endOfSurrogate = 0xDBFF,
-    _startOfSurrogateLow = 0xDC00,
-    _endOfSurrogateLow = 0xDFFF,
-    _2bytes = 0x10000,
+    // Unicode replacement character produced when a byte sequence is invalid
+    replacementCharacter = 0xFFFD,
 
     _ = 0x5F,
     $ = 0x24,
@@ -551,7 +573,7 @@ enum class CharacterCodes : number {
     ampersand = 0x26,             // &
     asterisk = 0x2A,              // *
     at = 0x40,                    // @
-    backslash = 0x5C,             // 
+    backslash = 0x5C,             
     backtick = 0x60,              // `
     bar = 0x7C,                   // |
     caret = 0x5E,                 // ^
