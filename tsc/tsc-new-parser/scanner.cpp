@@ -1509,12 +1509,11 @@ auto Scanner::isConflictMarkerTrivia(safe_string &text, number pos) -> boolean
     return false;
 }
 
-auto Scanner::scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number, string)> error)
-    -> number
+auto Scanner::scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number, string)> error) -> number
 {
     if (error)
     {
-        error(_E(Diagnostics::Merge_conflict_marker_encountered), pos, mergeConflictMarkerLength);
+        error(_E(Diagnostics::Merge_conflict_marker_encountered), pos, mergeConflictMarkerLength, string());
     }
 
     auto ch = text[pos];
@@ -2946,7 +2945,7 @@ auto Scanner::scan() -> SyntaxKind
             pos++;
             return token = SyntaxKind::Unknown;
         }
-        case CharacterCodes::hash:
+        case CharacterCodes::hash: {
             if (pos != 0 && text[pos + 1] == CharacterCodes::exclamation)
             {
                 error(_E(Diagnostics::can_only_be_used_at_the_start_of_a_file));
@@ -2989,7 +2988,9 @@ auto Scanner::scan() -> SyntaxKind
                 tokenValue = S("#");
                 error(_E(Diagnostics::Invalid_character), pos++, charSize(ch));
             }
+            
             return token = SyntaxKind::PrivateIdentifier;
+        }
         default:
             auto identifierKind = scanIdentifier(ch, languageVersion);
             if (identifierKind != SyntaxKind::Unknown)

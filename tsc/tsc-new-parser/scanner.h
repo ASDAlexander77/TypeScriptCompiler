@@ -368,7 +368,7 @@ class Scanner
 
     auto isConflictMarkerTrivia(safe_string &text, number pos) -> boolean;
 
-    auto scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number)> error = nullptr)
+    auto scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number, string)> error = nullptr)
         -> number;
 
     /*@internal*/

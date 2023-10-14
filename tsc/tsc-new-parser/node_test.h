@@ -788,18 +788,6 @@ namespace ts
         return kind == SyntaxKind::SyntheticReferenceExpression;
     }
 
-    /* @internal */
-    inline auto isMergeDeclarationMarker(SyntaxKind kind) -> boolean
-    {
-        return kind == SyntaxKind::MergeDeclarationMarker;
-    }
-
-    /* @internal */
-    inline auto isEndOfDeclarationMarker(SyntaxKind kind) -> boolean
-    {
-        return kind == SyntaxKind::EndOfDeclarationMarker;
-    }
-
     // Module References
 
     inline auto isExternalModuleReference(SyntaxKind kind) -> boolean
