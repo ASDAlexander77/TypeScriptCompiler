@@ -1501,7 +1501,7 @@ auto Scanner::scanConflictMarkerTrivia(safe_string &text, number pos, std::funct
 {
     if (error)
     {
-        error(data::DiagnosticMessage(Diagnostics::Merge_conflict_marker_encountered), pos, mergeConflictMarkerLength);
+        error(_E(Diagnostics::Merge_conflict_marker_encountered), pos, mergeConflictMarkerLength);
     }
 
     auto ch = text[pos];
@@ -1675,11 +1675,11 @@ auto Scanner::scanNumberFragment() -> string
                 tokenFlags |= TokenFlags::ContainsInvalidSeparator;
                 if (isPreviousTokenSeparator)
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
+                    error(_E(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
                 }
                 else
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+                    error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
                 }
             }
             pos++;
@@ -1698,7 +1698,7 @@ auto Scanner::scanNumberFragment() -> string
     if (text[pos - 1] == CharacterCodes::_)
     {
         tokenFlags |= TokenFlags::ContainsInvalidSeparator;
-        error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
+        error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
     }
     return result + text.substring(start, pos);
 }
@@ -1711,7 +1711,7 @@ auto Scanner::scanNumber() -> SyntaxKind
         pos++;
         if (text[pos] == CharacterCodes::_) {
             tokenFlags |= TokenFlags::ContainsSeparator | TokenFlags::ContainsInvalidSeparator;
-            error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+            error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
             // treat it as a normal number literal
             pos--;
             mainFragment = scanNumberFragment();
@@ -1735,7 +1735,7 @@ auto Scanner::scanNumber() -> SyntaxKind
             // TODO: finish it
             string literal = (withMinus ? S("-0o") : S("0o")) + tokenValue;
             if (withMinus) start--;
-            error(data::DiagnosticMessage(Diagnostics::Octal_literals_are_not_allowed_Use_the_syntax_0), start, pos - start, literal);
+            error(_E(Diagnostics::Octal_literals_are_not_allowed_Use_the_syntax_0), start, pos - start, literal);
             return SyntaxKind::NumericLiteral;
         }
     }
@@ -1761,7 +1761,7 @@ auto Scanner::scanNumber() -> SyntaxKind
         auto finalFragment = scanNumberFragment();
         if (finalFragment.empty())
         {
-            error(data::DiagnosticMessage(Diagnostics::Digit_expected));
+            error(_E(Diagnostics::Digit_expected));
         }
         else
         {
@@ -1788,7 +1788,7 @@ auto Scanner::scanNumber() -> SyntaxKind
     }
 
     if ((tokenFlags & TokenFlags::ContainsLeadingZero) == TokenFlags::ContainsLeadingZero) {
-        error(data::DiagnosticMessage(Diagnostics::Decimals_with_leading_zeros_are_not_allowed), start, end - start);
+        error(_E(Diagnostics::Decimals_with_leading_zeros_are_not_allowed), start, end - start);
         // if a literal has a leading zero, it must not be bigint
         tokenValue = to_string_val(+to_float_val(result));
         return SyntaxKind::NumericLiteral;
@@ -1824,18 +1824,18 @@ auto Scanner::checkForIdentifierStartAfterNumericLiteral(number numericStart, bo
     {
         if (isScientific)
         {
-            error(data::DiagnosticMessage(Diagnostics::A_bigint_literal_cannot_use_exponential_notation), numericStart,
+            error(_E(Diagnostics::A_bigint_literal_cannot_use_exponential_notation), numericStart,
                   identifierStart - numericStart + 1);
         }
         else
         {
-            error(data::DiagnosticMessage(Diagnostics::A_bigint_literal_must_be_an_integer), numericStart,
+            error(_E(Diagnostics::A_bigint_literal_must_be_an_integer), numericStart,
                   identifierStart - numericStart + 1);
         }
     }
     else
     {
-        error(data::DiagnosticMessage(Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal), identifierStart,
+        error(_E(Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal), identifierStart,
               length);
         pos = identifierStart;
     }
@@ -1892,11 +1892,11 @@ auto Scanner::scanHexDigits(number minCount, boolean scanAsManyAsPossible, boole
             }
             else if (isPreviousTokenSeparator)
             {
-                error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
+                error(_E(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
             }
             else
             {
-                error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+                error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
             }
             pos++;
             continue;
@@ -1921,7 +1921,7 @@ auto Scanner::scanHexDigits(number minCount, boolean scanAsManyAsPossible, boole
     }
     if (text[pos - 1] == CharacterCodes::_)
     {
-        error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
+        error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
     }
     return string(valueChars.begin(), valueChars.end());
 }
@@ -1938,7 +1938,7 @@ auto Scanner::scanString(boolean jsxAttributeString) -> string
         {
             result += text.substring(start, pos);
             tokenFlags |= TokenFlags::Unterminated;
-            error(data::DiagnosticMessage(Diagnostics::Unterminated_string_literal));
+            error(_E(Diagnostics::Unterminated_string_literal));
             break;
         }
         auto ch = text[pos];
@@ -1951,15 +1951,15 @@ auto Scanner::scanString(boolean jsxAttributeString) -> string
         if (ch == CharacterCodes::backslash && !jsxAttributeString)
         {
             result += text.substring(start, pos);
-            result += scanEscapeSequence();
+            result += scanEscapeSequence(/*shouldEmitInvalidEscapeError*/ true);
             start = pos;
             continue;
         }
-        if (isLineBreak(ch) && !jsxAttributeString)
+        if ((ch == CharacterCodes::lineFeed || ch == CharacterCodes::carriageReturn) && !jsxAttributeString)
         {
             result += text.substring(start, pos);
             tokenFlags |= TokenFlags::Unterminated;
-            error(data::DiagnosticMessage(Diagnostics::Unterminated_string_literal));
+            error(_E(Diagnostics::Unterminated_string_literal));
             break;
         }
         pos++;
@@ -1971,7 +1971,7 @@ auto Scanner::scanString(boolean jsxAttributeString) -> string
  * Sets the current 'tokenValue' and returns a NoSubstitutionTemplateLiteral or
  * a literal component of a TemplateExpression.
  */
-auto Scanner::scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKind
+auto Scanner::scanTemplateAndSetTokenValue(boolean shouldEmitInvalidEscapeError) -> SyntaxKind
 {
     auto startedWithBacktick = text[pos] == CharacterCodes::backtick;
 
@@ -1986,7 +1986,7 @@ auto Scanner::scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKi
         {
             contents += text.substring(start, pos);
             tokenFlags |= TokenFlags::Unterminated;
-            error(data::DiagnosticMessage(Diagnostics::Unterminated_template_literal));
+            error(_E(Diagnostics::Unterminated_template_literal));
             resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
             break;
         }
@@ -2015,7 +2015,7 @@ auto Scanner::scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKi
         if (currChar == CharacterCodes::backslash)
         {
             contents += text.substring(start, pos);
-            contents += scanEscapeSequence(isTaggedTemplate);
+            contents += scanEscapeSequence(shouldEmitInvalidEscapeError);
             start = pos;
             continue;
         }
@@ -2046,13 +2046,19 @@ auto Scanner::scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKi
     return resultingToken;
 }
 
-auto Scanner::scanEscapeSequence(boolean isTaggedTemplate) -> string
+string fromCharCode(int code)
+{
+    string s;
+    s.push_back(code);
+}
+
+auto Scanner::scanEscapeSequence(boolean shouldEmitInvalidEscapeError) -> string
 {
     auto start = pos;
     pos++;
     if (pos >= end)
     {
-        error(data::DiagnosticMessage(Diagnostics::Unexpected_end_of_text));
+        error(_E(Diagnostics::Unexpected_end_of_text));
         return string();
     }
     auto ch = text[pos];
@@ -2060,14 +2066,48 @@ auto Scanner::scanEscapeSequence(boolean isTaggedTemplate) -> string
     switch (ch)
     {
     case CharacterCodes::_0:
-        // '\01'
-        if (isTaggedTemplate && pos < end && isDigit(text[pos]))
-        {
-            pos++;
-            tokenFlags |= TokenFlags::ContainsInvalidEscape;
-            return text.substring(start, pos);
+        // Although '0' preceding any digit is treated as LegacyOctalEscapeSequence,
+        // '\08' should separately be interpreted as '\0' + '8'.
+        if (pos >= end || !isDigit(text[pos])) {
+            return S("\0");
         }
-        return S("\0");
+    // '\01', '\011'
+    // falls through
+    case CharacterCodes::_1:
+    case CharacterCodes::_2:
+    case CharacterCodes::_3:
+        // '\1', '\17', '\177'
+        if (pos < end && isOctalDigit(text[pos])) {
+            pos++;
+        }
+    // '\17', '\177'
+    // falls through
+    case CharacterCodes::_4:
+    case CharacterCodes::_5:
+    case CharacterCodes::_6:
+    case CharacterCodes::_7:
+        // '\4', '\47' but not '\477'
+        if (pos < end && isOctalDigit(text[pos])) {
+            pos++;
+        }
+        // '\47'
+        tokenFlags |= TokenFlags::ContainsInvalidEscape;
+        if (shouldEmitInvalidEscapeError) {
+            auto code = to_number_base(text.substring(start + 1, pos), 8);
+            // TODO: finish it
+            error(_E(Diagnostics::Octal_escape_sequences_are_not_allowed_Use_the_syntax_0), start, pos - start, S("\\x") + to_string_val(code)/*.padStart(2, S("0"))*/);
+            return fromCharCode(code);
+        }
+        return text.substring(start, pos);
+    case CharacterCodes::_8:
+    case CharacterCodes::_9:
+        // the invalid '\8' and '\9'
+        tokenFlags |= TokenFlags::ContainsInvalidEscape;
+        if (shouldEmitInvalidEscapeError) {
+            error(_E(Diagnostics::Escape_sequence_0_is_not_allowed), start, pos - start, text.substring(start, pos));
+            return  fromCharCode((int)ch);
+        }
+        return text.substring(start, pos);
     case CharacterCodes::b:
         return S("\b");
     case CharacterCodes::t:
@@ -2081,77 +2121,74 @@ auto Scanner::scanEscapeSequence(boolean isTaggedTemplate) -> string
     case CharacterCodes::r:
         return S("\r");
     case CharacterCodes::singleQuote:
-        return S("\'");
+        return S("'");
     case CharacterCodes::doubleQuote:
         return S("\"");
     case CharacterCodes::u:
-        if (isTaggedTemplate)
-        {
-            // '\u' or '\u0' or '\u00' or '\u000'
-            for (auto escapePos = pos; escapePos < pos + 4; escapePos++)
-            {
-                if (escapePos < end && !isHexDigit(text[escapePos]) && text[escapePos] != CharacterCodes::openBrace)
-                {
-                    pos = escapePos;
-                    tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                    return text.substring(start, pos);
-                }
-            }
-        }
-        // '\u{DDDDDDDD}'
-        if (pos < end && text[pos] == CharacterCodes::openBrace)
-        {
+        if (pos < end && text[pos] == CharacterCodes::openBrace) {
+            // '\u{DDDDDDDD}'
             pos++;
-
-            // '\u{'
-            if (isTaggedTemplate && !isHexDigit(text[pos]))
-            {
+            auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
+            auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
+            // '\u{Not Code Point' or '\u{CodePoint'
+            if (escapedValue < 0) {
                 tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Hexadecimal_digit_expected));
+                }
                 return text.substring(start, pos);
             }
-
-            if (isTaggedTemplate)
-            {
-                auto savePos = pos;
-                auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-                auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
-
-                // '\u{Not Code Point' or '\u{CodePoint'
-                if (!isCodePoint(escapedValue) || text[pos] != CharacterCodes::closeBrace)
-                {
-                    tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                    return text.substring(start, pos);
+            if (!isCodePoint(escapedValue)) {
+                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive));
                 }
-                else
-                {
-                    pos = savePos;
-                }
+                return text.substring(start, pos);
             }
+            if (pos >= end) {
+                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Unexpected_end_of_text));
+                }
+                return text.substring(start, pos);
+            }
+            if (text[pos] != CharacterCodes::closeBrace) {
+                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Unterminated_Unicode_escape_sequence));
+                }
+                return text.substring(start, pos);
+            }
+            pos++;
             tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
-            return scanExtendedUnicodeEscape();
+            return utf16EncodeAsString((CharacterCodes)escapedValue);
         }
-
-        tokenFlags |= TokenFlags::UnicodeEscape;
         // '\uDDDD'
-        return scanHexadecimalEscape(/*numDigits*/ 4);
+        for (; pos < start + 6; pos++) {
+            if (!(pos < end && isHexDigit(text[pos]))) {
+                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Hexadecimal_digit_expected));
+                }
+                return text.substring(start, pos);
+            }
+        }
+        tokenFlags |= TokenFlags::UnicodeEscape;
+        return fromCharCode(to_number_base(text.substring(start + 2, pos), 16));
 
     case CharacterCodes::x:
-        if (isTaggedTemplate)
-        {
-            if (!isHexDigit(text[pos]))
-            {
+        // '\xDD'
+        for (; pos < start + 4; pos++) {
+            if (!(pos < end && isHexDigit(text[pos]))) {
                 tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                return text.substring(start, pos);
-            }
-            else if (!isHexDigit(text[pos + 1]))
-            {
-                pos++;
-                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Hexadecimal_digit_expected));
+                }
                 return text.substring(start, pos);
             }
         }
-        // '\xDD'
-        return scanHexadecimalEscape(/*numDigits*/ 2);
+        tokenFlags |= TokenFlags::HexEscape;
+        return fromCharCode(to_number_base(text.substring(start + 2, pos), 16));
 
     // when encountering a LineContinuation (i.e. a backslash and a line terminator sequence),
     // the line terminator is interpreted to be "the empty code unit sequence".
@@ -2170,21 +2207,6 @@ auto Scanner::scanEscapeSequence(boolean isTaggedTemplate) -> string
     }
 }
 
-auto Scanner::scanHexadecimalEscape(number numDigits) -> string
-{
-    auto escapedValue = scanExactNumberOfHexDigits(numDigits, /*canHaveSeparators*/ false);
-
-    if (escapedValue >= 0)
-    {
-        return string(1, (char_t)escapedValue);
-    }
-    else
-    {
-        error(data::DiagnosticMessage(Diagnostics::Hexadecimal_digit_expected));
-        return string();
-    }
-}
-
 auto Scanner::scanExtendedUnicodeEscape() -> string
 {
     auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
@@ -2194,18 +2216,18 @@ auto Scanner::scanExtendedUnicodeEscape() -> string
     // Validate the value of the digit
     if (escapedValue < 0)
     {
-        error(data::DiagnosticMessage(Diagnostics::Hexadecimal_digit_expected));
+        error(_E(Diagnostics::Hexadecimal_digit_expected));
         isInvalidExtendedEscape = true;
     }
     else if (escapedValue > 0x10FFFF)
     {
-        error(data::DiagnosticMessage(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive));
+        error(_E(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive));
         isInvalidExtendedEscape = true;
     }
 
     if (pos >= end)
     {
-        error(data::DiagnosticMessage(Diagnostics::Unexpected_end_of_text));
+        error(_E(Diagnostics::Unexpected_end_of_text));
         isInvalidExtendedEscape = true;
     }
     else if (text[pos] == CharacterCodes::closeBrace)
@@ -2215,7 +2237,7 @@ auto Scanner::scanExtendedUnicodeEscape() -> string
     }
     else
     {
-        error(data::DiagnosticMessage(Diagnostics::Unterminated_Unicode_escape_sequence));
+        error(_E(Diagnostics::Unterminated_Unicode_escape_sequence));
         isInvalidExtendedEscape = true;
     }
 
@@ -2340,11 +2362,11 @@ auto Scanner::scanBinaryOrOctalDigits(number base) -> string
             }
             else if (isPreviousTokenSeparator)
             {
-                error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
+                error(_E(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
             }
             else
             {
-                error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+                error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
             }
             pos++;
             continue;
@@ -2361,7 +2383,7 @@ auto Scanner::scanBinaryOrOctalDigits(number base) -> string
     if (text[pos - 1] == CharacterCodes::_)
     {
         // Literal ends with underscore - not allowed
-        error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
+        error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
     }
     return value;
 }
@@ -2643,7 +2665,7 @@ auto Scanner::scan() -> SyntaxKind
 
                 if (!commentClosed)
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Asterisk_Slash_expected));
+                    error(_E(Diagnostics::Asterisk_Slash_expected));
                 }
 
                 if (_skipTrivia)
@@ -2675,7 +2697,7 @@ auto Scanner::scan() -> SyntaxKind
                 tokenValue = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ true);
                 if (tokenValue.empty())
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Hexadecimal_digit_expected));
+                    error(_E(Diagnostics::Hexadecimal_digit_expected));
                     tokenValue = S("0");
                 }
                 tokenValue = S("0x") + tokenValue;
@@ -2688,7 +2710,7 @@ auto Scanner::scan() -> SyntaxKind
                 tokenValue = scanBinaryOrOctalDigits(/* base */ 2);
                 if (tokenValue.empty())
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Binary_digit_expected));
+                    error(_E(Diagnostics::Binary_digit_expected));
                     tokenValue = S("0");
                 }
                 tokenValue = S("0b") + tokenValue;
@@ -2701,7 +2723,7 @@ auto Scanner::scan() -> SyntaxKind
                 tokenValue = scanBinaryOrOctalDigits(/* base */ 8);
                 if (tokenValue.empty())
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Octal_digit_expected));
+                    error(_E(Diagnostics::Octal_digit_expected));
                     tokenValue = S("0");
                 }
                 tokenValue = S("0o") + tokenValue;
@@ -2907,14 +2929,14 @@ auto Scanner::scan() -> SyntaxKind
                 return token = getIdentifierToken();
             }
 
-            error(data::DiagnosticMessage(Diagnostics::Invalid_character));
+            error(_E(Diagnostics::Invalid_character));
             pos++;
             return token = SyntaxKind::Unknown;
         }
         case CharacterCodes::hash:
             if (pos != 0 && text[pos + 1] == CharacterCodes::exclamation)
             {
-                error(data::DiagnosticMessage(Diagnostics::can_only_be_used_at_the_start_of_a_file));
+                error(_E(Diagnostics::can_only_be_used_at_the_start_of_a_file));
                 pos++;
                 return token = SyntaxKind::Unknown;
             }
@@ -2933,7 +2955,7 @@ auto Scanner::scan() -> SyntaxKind
             else
             {
                 tokenValue = S("#");
-                error(data::DiagnosticMessage(Diagnostics::Invalid_character));
+                error(_E(Diagnostics::Invalid_character));
             }
             return token = SyntaxKind::PrivateIdentifier;
         default:
@@ -2953,7 +2975,7 @@ auto Scanner::scan() -> SyntaxKind
                 pos += charSize(ch);
                 continue;
             }
-            error(data::DiagnosticMessage(Diagnostics::Invalid_character));
+            error(_E(Diagnostics::Invalid_character));
             pos += charSize(ch);
             return token = SyntaxKind::Unknown;
         }
@@ -3046,7 +3068,7 @@ auto Scanner::reScanSlashToken() -> SyntaxKind
             if (p >= end)
             {
                 tokenFlags |= TokenFlags::Unterminated;
-                error(data::DiagnosticMessage(Diagnostics::Unterminated_regular_expression_literal));
+                error(_E(Diagnostics::Unterminated_regular_expression_literal));
                 break;
             }
 
@@ -3054,7 +3076,7 @@ auto Scanner::reScanSlashToken() -> SyntaxKind
             if (isLineBreak(ch))
             {
                 tokenFlags |= TokenFlags::Unterminated;
-                error(data::DiagnosticMessage(Diagnostics::Unterminated_regular_expression_literal));
+                error(_E(Diagnostics::Unterminated_regular_expression_literal));
                 break;
             }
 
@@ -3223,11 +3245,11 @@ auto Scanner::scanJsxToken(boolean allowMultilineJsxText) -> SyntaxKind
         }
         if (char_ == CharacterCodes::greaterThan)
         {
-            error(data::DiagnosticMessage(Diagnostics::Unexpected_token_Did_you_mean_or_gt), pos, 1);
+            error(_E(Diagnostics::Unexpected_token_Did_you_mean_or_gt), pos, 1);
         }
         if (char_ == CharacterCodes::closeBrace)
         {
-            error(data::DiagnosticMessage(Diagnostics::Unexpected_token_Did_you_mean_or_rbrace), pos, 1);
+            error(_E(Diagnostics::Unexpected_token_Did_you_mean_or_rbrace), pos, 1);
         }
 
         // FirstNonWhitespace is 0, then we only see whitespaces so far. If we see a linebreak, we want to ignore that whitespaces.

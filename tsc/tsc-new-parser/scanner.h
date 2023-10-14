@@ -596,9 +596,9 @@ class Scanner
      * Sets the current 'tokenValue' and returns a NoSubstitutionTemplateLiteral or
      * a literal component of a TemplateExpression.
      */
-    auto scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKind;
+    auto scanTemplateAndSetTokenValue(boolean scanTemplateAndSetTokenValue) -> SyntaxKind;
 
-    auto scanEscapeSequence(boolean isTaggedTemplate = false) -> string;
+    auto scanEscapeSequence(boolean shouldEmitInvalidEscapeError = false) -> string;
 
     auto scanHexadecimalEscape(number numDigits) -> string;
 

@@ -1581,6 +1581,8 @@ namespace ts
         static DiagnosticMessageStore Specify_the_JSX_fragment_factory_function_to_use_when_targeting_react_JSX_emit_with_jsxFactory_compiler_option_is_specified_e_g_Fragment = {18034, DiagnosticCategory::Message, S("Specify_the_JSX_fragment_factory_function_to_use_when_targeting_react_JSX_emit_with_jsxFactory_compi_18034"), S("Specify the JSX fragment factory function to use when targeting 'react' JSX emit with 'jsxFactory' compiler option is specified, e.g. 'Fragment'.")};
         static DiagnosticMessageStore Invalid_value_for_jsxFragmentFactory_0_is_not_a_valid_identifier_or_qualified_name = {18035, DiagnosticCategory::Error, S("Invalid_value_for_jsxFragmentFactory_0_is_not_a_valid_identifier_or_qualified_name_18035"), S("Invalid value for 'jsxFragmentFactory'. '{0}' is not a valid identifier or qualified-name.")};
         static DiagnosticMessageStore Decimals_with_leading_zeros_are_not_allowed = {1489, DiagnosticCategory::Error, S("Decimals_with_leading_zeros_are_not_allowed_1489"), S("Decimals with leading zeros are not allowed.")};
+        static DiagnosticMessageStore Octal_escape_sequences_are_not_allowed_Use_the_syntax_0 = {1487, DiagnosticCategory::Error, S("Octal_escape_sequences_are_not_allowed_Use_the_syntax_0_1487"), S("Octal escape sequences are not allowed. Use the syntax '{0}'.")};
+        static DiagnosticMessageStore Escape_sequence_0_is_not_allowed = {1488, DiagnosticCategory::Error, S("Escape_sequence_0_is_not_allowed_1488"), S("Escape sequence '{0}' is not allowed.")};
     }
 
 } // namespace ts
