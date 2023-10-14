@@ -3483,6 +3483,8 @@ auto Scanner::scanJsDocToken() -> SyntaxKind
         return token = SyntaxKind::DotToken;
     case CharacterCodes::backtick:
         return token = SyntaxKind::BacktickToken;
+    case CharacterCodes::hash:
+        return token = SyntaxKind::HashToken;        
     case CharacterCodes::backslash:
         pos--;
         auto extendedCookedChar = peekExtendedUnicodeEscape();
@@ -3511,7 +3513,7 @@ auto Scanner::scanJsDocToken() -> SyntaxKind
         auto char_ = ch;
         while (pos < end && isIdentifierPart(char_ = codePointAt(text, pos), languageVersion) || text[pos] == CharacterCodes::minus)
             pos += charSize(char_);
-        tokenValue = text.substring(tokenPos, pos);
+        tokenValue = text.substring(tokenStart, pos);
         if (char_ == CharacterCodes::backslash)
         {
             tokenValue += scanIdentifierParts();
@@ -3543,7 +3545,7 @@ auto Scanner::setText(string newText, number start, number length) -> void
 {
     text = newText;
     end = length == -1 ? text.length() : start + length;
-    setTextPos(start);
+    resetTokenState(start);
 }
 
 auto Scanner::setOnError(ErrorCallback errorCallback) -> void
@@ -3561,17 +3563,21 @@ auto Scanner::setScriptKind(ScriptKind kind) -> void
     scriptKind = kind;
 }
 
+auto Scanner::setJSDocParsingMode(JSDocParsingMode kind) -> void {
+    jsDocParsingMode = kind;
+}
+
 auto Scanner::setLanguageVariant(LanguageVariant variant) -> void
 {
     languageVariant = variant;
 }
 
-auto Scanner::setTextPos(number textPos) -> void
+auto Scanner::resetTokenState(number position) -> void
 {
-    debug(textPos >= 0);
-    pos = textPos;
-    startPos = textPos;
-    tokenPos = textPos;
+    debug(position >= 0);
+    pos = position;
+    fullStartPos = position;
+    tokenStart = position;
     token = SyntaxKind::Unknown;
     tokenValue = string();
     tokenFlags = TokenFlags::None;

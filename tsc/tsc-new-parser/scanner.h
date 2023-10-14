@@ -670,8 +670,8 @@ class Scanner
     template <typename T> auto speculationHelper(std::function<T()> callback, boolean isLookahead) -> T
     {
         auto savePos = pos;
-        auto saveStartPos = startPos;
-        auto saveTokenPos = tokenPos;
+        auto saveStartPos = fullStartPos;
+        auto saveTokenPos = tokenStart;
         auto saveToken = token;
         auto saveTokenValue = tokenValue;
         auto saveTokenFlags = tokenFlags;
@@ -682,8 +682,8 @@ class Scanner
         if (!result || isLookahead)
         {
             pos = savePos;
-            startPos = saveStartPos;
-            tokenPos = saveTokenPos;
+            fullStartPos = saveStartPos;
+            tokenStart = saveTokenPos;
             token = saveToken;
             tokenValue = saveTokenValue;
             tokenFlags = saveTokenFlags;
@@ -695,8 +695,8 @@ class Scanner
     {
         auto saveEnd = end;
         auto savePos = pos;
-        auto saveStartPos = startPos;
-        auto saveTokenPos = tokenPos;
+        auto saveStartPos = fullStartPos;
+        auto saveTokenPos = tokenStart;
         auto saveToken = token;
         auto saveTokenValue = tokenValue;
         auto saveTokenFlags = tokenFlags;
@@ -707,8 +707,8 @@ class Scanner
 
         end = saveEnd;
         pos = savePos;
-        startPos = saveStartPos;
-        tokenPos = saveTokenPos;
+        fullStartPos = saveStartPos;
+        tokenStart = saveTokenPos;
         token = saveToken;
         tokenValue = saveTokenValue;
         tokenFlags = saveTokenFlags;
