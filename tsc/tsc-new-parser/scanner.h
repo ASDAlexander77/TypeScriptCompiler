@@ -574,7 +574,7 @@ class Scanner
 
     auto checkForIdentifierStartAfterNumericLiteral(number numericStart, bool isScientific = false) -> void;
 
-    auto scanOctalDigits() -> number;
+    auto scanDigits() -> bool;
 
     /**
      * Scans the given number of hexadecimal digits in the text,

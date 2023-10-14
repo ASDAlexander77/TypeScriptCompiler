@@ -1721,7 +1721,7 @@ auto Scanner::scanNumber() -> SyntaxKind
             // NonOctalDecimalIntegerLiteral, emit error later
             // Separators in decimal and exponent parts are still allowed according to the spec
             tokenFlags |= TokenFlags::ContainsLeadingZero;
-            mainFragment = tokenValue;
+            mainFragment = to_string_val(+to_float_val(tokenValue));
         }
         else if (tokenValue.empty()) {
             // a single zero
@@ -1733,7 +1733,7 @@ auto Scanner::scanNumber() -> SyntaxKind
             tokenFlags |= TokenFlags::Octal;
             auto withMinus = token == SyntaxKind::MinusToken;
             // TODO: finish it
-            string literal = (withMinus ? S("-") : S("")) + S("0o") + tokenValue;
+            string literal = (withMinus ? S("-0o") : S("0o")) + tokenValue;
             if (withMinus) start--;
             error(data::DiagnosticMessage(Diagnostics::Octal_literals_are_not_allowed_Use_the_syntax_0), start, pos - start, literal);
             return SyntaxKind::NumericLiteral;
@@ -1787,20 +1787,26 @@ auto Scanner::scanNumber() -> SyntaxKind
         result = text.substring(start, end); // No need to use all the fragments; no _ removal needed
     }
 
+    if ((tokenFlags & TokenFlags::ContainsLeadingZero) == TokenFlags::ContainsLeadingZero) {
+        error(data::DiagnosticMessage(Diagnostics::Decimals_with_leading_zeros_are_not_allowed), start, end - start);
+        // if a literal has a leading zero, it must not be bigint
+        tokenValue = to_string_val(+to_float_val(result));
+        return SyntaxKind::NumericLiteral;
+    }
+
     if (!decimalFragment.empty() || !!(tokenFlags & TokenFlags::Scientific))
     {
         checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
-        return {
-            SyntaxKind::NumericLiteral,
-            to_string_val(+to_float_val(result)) // if value is not an integer, it can be safely coerced to a number
-        };
+        // if value is not an integer, it can be safely coerced to a number
+        tokenValue = to_string_val(+to_float_val(result));
+        return SyntaxKind::NumericLiteral;
     }
     else
     {
         tokenValue = result;
         auto type = checkBigIntSuffix(); // if value is an integer, check whether it is a bigint
         checkForIdentifierStartAfterNumericLiteral(start);
-        return {type, tokenValue};
+        return type;
     }
 }
 
@@ -1835,14 +1841,18 @@ auto Scanner::checkForIdentifierStartAfterNumericLiteral(number numericStart, bo
     }
 }
 
-auto Scanner::scanOctalDigits() -> number
-{
+auto Scanner::scanDigits() -> boolean {
     auto start = pos;
-    while (isOctalDigit(text[pos]))
-    {
+    auto isOctal = true;
+    while (isDigit(text[pos])) {
+        if (!isOctalDigit(text[pos])) {
+            isOctal = false;
+        }
         pos++;
     }
-    return +std::stod((text.substring(start, pos)));
+
+    tokenValue = text.substring(start, pos);
+    return isOctal;
 }
 
 /**
