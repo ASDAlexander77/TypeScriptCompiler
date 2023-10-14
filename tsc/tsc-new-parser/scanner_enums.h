@@ -502,6 +502,12 @@ enum class CharacterCodes : number {
     // Unicode replacement character produced when a byte sequence is invalid
     replacementCharacter = 0xFFFD,
 
+    _startOfSurrogate = 0xD800,
+    _endOfSurrogate = 0xDBFF,
+    _startOfSurrogateLow = 0xDC00,
+    _endOfSurrogateLow = 0xDFFF,
+    _2bytes = 0x10000,
+    
     _ = 0x5F,
     $ = 0x24,
 

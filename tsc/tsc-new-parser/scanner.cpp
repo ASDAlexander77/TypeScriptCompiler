@@ -2046,10 +2046,10 @@ auto Scanner::scanTemplateAndSetTokenValue(boolean shouldEmitInvalidEscapeError)
     return resultingToken;
 }
 
-inline string fromCharCode(int code)
+inline string fromCharCode(char_t code)
 {
-    string s;
-    s.push_back(code);
+    string s(1, code);
+    return s;
 }
 
 auto Scanner::scanEscapeSequence(boolean shouldEmitInvalidEscapeError) -> string
@@ -3589,29 +3589,10 @@ auto Scanner::setInJSDocType(boolean inType) -> void
 }
 
 /* @internal */
+// TODO: I don't think I need to update it
 auto Scanner::codePointAt(safe_string &str, number i) -> CharacterCodes
 {
-    // from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/codePointAt
-    auto size = str.length();
-    // Account for out-of-bounds indices:
-    if (i < 0 || i >= size)
-    {
-        return CharacterCodes::outOfBoundary; // String.codePointAt returns `-1` for OOB indexes
-    }
-    // Get the first code unit
-    auto first = str[i];
-    // check if it’s the start of a surrogate pair
-    if (first >= CharacterCodes::_startOfSurrogate && first <= CharacterCodes::_endOfSurrogate && size > i + 1)
-    { // high surrogate and there is a next code unit
-        auto second = str[i + 1];
-        if (second >= CharacterCodes::_startOfSurrogateLow && second <= CharacterCodes::_endOfSurrogateLow)
-        { // low surrogate
-            // https://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
-            return (CharacterCodes)(((number)first - (number)CharacterCodes::_startOfSurrogate) * 0x400 + (number)second -
-                                    (number)CharacterCodes::_startOfSurrogateLow + (number)CharacterCodes::_2bytes);
-        }
-    }
-    return first;
+    return str[i];
 };
 
 /* @internal */
@@ -3624,22 +3605,7 @@ auto Scanner::charSize(CharacterCodes ch) -> number
 auto Scanner::utf16EncodeAsStringFallback(number codePoint) -> string
 {
     debug(0x0 <= codePoint && codePoint <= 0x10FFFF);
-
-    // TODO: review code
-    /*
-if (codePoint <= 65535)
-{
-    return string(1, (char_t)codePoint);
-}
-
-auto codeUnit1 = (number)((codePoint - 65536) / 1024) + 0xD800;
-auto codeUnit2 = ((codePoint - 65536) % 1024) + 0xDC00;
-
-// unit code
-return string({codeUnit1, codeUnit2});
-*/
-
-    return string(1, (char_t)codePoint);
+    return fromCharCode(codePoint);
 }
 
 /* @internal */
