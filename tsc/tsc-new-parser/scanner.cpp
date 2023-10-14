@@ -3021,8 +3021,7 @@ auto Scanner::shouldParseJSDoc() -> bool {
         return false;
     }
 
-    auto testText = text.substring(fullStartPos, pos);
-    auto words_begin = sregex_iterator(testText.begin(), testText.end(), jsDocSeeOrLink);
+    auto words_begin = sregex_iterator(((string&)text).begin() + fullStartPos, ((string&)text).begin() + pos, jsDocSeeOrLink);
     auto words_end = sregex_iterator();
     return (words_begin != words_end);
 }
@@ -3290,7 +3289,7 @@ auto Scanner::scanJsxToken(boolean allowMultilineJsxText) -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 return token = SyntaxKind::ConflictMarkerTrivia;
             }
             break;
@@ -3397,6 +3396,36 @@ auto Scanner::reScanJsxAttributeValue() -> SyntaxKind
 {
     pos = tokenStart = fullStartPos;
     return scanJsxAttributeValue();
+}
+
+auto Scanner::scanJSDocCommentTextToken(bool inBackticks) -> SyntaxKind {
+    fullStartPos = tokenStart = pos;
+    tokenFlags = TokenFlags::None;
+    if (pos >= end) {
+        return token = SyntaxKind::EndOfFileToken;
+    }
+    for (auto ch = text[pos]; pos < end && (!isLineBreak(ch) && ch != CharacterCodes::backtick); ch = codePointAt(text, ++pos)) {
+        if (!inBackticks) {
+            if (ch == CharacterCodes::openBrace) {
+                break;
+            }
+            else if (
+                ch == CharacterCodes::at
+                && pos - 1 >= 0 && isWhiteSpaceSingleLine(text[pos - 1])
+                && !(pos + 1 < end && isWhiteSpaceLike(text[pos + 1]))
+            ) {
+                // @ doesn't start a new tag inside ``, and elsewhere, only after whitespace and before non-whitespace
+                break;
+            }
+        }
+    }
+
+    if (pos == tokenStart) {
+        return scanJsDocToken();
+    }
+
+    tokenValue = text.substring(tokenStart, pos);
+    return token = SyntaxKind::JSDocCommentTextToken;
 }
 
 auto Scanner::scanJsDocToken() -> SyntaxKind
