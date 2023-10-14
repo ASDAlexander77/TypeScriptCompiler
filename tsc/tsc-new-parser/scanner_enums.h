@@ -143,7 +143,9 @@ enum class SyntaxKind : number {
     YieldKeyword,
     // Contextual keywords
     AbstractKeyword,
+    AccessorKeyword,
     AsKeyword,
+    AssertKeyword,
     AssertsKeyword,
     AnyKeyword,
     AsyncKeyword,
@@ -159,10 +161,12 @@ enum class SyntaxKind : number {
     ModuleKeyword,
     NamespaceKeyword,
     NeverKeyword,
+    OutKeyword,
     ReadonlyKeyword,
     RequireKeyword,
     NumberKeyword,
     ObjectKeyword,
+    SatisfiesKeyword,
     SetKeyword,
     StringKeyword,
     SymbolKeyword,
@@ -170,9 +174,11 @@ enum class SyntaxKind : number {
     UndefinedKeyword,
     UniqueKeyword,
     UnknownKeyword,
+    UsingKeyword,
     FromKeyword,
     GlobalKeyword,
     BigIntKeyword,
+    OverrideKeyword,
     OfKeyword, // LastKeyword and LastToken and LastContextualKeyword
 
     // Parse tree nodes
