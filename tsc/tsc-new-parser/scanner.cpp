@@ -2266,15 +2266,14 @@ auto Scanner::peekUnicodeEscape() -> CharacterCodes
 
 auto Scanner::peekExtendedUnicodeEscape() -> CharacterCodes
 {
-    if (languageVersion >= ScriptTarget::ES2015 && codePointAt(text, pos + 1) == CharacterCodes::u &&
-        codePointAt(text, pos + 2) == CharacterCodes::openBrace)
+    if (codePointAt(text, pos + 1) == CharacterCodes::u && codePointAt(text, pos + 2) == CharacterCodes::openBrace)
     {
         auto start = pos;
         pos += 3;
         auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-        auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
+        auto escapedValue = !escapedValueString.empty() ? (CharacterCodes)to_number_base(escapedValueString, 16) : CharacterCodes::outOfBoundary;
         pos = start;
-        return (CharacterCodes)escapedValue;
+        return escapedValue;
     }
     return CharacterCodes::outOfBoundary;
 }
