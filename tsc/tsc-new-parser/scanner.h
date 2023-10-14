@@ -220,6 +220,8 @@ class Scanner
     static regex shebangTriviaRegex;
 
   protected:
+    ScriptKind scriptKind;
+
     ScriptTarget languageVersion;
 
     boolean _skipTrivia;
@@ -622,6 +624,8 @@ class Scanner
     auto scanJSDocCommentTextToken(boolean inBackticks) -> SyntaxKind; /*JSDocSyntaxKind | SyntaxKind.JSDocCommentTextToken*/
 
     auto scan() -> SyntaxKind;
+
+    auto shouldParseJSDoc() -> bool;
 
     auto reScanInvalidIdentifier() -> SyntaxKind;
 

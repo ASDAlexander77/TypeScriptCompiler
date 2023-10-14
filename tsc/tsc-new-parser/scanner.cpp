@@ -3002,6 +3002,31 @@ auto Scanner::scan() -> SyntaxKind
     }
 }
 
+auto Scanner::shouldParseJSDoc() -> bool {
+    switch (jsDocParsingMode) {
+        case JSDocParsingMode::ParseAll:
+            return true;
+        case JSDocParsingMode::ParseNone:
+            return false;
+    }
+
+    if (scriptKind != ScriptKind::TS && scriptKind != ScriptKind::TSX) {
+        // If outside of TS, we need JSDoc to get any type info.
+        return true;
+    }
+
+    if (jsDocParsingMode == JSDocParsingMode::ParseForTypeInfo) {
+        // If we're in TS, but we don't need to produce reliable errors,
+        // we don't need to parse to find @see or @link.
+        return false;
+    }
+
+    auto testText = text.substring(fullStartPos, pos);
+    auto words_begin = sregex_iterator(testText.begin(), testText.end(), jsDocSeeOrLink);
+    auto words_end = sregex_iterator();
+    return (words_begin != words_end);
+}
+
 auto Scanner::reScanInvalidIdentifier() -> SyntaxKind
 {
     debug(token == SyntaxKind::Unknown,
@@ -3505,6 +3530,11 @@ auto Scanner::setOnError(ErrorCallback errorCallback) -> void
 auto Scanner::setScriptTarget(ScriptTarget scriptTarget) -> void
 {
     languageVersion = scriptTarget;
+}
+
+auto Scanner::setScriptKind(ScriptKind kind) -> void
+{
+    scriptKind = kind;
 }
 
 auto Scanner::setLanguageVariant(LanguageVariant variant) -> void
