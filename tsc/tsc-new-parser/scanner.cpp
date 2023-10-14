@@ -3355,7 +3355,6 @@ auto Scanner::scanJsxIdentifier() -> SyntaxKind
         // everything after it to the token
         // Do note that this means that `scanJsxIdentifier` effectively _mutates_ the visible token without advancing to a new token
         // Any caller should be expecting this behavior and should only read the pos or token value after calling it.
-        auto namespaceSeparator = false;
         while (pos < end)
         {
             auto ch = text[pos];
@@ -3365,13 +3364,6 @@ auto Scanner::scanJsxIdentifier() -> SyntaxKind
                 pos++;
                 continue;
             }
-            else if (ch == CharacterCodes::colon && !namespaceSeparator)
-            {
-                tokenValue += S(":");
-                pos++;
-                namespaceSeparator = true;
-                continue;
-            }
             auto oldPos = pos;
             tokenValue += scanIdentifierParts(); // reuse `scanIdentifierParts` so unicode escapes are handled
             if (pos == oldPos)
@@ -3379,19 +3371,15 @@ auto Scanner::scanJsxIdentifier() -> SyntaxKind
                 break;
             }
         }
-        // Do not include a trailing namespace separator in the token, since this is against the spec.
-        if (tokenValue.substr(tokenValue.length() - 1) == S(":"))
-        {
-            tokenValue = tokenValue.substr(0, tokenValue.length() - 1);
-            pos--;
-        }
+        
+        return getIdentifierToken();
     }
     return token;
 }
 
 auto Scanner::scanJsxAttributeValue() -> SyntaxKind
 {
-    startPos = pos;
+    fullStartPos = pos;
 
     switch (text[pos])
     {
@@ -3407,13 +3395,13 @@ auto Scanner::scanJsxAttributeValue() -> SyntaxKind
 
 auto Scanner::reScanJsxAttributeValue() -> SyntaxKind
 {
-    pos = tokenPos = startPos;
+    pos = tokenStart = fullStartPos;
     return scanJsxAttributeValue();
 }
 
 auto Scanner::scanJsDocToken() -> SyntaxKind
 {
-    startPos = tokenPos = pos;
+    fullStartPos = tokenStart = pos;
     tokenFlags = TokenFlags::None;
     if (pos >= end)
     {
