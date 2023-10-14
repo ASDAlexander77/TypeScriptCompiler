@@ -3031,7 +3031,7 @@ auto Scanner::reScanInvalidIdentifier() -> SyntaxKind
 {
     debug(token == SyntaxKind::Unknown,
           S("'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'."));
-    pos = tokenPos = startPos;
+    pos = tokenStart = fullStartPos;
     tokenFlags = TokenFlags::None;
     auto ch = codePointAt(text, pos);
     auto identifierKind = scanIdentifier(ch, ScriptTarget::ESNext);
@@ -3051,7 +3051,7 @@ auto Scanner::scanIdentifier(CharacterCodes startCharacter, ScriptTarget languag
         pos += charSize(ch);
         while (pos < end && isIdentifierPart(ch = codePointAt(text, pos), languageVersion))
             pos += charSize(ch);
-        tokenValue = text.substring(tokenPos, pos);
+        tokenValue = text.substring(tokenStart, pos);
         if (ch == CharacterCodes::backslash)
         {
             tokenValue += scanIdentifierParts();
@@ -3095,7 +3095,7 @@ auto Scanner::reScanGreaterToken() -> SyntaxKind
 auto Scanner::reScanAsteriskEqualsToken() -> SyntaxKind
 {
     debug(token == SyntaxKind::AsteriskEqualsToken, S("'reScanAsteriskEqualsToken' should only be called on a '*='"));
-    pos = tokenPos + 1;
+    pos = tokenStart + 1;
     return token = SyntaxKind::EqualsToken;
 }
 
@@ -3103,7 +3103,7 @@ auto Scanner::reScanSlashToken() -> SyntaxKind
 {
     if (token == SyntaxKind::SlashToken || token == SyntaxKind::SlashEqualsToken)
     {
-        auto p = tokenPos + 1;
+        auto p = tokenStart + 1;
         auto inEscape = false;
         auto inCharacterClass = false;
         while (true)
@@ -3158,7 +3158,7 @@ auto Scanner::reScanSlashToken() -> SyntaxKind
             p++;
         }
         pos = p;
-        tokenValue = text.substring(tokenPos, pos);
+        tokenValue = text.substring(tokenStart, pos);
         token = SyntaxKind::RegularExpressionLiteral;
     }
     return token;
@@ -3204,20 +3204,19 @@ auto Scanner::getDirectiveFromComment(string &text, regex commentDirectiveRegEx)
  */
 auto Scanner::reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind
 {
-    debug(token == SyntaxKind::CloseBraceToken, S("'reScanTemplateToken' should only be called on a '}'"));
-    pos = tokenPos;
-    return token = scanTemplateAndSetTokenValue(isTaggedTemplate);
+    pos = tokenStart;
+    return token = scanTemplateAndSetTokenValue(!isTaggedTemplate);
 }
 
 auto Scanner::reScanTemplateHeadOrNoSubstitutionTemplate() -> SyntaxKind
 {
-    pos = tokenPos;
-    return token = scanTemplateAndSetTokenValue(/* isTaggedTemplate */ true);
+    pos = tokenStart;
+    return token = scanTemplateAndSetTokenValue(/*shouldEmitInvalidEscapeError*/ true);
 }
 
 auto Scanner::reScanJsxToken(boolean allowMultilineJsxText) -> SyntaxKind
 {
-    pos = tokenPos = startPos;
+    pos = tokenStart = fullStartPos;
     return token = scanJsxToken(allowMultilineJsxText);
 }
 
@@ -3225,8 +3224,16 @@ auto Scanner::reScanLessThanToken() -> SyntaxKind
 {
     if (token == SyntaxKind::LessThanLessThanToken)
     {
-        pos = tokenPos + 1;
+        pos = tokenStart + 1;
         return token = SyntaxKind::LessThanToken;
+    }
+    return token;
+}
+
+auto Scanner::reScanHashToken() -> SyntaxKind {
+    if (token == SyntaxKind::PrivateIdentifier) {
+        pos = tokenStart + 1;
+        return token = SyntaxKind::HashToken;
     }
     return token;
 }
@@ -3234,13 +3241,13 @@ auto Scanner::reScanLessThanToken() -> SyntaxKind
 auto Scanner::reScanQuestionToken() -> SyntaxKind
 {
     debug(token == SyntaxKind::QuestionQuestionToken, S("'reScanQuestionToken' should only be called on a '\?\?'"));
-    pos = tokenPos + 1;
+    pos = tokenStart + 1;
     return token = SyntaxKind::QuestionToken;
 }
 
 auto Scanner::scanJsxToken(boolean allowMultilineJsxText) -> SyntaxKind
 {
-    startPos = tokenPos = pos;
+    fullStartPos = tokenStart = pos;
 
     if (pos >= end)
     {
@@ -3321,7 +3328,7 @@ auto Scanner::scanJsxToken(boolean allowMultilineJsxText) -> SyntaxKind
         pos++;
     }
 
-    tokenValue = text.substring(startPos, pos);
+    tokenValue = text.substring(fullStartPos, pos);
 
     return firstNonWhitespace == -1 ? SyntaxKind::JsxTextAllWhiteSpaces : SyntaxKind::JsxText;
 }
