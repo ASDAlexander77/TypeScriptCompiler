@@ -221,6 +221,8 @@ class Scanner
 
     static regex commentDirectiveRegExMultiLine;
 
+    static regex jsDocSeeOrLink;
+
     static number mergeConflictMarkerLength;
 
     static regex shebangTriviaRegex;

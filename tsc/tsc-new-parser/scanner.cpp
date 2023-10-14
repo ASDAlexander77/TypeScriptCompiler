@@ -949,12 +949,14 @@ std::vector<number> Scanner::unicodeESNextIdentifierPart = {
 /**
  * Test for whether a single line comment's text contains a directive.
  */
-regex Scanner::commentDirectiveRegExSingleLine = regex(S("^\\s*\\/\\/\\/?\\s*@(ts-expect-error|ts-ignore)"));
+regex Scanner::commentDirectiveRegExSingleLine = regex(S("^\\/\\/\\/?\\s*@(ts-expect-error|ts-ignore)"));
 
 /**
  * Test for whether a multi-line comment's last line contains a directive.
  */
-regex Scanner::commentDirectiveRegExMultiLine = regex(S("^\\s*(?:\\/|\\*)*\\s*@(ts-expect-error|ts-ignore)"));
+regex Scanner::commentDirectiveRegExMultiLine = regex(S("^(?:\\/|\\*)*\\s*@(ts-expect-error|ts-ignore)"));
+
+regex Scanner::jsDocSeeOrLink = regex(S("@(?:see|link)"));
 
 // Creates a scanner over a (possibly unspecified) range of a piece of text.
 Scanner::Scanner(ScriptTarget languageVersion, boolean skipTrivia, LanguageVariant languageVariant, string textInitial,
