@@ -581,8 +581,6 @@ std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::NotEmittedStatement, S("NotEmittedStatement")},
     {SyntaxKind::PartiallyEmittedExpression, S("PartiallyEmittedExpression")},
     {SyntaxKind::CommaListExpression, S("CommaListExpression")},
-    {SyntaxKind::MergeDeclarationMarker, S("MergeDeclarationMarker")},
-    {SyntaxKind::EndOfDeclarationMarker, S("EndOfDeclarationMarker")},
     {SyntaxKind::SyntheticReferenceExpression, S("SyntheticReferenceExpression")}};
 
 /*
@@ -966,9 +964,19 @@ Scanner::Scanner(ScriptTarget languageVersion, boolean skipTrivia, LanguageVaria
     setText(textInitial, start, length);
 }
 
-auto Scanner::getToken() -> SyntaxKind
+auto Scanner::getTokenFullStart() -> number
 {
-    return token;
+    return fullStartPos;
+}
+
+auto Scanner::getStartPos() -> number
+{
+    return fullStartPos;
+}
+
+auto Scanner::getTokenEnd() -> number
+{
+    return pos;
 }
 
 auto Scanner::getTextPos() -> number
@@ -976,19 +984,24 @@ auto Scanner::getTextPos() -> number
     return pos;
 }
 
-auto Scanner::getStartPos() -> number
+auto Scanner::getToken() -> SyntaxKind
 {
-    return startPos;
+    return token;
+}
+
+auto Scanner::getTokenStart() -> number
+{
+    return tokenStart;
 }
 
 auto Scanner::getTokenPos() -> number
 {
-    return tokenPos;
+    return tokenStart;
 }
 
 auto Scanner::getTokenText() -> string
 {
-    return text.substring(tokenPos, pos);
+    return text.substring(tokenStart, pos);
 }
 
 auto Scanner::getTokenValue() -> string
