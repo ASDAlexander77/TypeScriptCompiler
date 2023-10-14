@@ -1352,13 +1352,14 @@ auto Scanner::couldStartTrivia(safe_string &text, number pos) -> boolean
 }
 
 /* @internal */
-auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak, bool stopAtComments) -> number
+auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak, bool stopAtComments, bool inJSDoc) -> number
 {
     if (positionIsSynthesized(pos))
     {
         return pos;
     }
 
+    auto canConsumeStar = false;
     // Keep in sync with couldStartTrivia
     while (true)
     {
@@ -1377,6 +1378,8 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
             {
                 return pos;
             }
+
+            canConsumeStar = !!inJSDoc;
             continue;
         case CharacterCodes::tab:
         case CharacterCodes::verticalTab:
@@ -1400,6 +1403,8 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
                     }
                     pos++;
                 }
+
+                canConsumeStar = false;
                 continue;
             }
             if (text[pos + 1] == CharacterCodes::asterisk)
@@ -1414,6 +1419,8 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
                     }
                     pos++;
                 }
+
+                canConsumeStar = false;
                 continue;
             }
             break;
@@ -1425,6 +1432,7 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(text, pos);
+                canConsumeStar = false;
                 continue;
             }
             break;
@@ -1433,6 +1441,15 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
             if (pos == 0 && isShebangTrivia(text, pos))
             {
                 pos = scanShebangTrivia(text, pos);
+                canConsumeStar = false;
+                continue;
+            }
+            break;
+
+        case CharacterCodes::asterisk:
+            if (canConsumeStar) {
+                pos++;
+                canConsumeStar = false;                
                 continue;
             }
             break;

@@ -368,7 +368,7 @@ class Scanner
     auto couldStartTrivia(safe_string &text, number pos) -> boolean;
 
     /* @internal */
-    auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number;
+    auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false, bool inJSDoc = false) -> number;
 
     auto isConflictMarkerTrivia(safe_string &text, number pos) -> boolean;
 
