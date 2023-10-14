@@ -263,11 +263,20 @@ class Scanner
 
     auto getToken() -> SyntaxKind;
 
-    auto getTextPos() -> number;
-
+    /** @deprecated use {@link getTokenFullStart} */
     auto getStartPos() -> number;
 
+    /** @deprecated use {@link getTokenEnd} */
+    auto getTextPos() -> number;
+
+    /** @deprecated use {@link getTokenStart} */
     auto getTokenPos() -> number;
+
+    auto getTokenFullStart() -> number;
+
+    auto getTokenStart() -> number;
+    
+    auto getTokenEnd() -> number;
 
     auto getTokenText() -> string;
 
@@ -613,6 +622,9 @@ class Scanner
 
     auto checkBigIntSuffix() -> SyntaxKind;
 
+/** @internal */
+    auto scanJSDocCommentTextToken(boolean inBackticks) -> SyntaxKind; /*JSDocSyntaxKind | SyntaxKind.JSDocCommentTextToken*/
+
     auto scan() -> SyntaxKind;
 
     auto reScanInvalidIdentifier() -> SyntaxKind;
@@ -632,11 +644,14 @@ class Scanner
 
     auto reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind;
 
+    /** @deprecated use {@link reScanTemplateToken}(false) */
     auto reScanTemplateHeadOrNoSubstitutionTemplate() -> SyntaxKind;
 
     auto reScanJsxToken(boolean allowMultilineJsxText = true) -> SyntaxKind;
 
     auto reScanLessThanToken() -> SyntaxKind;
+
+    auto reScanHashToken() -> SyntaxKind;
 
     auto reScanQuestionToken() -> SyntaxKind;
 
@@ -726,8 +741,16 @@ class Scanner
 
     auto setLanguageVariant(LanguageVariant variant) -> void;
 
+    auto setScriptKind(ScriptKind scriptKind) -> void;
+    
+    auto setJSDocParsingMode(JSDocParsingMode kind) -> void;
+
+    /** @deprecated use {@link resetTokenState} */
     auto setTextPos(number textPos) -> void;
 
+    auto resetTokenState(number pos) -> void;
+
+    /** @internal */
     auto setInJSDocType(boolean inType) -> void;
 
     /* @internal */
