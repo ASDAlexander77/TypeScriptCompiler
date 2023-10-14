@@ -244,10 +244,10 @@ class Scanner
     number end;
 
     // Start position of whitespace before current token
-    number startPos;
+    number fullStartPos;
 
     // Start position of text of current token
-    number tokenPos;
+    number tokenStart;
 
     SyntaxKind token;
     string tokenValue;
@@ -255,6 +255,8 @@ class Scanner
 
     std::vector<CommentDirective> commentDirectives;
     number inJSDocType = 0;
+
+    JSDocParsingMode jsDocParsingMode = JSDocParsingMode::ParseAll;
 
     ErrorCallback onError = nullptr;
 

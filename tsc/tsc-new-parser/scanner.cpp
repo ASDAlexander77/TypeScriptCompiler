@@ -1670,13 +1670,17 @@ auto Scanner::scanNumberFragment() -> string
                 isPreviousTokenSeparator = true;
                 result += text.substring(start, pos);
             }
-            else if (isPreviousTokenSeparator)
+            else 
             {
-                error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
-            }
-            else
-            {
-                error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+                tokenFlags |= TokenFlags::ContainsInvalidSeparator;
+                if (isPreviousTokenSeparator)
+                {
+                    error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
+                }
+                else
+                {
+                    error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+                }
             }
             pos++;
             start = pos;
@@ -1693,6 +1697,7 @@ auto Scanner::scanNumberFragment() -> string
     }
     if (text[pos - 1] == CharacterCodes::_)
     {
+        tokenFlags |= TokenFlags::ContainsInvalidSeparator;
         error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
     }
     return result + text.substring(start, pos);
