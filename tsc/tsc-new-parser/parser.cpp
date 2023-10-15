@@ -179,7 +179,7 @@ struct Parser
         // Prime the scanner.
         nextToken();
         auto entityName = parseEntityName(/*allowReservedWords*/ true);
-        auto isInvalid = token() == SyntaxKind::EndOfFileToken && !parseDiagnostics.size();
+        auto isInvalid = token() == SyntaxKind::EndOfFileToken && !parse_E(Diagnostics::size();
         clearState();
         return isInvalid ? entityName : undefined;
     }
@@ -293,7 +293,7 @@ struct Parser
         sourceFile->identifiers = identifiers;
         // sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
         copy(sourceFile->parseDiagnostics, attachFileToDiagnostics(parseDiagnostics, sourceFile));
-        if (!jsDocDiagnostics.empty())
+        if (!jsDoc_E(Diagnostics::empty())
         {
             // sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
             copy(sourceFile->jsDocDiagnostics, attachFileToDiagnostics(jsDocDiagnostics, sourceFile));
@@ -314,7 +314,7 @@ struct Parser
         scriptKind = _scriptKind;
         languageVariant = getLanguageVariant(_scriptKind);
 
-        parseDiagnostics.clear();
+        parse_E(Diagnostics::clear();
         parsingContext = ParsingContext::Unknown;
         identifiers.clear();
         identifierCount = 0;
@@ -362,8 +362,8 @@ struct Parser
         scriptKind = ScriptKind::Unknown;
         languageVariant = LanguageVariant::Standard;
         sourceFlags = NodeFlags::None;
-        parseDiagnostics.clear();
-        jsDocDiagnostics.clear();
+        parse_E(Diagnostics::clear();
+        jsDoc_E(Diagnostics::clear();
         parsingContext = ParsingContext::Unknown;
         identifiers.clear();
         notParenthesizedArrow.clear();
@@ -404,7 +404,7 @@ struct Parser
         processCommentPragmas(sourceFile, sourceText);
 
         auto reportPragmaDiagnostic = [&](pos_type pos, number end, DiagnosticMessage diagnostic) -> void {
-            parseDiagnostics.push_back(createDetachedDiagnostic(fileName, sourceText, pos, end, diagnostic));
+            parse_E(Diagnostics::push_back(createDetachedDiagnostic(fileName, sourceText, pos, end, diagnostic));
         };
         processPragmasIntoFields(sourceFile, reportPragmaDiagnostic);
 
@@ -415,7 +415,7 @@ struct Parser
         // sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
         copy(sourceFile->parseDiagnostics, attachFileToDiagnostics(parseDiagnostics, sourceFile));
         sourceFile.jsDocParsingMode = jsDocParsingMode;
-        if (!jsDocDiagnostics.empty())
+        if (!jsDoc_E(Diagnostics::empty())
         {
             // sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
             copy(sourceFile->jsDocDiagnostics, attachFileToDiagnostics(jsDocDiagnostics, sourceFile));
@@ -492,7 +492,7 @@ struct Parser
         NodeArray<Statement> statements;
         auto savedParseDiagnostics = parseDiagnostics;
 
-        parseDiagnostics.clear();
+        parse_E(Diagnostics::clear();
 
         auto pos = 0;
         auto start = findNextStatementWithAwait(sourceFile->statements, 0);
@@ -606,8 +606,8 @@ struct Parser
         }
 
         sourceFile->text = sourceText;
-        sourceFile->bindDiagnostics.clear();
-        sourceFile->bindSuggestionDiagnostics.clear();
+        sourceFile->bind_E(Diagnostics::clear();
+        sourceFile->bindSuggestion_E(Diagnostics::clear();
         sourceFile->languageVersion = languageVersion;
         sourceFile->fileName = fileName;
         sourceFile->languageVariant = getLanguageVariant(scriptKind);
@@ -791,7 +791,7 @@ struct Parser
         if (!lastError || start != lastError->start)
         {
             result = createDetachedDiagnostic(fileName, sourceText, start, length, message, arg0);
-            parseDiagnostics.push_back(result);
+            parse_E(Diagnostics::push_back(result);
         }
 
         // Mark that we've encountered an error.  We'll set an appropriate bit on the next
@@ -927,7 +927,7 @@ struct Parser
         // Keep track of the state we'll need to rollback to if lookahead fails (or if the
         // caller asked us to always reset our state).
         auto saveToken = currentToken;
-        auto saveParseDiagnosticsLength = parseDiagnostics.size();
+        auto saveParseDiagnosticsLength = parse_E(Diagnostics::size();
         auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
 
         // it Note is not actually necessary to save/restore the context flags here.  That's
@@ -951,8 +951,8 @@ struct Parser
             currentToken = saveToken;
             if (speculationKind != SpeculationKind::Reparse)
             {
-                while (saveParseDiagnosticsLength < parseDiagnostics.size())
-                    parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
+                while (saveParseDiagnosticsLength < parse_E(Diagnostics::size())
+                    parse_E(Diagnostics::erase(parse_E(Diagnostics::begin() + saveParseDiagnosticsLength);
             }
             parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
         }
@@ -985,6 +985,8 @@ struct Parser
         {
             return true;
         }
+
+        // `let await`/`let yield` in [Yield] or [Await] are allowed here and disallowed in the binder.
         return token() > SyntaxKind::LastReservedWord;
     }
 
@@ -1036,6 +1038,140 @@ struct Parser
         }
         return false;
     }
+
+    // TODO: finish it
+    //auto viableKeywordSuggestions = Object.keys(textToKeywordObj).filter(keyword => keyword.length > 2);
+
+    /**
+     * Provides a better error message than the generic "';' expected" if possible for
+     * known common variants of a missing semicolon, such as from a mispelled names.
+     *
+     * @param node Node preceding the expected semicolon location.
+     */
+    auto parseErrorForMissingSemicolonAfter(Node node) -> void {
+        // Tagged template literals are sometimes used in places where only simple strings are allowed, i.e.:
+        //   module `M1` {
+        //   ^^^^^^^^^^^ This block is parsed as a template literal like module`M1`.
+        if (isTaggedTemplateExpression(node)) {
+            auto templateNode = node.as<TaggedTemplateExpression>();
+            parseErrorAt(scanner.skipTrivia(sourceText, templateNode->_template->pos), templateNode->_template->_end, _E(Diagnostics::Module_declaration_names_may_only_use_or_quoted_strings));
+            return;
+        }
+
+        // Otherwise, if this isn't a well-known keyword-like identifier, give the generic fallback message.
+        auto expressionText = isIdentifierNode(node) ? idText(node) : undefined;
+        if (!expressionText || !isIdentifierText(expressionText, languageVersion)) {
+            parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::SemicolonToken);
+            return;
+        }
+
+        auto pos = scanner.skipTrivia(sourceText, node->pos);
+
+        // Some known keywords are likely signs of syntax being used improperly.
+        switch (expressionText) {
+            case S("const"):
+            case S("let"):
+            case S("var"):
+                parseErrorAt(pos, node->_end, _E(Diagnostics::Variable_declaration_not_allowed_at_this_location));
+                return;
+
+            case S("declare"):
+                // If a declared node failed to parse, it would have emitted a diagnostic already.
+                return;
+
+            case S("interface"):
+                parseErrorForInvalidName(_E(Diagnostics::Interface_name_cannot_be_0), _E(Diagnostics::Interface_must_be_given_a_name), SyntaxKind::OpenBraceToken);
+                return;
+
+            case S("is"):
+                parseErrorAt(pos, scanner.getTokenStart(), _E(Diagnostics::A_type_predicate_is_only_allowed_in_return_type_position_for_functions_and_methods));
+                return;
+
+            case S("module"):
+            case S("namespace"):
+                parseErrorForInvalidName(_E(Diagnostics::Namespace_name_cannot_be_0), _E(Diagnostics::Namespace_must_be_given_a_name), SyntaxKind::OpenBraceToken);
+                return;
+
+            case S("type"):
+                parseErrorForInvalidName(_E(Diagnostics::Type_alias_name_cannot_be_0), _E(Diagnostics::Type_alias_must_be_given_a_name), SyntaxKind::EqualsToken);
+                return;
+        }
+
+        // The user alternatively might have misspelled or forgotten to add a space after a common keyword.
+        auto suggestion = getSpellingSuggestion(expressionText, viableKeywordSuggestions, n => n) ?? getSpaceSuggestion(expressionText);
+        if (suggestion) {
+            parseErrorAt(pos, node->_end, _E(Diagnostics::Unknown_keyword_or_identifier_Did_you_mean_0), suggestion);
+            return;
+        }
+
+        // Unknown tokens are handled with their own errors in the scanner
+        if (token() == SyntaxKind::Unknown) {
+            return;
+        }
+
+        // Otherwise, we know this some kind of unknown word, not just a missing expected semicolon.
+        parseErrorAt(pos, node->_end, _E(Diagnostics::Unexpected_keyword_or_identifier));
+    }
+
+    /**
+     * Reports a diagnostic error for the current token being an invalid name.
+     *
+     * @param blankDiagnostic Diagnostic to report for the case of the name being blank (matched tokenIfBlankName).
+     * @param nameDiagnostic Diagnostic to report for all other cases.
+     * @param tokenIfBlankName Current token if the name was invalid for being blank (not provided / skipped).
+     */
+    auto parseErrorForInvalidName(DiagnosticMessage nameDiagnostic, DiagnosticMessage blankDiagnostic, SyntaxKind tokenIfBlankName) {
+        if (token() == tokenIfBlankName) {
+            parseErrorAtCurrentToken(blankDiagnostic);
+        }
+        else {
+            parseErrorAtCurrentToken(nameDiagnostic, scanner.getTokenValue());
+        }
+    }
+
+    auto getSpaceSuggestion(string expressionText) {
+        for (auto keyword of viableKeywordSuggestions) {
+            if (expressionText.length > keyword.length + 2 && startsWith(expressionText, keyword)) {
+                return `${keyword} ${expressionText.slice(keyword.length)}`;
+            }
+        }
+
+        return undefined;
+    }
+
+    auto parseSemicolonAfterPropertyName(PropertyName name, TypeNode type, Expression initializer) {
+        if (token() == SyntaxKind::AtToken && !scanner.hasPrecedingLineBreak()) {
+            parseErrorAtCurrentToken(_E(Diagnostics::Decorators_must_precede_the_name_and_all_keywords_of_property_declarations));
+            return;
+        }
+
+        if (token() == SyntaxKind::OpenParenToken) {
+            parseErrorAtCurrentToken(_E(Diagnostics::Cannot_start_a_function_call_in_a_type_annotation));
+            nextToken();
+            return;
+        }
+
+        if (type && !canParseSemicolon()) {
+            if (initializer) {
+                parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::SemicolonToken));
+            }
+            else {
+                parseErrorAtCurrentToken(_E(Diagnostics::Expected_for_property_initializer));
+            }
+            return;
+        }
+
+        if (tryParseSemicolon()) {
+            return;
+        }
+
+        if (initializer) {
+            parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::SemicolonToken));
+            return;
+        }
+
+        parseErrorForMissingSemicolonAfter(name);
+    }    
 
     auto parseExpectedJSDoc(SyntaxKind kind)
     {
@@ -3665,9 +3801,9 @@ struct Parser
         if (token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::OpenBraceToken)
         {
             // Return true if we can parse an array or object binding pattern with no errors
-            auto previousErrorCount = parseDiagnostics.size();
+            auto previousErrorCount = parse_E(Diagnostics::size();
             parseIdentifierOrPattern();
-            return previousErrorCount == parseDiagnostics.size();
+            return previousErrorCount == parse_E(Diagnostics::size();
         }
         return false;
     }
@@ -7880,7 +8016,7 @@ struct Parser
     auto parseJSDocComment(Node parent, number start, number length) -> JSDoc
     {
         auto saveToken = currentToken;
-        auto saveParseDiagnosticsLength = parseDiagnostics.size();
+        auto saveParseDiagnosticsLength = parse_E(Diagnostics::size();
         auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
 
         auto comment =
@@ -7889,15 +8025,15 @@ struct Parser
 
         if (!!(contextFlags & NodeFlags::JavaScriptFile))
         {
-            if (!jsDocDiagnostics.empty())
+            if (!jsDoc_E(Diagnostics::empty())
             {
-                jsDocDiagnostics.clear();
+                jsDoc_E(Diagnostics::clear();
             }
             copy(jsDocDiagnostics, parseDiagnostics);
         }
         currentToken = saveToken;
-        while (saveParseDiagnosticsLength < parseDiagnostics.size())
-            parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
+        while (saveParseDiagnosticsLength < parse_E(Diagnostics::size())
+            parse_E(Diagnostics::erase(parse_E(Diagnostics::begin() + saveParseDiagnosticsLength);
         parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
         return comment;
     }
