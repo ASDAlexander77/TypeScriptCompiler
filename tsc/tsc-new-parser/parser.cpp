@@ -339,7 +339,7 @@ struct Parser
 
         // Initialize and prime the scanner before parsing the source elements.
         scanner.setText(sourceText);
-        scanner.setOnError(std::bind(&Parser::scanError, this, std::placeholders::_1, std::placeholders::_2));
+        scanner.setOnError(std::bind(&Parser::scanError, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
         scanner.setScriptTarget(languageVersion);
         scanner.setLanguageVariant(languageVariant);
     }
@@ -795,9 +795,9 @@ struct Parser
         parseErrorAt(range->pos, range->_end, message, arg0);
     }
 
-    auto scanError(DiagnosticMessage message, number length) -> void
+    auto scanError(DiagnosticMessage message, number length, string arg0) -> void
     {
-        parseErrorAtPosition(scanner.getTokenEnd(), length, message);
+        parseErrorAtPosition(scanner.getTokenEnd(), length, message, arg0);
     }
 
     auto getNodePos() -> pos_type

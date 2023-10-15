@@ -1726,11 +1726,12 @@ auto Scanner::scanNumber() -> SyntaxKind
         }
         else {
             // LegacyOctalIntegerLiteral
-            tokenValue = to_number_base(tokenValue, 8);
+            auto tokenValueOctal = tokenValue;
+            tokenValue = to_string_val(to_number_base(tokenValue, 8));
             tokenFlags |= TokenFlags::Octal;
             auto withMinus = token == SyntaxKind::MinusToken;
             // TODO: finish it
-            string literal = (withMinus ? S("-0o") : S("0o")) + tokenValue;
+            string literal = (withMinus ? S("-0o") : S("0o")) + tokenValueOctal;
             if (withMinus) start--;
             error(_E(Diagnostics::Octal_literals_are_not_allowed_Use_the_syntax_0), start, pos - start, literal);
             return SyntaxKind::NumericLiteral;

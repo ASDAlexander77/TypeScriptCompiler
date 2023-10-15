@@ -175,7 +175,7 @@ static auto formatStringFromArgs(string text, string arg0) -> string {
         auto end = text.find('}');
         if (end != std::string::npos)
         {
-            text.replace(pos, end, arg0);
+            text.replace(pos, end - pos + 1, arg0);
         }
     }
 
