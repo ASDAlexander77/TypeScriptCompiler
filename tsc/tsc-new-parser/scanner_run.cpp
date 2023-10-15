@@ -23,6 +23,16 @@ namespace fs = std::experimental::filesystem;
 
 using namespace ts;
 
+string getSafeToken(SyntaxKind token, Scanner scanner)
+{
+    if (token == SyntaxKind::NoSubstitutionTemplateLiteral)
+    {
+        return S("");
+    }
+
+    return scanner.getTokenText().c_str();
+}
+
 void printScanner(const wchar_t *str)
 {
     Scanner scanner(ScriptTarget::Latest, true, LanguageVariant::Standard, str);
@@ -34,7 +44,7 @@ void printScanner(const wchar_t *str)
         // std::wcout << scanner.syntaxKindString(token) << "(" << (int)token << S(") @") << scanner.getTokenPos() << S(" '") <<
         // scanner.tokenToString(token) << "':" << scanner.getTokenText() << std::endl; std::wcout << (number)token << S(" ") <<
         // scanner.getTokenText() << std::endl;
-        std::wcout << (number)token << " " << scanner.getTokenText().c_str() << "$$$" << std::endl;
+        std::wcout << (number)token << " " << getSafeToken(token, scanner) << "$$$" << std::endl;
     }
 }
 
