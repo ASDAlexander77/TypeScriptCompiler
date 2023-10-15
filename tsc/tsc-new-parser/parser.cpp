@@ -778,9 +778,9 @@ struct Parser
         return inContext(NodeFlags::AwaitContext);
     }
 
-    auto parseErrorAtCurrentToken(DiagnosticMessage message, string arg0 = string()) -> void
+    auto parseErrorAtCurrentToken(DiagnosticMessage message, string arg0 = string()) -> DiagnosticWithDetachedLocation
     {
-        parseErrorAt(scanner.getTokenStart(), scanner.getTokenEnd(), message, arg0);
+        return parseErrorAt(scanner.getTokenStart(), scanner.getTokenEnd(), message, arg0);
     }
 
     auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, string arg0 = string()) -> DiagnosticWithDetachedLocation
@@ -1180,7 +1180,8 @@ struct Parser
             nextTokenJSDoc();
             return true;
         }
-        Debug::_assert(isKeywordOrPunctuation(kind));
+        // TODO:
+        //Debug::_assert(isKeywordOrPunctuation(kind));
         parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(kind));
         return false;
     }
@@ -1197,7 +1198,11 @@ struct Parser
         if (lastError) {
             addRelatedInfo(
                 lastError,
-                createDetachedDiagnostic(fileName, sourceText, openPosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_1_to_match_the_0_token_here), scanner.tokenToString(openKind), scanner.tokenToString(closeKind)),
+                createDetachedDiagnostic(
+                    fileName, sourceText, openPosition, 1, 
+                    _E(Diagnostics::The_parser_expected_to_find_a_1_to_match_the_0_token_here), 
+                    scanner.tokenToString(openKind), 
+                    scanner.tokenToString(closeKind))
             );
         }
     }
@@ -5906,10 +5911,7 @@ struct Parser
             auto lastError = lastOrUndefined(parseDiagnostics);
             if (!!lastError && lastError->code == _E(Diagnostics::_0_expected).code)
             {
-                addRelatedInfo(lastError, createDetachedDiagnostic(
-                                              fileName, openBracePosition, 1,
-                                              _E(
-                                                  Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
+                addRelatedInfo(lastError, createDetachedDiagnostic(fileName, openBracePosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
             }
         }
         return finishNode(factory.createObjectLiteralExpression(properties, multiLine), pos);
@@ -6021,11 +6023,7 @@ struct Parser
                 auto lastError = lastOrUndefined(parseDiagnostics);
                 if (!!lastError && lastError->code == _E(Diagnostics::_0_expected).code)
                 {
-                    addRelatedInfo(lastError,
-                                   createDetachedDiagnostic(
-                                       fileName, openBracePosition, 1,
-                                       _E(
-                                           Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
+                    addRelatedInfo(lastError, createDetachedDiagnostic(fileName, openBracePosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
                 }
             }
             return finishNode(factory.createBlock(statements, multiLine), pos);

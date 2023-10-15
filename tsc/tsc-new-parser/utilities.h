@@ -168,28 +168,33 @@ if (arguments.length > 4) {
     return d;
 }
 
-static auto formatStringFromArgs(string text, string arg0) -> string {
+// TODO: finish it with detecting index
+static auto formatStringFromArgs(string text, string arg0, string arg1) -> string {
     auto pos = text.find('{');
     if (pos != std::string::npos)
     {
         auto end = text.find('}');
+
+        auto index = to_number_base(text.substr(pos, end));
+
         if (end != std::string::npos)
         {
-            text.replace(pos, end - pos + 1, arg0);
+            text.replace(pos, end - pos + 1, index == 0 ? arg0 : index == 1 ? arg1 : S(""));
         }
     }
 
     return text;
 }
 
-static auto createDetachedDiagnostic(string fileName, number start, number length, DiagnosticMessage message, string arg0, ...)
+// TODO: finish sourceText
+static auto createDetachedDiagnostic(string fileName, string sourceText, number start, number length, DiagnosticMessage message, string arg0, string arg1 = S(""))
     -> DiagnosticWithDetachedLocation
 {
     assertDiagnosticLocation(/*file*/ SourceFile(), start, length);
     auto text = getLocaleSpecificMessage(message);
 
-    if (text.find('{') >= 0) {
-        text = formatStringFromArgs(text, arg0);
+    while (text.find('{') >= 0) {
+        text = formatStringFromArgs(text, arg0, arg1);
     }
 
     DiagnosticWithDetachedLocation d{data::DiagnosticWithDetachedLocation()};
