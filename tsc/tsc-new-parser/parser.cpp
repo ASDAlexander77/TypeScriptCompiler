@@ -590,13 +590,13 @@ struct Parser
 
     auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind,
                           boolean isDeclarationFile, NodeArray<Statement> statements, Node endOfFileToken,
-                          NodeFlags flags) -> SourceFile
+                          NodeFlags flags,
+                          std::function<void(SourceFile)> setExternalModuleIndicator) -> SourceFile
     {
         // code from createNode is inlined here so createNode won't have to deal with special case of creating source
         // files this is quite rare comparing to other nodes and createNode should be.as<fast>().as<possible>()
         auto sourceFile = factory.createSourceFile(statements, endOfFileToken, flags);
         setTextRangePosWidth(sourceFile, 0, sourceText.size());
-        setExternalModuleIndicator(sourceFile);
 
         // If we parsed this.as<an>() external module, it may contain top-level await
         if (!isDeclarationFile && isExternalModule(sourceFile) &&
@@ -613,6 +613,9 @@ struct Parser
         sourceFile->languageVariant = getLanguageVariant(scriptKind);
         sourceFile->isDeclarationFile = isDeclarationFile;
         sourceFile->scriptKind = scriptKind;
+
+        setExternalModuleIndicator(sourceFile);
+        sourceFile->setExternalModuleIndicator = setExternalModuleIndicator;
 
         return sourceFile;
     }
