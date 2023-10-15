@@ -1238,16 +1238,14 @@ struct Parser
     auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage = undefined, string arg0 = string())
         -> Node
     {
-        return parseOptionalToken(t) ||
-               [&]() { return createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0); };
+        return parseOptionalToken(t) || createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0);
     }
 
     auto parseExpectedTokenJSDoc(SyntaxKind t) -> Node
     {
-        return parseOptionalTokenJSDoc(t) || [&]() {
-            return createMissingNode(t, /*reportAtCurrentPosition*/ false,
-                                     _E(Diagnostics::_0_expected), scanner.tokenToString(t));
-        };
+        auto optional = parseOptionalTokenJSDoc(t);
+        if (optional) return optional;        
+        return createMissingNode(t, /*reportAtCurrentPosition*/ false, _E(Diagnostics::_0_expected), scanner.tokenToString(t));
     }
 
     template <typename T> auto parseTokenNode() -> Node
