@@ -1048,130 +1048,130 @@ struct Parser
      *
      * @param node Node preceding the expected semicolon location.
      */
-    auto parseErrorForMissingSemicolonAfter(Node node) -> void {
-        // Tagged template literals are sometimes used in places where only simple strings are allowed, i.e.:
-        //   module `M1` {
-        //   ^^^^^^^^^^^ This block is parsed as a template literal like module`M1`.
-        if (isTaggedTemplateExpression(node)) {
-            auto templateNode = node.as<TaggedTemplateExpression>();
-            parseErrorAt(scanner.skipTrivia(sourceText, templateNode->_template->pos), templateNode->_template->_end, _E(Diagnostics::Module_declaration_names_may_only_use_or_quoted_strings));
-            return;
-        }
+    // auto parseErrorForMissingSemicolonAfter(Node node) -> void {
+    //     // Tagged template literals are sometimes used in places where only simple strings are allowed, i.e.:
+    //     //   module `M1` {
+    //     //   ^^^^^^^^^^^ This block is parsed as a template literal like module`M1`.
+    //     if (isTaggedTemplateExpression(node)) {
+    //         auto templateNode = node.as<TaggedTemplateExpression>();
+    //         parseErrorAt(scanner.skipTrivia(sourceText, templateNode->_template->pos), templateNode->_template->_end, _E(Diagnostics::Module_declaration_names_may_only_use_or_quoted_strings));
+    //         return;
+    //     }
 
-        // Otherwise, if this isn't a well-known keyword-like identifier, give the generic fallback message.
-        auto expressionText = isIdentifierNode(node) ? idText(node) : undefined;
-        if (!expressionText || !isIdentifierText(expressionText, languageVersion)) {
-            parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::SemicolonToken);
-            return;
-        }
+    //     // Otherwise, if this isn't a well-known keyword-like identifier, give the generic fallback message.
+    //     auto expressionText = isIdentifierNode(node) ? idText(node) : undefined;
+    //     if (!expressionText || !isIdentifierText(expressionText, languageVersion)) {
+    //         parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::SemicolonToken);
+    //         return;
+    //     }
 
-        auto pos = scanner.skipTrivia(sourceText, node->pos);
+    //     auto pos = scanner.skipTrivia(sourceText, node->pos);
 
-        // Some known keywords are likely signs of syntax being used improperly.
-        switch (expressionText) {
-            case S("const"):
-            case S("let"):
-            case S("var"):
-                parseErrorAt(pos, node->_end, _E(Diagnostics::Variable_declaration_not_allowed_at_this_location));
-                return;
+    //     // Some known keywords are likely signs of syntax being used improperly.
+    //     switch (expressionText) {
+    //         case S("const"):
+    //         case S("let"):
+    //         case S("var"):
+    //             parseErrorAt(pos, node->_end, _E(Diagnostics::Variable_declaration_not_allowed_at_this_location));
+    //             return;
 
-            case S("declare"):
-                // If a declared node failed to parse, it would have emitted a diagnostic already.
-                return;
+    //         case S("declare"):
+    //             // If a declared node failed to parse, it would have emitted a diagnostic already.
+    //             return;
 
-            case S("interface"):
-                parseErrorForInvalidName(_E(Diagnostics::Interface_name_cannot_be_0), _E(Diagnostics::Interface_must_be_given_a_name), SyntaxKind::OpenBraceToken);
-                return;
+    //         case S("interface"):
+    //             parseErrorForInvalidName(_E(Diagnostics::Interface_name_cannot_be_0), _E(Diagnostics::Interface_must_be_given_a_name), SyntaxKind::OpenBraceToken);
+    //             return;
 
-            case S("is"):
-                parseErrorAt(pos, scanner.getTokenStart(), _E(Diagnostics::A_type_predicate_is_only_allowed_in_return_type_position_for_functions_and_methods));
-                return;
+    //         case S("is"):
+    //             parseErrorAt(pos, scanner.getTokenStart(), _E(Diagnostics::A_type_predicate_is_only_allowed_in_return_type_position_for_functions_and_methods));
+    //             return;
 
-            case S("module"):
-            case S("namespace"):
-                parseErrorForInvalidName(_E(Diagnostics::Namespace_name_cannot_be_0), _E(Diagnostics::Namespace_must_be_given_a_name), SyntaxKind::OpenBraceToken);
-                return;
+    //         case S("module"):
+    //         case S("namespace"):
+    //             parseErrorForInvalidName(_E(Diagnostics::Namespace_name_cannot_be_0), _E(Diagnostics::Namespace_must_be_given_a_name), SyntaxKind::OpenBraceToken);
+    //             return;
 
-            case S("type"):
-                parseErrorForInvalidName(_E(Diagnostics::Type_alias_name_cannot_be_0), _E(Diagnostics::Type_alias_must_be_given_a_name), SyntaxKind::EqualsToken);
-                return;
-        }
+    //         case S("type"):
+    //             parseErrorForInvalidName(_E(Diagnostics::Type_alias_name_cannot_be_0), _E(Diagnostics::Type_alias_must_be_given_a_name), SyntaxKind::EqualsToken);
+    //             return;
+    //     }
 
-        // The user alternatively might have misspelled or forgotten to add a space after a common keyword.
-        auto suggestion = getSpellingSuggestion(expressionText, viableKeywordSuggestions, n => n) ?? getSpaceSuggestion(expressionText);
-        if (suggestion) {
-            parseErrorAt(pos, node->_end, _E(Diagnostics::Unknown_keyword_or_identifier_Did_you_mean_0), suggestion);
-            return;
-        }
+    //     // The user alternatively might have misspelled or forgotten to add a space after a common keyword.
+    //     auto suggestion = getSpellingSuggestion(expressionText, viableKeywordSuggestions, n => n) ?? getSpaceSuggestion(expressionText);
+    //     if (suggestion) {
+    //         parseErrorAt(pos, node->_end, _E(Diagnostics::Unknown_keyword_or_identifier_Did_you_mean_0), suggestion);
+    //         return;
+    //     }
 
-        // Unknown tokens are handled with their own errors in the scanner
-        if (token() == SyntaxKind::Unknown) {
-            return;
-        }
+    //     // Unknown tokens are handled with their own errors in the scanner
+    //     if (token() == SyntaxKind::Unknown) {
+    //         return;
+    //     }
 
-        // Otherwise, we know this some kind of unknown word, not just a missing expected semicolon.
-        parseErrorAt(pos, node->_end, _E(Diagnostics::Unexpected_keyword_or_identifier));
-    }
+    //     // Otherwise, we know this some kind of unknown word, not just a missing expected semicolon.
+    //     parseErrorAt(pos, node->_end, _E(Diagnostics::Unexpected_keyword_or_identifier));
+    // }
 
-    /**
-     * Reports a diagnostic error for the current token being an invalid name.
-     *
-     * @param blankDiagnostic Diagnostic to report for the case of the name being blank (matched tokenIfBlankName).
-     * @param nameDiagnostic Diagnostic to report for all other cases.
-     * @param tokenIfBlankName Current token if the name was invalid for being blank (not provided / skipped).
-     */
-    auto parseErrorForInvalidName(DiagnosticMessage nameDiagnostic, DiagnosticMessage blankDiagnostic, SyntaxKind tokenIfBlankName) {
-        if (token() == tokenIfBlankName) {
-            parseErrorAtCurrentToken(blankDiagnostic);
-        }
-        else {
-            parseErrorAtCurrentToken(nameDiagnostic, scanner.getTokenValue());
-        }
-    }
+    // /**
+    //  * Reports a diagnostic error for the current token being an invalid name.
+    //  *
+    //  * @param blankDiagnostic Diagnostic to report for the case of the name being blank (matched tokenIfBlankName).
+    //  * @param nameDiagnostic Diagnostic to report for all other cases.
+    //  * @param tokenIfBlankName Current token if the name was invalid for being blank (not provided / skipped).
+    //  */
+    // auto parseErrorForInvalidName(DiagnosticMessage nameDiagnostic, DiagnosticMessage blankDiagnostic, SyntaxKind tokenIfBlankName) {
+    //     if (token() == tokenIfBlankName) {
+    //         parseErrorAtCurrentToken(blankDiagnostic);
+    //     }
+    //     else {
+    //         parseErrorAtCurrentToken(nameDiagnostic, scanner.getTokenValue());
+    //     }
+    // }
 
-    auto getSpaceSuggestion(string expressionText) {
-        for (auto keyword of viableKeywordSuggestions) {
-            if (expressionText.length > keyword.length + 2 && startsWith(expressionText, keyword)) {
-                return `${keyword} ${expressionText.slice(keyword.length)}`;
-            }
-        }
+    // auto getSpaceSuggestion(string expressionText) {
+    //     for (auto keyword of viableKeywordSuggestions) {
+    //         if (expressionText.length > keyword.length + 2 && startsWith(expressionText, keyword)) {
+    //             return `${keyword} ${expressionText.slice(keyword.length)}`;
+    //         }
+    //     }
 
-        return undefined;
-    }
+    //     return undefined;
+    // }
 
-    auto parseSemicolonAfterPropertyName(PropertyName name, TypeNode type, Expression initializer) {
-        if (token() == SyntaxKind::AtToken && !scanner.hasPrecedingLineBreak()) {
-            parseErrorAtCurrentToken(_E(Diagnostics::Decorators_must_precede_the_name_and_all_keywords_of_property_declarations));
-            return;
-        }
+    // auto parseSemicolonAfterPropertyName(PropertyName name, TypeNode type, Expression initializer) {
+    //     if (token() == SyntaxKind::AtToken && !scanner.hasPrecedingLineBreak()) {
+    //         parseErrorAtCurrentToken(_E(Diagnostics::Decorators_must_precede_the_name_and_all_keywords_of_property_declarations));
+    //         return;
+    //     }
 
-        if (token() == SyntaxKind::OpenParenToken) {
-            parseErrorAtCurrentToken(_E(Diagnostics::Cannot_start_a_function_call_in_a_type_annotation));
-            nextToken();
-            return;
-        }
+    //     if (token() == SyntaxKind::OpenParenToken) {
+    //         parseErrorAtCurrentToken(_E(Diagnostics::Cannot_start_a_function_call_in_a_type_annotation));
+    //         nextToken();
+    //         return;
+    //     }
 
-        if (type && !canParseSemicolon()) {
-            if (initializer) {
-                parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::SemicolonToken));
-            }
-            else {
-                parseErrorAtCurrentToken(_E(Diagnostics::Expected_for_property_initializer));
-            }
-            return;
-        }
+    //     if (type && !canParseSemicolon()) {
+    //         if (initializer) {
+    //             parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::SemicolonToken));
+    //         }
+    //         else {
+    //             parseErrorAtCurrentToken(_E(Diagnostics::Expected_for_property_initializer));
+    //         }
+    //         return;
+    //     }
 
-        if (tryParseSemicolon()) {
-            return;
-        }
+    //     if (tryParseSemicolon()) {
+    //         return;
+    //     }
 
-        if (initializer) {
-            parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::SemicolonToken));
-            return;
-        }
+    //     if (initializer) {
+    //         parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::SemicolonToken));
+    //         return;
+    //     }
 
-        parseErrorForMissingSemicolonAfter(name);
-    }    
+    //     parseErrorForMissingSemicolonAfter(name);
+    // }    
 
     auto parseExpectedJSDoc(SyntaxKind kind)
     {
@@ -1180,8 +1180,26 @@ struct Parser
             nextTokenJSDoc();
             return true;
         }
+        Debug::_assert(isKeywordOrPunctuation(kind));
         parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(kind));
         return false;
+    }
+
+    auto parseExpectedMatchingBrackets(SyntaxKind openKind, SyntaxKind closeKind, boolean openParsed, number openPosition) {
+        if (token() == closeKind) {
+            nextToken();
+            return;
+        }
+        auto lastError = parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(closeKind));
+        if (!openParsed) {
+            return;
+        }
+        if (lastError) {
+            addRelatedInfo(
+                lastError,
+                createDetachedDiagnostic(fileName, sourceText, openPosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_1_to_match_the_0_token_here), scanner.tokenToString(openKind), scanner.tokenToString(closeKind)),
+            );
+        }
     }
 
     auto parseOptional(SyntaxKind t) -> boolean
