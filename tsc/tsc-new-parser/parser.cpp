@@ -1442,10 +1442,21 @@ struct Parser
         return createIdentifier(scanner.tokenIsIdentifierOrKeyword(token()), diagnosticMessage);
     }
 
+    auto parseIdentifierNameErrorOnUnicodeEscapeSequence() -> Identifier {
+        if (scanner.hasUnicodeEscape() || scanner.hasExtendedUnicodeEscape()) {
+            parseErrorAtCurrentToken(_E(Diagnostics::Unicode_escape_sequence_cannot_appear_here));
+        }
+        return createIdentifier(scanner.tokenIsIdentifierOrKeyword(token()));
+    }
+
     auto isLiteralPropertyName() -> boolean
     {
         return scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::StringLiteral ||
                token() == SyntaxKind::NumericLiteral;
+    }
+
+    auto isImportAttributeName() -> boolean {
+        return scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::StringLiteral;
     }
 
     auto parsePropertyNameWorker(boolean allowComputedPropertyNames) -> Node
