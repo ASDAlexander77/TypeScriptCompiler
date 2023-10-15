@@ -33,7 +33,6 @@ struct Parser
     SyntaxKind currentToken;
     number nodeCount;
     std::map<string, string> identifiers;
-    std::map<string, string> privateIdentifiers;
     number identifierCount;
 
     ParsingContext parsingContext;
@@ -143,14 +142,16 @@ struct Parser
 
     auto parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion,
                          IncrementalParser::SyntaxCursor syntaxCursor, boolean setParentNodes = false,
-                         ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile
+                         ScriptKind scriptKind = ScriptKind::Unknown,
+                         std::function<void(SourceFile)> setExternalModuleIndicatorOverride = nullptr,
+                         JSDocParsingMode jsDocParsingMode = JSDocParsingMode::ParseAll) -> SourceFile
     {
         scriptKind = ensureScriptKind(fileName, scriptKind);
         if (scriptKind == ScriptKind::JSON)
         {
             auto result = parseJsonText(fileName, sourceText, languageVersion, syntaxCursor, setParentNodes);
             // TODO: review if we need it
-            // convertToObjectWorker(result, result.statements[0].expression, result.parseDiagnostics, /*returnValue*/
+            // convertToJson(result, result.statements[0].expression, result.parseDiagnostics, /*returnValue*/
             // false,
             // /*knownRootOptions*/ undefined, /*jsonConversionNotifier*/ undefined);
             result->referencedFiles.clear();
@@ -162,9 +163,9 @@ struct Parser
             return result;
         }
 
-        initializeState(fileName, sourceText, languageVersion, syntaxCursor, scriptKind);
+        initializeState(fileName, sourceText, languageVersion, syntaxCursor, scriptKind, jsDocParsingMode);
 
-        auto result = parseSourceFileWorker(languageVersion, setParentNodes, scriptKind);
+        auto result = parseSourceFileWorker(languageVersion, setParentNodes, scriptKind, setExternalModuleIndicatorOverride ? setExternalModuleIndicatorOverride : setExternalModuleIndicator, jsDocParsingMode);
 
         clearState();
 
@@ -174,7 +175,7 @@ struct Parser
     auto parseIsolatedEntityName(string content, ScriptTarget languageVersion) -> EntityName
     {
         // Choice of `isDeclarationFile` should be arbitrary
-        initializeState(string(), content, languageVersion, undefined, ScriptKind::JS);
+        initializeState(string(), content, languageVersion, undefined, ScriptKind::JS, JSDocParsingMode::ParseAll);
         // Prime the scanner.
         nextToken();
         auto entityName = parseEntityName(/*allowReservedWords*/ true);
@@ -201,14 +202,14 @@ struct Parser
                        IncrementalParser::SyntaxCursor syntaxCursor = undefined, boolean setParentNodes = false)
         -> JsonSourceFile
     {
-        initializeState(fileName, sourceText, languageVersion, syntaxCursor, ScriptKind::JSON);
+        initializeState(fileName, sourceText, languageVersion, syntaxCursor, ScriptKind::JSON, JSDocParsingMode::ParseAll);
         sourceFlags = contextFlags;
 
         // Prime the scanner.
         nextToken();
         auto pos = getNodePos();
         NodeArray<Statement> statements;
-        Node endOfFileToken;
+        EndOfFileToken endOfFileToken;
         if (token() == SyntaxKind::EndOfFileToken)
         {
             statements = createNodeArray(NodeArray<Statement>(), pos, pos);
@@ -275,12 +276,12 @@ struct Parser
             finishNode(statement, pos);
             statements = createNodeArray(NodeArray<Statement>(statement), pos);
             endOfFileToken =
-                parseExpectedToken(SyntaxKind::EndOfFileToken, _E(Diagnostics::Unexpected_token));
+                parseExpectedToken(SyntaxKind::EndOfFileToken, _E(Diagnostics::Unexpected_token)).as<EndOfFileToken>();
         }
 
         // Set source file so that errors will be reported with this file name
-        auto sourceFile = createSourceFile(fileName, ScriptTarget::ES2015, ScriptKind::JSON, /*isDeclaration*/ false,
-                                           statements, endOfFileToken, sourceFlags);
+        auto sourceFile = createSourceFile(fileName, ScriptTarget::ES2015, ScriptKind::JSON, /*isDeclarationFile*/ false,
+                                           statements, endOfFileToken, sourceFlags, noop);
 
         if (setParentNodes)
         {
@@ -304,7 +305,7 @@ struct Parser
     }
 
     auto initializeState(string _fileName, string _sourceText, ScriptTarget _languageVersion,
-                         IncrementalParser::SyntaxCursor _syntaxCursor, ScriptKind _scriptKind) -> void
+                         IncrementalParser::SyntaxCursor _syntaxCursor, ScriptKind _scriptKind, JSDocParsingMode _jsDocParsingMode) -> void
     {
         fileName = normalizePath(_fileName);
         sourceText = _sourceText;
@@ -316,7 +317,6 @@ struct Parser
         parseDiagnostics.clear();
         parsingContext = ParsingContext::Unknown;
         identifiers.clear();
-        privateIdentifiers.clear();
         identifierCount = 0;
         nodeCount = 0;
         sourceFlags = NodeFlags::None;
@@ -342,6 +342,8 @@ struct Parser
         scanner.setOnError(std::bind(&Parser::scanError, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
         scanner.setScriptTarget(languageVersion);
         scanner.setLanguageVariant(languageVariant);
+        scanner.setScriptKind(scriptKind);
+        scanner.setJSDocParsingMode(_jsDocParsingMode);        
     }
 
     auto clearState() -> void
@@ -350,6 +352,8 @@ struct Parser
         scanner.clearCommentDirectives();
         scanner.setText(string());
         scanner.setOnError(nullptr);
+        scanner.setScriptKind(ScriptKind::Unknown);
+        scanner.setJSDocParsingMode(JSDocParsingMode::ParseAll);
 
         // Clear any data.  We don't want to accidentally hold onto it for too long.
         sourceText = string();
@@ -372,7 +376,7 @@ struct Parser
         return fileExtensionIs(fileName, Extension::Dts);
     }
 
-    auto parseSourceFileWorker(ScriptTarget languageVersion, boolean setParentNodes, ScriptKind scriptKind)
+    auto parseSourceFileWorker(ScriptTarget languageVersion, boolean setParentNodes, ScriptKind scriptKind, std::function<void(SourceFile)> setExternalModuleIndicator, JSDocParsingMode jsDocParsingMode)
         -> SourceFile
     {
         auto isDeclarationFile = isDeclarationFileName(fileName);
