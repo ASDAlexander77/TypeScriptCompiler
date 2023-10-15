@@ -903,6 +903,10 @@ struct Parser
         return currentToken = scanner.reScanLessThanToken();
     }
 
+    auto reScanHashToken() -> SyntaxKind {
+        return currentToken = scanner.reScanHashToken();
+    }
+
     auto scanJsxIdentifier() -> SyntaxKind
     {
         return currentToken = scanner.scanJsxIdentifier();
