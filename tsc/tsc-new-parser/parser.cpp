@@ -708,6 +708,16 @@ struct Parser
         return doInsideOfContext(NodeFlags::DisallowInContext, func);
     }
 
+    template <typename T> auto allowConditionalTypesAnd(std::function<T()> func) -> T 
+    {
+        return doOutsideOfContext(NodeFlags::DisallowConditionalTypesContext, func);
+    }
+
+    template <typename T> auto disallowConditionalTypesAnd(std::function<T()> func) -> T 
+    {
+        return doInsideOfContext(NodeFlags::DisallowConditionalTypesContext, func);
+    }
+
     template <typename T> auto doInYieldContext(std::function<T()> func) -> T
     {
         return doInsideOfContext(NodeFlags::YieldContext, func);
@@ -751,6 +761,11 @@ struct Parser
     auto inDisallowInContext()
     {
         return inContext(NodeFlags::DisallowInContext);
+    }
+
+    auto inDisallowConditionalTypesContext() 
+    {
+        return inContext(NodeFlags::DisallowConditionalTypesContext);
     }
 
     auto inDecoratorContext()
