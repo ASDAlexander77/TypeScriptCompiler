@@ -1498,12 +1498,6 @@ struct Parser
         return finishNode(factory.createComputedPropertyName(expression), pos);
     }
 
-    auto internPrivateIdentifier(string text) -> string
-    {
-        privateIdentifiers[text] = text;
-        return privateIdentifiers.at(text);
-    }
-
     auto parsePrivateIdentifier() -> Node
     {
         auto pos = getNodePos();
@@ -1548,7 +1542,6 @@ struct Parser
         case SyntaxKind::DefaultKeyword:
             return nextTokenCanFollowDefaultKeyword();
         case SyntaxKind::StaticKeyword:
-            return nextTokenIsOnSameLineAndCanFollowModifier();
         case SyntaxKind::GetKeyword:
         case SyntaxKind::SetKeyword:
             nextToken();
@@ -1560,8 +1553,11 @@ struct Parser
 
     auto canFollowExportModifier() -> boolean
     {
-        return token() != SyntaxKind::AsteriskToken && token() != SyntaxKind::AsKeyword &&
-               token() != SyntaxKind::OpenBraceToken && canFollowModifier();
+        return token() == SyntaxKind::AtToken
+            || token() != SyntaxKind::AsteriskToken 
+               && token() != SyntaxKind::AsKeyword 
+               && token() != SyntaxKind::OpenBraceToken 
+               && canFollowModifier();
     }
 
     auto nextTokenCanFollowExportModifier() -> boolean
