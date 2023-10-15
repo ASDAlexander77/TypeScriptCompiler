@@ -1641,6 +1641,8 @@ struct Parser
         case ParsingContext::ObjectBindingElements:
             return token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::DotDotDotToken ||
                    isLiteralPropertyName();
+        case ParsingContext::ImportAttributes:
+            return isImportAttributeName();                   
         case ParsingContext::HeritageClauseElement:
             // If we see `{ ... }` then only consume it.as<an>() expression if it is followed by `,` or `{`
             // That way we won't consume the body of a class in its heritage clause.
@@ -1666,7 +1668,7 @@ struct Parser
             return token() == SyntaxKind::CommaToken || token() == SyntaxKind::DotDotDotToken ||
                    isBindingIdentifierOrPrivateIdentifierOrPattern();
         case ParsingContext::TypeParameters:
-            return isIdentifier();
+            return token() == SyntaxKind::InKeyword || token() == SyntaxKind::ConstKeyword || isIdentifier();
         case ParsingContext::ArrayLiteralMembers:
             switch (token())
             {
@@ -1688,14 +1690,23 @@ struct Parser
         case ParsingContext::HeritageClauses:
             return isHeritageClause();
         case ParsingContext::ImportOrExportSpecifiers:
+            // bail out if the next token is [FromKeyword StringLiteral].
+            // That means we're in something like `import { from "mod"`. Stop here can give better error message.
+            if (token() == SyntaxKind::FromKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsStringLiteral, this))) {
+                return false;
+            }        
             return scanner.tokenIsIdentifierOrKeyword(token());
         case ParsingContext::JsxAttributes:
             return scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::OpenBraceToken;
         case ParsingContext::JsxChildren:
             return true;
-        }
-
-        return Debug::fail<boolean>(S("Non-exhaustive case in 'isListElement'."));
+        case ParsingContext::JSDocComment:
+            return true;
+        case ParsingContext::Count:
+            return Debug::fail<boolean>(S("ParsingContext.Count used as a context")); // Not a real context, only a marker.            
+        default:
+            Debug::_assertNever(S("Non-exhaustive case in 'isListElement'."));
+        }            
     }
 
     auto isValidHeritageClauseObjectLiteral() -> boolean
