@@ -329,20 +329,6 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
-            "name": "(Windows) tslang.exe",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tslang.exe",
-            "args": [
-                "C:/temp/MLIR_to_exe/1.obj"
-            ],
-            "stopAtEntry": false,
-            "cwd": "C:/temp/MLIR_to_exe",
-            "environment": [],
-            "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
-        {
             "name": "(Windows-CodeLLDB) 1.exe",
             "type": "lldb",
             "request": "launch",

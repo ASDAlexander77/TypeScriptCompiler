@@ -34,7 +34,7 @@ void printScanner(const wchar_t *str)
         // std::wcout << scanner.syntaxKindString(token) << "(" << (int)token << S(") @") << scanner.getTokenPos() << S(" '") <<
         // scanner.tokenToString(token) << "':" << scanner.getTokenText() << std::endl; std::wcout << (number)token << S(" ") <<
         // scanner.getTokenText() << std::endl;
-        std::wcout << (number)token << " " << scanner.getTokenText().c_str() << std::endl;
+        std::wcout << (number)token << " " << scanner.getTokenText().c_str() << "$$$" << std::endl;
     }
 }
 

@@ -2064,6 +2064,11 @@ inline string fromCharCode(char_t code)
     return s;
 }
 
+inline string padStart(string s, int size, char_t pad)
+{
+    return string((size - s.length()), pad).append(s);
+}
+
 auto Scanner::scanEscapeSequence(boolean shouldEmitInvalidEscapeError) -> string
 {
     auto start = pos;
@@ -2107,7 +2112,7 @@ auto Scanner::scanEscapeSequence(boolean shouldEmitInvalidEscapeError) -> string
         if (shouldEmitInvalidEscapeError) {
             auto code = to_number_base(text.substring(start + 1, pos), 8);
             // TODO: finish it
-            error(_E(Diagnostics::Octal_escape_sequences_are_not_allowed_Use_the_syntax_0), start, pos - start, S("\\x") + to_string_val(code)/*.padStart(2, S("0"))*/);
+            error(_E(Diagnostics::Octal_escape_sequences_are_not_allowed_Use_the_syntax_0), start, pos - start, S("\\x") + padStart(to_string_val(code), 2, S('0')));
             return fromCharCode(code);
         }
         return text.substring(start, pos);
@@ -2413,13 +2418,23 @@ auto Scanner::checkBigIntSuffix() -> SyntaxKind
         return SyntaxKind::BigIntLiteral;
     }
     else
-    { // not a bigint, so can convert to number in simplified form
-        // Number() may not support 0b or 0o, so use stoi() instead
-        auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string_val(to_bignumber_base(tokenValue.substr(2), 2))  // skip "0b"
-                            : !!(tokenFlags & TokenFlags::OctalSpecifier) ? to_string_val(to_bignumber_base(string(S("0")) + tokenValue.substr(2), 8))  // skip "0o"
-                            : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string_val(to_bignumber_base(tokenValue.substr(2), 16))  // skip "0x"
-                                                                          : to_string_val(to_bignumber(tokenValue));
-        tokenValue = numericValue;
+    {
+        try
+        {
+            // not a bigint, so can convert to number in simplified form
+            // Number() may not support 0b or 0o, so use stoi() instead
+            auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string_val(to_bignumber_base(tokenValue.substr(2), 2))                  // skip "0b"
+                                : !!(tokenFlags & TokenFlags::OctalSpecifier) ? to_string_val(to_bignumber_base(string(S("0")) + tokenValue.substr(2), 8)) // skip "0o"
+                                : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string_val(to_bignumber_base(tokenValue.substr(2), 16))                 // skip "0x"
+                                                                              : to_string_val(to_bignumber(tokenValue));
+            tokenValue = numericValue;
+        }
+        catch (const std::out_of_range &)
+        {
+            auto numericValue = to_string_val(to_float_val(tokenValue));
+            tokenValue = numericValue;
+        }
+
         return SyntaxKind::NumericLiteral;
     }
 }
