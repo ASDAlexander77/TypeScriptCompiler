@@ -1386,8 +1386,10 @@ struct Parser
             // type checker
             auto originalKeywordKind = token();
             auto text = internIdentifier(scanner.getTokenValue());
+            auto hasExtendedUnicodeEscape = scanner.hasExtendedUnicodeEscape();
             nextTokenWithoutCheck();
-            return finishNode(factory.createIdentifier(text, /*typeArguments*/ undefined, originalKeywordKind), pos);
+            // TODO: remove undefined
+            return finishNode(factory.createIdentifier(text, originalKeywordKind, hasExtendedUnicodeEscape), pos);
         }
 
         if (token() == SyntaxKind::PrivateIdentifier)
