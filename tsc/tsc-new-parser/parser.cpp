@@ -1277,23 +1277,25 @@ struct Parser
                scanner.hasPrecedingLineBreak();
     }
 
-    auto parseSemicolon() -> boolean
+    auto tryParseSemicolon() -> boolean
     {
-        if (canParseSemicolon())
+        if (!canParseSemicolon())
         {
-            if (token() == SyntaxKind::SemicolonToken)
-            {
-                // consume the semicolon if it was explicitly provided.
-                nextToken();
-            }
+            return false;
+        }
 
-            return true;
-        }
-        else
+        if (token() == SyntaxKind::SemicolonToken)
         {
-            return parseExpected(SyntaxKind::SemicolonToken);
+            // consume the semicolon if it was explicitly provided.
+            nextToken();
         }
+
+        return true;
     }
+
+    auto parseSemicolon() -> boolean {
+        return tryParseSemicolon() || parseExpected(SyntaxKind::SemicolonToken);
+    }    
 
     auto createNodeArray(NodeArray<Node> elements, pos_type pos, number end = -1, boolean hasTrailingComma = false)
         -> NodeArray<Node>
