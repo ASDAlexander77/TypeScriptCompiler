@@ -393,17 +393,18 @@ struct Parser
         auto statements =
             parseList<Statement>(ParsingContext::SourceElements, std::bind(&Parser::parseStatement, this));
         Debug::_assert(token() == SyntaxKind::EndOfFileToken);
-        auto endOfFileToken = addJSDocComment(parseTokenNode<EndOfFileToken>());
+        auto endHasJSDoc = hasPrecedingJSDocComment();
+        auto endOfFileToken = withJSDoc(parseTokenNode<EndOfFileToken>(), endHasJSDoc);
 
         auto sourceFile = createSourceFile(fileName, languageVersion, scriptKind, isDeclarationFile, statements,
-                                           endOfFileToken, sourceFlags);
+                                           endOfFileToken, sourceFlags, setExternalModuleIndicator);
 
         // A member of ReadonlyArray<T> isn't assignable to a member of T[] (and prevents a direct cast) - but this is
         // where we set up those members so they can be in the future
         processCommentPragmas(sourceFile, sourceText);
 
         auto reportPragmaDiagnostic = [&](pos_type pos, number end, DiagnosticMessage diagnostic) -> void {
-            parseDiagnostics.push_back(createDetachedDiagnostic(fileName, pos, end, diagnostic));
+            parseDiagnostics.push_back(createDetachedDiagnostic(fileName, sourceText, pos, end, diagnostic));
         };
         processPragmasIntoFields(sourceFile, reportPragmaDiagnostic);
 
@@ -413,6 +414,7 @@ struct Parser
         sourceFile->identifiers = identifiers;
         // sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
         copy(sourceFile->parseDiagnostics, attachFileToDiagnostics(parseDiagnostics, sourceFile));
+        sourceFile.jsDocParsingMode = jsDocParsingMode;
         if (!jsDocDiagnostics.empty())
         {
             // sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
@@ -429,12 +431,10 @@ struct Parser
 
     template <typename T> auto withJSDoc(T node, boolean hasJSDoc) -> T
     {
-        return hasJSDoc ? addJSDocComment(node) : node;
-    }
+        if (!hasJSDoc) {
+            return node;
+        }
 
-    boolean hasDeprecatedTag = false;
-    template <typename T> auto addJSDocComment(T node) -> T
-    {
         // TODO:
         // Debug::_assert(!node.as<JSDocContainer>()->jsDoc); // Should only be called once per node
         /*
