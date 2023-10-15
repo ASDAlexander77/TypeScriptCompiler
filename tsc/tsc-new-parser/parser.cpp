@@ -1581,7 +1581,7 @@ struct Parser
     {
         nextToken();
         return token() == SyntaxKind::ClassKeyword || token() == SyntaxKind::FunctionKeyword ||
-               token() == SyntaxKind::InterfaceKeyword ||
+               token() == SyntaxKind::InterfaceKeyword || token() == SyntaxKind::AtToken ||
                (token() == SyntaxKind::AbstractKeyword &&
                 lookAhead<boolean>(std::bind(&Parser::nextTokenIsClassKeywordOnSameLine, this))) ||
                (token() == SyntaxKind::AsyncKeyword &&
