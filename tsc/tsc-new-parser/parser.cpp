@@ -783,23 +783,26 @@ struct Parser
         parseErrorAt(scanner.getTokenStart(), scanner.getTokenEnd(), message, arg0);
     }
 
-    auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, string arg0 = string()) -> void
+    auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, string arg0 = string()) -> DiagnosticWithDetachedLocation
     {
         // Don't report another error if it would just be at the same position.as<the>() last error.
         auto lastError = lastOrUndefined(parseDiagnostics);
+        DiagnosticWithDetachedLocation result = undefined;
         if (!lastError || start != lastError->start)
         {
-            parseDiagnostics.push_back(createDetachedDiagnostic(fileName, start, length, message, arg0));
+            result = createDetachedDiagnostic(fileName, sourceText, start, length, message, arg0);
+            parseDiagnostics.push_back(result);
         }
 
         // Mark that we've encountered an error.  We'll set an appropriate bit on the next
         // node we finish so that it can't be reused incrementally.
         parseErrorBeforeNextFinishedNode = true;
+        return result;
     }
 
-    auto parseErrorAt(number start, number end, DiagnosticMessage message) -> void
+    auto parseErrorAt(number start, number end, DiagnosticMessage message) -> DiagnosticWithDetachedLocation
     {
-        parseErrorAtPosition(start, end - start, message);
+        return parseErrorAtPosition(start, end - start, message);
     }
 
     auto parseErrorAtRange(TextRange range, DiagnosticMessage message) -> void
@@ -807,9 +810,9 @@ struct Parser
         parseErrorAt(range->pos, range->_end, message);
     }
 
-    template <typename T> auto parseErrorAt(number start, number end, DiagnosticMessage message, T arg0) -> void
+    template <typename T> auto parseErrorAt(number start, number end, DiagnosticMessage message, T arg0) -> DiagnosticWithDetachedLocation
     {
-        parseErrorAtPosition(start, end - start, message, arg0);
+        return parseErrorAtPosition(start, end - start, message, arg0);
     }
 
     template <typename T> auto parseErrorAtRange(TextRange range, DiagnosticMessage message, T arg0) -> void
@@ -869,6 +872,10 @@ struct Parser
     auto nextTokenJSDoc() -> SyntaxKind
     {
         return currentToken = scanner.scanJsDocToken();
+    }
+
+    auto nextJSDocCommentTextToken(boolean inBackticks) -> SyntaxKind {
+        return currentToken = scanner.scanJSDocCommentTextToken(inBackticks);
     }
 
     auto reScanGreaterToken() -> SyntaxKind
