@@ -523,16 +523,16 @@ struct Parser
                 [&]() {
                     auto savedContextFlags = contextFlags;
                     contextFlags |= NodeFlags::AwaitContext;
-                    scanner.setTextPos(nextStatement->pos);
+                    scanner.resetTokenState(nextStatement->pos);
                     nextToken();
 
                     while (token() != SyntaxKind::EndOfFileToken)
                     {
-                        auto startPos = scanner.getStartPos();
+                        auto startPos = scanner.getTokenFullStart();
                         auto statement = parseListElement<Statement>(ParsingContext::SourceElements,
                                                                      std::bind(&Parser::parseStatement, this));
                         statements.push_back(statement);
-                        if (startPos == scanner.getStartPos())
+                        if (startPos == scanner.getTokenFullStart())
                         {
                             nextToken();
                         }
@@ -758,7 +758,7 @@ struct Parser
 
     auto parseErrorAtCurrentToken(DiagnosticMessage message, string arg0 = string()) -> void
     {
-        parseErrorAt(scanner.getTokenPos(), scanner.getTextPos(), message, arg0);
+        parseErrorAt(scanner.getTokenStart(), scanner.getTokenEnd(), message, arg0);
     }
 
     auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, string arg0 = string()) -> void
@@ -797,12 +797,12 @@ struct Parser
 
     auto scanError(DiagnosticMessage message, number length) -> void
     {
-        parseErrorAtPosition(scanner.getTextPos(), length, message);
+        parseErrorAtPosition(scanner.getTokenEnd(), length, message);
     }
 
     auto getNodePos() -> pos_type
     {
-        return {scanner.getStartPos(), scanner.getTokenPos()};
+        return {scanner.getTokenFullStart(), scanner.getTokenStart()};
     }
 
     auto hasPrecedingJSDocComment()
@@ -838,7 +838,7 @@ struct Parser
         if (isKeyword(currentToken) && (scanner.hasUnicodeEscape() || scanner.hasExtendedUnicodeEscape()))
         {
             // issue a parse error for the escape
-            parseErrorAt(scanner.getTokenPos(), scanner.getTextPos(),
+            parseErrorAt(scanner.getTokenStart(), scanner.getTokenEnd(),
                          _E(Diagnostics::Keywords_cannot_contain_escape_characters));
         }
         return nextTokenWithoutCheck();
@@ -1109,7 +1109,7 @@ struct Parser
         -> NodeArray<Node>
     {
         auto array = factory.createNodeArray(elements, hasTrailingComma);
-        setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
+        setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getTokenFullStart());
         array->pos.textPos = pos.textPos;
         return array;
     }
@@ -1119,7 +1119,7 @@ struct Parser
         -> NodeArray<T>
     {
         auto array = factory.createNodeArray<T>(elements, hasTrailingComma);
-        setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
+        setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getTokenFullStart());
         array->pos.textPos = pos.textPos;
         return array;
     }
@@ -1127,7 +1127,7 @@ struct Parser
     // TODO: use template instead of Node method to avoid casts
     auto finishNode(Node node, pos_type pos, number end = -1) -> Node
     {
-        setTextRangePosEnd(node, pos, end != -1 ? end : scanner.getStartPos());
+        setTextRangePosEnd(node, pos, end != -1 ? end : scanner.getTokenFullStart());
         node->pos.textPos = pos.textPos;
         if (!!contextFlags)
         {
@@ -1152,7 +1152,7 @@ struct Parser
     {
         if (reportAtCurrentPosition)
         {
-            parseErrorAtPosition(scanner.getStartPos(), 0, diagnosticMessage, arg0);
+            parseErrorAtPosition(scanner.getTokenFullStart(), 0, diagnosticMessage, arg0);
         }
         else if (!!diagnosticMessage)
         {
@@ -1722,7 +1722,7 @@ struct Parser
             return undefined;
         }
 
-        auto node = ((IncrementalParser::SyntaxCursor &)syntaxCursor).currentNode(scanner.getStartPos());
+        auto node = ((IncrementalParser::SyntaxCursor &)syntaxCursor).currentNode(scanner.getTokenFullStart());
 
         // Can't reuse a missing node->
         // Can't reuse a node that intersected the change range.
@@ -1769,7 +1769,7 @@ struct Parser
     auto consumeNode(Node node) -> Node
     {
         // Move the scanner so it is after the node we just consumed.
-        scanner.setTextPos(node->_end);
+        scanner.resetTokenState(node->_end);
         nextToken();
         return node;
     }
@@ -2109,9 +2109,9 @@ struct Parser
         {
             if (isListElement(kind, /*inErrorRecovery*/ false))
             {
-                auto startPos = scanner.getStartPos();
+                auto startPos = scanner.getTokenFullStart();
                 list.push_back(parseListElement<T>(kind, parseElement));
-                commaStart = scanner.getTokenPos();
+                commaStart = scanner.getTokenStart();
 
                 if (parseOptional(SyntaxKind::CommaToken))
                 {
@@ -2139,7 +2139,7 @@ struct Parser
                 {
                     nextToken();
                 }
-                if (startPos == scanner.getStartPos())
+                if (startPos == scanner.getTokenFullStart())
                 {
                     // What we're parsing isn't actually remotely recognizable.as<a>() element and we've consumed no
                     // tokens whatsoever Consume a token to advance the parser in some way and avoid an infinite loop
@@ -4212,7 +4212,7 @@ struct Parser
 
     auto parsePossibleParenthesizedArrowFunctionExpression() -> ArrowFunction
     {
-        auto tokenPos = scanner.getTokenPos();
+        auto tokenPos = scanner.getTokenStart();
         if (std::find(notParenthesizedArrow.begin(), notParenthesizedArrow.end(), tokenPos) !=
             notParenthesizedArrow.end())
         {
@@ -5708,7 +5708,7 @@ struct Parser
     auto parseObjectLiteralExpression() -> Node
     {
         auto pos = getNodePos();
-        auto openBracePosition = scanner.getTokenPos();
+        auto openBracePosition = scanner.getTokenStart();
         parseExpected(SyntaxKind::OpenBraceToken);
         auto multiLine = scanner.hasPrecedingLineBreak();
         auto properties = parseDelimitedList<ObjectLiteralElementLike>(
@@ -5811,7 +5811,7 @@ struct Parser
         else if (!!typeArguments)
         {
             parseErrorAt(
-                pos, scanner.getStartPos(),
+                pos, scanner.getTokenFullStart(),
                 _E(
                     Diagnostics::
                         A_new_expression_with_type_arguments_must_always_be_followed_by_a_parenthesized_argument_list));
@@ -5823,7 +5823,7 @@ struct Parser
     auto parseBlock(boolean ignoreMissingOpenBrace, DiagnosticMessage diagnosticMessage = undefined) -> Block
     {
         auto pos = getNodePos();
-        auto openBracePosition = scanner.getTokenPos();
+        auto openBracePosition = scanner.getTokenStart();
         if (parseExpected(SyntaxKind::OpenBraceToken, diagnosticMessage) || ignoreMissingOpenBrace)
         {
             auto multiLine = scanner.hasPrecedingLineBreak();
@@ -7440,7 +7440,7 @@ struct Parser
     {
         parseExpected(SyntaxKind::ImportKeyword);
 
-        auto afterImportPos = scanner.getStartPos();
+        auto afterImportPos = scanner.getTokenFullStart();
 
         // We don't parse the identifier here in await context, instead we will report a grammar error in the checker.
         Identifier identifier;
@@ -7619,8 +7619,8 @@ struct Parser
         //   IdentifierName
         //   IdentifierName.as<IdentifierName>()
         auto checkIdentifierIsKeyword = isKeyword(token()) && !isIdentifier();
-        auto checkIdentifierStart = scanner.getTokenPos();
-        auto checkIdentifierEnd = scanner.getTextPos();
+        auto checkIdentifierStart = scanner.getTokenStart();
+        auto checkIdentifierEnd = scanner.getTokenEnd();
         auto identifierName = parseIdentifierName();
         Identifier propertyName;
         Identifier name;
@@ -7629,8 +7629,8 @@ struct Parser
             propertyName = identifierName;
             parseExpected(SyntaxKind::AsKeyword);
             checkIdentifierIsKeyword = isKeyword(token()) && !isIdentifier();
-            checkIdentifierStart = scanner.getTokenPos();
-            checkIdentifierEnd = scanner.getTextPos();
+            checkIdentifierStart = scanner.getTokenStart();
+            checkIdentifierEnd = scanner.getTokenEnd();
             name = parseIdentifierName();
         }
         else

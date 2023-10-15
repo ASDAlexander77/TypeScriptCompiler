@@ -969,17 +969,7 @@ auto Scanner::getTokenFullStart() -> number
     return fullStartPos;
 }
 
-auto Scanner::getStartPos() -> number
-{
-    return fullStartPos;
-}
-
 auto Scanner::getTokenEnd() -> number
-{
-    return pos;
-}
-
-auto Scanner::getTextPos() -> number
 {
     return pos;
 }
@@ -990,11 +980,6 @@ auto Scanner::getToken() -> SyntaxKind
 }
 
 auto Scanner::getTokenStart() -> number
-{
-    return tokenStart;
-}
-
-auto Scanner::getTokenPos() -> number
 {
     return tokenStart;
 }
