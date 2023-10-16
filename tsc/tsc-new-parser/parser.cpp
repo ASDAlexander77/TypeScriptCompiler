@@ -6136,11 +6136,12 @@ struct Parser
     auto parseArrayLiteralExpression() -> Node
     {
         auto pos = getNodePos();
-        parseExpected(SyntaxKind::OpenBracketToken);
+        auto openBracketPosition = scanner.getTokenStart();
+        auto openBracketParsed = parseExpected(SyntaxKind::OpenBracketToken);
         auto multiLine = scanner.hasPrecedingLineBreak();
         auto elements = parseDelimitedList<Expression>(ParsingContext::ArrayLiteralMembers,
                                                        std::bind(&Parser::parseArgumentOrArrayLiteralElement, this));
-        parseExpected(SyntaxKind::CloseBracketToken);
+        parseExpectedMatchingBrackets(SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken, openBracketParsed, openBracketPosition);
         return finishNode(factory.createArrayLiteralExpression(elements, multiLine), pos);
     }
 
@@ -6151,20 +6152,19 @@ struct Parser
 
         if (parseOptionalToken(SyntaxKind::DotDotDotToken))
         {
-            auto expression = parseAssignmentExpressionOrHigher();
+            auto expression = parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true);
             return withJSDoc(finishNode(factory.createSpreadAssignment(expression), pos), hasJSDoc);
         }
 
-        auto decorators = parseDecorators();
-        auto modifiers = parseModifiers();
+        auto modifiers = parseModifiers(/*allowDecorators*/ true);
 
         if (parseContextualModifier(SyntaxKind::GetKeyword))
         {
-            return parseAccessorDeclaration(pos, hasJSDoc, decorators, modifiers, SyntaxKind::GetAccessor);
+            return parseAccessorDeclaration(pos, hasJSDoc, modifiers, SyntaxKind::GetAccessor, SignatureFlags::None);
         }
         if (parseContextualModifier(SyntaxKind::SetKeyword))
         {
-            return parseAccessorDeclaration(pos, hasJSDoc, decorators, modifiers, SyntaxKind::SetAccessor);
+            return parseAccessorDeclaration(pos, hasJSDoc, modifiers, SyntaxKind::SetAccessor, SignatureFlags::None);
         }
 
         auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
@@ -6178,7 +6178,7 @@ struct Parser
 
         if (asteriskToken || token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken)
         {
-            return parseMethodDeclaration(pos, hasJSDoc, decorators, modifiers, asteriskToken, name, questionToken,
+            return parseMethodDeclaration(pos, hasJSDoc, modifiers, asteriskToken, name, questionToken,
                                           exclamationToken);
         }
 
@@ -6194,7 +6194,7 @@ struct Parser
         {
             auto equalsToken = parseOptionalToken(SyntaxKind::EqualsToken);
             auto objectAssignmentInitializer =
-                equalsToken ? allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this))
+                equalsToken ? allowInAnd<Expression>([&]() { return parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true); })
                             : undefined;
             auto nodeSpa =
                 factory.createShorthandPropertyAssignment(name.as<Identifier>(), objectAssignmentInitializer);
@@ -6207,12 +6207,11 @@ struct Parser
         else
         {
             parseExpected(SyntaxKind::ColonToken);
-            auto initializer = allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
+            auto initializer = allowInAnd<Expression>([&]() { return parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true); });
             node = factory.createPropertyAssignment(name, initializer);
         }
         // Decorators, Modifiers, questionToken, and exclamationToken are not supported by property assignments and are
         // reported in the grammar checker
-        node->decorators = decorators;
         copy(node->modifiers, modifiers);
         node->questionToken = questionToken;
         node->exclamationToken = exclamationToken;
