@@ -5354,7 +5354,7 @@ struct Parser
             else {
                 closingElement = parseJsxClosingElement(opening, inExpressionContext);
                 if (!tagNamesAreEquivalent(opening->tagName, closingElement->tagName)) {
-                    if (openingTag && isJsxOpeningElement(openingTag) && tagNamesAreEquivalent(closingElement->tagName, openingTag->tagName)) {
+                    if (openingTag && isJsxOpeningElement(openingTag) && tagNamesAreEquivalent(closingElement->tagName, openingTag.as<JsxOpeningElement>()->tagName)) {
                         // opening incorrectly matched with its parent's closing -- put error on opening
                         parseErrorAtRange(opening->tagName, _E(Diagnostics::JSX_element_0_has_no_corresponding_closing_tag), getTextOfNodeFromSourceText(sourceText, opening->tagName));
                     }
@@ -5458,9 +5458,17 @@ struct Parser
         while (true)
         {
             auto child = parseJsxChild(openingTag, currentToken = scanner.reScanJsxToken());
-            if (!child)
-                break;
+            if (!child) break;
             list.push_back(child);
+            if (
+                isJsxOpeningElement(openingTag)
+                && child == SyntaxKind::JsxElement
+                && !tagNamesAreEquivalent(child.as<JsxElement>()->openingElement->tagName, child.as<JsxElement>()->closingElement->tagName)
+                && tagNamesAreEquivalent(openingTag.as<JsxOpeningElement>()->tagName, child.as<JsxElement>()->closingElement->tagName)
+            ) {
+                // stop after parsing a mismatched child like <div>...(<span></div>) in order to reattach the </div> higher
+                break;
+            }            
         }
 
         parsingContext = saveParsingContext;
