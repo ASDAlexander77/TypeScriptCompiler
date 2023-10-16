@@ -4514,7 +4514,7 @@ struct Parser
         return result;
     }
 
-    auto tryParseAsyncSimpleArrowFunctionExpression() -> ArrowFunction
+    auto tryParseAsyncSimpleArrowFunctionExpression(boolean allowReturnTypeInArrowFunction) -> ArrowFunction
     {
         // We do a check here so that we won't be doing unnecessarily call to "lookAhead"
         if (token() == SyntaxKind::AsyncKeyword)
@@ -4523,9 +4523,10 @@ struct Parser
                 Tristate::True)
             {
                 auto pos = getNodePos();
+                auto hasJSDoc = hasPrecedingJSDocComment();
                 auto asyncModifier = parseModifiersForArrowFunction();
                 auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
-                return parseSimpleArrowFunctionExpression(pos, expr.as<Identifier>(), asyncModifier);
+                return parseSimpleArrowFunctionExpression(pos, expr.as<Identifier>(), allowReturnTypeInArrowFunction, hasJSDoc, asyncModifier);
             }
         }
         return undefined;
@@ -4558,7 +4559,7 @@ struct Parser
         return Tristate::False;
     }
 
-    auto parseParenthesizedArrowFunctionExpression(boolean allowAmbiguity) -> ArrowFunction
+    auto parseParenthesizedArrowFunctionExpression(boolean allowAmbiguity, boolean allowReturnTypeInArrowFunction) -> ArrowFunction
     {
         auto pos = getNodePos();
         auto hasJSDoc = hasPrecedingJSDocComment();
@@ -4584,13 +4585,23 @@ struct Parser
         }
         else
         {
-            parameters = parseParametersWorker(isAsync);
+            if (!allowAmbiguity) {
+                auto maybeParameters = parseParametersWorker(isAsync, allowAmbiguity);
+                if (!maybeParameters) {
+                    return undefined;
+                }
+                parameters = maybeParameters;
+            }
+            else {
+                parameters = parseParametersWorker(isAsync, allowAmbiguity);
+            }
             if (!parseExpected(SyntaxKind::CloseParenToken) && !allowAmbiguity)
             {
                 return undefined;
             }
         }
 
+        auto hasReturnColon = token() == SyntaxKind::ColonToken;
         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
         if (!!type && !allowAmbiguity && typeHasArrowFunctionBlockingParseError(type))
         {
@@ -4604,9 +4615,15 @@ struct Parser
         //  - "(x,y)" is a comma expression parsed.as<a>() signature with two parameters.
         //  - "a ? (b) -> c" will have "(b) ->" parsed.as<a>() signature with a return type annotation.
         //  - "a ? (b) -> function() {}" will too, since function() is a valid JSDoc auto type.
+        //  - "a ? (b): (function() {})" as well, but inside of a parenthesized type with an arbitrary amount of nesting.
         //
         // So we need just a bit of lookahead to ensure that it can only be a signature.
-        auto hasJSDocFunctionType = !!type && isJSDocFunctionType(type);
+        auto unwrappedType = type;
+        while (unwrappedType == SyntaxKind::ParenthesizedType) {
+            unwrappedType = (unwrappedType.as<ParenthesizedTypeNode>())->type; // Skip parens if need be
+        }
+
+        auto hasJSDocFunctionType = !!unwrappedType && isJSDocFunctionType(unwrappedType);
         if (!allowAmbiguity && token() != SyntaxKind::EqualsGreaterThanToken &&
             (hasJSDocFunctionType || token() != SyntaxKind::OpenBraceToken))
         {
@@ -4619,8 +4636,34 @@ struct Parser
         auto lastToken = token();
         auto equalsGreaterThanToken = parseExpectedToken(SyntaxKind::EqualsGreaterThanToken);
         auto body = (lastToken == SyntaxKind::EqualsGreaterThanToken || lastToken == SyntaxKind::OpenBraceToken)
-                        ? parseArrowFunctionExpressionBody(some(modifiers, isAsyncModifier))
+                        ? parseArrowFunctionExpressionBody(some(modifiers, isAsyncModifier), allowReturnTypeInArrowFunction)
                         : parseIdentifier().as<Node>();
+
+        // Given:
+        //     x ? y => ({ y }) : z => ({ z })
+        // We try to parse the body of the first arrow function by looking at:
+        //     ({ y }) : z => ({ z })
+        // This is a valid arrow function with "z" as the return type.
+        //
+        // But, if we're in the true side of a conditional expression, this colon
+        // terminates the expression, so we cannot allow a return type if we aren't
+        // certain whether or not the preceding text was parsed as a parameter list.
+        //
+        // For example,
+        //     a() ? (b: number, c?: string): void => d() : e
+        // is determined by isParenthesizedArrowFunctionExpression to unambiguously
+        // be an arrow expression, so we allow a return type.
+        if (!allowReturnTypeInArrowFunction && hasReturnColon) {
+            // However, if the arrow function we were able to parse is followed by another colon
+            // as in:
+            //     a ? (x): string => x : null
+            // Then allow the arrow function, and treat the second colon as terminating
+            // the conditional expression. It's okay to do this because this code would
+            // be a syntax error in JavaScript (as the second colon shouldn't be there).
+            if (token() != SyntaxKind::ColonToken) {
+                return undefined;
+            }
+        }
 
         auto node =
             factory.createArrowFunction(modifiers, typeParameters, parameters, type, equalsGreaterThanToken, body);
