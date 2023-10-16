@@ -4788,7 +4788,7 @@ struct Parser
                 break;
             }
 
-            if (token() == SyntaxKind::AsKeyword)
+            if (token() == SyntaxKind::AsKeyword || token() === SyntaxKind::SatisfiesKeyword)
             {
                 // Make sure we *do* perform ASI for constructs like this:
                 //    var x = foo
@@ -4801,8 +4801,10 @@ struct Parser
                 }
                 else
                 {
+                    auto keywordKind = token();
                     nextToken();
-                    leftOperand = makeAsExpression(leftOperand, parseType());
+                    leftOperand = keywordKind == SyntaxKind::SatisfiesKeyword ? makeSatisfiesExpression(leftOperand, parseType()) :
+                        makeAsExpression(leftOperand, parseType());
                 }
             }
             else
@@ -4824,6 +4826,10 @@ struct Parser
         }
 
         return getBinaryOperatorPrecedence(token()) > (OperatorPrecedence)0;
+    }
+
+    auto makeSatisfiesExpression(Expression left, TypeNode right) -> SatisfiesExpression {
+        return finishNode(factory.createSatisfiesExpression(left, right), left.pos);
     }
 
     auto makeBinaryExpression(Expression left, BinaryOperatorToken operatorToken, Expression right, pos_type pos)
