@@ -4829,7 +4829,7 @@ struct Parser
     }
 
     auto makeSatisfiesExpression(Expression left, TypeNode right) -> SatisfiesExpression {
-        return finishNode(factory.createSatisfiesExpression(left, right), left.pos);
+        return finishNode(factory.createSatisfiesExpression(left, right), left->pos);
     }
 
     auto makeBinaryExpression(Expression left, BinaryOperatorToken operatorToken, Expression right, pos_type pos)
@@ -4905,7 +4905,6 @@ struct Parser
      * ES7 ExponentiationExpression:
      *      1) UnaryExpression[?Yield]
      *      2) UpdateExpression[?Yield] ** ExponentiationExpression[?Yield]
-     *
      */
     auto parseUnaryExpressionOrHigher() -> Node
     {
@@ -4954,11 +4953,9 @@ struct Parser
             }
             else
             {
-                parseErrorAt(
-                    pos, end,
-                    _E(
-                        Diagnostics::
-                            An_unary_expression_with_the_0_operator_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses),
+                Debug::_assert(isKeywordOrPunctuation(unaryOperator));
+                parseErrorAt(pos, end, _E(Diagnostics::
+                    An_unary_expression_with_the_0_operator_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses),
                     scanner.tokenToString(unaryOperator));
             }
         }
@@ -4995,6 +4992,11 @@ struct Parser
         case SyntaxKind::VoidKeyword:
             return parseVoidExpression();
         case SyntaxKind::LessThanToken:
+            // Just like in parseUpdateExpression, we need to avoid parsing type assertions when
+            // in JSX and we see an expression like "+ <foo> bar".
+            if (languageVariant == LanguageVariant::JSX) {
+                return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, /*topInvalidNodePosition*/ undefined, /*openingTag*/ undefined, /*mustBeUnary*/ true);
+            }        
             // This is modified UnaryExpression grammar in TypeScript
             //  UnaryExpression (modified) ->
             //      < type > UnaryExpression
@@ -5219,7 +5221,7 @@ struct Parser
     auto parseSuperExpression() -> MemberExpression
     {
         auto pos = getNodePos();
-        auto expression = parseTokenNode<PrimaryExpression>();
+        auto expression = parseTokenNode<MemberExpression>();
         if (token() == SyntaxKind::LessThanToken)
         {
             auto startPos = getNodePos();
@@ -5227,8 +5229,10 @@ struct Parser
                 tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
             if (typeArguments != undefined)
             {
-                parseErrorAt(startPos, getNodePos(),
-                             _E(Diagnostics::super_may_not_use_type_arguments));
+                parseErrorAt(startPos, getNodePos(), _E(Diagnostics::super_may_not_use_type_arguments));
+                if (!isTemplateStartOfTaggedTemplate()) {
+                    expression = factory.createExpressionWithTypeArguments(expression, typeArguments);
+                }                
             }
         }
 
@@ -5246,7 +5250,7 @@ struct Parser
         // private names will never work with `super` (`super.#foo`), but that's a semantic error, not syntactic
         return finishNode(
             factory.createPropertyAccessExpression(
-                expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true)),
+                expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true, /*allowUnicodeEscapeSequenceInIdentifierName*/ true)),
             pos);
     }
 
