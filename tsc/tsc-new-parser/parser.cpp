@@ -1703,7 +1703,7 @@ struct Parser
         case ParsingContext::JSDocComment:
             return true;
         case ParsingContext::Count:
-            return Debug::fail<boolean>(S("ParsingContext.Count used as a context")); // Not a real context, only a marker.            
+            return Debug::fail<boolean>(S("ParsingContext::Count used as a context")); // Not a real context, only a marker.            
         default:
             Debug::_assertNever(S("Non-exhaustive case in 'isListElement'."));
         }            
@@ -1790,6 +1790,7 @@ struct Parser
         case ParsingContext::ObjectLiteralMembers:
         case ParsingContext::ObjectBindingElements:
         case ParsingContext::ImportOrExportSpecifiers:
+        case ParsingContext::ImportAttributes:
             return token() == SyntaxKind::CloseBraceToken;
         case ParsingContext::SwitchClauseStatements:
             return token() == SyntaxKind::CloseBraceToken || token() == SyntaxKind::CaseKeyword ||
@@ -1864,6 +1865,9 @@ struct Parser
     // True if positioned at element or terminator of the current list or any enclosing list
     auto isInSomeParsingContext() -> boolean
     {
+        // We should be in at least one parsing context, be it SourceElements while parsing
+        // a SourceFile, or JSDocComment when lazily parsing JSDoc.
+        Debug::_assert(parsingContext != ParsingContext::Unknown, S("Missing parsing context"));        
         for (auto kind = (number)ParsingContext::Unknown; kind < (number)ParsingContext::Count; kind++)
         {
             if (!!(parsingContext & (ParsingContext)(1 << kind)))
@@ -1891,8 +1895,7 @@ struct Parser
         {
             if (isListElement(kind, /*inErrorRecovery*/ false))
             {
-                auto element = parseListElement(kind, parseElement);
-                list.push_back(element);
+                list.push_back(parseListElement(kind, parseElement));
 
                 continue;
             }
@@ -1918,7 +1921,7 @@ struct Parser
         return parseElement();
     }
 
-    auto currentNode(ParsingContext parsingContext) -> Node
+    auto currentNode(ParsingContext parsingContext, number pos = -1) -> Node
     {
         // If we don't have a cursor or the parsing context isn't reusable, there's nothing to reuse.
         //
@@ -1934,7 +1937,7 @@ struct Parser
             return undefined;
         }
 
-        auto node = ((IncrementalParser::SyntaxCursor &)syntaxCursor).currentNode(scanner.getTokenFullStart());
+        auto node = ((IncrementalParser::SyntaxCursor &)syntaxCursor).currentNode(pos != -1 ? pos : scanner.getTokenFullStart());
 
         // Can't reuse a missing node->
         // Can't reuse a node that intersected the change range.
@@ -1969,7 +1972,8 @@ struct Parser
             return undefined;
         }
 
-        if (node.as<JSDocContainer>()->jsDocCache.size() > 0)
+        // TODO: finish it
+        if (canHaveJSDoc(node) && node.as<JSDocContainer>()->jsDocCache.size() > 0)
         {
             // jsDocCache may include tags from parent nodes, which might have been modified.
             node.as<JSDocContainer>()->jsDocCache.clear();
@@ -2105,7 +2109,7 @@ struct Parser
                 auto methodDeclaration = node.as<MethodDeclaration>();
                 auto nameIsConstructor =
                     methodDeclaration->name == SyntaxKind::Identifier &&
-                    methodDeclaration->name.as<Identifier>()->originalKeywordKind == SyntaxKind::ConstructorKeyword;
+                    methodDeclaration->name.as<Identifier>()->escapedText == S("constructor");
 
                 return !nameIsConstructor;
             }
@@ -2244,65 +2248,74 @@ struct Parser
         return false;
     }
 
-    auto parsingContextErrors(ParsingContext context) -> void
+    auto parsingContextErrors(ParsingContext context) -> DiagnosticWithDetachedLocation
     {
         switch (context)
         {
-        case ParsingContext::SourceElements:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Declaration_or_statement_expected));
-        case ParsingContext::BlockStatements:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Declaration_or_statement_expected));
-        case ParsingContext::SwitchClauses:
-            return parseErrorAtCurrentToken(_E(Diagnostics::case_or_default_expected));
-        case ParsingContext::SwitchClauseStatements:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Statement_expected));
-        case ParsingContext::RestProperties: // fallthrough
-        case ParsingContext::TypeMembers:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Property_or_signature_expected));
-        case ParsingContext::ClassMembers:
-            return parseErrorAtCurrentToken(_E(
-                Diagnostics::Unexpected_token_A_constructor_method_accessor_or_property_was_expected));
-        case ParsingContext::EnumMembers:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Enum_member_expected));
-        case ParsingContext::HeritageClauseElement:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Expression_expected));
-        case ParsingContext::VariableDeclarations:
-            return isKeyword(token())
-                       ? parseErrorAtCurrentToken(
-                             _E(Diagnostics::_0_is_not_allowed_as_a_variable_declaration_name),
-                             scanner.tokenToString(token()))
-                       : parseErrorAtCurrentToken(_E(Diagnostics::Variable_declaration_expected));
-        case ParsingContext::ObjectBindingElements:
-            return parseErrorAtCurrentToken(
-                _E(Diagnostics::Property_destructuring_pattern_expected));
-        case ParsingContext::ArrayBindingElements:
-            return parseErrorAtCurrentToken(
-                _E(Diagnostics::Array_element_destructuring_pattern_expected));
-        case ParsingContext::ArgumentExpressions:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Argument_expression_expected));
-        case ParsingContext::ObjectLiteralMembers:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Property_assignment_expected));
-        case ParsingContext::ArrayLiteralMembers:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Expression_or_comma_expected));
-        case ParsingContext::JSDocParameters:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Parameter_declaration_expected));
-        case ParsingContext::Parameters:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Parameter_declaration_expected));
-        case ParsingContext::TypeParameters:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Type_parameter_declaration_expected));
-        case ParsingContext::TypeArguments:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Type_argument_expected));
-        case ParsingContext::TupleElementTypes:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Type_expected));
-        case ParsingContext::HeritageClauses:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Unexpected_token_expected));
-        case ParsingContext::ImportOrExportSpecifiers:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Identifier_expected));
-        case ParsingContext::JsxAttributes:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Identifier_expected));
-        case ParsingContext::JsxChildren:
-            return parseErrorAtCurrentToken(_E(Diagnostics::Identifier_expected));
-            return; // GH TODO#18217 `Debug::_assertNever default(context);`
+            case ParsingContext::SourceElements:
+                return token() == SyntaxKind::DefaultKeyword
+                    ? parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::ExportKeyword))
+                    : parseErrorAtCurrentToken(_E(Diagnostics::Declaration_or_statement_expected));
+            case ParsingContext::BlockStatements:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Declaration_or_statement_expected));
+            case ParsingContext::SwitchClauses:
+                return parseErrorAtCurrentToken(_E(Diagnostics::case_or_default_expected));
+            case ParsingContext::SwitchClauseStatements:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Statement_expected));
+            case ParsingContext::RestProperties: // fallthrough
+            case ParsingContext::TypeMembers:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Property_or_signature_expected));
+            case ParsingContext::ClassMembers:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Unexpected_token_A_constructor_method_accessor_or_property_was_expected));
+            case ParsingContext::EnumMembers:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Enum_member_expected));
+            case ParsingContext::HeritageClauseElement:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Expression_expected));
+            case ParsingContext::VariableDeclarations:
+                return isKeyword(token())
+                    ? parseErrorAtCurrentToken(_E(Diagnostics::_0_is_not_allowed_as_a_variable_declaration_name), scanner.tokenToString(token()))
+                    : parseErrorAtCurrentToken(_E(Diagnostics::Variable_declaration_expected));
+            case ParsingContext::ObjectBindingElements:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Property_destructuring_pattern_expected));
+            case ParsingContext::ArrayBindingElements:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Array_element_destructuring_pattern_expected));
+            case ParsingContext::ArgumentExpressions:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Argument_expression_expected));
+            case ParsingContext::ObjectLiteralMembers:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Property_assignment_expected));
+            case ParsingContext::ArrayLiteralMembers:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Expression_or_comma_expected));
+            case ParsingContext::JSDocParameters:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Parameter_declaration_expected));
+            case ParsingContext::Parameters:
+                return isKeyword(token())
+                    ? parseErrorAtCurrentToken(_E(Diagnostics::_0_is_not_allowed_as_a_parameter_name), scanner.tokenToString(token()))
+                    : parseErrorAtCurrentToken(_E(Diagnostics::Parameter_declaration_expected));
+            case ParsingContext::TypeParameters:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Type_parameter_declaration_expected));
+            case ParsingContext::TypeArguments:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Type_argument_expected));
+            case ParsingContext::TupleElementTypes:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Type_expected));
+            case ParsingContext::HeritageClauses:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Unexpected_token_expected));
+            case ParsingContext::ImportOrExportSpecifiers:
+                if (token() == SyntaxKind::FromKeyword) {
+                    return parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), S("}"));
+                }
+                return parseErrorAtCurrentToken(_E(Diagnostics::Identifier_expected));
+            case ParsingContext::JsxAttributes:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Identifier_expected));
+            case ParsingContext::JsxChildren:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Identifier_expected));
+            case ParsingContext::ImportAttributes:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Identifier_or_string_literal_expected));
+            case ParsingContext::JSDocComment:
+                return parseErrorAtCurrentToken(_E(Diagnostics::Identifier_expected));
+            case ParsingContext::Count:
+                return Debug::fail(S("ParsingContext::Count used as a context")); // Not a real context, only a marker.
+            default:
+                Debug::_assertNever(context);
         }
     }
 
@@ -2322,7 +2335,12 @@ struct Parser
             if (isListElement(kind, /*inErrorRecovery*/ false))
             {
                 auto startPos = scanner.getTokenFullStart();
-                list.push_back(parseListElement<T>(kind, parseElement));
+                auto result = parseListElement<T>(kind, parseElement);
+                if (!result) {
+                    parsingContext = saveParsingContext;
+                    return undefined;
+                }                
+                list.push_back(result);
                 commaStart = scanner.getTokenStart();
 
                 if (parseOptional(SyntaxKind::CommaToken))
@@ -2423,20 +2441,18 @@ struct Parser
     {
         auto pos = getNodePos();
         auto entity = allowReservedWords ? parseIdentifierName(diagnosticMessage) : parseIdentifier(diagnosticMessage);
-        auto dotPos = getNodePos();
         while (parseOptional(SyntaxKind::DotToken))
         {
             if (token() == SyntaxKind::LessThanToken)
             {
-                // the entity is part of a JSDoc-style generic, so record the trailing dot for later error reporting
-                entity->jsdocDotPos = dotPos;
+                // The entity is part of a JSDoc-style generic. We will use the gap between `typeName` and
+                // `typeArguments` to report it as a grammar error in the checker.
                 break;
             }
-            dotPos = getNodePos();
             entity = finishNode(
                 factory.createQualifiedName(
                     entity,
-                    parseRightSideOfDot(allowReservedWords, /* allowPrivateIdentifiers */ false).as<Identifier>()),
+                    parseRightSideOfDot(allowReservedWords, /*allowPrivateIdentifiers*/ false, /*allowUnicodeEscapeSequenceInIdentifierName*/ true).as<Identifier>()),
                 pos);
         }
         return entity;
@@ -2447,7 +2463,7 @@ struct Parser
         return finishNode(factory.createQualifiedName(entity, name), entity->pos).as<QualifiedName>();
     }
 
-    auto parseRightSideOfDot(boolean allowIdentifierNames, boolean allowPrivateIdentifiers) -> Node
+    auto parseRightSideOfDot(boolean allowIdentifierNames, boolean allowPrivateIdentifiers, boolean allowUnicodeEscapeSequenceInIdentifierName) -> Node
     {
         // Technically a keyword is valid here.as<all>() identifiers and keywords are identifier names.
         // However, often we'll encounter this in error situations when the identifier or keyword
@@ -2492,7 +2508,11 @@ struct Parser
                                                        _E(Diagnostics::Identifier_expected));
         }
 
-        return allowIdentifierNames ? parseIdentifierName() : parseIdentifier();
+        if (allowIdentifierNames) {
+            return allowUnicodeEscapeSequenceInIdentifierName ? parseIdentifierName() : parseIdentifierNameErrorOnUnicodeEscapeSequence();
+        }
+
+        return parseIdentifier();
     }
 
     auto parseTemplateSpans(boolean isTaggedTemplate) -> NodeArray<TemplateSpan>
