@@ -6222,19 +6222,11 @@ struct Parser
     {
         auto pos = getNodePos();
         auto openBracePosition = scanner.getTokenStart();
-        parseExpected(SyntaxKind::OpenBraceToken);
+        auto openBraceParsed = parseExpected(SyntaxKind::OpenBraceToken);
         auto multiLine = scanner.hasPrecedingLineBreak();
-        auto properties = parseDelimitedList<ObjectLiteralElementLike>(
-            ParsingContext::ObjectLiteralMembers, std::bind(&Parser::parseObjectLiteralElement, this),
-            /*considerSemicolonAsDelimiter*/ true);
-        if (!parseExpected(SyntaxKind::CloseBraceToken))
-        {
-            auto lastError = lastOrUndefined(parseDiagnostics);
-            if (!!lastError && lastError->code == _E(Diagnostics::_0_expected).code)
-            {
-                addRelatedInfo(lastError, createDetachedDiagnostic(fileName, openBracePosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
-            }
-        }
+        auto properties = parseDelimitedList<ObjectLiteralElementLike>(ParsingContext::ObjectLiteralMembers, std::bind(&Parser::parseObjectLiteralElement, this), /*considerSemicolonAsDelimiter*/ true);
+        parseExpectedMatchingBrackets(SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken, openBraceParsed, openBracePosition);
+
         return finishNode(factory.createObjectLiteralExpression(properties, multiLine), pos);
     }
 
