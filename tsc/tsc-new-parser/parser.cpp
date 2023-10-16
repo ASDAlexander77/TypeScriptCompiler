@@ -6004,14 +6004,17 @@ struct Parser
 
         auto typeArguments =
             parseDelimitedList<TypeNode>(ParsingContext::TypeArguments, std::bind(&Parser::parseType, this));
-        if (!parseExpected(SyntaxKind::GreaterThanToken))
+        if (reScanGreaterToken() != SyntaxKind::GreaterThanToken)
         {
             // If it doesn't have the closing `>` then it's definitely not an type argument list.
             return undefined;
         }
+        nextToken();
 
-        // If we have a '<', then only parse this.as<a>() argument list if the type arguments
-        // are complete and we have an open paren.  if we don't, rewind and return nothing.
+        // We successfully parsed a type argument list. The next token determines whether we want to
+        // treat it as such. If the type argument list is followed by `(` or a template literal, as in
+        // `f<number>(42)`, we favor the type argument interpretation even though JavaScript would view
+        // it as a relational expression.
         return !!typeArguments && canFollowTypeArgumentsInExpression() ? typeArguments : undefined;
     }
 
