@@ -5681,20 +5681,14 @@ struct Parser
     {
         auto pos = getNodePos();
         parseExpected(SyntaxKind::LessThanSlashToken);
-        if (scanner.tokenIsIdentifierOrKeyword(token()))
-        {
-            parseErrorAtRange(
-                parseJsxElementName(),
-                _E(Diagnostics::Expected_corresponding_closing_tag_for_JSX_fragment));
-        }
-        if (inExpressionContext)
-        {
-            parseExpected(SyntaxKind::GreaterThanToken);
-        }
-        else
-        {
-            parseExpected(SyntaxKind::GreaterThanToken, /*diagnostic*/ undefined, /*shouldAdvance*/ false);
-            scanJsxText();
+        if (parseExpected(SyntaxKind::GreaterThanToken, _E(Diagnostics::Expected_corresponding_closing_tag_for_JSX_fragment), /*shouldAdvance*/ false)) {
+            // manually advance the scanner in order to look for jsx text inside jsx
+            if (inExpressionContext) {
+                nextToken();
+            }
+            else {
+                scanJsxText();
+            }
         }
         return finishNode(factory.createJsxJsxClosingFragment(), pos);
     }
