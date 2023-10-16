@@ -4217,7 +4217,7 @@ struct Parser
         }
 
         // It wasn't an assignment or a lambda.  This is a conditional expression:
-        return parseConditionalExpressionRest(expr, pos);
+        return parseConditionalExpressionRest(expr, pos, allowReturnTypeInArrowFunction);
     }
 
     auto isYieldExpression() -> boolean
@@ -4270,19 +4270,18 @@ struct Parser
         if (!scanner.hasPrecedingLineBreak() && (token() == SyntaxKind::AsteriskToken || isStartOfExpression()))
         {
             auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
-            auto expression = parseAssignmentExpressionOrHigher();
+            auto expression = parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true);
             return finishNode(factory.createYieldExpression(asteriskToken, expression), pos);
         }
         else
         {
             // if the next token is not on the same line.as<yield>().  or we don't have an '*' or
             // the start of an expression, then this is just a simple "yield" expression.
-            return finishNode(factory.createYieldExpression(/*asteriskToken*/ undefined, /*expression*/ undefined),
-                              pos);
+            return finishNode(factory.createYieldExpression(/*asteriskToken*/ undefined, /*expression*/ undefined), pos);
         }
     }
 
-    auto parseSimpleArrowFunctionExpression(pos_type pos, Identifier identifier, NodeArray<Modifier> asyncModifier)
+    auto parseSimpleArrowFunctionExpression(pos_type pos, Identifier identifier, boolean allowReturnTypeInArrowFunction, boolean hasJSDoc, NodeArray<Modifier> asyncModifier)
         -> ArrowFunction
     {
         Debug::_assert(token() == SyntaxKind::EqualsGreaterThanToken,
@@ -4299,13 +4298,13 @@ struct Parser
         auto parameters = createNodeArray<ParameterDeclaration>(NodeArray<ParameterDeclaration>({parameter}),
                                                                 parameter->pos, parameter->_end);
         auto equalsGreaterThanToken = parseExpectedToken(SyntaxKind::EqualsGreaterThanToken);
-        auto body = parseArrowFunctionExpressionBody(/*isAsync*/ !!asyncModifier);
+        auto body = parseArrowFunctionExpressionBody(/*isAsync*/ !!asyncModifier, allowReturnTypeInArrowFunction);
         auto node = factory.createArrowFunction(asyncModifier, /*typeParameters*/ undefined, parameters,
                                                 /*type*/ undefined, equalsGreaterThanToken, body);
-        return addJSDocComment(finishNode(node, pos));
+        return addJSDocComment(finishNode(node, pos), hasJSDoc);
     }
 
-    auto tryParseParenthesizedArrowFunctionExpression() -> Expression
+    auto tryParseParenthesizedArrowFunctionExpression(boolean allowReturnTypeInArrowFunction) -> Expression
     {
         auto triState = isParenthesizedArrowFunctionExpression();
         if (triState == Tristate::False)
@@ -4318,9 +4317,8 @@ struct Parser
         // following => or { token. Otherwise, we *might* have an arrow function.  Try to parse
         // it out, but don't allow any ambiguity, and return 'undefined' if this could be an
         // expression instead.
-        return triState == Tristate::True ? parseParenthesizedArrowFunctionExpression(/*allowAmbiguity*/ true)
-                                          : tryParse<ArrowFunction>(std::bind(
-                                                &Parser::parsePossibleParenthesizedArrowFunctionExpression, this));
+        return triState == Tristate::True ? parseParenthesizedArrowFunctionExpression(/*allowAmbiguity*/ true, /*allowReturnTypeInArrowFunction*/ true)
+                                          : tryParse<ArrowFunction>([&]() { return parsePossibleParenthesizedArrowFunctionExpression(allowReturnTypeInArrowFunction); });
     }
 
     //  True        -> We definitely expect a parenthesized arrow auto here.
