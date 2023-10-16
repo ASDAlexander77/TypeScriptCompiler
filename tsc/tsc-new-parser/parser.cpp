@@ -5660,19 +5660,19 @@ struct Parser
         return finishNode(factory.createJsxSpreadAttribute(expression), pos);
     }
 
-    auto parseJsxClosingElement(boolean inExpressionContext) -> JsxClosingElement
+    auto parseJsxClosingElement(JsxOpeningElement open, boolean inExpressionContext) -> JsxClosingElement
     {
         auto pos = getNodePos();
         parseExpected(SyntaxKind::LessThanSlashToken);
         auto tagName = parseJsxElementName();
-        if (inExpressionContext)
-        {
-            parseExpected(SyntaxKind::GreaterThanToken);
-        }
-        else
-        {
-            parseExpected(SyntaxKind::GreaterThanToken, /*diagnostic*/ undefined, /*shouldAdvance*/ false);
-            scanJsxText();
+        if (parseExpected(SyntaxKind::GreaterThanToken, /*diagnosticMessage*/ undefined, /*shouldAdvance*/ false)) {
+            // manually advance the scanner in order to look for jsx text inside jsx
+            if (inExpressionContext || !tagNamesAreEquivalent(open->tagName, tagName)) {
+                nextToken();
+            }
+            else {
+                scanJsxText();
+            }
         }
         return finishNode(factory.createJsxClosingElement(tagName), pos);
     }
