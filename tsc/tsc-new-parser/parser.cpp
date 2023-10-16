@@ -6046,10 +6046,14 @@ struct Parser
     {
         switch (token())
         {
+            case SyntaxKind::NoSubstitutionTemplateLiteral:
+                if ((scanner.getTokenFlags() & TokenFlags::IsInvalid) > TokenFlags::None) {
+                    reScanTemplateToken(/*isTaggedTemplate*/ false);
+                }
+            // falls through            
         case SyntaxKind::NumericLiteral:
         case SyntaxKind::BigIntLiteral:
         case SyntaxKind::StringLiteral:
-        case SyntaxKind::NoSubstitutionTemplateLiteral:
             return parseLiteralNode();
         case SyntaxKind::ThisKeyword:
         case SyntaxKind::SuperKeyword:
@@ -6073,6 +6077,8 @@ struct Parser
             }
 
             return parseFunctionExpression();
+        case SyntaxKind::AtToken:
+            return parseDecoratedExpression();            
         case SyntaxKind::ClassKeyword:
             return parseClassExpression();
         case SyntaxKind::FunctionKeyword:
@@ -6088,6 +6094,8 @@ struct Parser
             break;
         case SyntaxKind::TemplateHead:
             return parseTemplateExpression(/* isTaggedTemplate */ false);
+        case SyntaxKind::PrivateIdentifier:
+            return parsePrivateIdentifier();            
         }
 
         return parseIdentifier(_E(Diagnostics::Expression_expected));
