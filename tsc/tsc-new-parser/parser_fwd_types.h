@@ -1056,6 +1056,7 @@ using PostfixUnaryOperator = SyntaxKind;
 template <typename T> using NodeArray = data::NodeArray<T>;
 
 using ModifiersArray = NodeArray<Modifier>;
+using ModifiersLikeArray = NodeArray<ModifierLike>;
 using DecoratorsArray = NodeArray<Decorator>;
 
 template <typename R = Node, typename T = Node> using ArrayFuncT = std::function<R(NodeArray<T>)>;
