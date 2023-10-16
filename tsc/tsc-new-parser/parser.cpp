@@ -5514,15 +5514,15 @@ struct Parser
         else
         {
             parseExpected(SyntaxKind::SlashToken);
-            if (inExpressionContext)
-            {
-                parseExpected(SyntaxKind::GreaterThanToken);
-            }
-            else
-            {
-                parseExpected(SyntaxKind::GreaterThanToken, /*diagnostic*/ undefined, /*shouldAdvance*/ false);
-                scanJsxText();
-            }
+            if (parseExpected(SyntaxKind::GreaterThanToken, /*diagnosticMessage*/ undefined, /*shouldAdvance*/ false)) {
+                // manually advance the scanner in order to look for jsx text inside jsx
+                if (inExpressionContext) {
+                    nextToken();
+                }
+                else {
+                    scanJsxText();
+                }
+            }            
             node = factory.createJsxSelfClosingElement(tagName, typeArguments, attributes);
         }
 
@@ -5532,23 +5532,20 @@ struct Parser
     auto parseJsxElementName() -> JsxTagNameExpression
     {
         auto pos = getNodePos();
-        scanJsxIdentifier();
         // JsxElement can have name in the form of
         //      propertyAccessExpression
         //      primaryExpression in the form of an identifier and "this" keyword
-        // We can't just simply use parseLeftHandSideExpressionOrHigher because then we will start consider class,auto
-        // etc.as<a>() keyword We only want to consider "this".as<a>() primaryExpression
-        JsxTagNameExpression expression =
-            token() == SyntaxKind::ThisKeyword ? parseTokenNode<ThisExpression>() : parseIdentifierName().as<Node>();
-        while (parseOptional(SyntaxKind::DotToken))
-        {
-            expression = finishNode(factory.createPropertyAccessExpression(
-                                        expression, parseRightSideOfDot(/*allowIdentifierNames*/ true,
-                                                                        /*allowPrivateIdentifiers*/ false)),
-                                    pos)
-                             .as<JsxTagNamePropertyAccess>();
+        // We can't just simply use parseLeftHandSideExpressionOrHigher because then we will start consider class,function etc as a keyword
+        // We only want to consider "this" as a primaryExpression
+        auto initialExpression = parseJsxTagName();
+        if (isJsxNamespacedName(initialExpression)) {
+            return initialExpression; // `a:b.c` is invalid syntax, don't even look for the `.` if we parse `a:b`, and let `parseAttribute` report "unexpected :" instead.
         }
-        return expression;
+        Node expression;
+        while (parseOptional(SyntaxKind::DotToken)) {
+            expression = finishNode(factory.createPropertyAccessExpression(expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ false, /*allowUnicodeEscapeSequenceInIdentifierName*/ false)), pos);
+        }
+        return expression.as<JsxTagNameExpression>();
     }
 
     auto parseJsxExpression(boolean inExpressionContext) -> JsxExpression
