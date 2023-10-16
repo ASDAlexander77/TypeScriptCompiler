@@ -5821,13 +5821,6 @@ struct Parser
                 continue;
             }
 
-            if (!questionDotToken && token() == SyntaxKind::ExclamationToken && !scanner.hasPrecedingLineBreak())
-            {
-                nextToken();
-                expression = finishNode(factory.createNonNullExpression(expression), pos);
-                continue;
-            }
-
             // when in the [Decorator] context, we do not parse ElementAccess.as<it>() could be part of a
             // ComputedPropertyName
             if ((questionDotToken || !inDecoratorContext()) && parseOptional(SyntaxKind::OpenBracketToken))
@@ -5838,8 +5831,24 @@ struct Parser
 
             if (isTemplateStartOfTaggedTemplate())
             {
-                expression = parseTaggedTemplateRest(pos, expression, questionDotToken, /*typeArguments*/ undefined);
+                // Absorb type arguments into TemplateExpression when preceding expression is ExpressionWithTypeArguments
+                expression = !questionDotToken && expression == SyntaxKind::ExpressionWithTypeArguments ?
+                    parseTaggedTemplateRest(pos, expression.as<ExpressionWithTypeArguments>()->expression, questionDotToken, expression.as<ExpressionWithTypeArguments>()->typeArguments) :
+                    parseTaggedTemplateRest(pos, expression, questionDotToken, /*typeArguments*/ undefined);
                 continue;
+            }
+
+            if (!questionDotToken) {
+                if (token() == SyntaxKind::ExclamationToken && !scanner.hasPrecedingLineBreak()) {
+                    nextToken();
+                    expression = finishNode(factory.createNonNullExpression(expression), pos);
+                    continue;
+                }
+                auto typeArguments = tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
+                if (typeArguments) {
+                    expression = finishNode(factory.createExpressionWithTypeArguments(expression, typeArguments), pos);
+                    continue;
+                }
             }
 
             return expression.as<MemberExpression>();
