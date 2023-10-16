@@ -4406,6 +4406,10 @@ struct Parser
             if (isModifierKind(second) && second != SyntaxKind::AsyncKeyword &&
                 lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifier, this)))
             {
+                if (nextToken() == SyntaxKind::AsKeyword) {
+                    // https://github.com/microsoft/TypeScript/issues/44466
+                    return Tristate::False;
+                }                
                 return Tristate::True;
             }
 
@@ -4448,7 +4452,7 @@ struct Parser
 
             // If we have "<" not followed by an identifier,
             // then this definitely is not an arrow function.
-            if (!isIdentifier())
+            if (!isIdentifier() && token() != SyntaxKind::ConstKeyword)
             {
                 return Tristate::False;
             }
@@ -4457,6 +4461,7 @@ struct Parser
             if (languageVariant == LanguageVariant::JSX)
             {
                 auto isArrowFunctionInJsx = lookAhead<boolean>([&]() {
+                    parseOptional(SyntaxKind::ConstKeyword);
                     auto third = nextToken();
                     if (third == SyntaxKind::ExtendsKeyword)
                     {
@@ -4465,12 +4470,13 @@ struct Parser
                         {
                         case SyntaxKind::EqualsToken:
                         case SyntaxKind::GreaterThanToken:
+                        case SyntaxKind::SlashToken:
                             return false;
                         default:
                             return true;
                         }
                     }
-                    else if (third == SyntaxKind::CommaToken)
+                    else if (third == SyntaxKind::CommaToken || third == SyntaxKind::EqualsToken)
                     {
                         return true;
                     }
@@ -4490,7 +4496,7 @@ struct Parser
         }
     }
 
-    auto parsePossibleParenthesizedArrowFunctionExpression() -> ArrowFunction
+    auto parsePossibleParenthesizedArrowFunctionExpression(boolean allowReturnTypeInArrowFunction) -> ArrowFunction
     {
         auto tokenPos = scanner.getTokenStart();
         if (std::find(notParenthesizedArrow.begin(), notParenthesizedArrow.end(), tokenPos) !=
@@ -4499,7 +4505,7 @@ struct Parser
             return undefined;
         }
 
-        auto result = parseParenthesizedArrowFunctionExpression(/*allowAmbiguity*/ false);
+        auto result = parseParenthesizedArrowFunctionExpression(/*allowAmbiguity*/ false, allowReturnTypeInArrowFunction);
         if (!result)
         {
             notParenthesizedArrow.push_back(tokenPos);
