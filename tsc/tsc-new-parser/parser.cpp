@@ -6115,7 +6115,7 @@ struct Parser
     {
         auto pos = getNodePos();
         parseExpected(SyntaxKind::DotDotDotToken);
-        auto expression = parseAssignmentExpressionOrHigher();
+        auto expression = parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true);
         return finishNode(factory.createSpreadElement(expression), pos);
     }
 
@@ -6124,7 +6124,7 @@ struct Parser
         return token() == SyntaxKind::DotDotDotToken ? parseSpreadElement()
                : token() == SyntaxKind::CommaToken
                    ? finishNode(factory.createOmittedExpression(), getNodePos()).as<Expression>()
-                   : parseAssignmentExpressionOrHigher();
+                   : parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true);
     }
 
     auto parseArgumentExpression() -> Expression
