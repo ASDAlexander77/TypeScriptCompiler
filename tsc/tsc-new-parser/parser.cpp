@@ -5748,7 +5748,7 @@ struct Parser
     auto parsePropertyAccessExpressionRest(pos_type pos, LeftHandSideExpression expression,
                                            QuestionDotToken questionDotToken)
     {
-        auto name = parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true);
+        auto name = parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true, /*allowUnicodeEscapeSequenceInIdentifierName*/ true);
         auto isOptionalChain = (number)questionDotToken || tryReparseOptionalChain(expression);
         auto propertyAccess =
             isOptionalChain
@@ -5760,6 +5760,12 @@ struct Parser
                 propertyAccess->name,
                 _E(Diagnostics::An_optional_chain_cannot_contain_private_identifiers));
         }
+        if (isExpressionWithTypeArguments(expression) && expression.as<ExpressionWithTypeArguments>()->typeArguments) {
+            auto pos = expression.as<ExpressionWithTypeArguments>()->typeArguments->pos - 1;
+            auto safe_str = safe_string(sourceText);
+            auto end = scanner.skipTrivia(safe_str, expression.as<ExpressionWithTypeArguments>()->typeArguments->_end) + 1;
+            parseErrorAt(pos, end, _E(Diagnostics::An_instantiation_expression_cannot_be_followed_by_a_property_access));
+        }        
         return finishNode(propertyAccess, pos);
     }
 
