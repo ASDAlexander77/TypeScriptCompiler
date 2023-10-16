@@ -5548,6 +5548,19 @@ struct Parser
         return expression.as<JsxTagNameExpression>();
     }
 
+    auto parseJsxTagName() -> Node {
+        auto pos = getNodePos();
+        scanJsxIdentifier();
+
+        auto isThis = token() == SyntaxKind::ThisKeyword;
+        auto tagName = parseIdentifierNameErrorOnUnicodeEscapeSequence();
+        if (parseOptional(SyntaxKind::ColonToken)) {
+            scanJsxIdentifier();
+            return finishNode(factory.createJsxNamespacedName(tagName, parseIdentifierNameErrorOnUnicodeEscapeSequence()), pos);
+        }
+        return isThis ? finishNode(factory.createToken(SyntaxKind::ThisKeyword), pos) : tagName;
+    }    
+
     auto parseJsxExpression(boolean inExpressionContext) -> JsxExpression
     {
         auto pos = getNodePos();
