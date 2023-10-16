@@ -5573,7 +5573,9 @@ struct Parser
         Expression expression;
         if (token() != SyntaxKind::CloseBraceToken)
         {
-            dotDotDotToken = parseOptionalToken(SyntaxKind::DotDotDotToken);
+            if (!inExpressionContext) {
+                dotDotDotToken = parseOptionalToken(SyntaxKind::DotDotDotToken);
+            }
             // Only an AssignmentExpression is valid here per the JSX spec,
             // but we can unambiguously parse a comma sequence and provide
             // a better error message in grammar checking.
@@ -5585,7 +5587,7 @@ struct Parser
         }
         else
         {
-            if (parseExpected(SyntaxKind::CloseBraceToken, /*message*/ undefined, /*shouldAdvance*/ false))
+            if (parseExpected(SyntaxKind::CloseBraceToken, /*diagnosticMessage*/ undefined, /*shouldAdvance*/ false))
             {
                 scanJsxText();
             }
@@ -5594,22 +5596,59 @@ struct Parser
         return finishNode(factory.createJsxExpression(dotDotDotToken, expression), pos);
     }
 
-    auto parseJsxAttribute() -> Node
-    {
-        if (token() == SyntaxKind::OpenBraceToken)
-        {
+    // auto parseJsxAttribute() -> Node
+    // {
+    //     if (token() == SyntaxKind::OpenBraceToken)
+    //     {
+    //         return parseJsxSpreadAttribute();
+    //     }
+
+    //     scanJsxIdentifier();
+    //     auto pos = getNodePos();
+    //     auto identifierName = parseIdentifierName();
+    //     auto initializer = token() != SyntaxKind::EqualsToken ? undefined
+    //                        : scanJsxAttributeValue() == SyntaxKind::StringLiteral
+    //                            ? parseLiteralNode().as<Node>()
+    //                            : parseJsxExpression(/*inExpressionContext*/ true).as<Node>();
+    //     return finishNode(factory.createJsxAttribute(identifierName, initializer), pos);
+    // }
+
+    auto parseJsxAttribute() -> Node {
+        if (token() == SyntaxKind::OpenBraceToken) {
             return parseJsxSpreadAttribute();
         }
 
-        scanJsxIdentifier();
         auto pos = getNodePos();
-        auto identifierName = parseIdentifierName();
-        auto initializer = token() != SyntaxKind::EqualsToken ? undefined
-                           : scanJsxAttributeValue() == SyntaxKind::StringLiteral
-                               ? parseLiteralNode().as<Node>()
-                               : parseJsxExpression(/*inExpressionContext*/ true).as<Node>();
-        return finishNode(factory.createJsxAttribute(identifierName, initializer), pos);
+        return finishNode(factory.createJsxAttribute(parseJsxAttributeName(), parseJsxAttributeValue()), pos);
     }
+
+    auto parseJsxAttributeValue() -> Node {
+        if (token() == SyntaxKind::EqualsToken) {
+            if (scanJsxAttributeValue() == SyntaxKind::StringLiteral) {
+                return parseLiteralNode();
+            }
+            if (token() == SyntaxKind::OpenBraceToken) {
+                return parseJsxExpression(/*inExpressionContext*/ true);
+            }
+            if (token() == SyntaxKind::LessThanToken) {
+                return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true);
+            }
+            parseErrorAtCurrentToken(_E(Diagnostics::or_JSX_element_expected));
+        }
+        return undefined;
+    }
+
+    auto parseJsxAttributeName() {
+        auto pos = getNodePos();
+        scanJsxIdentifier();
+
+        auto attrName = parseIdentifierNameErrorOnUnicodeEscapeSequence();
+        if (parseOptional(SyntaxKind::ColonToken)) {
+            scanJsxIdentifier();
+            return finishNode(factory.createJsxNamespacedName(attrName, parseIdentifierNameErrorOnUnicodeEscapeSequence()), pos);
+        }
+        return attrName;
+    }    
 
     auto parseJsxSpreadAttribute() -> JsxSpreadAttribute
     {
