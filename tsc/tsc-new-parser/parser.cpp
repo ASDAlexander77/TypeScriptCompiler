@@ -5884,64 +5884,100 @@ struct Parser
         return finishNode(tagExpression, pos);
     }
 
-    auto parseCallExpressionRest(pos_type pos, LeftHandSideExpression expression) -> LeftHandSideExpression
-    {
-        while (true)
-        {
-            expression = parseMemberExpressionRest(pos, expression, /*allowOptionalChain*/ true);
-            auto questionDotToken = parseOptionalToken(SyntaxKind::QuestionDotToken);
-            // handle 'foo<<T>()'
-            // parse template arguments only in TypeScript files (not in JavaScript files).
-            if ((contextFlags & NodeFlags::JavaScriptFile) == NodeFlags::None &&
-                (token() == SyntaxKind::LessThanToken || token() == SyntaxKind::LessThanLessThanToken))
-            {
-                // See if this is the start of a generic invocation.  If so, consume it and
-                // keep checking for postfix expressions.  Otherwise, it's just a '<' that's
-                // part of an arithmetic expression.  Break out so we consume it higher in the
-                // stack.
-                auto typeArguments =
-                    tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
-                if (!!typeArguments)
-                {
-                    if (isTemplateStartOfTaggedTemplate())
-                    {
-                        expression = parseTaggedTemplateRest(pos, expression, questionDotToken, typeArguments);
-                        continue;
-                    }
+    // auto parseCallExpressionRest(pos_type pos, LeftHandSideExpression expression) -> LeftHandSideExpression
+    // {
+    //     while (true)
+    //     {
+    //         expression = parseMemberExpressionRest(pos, expression, /*allowOptionalChain*/ true);
+    //         NodeArray<TypeNode> typeArguments;
+    //         auto questionDotToken = parseOptionalToken(SyntaxKind::QuestionDotToken);
+    //         // handle 'foo<<T>()'
+    //         // parse template arguments only in TypeScript files (not in JavaScript files).
+    //         if ((contextFlags & NodeFlags::JavaScriptFile) == NodeFlags::None &&
+    //             (token() == SyntaxKind::LessThanToken || token() == SyntaxKind::LessThanLessThanToken))
+    //         {
+    //             // See if this is the start of a generic invocation.  If so, consume it and
+    //             // keep checking for postfix expressions.  Otherwise, it's just a '<' that's
+    //             // part of an arithmetic expression.  Break out so we consume it higher in the
+    //             // stack.
+    //             auto typeArguments =
+    //                 tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
+    //             if (!!typeArguments)
+    //             {
+    //                 if (isTemplateStartOfTaggedTemplate())
+    //                 {
+    //                     expression = parseTaggedTemplateRest(pos, expression, questionDotToken, typeArguments);
+    //                     continue;
+    //                 }
 
-                    auto argumentList = parseArgumentList();
-                    auto callExpr =
-                        questionDotToken || tryReparseOptionalChain(expression)
-                            ? factory.createCallChain(expression, questionDotToken, typeArguments, argumentList)
-                                  .as<CallExpression>()
-                            : factory.createCallExpression(expression, typeArguments, argumentList);
-                    expression = finishNode(callExpr, pos);
+    //                 auto argumentList = parseArgumentList();
+    //                 auto callExpr =
+    //                     questionDotToken || tryReparseOptionalChain(expression)
+    //                         ? factory.createCallChain(expression, questionDotToken, typeArguments, argumentList)
+    //                               .as<CallExpression>()
+    //                         : factory.createCallExpression(expression, typeArguments, argumentList);
+    //                 expression = finishNode(callExpr, pos);
+    //                 continue;
+    //             }
+    //         }
+    //         else if (token() == SyntaxKind::OpenParenToken)
+    //         {
+    //             auto argumentList = parseArgumentList();
+    //             auto callExpr =
+    //                 questionDotToken || tryReparseOptionalChain(expression)
+    //                     ? factory
+    //                           .createCallChain(expression, questionDotToken, /*typeArguments*/ undefined, argumentList)
+    //                           .as<CallExpression>()
+    //                     : factory.createCallExpression(expression, /*typeArguments*/ undefined, argumentList);
+    //             expression = finishNode(callExpr, pos);
+    //             continue;
+    //         }
+    //         if (questionDotToken)
+    //         {
+    //             // We failed to parse anything, so report a missing identifier here.
+    //             auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false,
+    //                                                       _E(Diagnostics::Identifier_expected));
+    //             expression = finishNode(factory.createPropertyAccessChain(expression, questionDotToken, name), pos);
+    //         }
+    //         break;
+    //     }
+    //     return expression;
+    // }
+
+    auto parseCallExpressionRest(number pos, LeftHandSideExpression expression) -> LeftHandSideExpression {
+        while (true) {
+            expression = parseMemberExpressionRest(pos, expression, /*allowOptionalChain*/ true);
+            NodeArray<TypeNode> typeArguments;
+            auto questionDotToken = parseOptionalToken(SyntaxKind::QuestionDotToken);
+            if (questionDotToken) {
+                typeArguments = tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
+                if (isTemplateStartOfTaggedTemplate()) {
+                    expression = parseTaggedTemplateRest(pos, expression, questionDotToken, typeArguments);
                     continue;
                 }
             }
-            else if (token() == SyntaxKind::OpenParenToken)
-            {
+            if (typeArguments || token() == SyntaxKind::OpenParenToken) {
+                // Absorb type arguments into CallExpression when preceding expression is ExpressionWithTypeArguments
+                if (!questionDotToken && expression == SyntaxKind::ExpressionWithTypeArguments) {
+                    typeArguments = expression.as<ExpressionWithTypeArguments>()->typeArguments;
+                    expression = expression.as<ExpressionWithTypeArguments>()->expression;
+                }
                 auto argumentList = parseArgumentList();
-                auto callExpr =
-                    questionDotToken || tryReparseOptionalChain(expression)
-                        ? factory
-                              .createCallChain(expression, questionDotToken, /*typeArguments*/ undefined, argumentList)
-                              .as<CallExpression>()
-                        : factory.createCallExpression(expression, /*typeArguments*/ undefined, argumentList);
+                auto callExpr = questionDotToken || tryReparseOptionalChain(expression) ?
+                    factory.createCallChain(expression, questionDotToken, typeArguments, argumentList) :
+                    factory.createCallExpression(expression, typeArguments, argumentList);
                 expression = finishNode(callExpr, pos);
                 continue;
             }
-            if (questionDotToken)
-            {
-                // We failed to parse anything, so report a missing identifier here.
-                auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false,
-                                                          _E(Diagnostics::Identifier_expected));
+            if (questionDotToken) {
+                // We parsed `?.` but then failed to parse anything, so report a missing identifier here.
+                auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, _E(Diagnostics::Identifier_expected));
                 expression = finishNode(factory.createPropertyAccessChain(expression, questionDotToken, name), pos);
             }
             break;
         }
         return expression;
-    }
+    }    
 
     auto parseArgumentList() -> NodeArray<Expression>
     {
