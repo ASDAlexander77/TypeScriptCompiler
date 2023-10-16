@@ -5427,7 +5427,7 @@ struct Parser
                 // or to cover only 'Foo' in < Foo >
                 auto tag = openingTag.as<JsxOpeningElement>()->tagName;
                 auto safe_str = safe_string(sourceText);
-                auto start = scanner.skipTrivia(safe_str, tag->pos);
+                auto start = std::min(scanner.skipTrivia(safe_str, tag->pos), tag->_end);
                 parseErrorAt(start, tag->_end,
                              _E(Diagnostics::JSX_element_0_has_no_corresponding_closing_tag),
                              getTextOfNodeFromSourceText(sourceText, openingTag.as<JsxOpeningElement>()->tagName));
@@ -5442,7 +5442,7 @@ struct Parser
         case SyntaxKind::OpenBraceToken:
             return parseJsxExpression(/*inExpressionContext*/ false);
         case SyntaxKind::LessThanToken:
-            return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ false);
+            return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ false, /*topInvalidNodePosition*/ undefined, openingTag);
         default:
             return Debug::_assertNever(/*token*/ Node());
         }
