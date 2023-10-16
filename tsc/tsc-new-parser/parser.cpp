@@ -5695,6 +5695,7 @@ struct Parser
 
     auto parseTypeAssertion() -> TypeAssertion
     {
+        Debug::_assert(languageVariant != LanguageVariant::JSX, S("Type assertions should never be parsed in JSX; they should be parsed as comparisons or JSX elements/fragments."));
         auto pos = getNodePos();
         parseExpected(SyntaxKind::LessThanToken);
         auto type = parseType();
