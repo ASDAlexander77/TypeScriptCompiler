@@ -4670,7 +4670,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseArrowFunctionExpressionBody(boolean isAsync) -> Node
+    auto parseArrowFunctionExpressionBody(boolean isAsync, boolean allowReturnTypeInArrowFunction) -> Node
     {
         if (token() == SyntaxKind::OpenBraceToken)
         {
@@ -4702,13 +4702,13 @@ struct Parser
         auto savedTopLevel = topLevel;
         topLevel = false;
         auto node =
-            isAsync ? doInAwaitContext<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this))
-                    : doOutsideOfAwaitContext<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
+            isAsync ? doInAwaitContext<Expression>([&]() { return parseAssignmentExpressionOrHigher(allowReturnTypeInArrowFunction); })
+                    : doOutsideOfAwaitContext<Expression>([&]() { return parseAssignmentExpressionOrHigher(allowReturnTypeInArrowFunction); });
         topLevel = savedTopLevel;
         return node;
     }
 
-    auto parseConditionalExpressionRest(Expression leftOperand, pos_type pos) -> Expression
+    auto parseConditionalExpressionRest(Expression leftOperand, pos_type pos, boolean allowReturnTypeInArrowFunction) -> Expression
     {
         // we Note are passed in an expression which was produced from parseBinaryExpressionOrHigher.
         auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
@@ -4721,10 +4721,10 @@ struct Parser
         // we do not that for the 'whenFalse' part.
 
         auto whenTrue = doOutsideOfContext<Expression>(disallowInAndDecoratorContext,
-                                                       std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
+                                                       [&]() { return parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ false); });
         auto colonToken = parseExpectedToken(SyntaxKind::ColonToken);
         auto whenFalse = nodeIsPresent(colonToken)
-                             ? parseAssignmentExpressionOrHigher().as<Node>()
+                             ? parseAssignmentExpressionOrHigher(allowReturnTypeInArrowFunction).as<Node>()
                              : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false,
                                                              _E(Diagnostics::_0_expected),
                                                              scanner.tokenToString(SyntaxKind::ColonToken));
