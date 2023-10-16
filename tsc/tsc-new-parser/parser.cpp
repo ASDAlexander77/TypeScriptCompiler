@@ -986,7 +986,7 @@ struct Parser
             return true;
         }
 
-        // `let await`/`let yield` in [Yield] or [Await] are allowed here and disallowed in the binder.
+        // `auto await`/`auto yield` in [Yield] or [Await] are allowed here and disallowed in the binder.
         return token() > SyntaxKind::LastReservedWord;
     }
 
@@ -4788,7 +4788,7 @@ struct Parser
                 break;
             }
 
-            if (token() == SyntaxKind::AsKeyword || token() === SyntaxKind::SatisfiesKeyword)
+            if (token() == SyntaxKind::AsKeyword || token() == SyntaxKind::SatisfiesKeyword)
             {
                 // Make sure we *do* perform ASI for constructs like this:
                 //    var x = foo
@@ -5254,61 +5254,144 @@ struct Parser
             pos);
     }
 
-    auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition = -1)
-        -> Node
-    {
+    // auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition = -1, Node openingTag = undefined, boolean mustBeUnary = false)
+    //     -> Node
+    // {
+    //     auto pos = getNodePos();
+    //     JsxClosingElement opening = parseJsxOpeningOrSelfClosingElementOrOpeningFragment(inExpressionContext);
+    //     Node result;
+    //     if (opening == SyntaxKind::JsxOpeningElement)
+    //     {
+    //         auto children = parseJsxChildren(opening);
+    //         JsxClosingElement closingElement;
+
+    //         if (!tagNamesAreEquivalent(opening.as<JsxOpeningElement>()->tagName.as<JsxTagNameExpression>(),
+    //                                    closingElement->tagName.as<JsxTagNameExpression>()))
+    //         {
+    //             parseErrorAtRange(closingElement,
+    //                               _E(Diagnostics::Expected_corresponding_JSX_closing_tag_for_0),
+    //                               getTextOfNodeFromSourceText(sourceText, opening.as<JsxOpeningElement>()->tagName));
+    //         }
+
+    //         result = finishNode(factory.createJsxElement(opening, children, closingElement), pos);
+    //     }
+    //     else if (opening == SyntaxKind::JsxOpeningFragment)
+    //     {
+    //         auto jsxChildren = parseJsxChildren(opening);
+    //         auto jsxClosingFragment = parseJsxClosingFragment(inExpressionContext);
+    //         result = finishNode(factory.createJsxFragment(opening, jsxChildren, jsxClosingFragment), pos);
+    //     }
+    //     else
+    //     {
+    //         Debug::_assert(opening == SyntaxKind::JsxSelfClosingElement);
+    //         // Nothing else to do for self-closing elements
+    //         result = opening;
+    //     }
+
+    //     // If the user writes the invalid code '<div></div><div></div>' in an expression context (i.e. not wrapped in
+    //     // an enclosing tag), we'll naively try to parse   ^ this.as<a>() 'less than' operator and the remainder of the
+    //     // tag
+    //     //.as<garbage>(), which will cause the formatter to badly mangle the JSX. Perform a speculative parse of a JSX
+    //     // element if we see a < token so that we can wrap it in a synthetic binary expression so the formatter
+    //     // does less damage and we can report a better error.
+    //     // Since JSX elements are invalid < operands anyway, this lookahead parse will only occur in error scenarios
+    //     // of one sort or another.
+    //     if (inExpressionContext && token() == SyntaxKind::LessThanToken)
+    //     {
+    //         auto topBadPos = topInvalidNodePosition == -1 ? static_cast<number>(result->pos) : topInvalidNodePosition;
+    //         auto invalidElement = tryParse<Node>([&]() {
+    //             return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos);
+    //         });
+    //         if (invalidElement)
+    //         {
+    //             auto operatorToken = createMissingNode(SyntaxKind::CommaToken, /*reportAtCurrentPosition*/ false);
+    //             setTextRangePosWidth(operatorToken, invalidElement->pos, 0);
+    //             auto safe_str = safe_string(sourceText);
+    //             parseErrorAt(scanner.skipTrivia(safe_str, topBadPos), invalidElement->_end,
+    //                          _E(Diagnostics::JSX_expressions_must_have_one_parent_element));
+    //             return finishNode(factory.createBinaryExpression(result, operatorToken, invalidElement), pos);
+    //         }
+    //     }
+
+    //     return result;
+    // }
+
+    auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition = -1, Node openingTag = undefined, boolean mustBeUnary = false) -> Node {
         auto pos = getNodePos();
-        auto opening = parseJsxOpeningOrSelfClosingElementOrOpeningFragment(inExpressionContext);
+        auto openingOrSelfClosingElement = parseJsxOpeningOrSelfClosingElementOrOpeningFragment(inExpressionContext);
         Node result;
-        if (opening == SyntaxKind::JsxOpeningElement)
-        {
-            auto children = parseJsxChildren(opening);
-            auto closingElement = parseJsxClosingElement(inExpressionContext);
+        if (openingOrSelfClosingElement == SyntaxKind::JsxOpeningElement) {
+            auto opening = openingOrSelfClosingElement.as<JsxOpeningElement>();
+            NodeArray<JsxChild> children = parseJsxChildren(opening);
+            JsxClosingElement closingElement;
 
-            if (!tagNamesAreEquivalent(opening.as<JsxOpeningElement>()->tagName.as<JsxTagNameExpression>(),
-                                       closingElement->tagName.as<JsxTagNameExpression>()))
-            {
-                parseErrorAtRange(closingElement,
-                                  _E(Diagnostics::Expected_corresponding_JSX_closing_tag_for_0),
-                                  getTextOfNodeFromSourceText(sourceText, opening.as<JsxOpeningElement>()->tagName));
+            auto lastChild = children[children.size() - 1].as<JsxElement>();
+            if (
+                lastChild == SyntaxKind::JsxElement
+                && !tagNamesAreEquivalent(lastChild->openingElement->tagName, lastChild->closingElement->tagName)
+                && tagNamesAreEquivalent(opening->tagName, lastChild->closingElement->tagName)
+            ) {
+                // when an unclosed JsxOpeningElement incorrectly parses its parent's JsxClosingElement,
+                // restructure (<div>(...<span>...</div>)) --> (<div>(...<span>...</>)</div>)
+                // (no need to error; the parent will error)
+                auto end = lastChild->children->_end;
+                auto newLast = finishNode(
+                    factory.createJsxElement(
+                        lastChild->openingElement,
+                        lastChild->children,
+                        finishNode(factory.createJsxClosingElement(finishNode(factory.createIdentifier(S("")), end, end)), end, end)
+                    ),
+                    lastChild->openingElement->pos,
+                    end
+                );
+
+                NodeArray<JsxChild> newChildren;
+                copy(newChildren, children);
+                newChildren.push_back(newLast);
+                children = createNodeArray(newChildren, children.pos, end);
+                closingElement = lastChild->closingElement;
             }
-
+            else {
+                closingElement = parseJsxClosingElement(opening, inExpressionContext);
+                if (!tagNamesAreEquivalent(opening->tagName, closingElement->tagName)) {
+                    if (openingTag && isJsxOpeningElement(openingTag) && tagNamesAreEquivalent(closingElement->tagName, openingTag->tagName)) {
+                        // opening incorrectly matched with its parent's closing -- put error on opening
+                        parseErrorAtRange(opening->tagName, _E(Diagnostics::JSX_element_0_has_no_corresponding_closing_tag), getTextOfNodeFromSourceText(sourceText, opening->tagName));
+                    }
+                    else {
+                        // other opening/closing mismatches -- put error on closing
+                        parseErrorAtRange(closingElement->tagName, _E(Diagnostics::Expected_corresponding_JSX_closing_tag_for_0), getTextOfNodeFromSourceText(sourceText, opening->tagName));
+                    }
+                }
+            }
             result = finishNode(factory.createJsxElement(opening, children, closingElement), pos);
         }
-        else if (opening == SyntaxKind::JsxOpeningFragment)
-        {
-            auto jsxChildren = parseJsxChildren(opening);
-            auto jsxClosingFragment = parseJsxClosingFragment(inExpressionContext);
-            result = finishNode(factory.createJsxFragment(opening, jsxChildren, jsxClosingFragment), pos);
+        else if (openingOrSelfClosingElement == SyntaxKind::JsxOpeningFragment) {
+            result = finishNode(factory.createJsxFragment(openingOrSelfClosingElement, parseJsxChildren(openingOrSelfClosingElement), parseJsxClosingFragment(inExpressionContext)), pos);
         }
-        else
-        {
-            Debug::_assert(opening == SyntaxKind::JsxSelfClosingElement);
+        else {
+            Debug::_assert(openingOrSelfClosingElement == SyntaxKind::JsxSelfClosingElement);
             // Nothing else to do for self-closing elements
-            result = opening;
+            result = openingOrSelfClosingElement;
         }
 
         // If the user writes the invalid code '<div></div><div></div>' in an expression context (i.e. not wrapped in
-        // an enclosing tag), we'll naively try to parse   ^ this.as<a>() 'less than' operator and the remainder of the
-        // tag
-        //.as<garbage>(), which will cause the formatter to badly mangle the JSX. Perform a speculative parse of a JSX
+        // an enclosing tag), we'll naively try to parse   ^ this as a 'less than' operator and the remainder of the tag
+        // as garbage, which will cause the formatter to badly mangle the JSX. Perform a speculative parse of a JSX
         // element if we see a < token so that we can wrap it in a synthetic binary expression so the formatter
         // does less damage and we can report a better error.
         // Since JSX elements are invalid < operands anyway, this lookahead parse will only occur in error scenarios
         // of one sort or another.
-        if (inExpressionContext && token() == SyntaxKind::LessThanToken)
-        {
-            auto topBadPos = topInvalidNodePosition == -1 ? static_cast<number>(result->pos) : topInvalidNodePosition;
-            auto invalidElement = tryParse<Node>([&]() {
-                return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos);
-            });
-            if (invalidElement)
-            {
+        // If we are in a unary context, we can't do this recovery; the binary expression we return here is not
+        // a valid UnaryExpression and will cause problems later.
+        if (!mustBeUnary && inExpressionContext && token() == SyntaxKind::LessThanToken) {
+            auto topBadPos = topInvalidNodePosition == undefined ? result->pos : topInvalidNodePosition;
+            auto invalidElement = tryParse<Node>([&]() { return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos); });
+            if (invalidElement) {
                 auto operatorToken = createMissingNode(SyntaxKind::CommaToken, /*reportAtCurrentPosition*/ false);
                 setTextRangePosWidth(operatorToken, invalidElement->pos, 0);
                 auto safe_str = safe_string(sourceText);
-                parseErrorAt(scanner.skipTrivia(safe_str, topBadPos), invalidElement->_end,
-                             _E(Diagnostics::JSX_expressions_must_have_one_parent_element));
+                parseErrorAt(scanner.skipTrivia(safe_str, topBadPos), invalidElement->_end, _E(Diagnostics::JSX_expressions_must_have_one_parent_element));
                 return finishNode(factory.createBinaryExpression(result, operatorToken, invalidElement), pos);
             }
         }
