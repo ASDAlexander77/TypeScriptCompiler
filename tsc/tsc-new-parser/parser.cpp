@@ -6022,45 +6022,24 @@ struct Parser
     {
         switch (token())
         {
-        case SyntaxKind::OpenParenToken:                // foo<x>(
-        case SyntaxKind::NoSubstitutionTemplateLiteral: // foo<T> `...`
-        case SyntaxKind::TemplateHead:                  // foo<T> `...${100}...`
-        // these are the only tokens can legally follow a type argument
-        // list. So we definitely want to treat them.as<type>() arg lists.
-        // falls through
-        case SyntaxKind::DotToken:                     // foo<x>.
-        case SyntaxKind::CloseParenToken:              // foo<x>)
-        case SyntaxKind::CloseBracketToken:            // foo<x>]
-        case SyntaxKind::ColonToken:                   // foo<x>:
-        case SyntaxKind::SemicolonToken:               // foo<x>;
-        case SyntaxKind::QuestionToken:                // foo<x>?
-        case SyntaxKind::EqualsEqualsToken:            // foo<x> ==
-        case SyntaxKind::EqualsEqualsEqualsToken:      // foo<x> ==
-        case SyntaxKind::ExclamationEqualsToken:       // foo<x> !=
-        case SyntaxKind::ExclamationEqualsEqualsToken: // foo<x> !=
-        case SyntaxKind::AmpersandAmpersandToken:      // foo<x> &&
-        case SyntaxKind::BarBarToken:                  // foo<x> ||
-        case SyntaxKind::QuestionQuestionToken:        // foo<x> ??
-        case SyntaxKind::CaretToken:                   // foo<x> ^
-        case SyntaxKind::AmpersandToken:               // foo<x> &
-        case SyntaxKind::BarToken:                     // foo<x> |
-        case SyntaxKind::CloseBraceToken:              // foo<x> }
-        case SyntaxKind::EndOfFileToken:               // foo<x>
-            // these cases can't legally follow a type arg list.  However, they're not legal
-            // expressions either.  The user is probably in the middle of a generic type. So
-            // treat it.as<such>().
-            return true;
-
-        case SyntaxKind::CommaToken:     // foo<x>,
-        case SyntaxKind::OpenBraceToken: // foo<x> {
-        // We don't want to treat these.as<type>() arguments.  Otherwise we'll parse this
-        //.as<an>() invocation expression.  Instead, we want to parse out the expression
-        // in isolation from the type arguments.
-        // falls through
-        default:
-            // Anything else treat.as<an>() expression.
+            // These tokens can follow a type argument list in a call expression.
+            case SyntaxKind::OpenParenToken:                // foo<x>(
+            case SyntaxKind::NoSubstitutionTemplateLiteral: // foo<T> `...`
+            case SyntaxKind::TemplateHead:                  // foo<T> `...${100}...`
+                return true;
+            // A type argument list followed by `<` never makes sense, and a type argument list followed
+            // by `>` is ambiguous with a (re-scanned) `>>` operator, so we disqualify both. Also, in
+            // this context, `+` and `-` are unary operators, not binary operators.
+            case SyntaxKind::LessThanToken:
+            case SyntaxKind::GreaterThanToken:
+            case SyntaxKind::PlusToken:
+            case SyntaxKind::MinusToken:
             return false;
         }
+
+        // We favor the type argument list interpretation when it is immediately followed by
+        // a line break, a binary operator, or something that can't start an expression.
+        return scanner.hasPrecedingLineBreak() || isBinaryOperator() || !isStartOfExpression();        
     }
 
     auto parsePrimaryExpression() -> PrimaryExpression
