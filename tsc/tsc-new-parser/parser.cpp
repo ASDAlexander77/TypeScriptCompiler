@@ -5385,7 +5385,7 @@ struct Parser
         // If we are in a unary context, we can't do this recovery; the binary expression we return here is not
         // a valid UnaryExpression and will cause problems later.
         if (!mustBeUnary && inExpressionContext && token() == SyntaxKind::LessThanToken) {
-            auto topBadPos = topInvalidNodePosition == undefined ? result->pos : topInvalidNodePosition;
+            auto topBadPos = topInvalidNodePosition == -1 ? result->pos : topInvalidNodePosition;
             auto invalidElement = tryParse<Node>([&]() { return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos); });
             if (invalidElement) {
                 auto operatorToken = createMissingNode(SyntaxKind::CommaToken, /*reportAtCurrentPosition*/ false);
