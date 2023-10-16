@@ -4128,11 +4128,11 @@ struct Parser
         }
 
         auto pos = getNodePos();
-        auto expr = parseAssignmentExpressionOrHigher();
+        auto expr = parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true);
         BinaryOperatorToken operatorToken;
         while ((operatorToken = parseOptionalToken(SyntaxKind::CommaToken)))
         {
-            expr = makeBinaryExpression(expr, operatorToken, parseAssignmentExpressionOrHigher(), pos);
+            expr = makeBinaryExpression(expr, operatorToken, parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true), pos);
         }
 
         if (saveDecoratorContext)
@@ -4144,10 +4144,10 @@ struct Parser
 
     auto parseInitializer() -> Expression
     {
-        return parseOptional(SyntaxKind::EqualsToken) ? parseAssignmentExpressionOrHigher() : undefined;
+        return parseOptional(SyntaxKind::EqualsToken) ? parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true) : undefined;
     }
 
-    auto parseAssignmentExpressionOrHigher() -> Expression
+    auto parseAssignmentExpressionOrHigher(boolean allowReturnTypeInArrowFunction) -> Expression
     {
         //  AssignmentExpression[in,yield]:
         //      1) ConditionalExpression[?in,?yield]
@@ -4178,8 +4178,7 @@ struct Parser
         // If we do successfully parse arrow-function, we must *not* recurse for productions 1, 2 or 3. An ArrowFunction
         // is not a LeftHandSideExpression, nor does it start a ConditionalExpression.  So we are done with
         // AssignmentExpression if we see one.
-        auto arrowExpression = tryParseParenthesizedArrowFunctionExpression() ||
-                               [&]() { return tryParseAsyncSimpleArrowFunctionExpression(); };
+        auto arrowExpression = tryParseParenthesizedArrowFunctionExpression(allowReturnTypeInArrowFunction) || tryParseAsyncSimpleArrowFunctionExpression(allowReturnTypeInArrowFunction);
         if (arrowExpression)
         {
             return arrowExpression;
@@ -4195,6 +4194,7 @@ struct Parser
         // binary expression here, so we pass in the 'lowest' precedence here so that it matches
         // and consumes anything.
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
 
         // To avoid a look-ahead, we did not handle the case of an arrow auto with a single un-parenthesized
@@ -4202,7 +4202,7 @@ struct Parser
         // identifier and the current token is an arrow.
         if (expr == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken)
         {
-            return parseSimpleArrowFunctionExpression(pos, expr.as<Identifier>(), /*asyncModifier*/ undefined);
+            return parseSimpleArrowFunctionExpression(pos, expr.as<Identifier>(), allowReturnTypeInArrowFunction, hasJSDoc, /*asyncModifier*/ undefined);
         }
 
         // Now see if we might be in cases '2' or '3'.
@@ -4213,9 +4213,7 @@ struct Parser
         // for cases like `> > =` becoming `>>=`
         if (isLeftHandSideExpression(expr) && isAssignmentOperator(reScanGreaterToken()))
         {
-            auto operatorToken = parseTokenNode<Node>();
-            auto rightExpr = parseAssignmentExpressionOrHigher();
-            return makeBinaryExpression(expr, operatorToken, rightExpr, pos);
+            return makeBinaryExpression(expr, parseTokenNode<Node>(), parseAssignmentExpressionOrHigher(allowReturnTypeInArrowFunction), pos);
         }
 
         // It wasn't an assignment or a lambda.  This is a conditional expression:
