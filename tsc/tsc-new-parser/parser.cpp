@@ -5874,8 +5874,7 @@ struct Parser
         auto tagExpression = factory.createTaggedTemplateExpression(
             tag, typeArguments,
             token() == SyntaxKind::NoSubstitutionTemplateLiteral
-                ? (reScanTemplateHeadOrNoSubstitutionTemplate(),
-                   toNoSubstitutionTemplateLiteral(parseLiteralNode()).as<TemplateLiteralLikeNode>())
+                ? (reScanTemplateToken(/*isTaggedTemplate*/ true), parseLiteralNode().as<TemplateLiteralLikeNode>())
                 : parseTemplateExpression(/*isTaggedTemplate*/ true).as<TemplateLiteralLikeNode>());
         if ((number)questionDotToken || !!(tag->flags & NodeFlags::OptionalChain))
         {
