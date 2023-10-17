@@ -7937,8 +7937,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseAmbientExternalModuleDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                               NodeArray<Modifier> modifiers) -> ModuleDeclaration
+    auto parseAmbientExternalModuleDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiersIn) -> ModuleDeclaration
     {
         auto flags = NodeFlags::None;
         LiteralLikeNode name;
@@ -7962,18 +7961,17 @@ struct Parser
         {
             parseSemicolon();
         }
-        auto node = factory.createModuleDeclaration(decorators, modifiers, name, body, flags);
+        auto node = factory.createModuleDeclaration(modifiersIn, name, body, flags);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseModuleDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                NodeArray<Modifier> modifiers) -> ModuleDeclaration
+    auto parseModuleDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiersIn) -> ModuleDeclaration
     {
         NodeFlags flags = NodeFlags::None;
         if (token() == SyntaxKind::GlobalKeyword)
         {
             // global augmentation
-            return parseAmbientExternalModuleDeclaration(pos, hasJSDoc, decorators, modifiers);
+            return parseAmbientExternalModuleDeclaration(pos, hasJSDoc, modifiersIn);
         }
         else if (parseOptional(SyntaxKind::NamespaceKeyword))
         {
@@ -7984,10 +7982,10 @@ struct Parser
             parseExpected(SyntaxKind::ModuleKeyword);
             if (token() == SyntaxKind::StringLiteral)
             {
-                return parseAmbientExternalModuleDeclaration(pos, hasJSDoc, decorators, modifiers);
+                return parseAmbientExternalModuleDeclaration(pos, hasJSDoc, modifiersIn);
             }
         }
-        return parseModuleOrNamespaceDeclaration(pos, hasJSDoc, decorators, modifiers, flags);
+        return parseModuleOrNamespaceDeclaration(pos, hasJSDoc, modifiersIn, flags);
     }
 
     auto isExternalModuleReference() -> boolean
@@ -8001,13 +7999,17 @@ struct Parser
         return nextToken() == SyntaxKind::OpenParenToken;
     }
 
+    auto nextTokenIsOpenBrace() -> boolean
+    {
+        return nextToken() == SyntaxKind::OpenBraceToken;
+    }
+    
     auto nextTokenIsSlash() -> boolean
     {
         return nextToken() == SyntaxKind::SlashToken;
     }
 
-    auto parseNamespaceExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                         NodeArray<Modifier> modifiers) -> NamespaceExportDeclaration
+    auto parseNamespaceExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> NamespaceExportDeclaration
     {
         parseExpected(SyntaxKind::AsKeyword);
         parseExpected(SyntaxKind::NamespaceKeyword);
@@ -8016,7 +8018,6 @@ struct Parser
         auto node = factory.createNamespaceExportDeclaration(name);
         // NamespaceExportDeclaration nodes cannot have decorators or modifiers, so we attach them here so we can report
         // them in the grammar checker
-        node->decorators = decorators;
         copy(node->modifiers, modifiers);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
