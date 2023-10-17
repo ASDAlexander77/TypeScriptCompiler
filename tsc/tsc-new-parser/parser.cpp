@@ -6539,12 +6539,13 @@ struct Parser
     auto parseSwitchStatement() -> SwitchStatement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::SwitchKeyword);
         parseExpected(SyntaxKind::OpenParenToken);
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
         parseExpected(SyntaxKind::CloseParenToken);
         auto caseBlock = parseCaseBlock();
-        return finishNode(factory.createSwitchStatement(expression, caseBlock), pos);
+        return withJSDoc(finishNode(factory.createSwitchStatement(expression, caseBlock), pos), hasJSDoc);
     }
 
     auto parseThrowStatement() -> ThrowStatement
@@ -6553,6 +6554,7 @@ struct Parser
         //      throw [no LineTerminator here]Expression[In, ?Yield];
 
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::ThrowKeyword);
 
         // Because of automatic semicolon insertion, we need to report error if this
@@ -6568,8 +6570,10 @@ struct Parser
             identifierCount++;
             expression = finishNode(factory.createIdentifier(string()), getNodePos());
         }
-        parseSemicolon();
-        return finishNode(factory.createThrowStatement(expression), pos);
+        if (!tryParseSemicolon()) {
+            parseErrorForMissingSemicolonAfter(expression);
+        }        
+        return withJSDoc(finishNode(factory.createThrowStatement(expression), pos), hasJSDoc);
     }
 
     // Review TODO for error recovery
