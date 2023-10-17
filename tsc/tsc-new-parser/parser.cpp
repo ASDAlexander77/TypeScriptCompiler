@@ -8227,7 +8227,8 @@ struct Parser
 
     auto parseExportSpecifier() -> ImportOrExportSpecifier
     {
-        return parseImportOrExportSpecifier(SyntaxKind::ExportSpecifier).as<ExportSpecifier>();
+        auto hasJSDoc = hasPrecedingJSDocComment();
+        return withJSDoc(parseImportOrExportSpecifier(SyntaxKind::ExportSpecifier).as<ExportSpecifier>(), hasJSDoc);
     }
 
     auto parseImportSpecifier() -> ImportOrExportSpecifier
