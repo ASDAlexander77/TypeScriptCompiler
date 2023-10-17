@@ -7842,23 +7842,23 @@ struct Parser
         return parseList<ClassElement>(ParsingContext::ClassMembers, std::bind(&Parser::parseClassElement, this));
     }
 
-    auto parseInterfaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                   NodeArray<Modifier> modifiers) -> InterfaceDeclaration
+    auto parseInterfaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> InterfaceDeclaration
     {
         parseExpected(SyntaxKind::InterfaceKeyword);
         auto name = parseIdentifier();
         auto typeParameters = parseTypeParameters();
         auto heritageClauses = parseHeritageClauses();
         auto members = parseObjectTypeMembers();
-        auto node =
-            factory.createInterfaceDeclaration(decorators, modifiers, name, typeParameters, heritageClauses, members);
+        auto node = factory.createInterfaceDeclaration(modifiers, name, typeParameters, heritageClauses, members);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseTypeAliasDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                   NodeArray<Modifier> modifiers) -> TypeAliasDeclaration
+    auto parseTypeAliasDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Modifier> modifiers) -> TypeAliasDeclaration
     {
         parseExpected(SyntaxKind::TypeKeyword);
+        if (scanner.hasPrecedingLineBreak()) {
+            parseErrorAtCurrentToken(_E(Diagnostics::Line_break_not_permitted_here));
+        }        
         auto name = parseIdentifier();
         auto typeParameters = parseTypeParameters();
         parseExpected(SyntaxKind::EqualsToken);
@@ -7867,7 +7867,7 @@ struct Parser
                          : undefined) ||
                     [&]() { return parseType(); };
         parseSemicolon();
-        auto node = factory.createTypeAliasDeclaration(decorators, modifiers, name, typeParameters, type);
+        auto node = factory.createTypeAliasDeclaration(modifiers, name, typeParameters, type);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
