@@ -8073,6 +8073,41 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
+    auto parseImportAttribute() {
+        auto pos = getNodePos();
+        auto name = scanner.tokenIsIdentifierOrKeyword(token()) ? parseIdentifierName() : parseLiteralLikeNode(SyntaxKind::StringLiteral);
+        parseExpected(SyntaxKind::ColonToken);
+        auto value = parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true);
+        return finishNode(factory.createImportAttribute(name, value), pos);
+    }
+
+    auto parseImportAttributes(SyntaxKind token, boolean skipKeyword = true) -> Node {
+        auto pos = getNodePos();
+        if (!skipKeyword) {
+            parseExpected(token);
+        }
+        auto openBracePosition = scanner.getTokenStart();
+        if (parseExpected(SyntaxKind::OpenBraceToken)) {
+            auto multiLine = scanner.hasPrecedingLineBreak();
+            auto elements = parseDelimitedList<Node>(ParsingContext::ImportAttributes, std::bind(&Parser::parseImportAttribute, this), /*considerSemicolonAsDelimiter*/ true);
+            if (!parseExpected(SyntaxKind::CloseBraceToken)) {
+                auto lastError = lastOrUndefined(parseDiagnostics);
+                if (lastError && lastError->code == _E(Diagnostics::_0_expected).code) {
+                    addRelatedInfo(
+                        lastError,
+                        createDetachedDiagnostic(fileName, sourceText, openBracePosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_1_to_match_the_0_token_here), S("{"), S("}")),
+                    );
+                }
+            }
+            return finishNode(factory.createImportAttributes(elements, multiLine, token), pos);
+        }
+        else {
+            // TODO: which type of array?
+            auto elements = createNodeArray(NodeArray<Node>(), getNodePos(), /*end*/ undefined, /*hasTrailingComma*/ false);
+            return finishNode(factory.createImportAttributes(elements, /*multiLine*/ false, token), pos);
+        }
+    }    
+
     auto tokenAfterImportDefinitelyProducesImportDeclaration() -> boolean
     {
         return token() == SyntaxKind::AsteriskToken || token() == SyntaxKind::OpenBraceToken;
