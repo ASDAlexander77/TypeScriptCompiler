@@ -8022,8 +8022,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseImportDeclarationOrImportEqualsDeclaration(pos_type pos, boolean hasJSDoc,
-                                                         NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseImportDeclarationOrImportEqualsDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers)
         -> Node
     {
         parseExpected(SyntaxKind::ImportKeyword);
@@ -8047,7 +8046,7 @@ struct Parser
 
         if (!!identifier && !tokenAfterImportedIdentifierDefinitelyProducesImportDeclaration())
         {
-            return parseImportEqualsDeclaration(pos, hasJSDoc, decorators, modifiers, identifier, isTypeOnly);
+            return parseImportEqualsDeclaration(pos, hasJSDoc, modifiers, identifier, isTypeOnly);
         }
 
         // ImportDeclaration:
@@ -8064,8 +8063,13 @@ struct Parser
         }
 
         auto moduleSpecifier = parseModuleSpecifier();
+        auto currentToken = token();
+        ImportAttributes attributes;
+        if ((currentToken == SyntaxKind::WithKeyword || currentToken == SyntaxKind::AssertKeyword) && !scanner.hasPrecedingLineBreak()) {
+            attributes = parseImportAttributes(currentToken);
+        }        
         parseSemicolon();
-        auto node = factory.createImportDeclaration(decorators, modifiers, importClause, moduleSpecifier);
+        auto node = factory.createImportDeclaration(modifiers, importClause, moduleSpecifier, attributes);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
