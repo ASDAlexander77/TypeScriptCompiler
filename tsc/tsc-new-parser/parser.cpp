@@ -7853,7 +7853,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseTypeAliasDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Modifier> modifiers) -> TypeAliasDeclaration
+    auto parseTypeAliasDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> TypeAliasDeclaration
     {
         parseExpected(SyntaxKind::TypeKeyword);
         if (scanner.hasPrecedingLineBreak()) {
@@ -7884,8 +7884,7 @@ struct Parser
         return withJSDoc(finishNode(factory.createEnumMember(name, initializer), pos), hasJSDoc);
     }
 
-    auto parseEnumDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                              NodeArray<Modifier> modifiers) -> EnumDeclaration
+    auto parseEnumDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> EnumDeclaration
     {
         parseExpected(SyntaxKind::EnumKeyword);
         auto name = parseIdentifier();
@@ -7902,7 +7901,7 @@ struct Parser
         {
             members = createMissingList<EnumMember>();
         }
-        auto node = factory.createEnumDeclaration(decorators, modifiers, name, members);
+        auto node = factory.createEnumDeclaration(modifiers, name, members);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
@@ -7923,20 +7922,18 @@ struct Parser
         return finishNode(factory.createModuleBlock(statements), pos);
     }
 
-    auto parseModuleOrNamespaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                           NodeArray<Modifier> modifiers, NodeFlags flags) -> ModuleDeclaration
+    auto parseModuleOrNamespaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers, NodeFlags flags) -> ModuleDeclaration
     {
         // If we are parsing a dotted namespace name, we want to
         // propagate the 'Namespace' flag across the names if set.
         auto namespaceFlag = flags & NodeFlags::Namespace;
-        auto name = parseIdentifier();
+        auto name = (flags & NodeFlags::NestedNamespace) > NodeFlags::None ? parseIdentifierName() : parseIdentifier();
         auto body =
             parseOptional(SyntaxKind::DotToken)
-                ? parseModuleOrNamespaceDeclaration(getNodePos(), /*hasJSDoc*/ false, /*decorators*/ undefined,
-                                                    /*modifiers*/ undefined, NodeFlags::NestedNamespace | namespaceFlag)
+                ? parseModuleOrNamespaceDeclaration(getNodePos(), /*hasJSDoc*/ false, /*modifiers*/ undefined, NodeFlags::NestedNamespace | namespaceFlag)
                       .as<ModuleBody>()
                 : parseModuleBlock().as<ModuleBody>();
-        auto node = factory.createModuleDeclaration(decorators, modifiers, name, body, flags);
+        auto node = factory.createModuleDeclaration(modifiers, name, body, flags);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
