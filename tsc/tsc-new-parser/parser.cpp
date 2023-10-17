@@ -6413,52 +6413,50 @@ struct Parser
     auto parseForOrForInOrForOfStatement() -> Statement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::ForKeyword);
         auto awaitToken = parseOptionalToken(SyntaxKind::AwaitKeyword);
         parseExpected(SyntaxKind::OpenParenToken);
 
         Node initializer;
-        if (token() != SyntaxKind::SemicolonToken)
-        {
-            if (token() == SyntaxKind::VarKeyword || token() == SyntaxKind::LetKeyword ||
-                token() == SyntaxKind::ConstKeyword)
-            {
+        if (token() != SyntaxKind::SemicolonToken) {
+            if (
+                token() == SyntaxKind::VarKeyword || token() == SyntaxKind::LetKeyword || token() == SyntaxKind::ConstKeyword ||
+                token() == SyntaxKind::UsingKeyword && lookAhead<SyntaxKind>(std::bind(&Parser::nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLineDisallowOf, this)) ||
+                token() == SyntaxKind::AwaitKeyword && lookAhead<SyntaxKind>(std::bind(&Parser::nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLineDisallowOf, this))
+            ) {
                 initializer = parseVariableDeclarationList(/*inForStatementInitializer*/ true);
             }
-            else
-            {
+            else {
                 initializer = disallowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
             }
         }
 
-        Node node;
-        if (awaitToken ? parseExpected(SyntaxKind::OfKeyword) : parseOptional(SyntaxKind::OfKeyword))
-        {
-            auto expression = allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
+        IterationStatement node;
+        if (awaitToken ? parseExpected(SyntaxKind::OfKeyword) : parseOptional(SyntaxKind::OfKeyword)) {
+            auto expression = allowInAnd<Expression>([&]() { return parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true); });
             parseExpected(SyntaxKind::CloseParenToken);
             node = factory.createForOfStatement(awaitToken, initializer, expression, parseStatement());
         }
-        else if (parseOptional(SyntaxKind::InKeyword))
-        {
+        else if (parseOptional(SyntaxKind::InKeyword)) {
             auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
             parseExpected(SyntaxKind::CloseParenToken);
             node = factory.createForInStatement(initializer, expression, parseStatement());
         }
-        else
-        {
+        else {
             parseExpected(SyntaxKind::SemicolonToken);
             auto condition = token() != SyntaxKind::SemicolonToken && token() != SyntaxKind::CloseParenToken
-                                 ? allowInAnd<Expression>(std::bind(&Parser::parseExpression, this))
-                                 : undefined;
+                ? allowInAnd<Expression>(std::bind(&Parser::parseExpression, this))
+                : undefined;
             parseExpected(SyntaxKind::SemicolonToken);
             auto incrementor = token() != SyntaxKind::CloseParenToken
-                                   ? allowInAnd<Expression>(std::bind(&Parser::parseExpression, this))
-                                   : undefined;
+                ? allowInAnd<Expression>(std::bind(&Parser::parseExpression, this))
+                : undefined;
             parseExpected(SyntaxKind::CloseParenToken);
             node = factory.createForStatement(initializer, condition, incrementor, parseStatement());
         }
 
-        return finishNode(node, pos);
+        return withJSDoc(finishNode(node, pos), hasJSDoc);        
     }
 
     auto parseBreakOrContinueStatement(SyntaxKind kind) -> BreakOrContinueStatement
