@@ -7080,7 +7080,6 @@ struct Parser
                     SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true,
                     _E(Diagnostics::Declaration_expected));
                 setTextRangePos(missing, pos);
-                missing->decorators = decorators;
                 copy(missing->modifiers, modifiersIn);
                 return missing;
             }
@@ -7088,6 +7087,10 @@ struct Parser
         }
     }
 
+    auto nextTokenIsStringLiteral() {
+        return nextToken() == SyntaxKind::StringLiteral;
+    }
+    
     auto nextTokenIsIdentifierOrStringLiteralOnSameLine() -> boolean
     {
         nextToken();
