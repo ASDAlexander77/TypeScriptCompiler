@@ -7729,21 +7729,19 @@ struct Parser
 
     auto parseClassExpression() -> ClassExpression
     {
-        return parseClassDeclarationOrExpression(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
-                                                 /*modifiers*/ undefined, SyntaxKind::ClassExpression);
+        return parseClassDeclarationOrExpression(getNodePos(), hasPrecedingJSDocComment(), /*modifiers*/ undefined, SyntaxKind::ClassExpression);
     }
 
-    auto parseClassDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                               NodeArray<Modifier> modifiers) -> ClassDeclaration
+    auto parseClassDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> ClassDeclaration
     {
-        return parseClassDeclarationOrExpression(pos, hasJSDoc, decorators, modifiers, SyntaxKind::ClassDeclaration);
+        return parseClassDeclarationOrExpression(pos, hasJSDoc, modifiers, SyntaxKind::ClassDeclaration);
     }
 
-    auto parseClassDeclarationOrExpression(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                           NodeArray<Modifier> modifiers, SyntaxKind kind) -> ClassLikeDeclaration
+    auto parseClassDeclarationOrExpression(pos_type pos, boolean hasJSDoc, NodeArray<Modifier> modifiers, SyntaxKind kind) -> ClassLikeDeclaration
     {
         auto savedAwaitContext = inAwaitContext();
         parseExpected(SyntaxKind::ClassKeyword);
+
         // We don't parse the name here in await context, instead we will report a grammar error in the checker.
         auto name = parseNameOfClassDeclarationOrExpression();
         auto typeParameters = parseTypeParameters();
@@ -7766,9 +7764,9 @@ struct Parser
         setAwaitContext(savedAwaitContext);
         auto node =
             kind == SyntaxKind::ClassDeclaration
-                ? factory.createClassDeclaration(decorators, modifiers, name, typeParameters, heritageClauses, members)
+                ? factory.createClassDeclaration(modifiers, name, typeParameters, heritageClauses, members)
                       .as<ClassLikeDeclaration>()
-                : factory.createClassExpression(decorators, modifiers, name, typeParameters, heritageClauses, members)
+                : factory.createClassExpression(modifiers, name, typeParameters, heritageClauses, members)
                       .as<ClassLikeDeclaration>();
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
