@@ -8120,15 +8120,14 @@ struct Parser
         return token() == SyntaxKind::CommaToken || token() == SyntaxKind::FromKeyword;
     }
 
-    auto parseImportEqualsDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                      NodeArray<Modifier> modifiers, Identifier identifier, boolean isTypeOnly)
+    auto parseImportEqualsDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers, Identifier identifier, boolean isTypeOnly)
         -> ImportEqualsDeclaration
     {
         parseExpected(SyntaxKind::EqualsToken);
         auto moduleReference = parseModuleReference();
         parseSemicolon();
         auto node =
-            factory.createImportEqualsDeclaration(decorators, modifiers, isTypeOnly, identifier, moduleReference);
+            factory.createImportEqualsDeclaration(modifiers, isTypeOnly, identifier, moduleReference);
         auto finished = withJSDoc(finishNode(node, pos), hasJSDoc);
         return finished;
     }
