@@ -7407,8 +7407,7 @@ struct Parser
         return parsePropertyDeclaration(pos, hasJSDoc, modifiers, name, questionToken);
     }
 
-    auto parseAccessorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                  NodeArray<Modifier> modifiers, SyntaxKind kind) -> AccessorDeclaration
+    auto parseAccessorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers, SyntaxKind kind) -> AccessorDeclaration
     {
         auto name = parsePropertyName();
         auto typeParameters = parseTypeParameters();
@@ -7416,14 +7415,14 @@ struct Parser
         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
         auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None);
         auto node = kind == SyntaxKind::GetAccessor
-                        ? factory.createGetAccessorDeclaration(decorators, modifiers, name, parameters, type, body)
+                        ? factory.createGetAccessorDeclaration(modifiers, name, parameters, type, body)
                               .as<AccessorDeclaration>()
-                        : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body)
+                        : factory.createSetAccessorDeclaration(modifiers, name, parameters, body)
                               .as<AccessorDeclaration>();
         // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar
         // errors
         node->typeParameters = typeParameters;
-        if (!!type && node == SyntaxKind::SetAccessor)
+        if (isSetAccessorDeclaration(node))
             (node.asMutable<SetAccessorDeclaration>())->type = type;
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
@@ -7506,6 +7505,29 @@ struct Parser
 
         return false;
     }
+
+    auto parseClassStaticBlockDeclaration(number pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> ClassStaticBlockDeclaration {
+        parseExpectedToken(SyntaxKind::StaticKeyword);
+        auto body = parseClassStaticBlockBody();
+        auto node = withJSDoc(finishNode(factory.createClassStaticBlockDeclaration(body), pos), hasJSDoc).as<ClassStaticBlockDeclaration>();
+        node->modifiers = modifiers;
+        return node;
+    }
+
+    auto parseClassStaticBlockBody() -> Block {
+        auto savedYieldContext = inYieldContext();
+        auto savedAwaitContext = inAwaitContext();
+
+        setYieldContext(false);
+        setAwaitContext(true);
+
+        auto body = parseBlock(/*ignoreMissingOpenBrace*/ false);
+
+        setYieldContext(savedYieldContext);
+        setAwaitContext(savedAwaitContext);
+
+        return body;
+    }    
 
     auto parseDecoratorExpression()
     {
