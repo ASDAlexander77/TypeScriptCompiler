@@ -7099,12 +7099,16 @@ struct Parser
 
     auto parseFunctionBlockOrSemicolon(SignatureFlags flags, DiagnosticMessage diagnosticMessage = undefined) -> Block
     {
-        if (token() != SyntaxKind::OpenBraceToken && canParseSemicolon())
-        {
-            parseSemicolon();
-            return undefined;
+        if (token() != SyntaxKind::OpenBraceToken) {
+            if ((flags & SignatureFlags::Type) == SignatureFlags::Type) {
+                parseTypeMemberSemicolon();
+                return;
+            }
+            if (canParseSemicolon()) {
+                parseSemicolon();
+                return;
+            }
         }
-
         return parseFunctionBlock(flags, diagnosticMessage);
     }
 
