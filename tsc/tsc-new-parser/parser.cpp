@@ -6237,15 +6237,12 @@ struct Parser
         //
         // FunctionExpression:
         //      auto BindingIdentifier[opt](FormalParameters){ FunctionBody }
-        auto saveDecoratorContext = inDecoratorContext();
-        if (saveDecoratorContext)
-        {
-            setDecoratorContext(/*val*/ false);
-        }
+        auto savedDecoratorContext = inDecoratorContext();
+        setDecoratorContext(/*val*/ false);
 
         auto pos = getNodePos();
         auto hasJSDoc = hasPrecedingJSDocComment();
-        auto modifiers = parseModifiers();
+        auto modifiers = parseModifiers(/*allowDecorators*/ false);
         parseExpected(SyntaxKind::FunctionKeyword);
         auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
         auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
@@ -6262,10 +6259,7 @@ struct Parser
         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
         auto body = parseFunctionBlock(isGenerator | isAsync);
 
-        if (saveDecoratorContext)
-        {
-            setDecoratorContext(/*val*/ true);
-        }
+        setDecoratorContext(savedDecoratorContext);
 
         auto node =
             factory.createFunctionExpression(modifiers, asteriskToken, name, typeParameters, parameters, type, body);
@@ -6288,64 +6282,44 @@ struct Parser
         }
 
         auto expressionPos = getNodePos();
-        auto expression = parsePrimaryExpression();
+        auto expression = parseMemberExpressionRest(expressionPos, parsePrimaryExpression(), /*allowOptionalChain*/ false);
         NodeArray<TypeNode> typeArguments;
-        while (true)
-        {
-            expression = parseMemberExpressionRest(expressionPos, expression, /*allowOptionalChain*/ false);
-            typeArguments = tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
-            if (isTemplateStartOfTaggedTemplate())
-            {
-                Debug::_assert(!!typeArguments, S("Expected a type argument list; all plain tagged template starts "
-                                                  "should be consumed in 'parseMemberExpressionRest'"));
-                expression =
-                    parseTaggedTemplateRest(expressionPos, expression, /*optionalChain*/ undefined, typeArguments);
-                typeArguments = undefined;
-            }
-            break;
+        // Absorb type arguments into NewExpression when preceding expression is ExpressionWithTypeArguments
+        if (expression == SyntaxKind::ExpressionWithTypeArguments) {
+            auto expressionWithTypeArguments = expression.as<ExpressionWithTypeArguments>();
+            typeArguments = expressionWithTypeArguments->typeArguments;
+            expression = expressionWithTypeArguments->expression;
         }
-
-        NodeArray<Expression> argumentsArray;
-        if (token() == SyntaxKind::OpenParenToken)
-        {
-            argumentsArray = parseArgumentList();
+        if (token() == SyntaxKind::QuestionDotToken) {
+            parseErrorAtCurrentToken(_E(Diagnostics::Invalid_optional_chain_from_new_expression_Did_you_mean_to_call_0), getTextOfNodeFromSourceText(sourceText, expression));
         }
-        else if (!!typeArguments)
-        {
-            parseErrorAt(
-                pos, scanner.getTokenFullStart(),
-                _E(
-                    Diagnostics::
-                        A_new_expression_with_type_arguments_must_always_be_followed_by_a_parenthesized_argument_list));
-        }
-        return finishNode(factory.createNewExpression(expression, typeArguments, argumentsArray), pos);
+        auto argumentList = token() == SyntaxKind::OpenParenToken ? parseArgumentList() : undefined;
+        return finishNode(factory.createNewExpression(expression, typeArguments, argumentList), pos);
     }
 
     // STATEMENTS
     auto parseBlock(boolean ignoreMissingOpenBrace, DiagnosticMessage diagnosticMessage = undefined) -> Block
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         auto openBracePosition = scanner.getTokenStart();
-        if (parseExpected(SyntaxKind::OpenBraceToken, diagnosticMessage) || ignoreMissingOpenBrace)
-        {
+        auto openBraceParsed = parseExpected(SyntaxKind::OpenBraceToken, diagnosticMessage);
+        if (openBraceParsed || ignoreMissingOpenBrace) {
             auto multiLine = scanner.hasPrecedingLineBreak();
-            auto statements =
-                parseList<Statement>(ParsingContext::BlockStatements, std::bind(&Parser::parseStatement, this));
-            if (!parseExpected(SyntaxKind::CloseBraceToken))
-            {
-                auto lastError = lastOrUndefined(parseDiagnostics);
-                if (!!lastError && lastError->code == _E(Diagnostics::_0_expected).code)
-                {
-                    addRelatedInfo(lastError, createDetachedDiagnostic(fileName, openBracePosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
-                }
+            auto statements = parseList<Statement>(ParsingContext::BlockStatements, std::bind(&Parser::parseStatement, this));
+            parseExpectedMatchingBrackets(SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken, openBraceParsed, openBracePosition);
+            auto result = withJSDoc(finishNode(factory.createBlock(statements, multiLine), pos), hasJSDoc);
+            if (token() == SyntaxKind::EqualsToken) {
+                parseErrorAtCurrentToken(_E(Diagnostics::Declaration_or_statement_expected_This_follows_a_block_of_statements_so_if_you_intended_to_write_a_destructuring_assignment_you_might_need_to_wrap_the_whole_assignment_in_parentheses));
+                nextToken();
             }
-            return finishNode(factory.createBlock(statements, multiLine), pos);
+
+            return result;
         }
-        else
-        {
+        else {
             auto statements = createMissingList<Statement>();
-            return finishNode(factory.createBlock(statements, /*multiLine*/ false), pos);
-        }
+            return withJSDoc(finishNode(factory.createBlock(statements, /*multiLine*/ undefined), pos), hasJSDoc);
+        }        
     }
 
     auto parseFunctionBlock(SignatureFlags flags, DiagnosticMessage diagnosticMessage = undefined) -> Block
@@ -6384,49 +6358,56 @@ struct Parser
     auto parseEmptyStatement() -> Statement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::SemicolonToken);
-        return finishNode(factory.createEmptyStatement(), pos);
+        return withJSDoc(finishNode(factory.createEmptyStatement(), pos), hasJSDoc);
     }
 
     auto parseIfStatement() -> IfStatement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::IfKeyword);
-        parseExpected(SyntaxKind::OpenParenToken);
+        auto openParenPosition = scanner.getTokenStart();
+        auto openParenParsed = parseExpected(SyntaxKind::OpenParenToken);
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
-        parseExpected(SyntaxKind::CloseParenToken);
+        parseExpectedMatchingBrackets(SyntaxKind::OpenParenToken, SyntaxKind::CloseParenToken, openParenParsed, openParenPosition);
         auto thenStatement = parseStatement();
         auto elseStatement = parseOptional(SyntaxKind::ElseKeyword) ? parseStatement() : undefined;
-        return finishNode(factory.createIfStatement(expression, thenStatement, elseStatement), pos);
+        return withJSDoc(finishNode(factory.createIfStatement(expression, thenStatement, elseStatement), pos), hasJSDoc);
     }
 
     auto parseDoStatement() -> DoStatement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::DoKeyword);
         auto statement = parseStatement();
         parseExpected(SyntaxKind::WhileKeyword);
-        parseExpected(SyntaxKind::OpenParenToken);
+        auto openParenPosition = scanner.getTokenStart();
+        auto openParenParsed = parseExpected(SyntaxKind::OpenParenToken);
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
-        parseExpected(SyntaxKind::CloseParenToken);
+        parseExpectedMatchingBrackets(SyntaxKind::OpenParenToken, SyntaxKind::CloseParenToken, openParenParsed, openParenPosition);
 
-        // https From://mail.mozilla.org/pipermail/es-discuss/2011-August/016188.html
+        // From: https://mail.mozilla.org/pipermail/es-discuss/2011-August/016188.html
         // 157 min --- All allen at wirfs-brock.com CONF --- "do{;}while(false)false" prohibited in
         // spec but allowed in consensus reality. Approved -- this is the de-facto standard whereby
         //  do;while(0)x will have a semicolon inserted before x.
         parseOptional(SyntaxKind::SemicolonToken);
-        return finishNode(factory.createDoStatement(statement, expression), pos);
+        return withJSDoc(finishNode(factory.createDoStatement(statement, expression), pos), hasJSDoc);        
     }
 
     auto parseWhileStatement() -> WhileStatement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::WhileKeyword);
-        parseExpected(SyntaxKind::OpenParenToken);
+        auto openParenPosition = scanner.getTokenStart();
+        auto openParenParsed = parseExpected(SyntaxKind::OpenParenToken);
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
-        parseExpected(SyntaxKind::CloseParenToken);
+        parseExpectedMatchingBrackets(SyntaxKind::OpenParenToken, SyntaxKind::CloseParenToken, openParenParsed, openParenPosition);
         auto statement = parseStatement();
-        return finishNode(factory.createWhileStatement(expression, statement), pos);
+        return withJSDoc(finishNode(factory.createWhileStatement(expression, statement), pos), hasJSDoc);        
     }
 
     auto parseForOrForInOrForOfStatement() -> Statement
