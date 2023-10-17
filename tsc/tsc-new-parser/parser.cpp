@@ -7033,45 +7033,46 @@ struct Parser
         });
     }
 
-    auto parseDeclarationWorker(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                NodeArray<Modifier> modifiers) -> Statement
+    auto parseDeclarationWorker(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiersIn) -> Statement
     {
         switch (token())
         {
         case SyntaxKind::VarKeyword:
         case SyntaxKind::LetKeyword:
         case SyntaxKind::ConstKeyword:
-            return parseVariableStatement(pos, hasJSDoc, decorators, modifiers);
+        case SyntaxKind::UsingKeyword:
+        case SyntaxKind::AwaitKeyword:        
+            return parseVariableStatement(pos, hasJSDoc, modifiersIn);
         case SyntaxKind::FunctionKeyword:
-            return parseFunctionDeclaration(pos, hasJSDoc, decorators, modifiers);
+            return parseFunctionDeclaration(pos, hasJSDoc, modifiersIn);
         case SyntaxKind::ClassKeyword:
-            return parseClassDeclaration(pos, hasJSDoc, decorators, modifiers);
+            return parseClassDeclaration(pos, hasJSDoc, modifiersIn);
         case SyntaxKind::InterfaceKeyword:
-            return parseInterfaceDeclaration(pos, hasJSDoc, decorators, modifiers);
+            return parseInterfaceDeclaration(pos, hasJSDoc, modifiersIn);
         case SyntaxKind::TypeKeyword:
-            return parseTypeAliasDeclaration(pos, hasJSDoc, decorators, modifiers);
+            return parseTypeAliasDeclaration(pos, hasJSDoc, modifiersIn);
         case SyntaxKind::EnumKeyword:
-            return parseEnumDeclaration(pos, hasJSDoc, decorators, modifiers);
+            return parseEnumDeclaration(pos, hasJSDoc, modifiersIn);
         case SyntaxKind::GlobalKeyword:
         case SyntaxKind::ModuleKeyword:
         case SyntaxKind::NamespaceKeyword:
-            return parseModuleDeclaration(pos, hasJSDoc, decorators, modifiers);
+            return parseModuleDeclaration(pos, hasJSDoc, modifiersIn);
         case SyntaxKind::ImportKeyword:
-            return parseImportDeclarationOrImportEqualsDeclaration(pos, hasJSDoc, decorators, modifiers);
+            return parseImportDeclarationOrImportEqualsDeclaration(pos, hasJSDoc, modifiersIn);
         case SyntaxKind::ExportKeyword:
             nextToken();
             switch (token())
             {
             case SyntaxKind::DefaultKeyword:
             case SyntaxKind::EqualsToken:
-                return parseExportAssignment(pos, hasJSDoc, decorators, modifiers);
+                return parseExportAssignment(pos, hasJSDoc, modifiersIn);
             case SyntaxKind::AsKeyword:
-                return parseNamespaceExportDeclaration(pos, hasJSDoc, decorators, modifiers);
+                return parseNamespaceExportDeclaration(pos, hasJSDoc, modifiersIn);
             default:
-                return parseExportDeclaration(pos, hasJSDoc, decorators, modifiers);
+                return parseExportDeclaration(pos, hasJSDoc, modifiersIn);
             }
         default:
-            if (!!decorators || !!modifiers)
+            if (!!modifiersIn)
             {
                 // We reached this point because we encountered decorators and/or modifiers and assumed a declaration
                 // would follow. For recovery and error reporting purposes, return an incomplete declaration.
@@ -7080,7 +7081,7 @@ struct Parser
                     _E(Diagnostics::Declaration_expected));
                 setTextRangePos(missing, pos);
                 missing->decorators = decorators;
-                copy(missing->modifiers, modifiers);
+                copy(missing->modifiers, modifiersIn);
                 return missing;
             }
             return undefined; // GH TODO#18217
