@@ -7283,20 +7283,15 @@ struct Parser
         return nextTokenIsIdentifier() && nextToken() == SyntaxKind::CloseParenToken;
     }
 
-    auto parseVariableStatement(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                NodeArray<Modifier> modifiers) -> VariableStatement
+    auto parseVariableStatement(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> VariableStatement
     {
         auto declarationList = parseVariableDeclarationList(/*inForStatementInitializer*/ false);
         parseSemicolon();
         auto node = factory.createVariableStatement(modifiers, declarationList);
-        // Decorators are not allowed on a variable statement, so we keep track of them to report them in the grammar
-        // checker.
-        node->decorators = decorators;
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseFunctionDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                  NodeArray<Modifier> modifiers) -> FunctionDeclaration
+    auto parseFunctionDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> FunctionDeclaration
     {
         auto savedAwaitContext = inAwaitContext();
         auto modifierFlags = modifiersToFlags(modifiers);
@@ -7315,7 +7310,7 @@ struct Parser
         auto body =
             parseFunctionBlockOrSemicolon(isGenerator | isAsync, _E(Diagnostics::or_expected));
         setAwaitContext(savedAwaitContext);
-        auto node = factory.createFunctionDeclaration(decorators, modifiers, asteriskToken, name, typeParameters,
+        auto node = factory.createFunctionDeclaration(modifiers, asteriskToken, name, typeParameters,
                                                       parameters, type, body);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
