@@ -6488,24 +6488,26 @@ struct Parser
     auto parseWithStatement() -> WithStatement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::WithKeyword);
-        parseExpected(SyntaxKind::OpenParenToken);
+        auto openParenPosition = scanner.getTokenStart();
+        auto openParenParsed = parseExpected(SyntaxKind::OpenParenToken);
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
-        parseExpected(SyntaxKind::CloseParenToken);
-        auto statement =
-            doInsideOfContext<Statement>(NodeFlags::InWithStatement, std::bind(&Parser::parseStatement, this));
-        return finishNode(factory.createWithStatement(expression, statement), pos);
+        parseExpectedMatchingBrackets(SyntaxKind::OpenParenToken, SyntaxKind::CloseParenToken, openParenParsed, openParenPosition);
+        auto statement = doInsideOfContext<Statement>(NodeFlags::InWithStatement, std::bind(&Parser::parseStatement, this));
+        return withJSDoc(finishNode(factory.createWithStatement(expression, statement), pos), hasJSDoc);        
     }
 
     auto parseCaseClause() -> CaseClause
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::CaseKeyword);
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
         parseExpected(SyntaxKind::ColonToken);
         auto statements =
             parseList<Statement>(ParsingContext::SwitchClauseStatements, std::bind(&Parser::parseStatement, this));
-        return finishNode(factory.createCaseClause(expression, statements), pos);
+        return withJSDoc(finishNode(factory.createCaseClause(expression, statements), pos), hasJSDoc);
     }
 
     auto parseDefaultClause() -> DefaultClause
