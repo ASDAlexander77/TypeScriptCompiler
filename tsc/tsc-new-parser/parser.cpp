@@ -7556,24 +7556,12 @@ struct Parser
         return finishNode(factory.createDecorator(expression), pos);
     }
 
-    auto parseDecorators() -> NodeArray<Decorator>
-    {
-        auto pos = getNodePos();
-        NodeArray<Decorator> list;
-        Decorator decorator;
-        while (!!(decorator = tryParseDecorator()))
-        {
-            list = append(list, decorator);
-        }
-        return !!list ? createNodeArray(list, pos) : undefined;
-    }
-
-    auto tryParseModifier(boolean permitInvalidConstAsModifier) -> Modifier
+    auto tryParseModifier(boolean hasSeenStaticModifier, boolean permitConstAsModifier, boolean stopOnStartOfClassStaticBlock) -> Modifier
     {
         auto pos = getNodePos();
         auto kind = token();
 
-        if (token() == SyntaxKind::ConstKeyword && permitInvalidConstAsModifier)
+        if (token() == SyntaxKind::ConstKeyword && permitConstAsModifier)
         {
             // We need to ensure that any subsequent modifiers appear on the same line
             // so that when 'const' is a standalone declaration, we don't issue an error.
@@ -7582,6 +7570,12 @@ struct Parser
                 return undefined;
             }
         }
+        else if (stopOnStartOfClassStaticBlock && token() == SyntaxKind::StaticKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenBrace), this)) {
+            return undefined;
+        }
+        else if (hasSeenStaticModifier && token() == SyntaxKind::StaticKeyword) {
+            return undefined;
+        }        
         else
         {
             if (!parseAnyContextualModifier())
@@ -7600,17 +7594,47 @@ struct Parser
      *
      * In such situations, 'permitInvalidConstAsModifier' should be set to true.
      */
-    auto parseModifiers(boolean permitInvalidConstAsModifier = false) -> NodeArray<Modifier>
-    {
+    auto parseModifiers(boolean allowDecorators, boolean permitConstAsModifier, boolean stopOnStartOfClassStaticBlock) -> NodeArray<ModifierLike> {
         auto pos = getNodePos();
-        NodeArray<Modifier> list;
-        Modifier modifier;
-        while (modifier = tryParseModifier(permitInvalidConstAsModifier))
-        {
-            list = append(list, modifier);
+        NodeArray<ModifierLike> list;
+        boolean decorator, modifier, hasSeenStaticModifier = false, hasLeadingModifier = false, hasTrailingDecorator = false;
+
+        // Decorators should be contiguous in a list of modifiers but can potentially appear in two places (i.e., `[...leadingDecorators, ...leadingModifiers, ...trailingDecorators, ...trailingModifiers]`).
+        // The leading modifiers *should* only contain `export` and `default` when trailingDecorators are present, but we'll handle errors for any other leading modifiers in the checker.
+        // It is illegal to have both leadingDecorators and trailingDecorators, but we will report that as a grammar check in the checker.
+
+        // parse leading decorators
+        if (allowDecorators && token() == SyntaxKind::AtToken) {
+            while (decorator = tryParseDecorator()) {
+                list = append(list, decorator);
+            }
         }
+
+        // parse leading modifiers
+        while (modifier = tryParseModifier(hasSeenStaticModifier, permitConstAsModifier, stopOnStartOfClassStaticBlock)) {
+            if (modifier == SyntaxKind::StaticKeyword) hasSeenStaticModifier = true;
+            list = append(list, modifier);
+            hasLeadingModifier = true;
+        }
+
+        // parse trailing decorators, but only if we parsed any leading modifiers
+        if (hasLeadingModifier && allowDecorators && token() == SyntaxKind::AtToken) {
+            while (decorator = tryParseDecorator()) {
+                list = append(list, decorator);
+                hasTrailingDecorator = true;
+            }
+        }
+
+        // parse trailing modifiers, but only if we parsed any trailing decorators
+        if (hasTrailingDecorator) {
+            while (modifier = tryParseModifier(hasSeenStaticModifier, permitConstAsModifier, stopOnStartOfClassStaticBlock)) {
+                if (modifier == SyntaxKind::StaticKeyword) hasSeenStaticModifier = true;
+                list = append(list, modifier);
+            }
+        }
+
         return !!list ? createNodeArray(list, pos) : undefined;
-    }
+    }    
 
     auto parseModifiersForArrowFunction() -> NodeArray<Modifier>
     {
