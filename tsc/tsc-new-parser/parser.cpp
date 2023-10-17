@@ -6853,18 +6853,53 @@ struct Parser
         }
     }
 
-    auto nextTokenIsIdentifierOrStartOfDestructuring()
+    auto nextTokenIsBindingIdentifierOrStartOfDestructuring()
     {
         nextToken();
-        return isIdentifier() || token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::OpenBracketToken;
+        return isBindingIdentifier() || token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::OpenBracketToken;
     }
 
     auto isLetDeclaration()
     {
         // In ES6 'let' always starts a lexical declaration if followed by an identifier or {
         // or [.
-        return lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrStartOfDestructuring, this));
+        return lookAhead<boolean>(std::bind(&Parser::nextTokenIsBindingIdentifierOrStartOfDestructuring, this));
     }
+
+    auto nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLineDisallowOf() {
+        return nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(/*disallowOf*/ true);
+    }
+
+    auto nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(disallowOf?: boolean) {
+        nextToken();
+        if (disallowOf && token() == SyntaxKind::OfKeyword) return false;
+        return (isBindingIdentifier() || token() == SyntaxKind::OpenBraceToken) && !scanner.hasPrecedingLineBreak();
+    }
+
+    auto isUsingDeclaration() {
+        // 'using' always starts a lexical declaration if followed by an identifier. We also eagerly parse
+        // |ObjectBindingPattern| so that we can report a grammar error during check. We don't parse out
+        // |ArrayBindingPattern| since it potentially conflicts with element access (i.e., `using[x]`).
+        return lookAhead<?>(std::bind(&Parser::nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine, this));
+    }
+
+    auto nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLineDisallowOf() {
+        return nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine(/*disallowOf*/ true);
+    }
+
+    auto nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine(disallowOf?: boolean) {
+        if (nextToken() == SyntaxKind::UsingKeyword) {
+            return nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(disallowOf);
+        }
+        return false;
+    }
+
+    auto isAwaitUsingDeclaration() {
+        // 'await using' always starts a lexical declaration if followed by an identifier. We also eagerly parse
+        // |ObjectBindingPattern| so that we can report a grammar error during check. We don't parse out
+        // |ArrayBindingPattern| since it potentially conflicts with element access (i.e., `await using[x]`).
+        return lookAhead<?>(std::bind(&Parser::nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine, this));
+    }    
 
     auto parseStatement() -> Statement
     {
