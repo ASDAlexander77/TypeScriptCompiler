@@ -7153,8 +7153,8 @@ struct Parser
     {
         auto pos = getNodePos();
         parseExpected(SyntaxKind::OpenBraceToken);
-        auto elements = parseDelimitedList<BindingElement>(ParsingContext::ObjectBindingElements,
-                                                           std::bind(&Parser::parseObjectBindingElement, this));
+        auto elements = allowInAnd<NodeArray<BindingElement>>([&]() { return parseDelimitedList<BindingElement>(ParsingContext::ObjectBindingElements,
+                                                           std::bind(&Parser::parseObjectBindingElement, this));});
         parseExpected(SyntaxKind::CloseBraceToken);
         return finishNode(factory.createObjectBindingPattern(elements), pos);
     }
@@ -7163,8 +7163,8 @@ struct Parser
     {
         auto pos = getNodePos();
         parseExpected(SyntaxKind::OpenBracketToken);
-        auto elements = parseDelimitedList<ArrayBindingElement>(ParsingContext::ArrayBindingElements,
-                                                                std::bind(&Parser::parseArrayBindingElement, this));
+        auto elements = allowInAnd<NodeArray<ArrayBindingElement>>([&]() { return parseDelimitedList<ArrayBindingElement>(ParsingContext::ArrayBindingElements,
+                                                                std::bind(&Parser::parseArrayBindingElement, this));});
         parseExpected(SyntaxKind::CloseBracketToken);
         return finishNode(factory.createArrayBindingPattern(elements), pos);
     }
@@ -7231,6 +7231,14 @@ struct Parser
         case SyntaxKind::ConstKeyword:
             flags |= NodeFlags::Const;
             break;
+        case SyntaxKind::UsingKeyword:
+            flags |= NodeFlags::Using;
+            break;
+        case SyntaxKind::AwaitKeyword:
+            Debug::_assert(isAwaitUsingDeclaration());
+            flags |= NodeFlags::AwaitUsing;
+            nextToken();
+            break;            
         default:
             Debug::fail<void>();
         }
