@@ -7333,8 +7333,7 @@ struct Parser
         return false;
     }
 
-    auto tryParseConstructorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                        NodeArray<Modifier> modifiers) -> ConstructorDeclaration
+    auto tryParseConstructorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> ConstructorDeclaration
     {
         return tryParse<ConstructorDeclaration>([&]() {
             if (parseConstructorName())
@@ -7344,7 +7343,7 @@ struct Parser
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
                 auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None,
                                                           _E(Diagnostics::or_expected));
-                auto node = factory.createConstructorDeclaration(decorators, modifiers, parameters, body);
+                auto node = factory.createConstructorDeclaration(modifiers, parameters, body);
                 // Attach `typeParameters` and `type` if they exist so that we can report them in the grammar checker.
                 node->typeParameters = typeParameters;
                 node->type = type;
@@ -7357,8 +7356,8 @@ struct Parser
         return undefined;
     }
 
-    auto parseMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                NodeArray<Modifier> modifiers, AsteriskToken asteriskToken, PropertyName name,
+    auto parseMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers, 
+                                AsteriskToken asteriskToken, PropertyName name,
                                 QuestionToken questionToken, ExclamationToken exclamationToken,
                                 DiagnosticMessage diagnosticMessage = undefined) -> MethodDeclaration
     {
@@ -7368,7 +7367,7 @@ struct Parser
         auto parameters = parseParameters(isGenerator | isAsync);
         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
         auto body = parseFunctionBlockOrSemicolon(isGenerator | isAsync, diagnosticMessage);
-        auto node = factory.createMethodDeclaration(decorators, modifiers, asteriskToken, name, questionToken,
+        auto node = factory.createMethodDeclaration(modifiers, asteriskToken, name, questionToken,
                                                     typeParameters, parameters, type, body);
         // An exclamation token on a method is invalid syntax and will be handled by the grammar checker
         node->exclamationToken = exclamationToken;
