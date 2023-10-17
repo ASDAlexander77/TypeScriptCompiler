@@ -7018,10 +7018,12 @@ struct Parser
         }        
     }
 
-    auto tryReuseAmbientDeclaration() -> Statement
+    auto tryReuseAmbientDeclaration(number pos) -> Statement
     {
+        // TODO(jakebailey): this is totally wrong; `parsingContext` is the result of ORing a bunch of `1 << ParsingContext.XYZ`.
+        // The enum should really be a bunch of flags.        
         return doInsideOfContext<Statement>(NodeFlags::Ambient, [&]() {
-            auto node = currentNode(parsingContext);
+            auto node = currentNode(parsingContext, pos);
             if (node)
             {
                 return consumeNode(node).as<Statement>();
