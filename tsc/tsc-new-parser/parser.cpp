@@ -6870,7 +6870,7 @@ struct Parser
         return nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(/*disallowOf*/ true);
     }
 
-    auto nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(disallowOf?: boolean) {
+    auto nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(boolean disallowOf) {
         nextToken();
         if (disallowOf && token() == SyntaxKind::OfKeyword) return false;
         return (isBindingIdentifier() || token() == SyntaxKind::OpenBraceToken) && !scanner.hasPrecedingLineBreak();
@@ -6887,7 +6887,7 @@ struct Parser
         return nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine(/*disallowOf*/ true);
     }
 
-    auto nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine(disallowOf?: boolean) {
+    auto nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine(boolean disallowOf) {
         if (nextToken() == SyntaxKind::UsingKeyword) {
             return nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(disallowOf);
         }
@@ -6898,7 +6898,7 @@ struct Parser
         // 'await using' always starts a lexical declaration if followed by an identifier. We also eagerly parse
         // |ObjectBindingPattern| so that we can report a grammar error during check. We don't parse out
         // |ArrayBindingPattern| since it potentially conflicts with element access (i.e., `await using[x]`).
-        return lookAhead<?>(std::bind(&Parser::nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine, this));
+        return lookAhead<boolean>(std::bind(&Parser::nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine, this));
     }    
 
     auto parseStatement() -> Statement
@@ -6910,21 +6910,26 @@ struct Parser
         case SyntaxKind::OpenBraceToken:
             return parseBlock(/*ignoreMissingOpenBrace*/ false);
         case SyntaxKind::VarKeyword:
-            return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
-                                          /*modifiers*/ undefined);
+            return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*modifiers*/ undefined);
         case SyntaxKind::LetKeyword:
             if (isLetDeclaration())
             {
-                return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
-                                              /*modifiers*/ undefined);
+                return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*modifiers*/ undefined);
             }
             break;
+        case SyntaxKind::AwaitKeyword:
+            if (isAwaitUsingDeclaration()) {
+                return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*modifiers*/ undefined);
+            }
+            break;
+        case SyntaxKind::UsingKeyword:
+            if (isUsingDeclaration()) {
+                return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*modifiers*/ undefined);
+            }            
         case SyntaxKind::FunctionKeyword:
-            return parseFunctionDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
-                                            /*modifiers*/ undefined);
+            return parseFunctionDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*modifiers*/ undefined);
         case SyntaxKind::ClassKeyword:
-            return parseClassDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
-                                         /*modifiers*/ undefined);
+            return parseClassDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*modifiers*/ undefined);
         case SyntaxKind::IfKeyword:
             return parseIfStatement();
         case SyntaxKind::DoKeyword:
@@ -6969,6 +6974,7 @@ struct Parser
         case SyntaxKind::ProtectedKeyword:
         case SyntaxKind::PublicKeyword:
         case SyntaxKind::AbstractKeyword:
+        case SyntaxKind::AccessorKeyword:
         case SyntaxKind::StaticKeyword:
         case SyntaxKind::ReadonlyKeyword:
         case SyntaxKind::GlobalKeyword:
@@ -6981,50 +6987,35 @@ struct Parser
         return parseExpressionOrLabeledStatement();
     }
 
-    auto isDeclareModifier(Modifier modifier) -> boolean
+    auto isDeclareModifier(ModifierLike modifier) -> boolean
     {
         return modifier == SyntaxKind::DeclareKeyword;
     }
 
     auto parseDeclaration() -> Statement
     {
-        // Can TODO we hold onto the parsed decorators/modifiers and advance the scanner
-        //       if we can't reuse the declaration, so that we don't do this work twice?
-        //
         // `parseListElement` attempted to get the reused node at this position,
         // but the ambient context flag was not yet set, so the node appeared
-        // not reusable in that context->
-        auto isAmbient = some(lookAhead<NodeArray<Modifier>>([&]() {
-                                  parseDecorators();
-                                  return parseModifiers();
-                              }),
-                              std::bind(&Parser::isDeclareModifier, this, std::placeholders::_1));
-        if (isAmbient)
-        {
-            auto node = tryReuseAmbientDeclaration();
-            if (node)
-            {
-                return node;
-            }
-        }
-
+        // not reusable in that context
         auto pos = getNodePos();
         auto hasJSDoc = hasPrecedingJSDocComment();
-        auto decorators = parseDecorators();
-        auto modifiers = parseModifiers();
-        if (isAmbient)
-        {
+        auto modifiers = parseModifiers(/*allowDecorators*/ true);
+        auto isAmbient = some(modifiers, isDeclareModifier);
+        if (isAmbient) {
+            auto node = tryReuseAmbientDeclaration(pos);
+            if (node) {
+                return node;
+            }
+
             for (auto &m : modifiers)
             {
                 (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
             }
-            return doInsideOfContext<Node>(
-                NodeFlags::Ambient, [&]() { return parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers); });
+            return doInsideOfContext<Node>(NodeFlags::Ambient, [&]() { return parseDeclarationWorker(pos, hasJSDoc, modifiers); });
         }
-        else
-        {
-            return parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers);
-        }
+        else {
+            return parseDeclarationWorker(pos, hasJSDoc, modifiers);
+        }        
     }
 
     auto tryReuseAmbientDeclaration() -> Statement
