@@ -7713,6 +7713,20 @@ struct Parser
         return Debug::fail<ClassElement>(S("Should not have attempted to parse class member declaration."));        
     }
 
+    auto parseDecoratedExpression() -> Node {
+        auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
+        auto modifiers = parseModifiers(/*allowDecorators*/ true);
+        if (token() == SyntaxKind::ClassKeyword) {
+            return parseClassDeclarationOrExpression(pos, hasJSDoc, modifiers, SyntaxKind::ClassExpression);
+        }
+
+        auto missing = createMissingNode<MissingDeclaration>(SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true, _E(Diagnostics::Expression_expected));
+        setTextRangePos(missing, pos);
+        missing.asMutable<MissingDeclaration>()->modifiers = modifiers;
+        return missing;
+    }
+
     auto parseClassExpression() -> ClassExpression
     {
         return parseClassDeclarationOrExpression(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
