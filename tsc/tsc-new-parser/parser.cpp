@@ -6462,6 +6462,7 @@ struct Parser
     auto parseBreakOrContinueStatement(SyntaxKind kind) -> BreakOrContinueStatement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
 
         parseExpected(kind == SyntaxKind::BreakStatement ? SyntaxKind::BreakKeyword : SyntaxKind::ContinueKeyword);
         auto label = canParseSemicolon() ? undefined : parseIdentifier();
@@ -6470,7 +6471,7 @@ struct Parser
         auto node = kind == SyntaxKind::BreakStatement
                         ? factory.createBreakStatement(label).as<BreakOrContinueStatement>()
                         : factory.createContinueStatement(label).as<BreakOrContinueStatement>();
-        return finishNode(node, pos);
+        return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
     auto parseReturnStatement() -> ReturnStatement
