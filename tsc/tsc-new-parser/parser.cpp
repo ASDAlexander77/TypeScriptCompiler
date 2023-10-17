@@ -6580,6 +6580,7 @@ struct Parser
     auto parseTryStatement() -> TryStatement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
 
         parseExpected(SyntaxKind::TryKeyword);
         auto tryBlock = parseBlock(/*ignoreMissingOpenBrace*/ false);
@@ -6590,11 +6591,11 @@ struct Parser
         Block finallyBlock;
         if (!catchClause || token() == SyntaxKind::FinallyKeyword)
         {
-            parseExpected(SyntaxKind::FinallyKeyword);
+            parseExpected(SyntaxKind::FinallyKeyword, _E(Diagnostics::catch_or_finally_expected));
             finallyBlock = parseBlock(/*ignoreMissingOpenBrace*/ false);
         }
 
-        return finishNode(factory.createTryStatement(tryBlock, catchClause, finallyBlock), pos);
+        return withJSDoc(finishNode(factory.createTryStatement(tryBlock, catchClause, finallyBlock), pos), hasJSDoc);
     }
 
     auto parseCatchClause() -> CatchClause
@@ -6621,9 +6622,10 @@ struct Parser
     auto parseDebuggerStatement() -> Statement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::DebuggerKeyword);
         parseSemicolon();
-        return finishNode(factory.createDebuggerStatement(), pos);
+        return withJSDoc(finishNode(factory.createDebuggerStatement(), pos), hasJSDoc);
     }
 
     auto parseExpressionOrLabeledStatement() -> Node
@@ -6636,13 +6638,15 @@ struct Parser
         Node node;
         auto hasParen = token() == SyntaxKind::OpenParenToken;
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
-        if (ts::isIdentifier(expression) && parseOptional(SyntaxKind::ColonToken))
+        if (isIdentifierNode(expression) && parseOptional(SyntaxKind::ColonToken))
         {
             node = factory.createLabeledStatement(expression, parseStatement());
         }
         else
         {
-            parseSemicolon();
+            if (!tryParseSemicolon()) {
+                parseErrorForMissingSemicolonAfter(expression);
+            }
             node = factory.createExpressionStatement(expression);
             if (hasParen)
             {
@@ -6692,6 +6696,10 @@ struct Parser
             case SyntaxKind::ClassKeyword:
             case SyntaxKind::EnumKeyword:
                 return true;
+            case SyntaxKind::UsingKeyword:
+                return isUsingDeclaration();
+            case SyntaxKind::AwaitKeyword:
+                return isAwaitUsingDeclaration();
 
             // 'declare', 'module', 'namespace', 'interface'* and 'type' are all legal JavaScript identifiers;
             // however, an identifier cannot be followed by another identifier on the same line. This is what we
@@ -6721,18 +6729,25 @@ struct Parser
             case SyntaxKind::NamespaceKeyword:
                 return nextTokenIsIdentifierOrStringLiteralOnSameLine();
             case SyntaxKind::AbstractKeyword:
+            case SyntaxKind::AccessorKeyword:
             case SyntaxKind::AsyncKeyword:
             case SyntaxKind::DeclareKeyword:
             case SyntaxKind::PrivateKeyword:
             case SyntaxKind::ProtectedKeyword:
             case SyntaxKind::PublicKeyword:
             case SyntaxKind::ReadonlyKeyword:
+                auto previousToken = token();
                 nextToken();
                 // ASI takes effect for this modifier.
                 if (scanner.hasPrecedingLineBreak())
                 {
                     return false;
                 }
+                if (previousToken == SyntaxKind::DeclareKeyword && token() == SyntaxKind::TypeKeyword) {
+                    // If we see 'declare type', then commit to parsing a type alias. parseTypeAliasDeclaration will
+                    // report Line_break_not_permitted_here if needed.
+                    return true;
+                }                
                 continue;
 
             case SyntaxKind::GlobalKeyword:
@@ -6752,7 +6767,7 @@ struct Parser
                 }
                 if (currentToken == SyntaxKind::EqualsToken || currentToken == SyntaxKind::AsteriskToken ||
                     currentToken == SyntaxKind::OpenBraceToken || currentToken == SyntaxKind::DefaultKeyword ||
-                    currentToken == SyntaxKind::AsKeyword)
+                    currentToken == SyntaxKind::AsKeyword || currentToken == SyntaxKind::AtToken)
                 {
                     return true;
                 }
@@ -6781,6 +6796,7 @@ struct Parser
         case SyntaxKind::OpenBraceToken:
         case SyntaxKind::VarKeyword:
         case SyntaxKind::LetKeyword:
+        case SyntaxKind::UsingKeyword:
         case SyntaxKind::FunctionKeyword:
         case SyntaxKind::ClassKeyword:
         case SyntaxKind::EnumKeyword:
@@ -6821,6 +6837,7 @@ struct Parser
             // When these don't start a declaration, they're an identifier in an expression statement
             return true;
 
+        case SyntaxKind::AccessorKeyword:
         case SyntaxKind::PublicKeyword:
         case SyntaxKind::PrivateKeyword:
         case SyntaxKind::ProtectedKeyword:
