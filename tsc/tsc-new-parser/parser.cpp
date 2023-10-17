@@ -6477,11 +6477,12 @@ struct Parser
     auto parseReturnStatement() -> ReturnStatement
     {
         auto pos = getNodePos();
+        auto hasJSDoc = hasPrecedingJSDocComment();
         parseExpected(SyntaxKind::ReturnKeyword);
         auto expression =
             canParseSemicolon() ? undefined : allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
         parseSemicolon();
-        return finishNode(factory.createReturnStatement(expression), pos);
+        return withJSDoc(finishNode(factory.createReturnStatement(expression), pos), hasJSDoc);
     }
 
     auto parseWithStatement() -> WithStatement
