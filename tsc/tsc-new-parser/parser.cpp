@@ -7817,6 +7817,9 @@ struct Parser
     {
         auto pos = getNodePos();
         auto expression = parseLeftHandSideExpressionOrHigher();
+        if (expression == SyntaxKind::ExpressionWithTypeArguments) {
+            return expression.as<ExpressionWithTypeArguments>();
+        }        
         auto typeArguments = tryParseTypeArguments();
         return finishNode(factory.createExpressionWithTypeArguments(expression, typeArguments), pos);
     }
