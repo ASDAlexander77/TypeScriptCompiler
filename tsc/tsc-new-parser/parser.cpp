@@ -7652,74 +7652,65 @@ struct Parser
     auto parseClassElement() -> ClassElement
     {
         auto pos = getNodePos();
-        if (token() == SyntaxKind::SemicolonToken)
-        {
-            nextToken();
-            return finishNode(factory.createSemicolonClassElement(), pos);
-        }
-
         auto hasJSDoc = hasPrecedingJSDocComment();
-        auto decorators = parseDecorators();
-        auto modifiers = parseModifiers(/*permitInvalidConstAsModifier*/ true);
-
-        if (parseContextualModifier(SyntaxKind::GetKeyword))
-        {
-            return parseAccessorDeclaration(pos, hasJSDoc, decorators, modifiers, SyntaxKind::GetAccessor);
+        if (token() == SyntaxKind::SemicolonToken) {
+            nextToken();
+            return withJSDoc(finishNode(factory.createSemicolonClassElement(), pos), hasJSDoc);
         }
 
-        if (parseContextualModifier(SyntaxKind::SetKeyword))
-        {
-            return parseAccessorDeclaration(pos, hasJSDoc, decorators, modifiers, SyntaxKind::SetAccessor);
+        auto modifiers = parseModifiers(/*allowDecorators*/ true, /*permitConstAsModifier*/ true, /*stopOnStartOfClassStaticBlock*/ true);
+        if (token() == SyntaxKind::StaticKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenBrace), this)) {
+            return parseClassStaticBlockDeclaration(pos, hasJSDoc, modifiers);
         }
 
-        if (token() == SyntaxKind::ConstructorKeyword || token() == SyntaxKind::StringLiteral)
-        {
-            auto constructorDeclaration = tryParseConstructorDeclaration(pos, hasJSDoc, decorators, modifiers);
-            if (!!constructorDeclaration)
-            {
+        if (parseContextualModifier(SyntaxKind::GetKeyword)) {
+            return parseAccessorDeclaration(pos, hasJSDoc, modifiers, SyntaxKind::GetAccessor, SignatureFlags::None);
+        }
+
+        if (parseContextualModifier(SyntaxKind::SetKeyword)) {
+            return parseAccessorDeclaration(pos, hasJSDoc, modifiers, SyntaxKind::SetAccessor, SignatureFlags::None);
+        }
+
+        if (token() == SyntaxKind::ConstructorKeyword || token() == SyntaxKind::StringLiteral) {
+            auto constructorDeclaration = tryParseConstructorDeclaration(pos, hasJSDoc, modifiers);
+            if (constructorDeclaration) {
                 return constructorDeclaration;
             }
         }
 
-        if (isIndexSignature())
-        {
-            return parseIndexSignatureDeclaration(pos, hasJSDoc, decorators, modifiers);
+        if (isIndexSignature()) {
+            return parseIndexSignatureDeclaration(pos, hasJSDoc, modifiers);
         }
 
         // It is very important that we check this *after* checking indexers because
         // the [ token can start an index signature or a computed property name
-        if (scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::StringLiteral ||
-            token() == SyntaxKind::NumericLiteral || token() == SyntaxKind::AsteriskToken ||
-            token() == SyntaxKind::OpenBracketToken)
-        {
-            auto isAmbient =
-                some<ModifiersArray>(modifiers, std::bind(&Parser::isDeclareModifier, this, std::placeholders::_1));
-            if (isAmbient)
-            {
-                for (auto m : modifiers)
-                {
+        if (
+            tokenIsIdentifierOrKeyword(token()) ||
+            token() == SyntaxKind::StringLiteral ||
+            token() == SyntaxKind::NumericLiteral ||
+            token() == SyntaxKind::AsteriskToken ||
+            token() == SyntaxKind::OpenBracketToken
+        ) {
+            auto isAmbient = some<ModifiersArray>(modifiers, std::bind(&Parser::isDeclareModifier, this, std::placeholders::_1));
+            if (isAmbient) {
+                for (auto m : modifiers) {
                     (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
                 }
-                return doInsideOfContext<Node>(NodeFlags::Ambient, [&]() {
-                    return parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers);
-                });
+                return doInsideOfContext<Node>(NodeFlags::Ambient, [&]() { return parsePropertyOrMethodDeclaration(pos, hasJSDoc, modifiers); })
             }
-            else
-            {
-                return parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers);
+            else {
+                return parsePropertyOrMethodDeclaration(pos, hasJSDoc, modifiers);
             }
         }
 
-        if (!!decorators || !!modifiers)
-        {
-            // treat this.as<a>() property declaration with a missing name.
-            auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true,
-                                                      _E(Diagnostics::Declaration_expected));
-            return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, /*questionToken*/ undefined);
+        if (modifiers) {
+            // treat this as a property declaration with a missing name.
+            auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, _E(Diagnostics::Declaration_expected));
+            return parsePropertyDeclaration(pos, hasJSDoc, modifiers, name, /*questionToken*/ undefined);
         }
 
         // 'isClassMemberStart' should have hinted not to attempt parsing.
-        return Debug::fail<ClassElement>(S("Should not have attempted to parse class member declaration."));
+        return Debug::fail<ClassElement>(S("Should not have attempted to parse class member declaration."));        
     }
 
     auto parseClassExpression() -> ClassExpression
