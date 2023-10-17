@@ -7374,26 +7374,24 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parsePropertyDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                  NodeArray<Modifier> modifiers, PropertyName name, QuestionToken questionToken)
+    auto parsePropertyDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers, PropertyName name, QuestionToken questionToken)
         -> PropertyDeclaration
     {
         auto exclamationToken = !questionToken && !scanner.hasPrecedingLineBreak()
                                     ? parseOptionalToken(SyntaxKind::ExclamationToken)
                                     : undefined;
         auto type = parseTypeAnnotation();
-        auto initializer = doOutsideOfContext<Expression>(NodeFlags::YieldContext | NodeFlags::AwaitContext |
-                                                              NodeFlags::DisallowInContext,
-                                                          std::bind(&Parser::parseInitializer, this));
-        parseSemicolon();
+        auto initializer = doOutsideOfContext<Expression>(
+            NodeFlags::YieldContext | NodeFlags::AwaitContext | NodeFlags::DisallowInContext,
+            std::bind(&Parser::parseInitializer, this));
+        parseSemicolonAfterPropertyName(name, type, initializer);
         auto node = factory.createPropertyDeclaration(
-            decorators, modifiers, name, questionToken.as<Node>() || [&]() { return exclamationToken.as<Node>(); },
+            modifiers, name, questionToken.as<Node>() || [&]() { return exclamationToken.as<Node>(); },
             type, initializer);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parsePropertyOrMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                          NodeArray<Modifier> modifiers) -> Node
+    auto parsePropertyOrMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> Node
     {
         auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
         auto name = parsePropertyName();
@@ -7402,11 +7400,11 @@ struct Parser
         auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
         if (asteriskToken || token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken)
         {
-            return parseMethodDeclaration(pos, hasJSDoc, decorators, modifiers, asteriskToken, name, questionToken,
+            return parseMethodDeclaration(pos, hasJSDoc, modifiers, asteriskToken, name, questionToken,
                                           /*exclamationToken*/ undefined,
                                           _E(Diagnostics::or_expected));
         }
-        return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, questionToken);
+        return parsePropertyDeclaration(pos, hasJSDoc, modifiers, name, questionToken);
     }
 
     auto parseAccessorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
