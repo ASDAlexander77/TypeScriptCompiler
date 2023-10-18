@@ -261,23 +261,21 @@ auto NodeFactory::createComputedPropertyName(Expression expression) -> ComputedP
     return node;
 }
 
-auto NodeFactory::createTypeParameterDeclaration(Identifier name, TypeNode constraint, TypeNode defaultType) -> TypeParameterDeclaration
+auto NodeFactory::createTypeParameterDeclaration(NodeArray<ModifierLike> modifiers, Identifier name, TypeNode constraint, TypeNode defaultType) -> TypeParameterDeclaration
 {
-    auto node = createBaseNamedDeclaration<TypeParameterDeclaration>(SyntaxKind::TypeParameter,
-                                                                     /*decorators*/ undefined,
-                                                                     /*modifiers*/ undefined, name);
+    auto node = createBaseNamedDeclaration<TypeParameterDeclaration>(SyntaxKind::TypeParameter, /*modifiers*/ modifiers, name);
     node->constraint = constraint;
     node->_default = defaultType;
     node->transformFlags = TransformFlags::ContainsTypeScript;
     return node;
 }
 
-auto NodeFactory::createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken,
+auto NodeFactory::createParameterDeclaration(NodeArray<ModifierLike> modifiers, DotDotDotToken dotDotDotToken,
                                              BindingName name, QuestionToken questionToken, TypeNode type, Expression initializer)
     -> ParameterDeclaration
 {
     auto node = createBaseVariableLikeDeclaration<ParameterDeclaration>(
-        SyntaxKind::Parameter, decorators, modifiers, name, type,
+        SyntaxKind::Parameter, modifiers, name, type,
         initializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer) : undefined);
     node->dotDotDotToken = dotDotDotToken;
     node->questionToken = questionToken;
@@ -317,7 +315,7 @@ auto NodeFactory::createPropertySignature(ModifiersArray modifiers, PropertyName
     -> PropertySignature
 {
     auto node = createBaseNamedDeclaration<PropertySignature>(SyntaxKind::PropertySignature,
-                                                              /*decorators*/ undefined, modifiers, name);
+                                                              modifiers, name);
     node->type = type;
     node->questionToken = questionToken;
     node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -327,10 +325,10 @@ auto NodeFactory::createPropertySignature(ModifiersArray modifiers, PropertyName
 // @api
 
 // @api
-auto NodeFactory::createPropertyDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name,
+auto NodeFactory::createPropertyDeclaration(NodeArray<ModifierLike> modifiers, PropertyName name,
                                             Node questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration
 {
-    auto node = createBaseVariableLikeDeclaration<PropertyDeclaration>(SyntaxKind::PropertyDeclaration, decorators, modifiers, name, type,
+    auto node = createBaseVariableLikeDeclaration<PropertyDeclaration>(SyntaxKind::PropertyDeclaration, modifiers, name, type,
                                                                        initializer);
     node->questionToken =
         questionOrExclamationToken && isQuestionToken(questionOrExclamationToken) ? questionOrExclamationToken : undefined;
@@ -358,7 +356,7 @@ auto NodeFactory::createMethodSignature(ModifiersArray modifiers, PropertyName n
 {
     auto node =
         createBaseSignatureDeclaration<MethodSignature>(SyntaxKind::MethodSignature,
-                                                        /*decorators*/ undefined, modifiers, name, typeParameters, parameters, type);
+                                                        modifiers, name, typeParameters, parameters, type);
     node->questionToken = questionToken;
     node->transformFlags = TransformFlags::ContainsTypeScript;
     return node;
@@ -367,12 +365,12 @@ auto NodeFactory::createMethodSignature(ModifiersArray modifiers, PropertyName n
 // @api
 
 // @api
-auto NodeFactory::createMethodDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken,
+auto NodeFactory::createMethodDeclaration(NodeArray<ModifierLike> modifiers, AsteriskToken asteriskToken,
                                           PropertyName name, QuestionToken questionToken,
                                           NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
                                           TypeNode type, Block body) -> MethodDeclaration
 {
-    auto node = createBaseFunctionLikeDeclaration<MethodDeclaration>(SyntaxKind::MethodDeclaration, decorators, modifiers, name,
+    auto node = createBaseFunctionLikeDeclaration<MethodDeclaration>(SyntaxKind::MethodDeclaration, modifiers, name,
                                                                      typeParameters, parameters, type, body);
     node->asteriskToken = asteriskToken;
     node->questionToken = questionToken;
@@ -403,10 +401,10 @@ auto NodeFactory::createMethodDeclaration(DecoratorsArray decorators, ModifiersA
 // @api
 
 // @api
-auto NodeFactory::createConstructorDeclaration(DecoratorsArray decorators, ModifiersArray modifiers,
+auto NodeFactory::createConstructorDeclaration(NodeArray<ModifierLike> modifiers,
                                                NodeArray<ParameterDeclaration> parameters, Block body) -> ConstructorDeclaration
 {
-    auto node = createBaseFunctionLikeDeclaration<ConstructorDeclaration>(SyntaxKind::Constructor, decorators, modifiers,
+    auto node = createBaseFunctionLikeDeclaration<ConstructorDeclaration>(SyntaxKind::Constructor, modifiers,
                                                                           /*name*/ undefined,
                                                                           /*typeParameters*/ undefined, parameters,
                                                                           /*type*/ undefined, body);
@@ -417,21 +415,21 @@ auto NodeFactory::createConstructorDeclaration(DecoratorsArray decorators, Modif
 // @api
 
 // @api
-auto NodeFactory::createGetAccessorDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name,
+auto NodeFactory::createGetAccessorDeclaration(NodeArray<ModifierLike> modifiers, PropertyName name,
                                                NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body)
     -> GetAccessorDeclaration
 {
-    return createBaseFunctionLikeDeclaration<GetAccessorDeclaration>(SyntaxKind::GetAccessor, decorators, modifiers, name,
+    return createBaseFunctionLikeDeclaration<GetAccessorDeclaration>(SyntaxKind::GetAccessor, modifiers, name,
                                                                      /*typeParameters*/ undefined, parameters, type, body);
 }
 
 // @api
 
 // @api
-auto NodeFactory::createSetAccessorDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name,
+auto NodeFactory::createSetAccessorDeclaration(NodeArray<ModifierLike> modifiers, PropertyName name,
                                                NodeArray<ParameterDeclaration> parameters, Block body) -> SetAccessorDeclaration
 {
-    return createBaseFunctionLikeDeclaration<SetAccessorDeclaration>(SyntaxKind::SetAccessor, decorators, modifiers, name,
+    return createBaseFunctionLikeDeclaration<SetAccessorDeclaration>(SyntaxKind::SetAccessor, modifiers, name,
                                                                      /*typeParameters*/ undefined, parameters,
                                                                      /*type*/ undefined, body);
 }
@@ -443,7 +441,6 @@ auto NodeFactory::createCallSignature(NodeArray<TypeParameterDeclaration> typePa
                                       TypeNode type) -> CallSignatureDeclaration
 {
     auto node = createBaseSignatureDeclaration<CallSignatureDeclaration>(SyntaxKind::CallSignature,
-                                                                         /*decorators*/ undefined,
                                                                          /*modifiers*/ undefined,
                                                                          /*name*/ undefined, typeParameters, parameters, type);
     node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -457,7 +454,6 @@ auto NodeFactory::createConstructSignature(NodeArray<TypeParameterDeclaration> t
                                            TypeNode type) -> ConstructSignatureDeclaration
 {
     auto node = createBaseSignatureDeclaration<ConstructSignatureDeclaration>(SyntaxKind::ConstructSignature,
-                                                                              /*decorators*/ undefined,
                                                                               /*modifiers*/ undefined,
                                                                               /*name*/ undefined, typeParameters, parameters, type);
     node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -467,10 +463,10 @@ auto NodeFactory::createConstructSignature(NodeArray<TypeParameterDeclaration> t
 // @api
 
 // @api
-auto NodeFactory::createIndexSignature(DecoratorsArray decorators, ModifiersArray modifiers, NodeArray<ParameterDeclaration> parameters,
+auto NodeFactory::createIndexSignature(NodeArray<ModifierLike> modifiers, NodeArray<ParameterDeclaration> parameters,
                                        TypeNode type) -> IndexSignatureDeclaration
 {
-    auto node = createBaseSignatureDeclaration<IndexSignatureDeclaration>(SyntaxKind::IndexSignature, decorators, modifiers,
+    auto node = createBaseSignatureDeclaration<IndexSignatureDeclaration>(SyntaxKind::IndexSignature, modifiers,
                                                                           /*name*/ undefined,
                                                                           /*typeParameters*/ undefined, parameters, type);
     node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -525,7 +521,6 @@ auto NodeFactory::createFunctionTypeNode(NodeArray<TypeParameterDeclaration> typ
                                          TypeNode type) -> FunctionTypeNode
 {
     auto node = createBaseSignatureDeclaration<FunctionTypeNode>(SyntaxKind::FunctionType,
-                                                                 /*decorators*/ undefined,
                                                                  /*modifiers*/ undefined,
                                                                  /*name*/ undefined, typeParameters, parameters, type);
     node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -537,7 +532,7 @@ auto NodeFactory::createConstructorTypeNode(ModifiersArray modifiers, NodeArray<
                                             NodeArray<ParameterDeclaration> parameters, TypeNode type) -> ConstructorTypeNode
 {
     auto node = createBaseSignatureDeclaration<ConstructorTypeNode>(SyntaxKind::ConstructorType,
-                                                                    /*decorators*/ undefined, modifiers,
+                                                                    modifiers,
                                                                     /*name*/ undefined, typeParameters, parameters, type);
     node->transformFlags = TransformFlags::ContainsTypeScript;
     return node;
@@ -791,7 +786,7 @@ auto NodeFactory::createBindingElement(DotDotDotToken dotDotDotToken, PropertyNa
     -> BindingElement
 {
     auto node = createBaseBindingLikeDeclaration<BindingElement>(SyntaxKind::BindingElement,
-                                                                 /*decorators*/ undefined,
+                                                                 
                                                                  /*modifiers*/ undefined, name, initializer);
     node->propertyName = asName(propertyName);
     node->dotDotDotToken = dotDotDotToken;
@@ -1033,7 +1028,7 @@ auto NodeFactory::createFunctionExpression(ModifiersArray modifiers, AsteriskTok
                                            TypeNode type, Block body) -> FunctionExpression
 {
     auto node = createBaseFunctionLikeDeclaration<FunctionExpression>(SyntaxKind::FunctionExpression,
-                                                                      /*decorators*/ undefined, modifiers, name, typeParameters, parameters,
+                                                                      modifiers, name, typeParameters, parameters,
                                                                       type, body);
     node->asteriskToken = asteriskToken;
     node->transformFlags |= propagateChildFlags(node->asteriskToken);
@@ -1067,7 +1062,7 @@ auto NodeFactory::createArrowFunction(ModifiersArray modifiers, NodeArray<TypePa
                                       EqualsGreaterThanToken equalsGreaterThanToken, ConciseBody body) -> ArrowFunction
 {
     auto node = createBaseFunctionLikeDeclaration<ArrowFunction>(SyntaxKind::ArrowFunction,
-                                                                 /*decorators*/ undefined, modifiers,
+                                                                 modifiers,
                                                                  /*name*/ undefined, typeParameters, parameters, type,
                                                                  parenthesizerRules.parenthesizeConciseBodyOfArrowFunction(body));
     node->equalsGreaterThanToken =
@@ -1401,11 +1396,11 @@ auto NodeFactory::createSpreadElement(Expression expression) -> SpreadElement
 // @api
 
 // @api
-auto NodeFactory::createClassExpression(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+auto NodeFactory::createClassExpression(NodeArray<ModifierLike> modifiers, Identifier name,
                                         NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
                                         NodeArray<ClassElement> members) -> ClassExpression
 {
-    auto node = createBaseClassLikeDeclaration<ClassExpression>(SyntaxKind::ClassExpression, decorators, modifiers, name, typeParameters,
+    auto node = createBaseClassLikeDeclaration<ClassExpression>(SyntaxKind::ClassExpression, modifiers, name, typeParameters,
                                                                 heritageClauses, members);
     node->transformFlags |= TransformFlags::ContainsES2015;
     return node;
@@ -1533,7 +1528,7 @@ auto NodeFactory::createBlock(NodeArray<Statement> statements, boolean multiLine
 // @api
 auto NodeFactory::createVariableStatement(ModifiersArray modifiers, VariableDeclarationList declarationList) -> VariableStatement
 {
-    auto node = createBaseDeclaration<VariableStatement>(SyntaxKind::VariableStatement, /*decorators*/ undefined, modifiers);
+    auto node = createBaseDeclaration<VariableStatement>(SyntaxKind::VariableStatement, modifiers);
     node->declarationList = declarationList;
     node->transformFlags |= propagateChildFlags(node->declarationList);
     if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient))
@@ -1756,7 +1751,7 @@ auto NodeFactory::createVariableDeclaration(BindingName name, ExclamationToken e
 {
     auto node = createBaseVariableLikeDeclaration<VariableDeclaration>(
         SyntaxKind::VariableDeclaration,
-        /*decorators*/ undefined,
+        
         /*modifiers*/ undefined, name, type,
         initializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer) : undefined);
     node->exclamationToken = exclamationToken;
@@ -1787,11 +1782,11 @@ auto NodeFactory::createVariableDeclarationList(NodeArray<VariableDeclaration> d
 // @api
 
 // @api
-auto NodeFactory::createFunctionDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken,
+auto NodeFactory::createFunctionDeclaration(NodeArray<ModifierLike> modifiers, AsteriskToken asteriskToken,
                                             Identifier name, NodeArray<TypeParameterDeclaration> typeParameters,
                                             NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> FunctionDeclaration
 {
-    auto node = createBaseFunctionLikeDeclaration<FunctionDeclaration>(SyntaxKind::FunctionDeclaration, decorators, modifiers, name,
+    auto node = createBaseFunctionLikeDeclaration<FunctionDeclaration>(SyntaxKind::FunctionDeclaration, modifiers, name,
                                                                        typeParameters, parameters, type, body);
     node->asteriskToken = asteriskToken;
     if (!node->body || !!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient))
@@ -1823,11 +1818,11 @@ auto NodeFactory::createFunctionDeclaration(DecoratorsArray decorators, Modifier
 // @api
 
 // @api
-auto NodeFactory::createClassDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+auto NodeFactory::createClassDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
                                          NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
                                          NodeArray<ClassElement> members) -> ClassDeclaration
 {
-    auto node = createBaseClassLikeDeclaration<ClassDeclaration>(SyntaxKind::ClassDeclaration, decorators, modifiers, name, typeParameters,
+    auto node = createBaseClassLikeDeclaration<ClassDeclaration>(SyntaxKind::ClassDeclaration, modifiers, name, typeParameters,
                                                                  heritageClauses, members);
     if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient))
     {
@@ -1847,11 +1842,11 @@ auto NodeFactory::createClassDeclaration(DecoratorsArray decorators, ModifiersAr
 // @api
 
 // @api
-auto NodeFactory::createInterfaceDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+auto NodeFactory::createInterfaceDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
                                              NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
                                              NodeArray<TypeElement> members) -> InterfaceDeclaration
 {
-    auto node = createBaseInterfaceOrClassLikeDeclaration<InterfaceDeclaration>(SyntaxKind::InterfaceDeclaration, decorators, modifiers,
+    auto node = createBaseInterfaceOrClassLikeDeclaration<InterfaceDeclaration>(SyntaxKind::InterfaceDeclaration, modifiers,
                                                                                 name, typeParameters, heritageClauses);
     node->members = createNodeArray(members);
     node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -1861,10 +1856,10 @@ auto NodeFactory::createInterfaceDeclaration(DecoratorsArray decorators, Modifie
 // @api
 
 // @api
-auto NodeFactory::createTypeAliasDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+auto NodeFactory::createTypeAliasDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
                                              NodeArray<TypeParameterDeclaration> typeParameters, TypeNode type) -> TypeAliasDeclaration
 {
-    auto node = createBaseGenericNamedDeclaration<TypeAliasDeclaration>(SyntaxKind::TypeAliasDeclaration, decorators, modifiers, name,
+    auto node = createBaseGenericNamedDeclaration<TypeAliasDeclaration>(SyntaxKind::TypeAliasDeclaration, modifiers, name,
                                                                         typeParameters);
     node->type = type;
     node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -1874,10 +1869,10 @@ auto NodeFactory::createTypeAliasDeclaration(DecoratorsArray decorators, Modifie
 // @api
 
 // @api
-auto NodeFactory::createEnumDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+auto NodeFactory::createEnumDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
                                         NodeArray<EnumMember> members) -> EnumDeclaration
 {
-    auto node = createBaseNamedDeclaration<EnumDeclaration>(SyntaxKind::EnumDeclaration, decorators, modifiers, name);
+    auto node = createBaseNamedDeclaration<EnumDeclaration>(SyntaxKind::EnumDeclaration, modifiers, name);
     node->members = createNodeArray(members);
     node->transformFlags |= propagateChildrenFlags(node->members) | TransformFlags::ContainsTypeScript;
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // Enum declarations cannot contain `await`
@@ -1887,10 +1882,10 @@ auto NodeFactory::createEnumDeclaration(DecoratorsArray decorators, ModifiersArr
 // @api
 
 // @api
-auto NodeFactory::createModuleDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, ModuleName name, ModuleBody body,
+auto NodeFactory::createModuleDeclaration(NodeArray<ModifierLike> modifiers, ModuleName name, ModuleBody body,
                                           NodeFlags flags) -> ModuleDeclaration
 {
-    auto node = createBaseDeclaration<ModuleDeclaration>(SyntaxKind::ModuleDeclaration, decorators, modifiers);
+    auto node = createBaseDeclaration<ModuleDeclaration>(SyntaxKind::ModuleDeclaration, modifiers);
     node->flags |= flags & (NodeFlags::Namespace | NodeFlags::NestedNamespace | NodeFlags::GlobalAugmentation);
     node->name = name;
     node->body = body;
@@ -1934,7 +1929,7 @@ auto NodeFactory::createCaseBlock(NodeArray<CaseOrDefaultClause> clauses) -> Cas
 auto NodeFactory::createNamespaceExportDeclaration(Identifier name) -> NamespaceExportDeclaration
 {
     auto node = createBaseNamedDeclaration<NamespaceExportDeclaration>(SyntaxKind::NamespaceExportDeclaration,
-                                                                       /*decorators*/ undefined,
+                                                                       
                                                                        /*modifiers*/ undefined, name);
     node->transformFlags = TransformFlags::ContainsTypeScript;
     return node;
@@ -1943,10 +1938,10 @@ auto NodeFactory::createNamespaceExportDeclaration(Identifier name) -> Namespace
 // @api
 
 // @api
-auto NodeFactory::createImportEqualsDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly, Identifier name,
+auto NodeFactory::createImportEqualsDeclaration(NodeArray<ModifierLike> modifiers, boolean isTypeOnly, Identifier name,
                                                 ModuleReference moduleReference) -> ImportEqualsDeclaration
 {
-    auto node = createBaseNamedDeclaration<ImportEqualsDeclaration>(SyntaxKind::ImportEqualsDeclaration, decorators, modifiers, name);
+    auto node = createBaseNamedDeclaration<ImportEqualsDeclaration>(SyntaxKind::ImportEqualsDeclaration, modifiers, name);
     node->isTypeOnly = isTypeOnly;
     node->moduleReference = moduleReference;
     node->transformFlags |= propagateChildFlags(node->moduleReference);
@@ -1959,10 +1954,10 @@ auto NodeFactory::createImportEqualsDeclaration(DecoratorsArray decorators, Modi
 // @api
 
 // @api
-auto NodeFactory::createImportDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, ImportClause importClause,
+auto NodeFactory::createImportDeclaration(NodeArray<ModifierLike> modifiers, ImportClause importClause,
                                           Expression moduleSpecifier) -> ImportDeclaration
 {
-    auto node = createBaseDeclaration<ImportDeclaration>(SyntaxKind::ImportDeclaration, decorators, modifiers);
+    auto node = createBaseDeclaration<ImportDeclaration>(SyntaxKind::ImportDeclaration, modifiers);
     node->importClause = importClause;
     node->moduleSpecifier = moduleSpecifier;
     node->transformFlags |= propagateChildFlags(node->importClause) | propagateChildFlags(node->moduleSpecifier);
@@ -2040,10 +2035,10 @@ auto NodeFactory::createImportSpecifier(Identifier propertyName, Identifier name
 // @api
 
 // @api
-auto NodeFactory::createExportAssignment(DecoratorsArray decorators, ModifiersArray modifiers, boolean isExportEquals,
+auto NodeFactory::createExportAssignment(NodeArray<ModifierLike> modifiers, boolean isExportEquals,
                                          Expression expression) -> ExportAssignment
 {
-    auto node = createBaseDeclaration<ExportAssignment>(SyntaxKind::ExportAssignment, decorators, modifiers);
+    auto node = createBaseDeclaration<ExportAssignment>(SyntaxKind::ExportAssignment, modifiers);
     node->isExportEquals = isExportEquals;
     node->expression = isExportEquals
                            ? parenthesizerRules.parenthesizeRightSideOfBinary(SyntaxKind::EqualsToken, /*leftSide*/ undefined, expression)
@@ -2056,10 +2051,10 @@ auto NodeFactory::createExportAssignment(DecoratorsArray decorators, ModifiersAr
 // @api
 
 // @api
-auto NodeFactory::createExportDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly,
+auto NodeFactory::createExportDeclaration(NodeArray<ModifierLike> modifiers, boolean isTypeOnly,
                                           NamedExportBindings exportClause, Expression moduleSpecifier) -> ExportDeclaration
 {
-    auto node = createBaseDeclaration<ExportDeclaration>(SyntaxKind::ExportDeclaration, decorators, modifiers);
+    auto node = createBaseDeclaration<ExportDeclaration>(SyntaxKind::ExportDeclaration, modifiers);
     node->isTypeOnly = isTypeOnly;
     node->exportClause = exportClause;
     node->moduleSpecifier = moduleSpecifier;
@@ -2099,7 +2094,7 @@ auto NodeFactory::createExportSpecifier(Identifier propertyName, Identifier name
 auto NodeFactory::createMissingDeclaration() -> MissingDeclaration
 {
     auto node = createBaseDeclaration<MissingDeclaration>(SyntaxKind::MissingDeclaration,
-                                                          /*decorators*/ undefined,
+                                                          
                                                           /*modifiers*/ undefined);
     return node;
 }
@@ -2175,7 +2170,7 @@ auto NodeFactory::createJSDocNamepathType(TypeNode type) -> JSDocNamepathType
 auto NodeFactory::createJSDocFunctionType(NodeArray<ParameterDeclaration> parameters, TypeNode type) -> JSDocFunctionType
 {
     auto node = createBaseSignatureDeclaration<JSDocFunctionType>(SyntaxKind::JSDocFunctionType,
-                                                                  /*decorators*/ undefined,
+                                                                  
                                                                   /*modifiers*/ undefined,
                                                                   /*name*/ undefined,
                                                                   /*typeParameters*/ undefined, parameters, type);
@@ -2623,7 +2618,7 @@ auto NodeFactory::createCatchClause(VariableDeclaration variableDeclaration, Blo
 auto NodeFactory::createPropertyAssignment(PropertyName name, Expression initializer) -> PropertyAssignment
 {
     auto node = createBaseNamedDeclaration<PropertyAssignment>(SyntaxKind::PropertyAssignment,
-                                                               /*decorators*/ undefined,
+                                                               
                                                                /*modifiers*/ undefined, name);
     node->initializer = parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer);
     node->transformFlags |= propagateChildFlags(node->name) | propagateChildFlags(node->initializer);
@@ -2634,7 +2629,7 @@ auto NodeFactory::createPropertyAssignment(PropertyName name, Expression initial
 auto NodeFactory::createShorthandPropertyAssignment(Identifier name, Expression objectAssignmentInitializer) -> ShorthandPropertyAssignment
 {
     auto node = createBaseNamedDeclaration<ShorthandPropertyAssignment>(SyntaxKind::ShorthandPropertyAssignment,
-                                                                        /*decorators*/ undefined,
+                                                                        
                                                                         /*modifiers*/ undefined, name);
     node->objectAssignmentInitializer =
         objectAssignmentInitializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(objectAssignmentInitializer) : undefined;

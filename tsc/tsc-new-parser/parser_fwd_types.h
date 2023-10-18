@@ -540,7 +540,6 @@ FORWARD_DECLARATION(JsonObjectExpressionStatement)
 
 NODE_REF(ModifierLike)
 NODE_REF(Modifier)
-NODE_REF(Decorator)
 
 NODE_REF(EntityName)
 NODE_REF(PropertyName)

@@ -227,8 +227,7 @@ struct Node : TextRange
     NodeFlags flags;
     /* @internal */ ModifierFlags modifierFlagsCache;
     /* @internal */ TransformFlags transformFlags; // Flags for transforms
-    DecoratorsArray decorators;                    // Array of decorators (in document order)
-    ModifiersArray modifiers;                      // Array of modifiers
+    NodeArray<ModifierLike> modifiers;             // Array of modifiers
     /* @internal */ NodeId id;                     // Unique id (used to look up NodeLinks)
     PTR(Node) parent;                              // Parent node (initialized by binding)
     /* @internal */ PTR(Node) original;            // The original node if this is an updated node.
