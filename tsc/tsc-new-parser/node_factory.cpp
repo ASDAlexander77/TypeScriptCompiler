@@ -209,20 +209,27 @@ auto NodeFactory::createBaseIdentifier(string text, SyntaxKind originalKeywordKi
     return node;
 }
 
-/* @internal */ auto NodeFactory::createIdentifier(string text, NodeArray</*TypeNode | TypeParameterDeclaration*/ Node> typeArguments,
-                                                   SyntaxKind originalKeywordKind)
+/* @internal */ auto NodeFactory::createIdentifier(string text, SyntaxKind originalKeywordKind, boolean hasExtendedUnicodeEscape)
     -> Identifier // eslint-disable-line @typescript-eslint/unified-signatures
 {
-    auto node = createBaseIdentifier(text, originalKeywordKind);
-    if (!!typeArguments)
-    {
-        // NOTE: we do not use `setChildren` here because typeArguments in an identifier do not contribute to transformations
-        copy(node->typeArguments, createNodeArray(typeArguments));
+    if (originalKeywordKind == SyntaxKind::Unknown && text.length() > 0) {
+        originalKeywordKind = scanner->stringToToken(text);
     }
-    if (node->originalKeywordKind == SyntaxKind::AwaitKeyword)
-    {
+    if (originalKeywordKind == SyntaxKind::Identifier) {
+        originalKeywordKind = SyntaxKind::Unknown;
+    }
+
+    auto node = createBaseIdentifier(escapeLeadingUnderscores(text));
+    if (hasExtendedUnicodeEscape) node->flags |= NodeFlags::IdentifierHasExtendedUnicodeEscape;
+
+    // we NOTE do not include transform flags typeArguments  in an identifier as they do not contribute to transformations
+    if (node->escapedText == S("await")) {
         node->transformFlags |= TransformFlags::ContainsPossibleTopLevelAwait;
     }
+    if ((node->flags & NodeFlags::IdentifierHasExtendedUnicodeEscape) > NodeFlags::None) {
+        node->transformFlags |= TransformFlags::ContainsES2015;
+    }
+
     return node;
 }
 
@@ -537,10 +544,11 @@ auto NodeFactory::createConstructorTypeNode(ModifiersArray modifiers, NodeArray<
 }
 
 // @api
-auto NodeFactory::createTypeQueryNode(EntityName exprName) -> TypeQueryNode
+auto NodeFactory::createTypeQueryNode(EntityName exprName, NodeArray<TypeNode> typeArguments) -> TypeQueryNode
 {
     auto node = createBaseNode<TypeQueryNode>(SyntaxKind::TypeQuery);
     node->exprName = exprName;
+    node->typeArguments = typeArguments ? typeArguments : parenthesizerRules.parenthesizeTypeArguments(typeArguments);
     node->transformFlags = TransformFlags::ContainsTypeScript;
     return node;
 }
@@ -1475,7 +1483,7 @@ auto NodeFactory::createMetaProperty(SyntaxKind keywordToken, Identifier name) -
         node->transformFlags |= TransformFlags::ContainsESNext;
         break;
     default:
-        return Debug::_assertNever(node);
+        Debug::_assertNever(node);
     }
     return node;
 }
@@ -2124,17 +2132,21 @@ auto NodeFactory::createJSDocUnknownType() -> JSDocUnknownType
     return createBaseNode<JSDocUnknownType>(SyntaxKind::JSDocUnknownType);
 }
 
-auto NodeFactory::createJSDocNonNullableType(TypeNode type) -> JSDocNonNullableType
+auto NodeFactory::createJSDocNonNullableType(TypeNode type, boolean postfix) -> JSDocNonNullableType
 {
-    auto node = createBaseNode<JSDocNonNullableType>(SyntaxKind::JSDocNonNullableType);
-    node->type = type;
+    auto node = createJSDocUnaryTypeWorker<JSDocNonNullableType>(
+        SyntaxKind::JSDocNonNullableType,
+        postfix ? type ? type : parenthesizerRules.parenthesizeNonArrayTypeOfPostfixType(type) : type);
+    node->postfix = postfix;
     return node;
 }
 
-auto NodeFactory::createJSDocNullableType(TypeNode type) -> JSDocNullableType
+auto NodeFactory::createJSDocNullableType(TypeNode type, boolean postfix) -> JSDocNullableType
 {
-    auto node = createBaseNode<JSDocNullableType>(SyntaxKind::JSDocNullableType);
-    node->type = type;
+    auto node = createJSDocUnaryTypeWorker<JSDocNullableType>(
+        SyntaxKind::JSDocNullableType,
+        postfix ? type ? type : parenthesizerRules.parenthesizeNonArrayTypeOfPostfixType(type) : type);
+    node->postfix = postfix;
     return node;
 }
 
@@ -2580,7 +2592,7 @@ auto NodeFactory::createHeritageClause(SyntaxKind token, NodeArray<ExpressionWit
         node->transformFlags |= TransformFlags::ContainsTypeScript;
         break;
     default:
-        return Debug::_assertNever(node);
+        Debug::_assertNever(node);
     }
     return node;
 }

@@ -141,6 +141,12 @@ class NodeFactory
         return newNode;
     }
 
+    template <typename T> auto createJSDocUnaryTypeWorker(SyntaxKind kind, TypeNode type) -> T {
+        auto node = createBaseNode<T>(kind);
+        node->type = type;
+        return node;
+    }
+
     template <typename T> auto createBaseToken(SyntaxKind kind)
     {
         return createBaseNode<T>(kind);
@@ -410,8 +416,7 @@ class NodeFactory
     //
 
     auto createBaseIdentifier(string text, SyntaxKind originalKeywordKind = SyntaxKind::Unknown);
-    /* @internal */ auto createIdentifier(string text, NodeArray</*TypeNode | TypeParameterDeclaration*/ Node> typeArguments = undefined,
-                                          SyntaxKind originalKeywordKind = SyntaxKind::Unknown)
+    /* @internal */ auto createIdentifier(string text, SyntaxKind originalKeywordKind = SyntaxKind::Unknown, boolean hasExtendedUnicodeEscape = false)
         -> Identifier; // eslint-disable-line @typescript-eslint/unified-signatures
                        ///* @internal */ auto updateIdentifier(Identifier node, NodeArray</*TypeNode | TypeParameterDeclaration*/Node>
                        /// typeArguments) -> Identifier;
@@ -587,7 +592,7 @@ class NodeFactory
     // /** @deprecated */
     // auto updateConstructorTypeNode(ConstructorTypeNode node, NodeArray<TypeParameterDeclaration> typeParameters,
     // NodeArray<ParameterDeclaration> parameters, TypeNode type) -> ConstructorTypeNode;
-    auto createTypeQueryNode(EntityName exprName) -> TypeQueryNode;
+    auto createTypeQueryNode(EntityName exprName, NodeArray<TypeNode> typeArguments) -> TypeQueryNode;
     // auto updateTypeQueryNode(TypeQueryNode node, EntityName exprName) -> TypeQueryNode;
     auto createTypeLiteralNode(NodeArray<TypeElement> members) -> TypeLiteralNode;
     // auto updateTypeLiteralNode(TypeLiteralNode node, NodeArray<TypeElement> members) -> TypeLiteralNode;
@@ -924,9 +929,9 @@ class NodeFactory
     auto getDefaultTagName(JSDocTag node) -> Identifier;
     auto createJSDocAllType() -> JSDocAllType;
     auto createJSDocUnknownType() -> JSDocUnknownType;
-    auto createJSDocNonNullableType(TypeNode type) -> JSDocNonNullableType;
+    auto createJSDocNonNullableType(TypeNode type, boolean postfix) -> JSDocNonNullableType;
     // auto updateJSDocNonNullableType(JSDocNonNullableType node, TypeNode type) -> JSDocNonNullableType;
-    auto createJSDocNullableType(TypeNode type) -> JSDocNullableType;
+    auto createJSDocNullableType(TypeNode type, boolean postfix) -> JSDocNullableType;
     // auto updateJSDocNullableType(JSDocNullableType node, TypeNode type) -> JSDocNullableType;
     auto createJSDocOptionalType(TypeNode type) -> JSDocOptionalType;
     // auto updateJSDocOptionalType(JSDocOptionalType node, TypeNode type) -> JSDocOptionalType;

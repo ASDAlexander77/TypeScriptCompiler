@@ -140,6 +140,10 @@ struct Parser
         return node;
     }
 
+    auto setExternalModuleIndicator(SourceFile sourceFile) {
+        sourceFile->externalModuleIndicator = isFileProbablyExternalModule(sourceFile);
+    }
+
     auto parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion,
                          IncrementalParser::SyntaxCursor syntaxCursor, boolean setParentNodes = false,
                          ScriptKind scriptKind = ScriptKind::Unknown,
@@ -165,7 +169,14 @@ struct Parser
 
         initializeState(fileName, sourceText, languageVersion, syntaxCursor, scriptKind, jsDocParsingMode);
 
-        auto result = parseSourceFileWorker(languageVersion, setParentNodes, scriptKind, setExternalModuleIndicatorOverride ? setExternalModuleIndicatorOverride : setExternalModuleIndicator, jsDocParsingMode);
+        auto result = parseSourceFileWorker(
+            languageVersion, 
+            setParentNodes, 
+            scriptKind, 
+            setExternalModuleIndicatorOverride 
+                ? setExternalModuleIndicatorOverride 
+                : static_cast<std::function<void(SourceFile)>>(std::bind(&Parser::setExternalModuleIndicator, this, std::placeholders::_1)), 
+            jsDocParsingMode);
 
         clearState();
 
@@ -179,7 +190,7 @@ struct Parser
         // Prime the scanner.
         nextToken();
         auto entityName = parseEntityName(/*allowReservedWords*/ true);
-        auto isInvalid = token() == SyntaxKind::EndOfFileToken && !parse_E(Diagnostics::size();
+        auto isInvalid = token() == SyntaxKind::EndOfFileToken && !parseDiagnostics.size();
         clearState();
         return isInvalid ? entityName : undefined;
     }
@@ -281,7 +292,7 @@ struct Parser
 
         // Set source file so that errors will be reported with this file name
         auto sourceFile = createSourceFile(fileName, ScriptTarget::ES2015, ScriptKind::JSON, /*isDeclarationFile*/ false,
-                                           statements, endOfFileToken, sourceFlags, noop);
+                                           statements, endOfFileToken, sourceFlags);
 
         if (setParentNodes)
         {
@@ -293,7 +304,7 @@ struct Parser
         sourceFile->identifiers = identifiers;
         // sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
         copy(sourceFile->parseDiagnostics, attachFileToDiagnostics(parseDiagnostics, sourceFile));
-        if (!jsDoc_E(Diagnostics::empty())
+        if (!jsDocDiagnostics.empty())
         {
             // sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
             copy(sourceFile->jsDocDiagnostics, attachFileToDiagnostics(jsDocDiagnostics, sourceFile));
@@ -314,7 +325,7 @@ struct Parser
         scriptKind = _scriptKind;
         languageVariant = getLanguageVariant(_scriptKind);
 
-        parse_E(Diagnostics::clear();
+        parseDiagnostics.clear();
         parsingContext = ParsingContext::Unknown;
         identifiers.clear();
         identifierCount = 0;
@@ -362,8 +373,8 @@ struct Parser
         scriptKind = ScriptKind::Unknown;
         languageVariant = LanguageVariant::Standard;
         sourceFlags = NodeFlags::None;
-        parse_E(Diagnostics::clear();
-        jsDoc_E(Diagnostics::clear();
+        parseDiagnostics.clear();
+        jsDocDiagnostics.clear();
         parsingContext = ParsingContext::Unknown;
         identifiers.clear();
         notParenthesizedArrow.clear();
@@ -404,7 +415,7 @@ struct Parser
         processCommentPragmas(sourceFile, sourceText);
 
         auto reportPragmaDiagnostic = [&](pos_type pos, number end, DiagnosticMessage diagnostic) -> void {
-            parse_E(Diagnostics::push_back(createDetachedDiagnostic(fileName, sourceText, pos, end, diagnostic));
+            parseDiagnostics.push_back(createDetachedDiagnostic(fileName, sourceText, pos, end, diagnostic));
         };
         processPragmasIntoFields(sourceFile, reportPragmaDiagnostic);
 
@@ -414,8 +425,8 @@ struct Parser
         sourceFile->identifiers = identifiers;
         // sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
         copy(sourceFile->parseDiagnostics, attachFileToDiagnostics(parseDiagnostics, sourceFile));
-        sourceFile.jsDocParsingMode = jsDocParsingMode;
-        if (!jsDoc_E(Diagnostics::empty())
+        sourceFile->jsDocParsingMode = jsDocParsingMode;
+        if (!jsDocDiagnostics.empty())
         {
             // sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
             copy(sourceFile->jsDocDiagnostics, attachFileToDiagnostics(jsDocDiagnostics, sourceFile));
@@ -492,7 +503,7 @@ struct Parser
         NodeArray<Statement> statements;
         auto savedParseDiagnostics = parseDiagnostics;
 
-        parse_E(Diagnostics::clear();
+        parseDiagnostics.clear();
 
         auto pos = 0;
         auto start = findNextStatementWithAwait(sourceFile->statements, 0);
@@ -591,7 +602,7 @@ struct Parser
     auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind,
                           boolean isDeclarationFile, NodeArray<Statement> statements, Node endOfFileToken,
                           NodeFlags flags,
-                          std::function<void(SourceFile)> setExternalModuleIndicator) -> SourceFile
+                          std::function<void(SourceFile)> setExternalModuleIndicator = [](SourceFile) {}) -> SourceFile
     {
         // code from createNode is inlined here so createNode won't have to deal with special case of creating source
         // files this is quite rare comparing to other nodes and createNode should be.as<fast>().as<possible>()
@@ -606,8 +617,8 @@ struct Parser
         }
 
         sourceFile->text = sourceText;
-        sourceFile->bind_E(Diagnostics::clear();
-        sourceFile->bindSuggestion_E(Diagnostics::clear();
+        sourceFile->bindDiagnostics.clear();
+        sourceFile->bindSuggestionDiagnostics.clear();
         sourceFile->languageVersion = languageVersion;
         sourceFile->fileName = fileName;
         sourceFile->languageVariant = getLanguageVariant(scriptKind);
@@ -791,7 +802,7 @@ struct Parser
         if (!lastError || start != lastError->start)
         {
             result = createDetachedDiagnostic(fileName, sourceText, start, length, message, arg0);
-            parse_E(Diagnostics::push_back(result);
+            parseDiagnostics.push_back(result);
         }
 
         // Mark that we've encountered an error.  We'll set an appropriate bit on the next
@@ -830,7 +841,7 @@ struct Parser
         return {scanner.getTokenFullStart(), scanner.getTokenStart()};
     }
 
-    auto hasPrecedingJSDocComment()
+    auto hasPrecedingJSDocComment() -> boolean
     {
         return scanner.hasPrecedingJSDocComment();
     }
@@ -1180,8 +1191,7 @@ struct Parser
             nextTokenJSDoc();
             return true;
         }
-        // TODO:
-        //Debug::_assert(isKeywordOrPunctuation(kind));
+        Debug::_assert(isKeywordOrPunctuation(kind));
         parseErrorAtCurrentToken(_E(Diagnostics::_0_expected), scanner.tokenToString(kind));
         return false;
     }
@@ -1501,7 +1511,7 @@ struct Parser
     auto parsePrivateIdentifier() -> Node
     {
         auto pos = getNodePos();
-        auto node = factory.createPrivateIdentifier(internPrivateIdentifier(scanner.getTokenText()));
+        auto node = factory.createPrivateIdentifier(internIdentifier(scanner.getTokenText()));
         nextToken();
         return finishNode(node, pos);
     }
@@ -2313,7 +2323,7 @@ struct Parser
             case ParsingContext::JSDocComment:
                 return parseErrorAtCurrentToken(_E(Diagnostics::Identifier_expected));
             case ParsingContext::Count:
-                return Debug::fail(S("ParsingContext::Count used as a context")); // Not a real context, only a marker.
+                Debug::fail<string>(S("ParsingContext::Count used as a context")); // Not a real context, only a marker.
             default:
                 Debug::_assertNever(context);
         }
@@ -7087,7 +7097,7 @@ struct Parser
         }
     }
 
-    auto nextTokenIsStringLiteral() {
+    auto nextTokenIsStringLiteral() -> boolean {
         return nextToken() == SyntaxKind::StringLiteral;
     }
     
@@ -8241,38 +8251,84 @@ struct Parser
         auto pos = getNodePos();
         // ImportSpecifier:
         //   BindingIdentifier
-        //   IdentifierName.as<BindingIdentifier>()
+        //   IdentifierName as BindingIdentifier
         // ExportSpecifier:
         //   IdentifierName
-        //   IdentifierName.as<IdentifierName>()
+        //   IdentifierName as IdentifierName
         auto checkIdentifierIsKeyword = isKeyword(token()) && !isIdentifier();
         auto checkIdentifierStart = scanner.getTokenStart();
         auto checkIdentifierEnd = scanner.getTokenEnd();
-        auto identifierName = parseIdentifierName();
+        auto isTypeOnly = false;
         Identifier propertyName;
-        Identifier name;
-        if (token() == SyntaxKind::AsKeyword)
-        {
-            propertyName = identifierName;
-            parseExpected(SyntaxKind::AsKeyword);
+        auto canParseAsKeyword = true;
+        auto name = parseIdentifierName();
+
+        auto parseNameWithKeywordCheck = [&]() {
             checkIdentifierIsKeyword = isKeyword(token()) && !isIdentifier();
             checkIdentifierStart = scanner.getTokenStart();
             checkIdentifierEnd = scanner.getTokenEnd();
-            name = parseIdentifierName();
+            return parseIdentifierName();
+        };
+
+        if (name->escapedText == S("type")) {
+            // If the first token : an import specifier is 'type', there are a lot : possibilities,
+            // especially if we see 'as' afterwards:
+            //
+            // import { type } from S("mod");          - isTypeOnly: false,   name: type
+            // import { type as } from S("mod");       - isTypeOnly: true,    name: as
+            // import { type as as } from S("mod");    - isTypeOnly: false,   name: as,    propertyName: type
+            // import { type as as as } from S("mod"); - isTypeOnly: true,    name: as,    propertyName: as
+            if (token() == SyntaxKind::AsKeyword) {
+                // { type as ...? }
+                auto firstAs = parseIdentifierName();
+                if (token() == SyntaxKind::AsKeyword) {
+                    // { type as as ...? }
+                    auto secondAs = parseIdentifierName();
+                    if (scanner.tokenIsIdentifierOrKeyword(token())) {
+                        // { type as as something }
+                        isTypeOnly = true;
+                        propertyName = firstAs;
+                        name = parseNameWithKeywordCheck();
+                        canParseAsKeyword = false;
+                    }
+                    else {
+                        // { type as as }
+                        propertyName = name;
+                        name = secondAs;
+                        canParseAsKeyword = false;
+                    }
+                }
+                else if (scanner.tokenIsIdentifierOrKeyword(token())) {
+                    // { type as something }
+                    propertyName = name;
+                    canParseAsKeyword = false;
+                    name = parseNameWithKeywordCheck();
+                }
+                else {
+                    // { type as }
+                    isTypeOnly = true;
+                    name = firstAs;
+                }
+            }
+            else if (scanner.tokenIsIdentifierOrKeyword(token())) {
+                // { type something ...? }
+                isTypeOnly = true;
+                name = parseNameWithKeywordCheck();
+            }
         }
-        else
-        {
-            name = identifierName;
+
+        if (canParseAsKeyword && token() == SyntaxKind::AsKeyword) {
+            propertyName = name;
+            parseExpected(SyntaxKind::AsKeyword);
+            name = parseNameWithKeywordCheck();
         }
-        if (kind == SyntaxKind::ImportSpecifier && checkIdentifierIsKeyword)
-        {
-            parseErrorAt(checkIdentifierStart, checkIdentifierEnd,
-                         _E(Diagnostics::Identifier_expected));
+        if (kind == SyntaxKind::ImportSpecifier && checkIdentifierIsKeyword) {
+            parseErrorAt(checkIdentifierStart, checkIdentifierEnd, _E(Diagnostics::Identifier_expected));
         }
         auto node = kind == SyntaxKind::ImportSpecifier
-                        ? factory.createImportSpecifier(propertyName, name).as<ImportOrExportSpecifier>()
-                        : factory.createExportSpecifier(propertyName, name).as<ImportOrExportSpecifier>();
-        return finishNode(node, pos);
+            ? factory.createImportSpecifier(isTypeOnly, propertyName, name).as<ImportOrExportSpecifier>()
+            : factory.createExportSpecifier(isTypeOnly, propertyName, name).as<ImportOrExportSpecifier>();
+        return finishNode(node, pos);        
     }
 
     auto parseNamespaceExport(pos_type pos) -> NamespaceExport
@@ -8280,13 +8336,13 @@ struct Parser
         return finishNode(factory.createNamespaceExport(parseIdentifierName()), pos);
     }
 
-    auto parseExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                NodeArray<Modifier> modifiers) -> ExportDeclaration
+    auto parseExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> ExportDeclaration
     {
         auto savedAwaitContext = inAwaitContext();
         setAwaitContext(/*value*/ true);
         NamedExportBindings exportClause;
         Expression moduleSpecifier;
+        ImportAttributes attributes;
         auto isTypeOnly = parseOptional(SyntaxKind::TypeKeyword);
         auto namespaceExportPos = getNodePos();
         if (parseOptional(SyntaxKind::AsteriskToken))
@@ -8312,14 +8368,17 @@ struct Parser
                 moduleSpecifier = parseModuleSpecifier();
             }
         }
+        auto currentToken = token();
+        if (moduleSpecifier && (currentToken == SyntaxKind::WithKeyword || currentToken == SyntaxKind::AssertKeyword) && !scanner.hasPrecedingLineBreak()) {
+            attributes = parseImportAttributes(currentToken);
+        }        
         parseSemicolon();
         setAwaitContext(savedAwaitContext);
-        auto node = factory.createExportDeclaration(decorators, modifiers, isTypeOnly, exportClause, moduleSpecifier);
+        auto node = factory.createExportDeclaration(modifiers, isTypeOnly, exportClause, moduleSpecifier, attributes);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseExportAssignment(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                               NodeArray<Modifier> modifiers) -> ExportAssignment
+    auto parseExportAssignment(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> ExportAssignment
     {
         auto savedAwaitContext = inAwaitContext();
         setAwaitContext(/*value*/ true);
@@ -8332,13 +8391,15 @@ struct Parser
         {
             parseExpected(SyntaxKind::DefaultKeyword);
         }
-        auto expression = parseAssignmentExpressionOrHigher();
+        auto expression = parseAssignmentExpressionOrHigher(/*allowReturnTypeInArrowFunction*/ true);
         parseSemicolon();
         setAwaitContext(savedAwaitContext);
-        auto node = factory.createExportAssignment(decorators, modifiers, isExportEquals, expression);
+        auto node = factory.createExportAssignment(modifiers, isExportEquals, expression);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
+    // TODO: to remove
+    /*
     auto setExternalModuleIndicator(SourceFile sourceFile) -> void
     {
         // Try to use the first top-level import/when available, then
@@ -8375,7 +8436,6 @@ struct Parser
                          node, std::bind(&Parser::walkTreeForExternalModuleIndicators, this, std::placeholders::_1));
     }
 
-    /** Do not use hasModifier inside the parser; it relies on parent pointers. Use this instead. */
     auto hasModifierOfKind(Node node, SyntaxKind kind) -> boolean
     {
         return some(node->modifiers, [=](auto m) { return m == kind; });
@@ -8386,19 +8446,20 @@ struct Parser
         return isMetaProperty(node) && node.as<MetaProperty>()->keywordToken == SyntaxKind::ImportKeyword &&
                node.as<MetaProperty>()->name->escapedText == S("meta");
     }
+    */
 
     // [[[ namespace JSDocParser ]]]
 
     auto parseJSDocTypeExpressionForTests(string content, number start, number length) -> NodeWithDiagnostics
     {
-        initializeState(S("file.js"), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
+        initializeState(S("file.js"), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS, JSDocParsingMode::ParseAll);
         scanner.setText(content, start, length);
         currentToken = scanner.scan();
         auto jsDocTypeExpression = parseJSDocTypeExpression();
 
         auto sourceFile =
             createSourceFile(S("file.js"), ScriptTarget::Latest, ScriptKind::JS, /*isDeclarationFile*/ false,
-                             NodeArray<Statement>(), factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None);
+                             NodeArray<Statement>(), factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None, noop);
         auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
         if (!!jsDocDiagnostics)
         {
@@ -8438,7 +8499,13 @@ struct Parser
     {
         auto pos = getNodePos();
         auto hasBrace = parseOptional(SyntaxKind::OpenBraceToken);
+        auto p2 = getNodePos();
         auto entityName = parseEntityName(/* allowReservedWords*/ false);
+        while (token() == SyntaxKind::PrivateIdentifier) {
+            reScanHashToken(); // rescan #id as # id
+            nextTokenJSDoc(); // then skip the #
+            entityName = finishNode(factory.createJSDocMemberName(entityName, parseIdentifier()), p2);
+        }        
         if (hasBrace)
         {
             parseExpectedJSDoc(SyntaxKind::CloseBraceToken);
@@ -8451,7 +8518,7 @@ struct Parser
 
     auto parseIsolatedJSDocComment(string content, number start, number length) -> NodeWithDiagnostics
     {
-        initializeState(string(), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
+        initializeState(string(), content, ScriptTarget::Latest, /*_syntaxCursor*/ undefined, ScriptKind::JS, JSDocParsingMode::ParseAll);
         auto jsDoc =
             doInsideOfContext<JSDoc>(NodeFlags::JSDoc, [&]() { return parseJSDocCommentWorker(start, length); });
 
@@ -8474,7 +8541,7 @@ struct Parser
     auto parseJSDocComment(Node parent, number start, number length) -> JSDoc
     {
         auto saveToken = currentToken;
-        auto saveParseDiagnosticsLength = parse_E(Diagnostics::size();
+        auto saveParseDiagnosticsLength = parseDiagnostics.size();
         auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
 
         auto comment =
@@ -8483,25 +8550,159 @@ struct Parser
 
         if (!!(contextFlags & NodeFlags::JavaScriptFile))
         {
-            if (!jsDoc_E(Diagnostics::empty())
+            if (!jsDocDiagnostics.empty())
             {
-                jsDoc_E(Diagnostics::clear();
+                jsDocDiagnostics.clear();
             }
             copy(jsDocDiagnostics, parseDiagnostics);
         }
         currentToken = saveToken;
-        while (saveParseDiagnosticsLength < parse_E(Diagnostics::size())
-            parse_E(Diagnostics::erase(parse_E(Diagnostics::begin() + saveParseDiagnosticsLength);
+        while (saveParseDiagnosticsLength < parseDiagnostics.size())
+            parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
         parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
         return comment;
     }
 
     auto parseJSDocCommentWorker(number start = 0, number length = -1) -> JSDoc
     {
-        // TODO: finish it
-        // ParseJSDocCommentClass p(scanner, this, sourceText);
-        // return p.parseJSDocCommentWorker(start, length);
-        return JSDoc();
+        auto content = sourceText;
+        auto end = length == undefined ? content.length() : start + length;
+        length = end - start;
+
+        Debug::_assert(start >= 0);
+        Debug::_assert(start <= end);
+        Debug::_assert(end <= content.length());
+
+        // Check for /** (JSDoc opening part)
+        if (!isJSDocLikeText(content, start)) {
+            return undefined;
+        }
+
+        NodeArray<JSDocTag> tags;
+        number tagsPos;
+        number tagsEnd;
+        number linkEnd;
+        number commentsPos;
+        NodeArray<string> comments;
+        NodeArray<JSDocComment> parts;
+
+        auto saveParsingContext = parsingContext;
+        parsingContext |= 1 << ParsingContext::JSDocComment;
+
+        auto doJSDocScan = [&]() {
+            // Initially we can parse out a tag.  We also have seen a starting asterisk.
+            // This is so that /** * @type */ doesn't parse.
+            auto state = JSDocState::SawAsterisk;
+            number margin;
+            // + 4 for leading '/** '
+            // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
+            auto indent = start - (content.lastIndexOf(S("\n"), start) + 1) + 4;
+            auto pushComment = [&](string text) {
+                if (!margin) {
+                    margin = indent;
+                }
+                comments.push(text);
+                indent += text.length();
+            };
+
+            nextTokenJSDoc();
+            while (parseOptionalJsdoc(SyntaxKind::WhitespaceTrivia));
+            if (parseOptionalJsdoc(SyntaxKind::NewLineTrivia)) {
+                state = JSDocState::BeginningOfLine;
+                indent = 0;
+            }
+            loop:
+            while (true) {
+                switch (token()) {
+                    case SyntaxKind::AtToken:
+                        removeTrailingWhitespace(comments);
+                        if (!commentsPos) commentsPos = getNodePos();
+                        addTag(parseTag(indent));
+                        // NOTE: According to usejsdoc.org, a tag goes to end of line, except the last tag.
+                        // Real-world comments may break this rule, so "BeginningOfLine" will not be a real line beginning
+                        // for malformed examples like `/** @param {string} x @returns {number} the length */`
+                        state = JSDocState::BeginningOfLine;
+                        margin = undefined;
+                        break;
+                    case SyntaxKind::NewLineTrivia:
+                        comments.push(scanner.getTokenText());
+                        state = JSDocState::BeginningOfLine;
+                        indent = 0;
+                        break;
+                    case SyntaxKind::AsteriskToken:
+                        auto asterisk = scanner.getTokenText();
+                        if (state == JSDocState::SawAsterisk) {
+                            // If we've already seen an asterisk, then we can no longer parse a tag on this line
+                            state = JSDocState::SavingComments;
+                            pushComment(asterisk);
+                        }
+                        else {
+                            Debug::_assert(state == JSDocState::BeginningOfLine);
+                            // Ignore the first asterisk on a line
+                            state = JSDocState::SawAsterisk;
+                            indent += asterisk.length();
+                        }
+                        break;
+                    case SyntaxKind::WhitespaceTrivia:
+                        Debug::_assert(state != JSDocState::SavingComments, S("whitespace shouldn't come from the scanner while saving top-level comment text"));
+                        // only collect whitespace if we're already saving comments or have just crossed the comment indent margin
+                        auto whitespace = scanner.getTokenText();
+                        if (margin != undefined && indent + whitespace.length() > margin) {
+                            comments.push(whitespace.substr(margin - indent));
+                        }
+                        indent += whitespace.length();
+                        break;
+                    case SyntaxKind::EndOfFileToken:
+                        goto loop;
+                    case SyntaxKind::JSDocCommentTextToken:
+                        state = JSDocState::SavingComments;
+                        pushComment(scanner.getTokenValue());
+                        break;
+                    case SyntaxKind::OpenBraceToken: {
+                        state = JSDocState::SavingComments;
+                        auto commentEnd = scanner.getTokenFullStart();
+                        auto linkStart = scanner.getTokenEnd() - 1;
+                        auto link = parseJSDocLink(linkStart);
+                        if (link) {
+                            if (!linkEnd) {
+                                removeLeadingNewlines(comments);
+                            }
+                            parts->push(finishNode(factory.createJSDocText(comments.join(S(""))), linkEnd >= 0 ? linkEnd : start, commentEnd));
+                            parts->push(link);
+                            comments.empty();
+                            linkEnd = scanner.getTokenEnd();
+                            break;
+                        }
+                    }
+                        // fallthrough if it's not a {@link sequence
+                    default:
+                        // Anything else is doc comment text. We just save it. Because it
+                        // wasn't a tag, we can no longer parse a tag on this line until we hit the next
+                        // line break.
+                        state = JSDocState::SavingComments;
+                        pushComment(scanner.getTokenText());
+                        break;
+                }
+                if (state == JSDocState::SavingComments) {
+                    nextJSDocCommentTextToken(/*inBackticks*/ false);
+                }
+                else {
+                    nextTokenJSDoc();
+                }
+            }
+            auto trimmedComments = comments.join(S("")).trimEnd();
+            if (parts.length && trimmedComments.length) {
+                parts.push(finishNode(factory.createJSDocText(trimmedComments), linkEnd >= 0 ? linkEnd : start, commentsPos));
+            }
+            if (parts.length && tags) Debug::_assertIsDefined(commentsPos, S("having parsed tags implies that the end : the comment span should be set"));
+            const tagsArray = tags && createNodeArray(tags, tagsPos, tagsEnd);
+            return finishNode(factory.createJSDocComment(parts.length ? createNodeArray(parts, start, commentsPos) : trimmedComments.length ? trimmedComments : undefined, tagsArray), start, end);
+        }
+
+        // + 3 for leading /**, - 5 in total for /** */
+        const result = scanner.scanRange(start + 3, length - 5, doJSDocScan);
+        parsingContext = saveParsingContext;
+        return result;
     } // end of parseJSDocCommentWorker
 
   public:
@@ -8786,6 +8987,22 @@ struct Parser
                tagNamesAreEquivalent(lhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>(),
                                      rhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>());
     }
+
+private:
+    auto isFileProbablyExternalModule(SourceFile sourceFile) -> Node {
+        // Try to use the first top-level import/export when available, then
+        // fall back to looking for an 'import.meta' somewhere in the tree if necessary.
+        return forEach<Node>(sourceFile->statements, std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1)) ||
+            getImportMetaIfNecessary(sourceFile);
+    }    
+
+    auto isAnExternalModuleIndicatorNode(Node node) -> Node {
+        return canHaveModifiers(node) && hasModifierOfKind(node, SyntaxKind::ExportKeyword)
+                || isImportEqualsDeclaration(node) && isExternalModuleReference(node->moduleReference)
+                || isImportDeclaration(node)
+                || isExportAssignment(node)
+                || isExportDeclaration(node) ? node : undefined;
+}    
 
 }; // End of Scanner
 

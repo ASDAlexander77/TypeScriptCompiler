@@ -487,4 +487,52 @@ auto ParenthesizerRules::parenthesizeOrdinalTypeArgument(TypeNode node, number i
                ? factory->createParenthesizedType(node).as<TypeNode>()
                : node;
 }
+
+auto ParenthesizerRules::parenthesizeCheckTypeOfConditionalType(TypeNode checkType) -> TypeNode {
+    switch ((SyntaxKind)checkType) {
+        case SyntaxKind::FunctionType:
+        case SyntaxKind::ConstructorType:
+        case SyntaxKind::ConditionalType:
+            return factory->createParenthesizedType(checkType);
+    }
+    return checkType;
+}
+
+auto ParenthesizerRules::parenthesizeConstituentTypeOfUnionType(TypeNode type) -> TypeNode {
+    switch ((SyntaxKind)type) {
+        case SyntaxKind::UnionType: // Not strictly necessary, but a union containing a union should have been flattened
+        case SyntaxKind::IntersectionType: // Not strictly necessary, but makes generated output more readable and avoids breaks in DT tests
+            return factory->createParenthesizedType(type);
+    }
+    return parenthesizeCheckTypeOfConditionalType(type);
+}
+
+auto ParenthesizerRules::parenthesizeConstituentTypeOfIntersectionType(TypeNode type) -> TypeNode {
+    switch ((SyntaxKind)type) {
+        case SyntaxKind::UnionType:
+        case SyntaxKind::IntersectionType: // Not strictly necessary, but an intersection containing an intersection should have been flattened
+            return factory->createParenthesizedType(type);
+    }
+    return parenthesizeConstituentTypeOfUnionType(type);
+}
+
+auto ParenthesizerRules::parenthesizeOperandOfTypeOperator(TypeNode type) -> TypeNode {
+    switch ((SyntaxKind)type) {
+        case SyntaxKind::IntersectionType:
+            return factory->createParenthesizedType(type);
+    }
+    return parenthesizeConstituentTypeOfIntersectionType(type);
+}
+
+auto ParenthesizerRules::parenthesizeNonArrayTypeOfPostfixType(TypeNode type) -> TypeNode {
+    switch ((SyntaxKind)type) {
+        case SyntaxKind::InferType:
+        case SyntaxKind::TypeOperator:
+        case SyntaxKind::TypeQuery: // Not strictly necessary, but makes generated output more readable and avoids breaks in DT tests
+            return factory->createParenthesizedType(type);
+    }
+    return parenthesizeOperandOfTypeOperator(type);
+}
+
+
 } // namespace ts

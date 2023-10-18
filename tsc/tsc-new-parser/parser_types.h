@@ -691,6 +691,7 @@ struct TypeQueryNode : TypeNode
 {
     // kind: SyntaxKind::TypeQuery;
     PTR(EntityName) exprName;
+    NodeArray<PTR(TypeNode)> typeArguments;
 };
 
 // A TypeLiteral is the declaration node for an anonymous symbol.
@@ -1993,12 +1994,14 @@ struct JSDocNonNullableType : JSDocType
 {
     // kind: SyntaxKind::JSDocNonNullableType;
     PTR(TypeNode) type;
+    boolean postfix;
 };
 
 struct JSDocNullableType : JSDocType
 {
     // kind: SyntaxKind::JSDocNullableType;
     PTR(TypeNode) type;
+    boolean postfix;
 };
 
 struct JSDocOptionalType : JSDocType
@@ -2423,6 +2426,9 @@ struct SourceFile : SourceFileLike
      * but could be arbitrarily nested (e.g. `import.meta`).
      */
     /* @internal */ PTR(Node) externalModuleIndicator;
+
+    std::function<void(SourceFile)> setExternalModuleIndicator;
+
     // The first node that causes this file to be a CommonJS module
     /* @internal */ PTR(Node) commonJsModuleIndicator;
     // JS identifier-declarations that are intended to merge with globals
@@ -2469,7 +2475,9 @@ struct SourceFile : SourceFileLike
     /* @internal */ PTR(EntityName) localJsxFactory;
     /* @internal */ PTR(EntityName) localJsxFragmentFactory;
 
-    /* @internal */ ExportedModulesFromDeclarationEmit exportedModulesFromDeclarationEmit;
+    /* @internal */ ExportedModulesFromDeclarationEmit exportedModulesFromDeclarationEmit;    
+
+    /* @internal */ JSDocParsingMode jsDocParsingMode;
 };
 
 struct UnparsedSection : Node

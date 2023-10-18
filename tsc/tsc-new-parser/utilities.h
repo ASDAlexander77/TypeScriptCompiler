@@ -143,17 +143,11 @@ static auto getLocaleSpecificMessage(DiagnosticMessage message) -> string
     return string(message->message);
 }
 
-static auto createDetachedDiagnostic(string fileName, number start, number length, DiagnosticMessage message)
+static auto createDetachedDiagnostic(string fileName, string sourceText, number start, number length, DiagnosticMessage message)
     -> DiagnosticWithDetachedLocation
 {
     assertDiagnosticLocation(/*file*/ SourceFile(), start, length);
     auto text = getLocaleSpecificMessage(message);
-
-    /*
-if (arguments.length > 4) {
-    text = formatStringFromArgs(text, arguments, 4);
-}
-*/
 
     DiagnosticWithDetachedLocation d{data::DiagnosticWithDetachedLocation()};
     d->start = start;
@@ -175,7 +169,7 @@ static auto formatStringFromArgs(string text, string arg0, string arg1) -> strin
     {
         auto end = text.find('}');
 
-        auto index = to_number_base(text.substr(pos, end));
+        auto index = to_number_base(text.substr(pos, end), 10);
 
         if (end != std::string::npos)
         {
@@ -1475,6 +1469,14 @@ inline auto isKeyword(SyntaxKind token) -> boolean
     return SyntaxKind::FirstKeyword <= token && token <= SyntaxKind::LastKeyword;
 }
 
+inline auto isPunctuation(SyntaxKind token) -> boolean {
+    return SyntaxKind::FirstPunctuation <= token && token <= SyntaxKind::LastPunctuation;
+}
+
+inline auto isKeywordOrPunctuation(SyntaxKind token) -> boolean {
+    return isKeyword(token) || isPunctuation(token);
+}
+
 inline auto isTemplateLiteralKind(SyntaxKind kind) -> boolean
 {
     return SyntaxKind::FirstTemplateToken <= kind && kind <= SyntaxKind::LastTemplateToken;
@@ -1949,6 +1951,81 @@ inline static auto getJSDocModifierFlagsNoCache(Node node) -> ModifierFlags
     }
 
     return flags;
+}
+
+/** @internal */
+inline static auto canHaveJSDoc(Node node) -> boolean {
+    switch ((SyntaxKind)node) {
+        case SyntaxKind::ArrowFunction:
+        case SyntaxKind::BinaryExpression:
+        case SyntaxKind::Block:
+        case SyntaxKind::BreakStatement:
+        case SyntaxKind::CallSignature:
+        case SyntaxKind::CaseClause:
+        case SyntaxKind::ClassDeclaration:
+        case SyntaxKind::ClassExpression:
+        case SyntaxKind::ClassStaticBlockDeclaration:
+        case SyntaxKind::Constructor:
+        case SyntaxKind::ConstructorType:
+        case SyntaxKind::ConstructSignature:
+        case SyntaxKind::ContinueStatement:
+        case SyntaxKind::DebuggerStatement:
+        case SyntaxKind::DoStatement:
+        case SyntaxKind::ElementAccessExpression:
+        case SyntaxKind::EmptyStatement:
+        case SyntaxKind::EndOfFileToken:
+        case SyntaxKind::EnumDeclaration:
+        case SyntaxKind::EnumMember:
+        case SyntaxKind::ExportAssignment:
+        case SyntaxKind::ExportDeclaration:
+        case SyntaxKind::ExportSpecifier:
+        case SyntaxKind::ExpressionStatement:
+        case SyntaxKind::ForInStatement:
+        case SyntaxKind::ForOfStatement:
+        case SyntaxKind::ForStatement:
+        case SyntaxKind::FunctionDeclaration:
+        case SyntaxKind::FunctionExpression:
+        case SyntaxKind::FunctionType:
+        case SyntaxKind::GetAccessor:
+        case SyntaxKind::Identifier:
+        case SyntaxKind::IfStatement:
+        case SyntaxKind::ImportDeclaration:
+        case SyntaxKind::ImportEqualsDeclaration:
+        case SyntaxKind::IndexSignature:
+        case SyntaxKind::InterfaceDeclaration:
+        case SyntaxKind::JSDocFunctionType:
+        case SyntaxKind::JSDocSignature:
+        case SyntaxKind::LabeledStatement:
+        case SyntaxKind::MethodDeclaration:
+        case SyntaxKind::MethodSignature:
+        case SyntaxKind::ModuleDeclaration:
+        case SyntaxKind::NamedTupleMember:
+        case SyntaxKind::NamespaceExportDeclaration:
+        case SyntaxKind::ObjectLiteralExpression:
+        case SyntaxKind::Parameter:
+        case SyntaxKind::ParenthesizedExpression:
+        case SyntaxKind::PropertyAccessExpression:
+        case SyntaxKind::PropertyAssignment:
+        case SyntaxKind::PropertyDeclaration:
+        case SyntaxKind::PropertySignature:
+        case SyntaxKind::ReturnStatement:
+        case SyntaxKind::SemicolonClassElement:
+        case SyntaxKind::SetAccessor:
+        case SyntaxKind::ShorthandPropertyAssignment:
+        case SyntaxKind::SpreadAssignment:
+        case SyntaxKind::SwitchStatement:
+        case SyntaxKind::ThrowStatement:
+        case SyntaxKind::TryStatement:
+        case SyntaxKind::TypeAliasDeclaration:
+        case SyntaxKind::TypeParameter:
+        case SyntaxKind::VariableDeclaration:
+        case SyntaxKind::VariableStatement:
+        case SyntaxKind::WhileStatement:
+        case SyntaxKind::WithStatement:
+            return true;
+        default:
+            return false;
+    }
 }
 
 inline static auto getModifierFlagsWorker(Node node, boolean includeJSDoc, boolean alwaysIncludeJSDoc = false) -> ModifierFlags

@@ -61,6 +61,16 @@ namespace ts
 
         auto parenthesizeOrdinalTypeArgument(TypeNode node, number i) -> TypeNode;
 
+        auto parenthesizeCheckTypeOfConditionalType(TypeNode checkType) -> TypeNode;
+
+        auto parenthesizeConstituentTypeOfUnionType(TypeNode type) -> TypeNode;
+
+        auto parenthesizeConstituentTypeOfIntersectionType(TypeNode type) -> TypeNode;
+
+        auto parenthesizeOperandOfTypeOperator(TypeNode type) -> TypeNode;
+
+        auto parenthesizeNonArrayTypeOfPostfixType(TypeNode node) -> TypeNode;
+
         auto binaryOperandNeedsParentheses(SyntaxKind binaryOperator, Expression operand, boolean isLeftSideOfBinary, Expression leftOperand = undefined) -> boolean;
     };
 }
