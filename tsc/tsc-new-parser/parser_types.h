@@ -1401,6 +1401,12 @@ struct TypeAssertion : UnaryExpression
     PTR(TypeNode) type;
 };
 
+struct SatisfiesExpression : Expression {
+    // kind: SyntaxKind.SatisfiesExpression;
+    PTR(Expression) expression;
+    PTR(TypeNode) type;
+};
+
 struct NonNullExpression : LeftHandSideExpression
 {
     // kind: SyntaxKind::NonNullExpression;

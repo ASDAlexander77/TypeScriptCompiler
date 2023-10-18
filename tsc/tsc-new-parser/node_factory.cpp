@@ -1453,6 +1453,17 @@ auto NodeFactory::createNonNullExpression(Expression expression) -> NonNullExpre
     return node;
 }
 
+
+auto NodeFactory::createSatisfiesExpression(Expression expression, TypeNode type) -> SatisfiesExpression {
+    auto node = createBaseNode<SatisfiesExpression>(SyntaxKind::SatisfiesExpression);
+    node->expression = expression;
+    node->type = type;
+    node->transformFlags |= propagateChildFlags(node->expression) |
+        propagateChildFlags(node->type) |
+        TransformFlags::ContainsTypeScript;
+    return node;
+}
+
 // @api
 
 // @api

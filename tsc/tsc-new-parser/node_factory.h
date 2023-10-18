@@ -761,6 +761,7 @@ class NodeFactory
     // auto updateAsExpression(AsExpression node, Expression expression, TypeNode type) -> AsExpression;
     auto createNonNullExpression(Expression expression) -> NonNullExpression;
     // auto updateNonNullExpression(NonNullExpression node, Expression expression) -> NonNullExpression;
+    auto createSatisfiesExpression(Expression expression, TypeNode type) -> SatisfiesExpression;
     auto createNonNullChain(Expression expression) -> NonNullChain;
     // auto updateNonNullChain(NonNullChain node, Expression expression) -> NonNullChain;
     auto createMetaProperty(SyntaxKind keywordToken, Identifier name) -> MetaProperty;

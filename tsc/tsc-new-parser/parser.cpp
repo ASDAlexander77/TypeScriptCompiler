@@ -4812,8 +4812,9 @@ struct Parser
                 {
                     auto keywordKind = token();
                     nextToken();
-                    leftOperand = keywordKind == SyntaxKind::SatisfiesKeyword ? makeSatisfiesExpression(leftOperand, parseType()) :
-                        makeAsExpression(leftOperand, parseType());
+                    leftOperand = keywordKind == SyntaxKind::SatisfiesKeyword 
+                        ? makeSatisfiesExpression(leftOperand, parseType()).as<Expression>() 
+                        : makeAsExpression(leftOperand, parseType()).as<Expression>();
                 }
             }
             else
@@ -5394,7 +5395,7 @@ struct Parser
         // If we are in a unary context, we can't do this recovery; the binary expression we return here is not
         // a valid UnaryExpression and will cause problems later.
         if (!mustBeUnary && inExpressionContext && token() == SyntaxKind::LessThanToken) {
-            auto topBadPos = topInvalidNodePosition == -1 ? result->pos : topInvalidNodePosition;
+            auto topBadPos = topInvalidNodePosition == -1 ? result->pos : pos_type(topInvalidNodePosition);
             auto invalidElement = tryParse<Node>([&]() { return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos); });
             if (invalidElement) {
                 auto operatorToken = createMissingNode(SyntaxKind::CommaToken, /*reportAtCurrentPosition*/ false);
@@ -5453,7 +5454,7 @@ struct Parser
         case SyntaxKind::LessThanToken:
             return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ false, /*topInvalidNodePosition*/ undefined, openingTag);
         default:
-            return Debug::_assertNever(/*token*/ Node());
+            Debug::_assertNever(/*token*/ Node());
         }
     }
 
