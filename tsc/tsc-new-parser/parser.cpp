@@ -7604,7 +7604,7 @@ struct Parser
      *
      * In such situations, 'permitInvalidConstAsModifier' should be set to true.
      */
-    auto parseModifiers(boolean allowDecorators, boolean permitConstAsModifier, boolean stopOnStartOfClassStaticBlock) -> NodeArray<ModifierLike> {
+    auto parseModifiers(boolean allowDecorators, boolean permitConstAsModifier = false, boolean stopOnStartOfClassStaticBlock = false) -> NodeArray<ModifierLike> {
         auto pos = getNodePos();
         NodeArray<ModifierLike> list;
         boolean decorator, modifier, hasSeenStaticModifier = false, hasLeadingModifier = false, hasTrailingDecorator = false;
