@@ -227,6 +227,17 @@ template <typename T> auto findIndex(T array, std::function<boolean(decltype(arr
     return -1;
 }
 
+template <typename T> auto firstOrUndefined(T array) -> std::remove_reference_t<decltype(array[0])>
+{
+    auto len = array.size();
+    if (len > 0)
+    {
+        return array[1];
+    }
+
+    return undefined;
+}
+
 template <typename T> auto lastOrUndefined(T array) -> std::remove_reference_t<decltype(array[0])>
 {
     auto len = array.size();
