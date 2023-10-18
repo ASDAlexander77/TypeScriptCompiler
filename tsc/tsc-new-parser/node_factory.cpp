@@ -669,11 +669,12 @@ auto NodeFactory::createTemplateLiteralType(TemplateHead head, NodeArray<Templat
 }
 
 // @api
-auto NodeFactory::createImportTypeNode(TypeNode argument, EntityName qualifier, NodeArray<TypeNode> typeArguments, boolean isTypeOf)
+auto NodeFactory::createImportTypeNode(TypeNode argument, ImportAttributes attributes, EntityName qualifier, NodeArray<TypeNode> typeArguments, boolean isTypeOf)
     -> ImportTypeNode
 {
     auto node = createBaseNode<ImportTypeNode>(SyntaxKind::ImportType);
     node->argument = argument;
+    node->attributes = attributes;
     node->qualifier = qualifier;
     node->typeArguments = typeArguments ? parenthesizerRules.parenthesizeTypeArguments(typeArguments) : undefined;
     node->isTypeOf = isTypeOf;

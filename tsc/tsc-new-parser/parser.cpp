@@ -3791,7 +3791,7 @@ struct Parser
 
     auto tryParseConstraintOfInferType() {
         if (parseOptional(SyntaxKind::ExtendsKeyword)) {
-            auto constraint = disallowConditionalTypesAnd(std::bind(&Parser::parseType, this));
+            auto constraint = disallowConditionalTypesAnd<TypeNode>(std::bind(&Parser::parseType, this));
             if (inDisallowConditionalTypesContext() || token() != SyntaxKind::QuestionToken) {
                 return constraint;
             }
@@ -3801,7 +3801,7 @@ struct Parser
     auto parseTypeParameterOfInferType() -> TypeParameterDeclaration {
         auto pos = getNodePos();
         auto name = parseIdentifier();
-        auto constraint = tryParse(std::bind(&Parser::tryParseConstraintOfInferType, this));
+        auto constraint = tryParse<TypeNode>(std::bind(&Parser::tryParseConstraintOfInferType, this));
         auto node = factory.createTypeParameterDeclaration(/*modifiers*/ undefined, name, constraint);
         return finishNode(node, pos);
     }
@@ -4297,7 +4297,6 @@ struct Parser
         Debug::_assert(token() == SyntaxKind::EqualsGreaterThanToken,
                        S("parseSimpleArrowFunctionExpression should only have been called if we had a =>"));
         auto parameter = factory.createParameterDeclaration(
-            /*decorators*/ undefined,
             /*modifiers*/ undefined,
             /*dotDotDotToken*/ undefined, identifier,
             /*questionToken*/ undefined,
@@ -4311,7 +4310,7 @@ struct Parser
         auto body = parseArrowFunctionExpressionBody(/*isAsync*/ !!asyncModifier, allowReturnTypeInArrowFunction);
         auto node = factory.createArrowFunction(asyncModifier, /*typeParameters*/ undefined, parameters,
                                                 /*type*/ undefined, equalsGreaterThanToken, body);
-        return addJSDocComment(finishNode(node, pos), hasJSDoc);
+        return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
     auto tryParseParenthesizedArrowFunctionExpression(boolean allowReturnTypeInArrowFunction) -> Expression

@@ -650,6 +650,7 @@ struct ImportTypeNode : NodeWithTypeArguments
     // kind: SyntaxKind::ImportType;
     boolean isTypeOf;
     PTR(TypeNode) argument;
+    PTR(ImportAttributes) attributes;
     PTR(EntityName) qualifier;
 };
 

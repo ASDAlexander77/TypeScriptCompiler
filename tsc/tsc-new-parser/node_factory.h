@@ -616,7 +616,7 @@ class NodeFactory
     // falseType) -> ConditionalTypeNode;
     auto createInferTypeNode(TypeParameterDeclaration typeParameter) -> InferTypeNode;
     // auto updateInferTypeNode(InferTypeNode node, TypeParameterDeclaration typeParameter) -> InferTypeNode;
-    auto createImportTypeNode(TypeNode argument, EntityName qualifier = undefined, NodeArray<TypeNode> typeArguments = undefined,
+    auto createImportTypeNode(TypeNode argument, ImportAttributes attributes, EntityName qualifier = undefined, NodeArray<TypeNode> typeArguments = undefined,
                               boolean isTypeOf = false) -> ImportTypeNode;
     // auto updateImportTypeNode(ImportTypeNode node, TypeNode argument, EntityName qualifier, NodeArray<TypeNode> typeArguments, boolean
     // isTypeOf = false) -> ImportTypeNode;
