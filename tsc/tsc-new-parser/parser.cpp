@@ -3578,7 +3578,7 @@ struct Parser
                 if (lastError && lastError->code == Diagnostics::_0_expected.code) {
                     addRelatedInfo(
                         lastError,
-                        createDetachedDiagnostic(fileName, sourceText, openBracePosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_1_to_match_the_0_token_here), S("{"), S("}")),
+                        createDetachedDiagnostic(fileName, sourceText, openBracePosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_1_to_match_the_0_token_here), S("{"), S("}"))
                     );
                 }
             }
