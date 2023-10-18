@@ -724,7 +724,7 @@ auto NodeFactory::createIndexedAccessTypeNode(TypeNode objectType, TypeNode inde
 
 // @api
 auto NodeFactory::createMappedTypeNode(Node readonlyToken, TypeParameterDeclaration typeParameter, TypeNode nameType, Node questionToken,
-                                       TypeNode type) -> MappedTypeNode
+                                       TypeNode type, NodeArray<TypeElement> members) -> MappedTypeNode
 {
     auto node = createBaseNode<MappedTypeNode>(SyntaxKind::MappedType);
     node->readonlyToken = readonlyToken;
@@ -732,7 +732,11 @@ auto NodeFactory::createMappedTypeNode(Node readonlyToken, TypeParameterDeclarat
     node->nameType = nameType;
     node->questionToken = questionToken;
     node->type = type;
+    node->members = members ? members : createNodeArray(members);
     node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)    
     return node;
 }
 

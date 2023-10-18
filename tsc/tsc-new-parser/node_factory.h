@@ -628,7 +628,7 @@ class NodeFactory
     auto createIndexedAccessTypeNode(TypeNode objectType, TypeNode indexType) -> IndexedAccessTypeNode;
     // auto updateIndexedAccessTypeNode(IndexedAccessTypeNode node, TypeNode objectType, TypeNode indexType) -> IndexedAccessTypeNode;
     auto createMappedTypeNode(Node readonlyToken, TypeParameterDeclaration typeParameter, TypeNode nameType, Node questionToken,
-                              TypeNode type) -> MappedTypeNode;
+                              TypeNode type, NodeArray<TypeElement> members) -> MappedTypeNode;
     // auto updateMappedTypeNode(MappedTypeNode node, Node token, TypeParameterDeclaration typeParameter, TypeNode nameType, Node
     // questionToken, TypeNode type) -> MappedTypeNode;
     auto createLiteralTypeNode(LiteralTypeNode literal) -> LiteralTypeNode;

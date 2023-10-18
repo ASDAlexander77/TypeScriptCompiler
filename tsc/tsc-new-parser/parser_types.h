@@ -181,8 +181,7 @@ struct Symbol
     /* @internal */ number mergeId;           // Merge id (used to look up merged symbol)
     /* @internal */ PTR(Symbol) parent;       // Parent symbol
     /* @internal */ PTR(Symbol) exportSymbol; // Exported symbol associated with this symbol
-    /* @internal */ boolean
-        constEnumOnlyModule; // True if module contains only const enums or other modules with only const enums
+    /* @internal */ boolean constEnumOnlyModule; // True if module contains only const enums or other modules with only const enums
     /* @internal */ SymbolFlags isReferenced; // True if the symbol is referenced elsewhere. Keeps track of the meaning
                                               // of a reference in case a symbol is both a type parameter and parameter.
     /* @internal */ boolean isReplaceableByMethod; // Can this Javascript class property be replaced by a method symbol?
@@ -231,10 +230,6 @@ struct Node : TextRange
     /* @internal */ NodeId id;                     // Unique id (used to look up NodeLinks)
     PTR(Node) parent;                              // Parent node (initialized by binding)
     /* @internal */ PTR(Node) original;            // The original node if this is an updated node.
-    /* @internal */ PTR(Symbol) symbol;            // Symbol declared by node (initialized by binding)
-    /* @internal */ SymbolTable locals;            // Locals associated with node (initialized by binding)
-    /* @internal */ //PTR(Node) nextContainer;       // Next container in declaration order (initialized by binding)
-    /* @internal */ PTR(Symbol) localSymbol;       // Local symbol declared by node (initialized by binding only for exported nodes)
     ///* @internal */ PTR(FlowNode) flowNode;                  // Associated FlowNode (initialized by binding)
     ///* @internal */ PTR(EmitNode) emitNode;                  // Associated EmitNode (initialized by transforms)
     ///* @internal */ PTR(Type) contextualType;                // Used to temporarily assign a contextual type during
@@ -242,6 +237,24 @@ struct Node : TextRange
     ///* @internal */ PTR(InferenceContext) inferenceContext;  // Inference context for contextual type
     /* @internal */ InternalFlags internalFlags;
     /* @internal */ bool processed; // internal field to mark processed node
+};
+
+struct LocalsContainer {
+    /** @internal */ SymbolTable locals; // Locals associated with node (initialized by binding)
+    /** @internal */ PTR(Node) nextContainer; // Next container in declaration order (initialized by binding)
+};
+
+struct ImportAttribute : Node {
+    PTR(ImportAttributes) parent;
+    PTR(Node) /*Identifier | StringLiteral*/ name;
+    PTR(Expression) value;
+};
+
+struct ImportAttributes : Node {
+    SyntaxKind token;
+    PTR(Node) /*ImportDeclaration | ExportDeclaration*/ parent;
+    NodeArray<PTR(ImportAttribute)> elements;
+    boolean multiLine;
 };
 
 struct JSDocContainer : Node
@@ -330,6 +343,11 @@ struct PrimaryExpression : MemberExpression
 struct Statement : PrimaryExpression
 {
     //any _statementBrand;
+};
+
+struct Declaration {
+    /** @internal */ PTR(Symbol) symbol; // Symbol declared by node (initialized by binding)
+    /** @internal */ PTR(Symbol) localSymbol; // Local symbol declared by node (initialized by binding only for exported nodes)
 };
 
 struct Declaration : Statement
@@ -786,7 +804,7 @@ struct IndexedAccessTypeNode : TypeNode
     PTR(TypeNode) indexType;
 };
 
-struct MappedTypeNode : TypeNode
+struct MappedTypeNode : TypeNode, LocalsContainer
 {
     // kind: SyntaxKind::MappedType;
     PTR(Node) /**ReadonlyToken | PlusToken | MinusToken*/ readonlyToken;
@@ -794,6 +812,7 @@ struct MappedTypeNode : TypeNode
     PTR(TypeNode) nameType;
     PTR(Node) /**QuestionToken | PlusToken | MinusToken*/ questionToken;
     PTR(TypeNode) type;
+    NodeArray<PTR(TypeElement)> members;
 };
 
 struct TemplateLiteralTypeNode : TypeNode
