@@ -852,6 +852,11 @@ namespace ts
         return kind == SyntaxKind::JsxExpression;
     }
 
+    inline auto isJsxNamespacedName(SyntaxKind kind) -> boolean
+    {
+        return kind == SyntaxKind::JsxNamespacedName;
+    }
+
     // Clauses
 
     inline auto isCaseClause(SyntaxKind kind) -> boolean
