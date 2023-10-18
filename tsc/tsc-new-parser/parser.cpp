@@ -3006,11 +3006,11 @@ struct Parser
                     parseNameOfParameter(modifiers),
                     parseOptionalToken(SyntaxKind::QuestionToken),
                     parseTypeAnnotation(),
-                    parseInitializer(),
+                    parseInitializer()
                 ),
-                pos,
+                pos
             ),
-            hasJSDoc,
+            hasJSDoc
         );
         topLevel = savedTopLevel;
         return node;        
@@ -3020,7 +3020,7 @@ struct Parser
     {
         if (shouldParseReturnType(returnToken, isType))
         {
-            return allowConditionalTypesAnd(std::bind(&Parser::parseTypeOrTypePredicate, this));
+            return allowConditionalTypesAnd<TypeNode>(std::bind(&Parser::parseTypeOrTypePredicate, this));
         }
 
         return undefined;
@@ -3418,7 +3418,7 @@ struct Parser
         }
         auto type = parseTypeAnnotation();
         parseSemicolon();
-        auto members = parseList(ParsingContext::TypeMembers, parseTypeMember);
+        auto members = parseList<TypeElement>(ParsingContext::TypeMembers, std::bind(&Parser::parseTypeMember, this));
         parseExpected(SyntaxKind::CloseBraceToken);
         return finishNode(factory.createMappedTypeNode(readonlyToken, typeParameter, nameType, questionToken, type, members), pos);
     }
@@ -7417,18 +7417,16 @@ struct Parser
         return parsePropertyDeclaration(pos, hasJSDoc, modifiers, name, questionToken);
     }
 
-    auto parseAccessorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers, SyntaxKind kind) -> AccessorDeclaration
+    auto parseAccessorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers, SyntaxKind kind, SignatureFlags flags) -> AccessorDeclaration
     {
         auto name = parsePropertyName();
         auto typeParameters = parseTypeParameters();
         auto parameters = parseParameters(SignatureFlags::None);
         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
-        auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None);
+        auto body = parseFunctionBlockOrSemicolon(flags);
         auto node = kind == SyntaxKind::GetAccessor
-                        ? factory.createGetAccessorDeclaration(modifiers, name, parameters, type, body)
-                              .as<AccessorDeclaration>()
-                        : factory.createSetAccessorDeclaration(modifiers, name, parameters, body)
-                              .as<AccessorDeclaration>();
+                        ? factory.createGetAccessorDeclaration(modifiers, name, parameters, type, body).as<AccessorDeclaration>()
+                        : factory.createSetAccessorDeclaration(modifiers, name, parameters, body).as<AccessorDeclaration>();
         // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar
         // errors
         node->typeParameters = typeParameters;
