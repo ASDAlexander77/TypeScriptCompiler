@@ -1451,8 +1451,8 @@ struct JsxTagNamePropertyAccess : PropertyAccessExpression
 struct JsxAttributes : PrimaryExpression
 {
     // kind: SyntaxKind.JsxAttributes;
-    NodeArray<JsxAttributeLike> properties;
-    JsxOpeningLikeElement parent;
+    NodeArray<PTR(JsxAttributeLike)> properties;
+    PTR(JsxOpeningLikeElement) parent;
 };
 
 struct JsxNamespacedName : Node {

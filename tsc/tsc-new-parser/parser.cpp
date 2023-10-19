@@ -7213,11 +7213,11 @@ struct Parser
         if (token() != SyntaxKind::OpenBraceToken) {
             if ((flags & SignatureFlags::Type) == SignatureFlags::Type) {
                 parseTypeMemberSemicolon();
-                return;
+                return undefined;
             }
             if (canParseSemicolon()) {
                 parseSemicolon();
-                return;
+                return undefined;
             }
         }
         return parseFunctionBlock(flags, diagnosticMessage);
