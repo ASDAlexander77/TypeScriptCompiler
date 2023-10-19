@@ -369,8 +369,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::ShorthandPropertyAssignment:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ShorthandPropertyAssignment>()->name);
@@ -389,8 +387,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::Parameter:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ParameterDeclaration>()->dotDotDotToken);
@@ -404,8 +400,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ParameterDeclaration>()->initializer);
         return result;
     case SyntaxKind::PropertyDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -421,8 +415,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::PropertySignature:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<PropertySignature>()->name);
@@ -435,8 +427,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::PropertyAssignment:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<PropertyAssignment>()->name);
@@ -446,8 +436,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<PropertyAssignment>()->initializer);
         return result;
     case SyntaxKind::VariableDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -460,8 +448,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<VariableDeclaration>()->initializer);
         return result;
     case SyntaxKind::BindingElement:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -479,8 +465,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
     case SyntaxKind::ConstructSignature:
     case SyntaxKind::IndexSignature:
     case SyntaxKind::MethodSignature:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (kind == SyntaxKind::MethodSignature && !result)
@@ -501,8 +485,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
     case SyntaxKind::FunctionExpression:
     case SyntaxKind::FunctionDeclaration:
     case SyntaxKind::ArrowFunction:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -775,8 +757,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::VariableStatement:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<VariableStatement>()->declarationList);
@@ -906,8 +886,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
     case SyntaxKind::ClassDeclaration:
     case SyntaxKind::ClassExpression:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ClassLikeDeclaration>()->name);
@@ -919,8 +897,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNodes(cbNode, cbNodes, node.template as<ClassLikeDeclaration>()->members);
         return result;
     case SyntaxKind::InterfaceDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -934,8 +910,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::TypeAliasDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeAliasDeclaration>()->name);
@@ -945,8 +919,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<TypeAliasDeclaration>()->type);
         return result;
     case SyntaxKind::EnumDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -962,8 +934,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::ModuleDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ModuleDeclaration>()->name);
@@ -972,8 +942,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::ImportEqualsDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ImportEqualsDeclaration>()->name);
@@ -981,8 +949,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ImportEqualsDeclaration>()->moduleReference);
         return result;
     case SyntaxKind::ImportDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -1019,8 +985,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::ExportDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ExportDeclaration>()->exportClause);
@@ -1040,8 +1004,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ExportSpecifier>()->name);
         return result;
     case SyntaxKind::ExportAssignment:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -1091,7 +1053,7 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::MissingDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
+            result = visitNodes(cbNode, cbNodes, node->modifiers);
         return result;
     case SyntaxKind::CommaListExpression:
         if (!result)

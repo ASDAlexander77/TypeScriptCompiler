@@ -423,9 +423,7 @@ struct TypeParameterDeclaration : Node, NamedDeclaration
     /** Note: Consider calling `getEffectiveConstraintOfTypeParameter` */
     PTR(TypeNode) constraint;
     PTR(TypeNode) _default;
-
-    // For error recovery purposes.
-    //PTR(Expression) expression;
+    PTR(Expression) expression;
 };
 
 struct SignatureDeclarationBase : TypeElement
@@ -1512,7 +1510,7 @@ struct JsxAttribute : ObjectLiteralElement
 struct JsxSpreadAttribute : ObjectLiteralElement
 {
     // kind: SyntaxKind::JsxSpreadAttribute;
-    //PTR(Expression) expression;
+    PTR(Expression) expression;
 };
 
 struct JsxClosingElement : Node

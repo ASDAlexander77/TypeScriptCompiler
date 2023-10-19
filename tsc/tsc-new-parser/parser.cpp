@@ -6846,7 +6846,7 @@ struct Parser
             case SyntaxKind::PrivateKeyword:
             case SyntaxKind::ProtectedKeyword:
             case SyntaxKind::PublicKeyword:
-            case SyntaxKind::ReadonlyKeyword:
+            case SyntaxKind::ReadonlyKeyword: {
                 auto previousToken = token();
                 nextToken();
                 // ASI takes effect for this modifier.
@@ -6860,7 +6860,7 @@ struct Parser
                     return true;
                 }                
                 continue;
-
+            }
             case SyntaxKind::GlobalKeyword:
                 nextToken();
                 return token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::Identifier ||

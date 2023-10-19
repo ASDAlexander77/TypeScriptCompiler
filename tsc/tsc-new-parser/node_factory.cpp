@@ -2187,18 +2187,18 @@ auto NodeFactory::createJSDocUnknownType() -> JSDocUnknownType
 
 auto NodeFactory::createJSDocNonNullableType(TypeNode type, boolean postfix) -> JSDocNonNullableType
 {
-    auto node = createJSDocUnaryTypeWorker<JSDocNonNullableType>(
-        SyntaxKind::JSDocNonNullableType,
-        postfix ? type ? type : parenthesizerRules.parenthesizeNonArrayTypeOfPostfixType(type) : type);
+    auto typeNode = postfix ? type ? type : parenthesizerRules.parenthesizeNonArrayTypeOfPostfixType(type) : type;
+    auto node = createJSDocUnaryTypeWorker<JSDocNonNullableType>(SyntaxKind::JSDocNonNullableType, typeNode);
     node->postfix = postfix;
     return node;
 }
 
 auto NodeFactory::createJSDocNullableType(TypeNode type, boolean postfix) -> JSDocNullableType
 {
+    auto typeNode = postfix ? type ? type : parenthesizerRules.parenthesizeNonArrayTypeOfPostfixType(type) : type;
     auto node = createJSDocUnaryTypeWorker<JSDocNullableType>(
         SyntaxKind::JSDocNullableType,
-        postfix ? type ? type : parenthesizerRules.parenthesizeNonArrayTypeOfPostfixType(type) : type);
+        typeNode);
     node->postfix = postfix;
     return node;
 }

@@ -141,12 +141,6 @@ class NodeFactory
         return newNode;
     }
 
-    template <typename T> auto createJSDocUnaryTypeWorker(SyntaxKind kind, TypeNode type) -> T {
-        auto node = createBaseNode<T>(kind);
-        node->type = type;
-        return node;
-    }
-
     template <typename T> auto createBaseToken(SyntaxKind kind)
     {
         return createBaseNode<T>(kind);
