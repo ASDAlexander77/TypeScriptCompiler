@@ -2430,6 +2430,16 @@ auto NodeFactory::createJSDocNameReference(EntityName name) -> JSDocNameReferenc
 }
 
 // @api
+auto NodeFactory::createJSDocMemberName(Node left, Identifier right) -> JSDocMemberName {
+    auto node = createBaseNode<JSDocMemberName>(SyntaxKind::JSDocMemberName);
+    node->left = left;
+    node->right = right;
+    node->transformFlags |= propagateChildFlags(node->left) |
+        propagateChildFlags(node->right);
+    return node;
+}
+
+// @api
 auto NodeFactory::createJSDocUnknownTag(Identifier tagName, string comment) -> JSDocUnknownTag
 {
     auto node = createBaseJSDocTag<JSDocUnknownTag>(SyntaxKind::JSDocTag, tagName, comment);

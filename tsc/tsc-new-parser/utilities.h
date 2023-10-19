@@ -2488,6 +2488,34 @@ inline static auto getOperatorAssociativity(SyntaxKind kind, SyntaxKind _operato
     return Associativity::Left;
 }
 
+inline static auto canHaveModifiers(SyntaxKind kind) -> boolean {
+    return kind == SyntaxKind::TypeParameter
+        || kind == SyntaxKind::Parameter
+        || kind == SyntaxKind::PropertySignature
+        || kind == SyntaxKind::PropertyDeclaration
+        || kind == SyntaxKind::MethodSignature
+        || kind == SyntaxKind::MethodDeclaration
+        || kind == SyntaxKind::Constructor
+        || kind == SyntaxKind::GetAccessor
+        || kind == SyntaxKind::SetAccessor
+        || kind == SyntaxKind::IndexSignature
+        || kind == SyntaxKind::ConstructorType
+        || kind == SyntaxKind::FunctionExpression
+        || kind == SyntaxKind::ArrowFunction
+        || kind == SyntaxKind::ClassExpression
+        || kind == SyntaxKind::VariableStatement
+        || kind == SyntaxKind::FunctionDeclaration
+        || kind == SyntaxKind::ClassDeclaration
+        || kind == SyntaxKind::InterfaceDeclaration
+        || kind == SyntaxKind::TypeAliasDeclaration
+        || kind == SyntaxKind::EnumDeclaration
+        || kind == SyntaxKind::ModuleDeclaration
+        || kind == SyntaxKind::ImportEqualsDeclaration
+        || kind == SyntaxKind::ImportDeclaration
+        || kind == SyntaxKind::ExportAssignment
+        || kind == SyntaxKind::ExportDeclaration;
+}
+
 inline static auto getExpressionAssociativity(Expression expression)
 {
     auto _operator = getOperator(expression);

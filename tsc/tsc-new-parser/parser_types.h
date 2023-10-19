@@ -2026,6 +2026,13 @@ struct JSDocNameReference : Node
     PTR(EntityName) name;
 };
 
+/** Class#method reference in JSDoc */
+struct JSDocMemberName : Node {
+    //kind: SyntaxKind.JSDocMemberName;
+    PTR(Node) left;
+    PTR(Identifier) right;
+};
+
 struct JSDocType : TypeNode
 {
     //any _jsDocTypeBrand;

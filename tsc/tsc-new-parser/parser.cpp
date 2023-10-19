@@ -8664,146 +8664,154 @@ struct Parser
         return comment;
     }
 
+    // TODO: finish it
     auto parseJSDocCommentWorker(number start = 0, number length = -1) -> JSDoc
     {
-        auto content = sourceText;
-        auto end = length == undefined ? content.length() : start + length;
-        length = end - start;
+        return JSDoc();
+        // auto content = sourceText;
+        // auto end = length == undefined ? content.length() : start + length;
+        // length = end - start;
 
-        Debug::_assert(start >= 0);
-        Debug::_assert(start <= end);
-        Debug::_assert(end <= content.length());
+        // Debug::_assert(start >= 0);
+        // Debug::_assert(start <= end);
+        // Debug::_assert(end <= content.length());
 
-        // Check for /** (JSDoc opening part)
-        if (!isJSDocLikeText(content, start)) {
-            return undefined;
-        }
+        // // Check for /** (JSDoc opening part)
+        // if (!isJSDocLikeText(content, start)) {
+        //     return undefined;
+        // }
 
-        NodeArray<JSDocTag> tags;
-        number tagsPos;
-        number tagsEnd;
-        number linkEnd;
-        number commentsPos;
-        NodeArray<string> comments;
-        NodeArray<JSDocComment> parts;
+        // NodeArray<JSDocTag> tags;
+        // number tagsPos;
+        // number tagsEnd;
+        // number linkEnd;
+        // number commentsPos;
+        // NodeArray<string> comments;
+        // NodeArray<JSDocComment> parts;
 
-        auto saveParsingContext = parsingContext;
-        parsingContext |= 1 << ParsingContext::JSDocComment;
+        // auto saveParsingContext = parsingContext;
+        // parsingContext |= static_cast<ParsingContext>(1 << static_cast<int>(ParsingContext::JSDocComment));
 
-        auto doJSDocScan = [&]() {
-            // Initially we can parse out a tag.  We also have seen a starting asterisk.
-            // This is so that /** * @type */ doesn't parse.
-            auto state = JSDocState::SawAsterisk;
-            number margin;
-            // + 4 for leading '/** '
-            // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
-            auto indent = start - (content.lastIndexOf(S("\n"), start) + 1) + 4;
-            auto pushComment = [&](string text) {
-                if (!margin) {
-                    margin = indent;
-                }
-                comments.push(text);
-                indent += text.length();
-            };
+        // auto doJSDocScan = [&]() {
+        //     // Initially we can parse out a tag.  We also have seen a starting asterisk.
+        //     // This is so that /** * @type */ doesn't parse.
+        //     auto state = JSDocState::SawAsterisk;
+        //     number margin;
+        //     // + 4 for leading '/** '
+        //     // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
+        //     auto lastIndexOf = content.find_last_of(S("\n");
+        //     if (lastIndexOf == std::string::npos)
+        //     {
+        //         lastIndexOf = -1;
+        //     }
 
-            nextTokenJSDoc();
-            while (parseOptionalJsdoc(SyntaxKind::WhitespaceTrivia));
-            if (parseOptionalJsdoc(SyntaxKind::NewLineTrivia)) {
-                state = JSDocState::BeginningOfLine;
-                indent = 0;
-            }
-            loop:
-            while (true) {
-                switch (token()) {
-                    case SyntaxKind::AtToken:
-                        removeTrailingWhitespace(comments);
-                        if (!commentsPos) commentsPos = getNodePos();
-                        addTag(parseTag(indent));
-                        // NOTE: According to usejsdoc.org, a tag goes to end of line, except the last tag.
-                        // Real-world comments may break this rule, so "BeginningOfLine" will not be a real line beginning
-                        // for malformed examples like `/** @param {string} x @returns {number} the length */`
-                        state = JSDocState::BeginningOfLine;
-                        margin = undefined;
-                        break;
-                    case SyntaxKind::NewLineTrivia:
-                        comments.push(scanner.getTokenText());
-                        state = JSDocState::BeginningOfLine;
-                        indent = 0;
-                        break;
-                    case SyntaxKind::AsteriskToken:
-                        auto asterisk = scanner.getTokenText();
-                        if (state == JSDocState::SawAsterisk) {
-                            // If we've already seen an asterisk, then we can no longer parse a tag on this line
-                            state = JSDocState::SavingComments;
-                            pushComment(asterisk);
-                        }
-                        else {
-                            Debug::_assert(state == JSDocState::BeginningOfLine);
-                            // Ignore the first asterisk on a line
-                            state = JSDocState::SawAsterisk;
-                            indent += asterisk.length();
-                        }
-                        break;
-                    case SyntaxKind::WhitespaceTrivia:
-                        Debug::_assert(state != JSDocState::SavingComments, S("whitespace shouldn't come from the scanner while saving top-level comment text"));
-                        // only collect whitespace if we're already saving comments or have just crossed the comment indent margin
-                        auto whitespace = scanner.getTokenText();
-                        if (margin != undefined && indent + whitespace.length() > margin) {
-                            comments.push(whitespace.substr(margin - indent));
-                        }
-                        indent += whitespace.length();
-                        break;
-                    case SyntaxKind::EndOfFileToken:
-                        goto loop;
-                    case SyntaxKind::JSDocCommentTextToken:
-                        state = JSDocState::SavingComments;
-                        pushComment(scanner.getTokenValue());
-                        break;
-                    case SyntaxKind::OpenBraceToken: {
-                        state = JSDocState::SavingComments;
-                        auto commentEnd = scanner.getTokenFullStart();
-                        auto linkStart = scanner.getTokenEnd() - 1;
-                        auto link = parseJSDocLink(linkStart);
-                        if (link) {
-                            if (!linkEnd) {
-                                removeLeadingNewlines(comments);
-                            }
-                            parts->push(finishNode(factory.createJSDocText(comments.join(S(""))), linkEnd >= 0 ? linkEnd : start, commentEnd));
-                            parts->push(link);
-                            comments.empty();
-                            linkEnd = scanner.getTokenEnd();
-                            break;
-                        }
-                    }
-                        // fallthrough if it's not a {@link sequence
-                    default:
-                        // Anything else is doc comment text. We just save it. Because it
-                        // wasn't a tag, we can no longer parse a tag on this line until we hit the next
-                        // line break.
-                        state = JSDocState::SavingComments;
-                        pushComment(scanner.getTokenText());
-                        break;
-                }
-                if (state == JSDocState::SavingComments) {
-                    nextJSDocCommentTextToken(/*inBackticks*/ false);
-                }
-                else {
-                    nextTokenJSDoc();
-                }
-            }
-            auto trimmedComments = comments.join(S("")).trimEnd();
-            if (parts.length && trimmedComments.length) {
-                parts.push(finishNode(factory.createJSDocText(trimmedComments), linkEnd >= 0 ? linkEnd : start, commentsPos));
-            }
-            if (parts.length && tags) Debug::_assertIsDefined(commentsPos, S("having parsed tags implies that the end : the comment span should be set"));
-            const tagsArray = tags && createNodeArray(tags, tagsPos, tagsEnd);
-            return finishNode(factory.createJSDocComment(parts.length ? createNodeArray(parts, start, commentsPos) : trimmedComments.length ? trimmedComments : undefined, tagsArray), start, end);
-        }
+        //     auto indent = start - (lastIndexOf + 1) + 4;
+        //     auto pushComment = [&](string text) {
+        //         if (!margin) {
+        //             margin = indent;
+        //         }
+        //         comments.push_back(text);
+        //         indent += text.length();
+        //     };
 
-        // + 3 for leading /**, - 5 in total for /** */
-        const result = scanner.scanRange(start + 3, length - 5, doJSDocScan);
-        parsingContext = saveParsingContext;
-        return result;
+        //     nextTokenJSDoc();
+        //     while (parseOptionalJsdoc(SyntaxKind::WhitespaceTrivia));
+        //     if (parseOptionalJsdoc(SyntaxKind::NewLineTrivia)) {
+        //         state = JSDocState::BeginningOfLine;
+        //         indent = 0;
+        //     }
+        //     loop:
+        //     while (true) {
+        //         switch (token()) {
+        //             case SyntaxKind::AtToken:
+        //                 removeTrailingWhitespace(comments);
+        //                 if (!commentsPos) commentsPos = getNodePos();
+        //                 addTag(parseTag(indent));
+        //                 // NOTE: According to usejsdoc.org, a tag goes to end of line, except the last tag.
+        //                 // Real-world comments may break this rule, so "BeginningOfLine" will not be a real line beginning
+        //                 // for malformed examples like `/** @param {string} x @returns {number} the length */`
+        //                 state = JSDocState::BeginningOfLine;
+        //                 margin = undefined;
+        //                 break;
+        //             case SyntaxKind::NewLineTrivia:
+        //                 comments.push_back(scanner.getTokenText());
+        //                 state = JSDocState::BeginningOfLine;
+        //                 indent = 0;
+        //                 break;
+        //             case SyntaxKind::AsteriskToken:
+        //                 auto asterisk = scanner.getTokenText();
+        //                 if (state == JSDocState::SawAsterisk) {
+        //                     // If we've already seen an asterisk, then we can no longer parse a tag on this line
+        //                     state = JSDocState::SavingComments;
+        //                     pushComment(asterisk);
+        //                 }
+        //                 else {
+        //                     Debug::_assert(state == JSDocState::BeginningOfLine);
+        //                     // Ignore the first asterisk on a line
+        //                     state = JSDocState::SawAsterisk;
+        //                     indent += asterisk.length();
+        //                 }
+        //                 break;
+        //             case SyntaxKind::WhitespaceTrivia:
+        //                 Debug::_assert(state != JSDocState::SavingComments, S("whitespace shouldn't come from the scanner while saving top-level comment text"));
+        //                 // only collect whitespace if we're already saving comments or have just crossed the comment indent margin
+        //                 auto whitespace = scanner.getTokenText();
+        //                 if (margin != undefined && indent + whitespace.length() > margin) {
+        //                     comments.push_back(whitespace.substr(margin - indent));
+        //                 }
+        //                 indent += whitespace.length();
+        //                 break;
+        //             case SyntaxKind::EndOfFileToken:
+        //                 goto loop;
+        //             case SyntaxKind::JSDocCommentTextToken:
+        //                 state = JSDocState::SavingComments;
+        //                 pushComment(scanner.getTokenValue());
+        //                 break;
+        //             case SyntaxKind::OpenBraceToken: {
+        //                 state = JSDocState::SavingComments;
+        //                 auto commentEnd = scanner.getTokenFullStart();
+        //                 auto linkStart = scanner.getTokenEnd() - 1;
+        //                 auto link = parseJSDocLink(linkStart);
+        //                 if (link) {
+        //                     if (!linkEnd) {
+        //                         removeLeadingNewlines(comments);
+        //                     }
+        //                     parts.push_back(finishNode(factory.createJSDocText(comments.join(S(""))), linkEnd >= 0 ? linkEnd : start, commentEnd));
+        //                     parts.push_back(link);
+        //                     comments.empty();
+        //                     linkEnd = scanner.getTokenEnd();
+        //                     break;
+        //                 }
+        //             }
+        //                 // fallthrough if it's not a {@link sequence
+        //             default:
+        //                 // Anything else is doc comment text. We just save it. Because it
+        //                 // wasn't a tag, we can no longer parse a tag on this line until we hit the next
+        //                 // line break.
+        //                 state = JSDocState::SavingComments;
+        //                 pushComment(scanner.getTokenText());
+        //                 break;
+        //         }
+        //         if (state == JSDocState::SavingComments) {
+        //             nextJSDocCommentTextToken(/*inBackticks*/ false);
+        //         }
+        //         else {
+        //             nextTokenJSDoc();
+        //         }
+        //     }
+        //     auto trimmedComments = comments.join(S("")).trimEnd();
+        //     if (parts.length() && trimmedComments.length) {
+        //         parts.push_back(finishNode(factory.createJSDocText(trimmedComments), linkEnd >= 0 ? linkEnd : start, commentsPos));
+        //     }
+        //     if (parts.length() && !!tags) Debug::_assertIsDefined(commentsPos, S("having parsed tags implies that the end : the comment span should be set"));
+        //     auto tagsArray = !!tags ? tags : createNodeArray(tags, tagsPos, tagsEnd);
+        //     return finishNode(factory.createJSDocComment(parts.length() ? createNodeArray(parts, start, commentsPos) : trimmedComments.length ? trimmedComments : undefined, tagsArray), start, end);
+        // }
+
+        // // + 3 for leading /**, - 5 in total for /** */
+        // auto result = scanner.scanRange(start + 3, length - 5, doJSDocScan);
+        // parsingContext = saveParsingContext;
+        // return result;
     } // end of parseJSDocCommentWorker
 
   public:
@@ -9090,19 +9098,57 @@ struct Parser
     }
 
 private:
+
+    auto isJSDocLikeText(string text, number start) -> boolean {
+        return text[start + 1] == (char_t)CharacterCodes::asterisk &&
+            text[start + 2] == (char_t)CharacterCodes::asterisk &&
+            text[start + 3] != (char_t)CharacterCodes::slash;
+    }
+
     auto isFileProbablyExternalModule(SourceFile sourceFile) -> Node {
         // Try to use the first top-level import/export when available, then
         // fall back to looking for an 'import.meta' somewhere in the tree if necessary.
-        return forEach<Node>(sourceFile->statements, std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1)) ||
-            getImportMetaIfNecessary(sourceFile);
+        return forEach<decltype(sourceFile->statements), Node>(
+                sourceFile->statements,
+                (FuncT<Node>)std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1))
+            || [&]() { return getImportMetaIfNecessary(sourceFile); };
     }    
 
-    auto isAnExternalModuleIndicatorNode(Node node) -> Node {
-        return canHaveModifiers(node) && hasModifierOfKind(node, SyntaxKind::ExportKeyword)
-                || isImportEqualsDeclaration(node) && isExternalModuleReference(node->moduleReference)
-                || isImportDeclaration(node)
-                || isExportAssignment(node)
-                || isExportDeclaration(node) ? node : undefined;
+    auto isAnExternalModuleIndicatorNode(Node node) -> Node
+    {
+        return canHaveModifiers(node) && hasModifierOfKind(node, SyntaxKind::ExportKeyword) ||
+                       isImportEqualsDeclaration(node) &&
+                           ts::isExternalModuleReference(node.as<ImportEqualsDeclaration>()->moduleReference) ||
+                       isImportDeclaration(node) || isExportAssignment(node) || isExportDeclaration(node)
+                   ? node
+                   : undefined;
+    }
+
+    auto getImportMetaIfNecessary(SourceFile sourceFile) -> Node
+    {
+        return !!(sourceFile->flags & NodeFlags::PossiblyContainsImportMeta)
+                   ? walkTreeForImportMeta(sourceFile)
+                   : undefined;
+    }
+
+    auto walkTreeForImportMeta(Node node) -> Node
+    {
+        return isImportMeta(node)
+                   ? node
+                   : forEachChild<Node, Node>(
+                         node, std::bind(&Parser::walkTreeForImportMeta, this, std::placeholders::_1));
+    }
+
+    auto hasModifierOfKind(Node node, SyntaxKind kind) -> boolean
+    {
+        return some(node->modifiers, [=](auto m) { return m._kind == kind; });
+    }
+
+    auto isImportMeta(Node node) -> boolean
+    {
+        return isMetaProperty(node) && node.as<MetaProperty>()->keywordToken == SyntaxKind::ImportKeyword &&
+               node.as<MetaProperty>()->name->escapedText == S("meta");
+    }
 }    
 
 }; // End of Scanner

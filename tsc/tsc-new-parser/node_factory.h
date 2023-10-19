@@ -952,6 +952,9 @@ class NodeFactory
     // auto updateJSDocTypeExpression(JSDocTypeExpression node, TypeNode type) -> JSDocTypeExpression;
     auto createJSDocNameReference(EntityName name) -> JSDocNameReference;
     // auto updateJSDocNameReference(JSDocNameReference node, EntityName name) -> JSDocNameReference;
+
+    auto createJSDocMemberName(Node left, Identifier right) -> JSDocMemberName;
+
     auto createJSDocTypeLiteral(NodeArray<JSDocPropertyLikeTag> jsDocPropertyTags = undefined, boolean isArrayType = false)
         -> JSDocTypeLiteral;
     // auto updateJSDocTypeLiteral(JSDocTypeLiteral node, NodeArray<JSDocPropertyLikeTag> jsDocPropertyTags, boolean isArrayType) ->
