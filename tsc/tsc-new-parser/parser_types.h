@@ -1911,14 +1911,17 @@ struct NamespaceExportDeclaration : DeclarationStatement
     PTR(Identifier) name;
 };
 
-struct ExportDeclaration : DeclarationStatement
+struct ExportDeclaration : DeclarationStatement, JSDocContainer
 {
     // kind: SyntaxKind::ExportDeclaration;
+    PTR(Node) parent; // SourceFile | ModuleBlock;
+    NodeArray<PTR(ModifierLike)> modifiers;
     boolean isTypeOnly;
     /** Will not be assigned in the case of `export * from "foo";` */
     PTR(NamedExportBindings) exportClause;
     /** If this is not a StringLiteral it will be a grammar error. */
     PTR(Expression) moduleSpecifier;
+    PTR(ImportAttributes) attributes;
 };
 
 struct NamedImportsOrExports : Node
@@ -1939,7 +1942,10 @@ struct NamedExports : NamedImportsOrExports
 
 struct ImportOrExportSpecifier : NamedDeclaration
 {
+    PTR(NamedImports) parent;
     PTR(Identifier) propertyName; // Name preceding "as" keyword (or undefined when "as" is absent)
+    PTR(Identifier) name;
+    boolean isTypeOnly;
 };
 
 struct ImportSpecifier : ImportOrExportSpecifier

@@ -938,7 +938,7 @@ struct Parser
         // Keep track of the state we'll need to rollback to if lookahead fails (or if the
         // caller asked us to always reset our state).
         auto saveToken = currentToken;
-        auto saveParseDiagnosticsLength = parse_E(Diagnostics::size();
+        auto saveParseDiagnosticsLength = parseDiagnostics.size();
         auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
 
         // it Note is not actually necessary to save/restore the context flags here.  That's
@@ -962,8 +962,8 @@ struct Parser
             currentToken = saveToken;
             if (speculationKind != SpeculationKind::Reparse)
             {
-                while (saveParseDiagnosticsLength < parse_E(Diagnostics::size())
-                    parse_E(Diagnostics::erase(parse_E(Diagnostics::begin() + saveParseDiagnosticsLength);
+                while (saveParseDiagnosticsLength < parseDiagnostics.size())
+                    parseDiagnostics.erase(parseDiagnostics.begin() + saveParseDiagnosticsLength);
             }
             parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
         }
@@ -8560,7 +8560,7 @@ struct Parser
 
         auto sourceFile =
             createSourceFile(S("file.js"), ScriptTarget::Latest, ScriptKind::JS, /*isDeclarationFile*/ false,
-                             NodeArray<Statement>(), factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None, noop);
+                             NodeArray<Statement>(), factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None);
         auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
         if (!!jsDocDiagnostics)
         {

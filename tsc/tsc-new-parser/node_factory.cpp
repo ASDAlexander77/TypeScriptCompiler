@@ -2020,6 +2020,15 @@ auto NodeFactory::createImportClause(boolean isTypeOnly, Identifier name, NamedI
 
 // @api
 
+auto  NodeFactory::createImportAttributes(NodeArray<ImportAttribute> elements, boolean multiLine, SyntaxKind token) -> ImportAttributes {
+    auto node = createBaseNode<ImportAttributes>(SyntaxKind::ImportAttributes);
+    node->token = token != SyntaxKind::Unknown ? token : SyntaxKind::WithKeyword;
+    node->elements = createNodeArray(elements);
+    node->multiLine = multiLine;
+    node->transformFlags |= TransformFlags::ContainsESNext;
+    return node;
+}
+
 // @api
 auto NodeFactory::createImportAttribute(Node name, Expression value) -> ImportAttribute {
     auto node = createBaseNode<ImportAttribute>(SyntaxKind::ImportAttribute);
@@ -2066,9 +2075,10 @@ auto NodeFactory::createNamedImports(NodeArray<ImportSpecifier> elements) -> Nam
 // @api
 
 // @api
-auto NodeFactory::createImportSpecifier(Identifier propertyName, Identifier name) -> ImportSpecifier
+auto NodeFactory::createImportSpecifier(boolean isTypeOnly, Identifier propertyName, Identifier name) -> ImportSpecifier
 {
     auto node = createBaseNode<ImportSpecifier>(SyntaxKind::ImportSpecifier);
+    node->isTypeOnly = isTypeOnly;
     node->propertyName = propertyName;
     node->name = name;
     node->transformFlags |= propagateChildFlags(node->propertyName) | propagateChildFlags(node->name);
@@ -2096,14 +2106,17 @@ auto NodeFactory::createExportAssignment(NodeArray<ModifierLike> modifiers, bool
 
 // @api
 auto NodeFactory::createExportDeclaration(NodeArray<ModifierLike> modifiers, boolean isTypeOnly,
-                                          NamedExportBindings exportClause, Expression moduleSpecifier) -> ExportDeclaration
+                                          NamedExportBindings exportClause, Expression moduleSpecifier, ImportAttributes attributes) -> ExportDeclaration
 {
     auto node = createBaseDeclaration<ExportDeclaration>(SyntaxKind::ExportDeclaration, modifiers);
     node->isTypeOnly = isTypeOnly;
     node->exportClause = exportClause;
     node->moduleSpecifier = moduleSpecifier;
+    node->attributes = attributes;
     node->transformFlags |= propagateChildFlags(node->exportClause) | propagateChildFlags(node->moduleSpecifier);
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // always parsed in an Await context
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -2122,9 +2135,10 @@ auto NodeFactory::createNamedExports(NodeArray<ExportSpecifier> elements) -> Nam
 // @api
 
 // @api
-auto NodeFactory::createExportSpecifier(Identifier propertyName, Identifier name) -> ExportSpecifier
+auto NodeFactory::createExportSpecifier(boolean isTypeOnly, Identifier propertyName, Identifier name) -> ExportSpecifier
 {
     auto node = createBaseNode<ExportSpecifier>(SyntaxKind::ExportSpecifier);
+    node->isTypeOnly = isTypeOnly;
     node->propertyName = asName(propertyName);
     node->name = asName(name);
     node->transformFlags |= propagateChildFlags(node->propertyName) | propagateChildFlags(node->name);

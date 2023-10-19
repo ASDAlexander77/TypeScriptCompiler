@@ -896,6 +896,7 @@ class NodeFactory
     auto createImportClause(boolean isTypeOnly, Identifier name, NamedImportBindings namedBindings) -> ImportClause;
     // auto updateImportClause(ImportClause node, boolean isTypeOnly, Identifier name, NamedImportBindings namedBindings) -> ImportClause;
 
+    auto createImportAttributes(NodeArray<ImportAttribute> elements, boolean multiLine = false, SyntaxKind token = SyntaxKind::Unknown) -> ImportAttributes;
     auto createImportAttribute(Node name, Expression value) -> ImportAttribute;
 
     auto createNamespaceImport(Identifier name) -> NamespaceImport;
@@ -904,20 +905,20 @@ class NodeFactory
     // auto updateNamespaceExport(NamespaceExport node, Identifier name) -> NamespaceExport;
     auto createNamedImports(NodeArray<ImportSpecifier> elements) -> NamedImports;
     // auto updateNamedImports(NamedImports node, NodeArray<ImportSpecifier> elements) -> NamedImports;
-    auto createImportSpecifier(Identifier propertyName, Identifier name) -> ImportSpecifier;
+    auto createImportSpecifier(boolean isTypeOnly, Identifier propertyName, Identifier name) -> ImportSpecifier;
     // auto updateImportSpecifier(ImportSpecifier node, Identifier propertyName, Identifier name) -> ImportSpecifier;
     auto createExportAssignment(NodeArray<ModifierLike> modifiers, boolean isExportEquals, Expression expression)
         -> ExportAssignment;
     // auto updateExportAssignment(ExportAssignment node, NodeArray<ModifierLike> modifiers, Expression expression) ->
     // ExportAssignment;
     auto createExportDeclaration(NodeArray<ModifierLike> modifiers, boolean isTypeOnly, NamedExportBindings exportClause,
-                                 Expression moduleSpecifier = undefined) -> ExportDeclaration;
+                                 Expression moduleSpecifier = undefined, ImportAttributes attributes = undefined) -> ExportDeclaration;
     // auto updateExportDeclaration(ExportDeclaration node, NodeArray<ModifierLike> modifiers, boolean isTypeOnly,
     // NamedExportBindings exportClause, Expression moduleSpecifier) -> ExportDeclaration;
     auto createNamedExports(NodeArray<ExportSpecifier> elements) -> NamedExports;
     // auto updateNamedExports(NamedExports node, NodeArray<ExportSpecifier> elements) -> NamedExports;
     // auto createExportSpecifier(string propertyName, string name) -> ExportSpecifier;
-    auto createExportSpecifier(Identifier propertyName, Identifier name) -> ExportSpecifier;
+    auto createExportSpecifier(boolean isTypeOnly, Identifier propertyName, Identifier name) -> ExportSpecifier;
     // auto updateExportSpecifier(ExportSpecifier node, Identifier propertyName, Identifier name) -> ExportSpecifier;
     /* @internal*/ auto createMissingDeclaration() -> MissingDeclaration;
 
