@@ -7111,7 +7111,7 @@ struct Parser
         auto pos = getNodePos();
         auto hasJSDoc = hasPrecedingJSDocComment();
         auto modifiers = parseModifiers(/*allowDecorators*/ true);
-        auto isAmbient = some<ModifiersLikeArray>(modifiers, std::bind(&Parser::isDeclareModifier, this));
+        auto isAmbient = some<ModifiersLikeArray>(modifiers, std::bind(&Parser::isDeclareModifier, this, std::placeholders::_1));
         if (isAmbient) {
             auto node = tryReuseAmbientDeclaration(pos);
             if (node) {
@@ -7679,7 +7679,7 @@ struct Parser
                 return undefined;
             }
         }
-        else if (stopOnStartOfClassStaticBlock && token() == SyntaxKind::StaticKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenBrace), this)) {
+        else if (stopOnStartOfClassStaticBlock && token() == SyntaxKind::StaticKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenBrace, this))) {
             return undefined;
         }
         else if (hasSeenStaticModifier && token() == SyntaxKind::StaticKeyword) {
@@ -7770,7 +7770,7 @@ struct Parser
         }
 
         auto modifiers = parseModifiers(/*allowDecorators*/ true, /*permitConstAsModifier*/ true, /*stopOnStartOfClassStaticBlock*/ true);
-        if (token() == SyntaxKind::StaticKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenBrace), this)) {
+        if (token() == SyntaxKind::StaticKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenBrace, this))) {
             return parseClassStaticBlockDeclaration(pos, hasJSDoc, modifiers);
         }
 
@@ -8699,7 +8699,7 @@ struct Parser
         //     number margin;
         //     // + 4 for leading '/** '
         //     // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
-        //     auto lastIndexOf = content.find_last_of(S("\n");
+        //     auto lastIndexOf = content.rfind(S("\n");
         //     if (lastIndexOf == std::string::npos)
         //     {
         //         lastIndexOf = -1;
