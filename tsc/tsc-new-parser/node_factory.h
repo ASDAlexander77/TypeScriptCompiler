@@ -890,11 +890,14 @@ class NodeFactory
     // auto updateImportEqualsDeclaration(ImportEqualsDeclaration node, NodeArray<ModifierLike> modifiers, boolean
     // isTypeOnly, Identifier name, ModuleReference moduleReference) -> ImportEqualsDeclaration;
     auto createImportDeclaration(NodeArray<ModifierLike> modifiers, ImportClause importClause,
-                                 Expression moduleSpecifier) -> ImportDeclaration;
+                                 Expression moduleSpecifier, ImportAttributes attributes) -> ImportDeclaration;
     // auto updateImportDeclaration(ImportDeclaration node, NodeArray<ModifierLike> modifiers, ImportClause importClause,
     // Expression moduleSpecifier) -> ImportDeclaration;
     auto createImportClause(boolean isTypeOnly, Identifier name, NamedImportBindings namedBindings) -> ImportClause;
     // auto updateImportClause(ImportClause node, boolean isTypeOnly, Identifier name, NamedImportBindings namedBindings) -> ImportClause;
+
+    auto createImportAttribute(Node name, Expression value) -> ImportAttribute;
+
     auto createNamespaceImport(Identifier name) -> NamespaceImport;
     // auto updateNamespaceImport(NamespaceImport node, Identifier name) -> NamespaceImport;
     auto createNamespaceExport(Identifier name) -> NamespaceExport;

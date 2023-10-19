@@ -1873,9 +1873,12 @@ struct ExternalModuleReference : Node
 struct ImportDeclaration : Statement
 {
     // kind: SyntaxKind::ImportDeclaration;
+    PTR(Node) parent; // SourceFile | ModuleBlock
+    NodeArray<PTR(ModifierLike)> modifiers;
     PTR(ImportClause) importClause;
     /** If this is not a StringLiteral it will be a grammar error. */
     PTR(Expression) moduleSpecifier;
+    PTR(ImportAttributes) attributes;
 };
 
 // In case of:

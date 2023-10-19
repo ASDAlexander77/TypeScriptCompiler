@@ -1987,13 +1987,16 @@ auto NodeFactory::createImportEqualsDeclaration(NodeArray<ModifierLike> modifier
 
 // @api
 auto NodeFactory::createImportDeclaration(NodeArray<ModifierLike> modifiers, ImportClause importClause,
-                                          Expression moduleSpecifier) -> ImportDeclaration
+                                          Expression moduleSpecifier, ImportAttributes attributes) -> ImportDeclaration
 {
     auto node = createBaseDeclaration<ImportDeclaration>(SyntaxKind::ImportDeclaration, modifiers);
     node->importClause = importClause;
     node->moduleSpecifier = moduleSpecifier;
+    node->attributes = attributes;
     node->transformFlags |= propagateChildFlags(node->importClause) | propagateChildFlags(node->moduleSpecifier);
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // always parsed in an Await context
+
+    // node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -2016,6 +2019,15 @@ auto NodeFactory::createImportClause(boolean isTypeOnly, Identifier name, NamedI
 }
 
 // @api
+
+// @api
+auto NodeFactory::createImportAttribute(Node name, Expression value) -> ImportAttribute {
+    auto node = createBaseNode<ImportAttribute>(SyntaxKind::ImportAttribute);
+    node->name = name;
+    node->value = value;
+    node->transformFlags |= TransformFlags::ContainsESNext;
+    return node;
+}
 
 // @api
 auto NodeFactory::createNamespaceImport(Identifier name) -> NamespaceImport
