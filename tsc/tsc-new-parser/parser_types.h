@@ -257,14 +257,14 @@ struct ImportAttributes : Node {
     boolean multiLine;
 };
 
-struct JSDocContainer : Node
+struct JSDocContainer
 {
     /* @internal */ NodeArray<PTR(JSDoc)> jsDoc;         // JSDoc that directly precedes this node
     /* @internal */ NodeArray<PTR(JSDocTag)> jsDocCache; // Cache for getJSDocTags
 };
 
 // TODO(rbuckton): Constraint 'TKind' to 'TokenSyntaxKind'
-template <SyntaxKind... TKind> struct Token : JSDocContainer
+template <SyntaxKind... TKind> struct Token : Node
 {
 };
 
@@ -294,7 +294,7 @@ struct QualifiedName : Node
     /*@internal*/ number jsdocDotPos; // QualifiedName occurs in JSDoc-style generic: Id1.Id2.<T>
 };
 
-struct ClassElement : JSDocContainer
+struct ClassElement : Node
 {
 };
 

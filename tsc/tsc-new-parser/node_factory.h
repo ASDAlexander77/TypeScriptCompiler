@@ -532,6 +532,9 @@ class NodeFactory
     auto createMethodDeclaration(NodeArray<ModifierLike> modifiers, AsteriskToken asteriskToken, PropertyName name,
                                  QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters,
                                  NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;
+
+    auto createClassStaticBlockDeclaration(Block body) -> ClassStaticBlockDeclaration;
+
     // auto updateMethodDeclaration(MethodDeclaration node, NodeArray<ModifierLike> modifiers, AsteriskToken
     // asteriskToken, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters,
     // NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;

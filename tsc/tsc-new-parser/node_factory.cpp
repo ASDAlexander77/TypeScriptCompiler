@@ -400,6 +400,22 @@ auto NodeFactory::createMethodDeclaration(NodeArray<ModifierLike> modifiers, Ast
 
 // @api
 
+auto NodeFactory::createClassStaticBlockDeclaration(Block body) -> ClassStaticBlockDeclaration {
+    auto node = createBaseDeclaration<ClassStaticBlockDeclaration>(SyntaxKind::ClassStaticBlockDeclaration, undefined);
+    node->body = body;
+    node->transformFlags = propagateChildFlags(body) | TransformFlags::ContainsClassFields;
+
+    // node.modifiers = undefined; // initialized by parser for grammar errors
+    // node.jsDoc = undefined; // initialized by parser (JsDocContainer)
+    // node.locals = undefined; // initialized by binder (LocalsContainer)
+    // node.nextContainer = undefined; // initialized by binder (LocalsContainer)
+    // node.endFlowNode = undefined;
+    // node.returnFlowNode = undefined;
+    return node;
+}
+
+
+
 // @api
 auto NodeFactory::createConstructorDeclaration(NodeArray<ModifierLike> modifiers,
                                                NodeArray<ParameterDeclaration> parameters, Block body) -> ConstructorDeclaration

@@ -7618,7 +7618,7 @@ struct Parser
     auto parseClassStaticBlockDeclaration(number pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> ClassStaticBlockDeclaration {
         parseExpectedToken(SyntaxKind::StaticKeyword);
         auto body = parseClassStaticBlockBody();
-        auto node = withJSDoc(finishNode(factory.createClassStaticBlockDeclaration(body), pos), hasJSDoc).as<ClassStaticBlockDeclaration>();
+        auto node = withJSDoc(finishNode(factory.createClassStaticBlockDeclaration(body), pos), hasJSDoc);
         node->modifiers = modifiers;
         return node;
     }
@@ -7796,7 +7796,7 @@ struct Parser
         // It is very important that we check this *after* checking indexers because
         // the [ token can start an index signature or a computed property name
         if (
-            tokenIsIdentifierOrKeyword(token()) ||
+            scanner.tokenIsIdentifierOrKeyword(token()) ||
             token() == SyntaxKind::StringLiteral ||
             token() == SyntaxKind::NumericLiteral ||
             token() == SyntaxKind::AsteriskToken ||
@@ -7807,7 +7807,7 @@ struct Parser
                 for (auto m : modifiers) {
                     (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
                 }
-                return doInsideOfContext<Node>(NodeFlags::Ambient, [&]() { return parsePropertyOrMethodDeclaration(pos, hasJSDoc, modifiers); })
+                return doInsideOfContext<Node>(NodeFlags::Ambient, [&]() { return parsePropertyOrMethodDeclaration(pos, hasJSDoc, modifiers); });
             }
             else {
                 return parsePropertyOrMethodDeclaration(pos, hasJSDoc, modifiers);
