@@ -359,12 +359,7 @@ struct Declaration {
     /** @internal */ PTR(Symbol) localSymbol; // Local symbol declared by node (initialized by binding only for exported nodes)
 };
 
-struct Declaration : Statement
-{
-    //any _declarationBrand;
-};
-
-struct DeclarationStatement : Statement
+struct DeclarationStatement : Statement, Declaration
 {
 };
 
@@ -373,14 +368,14 @@ struct NamedDeclaration : Declaration
     PTR(DeclarationName) name;
 };
 
-struct TypeElement : NamedDeclaration
+struct TypeElement : Node, NamedDeclaration
 {
     //any _typeElementBrand;
     PTR(QuestionToken) questionToken;
 };
 
 /* @internal */
-struct DynamicNamedDeclaration : NamedDeclaration
+struct DynamicNamedDeclaration : Node, NamedDeclaration
 {
 };
 
@@ -422,7 +417,7 @@ struct Decorator : Node
     PTR(LeftHandSideExpression) expression;
 };
 
-struct TypeParameterDeclaration : NamedDeclaration
+struct TypeParameterDeclaration : Node, NamedDeclaration
 {
     // kind: SyntaxKind::TypeParameter;
     /** Note: Consider calling `getEffectiveConstraintOfTypeParameter` */
@@ -453,7 +448,7 @@ struct ConstructSignatureDeclaration : SignatureDeclarationBase
     // kind: SyntaxKind::ConstructSignature;
 };
 
-struct VariableDeclaration : NamedDeclaration
+struct VariableDeclaration : Node, NamedDeclaration
 {
     // kind: SyntaxKind::VariableDeclaration;
     PTR(ExclamationToken) exclamationToken; // Optional definite assignment assertion
@@ -473,7 +468,7 @@ struct VariableDeclarationList : Node
     NodeArray<PTR(VariableDeclaration)> declarations;
 };
 
-struct ParameterDeclaration : NamedDeclaration
+struct ParameterDeclaration : Node, NamedDeclaration
 {
     // kind: SyntaxKind::Parameter;
     PTR(DotDotDotToken) dotDotDotToken; // Present on rest parameter
@@ -482,7 +477,7 @@ struct ParameterDeclaration : NamedDeclaration
     PTR(Expression) initializer;        // Optional initializer
 };
 
-struct BindingElement : NamedDeclaration
+struct BindingElement : Node, NamedDeclaration
 {
     // kind: SyntaxKind::BindingElement;
     PTR(PropertyName) propertyName;     // Binding property name (in object binding pattern)
@@ -498,7 +493,7 @@ struct PropertySignature : TypeElement
     PTR(Expression) initializer;      // Present for use with reporting a grammar error
 };
 
-struct PropertyDeclaration : NamedDeclaration
+struct PropertyDeclaration : Node, NamedDeclaration
 {
     // kind: SyntaxKind::PropertyDeclaration;
     PTR(QuestionToken) questionToken; // Present for use with reporting a grammar error
@@ -518,7 +513,7 @@ struct InitializedPropertyDeclaration : PropertyDeclaration
     //PTR(Expression) initializer;
 };
 
-struct ObjectLiteralElement : NamedDeclaration
+struct ObjectLiteralElement : Node, NamedDeclaration
 {
 };
 
@@ -542,10 +537,10 @@ struct ShorthandPropertyAssignment : PropertyAssignment
 struct SpreadAssignment : ObjectLiteralElement
 {
     // kind: SyntaxKind::SpreadAssignment;
-    //PTR(Expression) expression;
+    PTR(Expression) expression;
 };
 
-struct PropertyLikeDeclaration : NamedDeclaration
+struct PropertyLikeDeclaration : Node, NamedDeclaration
 {
 };
 
@@ -1756,7 +1751,7 @@ struct CatchClause : Node
     PTR(Block) block;
 };
 
-struct ClassLikeDeclaration : NamedDeclaration
+struct ClassLikeDeclaration : Node, NamedDeclaration
 {
     // kind: SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression;
     NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
@@ -1799,7 +1794,7 @@ struct TypeAliasDeclaration : DeclarationStatement
     PTR(TypeNode) type;
 };
 
-struct EnumMember : NamedDeclaration
+struct EnumMember : Node, NamedDeclaration
 {
     // kind: SyntaxKind::EnumMember;
     // This does include ComputedPropertyName, but the parser will give an error
@@ -1888,19 +1883,19 @@ struct ImportDeclaration : Statement
 // import { a, b as x } from "mod" => name = undefined, namedBinding: NamedImports = { elements: [{ name: a }, { name:
 // x, propertyName: b}]} import d, { a, b as x } from "mod" => name = d, namedBinding: NamedImports = { elements: [{
 // name: a }, { name: x, propertyName: b}]}
-struct ImportClause : NamedDeclaration
+struct ImportClause : Node, NamedDeclaration
 {
     // kind: SyntaxKind::ImportClause;
     boolean isTypeOnly;
     PTR(NamedImportBindings) namedBindings;
 };
 
-struct NamespaceImport : NamedDeclaration
+struct NamespaceImport : Node, NamedDeclaration
 {
     // kind: SyntaxKind::NamespaceImport;
 };
 
-struct NamespaceExport : NamedDeclaration
+struct NamespaceExport : Node, NamedDeclaration
 {
     // kind: SyntaxKind::NamespaceExport;
 };
@@ -1940,7 +1935,7 @@ struct NamedExports : NamedImportsOrExports
     NodeArray<PTR(ExportSpecifier)> elements;
 };
 
-struct ImportOrExportSpecifier : NamedDeclaration
+struct ImportOrExportSpecifier : Node, NamedDeclaration
 {
     PTR(NamedImports) parent;
     PTR(Identifier) propertyName; // Name preceding "as" keyword (or undefined when "as" is absent)
@@ -2092,7 +2087,7 @@ struct JSDoc : Node
     string comment;
 };
 
-struct JSDocTag : Declaration
+struct JSDocTag : Node, Declaration
 {
     PTR(Identifier) tagName;
     string comment;
@@ -2285,7 +2280,7 @@ using ExportedModulesFromDeclarationEmit = std::vector<Symbol>;
 /**
  * Subset of properties from SourceFile that are used in multiple utility functions
  */
-struct SourceFileLike : Declaration
+struct SourceFileLike : Node, Declaration
 {
     string text;
     // Stores a line map for the file.

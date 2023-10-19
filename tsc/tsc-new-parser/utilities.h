@@ -2583,7 +2583,7 @@ auto idText(Node identifierOrPrivateName) -> string {
     if (identifierOrPrivateName == SyntaxKind::PrivateIdentifier)
         return unescapeLeadingUnderscores(identifierOrPrivateName.as<PrivateIdentifier>()->escapedText);
 
-    return false;
+    return S("");
 }
 
 } // namespace ts

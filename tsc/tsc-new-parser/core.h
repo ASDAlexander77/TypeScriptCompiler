@@ -389,6 +389,19 @@ static string join(const std::vector<string> &v)
  *
  * @internal
  */
+
+static string str_tolower(string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::tolower(c); });
+    return s;
+}
+
+static string str_toupper(string s)
+{
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c){ return std::toupper(c); });
+    return s;
+}
+
 template <typename T>
 auto getSpellingSuggestion(string name, std::vector<T> candidates, std::function<string(T)> getName) -> T {
     auto maximumLengthDifference = std::max(2, std::floor(name.length() * 0.34));
@@ -397,12 +410,12 @@ auto getSpellingSuggestion(string name, std::vector<T> candidates, std::function
     for (auto candidate : candidates) {
         auto candidateName = getName(candidate);
         if (candidateName != undefined && std::abs(candidateName.size() - name.length()) <= maximumLengthDifference) {
-            if (candidateName === name) {
+            if (candidateName == name) {
                 continue;
             }
             // Only consider candidates less than 3 characters long when they differ by case.
             // Otherwise, don't bother, since a user would usually notice differences of a 2-character name.
-            if (candidateName.length() < 3 && candidateName.toLowerCase() != name.toLowerCase()) {
+            if (candidateName.length() < 3 && str_tolower(candidateName) != str_tolower(name)) {
                 continue;
             }
 
@@ -411,7 +424,8 @@ auto getSpellingSuggestion(string name, std::vector<T> candidates, std::function
                 continue;
             }
 
-            Debug::_assert(distance < bestDistance); // Else `levenshteinWithMax` should return undefined
+            // TODO: finish it
+            //Debug::_assert(distance < bestDistance); // Else `levenshteinWithMax` should return undefined
             bestDistance = distance;
             bestCandidate = candidate;
         }
