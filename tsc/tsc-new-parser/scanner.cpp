@@ -1350,7 +1350,7 @@ auto Scanner::couldStartTrivia(safe_string &text, number pos) -> boolean
 }
 
 /* @internal */
-auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak, bool stopAtComments, bool inJSDoc) -> number
+auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false, bool inJSDoc = false) -> number
 {
     if (positionIsSynthesized(pos))
     {

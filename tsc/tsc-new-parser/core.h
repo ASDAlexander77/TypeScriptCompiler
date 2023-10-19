@@ -375,6 +375,50 @@ static string join(const std::vector<string> &v)
     return s;
 }
 
+/**
+ * Given a name and a list of names that are *not* equal to the name, return a spelling suggestion if there is one that is close enough.
+ * Names less than length 3 only check for case-insensitive equality.
+ *
+ * find the candidate with the smallest Levenshtein distance,
+ *    except for candidates:
+ *      * With no name
+ *      * Whose length differs from the target name by more than 0.34 of the length of the name.
+ *      * Whose levenshtein distance is more than 0.4 of the length of the name
+ *        (0.4 allows 1 substitution/transposition for every 5 characters,
+ *         and 1 insertion/deletion at 3 characters)
+ *
+ * @internal
+ */
+template <typename T>
+auto getSpellingSuggestion(string name, NodeArray<T> candidates, std::function<string(T)> getName) -> T {
+    auto maximumLengthDifference = std::max(2, std::floor(name.length() * 0.34));
+    auto bestDistance = std::floor(name.length() * 0.4) + 1; // If the best result is worse than this, don't bother.
+    T bestCandidate;
+    for (auto candidate : candidates) {
+        auto candidateName = getName(candidate);
+        if (candidateName != undefined && std::abs(candidateName.size() - name.length()) <= maximumLengthDifference) {
+            if (candidateName === name) {
+                continue;
+            }
+            // Only consider candidates less than 3 characters long when they differ by case.
+            // Otherwise, don't bother, since a user would usually notice differences of a 2-character name.
+            if (candidateName.length() < 3 && candidateName.toLowerCase() != name.toLowerCase()) {
+                continue;
+            }
+
+            auto distance = levenshteinWithMax(name, candidateName, bestDistance - 0.1);
+            if (distance == undefined) {
+                continue;
+            }
+
+            Debug::_assert(distance < bestDistance); // Else `levenshteinWithMax` should return undefined
+            bestDistance = distance;
+            bestCandidate = candidate;
+        }
+    }
+    return bestCandidate;
+}
+
 } // namespace ts
 
 #endif // CORE_H

@@ -2559,6 +2559,17 @@ auto NodeFactory::createJsxExpression(DotDotDotToken dotDotDotToken, Expression 
 }
 
 // @api
+auto NodeFactory::createJsxNamespacedName(Identifier namespace_, Identifier name) -> JsxNamespacedName {
+    auto node = createBaseNode<JsxNamespacedName>(SyntaxKind::JsxNamespacedName);
+    node->_namespace = namespace_;
+    node->name = name;
+    node->transformFlags |= propagateChildFlags(node->_namespace) |
+        propagateChildFlags(node->name) |
+        TransformFlags::ContainsJsx;
+    return node;
+}
+
+// @api
 
 //
 // Clauses

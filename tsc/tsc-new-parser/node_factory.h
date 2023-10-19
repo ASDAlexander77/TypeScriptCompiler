@@ -266,9 +266,9 @@ class NodeFactory
         node->transformFlags |= propagateChildrenFlags(node->modifiers);
         // NOTE: The following properties are commonly set by the binder and are added here to
         // ensure declarations have a stable shape.
-        node->symbol = undefined;        // initialized by binder
-        node->localSymbol = undefined;   // initialized by binder
-        node->locals.clear();            // initialized by binder
+        //node->symbol = undefined;        // initialized by binder
+        //node->localSymbol = undefined;   // initialized by binder
+        //node->locals.clear();            // initialized by binder
         //node->nextContainer = undefined; // initialized by binder
         return node;
     }
@@ -1045,6 +1045,7 @@ class NodeFactory
     // auto updateJsxSpreadAttribute(JsxSpreadAttribute node, Expression expression) -> JsxSpreadAttribute;
     auto createJsxExpression(DotDotDotToken dotDotDotToken, Expression expression) -> JsxExpression;
     // auto updateJsxExpression(JsxExpression node, Expression expression) -> JsxExpression;
+    auto createJsxNamespacedName(Identifier namespace_, Identifier name) -> JsxNamespacedName;
 
     // //
     // // Clauses

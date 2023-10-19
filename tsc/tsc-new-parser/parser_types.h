@@ -1446,9 +1446,17 @@ struct JsxTagNamePropertyAccess : PropertyAccessExpression
     PTR(JsxTagNameExpression) expression;
 };
 
-struct JsxAttributes : ObjectLiteralExpressionBase<JsxAttributeLike>
+struct JsxAttributes : PrimaryExpression
 {
-    // kind: SyntaxKind::JsxAttributes;
+    // kind: SyntaxKind.JsxAttributes;
+    NodeArray<JsxAttributeLike> properties;
+    JsxOpeningLikeElement parent;
+};
+
+struct JsxNamespacedName : Node {
+    // kind: SyntaxKind.JsxNamespacedName;
+    PTR(Identifier) name;
+    PTR(Identifier) _namespace;
 };
 
 /// The opening element of a <Tag>...</Tag> JsxElement

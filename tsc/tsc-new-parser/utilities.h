@@ -2538,6 +2538,26 @@ inline static auto hasModifier(Node node, SyntaxKind key) -> boolean
     return some(node->modifiers, [=](auto m) { return m == key; });
 }
 
+/**
+ * Remove extra underscore from escaped identifier text content.
+ *
+ * @param identifier The escaped identifier text.
+ * @returns The unescaped identifier text.
+ */
+auto unescapeLeadingUnderscores(string identifier) -> string {
+    auto id = identifier;
+    return id.length() >= 3 && id[0] == (char_t) CharacterCodes::_ && id[1] == (char_t) CharacterCodes::_ && id[2] == (char_t) CharacterCodes::_ ? id.substr(1) : id;
+}
+
+auto idText(Node identifierOrPrivateName) -> string {
+    if (identifierOrPrivateName == SyntaxKind::Identifier)
+        return unescapeLeadingUnderscores(identifierOrPrivateName.as<Identifier>() ->escapedText);
+    if (identifierOrPrivateName == SyntaxKind::PrivateIdentifier)
+        return unescapeLeadingUnderscores(identifierOrPrivateName.as<PrivateIdentifier>()->escapedText);
+
+    return false;
+}
+
 } // namespace ts
 
 #endif // UTILITIES_H
