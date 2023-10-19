@@ -390,7 +390,7 @@ static string join(const std::vector<string> &v)
  * @internal
  */
 template <typename T>
-auto getSpellingSuggestion(string name, NodeArray<T> candidates, std::function<string(T)> getName) -> T {
+auto getSpellingSuggestion(string name, std::vector<T> candidates, std::function<string(T)> getName) -> T {
     auto maximumLengthDifference = std::max(2, std::floor(name.length() * 0.34));
     auto bestDistance = std::floor(name.length() * 0.4) + 1; // If the best result is worse than this, don't bother.
     T bestCandidate;

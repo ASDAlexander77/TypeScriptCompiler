@@ -1050,8 +1050,91 @@ struct Parser
         return false;
     }
 
-    // TODO: finish it
-    //auto viableKeywordSuggestions = Object.keys(textToKeywordObj).filter(keyword => keyword.length > 2);
+
+    std::vector<string> viableKeywordSuggestions = {{S("abstract")},
+                                                       {S("accessor")},
+                                                       {S("any")},
+                                                       //{S("as")},
+                                                       {S("asserts")},
+                                                       {S("assert")},
+                                                       {S("bigint")},
+                                                       {S("boolean")},
+                                                       {S("break")},
+                                                       {S("case")},
+                                                       {S("catch")},
+                                                       {S("class")},
+                                                       {S("continue")},
+                                                       {S("const")},
+                                                       {S("constructor")},
+                                                       {S("debugger")},
+                                                       {S("declare")},
+                                                       {S("default")},
+                                                       {S("delete")},
+                                                       //{S("do")},
+                                                       {S("else")},
+                                                       {S("enum")},
+                                                       {S("export")},
+                                                       {S("extends")},
+                                                       {S("false")},
+                                                       {S("finally")},
+                                                       {S("for")},
+                                                       {S("from")},
+                                                       {S("function")},
+                                                       {S("get")},
+                                                       //{S("if")},
+                                                       {S("implements")},
+                                                       {S("import")},
+                                                       //{S("in")},
+                                                       {S("infer")},
+                                                       {S("instanceof")},
+                                                       {S("interface")},
+                                                       {S("intrinsic")},
+                                                       //{S("is")},
+                                                       {S("keyof")},
+                                                       {S("let")},
+                                                       {S("module")},
+                                                       {S("namespace")},
+                                                       {S("never")},
+                                                       {S("new")},
+                                                       {S("null")},
+                                                       {S("number")},
+                                                       {S("object")},
+                                                       {S("package")},
+                                                       {S("private")},
+                                                       {S("protected")},
+                                                       {S("public")},
+                                                       {S("override")},
+                                                       {S("out")},
+                                                       {S("readonly")},
+                                                       {S("require")},
+                                                       {S("global")},
+                                                       {S("return")},
+                                                       {S("satisfies")},
+                                                       {S("set")},
+                                                       {S("static")},
+                                                       {S("string")},
+                                                       {S("super")},
+                                                       {S("switch")},
+                                                       {S("symbol")},
+                                                       {S("this")},
+                                                       {S("throw")},
+                                                       {S("true")},
+                                                       {S("try")},
+                                                       {S("type")},
+                                                       {S("typeof")},
+                                                       {S("undefined")},
+                                                       {S("unique")},
+                                                       {S("unknown")},
+                                                       {S("using")},
+                                                       {S("var")},
+                                                       {S("void")},
+                                                       {S("while")},
+                                                       {S("with")},
+                                                       {S("yield")},
+                                                       {S("async")},
+                                                       {S("await")},
+                                                       //{S("of")}
+                                                       };
 
     /**
      * Provides a better error message than the generic "';' expected" if possible for
@@ -1118,13 +1201,13 @@ struct Parser
         }
 
         // The user alternatively might have misspelled or forgotten to add a space after a common keyword.
-        auto suggestion = getSpellingSuggestion(expressionText, viableKeywordSuggestions, [](auto n) { return n; });
-        if (!suggestion)
+        auto suggestion = getSpellingSuggestion<string>(expressionText, viableKeywordSuggestions, [](auto n) { return n; });
+        if (suggestion.empty())
         {
              suggestion = getSpaceSuggestion(expressionText);
         }
 
-        if (suggestion) {
+        if (!suggestion.empty()) {
             parseErrorAt(pos, node->_end, _E(Diagnostics::Unknown_keyword_or_identifier_Did_you_mean_0), suggestion);
             return;
         }
