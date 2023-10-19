@@ -9141,7 +9141,7 @@ private:
 
     auto hasModifierOfKind(Node node, SyntaxKind kind) -> boolean
     {
-        return some(node->modifiers, [=](auto m) { return m._kind == kind; });
+        return some(node->modifiers, [=](auto m) { return m == kind; });
     }
 
     auto isImportMeta(Node node) -> boolean
@@ -9149,7 +9149,6 @@ private:
         return isMetaProperty(node) && node.as<MetaProperty>()->keywordToken == SyntaxKind::ImportKeyword &&
                node.as<MetaProperty>()->name->escapedText == S("meta");
     }
-}    
 
 }; // End of Scanner
 
