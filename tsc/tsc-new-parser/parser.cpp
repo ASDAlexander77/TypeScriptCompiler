@@ -1375,7 +1375,7 @@ struct Parser
         return finishNode(factory.createToken<Node>(kind), pos);
     }
 
-    auto canParseSemicolon()
+    auto canParseSemicolon() -> boolean
     {
         // If there's a real semicolon, then we can always parse it out.
         if (token() == SyntaxKind::SemicolonToken)
@@ -6749,7 +6749,7 @@ struct Parser
         Node node;
         auto hasParen = token() == SyntaxKind::OpenParenToken;
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
-        if (isIdentifierNode(expression) && parseOptional(SyntaxKind::ColonToken))
+        if (ts::isIdentifier(expression) && parseOptional(SyntaxKind::ColonToken))
         {
             node = factory.createLabeledStatement(expression, parseStatement());
         }
@@ -6981,35 +6981,35 @@ struct Parser
         return nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(/*disallowOf*/ true);
     }
 
-    auto nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(boolean disallowOf) -> boolean {
+    auto nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(boolean disallowOf = false) -> boolean {
         nextToken();
         if (disallowOf && token() == SyntaxKind::OfKeyword) return false;
         return (isBindingIdentifier() || token() == SyntaxKind::OpenBraceToken) && !scanner.hasPrecedingLineBreak();
     }
 
-    auto isUsingDeclaration() {
+    auto isUsingDeclaration() -> boolean {
         // 'using' always starts a lexical declaration if followed by an identifier. We also eagerly parse
         // |ObjectBindingPattern| so that we can report a grammar error during check. We don't parse out
         // |ArrayBindingPattern| since it potentially conflicts with element access (i.e., `using[x]`).
-        return lookAhead<?>(std::bind(&Parser::nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine, this));
+        return lookAhead<boolean>([&]() { return nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(); });
     }
 
     auto nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLineDisallowOf() -> boolean {
         return nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine(/*disallowOf*/ true);
     }
 
-    auto nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine(boolean disallowOf) -> boolean {
+    auto nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine(boolean disallowOf = false) -> boolean {
         if (nextToken() == SyntaxKind::UsingKeyword) {
             return nextTokenIsBindingIdentifierOrStartOfDestructuringOnSameLine(disallowOf);
         }
         return false;
     }
 
-    auto isAwaitUsingDeclaration() {
+    auto isAwaitUsingDeclaration() -> boolean {
         // 'await using' always starts a lexical declaration if followed by an identifier. We also eagerly parse
         // |ObjectBindingPattern| so that we can report a grammar error during check. We don't parse out
         // |ArrayBindingPattern| since it potentially conflicts with element access (i.e., `await using[x]`).
-        return lookAhead<boolean>(std::bind(&Parser::nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine, this));
+        return lookAhead<boolean>([&]() { return nextTokenIsUsingKeywordThenBindingIdentifierOrStartOfObjectDestructuringOnSameLine(); });
     }    
 
     auto parseStatement() -> Statement
@@ -7111,7 +7111,7 @@ struct Parser
         auto pos = getNodePos();
         auto hasJSDoc = hasPrecedingJSDocComment();
         auto modifiers = parseModifiers(/*allowDecorators*/ true);
-        auto isAmbient = some(modifiers, isDeclareModifier);
+        auto isAmbient = some<ModifiersLikeArray>(modifiers, std::bind(&Parser::isDeclareModifier, this));
         if (isAmbient) {
             auto node = tryReuseAmbientDeclaration(pos);
             if (node) {
@@ -7703,10 +7703,12 @@ struct Parser
      *
      * In such situations, 'permitInvalidConstAsModifier' should be set to true.
      */
-    auto parseModifiers(boolean allowDecorators, boolean permitConstAsModifier = false, boolean stopOnStartOfClassStaticBlock = false) -> NodeArray<ModifierLike> {
+    auto parseModifiers(boolean allowDecorators, boolean permitConstAsModifier = false, boolean stopOnStartOfClassStaticBlock = false) -> ModifiersLikeArray {
         auto pos = getNodePos();
-        NodeArray<ModifierLike> list;
-        boolean decorator, modifier, hasSeenStaticModifier = false, hasLeadingModifier = false, hasTrailingDecorator = false;
+        ModifiersLikeArray list;
+        Decorator decorator;
+        Modifier modifier;
+        auto hasSeenStaticModifier = false, hasLeadingModifier = false, hasTrailingDecorator = false;
 
         // Decorators should be contiguous in a list of modifiers but can potentially appear in two places (i.e., `[...leadingDecorators, ...leadingModifiers, ...trailingDecorators, ...trailingModifiers]`).
         // The leading modifiers *should* only contain `export` and `default` when trailingDecorators are present, but we'll handle errors for any other leading modifiers in the checker.

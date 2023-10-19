@@ -298,6 +298,15 @@ struct ClassElement : JSDocContainer
 {
 };
 
+struct ClassStaticBlockDeclaration : ClassElement, JSDocContainer, LocalsContainer {
+    // kind: SyntaxKind.ClassStaticBlockDeclaration;
+    PTR(Node) parent;
+    PTR(Block) body;
+
+    // The following properties are used only to report grammar errors (see `isGrammarError` in utilities.ts)
+    /** @internal */ NodeArray<PTR(ModifierLike)> modifiers;
+};
+
 struct TypeNode : ClassElement
 {
     // kind: TypeNodeSyntaxKind;
