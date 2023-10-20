@@ -163,17 +163,19 @@ static auto createDetachedDiagnostic(string fileName, string sourceText, number 
 }
 
 // TODO: finish it with detecting index
-static auto formatStringFromArgs(string text, string arg0, string arg1) -> string {
-    auto pos = text.find('{');
+static auto formatStringFromArgs(int& replaceIndex, string text, string arg0, string arg1) -> string {
+    auto pos = text.find('{', replaceIndex);
     if (pos != std::string::npos)
     {
-        auto end = text.find('}');
+        auto end = text.find('}', replaceIndex + 1);
 
-        auto index = to_number_base(text.substr(pos, end), 10);
+        auto index = to_number_base(text.substr(pos + 1, end - 1), 10);
 
         if (end != std::string::npos)
         {
-            text.replace(pos, end - pos + 1, index == 0 ? arg0 : index == 1 ? arg1 : S(""));
+            auto subText = index == 0 ? arg0 : index == 1 ? arg1 : S("");
+            text.replace(pos, end - pos + 1, subText);
+            replaceIndex = pos + subText.size() + 1;
         }
     }
 
@@ -187,8 +189,9 @@ static auto createDetachedDiagnostic(string fileName, string sourceText, number 
     assertDiagnosticLocation(/*file*/ SourceFile(), start, length);
     auto text = getLocaleSpecificMessage(message);
 
-    while (text.find('{') >= 0) {
-        text = formatStringFromArgs(text, arg0, arg1);
+    auto replaceIndex = 0;
+    while (text.find('{', replaceIndex) != std::string::npos) {
+        text = formatStringFromArgs(replaceIndex, text, arg0, arg1);
     }
 
     DiagnosticWithDetachedLocation d{data::DiagnosticWithDetachedLocation()};
