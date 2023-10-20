@@ -21,7 +21,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/tsc-new-parser/Debug/tsc-new-parser.exe",
-            "args": ["E:/Dev3/TypeScript/src/compiler/binder.ts"],
+            "args": ["C:/temp/test_scanner/1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

@@ -4328,7 +4328,9 @@ struct Parser
         // for cases like `> > =` becoming `>>=`
         if (isLeftHandSideExpression(expr) && isAssignmentOperator(reScanGreaterToken()))
         {
-            return makeBinaryExpression(expr, parseTokenNode<Node>(), parseAssignmentExpressionOrHigher(allowReturnTypeInArrowFunction), pos);
+            // WARN: we can use it in function call, as it will recorder calls
+            auto tokenNode = parseTokenNode<Node>();
+            return makeBinaryExpression(expr, tokenNode, parseAssignmentExpressionOrHigher(allowReturnTypeInArrowFunction), pos);
         }
 
         // It wasn't an assignment or a lambda.  This is a conditional expression:
