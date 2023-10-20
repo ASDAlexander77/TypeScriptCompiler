@@ -257,7 +257,7 @@ struct ImportAttributes : Node {
     boolean multiLine;
 };
 
-struct JSDocContainer
+struct JSDocContainer : Node
 {
     /* @internal */ NodeArray<PTR(JSDoc)> jsDoc;         // JSDoc that directly precedes this node
     /* @internal */ NodeArray<PTR(JSDocTag)> jsDocCache; // Cache for getJSDocTags
@@ -294,11 +294,11 @@ struct QualifiedName : Node
     /*@internal*/ number jsdocDotPos; // QualifiedName occurs in JSDoc-style generic: Id1.Id2.<T>
 };
 
-struct ClassElement : Node
+struct ClassElement : JSDocContainer
 {
 };
 
-struct ClassStaticBlockDeclaration : ClassElement, JSDocContainer, LocalsContainer {
+struct ClassStaticBlockDeclaration : ClassElement, LocalsContainer {
     // kind: SyntaxKind.ClassStaticBlockDeclaration;
     PTR(Node) parent;
     PTR(Block) body;
@@ -354,12 +354,12 @@ struct Statement : PrimaryExpression
     //any _statementBrand;
 };
 
-struct Declaration {
+struct Declaration : Node {
     /** @internal */ PTR(Symbol) symbol; // Symbol declared by node (initialized by binding)
     /** @internal */ PTR(Symbol) localSymbol; // Local symbol declared by node (initialized by binding only for exported nodes)
 };
 
-struct DeclarationStatement : Statement, Declaration
+struct DeclarationStatement : Statement
 {
 };
 
@@ -368,14 +368,14 @@ struct NamedDeclaration : Declaration
     PTR(DeclarationName) name;
 };
 
-struct TypeElement : Node, NamedDeclaration
+struct TypeElement : NamedDeclaration
 {
     //any _typeElementBrand;
     PTR(QuestionToken) questionToken;
 };
 
 /* @internal */
-struct DynamicNamedDeclaration : Node, NamedDeclaration
+struct DynamicNamedDeclaration : NamedDeclaration
 {
 };
 
@@ -417,7 +417,7 @@ struct Decorator : Node
     PTR(LeftHandSideExpression) expression;
 };
 
-struct TypeParameterDeclaration : Node, NamedDeclaration
+struct TypeParameterDeclaration : NamedDeclaration
 {
     // kind: SyntaxKind::TypeParameter;
     /** Note: Consider calling `getEffectiveConstraintOfTypeParameter` */
@@ -446,7 +446,7 @@ struct ConstructSignatureDeclaration : SignatureDeclarationBase
     // kind: SyntaxKind::ConstructSignature;
 };
 
-struct VariableDeclaration : Node, NamedDeclaration
+struct VariableDeclaration : NamedDeclaration
 {
     // kind: SyntaxKind::VariableDeclaration;
     PTR(ExclamationToken) exclamationToken; // Optional definite assignment assertion
@@ -466,7 +466,7 @@ struct VariableDeclarationList : Node
     NodeArray<PTR(VariableDeclaration)> declarations;
 };
 
-struct ParameterDeclaration : Node, NamedDeclaration
+struct ParameterDeclaration : NamedDeclaration
 {
     // kind: SyntaxKind::Parameter;
     PTR(DotDotDotToken) dotDotDotToken; // Present on rest parameter
@@ -475,7 +475,7 @@ struct ParameterDeclaration : Node, NamedDeclaration
     PTR(Expression) initializer;        // Optional initializer
 };
 
-struct BindingElement : Node, NamedDeclaration
+struct BindingElement : NamedDeclaration
 {
     // kind: SyntaxKind::BindingElement;
     PTR(PropertyName) propertyName;     // Binding property name (in object binding pattern)
@@ -491,7 +491,7 @@ struct PropertySignature : TypeElement
     PTR(Expression) initializer;      // Present for use with reporting a grammar error
 };
 
-struct PropertyDeclaration : Node, NamedDeclaration
+struct PropertyDeclaration : NamedDeclaration
 {
     // kind: SyntaxKind::PropertyDeclaration;
     PTR(QuestionToken) questionToken; // Present for use with reporting a grammar error
@@ -511,7 +511,7 @@ struct InitializedPropertyDeclaration : PropertyDeclaration
     //PTR(Expression) initializer;
 };
 
-struct ObjectLiteralElement : Node, NamedDeclaration
+struct ObjectLiteralElement : NamedDeclaration
 {
 };
 
@@ -538,7 +538,7 @@ struct SpreadAssignment : ObjectLiteralElement
     PTR(Expression) expression;
 };
 
-struct PropertyLikeDeclaration : Node, NamedDeclaration
+struct PropertyLikeDeclaration : NamedDeclaration
 {
 };
 
@@ -1749,7 +1749,7 @@ struct CatchClause : Node
     PTR(Block) block;
 };
 
-struct ClassLikeDeclaration : Node, NamedDeclaration
+struct ClassLikeDeclaration : NamedDeclaration
 {
     // kind: SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression;
     NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
@@ -1792,7 +1792,7 @@ struct TypeAliasDeclaration : DeclarationStatement
     PTR(TypeNode) type;
 };
 
-struct EnumMember : Node, NamedDeclaration
+struct EnumMember : NamedDeclaration
 {
     // kind: SyntaxKind::EnumMember;
     // This does include ComputedPropertyName, but the parser will give an error
@@ -1881,19 +1881,19 @@ struct ImportDeclaration : Statement
 // import { a, b as x } from "mod" => name = undefined, namedBinding: NamedImports = { elements: [{ name: a }, { name:
 // x, propertyName: b}]} import d, { a, b as x } from "mod" => name = d, namedBinding: NamedImports = { elements: [{
 // name: a }, { name: x, propertyName: b}]}
-struct ImportClause : Node, NamedDeclaration
+struct ImportClause : NamedDeclaration
 {
     // kind: SyntaxKind::ImportClause;
     boolean isTypeOnly;
     PTR(NamedImportBindings) namedBindings;
 };
 
-struct NamespaceImport : Node, NamedDeclaration
+struct NamespaceImport : NamedDeclaration
 {
     // kind: SyntaxKind::NamespaceImport;
 };
 
-struct NamespaceExport : Node, NamedDeclaration
+struct NamespaceExport : NamedDeclaration
 {
     // kind: SyntaxKind::NamespaceExport;
 };
@@ -1904,7 +1904,7 @@ struct NamespaceExportDeclaration : DeclarationStatement
     PTR(Identifier) name;
 };
 
-struct ExportDeclaration : DeclarationStatement, JSDocContainer
+struct ExportDeclaration : DeclarationStatement
 {
     // kind: SyntaxKind::ExportDeclaration;
     PTR(Node) parent; // SourceFile | ModuleBlock;
@@ -1933,7 +1933,7 @@ struct NamedExports : NamedImportsOrExports
     NodeArray<PTR(ExportSpecifier)> elements;
 };
 
-struct ImportOrExportSpecifier : Node, NamedDeclaration
+struct ImportOrExportSpecifier : NamedDeclaration
 {
     PTR(NamedImports) parent;
     PTR(Identifier) propertyName; // Name preceding "as" keyword (or undefined when "as" is absent)
@@ -2085,7 +2085,7 @@ struct JSDoc : Node
     string comment;
 };
 
-struct JSDocTag : Node, Declaration
+struct JSDocTag : Declaration
 {
     PTR(Identifier) tagName;
     string comment;
@@ -2278,7 +2278,7 @@ using ExportedModulesFromDeclarationEmit = std::vector<Symbol>;
 /**
  * Subset of properties from SourceFile that are used in multiple utility functions
  */
-struct SourceFileLike : Node, Declaration
+struct SourceFileLike : Declaration
 {
     string text;
     // Stores a line map for the file.
