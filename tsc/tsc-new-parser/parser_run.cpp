@@ -37,10 +37,7 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
     auto indent = 0;
 
     visitNode = [&](ts::Node child) -> ts::Node {
-        for (auto i = 0; i < indent; i++)
-        {
-            std::cout << "\t";
-        }
+        std::cout << string(indent, S('\t')).c_str();
 
         if (showLineCharPos)
         {
