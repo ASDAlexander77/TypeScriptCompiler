@@ -264,7 +264,7 @@ struct JSDocContainer : Node
 };
 
 // TODO(rbuckton): Constraint 'TKind' to 'TokenSyntaxKind'
-template <SyntaxKind... TKind> struct Token : Node
+template <SyntaxKind... TKind> struct Token : JSDocContainer
 {
 };
 
@@ -322,7 +322,18 @@ struct OmittedExpression : Expression
     // kind: SyntaxKind::OmittedExpression;
 };
 
-struct UnaryExpression : Expression
+struct NodeWithTypeArguments : Expression
+{
+    NodeArray<PTR(TypeNode)> typeArguments;
+};
+
+struct ExpressionWithTypeArguments : NodeWithTypeArguments
+{
+    // kind: SyntaxKind::ExpressionWithTypeArguments;
+    PTR(LeftHandSideExpression) expression;
+};
+
+struct UnaryExpression : ExpressionWithTypeArguments
 {
     //any _unaryExpressionBrand;
     PTR(Expression) expression;
@@ -354,7 +365,7 @@ struct Statement : PrimaryExpression
     //any _statementBrand;
 };
 
-struct Declaration : Node {
+struct Declaration : Statement {
     /** @internal */ PTR(Symbol) symbol; // Symbol declared by node (initialized by binding)
     /** @internal */ PTR(Symbol) localSymbol; // Local symbol declared by node (initialized by binding only for exported nodes)
 };
@@ -423,7 +434,7 @@ struct TypeParameterDeclaration : NamedDeclaration
     /** Note: Consider calling `getEffectiveConstraintOfTypeParameter` */
     PTR(TypeNode) constraint;
     PTR(TypeNode) _default;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct SignatureDeclarationBase : TypeElement
@@ -640,11 +651,6 @@ struct IndexSignatureDeclaration : SignatureDeclarationBase
 
 template <SyntaxKind TKind> struct KeywordTypeNode : KeywordToken<TKind>, TypeNode
 {
-};
-
-struct NodeWithTypeArguments : TypeNode
-{
-    NodeArray<PTR(TypeNode)> typeArguments;
 };
 
 struct ImportTypeNode : NodeWithTypeArguments
@@ -877,11 +883,20 @@ struct LiteralLikeNode : PrimaryExpression
     boolean hasExtendedUnicodeEscape;
 };
 
+struct TemplateLiteralLikeNode : LiteralLikeNode
+{
+    PTR(TemplateHead) head;
+    NodeArray<PTR(TemplateSpan)> templateSpans;
+    string rawText;
+    /* @internal */
+    TokenFlags templateFlags;
+};
+
 // The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a
 // StringLiteral, or any literal of a template, this means quotes have been removed and escapes have been converted to
 // actual characters. For a NumericLiteral, the stored value is the toString() representation of the number. For example
 // 1, 1.00, and 1e0 are all stored as just "1".
-struct LiteralExpression : LiteralLikeNode
+struct LiteralExpression : TemplateLiteralLikeNode
 {
     //any _literalExpressionBrand;
 };
@@ -1134,15 +1149,6 @@ struct ArrowFunction : /*Expression, */ FunctionLikeDeclarationBase
     PTR(EqualsGreaterThanToken) equalsGreaterThanToken;
 };
 
-struct TemplateLiteralLikeNode : LiteralLikeNode
-{
-    PTR(TemplateHead) head;
-    NodeArray<PTR(TemplateSpan)> templateSpans;
-    string rawText;
-    /* @internal */
-    TokenFlags templateFlags;
-};
-
 struct RegularExpressionLiteral : LiteralExpression
 {
     // kind: SyntaxKind::RegularExpressionLiteral;
@@ -1368,12 +1374,6 @@ struct ImportCall : CallExpression
     PTR(ImportExpression) expression;
 };
 
-struct ExpressionWithTypeArguments : NodeWithTypeArguments
-{
-    // kind: SyntaxKind::ExpressionWithTypeArguments;
-    PTR(LeftHandSideExpression) expression;
-};
-
 struct NewExpression : PrimaryExpression
 {
     // kind: SyntaxKind::NewExpression;
@@ -1510,7 +1510,7 @@ struct JsxAttribute : ObjectLiteralElement
 struct JsxSpreadAttribute : ObjectLiteralElement
 {
     // kind: SyntaxKind::JsxSpreadAttribute;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 struct JsxClosingElement : Node

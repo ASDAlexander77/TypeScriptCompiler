@@ -4,6 +4,8 @@
 #include "config.h"
 #include "undefined.h"
 
+#include <algorithm>
+
 namespace ts
 {
 
@@ -402,14 +404,64 @@ static string str_toupper(string s)
     return s;
 }
 
+
+using fnumber = double;
+static auto levenshteinWithMax(string s1, string s2, number max) -> number {
+    std::vector<fnumber> previous(s2.size() + 1);
+    std::vector<fnumber> current(s2.size() + 1);
+    /** Represents any value > max. We don't care about the particular value. */
+    auto big = max + 0.01;
+
+    for (auto i = 0; i <= s2.size(); i++) {
+        previous[i] = i;
+    }
+
+    for (auto i = 1; i <= s1.size(); i++) {
+        auto c1 = s1[i - 1];
+        auto minJ = (fnumber) std::ceil(i > max ? i - max : 1);
+        auto maxJ = (fnumber) std::floor(s2.size() > max + i ? max + i : s2.size());
+        current[0] = i;
+        /** Smallest value of the matrix in the ith column. */
+        auto colMin = i;
+        for (auto j = 1; j < minJ; j++) {
+            current[j] = big;
+        }
+        for (auto j = minJ; j <= maxJ; j++) {
+            // case difference should be significantly cheaper than other differences
+            auto substitutionDistance = std::tolower(s1[i - 1]) == std::tolower(s2[j - 1])
+                ? (previous[j - 1] + 0.1)
+                : (previous[j - 1] + 2);
+            auto dist = c1 == s2[j - 1]
+                ? previous[j - 1]
+                : std::min((fnumber) (/*delete*/ previous[j] + 1, /*insert*/ current[j - 1] + 1), /*substitute*/ (fnumber) substitutionDistance);
+            current[j] = dist;
+            colMin = std::min((fnumber)colMin, dist);
+        }
+        for (auto j = maxJ + 1; j <= s2.size(); j++) {
+            current[j] = big;
+        }
+        if (colMin > max) {
+            // Give up -- everything in this column is > max and it can't get better in future columns.
+            return undefined;
+        }
+
+        auto temp = previous;
+        previous = current;
+        current = temp;
+    }
+
+    auto res = previous[s2.size()];
+    return res > max ? undefined : res;
+}
+
 template <typename T>
 auto getSpellingSuggestion(string name, std::vector<T> candidates, std::function<string(T)> getName) -> T {
-    auto maximumLengthDifference = std::max(2, std::floor(name.length() * 0.34));
+    auto maximumLengthDifference = std::max(2.0, std::floor(name.length() * 0.34));
     auto bestDistance = std::floor(name.length() * 0.4) + 1; // If the best result is worse than this, don't bother.
     T bestCandidate;
     for (auto candidate : candidates) {
         auto candidateName = getName(candidate);
-        if (candidateName != undefined && std::abs(candidateName.size() - name.length()) <= maximumLengthDifference) {
+        if (!candidateName.empty() && std::abs((const long)(candidateName.size() - name.length())) <= maximumLengthDifference) {
             if (candidateName == name) {
                 continue;
             }

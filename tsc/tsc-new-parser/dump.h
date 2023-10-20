@@ -321,10 +321,10 @@ protected:
             || kind == SyntaxKind::SwitchStatement;
     }
 
-    void printDecorators(ts::Node node)
-    {
-        forEachChildrenPrint(node->decorators, nullptr, nullptr, nullptr, false, " ", "@");
-    }
+    // void printDecorators(ts::Node node)
+    // {
+    //     forEachChildrenPrint(node->decorators, nullptr, nullptr, nullptr, false, " ", "@");
+    // }
 
     void printModifiersWithMode(ts::Node node)
     {
@@ -647,7 +647,6 @@ protected:
         case SyntaxKind::ShorthandPropertyAssignment:
         {
             auto shorthandPropertyAssignment = node.as<ShorthandPropertyAssignment>();
-            printDecorators(node);
             printModifiers(node);
             forEachChildPrint(shorthandPropertyAssignment->name);
             forEachChildPrint(shorthandPropertyAssignment->questionToken);
@@ -665,7 +664,6 @@ protected:
         }
         case SyntaxKind::Parameter:
         {
-            printDecorators(node);
             printModifiers(node);
             auto parameterDeclaration = node.as<ParameterDeclaration>();
             forEachChildPrint(parameterDeclaration->dotDotDotToken);
@@ -681,7 +679,6 @@ protected:
         }
         case SyntaxKind::PropertyDeclaration:
         {
-            printDecorators(node);
             printModifiers(node);
             auto propertyDeclaration = node.as<PropertyDeclaration>();
             forEachChildPrint(propertyDeclaration->name);
@@ -699,7 +696,6 @@ protected:
         }
         case SyntaxKind::PropertySignature:
         {
-            printDecorators(node);
             printModifiers(node);
             auto propertySignature = node.as<PropertySignature>();
             forEachChildPrint(propertySignature->name);
@@ -716,7 +712,6 @@ protected:
         }
         case SyntaxKind::PropertyAssignment:
         {
-            printDecorators(node);
             printModifiers(node);
             auto propertyAssignment = node.as<PropertyAssignment>();
             forEachChildPrint(propertyAssignment->name);
@@ -731,7 +726,6 @@ protected:
         case SyntaxKind::VariableDeclaration:
         {
             auto variableDeclaration = node.as<VariableDeclaration>();
-            printDecorators(node);
             printModifiers(node);
             forEachChildPrint(variableDeclaration->name);
             forEachChildPrint(variableDeclaration->exclamationToken);
@@ -749,7 +743,6 @@ protected:
         }
         case SyntaxKind::BindingElement:
         {
-            printDecorators(node);
             printModifiers(node);
             auto bindingElement = node.as<BindingElement>();
             forEachChildPrint(bindingElement->dotDotDotToken);
@@ -771,7 +764,6 @@ protected:
         case SyntaxKind::FunctionType:
         case SyntaxKind::ConstructorType: {
             auto signatureDeclarationBase = node.as<SignatureDeclarationBase>();
-            printDecorators(node);
             printModifiers(node);
             if (kind == SyntaxKind::ConstructorType)
                 out << "new ";
@@ -786,7 +778,6 @@ protected:
         case SyntaxKind::ConstructSignature:
         {
             auto signatureDeclarationBase = node.as<SignatureDeclarationBase>();
-            printDecorators(node);
             printModifiers(node);
             if (kind == SyntaxKind::ConstructSignature)
                 out << "new ";
@@ -807,7 +798,6 @@ protected:
         case SyntaxKind::IndexSignature:
         {
             auto signatureDeclarationBase = node.as<SignatureDeclarationBase>();
-            printDecorators(node);
             printModifiers(node);
             forEachChildrenPrint(signatureDeclarationBase->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(signatureDeclarationBase->parameters, "[", ", ", "]");
@@ -831,8 +821,6 @@ protected:
             auto functionLikeDeclarationBase = node.as<FunctionLikeDeclarationBase>();
             if (functionLikeDeclarationBase->body)
                 functionLikeDeclarationBase->body->parent = functionLikeDeclarationBase;
-
-            printDecorators(node);
 
             if (declarationMode && isClassMemeber(node))
             {
@@ -1257,7 +1245,6 @@ protected:
         }
         case SyntaxKind::VariableStatement:
         {
-            printDecorators(node);
             printModifiers(node);
             forEachChildPrint(node.as<VariableStatement>()->declarationList);
             break;
@@ -1525,7 +1512,6 @@ protected:
         case SyntaxKind::ClassExpression:
         {
             auto classLikeDeclaration = node.as<ClassLikeDeclaration>();
-            printDecorators(node);
             printModifiersWithMode(node);
             out << "class ";
             forEachChildPrint(classLikeDeclaration->name);
@@ -1537,7 +1523,6 @@ protected:
         case SyntaxKind::InterfaceDeclaration:
         {
             auto interfaceDeclaration = node.as<InterfaceDeclaration>();
-            printDecorators(node);
             printModifiersWithMode(node);
             out << "interface ";
             forEachChildPrint(interfaceDeclaration->name);
@@ -1549,7 +1534,6 @@ protected:
         case SyntaxKind::TypeAliasDeclaration:
         {
             auto typeAliasDeclaration = node.as<TypeAliasDeclaration>();
-            printDecorators(node);
             printModifiersWithMode(node);
             out << "type ";
             forEachChildPrint(typeAliasDeclaration->name);
@@ -1561,7 +1545,6 @@ protected:
         case SyntaxKind::EnumDeclaration:
         {
             auto enumDeclaration = node.as<EnumDeclaration>();
-            printDecorators(node);
             printModifiersWithMode(node);
             out << "enum ";
             forEachChildPrint(enumDeclaration->name);
@@ -1580,7 +1563,6 @@ protected:
         case SyntaxKind::ModuleDeclaration:
         {
             auto moduleDeclaration = node.as<ModuleDeclaration>();
-            printDecorators(node);
             printModifiers(node);
             out << "module ";
             forEachChildPrint(moduleDeclaration->name);
@@ -1601,7 +1583,6 @@ protected:
         case SyntaxKind::ImportEqualsDeclaration:
         {
             auto importEqualsDeclaration = node.as<ImportEqualsDeclaration>();
-            printDecorators(node);
             printModifiers(node);
             out << "import ";
             forEachChildPrint(importEqualsDeclaration->name);
@@ -1612,7 +1593,6 @@ protected:
         case SyntaxKind::ImportDeclaration:
         {
             auto importDeclaration = node.as<ImportDeclaration>();
-            printDecorators(node);
             printModifiers(node);
             out << "import ";
             if (importDeclaration->importClause)
@@ -1664,7 +1644,6 @@ protected:
         case SyntaxKind::ExportDeclaration:
         {
             auto exportDeclaration = node.as<ExportDeclaration>();
-            printDecorators(node);
             printModifiers(node);
             out << "export ";
             if (exportDeclaration->exportClause)
@@ -1711,7 +1690,6 @@ protected:
         }
         case SyntaxKind::ExportAssignment:
         {
-            printDecorators(node);
             printModifiers(node);
             out << "export = ";
             forEachChildPrint(node.as<ExportAssignment>()->expression);
@@ -1808,7 +1786,7 @@ protected:
         }
         case SyntaxKind::MissingDeclaration:
         {
-            printDecorators(node);
+            printModifiers(node);
             break;
         }
         case SyntaxKind::CommaListExpression:

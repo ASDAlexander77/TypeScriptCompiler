@@ -193,19 +193,10 @@ auto NodeFactory::createLiteralLikeNode(SyntaxKind kind, string text) -> Literal
     return undefined;
 }
 
-auto NodeFactory::createBaseIdentifier(string text, SyntaxKind originalKeywordKind)
+auto NodeFactory::createBaseIdentifier(string text)
 {
-    if (originalKeywordKind == SyntaxKind::Unknown && !text.empty() && scanner)
-    {
-        originalKeywordKind = scanner->stringToToken(text);
-    }
-    if (originalKeywordKind == SyntaxKind::Identifier)
-    {
-        originalKeywordKind = SyntaxKind::Unknown;
-    }
     auto node = createBaseNode<Identifier>(SyntaxKind::Identifier);
-    node->originalKeywordKind = originalKeywordKind;
-    node->escapedText = escapeLeadingUnderscores(text);
+    node->escapedText = text;
     return node;
 }
 

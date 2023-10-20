@@ -15,6 +15,18 @@
             "environment": [],
             "externalConsole": true,
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        }
+        },
+        {
+            "name": "(Windows) tsc-new-parser.exe - Launch",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/tsc-new-parser/Debug/tsc-new-parser.exe",
+            "args": ["E:/Dev3/TypeScript/tests/cases/compiler/2dArrays.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        }        
    ]
 }

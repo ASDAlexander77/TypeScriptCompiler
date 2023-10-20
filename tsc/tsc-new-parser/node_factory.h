@@ -408,7 +408,7 @@ class NodeFactory
     // Identifiers
     //
 
-    auto createBaseIdentifier(string text, SyntaxKind originalKeywordKind = SyntaxKind::Unknown);
+    auto createBaseIdentifier(string text);
     /* @internal */ auto createIdentifier(string text, SyntaxKind originalKeywordKind = SyntaxKind::Unknown, boolean hasExtendedUnicodeEscape = false)
         -> Identifier; // eslint-disable-line @typescript-eslint/unified-signatures
                        ///* @internal */ auto updateIdentifier(Identifier node, NodeArray</*TypeNode | TypeParameterDeclaration*/Node>

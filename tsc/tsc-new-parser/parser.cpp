@@ -1306,7 +1306,7 @@ struct Parser
         if (!openParsed) {
             return;
         }
-        if (lastError) {
+        if (lastError != undefined) {
             addRelatedInfo(
                 lastError,
                 createDetachedDiagnostic(
@@ -1349,7 +1349,7 @@ struct Parser
     auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage = undefined, string arg0 = string())
         -> Node
     {
-        return parseOptionalToken(t) || createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0);
+        return parseOptionalToken(t) || [&]() { return createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0); };
     }
 
     auto parseExpectedTokenJSDoc(SyntaxKind t) -> Node
@@ -1817,6 +1817,7 @@ struct Parser
             return Debug::fail<boolean>(S("ParsingContext::Count used as a context")); // Not a real context, only a marker.            
         default:
             Debug::_assertNever(S("Non-exhaustive case in 'isListElement'."));
+            return false;
         }            
     }
 
@@ -2427,6 +2428,7 @@ struct Parser
                 Debug::fail<string>(S("ParsingContext::Count used as a context")); // Not a real context, only a marker.
             default:
                 Debug::_assertNever(context);
+                return undefined;
         }
     }
 
@@ -3676,7 +3678,7 @@ struct Parser
             attributes = parseImportAttributes(currentToken, /*skipKeyword*/ true);
             if (!parseExpected(SyntaxKind::CloseBraceToken)) {
                 auto lastError = lastOrUndefined(parseDiagnostics);
-                if (lastError && lastError->code == Diagnostics::_0_expected.code) {
+                if (lastError != undefined && lastError->code == Diagnostics::_0_expected.code) {
                     addRelatedInfo(
                         lastError,
                         createDetachedDiagnostic(fileName, sourceText, openBracePosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_1_to_match_the_0_token_here), S("{"), S("}"))
@@ -3890,13 +3892,15 @@ struct Parser
         return finishNode(factory.createTypeOperatorNode(operator_, parseTypeOperatorOrHigher()), pos);
     }
 
-    auto tryParseConstraintOfInferType() {
+    auto tryParseConstraintOfInferType() -> TypeNode {
         if (parseOptional(SyntaxKind::ExtendsKeyword)) {
             auto constraint = disallowConditionalTypesAnd<TypeNode>(std::bind(&Parser::parseType, this));
             if (inDisallowConditionalTypesContext() || token() != SyntaxKind::QuestionToken) {
                 return constraint;
             }
         }
+
+        return undefined;
     }
 
     auto parseTypeParameterOfInferType() -> TypeParameterDeclaration {
@@ -4289,7 +4293,7 @@ struct Parser
         // If we do successfully parse arrow-function, we must *not* recurse for productions 1, 2 or 3. An ArrowFunction
         // is not a LeftHandSideExpression, nor does it start a ConditionalExpression.  So we are done with
         // AssignmentExpression if we see one.
-        auto arrowExpression = tryParseParenthesizedArrowFunctionExpression(allowReturnTypeInArrowFunction) || tryParseAsyncSimpleArrowFunctionExpression(allowReturnTypeInArrowFunction);
+        auto arrowExpression = tryParseParenthesizedArrowFunctionExpression(allowReturnTypeInArrowFunction) || [&]() { return tryParseAsyncSimpleArrowFunctionExpression(allowReturnTypeInArrowFunction); };
         if (arrowExpression)
         {
             return arrowExpression;
@@ -5556,6 +5560,7 @@ struct Parser
             return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ false, /*topInvalidNodePosition*/ undefined, openingTag);
         default:
             Debug::_assertNever(/*token*/ Node());
+            return undefined;
         }
     }
 
@@ -8203,7 +8208,7 @@ struct Parser
             auto elements = parseDelimitedList<Node>(ParsingContext::ImportAttributes, std::bind(&Parser::parseImportAttribute, this), /*considerSemicolonAsDelimiter*/ true);
             if (!parseExpected(SyntaxKind::CloseBraceToken)) {
                 auto lastError = lastOrUndefined(parseDiagnostics);
-                if (lastError && lastError->code == _E(Diagnostics::_0_expected).code) {
+                if (lastError != undefined && lastError->code == _E(Diagnostics::_0_expected).code) {
                     addRelatedInfo(
                         lastError,
                         createDetachedDiagnostic(fileName, sourceText, openBracePosition, 1, _E(Diagnostics::The_parser_expected_to_find_a_1_to_match_the_0_token_here), S("{"), S("}"))
