@@ -503,7 +503,7 @@ struct PropertySignature : TypeElement
     PTR(Expression) initializer;      // Present for use with reporting a grammar error
 };
 
-struct PropertyDeclaration : NamedDeclaration
+struct PropertyDeclaration : ClassElement /*NamedDeclaration*/
 {
     // kind: SyntaxKind::PropertyDeclaration;
     PTR(QuestionToken) questionToken; // Present for use with reporting a grammar error
@@ -1808,11 +1808,11 @@ struct EnumDeclaration : Declaration/*DeclarationStatement*/
     NodeArray<PTR(EnumMember)> members;
 };
 
-struct ModuleBody : DeclarationStatement
+struct ModuleBody : NamedDeclaration
 {
 };
 
-struct ModuleDeclaration : NamedDeclaration, LocalsContainer
+struct ModuleDeclaration : ModuleBody, LocalsContainer
 {
     // kind: SyntaxKind::ModuleDeclaration;
     PTR(Node) parent;

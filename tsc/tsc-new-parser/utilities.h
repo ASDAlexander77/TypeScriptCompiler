@@ -2517,17 +2517,17 @@ inline static auto isFunctionOrConstructorTypeNode(Node node) -> boolean
 }
 
 // TODO: for emitNode
-auto isGeneratedIdentifier(Node node) -> boolean {
+static auto isGeneratedIdentifier(Node node) -> boolean {
     //return isIdentifier(node) && node->emitNode->autoGenerate != undefined;
     return false;
 }
 
-//auto getEmitFlags(Node node) -> EmitFlags {
+//static auto getEmitFlags(Node node) -> EmitFlags {
 //    auto emitNode = node->emitNode;
 //    return emitNode && emitNode->flags || 0;
 //}
 
-auto isLocalName(Identifier node) -> boolean {
+static auto isLocalName(Identifier node) -> boolean {
     //return (getEmitFlags(node) & EmitFlags::LocalName) != EmitFlags::None;
     return false;
 }
