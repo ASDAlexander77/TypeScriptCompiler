@@ -1451,18 +1451,22 @@ inline auto isModifierKind(SyntaxKind token) -> boolean
 {
     switch (token)
     {
-    case SyntaxKind::AbstractKeyword:
-    case SyntaxKind::AsyncKeyword:
-    case SyntaxKind::ConstKeyword:
-    case SyntaxKind::DeclareKeyword:
-    case SyntaxKind::DefaultKeyword:
-    case SyntaxKind::ExportKeyword:
-    case SyntaxKind::PublicKeyword:
-    case SyntaxKind::PrivateKeyword:
-    case SyntaxKind::ProtectedKeyword:
-    case SyntaxKind::ReadonlyKeyword:
-    case SyntaxKind::StaticKeyword:
-        return true;
+        case SyntaxKind::AbstractKeyword:
+        case SyntaxKind::AccessorKeyword:
+        case SyntaxKind::AsyncKeyword:
+        case SyntaxKind::ConstKeyword:
+        case SyntaxKind::DeclareKeyword:
+        case SyntaxKind::DefaultKeyword:
+        case SyntaxKind::ExportKeyword:
+        case SyntaxKind::InKeyword:
+        case SyntaxKind::PublicKeyword:
+        case SyntaxKind::PrivateKeyword:
+        case SyntaxKind::ProtectedKeyword:
+        case SyntaxKind::ReadonlyKeyword:
+        case SyntaxKind::StaticKeyword:
+        case SyntaxKind::OutKeyword:
+        case SyntaxKind::OverrideKeyword:
+            return true;
     }
     return false;
 }
@@ -1549,34 +1553,37 @@ inline auto isLeftHandSideExpressionKind(SyntaxKind kind) -> boolean
 {
     switch (kind)
     {
-    case SyntaxKind::PropertyAccessExpression:
-    case SyntaxKind::ElementAccessExpression:
-    case SyntaxKind::NewExpression:
-    case SyntaxKind::CallExpression:
-    case SyntaxKind::JsxElement:
-    case SyntaxKind::JsxSelfClosingElement:
-    case SyntaxKind::JsxFragment:
-    case SyntaxKind::TaggedTemplateExpression:
-    case SyntaxKind::ArrayLiteralExpression:
-    case SyntaxKind::ParenthesizedExpression:
-    case SyntaxKind::ObjectLiteralExpression:
-    case SyntaxKind::ClassExpression:
-    case SyntaxKind::FunctionExpression:
-    case SyntaxKind::Identifier:
-    case SyntaxKind::RegularExpressionLiteral:
-    case SyntaxKind::NumericLiteral:
-    case SyntaxKind::BigIntLiteral:
-    case SyntaxKind::StringLiteral:
-    case SyntaxKind::NoSubstitutionTemplateLiteral:
-    case SyntaxKind::TemplateExpression:
-    case SyntaxKind::FalseKeyword:
-    case SyntaxKind::NullKeyword:
-    case SyntaxKind::ThisKeyword:
-    case SyntaxKind::TrueKeyword:
-    case SyntaxKind::SuperKeyword:
-    case SyntaxKind::NonNullExpression:
-    case SyntaxKind::MetaProperty:
-    case SyntaxKind::ImportKeyword: // technically this is only an Expression if it's in a CallExpression
+        case SyntaxKind::PropertyAccessExpression:
+        case SyntaxKind::ElementAccessExpression:
+        case SyntaxKind::NewExpression:
+        case SyntaxKind::CallExpression:
+        case SyntaxKind::JsxElement:
+        case SyntaxKind::JsxSelfClosingElement:
+        case SyntaxKind::JsxFragment:
+        case SyntaxKind::TaggedTemplateExpression:
+        case SyntaxKind::ArrayLiteralExpression:
+        case SyntaxKind::ParenthesizedExpression:
+        case SyntaxKind::ObjectLiteralExpression:
+        case SyntaxKind::ClassExpression:
+        case SyntaxKind::FunctionExpression:
+        case SyntaxKind::Identifier:
+        case SyntaxKind::PrivateIdentifier: // technically this is only an Expression if it's in a `#field in expr` BinaryExpression
+        case SyntaxKind::RegularExpressionLiteral:
+        case SyntaxKind::NumericLiteral:
+        case SyntaxKind::BigIntLiteral:
+        case SyntaxKind::StringLiteral:
+        case SyntaxKind::NoSubstitutionTemplateLiteral:
+        case SyntaxKind::TemplateExpression:
+        case SyntaxKind::FalseKeyword:
+        case SyntaxKind::NullKeyword:
+        case SyntaxKind::ThisKeyword:
+        case SyntaxKind::TrueKeyword:
+        case SyntaxKind::SuperKeyword:
+        case SyntaxKind::NonNullExpression:
+        case SyntaxKind::ExpressionWithTypeArguments:
+        case SyntaxKind::MetaProperty:
+        case SyntaxKind::ImportKeyword: // technically this is only an Expression if it's in a CallExpression
+        case SyntaxKind::MissingDeclaration:
         return true;
     default:
         return false;
