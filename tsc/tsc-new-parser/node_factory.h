@@ -66,6 +66,10 @@ class NodeFactory
         return name;
     }
 
+    inline auto asInitializer(Expression node) -> Expression {
+        return !!node ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(node) : node;
+    }
+
     template <typename T> inline auto asNodeArray(NodeArray<T> array) -> NodeArray<T>
     {
         return createNodeArray(array);
@@ -141,6 +145,13 @@ class NodeFactory
         newNode->_kind = kind;
         createNodeCallback(newNode);
         return newNode;
+    }
+
+    template <typename T> auto createBaseDeclaration(SyntaxKind kind) {
+        auto node = createBaseNode<T>(kind);
+        node->symbol = undefined; // initialized by binder
+        node->localSymbol = undefined; // initialized by binder
+        return node;
     }
 
     template <typename T> auto createBaseToken(SyntaxKind kind)
@@ -252,137 +263,6 @@ class NodeFactory
     {
         auto node = createBaseJSDocTag<T>(kind, tagName ? tagName : createIdentifier(getDefaultTagNameForKind(kind)), comment);
         node->typeExpression = typeExpression;
-        return node;
-    }
-
-    template <typename T> auto createBaseDeclaration(SyntaxKind kind)
-    {
-        auto node = createBaseNode<T>(kind);
-        node->symbol = undefined; // initialized by binder
-        node->localSymbol = undefined; // initialized by binder
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseNamedDeclaration(SyntaxKind kind, NodeArray<ModifierLike> modifiers, Identifier name) -> T
-    {
-        auto node = createBaseDeclaration<T>(kind, modifiers);
-        name = asName(name);
-        node->name = name;
-
-        // The PropertyName of a member is allowed to be `await`.
-        // We don't need to exclude `await` for type signatures since types
-        // don't propagate child flags.
-        if (name)
-        {
-            switch ((SyntaxKind)node)
-            {
-            case SyntaxKind::MethodDeclaration:
-            case SyntaxKind::GetAccessor:
-            case SyntaxKind::SetAccessor:
-            case SyntaxKind::PropertyDeclaration:
-            case SyntaxKind::PropertyAssignment:
-                if (isIdentifier(name))
-                {
-                    node->transformFlags |= propagateIdentifierNameFlags(name);
-                    break;
-                }
-                // fall through
-            default:
-                node->transformFlags |= propagateChildFlags(name);
-                break;
-            }
-        }
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseBindingLikeDeclaration(SyntaxKind kind, NodeArray<ModifierLike> modifiers, BindingName name,
-                                          Expression initializer) -> T
-    {
-        auto node = createBaseNamedDeclaration<T>(kind, modifiers, name);
-        node->initializer = initializer;
-        node->transformFlags |= propagateChildFlags(node->initializer);
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseVariableLikeDeclaration(SyntaxKind kind, NodeArray<ModifierLike> modifiers, BindingName name,
-                                           TypeNode type, Expression initializer) -> T
-    {
-        auto node = createBaseBindingLikeDeclaration<T>(kind, modifiers, name, initializer);
-        node->type = type;
-        node->transformFlags |= propagateChildFlags(type);
-        if (type)
-            node->transformFlags |= TransformFlags::ContainsTypeScript;
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseGenericNamedDeclaration(SyntaxKind kind, NodeArray<ModifierLike> modifiers, PropertyName name,
-                                           NodeArray<TypeParameterDeclaration> typeParameters)
-    {
-        auto node = createBaseNamedDeclaration<T>(kind, modifiers, name);
-        node->typeParameters = asNodeArray(typeParameters);
-        node->transformFlags |= propagateChildrenFlags(node->typeParameters);
-        if (!typeParameters.empty())
-            node->transformFlags |= TransformFlags::ContainsTypeScript;
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseSignatureDeclaration(SyntaxKind kind, NodeArray<ModifierLike> modifiers, PropertyName name,
-                                        NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
-                                        TypeNode type)
-    {
-        auto node = createBaseGenericNamedDeclaration<T>(kind, modifiers, name, typeParameters);
-        node->parameters = createNodeArray(parameters);
-        node->type = type;
-        node->transformFlags |= propagateChildrenFlags(node->parameters) | propagateChildFlags(node->type);
-        if (type)
-            node->transformFlags |= TransformFlags::ContainsTypeScript;
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseFunctionLikeDeclaration(SyntaxKind kind, NodeArray<ModifierLike> modifiers, PropertyName name,
-                                           NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
-                                           TypeNode type, Block body)
-    {
-        auto node = createBaseSignatureDeclaration<T>(kind, modifiers, name, typeParameters, parameters, type);
-        node->body = body;
-        node->transformFlags |= propagateChildFlags(node->body) & ~TransformFlags::ContainsPossibleTopLevelAwait;
-        if (!body)
-            node->transformFlags |= TransformFlags::ContainsTypeScript;
-        return node;
-    }
-
-    template <typename T> auto createBaseExpression(SyntaxKind kind)
-    {
-        auto node = createBaseNode<T>(kind);
-        // the following properties are commonly set by the checker/binder
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseInterfaceOrClassLikeDeclaration(SyntaxKind kind, NodeArray<ModifierLike> modifiers, Identifier name,
-                                                   NodeArray<TypeParameterDeclaration> typeParameters,
-                                                   NodeArray<HeritageClause> heritageClauses)
-    {
-        auto node = createBaseGenericNamedDeclaration<T>(kind, modifiers, name, typeParameters);
-        node->heritageClauses = asNodeArray(heritageClauses);
-        node->transformFlags |= propagateChildrenFlags(node->heritageClauses);
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseClassLikeDeclaration(SyntaxKind kind, NodeArray<ModifierLike> modifiers, Identifier name,
-                                        NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
-                                        NodeArray<ClassElement> members)
-    {
-        auto node = createBaseInterfaceOrClassLikeDeclaration<T>(kind, modifiers, name, typeParameters, heritageClauses);
-        node->members = createNodeArray(members);
-        node->transformFlags |= propagateChildrenFlags(node->members);
         return node;
     }
 

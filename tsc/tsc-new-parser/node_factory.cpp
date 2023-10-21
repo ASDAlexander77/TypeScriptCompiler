@@ -258,10 +258,15 @@ auto NodeFactory::createComputedPropertyName(Expression expression) -> ComputedP
 
 auto NodeFactory::createTypeParameterDeclaration(NodeArray<ModifierLike> modifiers, Identifier name, TypeNode constraint, TypeNode defaultType) -> TypeParameterDeclaration
 {
-    auto node = createBaseNamedDeclaration<TypeParameterDeclaration>(SyntaxKind::TypeParameter, /*modifiers*/ modifiers, name);
+    auto node = createBaseDeclaration<TypeParameterDeclaration>(SyntaxKind::TypeParameter);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);
     node->constraint = constraint;
     node->_default = defaultType;
     node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    node->expression = undefined; // initialized by parser to report grammar errors
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -269,25 +274,33 @@ auto NodeFactory::createParameterDeclaration(NodeArray<ModifierLike> modifiers, 
                                              BindingName name, QuestionToken questionToken, TypeNode type, Expression initializer)
     -> ParameterDeclaration
 {
-    auto node = createBaseVariableLikeDeclaration<ParameterDeclaration>(
-        SyntaxKind::Parameter, modifiers, name, type,
-        initializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer) : undefined);
+    auto node = createBaseDeclaration<ParameterDeclaration>(SyntaxKind::Parameter);
+    node->modifiers = asNodeArray(modifiers);
     node->dotDotDotToken = dotDotDotToken;
+    node->name = asName(name);
     node->questionToken = questionToken;
+    node->type = type;
+    node->initializer = asInitializer(initializer);
     if (isThisIdentifier(node->name))
     {
         node->transformFlags = TransformFlags::ContainsTypeScript;
     }
     else
     {
-        node->transformFlags |= propagateChildFlags(node->dotDotDotToken) | propagateChildFlags(node->questionToken);
-        if (questionToken)
+        node->transformFlags |= propagateChildrenFlags(node->modifiers) |
+            propagateChildFlags(node->dotDotDotToken) | 
+            propagateNameFlags(node->name) |
+            propagateChildFlags(node->questionToken) |
+            propagateChildFlags(node->initializer);
+        if (questionToken || node->type)
             node->transformFlags |= TransformFlags::ContainsTypeScript;
-        if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::ParameterPropertyModifier))
-            node->transformFlags |= TransformFlags::ContainsTypeScriptClassSyntax;
         if (!!initializer || !!dotDotDotToken)
             node->transformFlags |= TransformFlags::ContainsES2015;
+        if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::ParameterPropertyModifier))
+            node->transformFlags |= TransformFlags::ContainsTypeScriptClassSyntax;
     }
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -309,11 +322,15 @@ auto NodeFactory::createDecorator(Expression expression) -> Decorator
 auto NodeFactory::createPropertySignature(ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, TypeNode type)
     -> PropertySignature
 {
-    auto node = createBaseNamedDeclaration<PropertySignature>(SyntaxKind::PropertySignature,
-                                                              modifiers, name);
+    auto node = createBaseDeclaration<PropertySignature>(SyntaxKind::PropertySignature);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);    
     node->type = type;
     node->questionToken = questionToken;
     node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    node->initializer = undefined; // initialized by parser to report grammar errors
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)    
     return node;
 }
 
@@ -323,22 +340,28 @@ auto NodeFactory::createPropertySignature(ModifiersArray modifiers, PropertyName
 auto NodeFactory::createPropertyDeclaration(NodeArray<ModifierLike> modifiers, PropertyName name,
                                             Node questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration
 {
-    auto node = createBaseVariableLikeDeclaration<PropertyDeclaration>(SyntaxKind::PropertyDeclaration, modifiers, name, type,
-                                                                       initializer);
+    auto node = createBaseDeclaration<PropertyDeclaration>(SyntaxKind::PropertyDeclaration);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);    
     node->questionToken =
         questionOrExclamationToken && isQuestionToken(questionOrExclamationToken) ? questionOrExclamationToken : undefined;
     node->exclamationToken =
         questionOrExclamationToken && isExclamationToken(questionOrExclamationToken) ? questionOrExclamationToken : undefined;
-    node->transformFlags |=
-        propagateChildFlags(node->questionToken) | propagateChildFlags(node->exclamationToken) | TransformFlags::ContainsClassFields;
-    if (isComputedPropertyName(node->name) || (hasStaticModifier(node) && node->initializer))
+    node->type = type;
+    node->initializer = asInitializer(initializer);        
+
+    auto isAmbient = !!(node->flags & NodeFlags::Ambient) || !!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient);
+
+    node->transformFlags |= propagateChildrenFlags(node->modifiers) |
+        propagateNameFlags(node->name) |
+        propagateChildFlags(node->initializer) |
+        ((isAmbient || !!node->questionToken || !!node->exclamationToken || !!node->type) ? TransformFlags::ContainsClassFields : TransformFlags::None);
+    if (isComputedPropertyName(node->name) || (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Static) && node->initializer))
     {
         node->transformFlags |= TransformFlags::ContainsTypeScriptClassSyntax;
     }
-    if (questionOrExclamationToken || !!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient))
-    {
-        node->transformFlags |= TransformFlags::ContainsTypeScript;
-    }
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -349,11 +372,19 @@ auto NodeFactory::createMethodSignature(ModifiersArray modifiers, PropertyName n
                                         NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
                                         TypeNode type) -> MethodSignature
 {
-    auto node =
-        createBaseSignatureDeclaration<MethodSignature>(SyntaxKind::MethodSignature,
-                                                        modifiers, name, typeParameters, parameters, type);
+    auto node = createBaseDeclaration<MethodSignature>(SyntaxKind::MethodSignature);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);
     node->questionToken = questionToken;
+    node->typeParameters = asNodeArray(typeParameters);
+    node->parameters = asNodeArray(parameters);
+    node->type = type;
     node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    //node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    node->typeArguments = undefined; // used in quick info
     return node;
 }
 
@@ -1944,7 +1975,7 @@ auto NodeFactory::createModuleDeclaration(NodeArray<ModifierLike> modifiers, Mod
 
     auto node = createBaseDeclaration<ModuleDeclaration>(SyntaxKind::ModuleDeclaration);
     node->modifiers = asNodeArray(modifiers);
-    node->flags |= flags & (NodeFlags::Namespace | NodeFlags.NestedNamespace | NodeFlags.GlobalAugmentation);
+    node->flags |= flags & (NodeFlags::Namespace | NodeFlags::NestedNamespace | NodeFlags::GlobalAugmentation);
     node->name = name;
     node->body = body;
     if ((modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) > ModifierFlags::None) {
@@ -1959,7 +1990,7 @@ auto NodeFactory::createModuleDeclaration(NodeArray<ModifierLike> modifiers, Mod
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // Module declarations cannot contain `await`.
 
     node->jsDoc = undefined; // initialized by parser (JsDocContainer)
-    node->locals.clean(); // initialized by binder (LocalsContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
     //node->nextContainer = undefined; // initialized by binder (LocalsContainer)
     return node;    
 }
@@ -2020,7 +2051,8 @@ auto NodeFactory::createImportEqualsDeclaration(NodeArray<ModifierLike> modifier
 auto NodeFactory::createImportDeclaration(NodeArray<ModifierLike> modifiers, ImportClause importClause,
                                           Expression moduleSpecifier, ImportAttributes attributes) -> ImportDeclaration
 {
-    auto node = createBaseDeclaration<ImportDeclaration>(SyntaxKind::ImportDeclaration, modifiers);
+    auto node = createBaseNode<ImportDeclaration>(SyntaxKind::ImportDeclaration);
+    node->modifiers = asNodeArray(modifiers);
     node->importClause = importClause;
     node->moduleSpecifier = moduleSpecifier;
     node->attributes = attributes;
@@ -2123,13 +2155,16 @@ auto NodeFactory::createImportSpecifier(boolean isTypeOnly, Identifier propertyN
 auto NodeFactory::createExportAssignment(NodeArray<ModifierLike> modifiers, boolean isExportEquals,
                                          Expression expression) -> ExportAssignment
 {
-    auto node = createBaseDeclaration<ExportAssignment>(SyntaxKind::ExportAssignment, modifiers);
+    auto node = createBaseNode<ExportAssignment>(SyntaxKind::ExportAssignment);
+    node->modifiers = asNodeArray(modifiers);
     node->isExportEquals = isExportEquals;
     node->expression = isExportEquals
                            ? parenthesizerRules.parenthesizeRightSideOfBinary(SyntaxKind::EqualsToken, /*leftSide*/ undefined, expression)
                            : parenthesizerRules.parenthesizeExpressionOfExportDefault(expression);
-    node->transformFlags |= propagateChildFlags(node->expression);
+    node->transformFlags |= propagateChildrenFlags(node->modifiers) | propagateChildFlags(node->expression);
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // always parsed in an Await context
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -2139,12 +2174,15 @@ auto NodeFactory::createExportAssignment(NodeArray<ModifierLike> modifiers, bool
 auto NodeFactory::createExportDeclaration(NodeArray<ModifierLike> modifiers, boolean isTypeOnly,
                                           NamedExportBindings exportClause, Expression moduleSpecifier, ImportAttributes attributes) -> ExportDeclaration
 {
-    auto node = createBaseDeclaration<ExportDeclaration>(SyntaxKind::ExportDeclaration, modifiers);
+    auto node = createBaseNode<ExportDeclaration>(SyntaxKind::ExportDeclaration);
+    node->modifiers = asNodeArray(modifiers);
     node->isTypeOnly = isTypeOnly;
     node->exportClause = exportClause;
     node->moduleSpecifier = moduleSpecifier;
     node->attributes = attributes;
-    node->transformFlags |= propagateChildFlags(node->exportClause) | propagateChildFlags(node->moduleSpecifier);
+    node->transformFlags |= propagateChildrenFlags(node->modifiers) | 
+        propagateChildFlags(node->exportClause) | 
+        propagateChildFlags(node->moduleSpecifier);
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // always parsed in an Await context
 
     //node->jsDoc = undefined; // initialized by parser (JsDocContainer)

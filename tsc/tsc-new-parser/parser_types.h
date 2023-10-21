@@ -352,13 +352,13 @@ struct Statement : PrimaryExpression
     //any _statementBrand;
 };
 
-struct Declaration : Statement {
-    /** @internal */ PTR(Symbol) symbol; // Symbol declared by node (initialized by binding)
-    /** @internal */ PTR(Symbol) localSymbol; // Local symbol declared by node (initialized by binding only for exported nodes)
-};
-
 struct DeclarationStatement : Statement
 {
+};
+
+struct Declaration : DeclarationStatement {
+    /** @internal */ PTR(Symbol) symbol; // Symbol declared by node (initialized by binding)
+    /** @internal */ PTR(Symbol) localSymbol; // Local symbol declared by node (initialized by binding only for exported nodes)
 };
 
 struct NamedDeclaration : Declaration
@@ -1812,9 +1812,11 @@ struct ModuleBody : DeclarationStatement
 {
 };
 
-struct ModuleDeclaration : ModuleBody
+struct ModuleDeclaration : NamedDeclaration, LocalsContainer
 {
     // kind: SyntaxKind::ModuleDeclaration;
+    PTR(Node) parent;
+    NodeArray<PTR(ModifierLike)> modifiers;
     PTR(ModuleName) name;
     PTR(Node) /**ModuleBody | JSDocNamespaceDeclaration*/ body;
 };
