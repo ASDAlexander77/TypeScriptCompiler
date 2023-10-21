@@ -380,7 +380,7 @@ struct ClassStaticBlockDeclaration : ClassElement, LocalsContainer {
     /** @internal */ NodeArray<PTR(ModifierLike)> modifiers;
 };
 
-struct TypeElement : NamedDeclaration
+struct TypeElement : ClassElement
 {
     //any _typeElementBrand;
     PTR(QuestionToken) questionToken;
@@ -448,12 +448,12 @@ struct SignatureDeclarationBase : TypeElement
         typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
 };
 
-struct CallSignatureDeclaration : SignatureDeclarationBase
+struct CallSignatureDeclaration : SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::CallSignature;
 };
 
-struct ConstructSignatureDeclaration : SignatureDeclarationBase
+struct ConstructSignatureDeclaration : SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::ConstructSignature;
 };
@@ -525,6 +525,7 @@ struct InitializedPropertyDeclaration : PropertyDeclaration
 
 struct ObjectLiteralElement : NamedDeclaration
 {
+    PTR(PropertyName) name;
 };
 
 struct PropertyAssignment : ObjectLiteralElement
@@ -591,7 +592,7 @@ struct FunctionDeclaration : FunctionLikeDeclarationBase
     // kind: SyntaxKind::FunctionDeclaration;
 };
 
-struct MethodSignature : SignatureDeclarationBase
+struct MethodSignature : SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::MethodSignature;
 };
@@ -605,13 +606,13 @@ struct MethodSignature : SignatureDeclarationBase
 // Because of this, it may be necessary to determine what sort of MethodDeclaration you have
 // at later stages of the compiler pipeline.  In that case, you can either check the parent kind
 // of the method, or use helpers like isObjectLiteralMethodDeclaration
-struct MethodDeclaration : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/
+struct MethodDeclaration : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/, LocalsContainer/*, FlowContainer*/
 {
     // kind: SyntaxKind::MethodDeclaration;
     /* @internal*/ PTR(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
 };
 
-struct ConstructorDeclaration : FunctionLikeDeclarationBase
+struct ConstructorDeclaration : FunctionLikeDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::Constructor;
     /* @internal */ //NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
@@ -625,8 +626,7 @@ struct SemicolonClassElement : ClassElement
 };
 
 struct AccessorDeclaration
-    : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/ // ClassElement and ObjectLiteralElement contains all
-                                                             // fields in FunctionLikeDeclarationBase
+    : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/, LocalsContainer
 {
     /* @internal */ //NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
 };
@@ -645,7 +645,7 @@ struct SetAccessorDeclaration : AccessorDeclaration
     // kind: SyntaxKind::SetAccessor;
 };
 
-struct IndexSignatureDeclaration : SignatureDeclarationBase
+struct IndexSignatureDeclaration : SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::IndexSignature;
 };
@@ -690,12 +690,12 @@ struct FunctionOrConstructorTypeNodeBase : SignatureDeclarationBase /*, TypeNode
     // kind: SyntaxKind::FunctionType | SyntaxKind::ConstructorType;
 };
 
-struct FunctionTypeNode : FunctionOrConstructorTypeNodeBase
+struct FunctionTypeNode : FunctionOrConstructorTypeNodeBase, LocalsContainer
 {
     // kind: SyntaxKind::FunctionType;
 };
 
-struct ConstructorTypeNode : FunctionOrConstructorTypeNodeBase
+struct ConstructorTypeNode : FunctionOrConstructorTypeNodeBase, LocalsContainer
 {
     // kind: SyntaxKind::ConstructorType;
 };
@@ -1228,20 +1228,20 @@ struct SpreadElement : Expression
  * only be JSXAttribute or JSXSpreadAttribute. ObjectLiteralExpression, on the other hand, can only have properties of
  * type ObjectLiteralElement (e.g. PropertyAssignment, ShorthandPropertyAssignment etc.)
  */
-template <typename T /*: ObjectLiteralElement*/> struct ObjectLiteralExpressionBase : PrimaryExpression
+template <typename T /*: ObjectLiteralElement*/> struct ObjectLiteralExpressionBase : Declaration
 {
     NodeArray<PTR(T)> properties;
 };
 
 // An ObjectLiteralExpression is the declaration node for an anonymous symbol.
-struct ObjectLiteralExpression : ObjectLiteralExpressionBase<ObjectLiteralElementLike>
+struct ObjectLiteralExpression : ObjectLiteralExpressionBase<ObjectLiteralElementLike>, LocalsContainer
 {
     // kind: SyntaxKind::ObjectLiteralExpression;
     /* @internal */
     boolean multiLine;
 };
 
-struct PropertyAccessExpression : MemberExpression
+struct PropertyAccessExpression : Declaration /*MemberExpression*/, LocalsContainer
 {
     // kind: SyntaxKind::PropertyAccessExpression;
     PTR(LeftHandSideExpression) expression;
@@ -1278,7 +1278,7 @@ struct PropertyAccessEntityNameExpression : PropertyAccessExpression
     PTR(EntityNameExpression) expression;
 };
 
-struct ElementAccessExpression : MemberExpression
+struct ElementAccessExpression : Declaration /*MemberExpression*/
 {
     // kind: SyntaxKind::ElementAccessExpression;
     PTR(LeftHandSideExpression) expression;
@@ -1308,7 +1308,7 @@ struct SuperElementAccessExpression : ElementAccessExpression
     PTR(SuperExpression) expression;
 };
 
-struct CallExpression : LeftHandSideExpression
+struct CallExpression : /*LeftHandSideExpression*/ Declaration
 {
     // kind: SyntaxKind::CallExpression;
     PTR(LeftHandSideExpression) expression;

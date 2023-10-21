@@ -25,7 +25,7 @@ namespace ts
 
         auto parenthesizeExpressionForDisallowedComma(Expression expression) -> Expression;
 
-        auto parenthesizeLeftSideOfAccess(Expression expression) -> LeftHandSideExpression;
+        auto parenthesizeLeftSideOfAccess(Expression expression, boolean optionalChain = false) -> LeftHandSideExpression;
 
         auto parenthesizeTypeArguments(NodeArray<TypeNode> typeArguments) -> NodeArray<TypeNode>;
 

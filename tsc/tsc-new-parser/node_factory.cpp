@@ -32,6 +32,10 @@ auto NodeFactory::propagateChildFlags(Node child) -> TransformFlags
                : childFlags;
 }
 
+auto propagateChildrenFlags(NodeArray<Node> children) -> TransformFlags {
+    return children ? children.transformFlags : TransformFlags::None;
+}
+
 auto NodeFactory::propagateAssignmentPatternFlags(AssignmentPattern node) -> TransformFlags
 {
     if (!!(node->transformFlags & TransformFlags::ContainsObjectRestOrSpread))
@@ -396,31 +400,49 @@ auto NodeFactory::createMethodDeclaration(NodeArray<ModifierLike> modifiers, Ast
                                           NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
                                           TypeNode type, Block body) -> MethodDeclaration
 {
-    auto node = createBaseFunctionLikeDeclaration<MethodDeclaration>(SyntaxKind::MethodDeclaration, modifiers, name,
-                                                                     typeParameters, parameters, type, body);
+    auto node = createBaseDeclaration<MethodDeclaration>(SyntaxKind::MethodDeclaration);
+    node->modifiers = asNodeArray(modifiers);
     node->asteriskToken = asteriskToken;
+    node->name = asName(name);
     node->questionToken = questionToken;
-    node->transformFlags |=
-        propagateChildFlags(node->asteriskToken) | propagateChildFlags(node->questionToken) | TransformFlags::ContainsES2015;
-    if (questionToken)
-    {
-        node->transformFlags |= TransformFlags::ContainsTypeScript;
+    node->exclamationToken = undefined; // initialized by parser for grammar errors
+    node->typeParameters = asNodeArray(typeParameters);
+    node->parameters = createNodeArray(parameters);
+    node->type = type;
+    node->body = body;
+
+    if (!node->body) {
+        node->transformFlags = TransformFlags::ContainsTypeScript;
     }
-    if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Async))
-    {
-        if (asteriskToken)
-        {
-            node->transformFlags |= TransformFlags::ContainsES2018;
-        }
-        else
-        {
-            node->transformFlags |= TransformFlags::ContainsES2017;
-        }
+    else {
+        auto isAsync = !!(modifiersToFlags(node->modifiers) & ModifierFlags::Async);
+        auto isGenerator = !!node->asteriskToken;
+        auto isAsyncGenerator = isAsync && isGenerator;
+
+        node->transformFlags = propagateChildrenFlags(node->modifiers) |
+            propagateChildFlags(node->asteriskToken) |
+            propagateNameFlags(node->name) |
+            propagateChildFlags(node->questionToken) |
+            propagateChildrenFlags(node->typeParameters) |
+            propagateChildrenFlags(node->parameters) |
+            propagateChildFlags(node->type) |
+            (propagateChildFlags(node->body) & ~TransformFlags::ContainsPossibleTopLevelAwait) |
+            (isAsyncGenerator ? TransformFlags::ContainsES2018 :
+                isAsync ? TransformFlags::ContainsES2017 :
+                isGenerator ? TransformFlags::ContainsGenerator :
+                TransformFlags::None) |
+            (node->questionToken || node->typeParameters || node->type ? TransformFlags::ContainsTypeScript : TransformFlags::None) |
+            TransformFlags::ContainsES2015;
     }
-    else if (asteriskToken)
-    {
-        node->transformFlags |= TransformFlags::ContainsGenerator;
-    }
+
+    node->typeArguments = undefined; // used in quick info
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    //node->flowNode = undefined; // initialized by binder (FlowContainer)
+    //node->endFlowNode = undefined;
+    //node->returnFlowNode = undefined;
+
     return node;
 }
 
@@ -446,11 +468,24 @@ auto NodeFactory::createClassStaticBlockDeclaration(Block body) -> ClassStaticBl
 auto NodeFactory::createConstructorDeclaration(NodeArray<ModifierLike> modifiers,
                                                NodeArray<ParameterDeclaration> parameters, Block body) -> ConstructorDeclaration
 {
-    auto node = createBaseFunctionLikeDeclaration<ConstructorDeclaration>(SyntaxKind::Constructor, modifiers,
-                                                                          /*name*/ undefined,
-                                                                          /*typeParameters*/ undefined, parameters,
-                                                                          /*type*/ undefined, body);
-    node->transformFlags |= TransformFlags::ContainsES2015;
+    auto node = createBaseDeclaration<ConstructorDeclaration>(SyntaxKind::Constructor);
+    node->modifiers = asNodeArray(modifiers);
+    node->parameters = createNodeArray(parameters);
+    node->body = body;
+
+    node->transformFlags = propagateChildrenFlags(node->modifiers) |
+        propagateChildrenFlags(node->parameters) |
+        (propagateChildFlags(node->body) & ~TransformFlags::ContainsPossibleTopLevelAwait) |
+        TransformFlags::ContainsES2015;
+
+    node->typeParameters = undefined; // initialized by parser for grammar errors
+    node->type = undefined; // initialized by parser for grammar errors
+    node->typeArguments = undefined; // used in quick info
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    //node->endFlowNode = undefined;
+    //node->returnFlowNode = undefined;
     return node;
 }
 
@@ -461,8 +496,34 @@ auto NodeFactory::createGetAccessorDeclaration(NodeArray<ModifierLike> modifiers
                                                NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body)
     -> GetAccessorDeclaration
 {
-    return createBaseFunctionLikeDeclaration<GetAccessorDeclaration>(SyntaxKind::GetAccessor, modifiers, name,
-                                                                     /*typeParameters*/ undefined, parameters, type, body);
+    auto node = createBaseDeclaration<GetAccessorDeclaration>(SyntaxKind::GetAccessor);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);
+    node->parameters = createNodeArray(parameters);
+    node->type = type;
+    node->body = body;
+
+    if (!node->body) {
+        node->transformFlags = TransformFlags::ContainsTypeScript;
+    }
+    else {
+        node->transformFlags = propagateChildrenFlags(node->modifiers) |
+            propagateNameFlags(node->name) |
+            propagateChildrenFlags(node->parameters) |
+            propagateChildFlags(node->type) |
+            (propagateChildFlags(node->body) & ~TransformFlags::ContainsPossibleTopLevelAwait) |
+            (node->type ? TransformFlags::ContainsTypeScript : TransformFlags::None);
+    }
+
+    node->typeArguments = undefined; // used in quick info
+    node->typeParameters = undefined; // initialized by parser for grammar errors
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    //node->flowNode = undefined; // initialized by binder (FlowContainer)
+    //node->endFlowNode = undefined;
+    //node->returnFlowNode = undefined;
+    return node;
 }
 
 // @api
@@ -471,9 +532,33 @@ auto NodeFactory::createGetAccessorDeclaration(NodeArray<ModifierLike> modifiers
 auto NodeFactory::createSetAccessorDeclaration(NodeArray<ModifierLike> modifiers, PropertyName name,
                                                NodeArray<ParameterDeclaration> parameters, Block body) -> SetAccessorDeclaration
 {
-    return createBaseFunctionLikeDeclaration<SetAccessorDeclaration>(SyntaxKind::SetAccessor, modifiers, name,
-                                                                     /*typeParameters*/ undefined, parameters,
-                                                                     /*type*/ undefined, body);
+    auto node = createBaseDeclaration<SetAccessorDeclaration>(SyntaxKind::SetAccessor);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);
+    node->parameters = createNodeArray(parameters);
+    node->body = body;
+
+    if (!node->body) {
+        node->transformFlags = TransformFlags::ContainsTypeScript;
+    }
+    else {
+        node->transformFlags = propagateChildrenFlags(node->modifiers) |
+            propagateNameFlags(node->name) |
+            propagateChildrenFlags(node->parameters) |
+            (propagateChildFlags(node->body) & ~TransformFlags::ContainsPossibleTopLevelAwait) |
+            (node->type ? TransformFlags::ContainsTypeScript : TransformFlags::None);
+    }
+
+    node->typeArguments = undefined; // used in quick info
+    node->typeParameters = undefined; // initialized by parser for grammar errors
+    node->type = undefined; // initialized by parser for grammar errors
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    //node->flowNode = undefined; // initialized by binder (FlowContainer)
+    //node->endFlowNode = undefined;
+    //node->returnFlowNode = undefined;
+    return node;
 }
 
 // @api
@@ -482,10 +567,16 @@ auto NodeFactory::createSetAccessorDeclaration(NodeArray<ModifierLike> modifiers
 auto NodeFactory::createCallSignature(NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
                                       TypeNode type) -> CallSignatureDeclaration
 {
-    auto node = createBaseSignatureDeclaration<CallSignatureDeclaration>(SyntaxKind::CallSignature,
-                                                                         /*modifiers*/ undefined,
-                                                                         /*name*/ undefined, typeParameters, parameters, type);
+    auto node = createBaseDeclaration<CallSignatureDeclaration>(SyntaxKind::CallSignature);
+    node->typeParameters = asNodeArray(typeParameters);
+    node->parameters = asNodeArray(parameters);
+    node->type = type;
     node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    node->typeArguments = undefined; // used in quick info
     return node;
 }
 
@@ -495,10 +586,16 @@ auto NodeFactory::createCallSignature(NodeArray<TypeParameterDeclaration> typePa
 auto NodeFactory::createConstructSignature(NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
                                            TypeNode type) -> ConstructSignatureDeclaration
 {
-    auto node = createBaseSignatureDeclaration<ConstructSignatureDeclaration>(SyntaxKind::ConstructSignature,
-                                                                              /*modifiers*/ undefined,
-                                                                              /*name*/ undefined, typeParameters, parameters, type);
+    auto node = createBaseDeclaration<ConstructSignatureDeclaration>(SyntaxKind::ConstructSignature);
+    node->typeParameters = asNodeArray(typeParameters);
+    node->parameters = asNodeArray(parameters);
+    node->type = type;
     node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    node->typeArguments = undefined; // used in quick info
     return node;
 }
 
@@ -508,10 +605,16 @@ auto NodeFactory::createConstructSignature(NodeArray<TypeParameterDeclaration> t
 auto NodeFactory::createIndexSignature(NodeArray<ModifierLike> modifiers, NodeArray<ParameterDeclaration> parameters,
                                        TypeNode type) -> IndexSignatureDeclaration
 {
-    auto node = createBaseSignatureDeclaration<IndexSignatureDeclaration>(SyntaxKind::IndexSignature, modifiers,
-                                                                          /*name*/ undefined,
-                                                                          /*typeParameters*/ undefined, parameters, type);
+    auto node = createBaseDeclaration<IndexSignatureDeclaration>(SyntaxKind::IndexSignature);
+    node->modifiers = asNodeArray(modifiers);
+    node->parameters = asNodeArray(parameters);
+    node->type = type; // TODO(rbuckton): We mark this as required in IndexSignatureDeclaration, but it looks like the parser allows it to be elided.
     node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    node->typeArguments = undefined; // used in quick info
     return node;
 }
 
@@ -562,10 +665,17 @@ auto NodeFactory::createTypeReferenceNode(EntityName typeName, NodeArray<TypeNod
 auto NodeFactory::createFunctionTypeNode(NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
                                          TypeNode type) -> FunctionTypeNode
 {
-    auto node = createBaseSignatureDeclaration<FunctionTypeNode>(SyntaxKind::FunctionType,
-                                                                 /*modifiers*/ undefined,
-                                                                 /*name*/ undefined, typeParameters, parameters, type);
+    auto node = createBaseDeclaration<FunctionTypeNode>(SyntaxKind::FunctionType);
+    node->typeParameters = asNodeArray(typeParameters);
+    node->parameters = asNodeArray(parameters);
+    node->type = type;
     node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    node->modifiers = undefined; // initialized by parser for grammar errors
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    //node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    node->typeArguments = undefined; // used in quick info
     return node;
 }
 
@@ -573,10 +683,17 @@ auto NodeFactory::createFunctionTypeNode(NodeArray<TypeParameterDeclaration> typ
 auto NodeFactory::createConstructorTypeNode(ModifiersArray modifiers, NodeArray<TypeParameterDeclaration> typeParameters,
                                             NodeArray<ParameterDeclaration> parameters, TypeNode type) -> ConstructorTypeNode
 {
-    auto node = createBaseSignatureDeclaration<ConstructorTypeNode>(SyntaxKind::ConstructorType,
-                                                                    modifiers,
-                                                                    /*name*/ undefined, typeParameters, parameters, type);
+    auto node = createBaseDeclaration<ConstructorTypeNode>(SyntaxKind::ConstructorType);
+    node->modifiers = asNodeArray(modifiers);
+    node->typeParameters = asNodeArray(typeParameters);
+    node->parameters = asNodeArray(parameters);
+    node->type = type;
     node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    node->typeArguments = undefined; // used in quick info
     return node;
 }
 
@@ -832,19 +949,19 @@ auto NodeFactory::createArrayBindingPattern(NodeArray<ArrayBindingElement> eleme
 auto NodeFactory::createBindingElement(DotDotDotToken dotDotDotToken, PropertyName propertyName, BindingName name, Expression initializer)
     -> BindingElement
 {
-    auto node = createBaseBindingLikeDeclaration<BindingElement>(SyntaxKind::BindingElement,
-                                                                 
-                                                                 /*modifiers*/ undefined, name, initializer);
-    node->propertyName = asName(propertyName);
+    auto node = createBaseDeclaration<BindingElement>(SyntaxKind::BindingElement);
     node->dotDotDotToken = dotDotDotToken;
-    node->transformFlags |= propagateChildFlags(node->dotDotDotToken) | TransformFlags::ContainsES2015;
-    if (node->propertyName)
-    {
-        node->transformFlags |=
-            isIdentifier(node->propertyName) ? propagateIdentifierNameFlags(node->propertyName) : propagateChildFlags(node->propertyName);
-    }
-    if (dotDotDotToken)
-        node->transformFlags |= TransformFlags::ContainsRestOrSpread;
+    node->propertyName = asName(propertyName);
+    node->name = asName(name);
+    node->initializer = asInitializer(initializer);
+    node->transformFlags |= propagateChildFlags(node->dotDotDotToken) |
+        propagateNameFlags(node->propertyName) |
+        propagateNameFlags(node->name) |
+        propagateChildFlags(node->initializer) |
+        (node->dotDotDotToken ? TransformFlags::ContainsRestOrSpread : TransformFlags::None) |
+        TransformFlags::ContainsES2015;
+
+    //node->flowNode = undefined; // initialized by binder (FlowContainer)
     return node;
 }
 
@@ -857,8 +974,13 @@ auto NodeFactory::createBindingElement(DotDotDotToken dotDotDotToken, PropertyNa
 // @api
 auto NodeFactory::createArrayLiteralExpression(NodeArray<Expression> elements, boolean multiLine) -> ArrayLiteralExpression
 {
-    auto node = createBaseExpression<ArrayLiteralExpression>(SyntaxKind::ArrayLiteralExpression);
-    node->elements = parenthesizerRules.parenthesizeExpressionsOfCommaDelimitedList(createNodeArray(elements));
+    auto node = createBaseNode<ArrayLiteralExpression>(SyntaxKind::ArrayLiteralExpression);
+    // Ensure we add a trailing comma for something like `[NumericLiteral(1), NumericLiteral(2), OmittedExpresion]` so that
+    // we end up with `[1, 2, ,]` instead : `[1, 2, ]` otherwise the `OmittedExpression` will just end up being treated like
+    // a trailing comma.
+    auto lastElement = lastOrUndefined(elements);
+    auto elementsArray = createNodeArray(elements, lastElement && isOmittedExpression(lastElement) ? true : undefined);
+    node->elements = parenthesizerRules.parenthesizeExpressionsOfCommaDelimitedList(elementsArray);
     node->multiLine = multiLine;
     node->transformFlags |= propagateChildrenFlags(node->elements);
     return node;
@@ -870,23 +992,39 @@ auto NodeFactory::createArrayLiteralExpression(NodeArray<Expression> elements, b
 auto NodeFactory::createObjectLiteralExpression(NodeArray<ObjectLiteralElementLike> properties, boolean multiLine)
     -> ObjectLiteralExpression
 {
-    auto node = createBaseExpression<ObjectLiteralExpression>(SyntaxKind::ObjectLiteralExpression);
+    auto node = createBaseDeclaration<ObjectLiteralExpression>(SyntaxKind::ObjectLiteralExpression);
     node->properties = createNodeArray(properties);
     node->multiLine = multiLine;
     node->transformFlags |= propagateChildrenFlags(node->properties);
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
 // @api
+auto NodeFactory::createBasePropertyAccessExpression(LeftHandSideExpression expression, QuestionDotToken questionDotToken, MemberName name) -> PropertyAccessExpression {
+    auto node = createBaseDeclaration<PropertyAccessExpression>(SyntaxKind::PropertyAccessExpression);
+    node->expression = expression;
+    node->questionDotToken = questionDotToken;
+    node->name = name;
+    node->transformFlags = propagateChildFlags(node->expression) |
+        propagateChildFlags(node->questionDotToken) |
+        (isIdentifier(node->name) ?
+            propagateIdentifierNameFlags(node->name) : propagateChildFlags(node->name) | TransformFlags::ContainsPrivateIdentifierInExpression);
+
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    //node->flowNode = undefined; // initialized by binder (FlowContainer)
+    return node;
+}
 
 // @api
 auto NodeFactory::createPropertyAccessExpression(Expression expression, MemberName name) -> PropertyAccessExpression
 {
-    auto node = createBaseExpression<PropertyAccessExpression>(SyntaxKind::PropertyAccessExpression);
-    node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
-    node->name = asName(name);
-    node->transformFlags = propagateChildFlags(node->expression) |
-                           (isIdentifier(node->name) ? propagateIdentifierNameFlags(node->name) : propagateChildFlags(node->name));
+    auto node = createBasePropertyAccessExpression(
+        parenthesizerRules.parenthesizeLeftSideOfAccess(expression, /*optionalChain*/ false),
+        /*questionDotToken*/ undefined,
+        asName(name)
+    );
     if (isSuperKeyword(expression))
     {
         // super method calls require a lexical 'this'
@@ -900,31 +1038,44 @@ auto NodeFactory::createPropertyAccessExpression(Expression expression, MemberNa
 auto NodeFactory::createPropertyAccessChain(Expression expression, QuestionDotToken questionDotToken, MemberName name)
     -> PropertyAccessChain
 {
-    auto node = createBaseExpression<PropertyAccessChain>(SyntaxKind::PropertyAccessExpression);
+    auto node = createBasePropertyAccessExpression(
+        parenthesizerRules.parenthesizeLeftSideOfAccess(expression, /*optionalChain*/ true),
+        questionDotToken,
+        asName(name)
+    ).as<PropertyAccessChain>();
     node->flags |= NodeFlags::OptionalChain;
-    node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
-    node->questionDotToken = questionDotToken;
-    node->name = asName(name);
-    node->transformFlags |= TransformFlags::ContainsES2020 | propagateChildFlags(node->expression) |
-                            propagateChildFlags(node->questionDotToken) |
-                            (isIdentifier(node->name) ? propagateIdentifierNameFlags(node->name) : propagateChildFlags(node->name));
+    node->transformFlags |= TransformFlags::ContainsES2020;
     return node;
 }
 
 // @api
+auto NodeFactory::createBaseElementAccessExpression(LeftHandSideExpression expression, QuestionDotToken questionDotToken, Expression argumentExpression) -> ElementAccessExpression {
+    auto node = createBaseDeclaration<ElementAccessExpression>(SyntaxKind::ElementAccessExpression);
+    node->expression = expression;
+    node->questionDotToken = questionDotToken;
+    node->argumentExpression = argumentExpression;
+    node->transformFlags |= propagateChildFlags(node->expression) |
+        propagateChildFlags(node->questionDotToken) |
+        propagateChildFlags(node->argumentExpression);
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    //node->flowNode = undefined; // initialized by binder (FlowContainer)
+    return node;
+}
 
 // @api
 auto NodeFactory::createElementAccessExpression(Expression expression, Expression index) -> ElementAccessExpression
 {
-    auto node = createBaseExpression<ElementAccessExpression>(SyntaxKind::ElementAccessExpression);
-    node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
-    node->argumentExpression = asExpression(index);
-    node->transformFlags |= propagateChildFlags(node->expression) | propagateChildFlags(node->argumentExpression);
-    if (isSuperKeyword(expression))
-    {
+    auto node = createBaseElementAccessExpression(
+        parenthesizerRules.parenthesizeLeftSideOfAccess(expression, /*optionalChain*/ false),
+        /*questionDotToken*/ undefined,
+        asExpression(index)
+    );
+    if (isSuperKeyword(expression)) {
         // super method calls require a lexical 'this'
         // super method calls require 'super' hoisting in ES2017 and ES2018 async functions and async generators
-        node->transformFlags |= TransformFlags::ContainsES2017 | TransformFlags::ContainsES2018;
+        node->transformFlags |= TransformFlags::ContainsES2017 |
+            TransformFlags::ContainsES2018;
     }
     return node;
 }
@@ -932,39 +1083,48 @@ auto NodeFactory::createElementAccessExpression(Expression expression, Expressio
 // @api
 auto NodeFactory::createElementAccessChain(Expression expression, QuestionDotToken questionDotToken, Expression index) -> ElementAccessChain
 {
-    auto node = createBaseExpression<ElementAccessChain>(SyntaxKind::ElementAccessExpression);
+    auto node = createBaseElementAccessExpression(
+        parenthesizerRules.parenthesizeLeftSideOfAccess(expression, /*optionalChain*/ true),
+        questionDotToken,
+        asExpression(index)
+    ).as<ElementAccessChain>();
     node->flags |= NodeFlags::OptionalChain;
-    node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
-    node->questionDotToken = questionDotToken;
-    node->argumentExpression = asExpression(index);
-    node->transformFlags |= propagateChildFlags(node->expression) | propagateChildFlags(node->questionDotToken) |
-                            propagateChildFlags(node->argumentExpression) | TransformFlags::ContainsES2020;
+    node->transformFlags |= TransformFlags::ContainsES2020;
     return node;
 }
 
 // @api
+auto NodeFactory::createBaseCallExpression(LeftHandSideExpression expression, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression {
+    auto node = createBaseDeclaration<CallExpression>(SyntaxKind::CallExpression);
+    node->expression = expression;
+    node->questionDotToken = questionDotToken;
+    node->typeArguments = typeArguments;
+    node->arguments = argumentsArray;
+    node->transformFlags |= propagateChildFlags(node->expression) |
+        propagateChildFlags(node->questionDotToken) |
+        propagateChildrenFlags(node->typeArguments) |
+        propagateChildrenFlags(node->arguments);
+    if (node->typeArguments) {
+        node->transformFlags |= TransformFlags::ContainsTypeScript;
+    }
+    if (isSuperProperty(node->expression)) {
+        node->transformFlags |= TransformFlags::ContainsLexicalThis;
+    }
+    return node;
+}
 
 // @api
 auto NodeFactory::createCallExpression(Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray)
     -> CallExpression
 {
-    auto node = createBaseExpression<CallExpression>(SyntaxKind::CallExpression);
-    node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
-    node->typeArguments = asNodeArray(typeArguments);
-    node->arguments = parenthesizerRules.parenthesizeExpressionsOfCommaDelimitedList(createNodeArray(argumentsArray));
-    node->transformFlags |=
-        propagateChildFlags(node->expression) | propagateChildrenFlags(node->typeArguments) | propagateChildrenFlags(node->arguments);
-    if (node->typeArguments)
-    {
-        node->transformFlags |= TransformFlags::ContainsTypeScript;
-    }
-    if (isImportKeyword(node->expression))
-    {
+    auto node = createBaseCallExpression(
+        parenthesizerRules.parenthesizeLeftSideOfAccess(expression, /*optionalChain*/ false),
+        /*questionDotToken*/ undefined,
+        asNodeArray(typeArguments),
+        parenthesizerRules.parenthesizeExpressionsOfCommaDelimitedList(createNodeArray(argumentsArray))
+    );
+    if (isImportKeyword(node->expression)) {
         node->transformFlags |= TransformFlags::ContainsDynamicImport;
-    }
-    else if (isSuperProperty(node->expression))
-    {
-        node->transformFlags |= TransformFlags::ContainsLexicalThis;
     }
     return node;
 }
@@ -982,23 +1142,14 @@ auto NodeFactory::updateCallExpression(CallExpression node, Expression expressio
 auto NodeFactory::createCallChain(Expression expression, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments,
                                   NodeArray<Expression> argumentsArray) -> CallChain
 {
-    auto node = createBaseExpression<CallChain>(SyntaxKind::CallExpression);
+    auto node = createBaseCallExpression(
+        parenthesizerRules.parenthesizeLeftSideOfAccess(expression, /*optionalChain*/ true),
+        questionDotToken,
+        asNodeArray(typeArguments),
+        parenthesizerRules.parenthesizeExpressionsOfCommaDelimitedList(createNodeArray(argumentsArray))
+    ).as<CallChain>();
     node->flags |= NodeFlags::OptionalChain;
-    node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
-    node->questionDotToken = questionDotToken;
-    node->typeArguments = asNodeArray(typeArguments);
-    node->arguments = parenthesizerRules.parenthesizeExpressionsOfCommaDelimitedList(createNodeArray(argumentsArray));
-    node->transformFlags |= propagateChildFlags(node->expression) | propagateChildFlags(node->questionDotToken) |
-                            propagateChildrenFlags(node->typeArguments) | propagateChildrenFlags(node->arguments) |
-                            TransformFlags::ContainsES2020;
-    if (node->typeArguments)
-    {
-        node->transformFlags |= TransformFlags::ContainsTypeScript;
-    }
-    if (isSuperProperty(node->expression))
-    {
-        node->transformFlags |= TransformFlags::ContainsLexicalThis;
-    }
+    node->transformFlags |= TransformFlags::ContainsES2020;
     return node;
 }
 

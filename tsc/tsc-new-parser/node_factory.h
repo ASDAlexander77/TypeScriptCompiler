@@ -535,6 +535,9 @@ class NodeFactory
         -> ObjectLiteralExpression;
     // auto updateObjectLiteralExpression(ObjectLiteralExpression node, NodeArray<ObjectLiteralElementLike> properties) ->
     // ObjectLiteralExpression; auto createPropertyAccessExpression(Expression expression, string name) -> PropertyAccessExpression;
+
+    auto createBasePropertyAccessExpression(LeftHandSideExpression expression, QuestionDotToken questionDotToken, MemberName name) -> PropertyAccessExpression;
+
     auto createPropertyAccessExpression(Expression expression, MemberName name) -> PropertyAccessExpression;
     // auto updatePropertyAccessExpression(PropertyAccessExpression node, Expression expression, MemberName name) ->
     // PropertyAccessExpression; auto createPropertyAccessChain(Expression expression, QuestionDotToken questionDotToken, string name) ->
@@ -542,6 +545,9 @@ class NodeFactory
     auto createPropertyAccessChain(Expression expression, QuestionDotToken questionDotToken, MemberName name) -> PropertyAccessChain;
     // auto updatePropertyAccessChain(PropertyAccessChain node, Expression expression, QuestionDotToken questionDotToken, MemberName name)
     // -> PropertyAccessChain; auto createElementAccessExpression(Expression expression, number index) -> ElementAccessExpression;
+    
+    auto createBaseElementAccessExpression(LeftHandSideExpression expression, QuestionDotToken questionDotToken, Expression argumentExpression) -> ElementAccessExpression;
+
     auto createElementAccessExpression(Expression expression, Expression index) -> ElementAccessExpression;
     // auto updateElementAccessExpression(ElementAccessExpression node, Expression expression, Expression argumentExpression) ->
     // ElementAccessExpression; auto createElementAccessChain(Expression expression, QuestionDotToken questionDotToken, number index) ->
@@ -549,6 +555,7 @@ class NodeFactory
     auto createElementAccessChain(Expression expression, QuestionDotToken questionDotToken, Expression index) -> ElementAccessChain;
     // auto updateElementAccessChain(ElementAccessChain node, Expression expression, QuestionDotToken questionDotToken, Expression
     // argumentExpression) -> ElementAccessChain;
+    auto createBaseCallExpression(LeftHandSideExpression expression, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression;
     auto createCallExpression(Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray)
         -> CallExpression;
     auto updateCallExpression(CallExpression node, Expression expression, NodeArray<TypeNode> typeArguments,

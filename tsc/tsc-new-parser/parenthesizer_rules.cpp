@@ -40,7 +40,7 @@ auto ParenthesizerRules::parenthesizeExpressionForDisallowedComma(Expression exp
                : setTextRange(factory->createParenthesizedExpression(expression).as<Expression>(), expression);
 }
 
-auto ParenthesizerRules::parenthesizeLeftSideOfAccess(Expression expression) -> LeftHandSideExpression
+auto ParenthesizerRules::parenthesizeLeftSideOfAccess(Expression expression, boolean optionalChain) -> LeftHandSideExpression
 {
     if (factory->NoParenthesizerRules())
     {
@@ -54,8 +54,9 @@ auto ParenthesizerRules::parenthesizeLeftSideOfAccess(Expression expression) -> 
     //       new C.x        -> not the same as (new C).x
     //
     auto emittedExpression = skipPartiallyEmittedExpressions(expression);
-    if (isLeftHandSideExpression(emittedExpression) &&
-        (emittedExpression != SyntaxKind::NewExpression || emittedExpression.as<NewExpression>()->arguments))
+    if (isLeftHandSideExpression(emittedExpression) 
+        && (emittedExpression != SyntaxKind::NewExpression || emittedExpression.as<NewExpression>()->arguments)
+        && (optionalChain || !isOptionalChain(emittedExpression)))
     {
         // TODO(rbuckton) -> Verify whether this assertion holds.
         return expression.as<LeftHandSideExpression>();

@@ -2418,6 +2418,15 @@ inline static auto isUnaryExpression(Node node) -> boolean
     return isUnaryExpressionKind(skipPartiallyEmittedExpressions(node));
 }
 
+inline static auto isOptionalChain(Node node) -> boolean {
+    auto kind = node->_kind;
+    return !!(node->flags & NodeFlags::OptionalChain) &&
+        (kind == SyntaxKind::PropertyAccessExpression
+            || kind == SyntaxKind::ElementAccessExpression
+            || kind == SyntaxKind::CallExpression
+            || kind == SyntaxKind::NonNullExpression);
+}
+
 inline static auto getOperatorAssociativity(SyntaxKind kind, SyntaxKind _operator, boolean hasArguments = false) -> Associativity
 {
     switch (kind)
