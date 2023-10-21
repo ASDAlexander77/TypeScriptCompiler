@@ -3032,23 +3032,34 @@ auto NodeFactory::createCatchClause(VariableDeclaration variableDeclaration, Blo
 // @api
 auto NodeFactory::createPropertyAssignment(PropertyName name, Expression initializer) -> PropertyAssignment
 {
-    auto node = createBaseNamedDeclaration<PropertyAssignment>(SyntaxKind::PropertyAssignment,
-                                                               
-                                                               /*modifiers*/ undefined, name);
+    auto node = createBaseDeclaration<PropertyAssignment>(SyntaxKind::PropertyAssignment);
+    node->name = asName(name);
     node->initializer = parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer);
-    node->transformFlags |= propagateChildFlags(node->name) | propagateChildFlags(node->initializer);
+    node->transformFlags |= propagateNameFlags(node->name) |
+        propagateChildFlags(node->initializer);
+
+    node->modifiers = undefined; // initialized by parser to report grammar errors
+    node->questionToken = undefined; // initialized by parser to report grammar errors
+    node->exclamationToken = undefined; // initialized by parser to report grammar errors
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
 // @api
 auto NodeFactory::createShorthandPropertyAssignment(Identifier name, Expression objectAssignmentInitializer) -> ShorthandPropertyAssignment
 {
-    auto node = createBaseNamedDeclaration<ShorthandPropertyAssignment>(SyntaxKind::ShorthandPropertyAssignment,
-                                                                        
-                                                                        /*modifiers*/ undefined, name);
-    node->objectAssignmentInitializer =
-        objectAssignmentInitializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(objectAssignmentInitializer) : undefined;
-    node->transformFlags |= propagateChildFlags(node->objectAssignmentInitializer) | TransformFlags::ContainsES2015;
+    auto node = createBaseDeclaration<ShorthandPropertyAssignment>(SyntaxKind::ShorthandPropertyAssignment);
+    node->name = asName(name);
+    node->objectAssignmentInitializer = !!objectAssignmentInitializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(objectAssignmentInitializer) : objectAssignmentInitializer;
+    node->transformFlags |= propagateIdentifierNameFlags(node->name) |
+        propagateChildFlags(node->objectAssignmentInitializer) |
+        TransformFlags::ContainsES2015;
+
+    node->equalsToken = undefined; // initialized by parser to report grammar errors
+    node->modifiers = undefined; // initialized by parser to report grammar errors
+    node->questionToken = undefined; // initialized by parser to report grammar errors
+    node->exclamationToken = undefined; // initialized by parser to report grammar errors
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
