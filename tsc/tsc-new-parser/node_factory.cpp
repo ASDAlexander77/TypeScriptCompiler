@@ -2166,19 +2166,6 @@ auto NodeFactory::createInterfaceDeclaration(NodeArray<ModifierLike> modifiers, 
                                              NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
                                              NodeArray<TypeElement> members) -> InterfaceDeclaration
 {
-    auto node = createBaseInterfaceOrClassLikeDeclaration<InterfaceDeclaration>(SyntaxKind::InterfaceDeclaration, modifiers,
-                                                                                name, typeParameters, heritageClauses);
-    node->members = createNodeArray(members);
-    node->transformFlags = TransformFlags::ContainsTypeScript;
-    return node;
-}
-
-// @api
-
-// @api
-auto NodeFactory::createTypeAliasDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
-                                             NodeArray<TypeParameterDeclaration> typeParameters, TypeNode type) -> TypeAliasDeclaration
-{
     auto node = createBaseDeclaration<InterfaceDeclaration>(SyntaxKind::InterfaceDeclaration);
     node->modifiers = asNodeArray(modifiers);
     node->name = asName(name);
@@ -2194,13 +2181,39 @@ auto NodeFactory::createTypeAliasDeclaration(NodeArray<ModifierLike> modifiers, 
 // @api
 
 // @api
+auto NodeFactory::createTypeAliasDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
+                                             NodeArray<TypeParameterDeclaration> typeParameters, TypeNode type) -> TypeAliasDeclaration
+{
+    auto node = createBaseDeclaration<TypeAliasDeclaration>(SyntaxKind::TypeAliasDeclaration);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);
+    node->typeParameters = asNodeArray(typeParameters);
+    node->type = type;
+    node->transformFlags = TransformFlags::ContainsTypeScript;
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    return node;
+}
+
+// @api
+
+// @api
 auto NodeFactory::createEnumDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
                                         NodeArray<EnumMember> members) -> EnumDeclaration
 {
-    auto node = createBaseNamedDeclaration<EnumDeclaration>(SyntaxKind::EnumDeclaration, modifiers, name);
+    auto node = createBaseDeclaration<EnumDeclaration>(SyntaxKind::EnumDeclaration);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);
     node->members = createNodeArray(members);
-    node->transformFlags |= propagateChildrenFlags(node->members) | TransformFlags::ContainsTypeScript;
+    node->transformFlags |= propagateChildrenFlags(node->modifiers) |
+        propagateChildFlags(node->name) |
+        propagateChildrenFlags(node->members) |
+        TransformFlags::ContainsTypeScript;
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // Enum declarations cannot contain `await`
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -2210,27 +2223,12 @@ auto NodeFactory::createEnumDeclaration(NodeArray<ModifierLike> modifiers, Ident
 auto NodeFactory::createModuleDeclaration(NodeArray<ModifierLike> modifiers, ModuleName name, ModuleBody body,
                                           NodeFlags flags) -> ModuleDeclaration
 {
-    // auto node = createBaseDeclaration<ModuleDeclaration>(SyntaxKind::ModuleDeclaration, modifiers);
-    // node->flags |= flags & (NodeFlags::Namespace | NodeFlags::NestedNamespace | NodeFlags::GlobalAugmentation);
-    // node->name = name;
-    // node->body = body;
-    // if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient))
-    // {
-    //     node->transformFlags = TransformFlags::ContainsTypeScript;
-    // }
-    // else
-    // {
-    //     node->transformFlags |= propagateChildFlags(node->name) | propagateChildFlags(node->body) | TransformFlags::ContainsTypeScript;
-    // }
-    // node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // Module declarations cannot contain `await`.
-    // return node;
-
     auto node = createBaseDeclaration<ModuleDeclaration>(SyntaxKind::ModuleDeclaration);
     node->modifiers = asNodeArray(modifiers);
     node->flags |= flags & (NodeFlags::Namespace | NodeFlags::NestedNamespace | NodeFlags::GlobalAugmentation);
     node->name = name;
     node->body = body;
-    if ((modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) > ModifierFlags::None) {
+    if (!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient)) {
         node->transformFlags = TransformFlags::ContainsTypeScript;
     }
     else {
@@ -2241,10 +2239,10 @@ auto NodeFactory::createModuleDeclaration(NodeArray<ModifierLike> modifiers, Mod
     }
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // Module declarations cannot contain `await`.
 
-    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     node->locals.clear(); // initialized by binder (LocalsContainer)
-    //node->nextContainer = undefined; // initialized by binder (LocalsContainer)
-    return node;    
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    return node;   
 }
 
 // @api
@@ -2274,10 +2272,13 @@ auto NodeFactory::createCaseBlock(NodeArray<CaseOrDefaultClause> clauses) -> Cas
 // @api
 auto NodeFactory::createNamespaceExportDeclaration(Identifier name) -> NamespaceExportDeclaration
 {
-    auto node = createBaseNamedDeclaration<NamespaceExportDeclaration>(SyntaxKind::NamespaceExportDeclaration,
-                                                                       
-                                                                       /*modifiers*/ undefined, name);
-    node->transformFlags = TransformFlags::ContainsTypeScript;
+    auto node = createBaseDeclaration<NamespaceExportDeclaration>(SyntaxKind::NamespaceExportDeclaration);
+    node->name = asName(name);
+    node->transformFlags |= propagateIdentifierNameFlags(node->name) |
+        TransformFlags::ContainsTypeScript;
+
+    node->modifiers.clear(); // initialized by parser to report grammar errors
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -2287,13 +2288,22 @@ auto NodeFactory::createNamespaceExportDeclaration(Identifier name) -> Namespace
 auto NodeFactory::createImportEqualsDeclaration(NodeArray<ModifierLike> modifiers, boolean isTypeOnly, Identifier name,
                                                 ModuleReference moduleReference) -> ImportEqualsDeclaration
 {
-    auto node = createBaseNamedDeclaration<ImportEqualsDeclaration>(SyntaxKind::ImportEqualsDeclaration, modifiers, name);
+    auto node = createBaseDeclaration<ImportEqualsDeclaration>(SyntaxKind::ImportEqualsDeclaration);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);
     node->isTypeOnly = isTypeOnly;
     node->moduleReference = moduleReference;
-    node->transformFlags |= propagateChildFlags(node->moduleReference);
-    if (!isExternalModuleReference(node->moduleReference))
+    node->transformFlags |= propagateChildrenFlags(node->modifiers) |
+        propagateIdentifierNameFlags(node->name) |
+        propagateChildFlags(node->moduleReference);
+
+    if (!isExternalModuleReference(node->moduleReference)) {
         node->transformFlags |= TransformFlags::ContainsTypeScript;
+    }
+
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // Import= declaration is always parsed in an Await context
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -2472,9 +2482,9 @@ auto NodeFactory::createExportSpecifier(boolean isTypeOnly, Identifier propertyN
 // @api
 auto NodeFactory::createMissingDeclaration() -> MissingDeclaration
 {
-    auto node = createBaseDeclaration<MissingDeclaration>(SyntaxKind::MissingDeclaration,
-                                                          
-                                                          /*modifiers*/ undefined);
+    auto node = createBaseDeclaration<MissingDeclaration>(SyntaxKind::MissingDeclaration);
+
+    //node->jsDoc = undefined; // initialized by parser (JsDocContainer)
     return node;
 }
 
@@ -2548,11 +2558,16 @@ auto NodeFactory::createJSDocNamepathType(TypeNode type) -> JSDocNamepathType
 // @api
 auto NodeFactory::createJSDocFunctionType(NodeArray<ParameterDeclaration> parameters, TypeNode type) -> JSDocFunctionType
 {
-    auto node = createBaseSignatureDeclaration<JSDocFunctionType>(SyntaxKind::JSDocFunctionType,
-                                                                  
-                                                                  /*modifiers*/ undefined,
-                                                                  /*name*/ undefined,
-                                                                  /*typeParameters*/ undefined, parameters, type);
+    auto node = createBaseDeclaration<JSDocFunctionType>(SyntaxKind::JSDocFunctionType);
+    node->parameters = asNodeArray(parameters);
+    node->type = type;
+    node->transformFlags = propagateChildrenFlags(node->parameters) |
+        (node->type ? TransformFlags::ContainsTypeScript : TransformFlags::None);
+
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    node->typeArguments = undefined; // used in quick info
     return node;
 }
 

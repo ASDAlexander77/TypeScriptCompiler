@@ -1584,7 +1584,7 @@ struct DebuggerStatement : Statement
     // kind: SyntaxKind::DebuggerStatement;
 };
 
-struct MissingDeclaration : DeclarationStatement
+struct MissingDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::MissingDeclaration;
     PTR(Identifier) name;
@@ -1769,7 +1769,7 @@ struct ClassExpression : ClassLikeDeclaration /*, PrimaryExpression*/
     // kind: SyntaxKind::ClassExpression;
 };
 
-struct InterfaceDeclaration : DeclarationStatement
+struct InterfaceDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::InterfaceDeclaration;
     PTR(Identifier) name;
@@ -1785,7 +1785,7 @@ struct HeritageClause : Node
     NodeArray<PTR(ExpressionWithTypeArguments)> types;
 };
 
-struct TypeAliasDeclaration : DeclarationStatement
+struct TypeAliasDeclaration : Declaration/*DeclarationStatement*/, LocalsContainer
 {
     // kind: SyntaxKind::TypeAliasDeclaration;
     PTR(Identifier) name;
@@ -1801,7 +1801,7 @@ struct EnumMember : NamedDeclaration
     PTR(Expression) initializer;
 };
 
-struct EnumDeclaration : DeclarationStatement
+struct EnumDeclaration : Declaration/*DeclarationStatement*/
 {
     // kind: SyntaxKind::EnumDeclaration;
     PTR(Identifier) name;
@@ -1845,7 +1845,7 @@ struct ModuleBlock : ModuleBody
  * - import x = require("mod");
  * - import x = M.x;
  */
-struct ImportEqualsDeclaration : DeclarationStatement
+struct ImportEqualsDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::ImportEqualsDeclaration;
     PTR(Identifier) name;
@@ -1901,13 +1901,13 @@ struct NamespaceExport : NamedDeclaration
     // kind: SyntaxKind::NamespaceExport;
 };
 
-struct NamespaceExportDeclaration : DeclarationStatement
+struct NamespaceExportDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::NamespaceExportDeclaration name;
     PTR(Identifier) name;
 };
 
-struct ExportDeclaration : DeclarationStatement
+struct ExportDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::ExportDeclaration;
     PTR(Node) parent; // SourceFile | ModuleBlock;
@@ -2064,7 +2064,7 @@ struct JSDocOptionalType : JSDocType
     PTR(TypeNode) type;
 };
 
-struct JSDocFunctionType : /*JSDocType, */ SignatureDeclarationBase
+struct JSDocFunctionType : /*JSDocType, */ SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::JSDocFunctionType;
 };
