@@ -587,7 +587,7 @@ struct FunctionLikeDeclarationBase : SignatureDeclarationBase
     ///* @internal */ PTR(FlowNode) returnFlowNode;
 };
 
-struct FunctionDeclaration : FunctionLikeDeclarationBase
+struct FunctionDeclaration : FunctionLikeDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::FunctionDeclaration;
 };
