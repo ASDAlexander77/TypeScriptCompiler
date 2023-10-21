@@ -895,6 +895,39 @@ enum class JSDocParsingMode : number {
     ParseForTypeInfo,
 };
 
+
+enum class EmitFlags : number {
+    None = 0,
+    SingleLine = 1 << 0,                    // The contents of this node should be emitted on a single line.
+    MultiLine = 1 << 1,
+    AdviseOnEmitNode = 1 << 2,              // The printer should invoke the onEmitNode callback when printing this node.
+    NoSubstitution = 1 << 3,                // Disables further substitution of an expression.
+    CapturesThis = 1 << 4,                  // The function captures a lexical `this`
+    NoLeadingSourceMap = 1 << 5,            // Do not emit a leading source map location for this node.
+    NoTrailingSourceMap = 1 << 6,           // Do not emit a trailing source map location for this node.
+    NoSourceMap = NoLeadingSourceMap | NoTrailingSourceMap, // Do not emit a source map location for this node.
+    NoNestedSourceMaps = 1 << 7,            // Do not emit source map locations for children of this node.
+    NoTokenLeadingSourceMaps = 1 << 8,      // Do not emit leading source map location for token nodes.
+    NoTokenTrailingSourceMaps = 1 << 9,     // Do not emit trailing source map location for token nodes.
+    NoTokenSourceMaps = NoTokenLeadingSourceMaps | NoTokenTrailingSourceMaps, // Do not emit source map locations for tokens of this node.
+    NoLeadingComments = 1 << 10,            // Do not emit leading comments for this node.
+    NoTrailingComments = 1 << 11,           // Do not emit trailing comments for this node.
+    NoComments = NoLeadingComments | NoTrailingComments, // Do not emit comments for this node.
+    NoNestedComments = 1 << 12,
+    HelperName = 1 << 13,                   // The Identifier refers to an *unscoped* emit helper (one that is emitted at the top of the file)
+    ExportName = 1 << 14,                   // Ensure an export prefix is added for an identifier that points to an exported declaration with a local name (see SymbolFlags.ExportHasLocal).
+    LocalName = 1 << 15,                    // Ensure an export prefix is not added for an identifier that points to an exported declaration.
+    InternalName = 1 << 16,                 // The name is internal to an ES5 class body function.
+    Indented = 1 << 17,                     // Adds an explicit extra indentation level for class and function bodies when printing (used to match old emitter).
+    NoIndentation = 1 << 18,                // Do not indent the node.
+    AsyncFunctionBody = 1 << 19,
+    ReuseTempVariableScope = 1 << 20,       // Reuse the existing temp variable scope during emit.
+    CustomPrologue = 1 << 21,               // Treat the statement as if it were a prologue directive (NOTE: Prologue directives are *not* transformed).
+    NoHoisting = 1 << 22,                   // Do not hoist this declaration in --module system
+    Iterator = 1 << 23,                     // The expression to a `yield*` should be treated as an Iterator when down-leveling, not an Iterable.
+    NoAsciiEscaping = 1 << 24,              // When synthesizing nodes that lack an original node or textSourceNode, we want to write the text on the node with ASCII escaping substitutions.
+};
+
 } // namespace ts
 
 #endif // ENUMS_H

@@ -1089,7 +1089,7 @@ using BinaryOperator = SyntaxKind;
 
 using LogicalOrCoalescingAssignmentOperator = SyntaxKind;
 
-struct BinaryExpression : Expression
+struct BinaryExpression : /*Expression*/ Declaration
 {
     // kind: SyntaxKind::BinaryExpression;
     PTR(Expression) left;
@@ -1139,12 +1139,12 @@ struct ConditionalExpression : Expression
     PTR(Expression) whenFalse;
 };
 
-struct FunctionExpression : /*PrimaryExpression, */ FunctionLikeDeclarationBase
+struct FunctionExpression : /*PrimaryExpression, */ FunctionLikeDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::FunctionExpression;
 };
 
-struct ArrowFunction : /*Expression, */ FunctionLikeDeclarationBase
+struct ArrowFunction : /*Expression, */ FunctionLikeDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::ArrowFunction;
     PTR(EqualsGreaterThanToken) equalsGreaterThanToken;
