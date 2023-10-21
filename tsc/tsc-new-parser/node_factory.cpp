@@ -13,6 +13,10 @@ auto NodeFactory::propagateIdentifierNameFlags(Identifier node) -> TransformFlag
     return propagateChildFlags(node) & ~TransformFlags::ContainsPossibleTopLevelAwait;
 }
 
+auto NodeFactory::propagateNameFlags(Node node) -> TransformFlags {
+    return !!node && isIdentifier(node) ? propagateIdentifierNameFlags(node) : propagateChildFlags(node);
+}
+
 auto NodeFactory::propagatePropertyNameFlagsOfChild(PropertyName node, TransformFlags transformFlags) -> TransformFlags
 {
     return transformFlags | (node->transformFlags & TransformFlags::PropertyNamePropagatingFlags);
@@ -392,16 +396,16 @@ auto NodeFactory::createMethodDeclaration(NodeArray<ModifierLike> modifiers, Ast
 // @api
 
 auto NodeFactory::createClassStaticBlockDeclaration(Block body) -> ClassStaticBlockDeclaration {
-    auto node = createBaseDeclaration<ClassStaticBlockDeclaration>(SyntaxKind::ClassStaticBlockDeclaration, undefined);
+    auto node = createBaseDeclaration<ClassStaticBlockDeclaration>(SyntaxKind::ClassStaticBlockDeclaration);
     node->body = body;
     node->transformFlags = propagateChildFlags(body) | TransformFlags::ContainsClassFields;
 
-    // node.modifiers = undefined; // initialized by parser for grammar errors
-    // node.jsDoc = undefined; // initialized by parser (JsDocContainer)
-    // node.locals = undefined; // initialized by binder (LocalsContainer)
-    // node.nextContainer = undefined; // initialized by binder (LocalsContainer)
-    // node.endFlowNode = undefined;
-    // node.returnFlowNode = undefined;
+    node->modifiers = undefined; // initialized by parser for grammar errors
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clear(); // initialized by binder (LocalsContainer)
+    node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    //node->endFlowNode = undefined;
+    //node->returnFlowNode = undefined;
     return node;
 }
 
@@ -1551,13 +1555,18 @@ auto NodeFactory::createBlock(NodeArray<Statement> statements, boolean multiLine
 // @api
 auto NodeFactory::createVariableStatement(ModifiersArray modifiers, VariableDeclarationList declarationList) -> VariableStatement
 {
-    auto node = createBaseDeclaration<VariableStatement>(SyntaxKind::VariableStatement, modifiers);
+    auto node = createBaseNode<VariableStatement>(SyntaxKind::VariableStatement);
+    node->modifiers = asNodeArray(modifiers);
+    //node->declarationList = isArray(declarationList) ? createVariableDeclarationList(declarationList) : declarationList;
     node->declarationList = declarationList;
-    node->transformFlags |= propagateChildFlags(node->declarationList);
-    if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient))
-    {
+    node->transformFlags |= propagateChildrenFlags(node->modifiers) |
+        propagateChildFlags(node->declarationList);
+    if ((modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) > ModifierFlags::None) {
         node->transformFlags = TransformFlags::ContainsTypeScript;
     }
+
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    //node->flowNode = undefined; // initialized by binder (FlowContainer)
     return node;
 }
 
@@ -1845,21 +1854,31 @@ auto NodeFactory::createClassDeclaration(NodeArray<ModifierLike> modifiers, Iden
                                          NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
                                          NodeArray<ClassElement> members) -> ClassDeclaration
 {
-    auto node = createBaseClassLikeDeclaration<ClassDeclaration>(SyntaxKind::ClassDeclaration, modifiers, name, typeParameters,
-                                                                 heritageClauses, members);
-    if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient))
-    {
+    auto node = createBaseDeclaration<ClassDeclaration>(SyntaxKind::ClassDeclaration);
+    node->modifiers = asNodeArray(modifiers);
+    node->name = asName(name);
+    node->typeParameters = asNodeArray(typeParameters);
+    node->heritageClauses = asNodeArray(heritageClauses);
+    node->members = createNodeArray(members);
+
+    if ((modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) > ModifierFlags::None) {
         node->transformFlags = TransformFlags::ContainsTypeScript;
     }
-    else
-    {
-        node->transformFlags |= TransformFlags::ContainsES2015;
-        if (!!(node->transformFlags & TransformFlags::ContainsTypeScriptClassSyntax))
-        {
+    else {
+        node->transformFlags |= propagateChildrenFlags(node->modifiers) |
+            propagateNameFlags(node->name) |
+            propagateChildrenFlags(node->typeParameters) |
+            propagateChildrenFlags(node->heritageClauses) |
+            propagateChildrenFlags(node->members) |
+            (node->typeParameters ? TransformFlags::ContainsTypeScript : TransformFlags::None) |
+            TransformFlags::ContainsES2015;
+        if ((node->transformFlags & TransformFlags::ContainsTypeScriptClassSyntax) > TransformFlags::None) {
             node->transformFlags |= TransformFlags::ContainsTypeScript;
         }
     }
-    return node;
+
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    return node;    
 }
 
 // @api
@@ -1908,20 +1927,41 @@ auto NodeFactory::createEnumDeclaration(NodeArray<ModifierLike> modifiers, Ident
 auto NodeFactory::createModuleDeclaration(NodeArray<ModifierLike> modifiers, ModuleName name, ModuleBody body,
                                           NodeFlags flags) -> ModuleDeclaration
 {
-    auto node = createBaseDeclaration<ModuleDeclaration>(SyntaxKind::ModuleDeclaration, modifiers);
-    node->flags |= flags & (NodeFlags::Namespace | NodeFlags::NestedNamespace | NodeFlags::GlobalAugmentation);
+    // auto node = createBaseDeclaration<ModuleDeclaration>(SyntaxKind::ModuleDeclaration, modifiers);
+    // node->flags |= flags & (NodeFlags::Namespace | NodeFlags::NestedNamespace | NodeFlags::GlobalAugmentation);
+    // node->name = name;
+    // node->body = body;
+    // if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient))
+    // {
+    //     node->transformFlags = TransformFlags::ContainsTypeScript;
+    // }
+    // else
+    // {
+    //     node->transformFlags |= propagateChildFlags(node->name) | propagateChildFlags(node->body) | TransformFlags::ContainsTypeScript;
+    // }
+    // node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // Module declarations cannot contain `await`.
+    // return node;
+
+    auto node = createBaseDeclaration<ModuleDeclaration>(SyntaxKind::ModuleDeclaration);
+    node->modifiers = asNodeArray(modifiers);
+    node->flags |= flags & (NodeFlags::Namespace | NodeFlags.NestedNamespace | NodeFlags.GlobalAugmentation);
     node->name = name;
     node->body = body;
-    if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient))
-    {
+    if ((modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) > ModifierFlags::None) {
         node->transformFlags = TransformFlags::ContainsTypeScript;
     }
-    else
-    {
-        node->transformFlags |= propagateChildFlags(node->name) | propagateChildFlags(node->body) | TransformFlags::ContainsTypeScript;
+    else {
+        node->transformFlags |= propagateChildrenFlags(node->modifiers) |
+            propagateChildFlags(node->name) |
+            propagateChildFlags(node->body) |
+            TransformFlags::ContainsTypeScript;
     }
     node->transformFlags &= ~TransformFlags::ContainsPossibleTopLevelAwait; // Module declarations cannot contain `await`.
-    return node;
+
+    node->jsDoc = undefined; // initialized by parser (JsDocContainer)
+    node->locals.clean(); // initialized by binder (LocalsContainer)
+    //node->nextContainer = undefined; // initialized by binder (LocalsContainer)
+    return node;    
 }
 
 // @api

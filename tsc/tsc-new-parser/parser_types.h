@@ -294,20 +294,7 @@ struct QualifiedName : Node
     /*@internal*/ number jsdocDotPos; // QualifiedName occurs in JSDoc-style generic: Id1.Id2.<T>
 };
 
-struct ClassElement : JSDocContainer
-{
-};
-
-struct ClassStaticBlockDeclaration : ClassElement, LocalsContainer {
-    // kind: SyntaxKind.ClassStaticBlockDeclaration;
-    PTR(Node) parent;
-    PTR(Block) body;
-
-    // The following properties are used only to report grammar errors (see `isGrammarError` in utilities.ts)
-    /** @internal */ NodeArray<PTR(ModifierLike)> modifiers;
-};
-
-struct TypeNode : ClassElement
+struct TypeNode : JSDocContainer
 {
     // kind: TypeNodeSyntaxKind;
     //any _typeNodeBrand;
@@ -377,6 +364,20 @@ struct DeclarationStatement : Statement
 struct NamedDeclaration : Declaration
 {
     PTR(DeclarationName) name;
+};
+
+struct ClassElement : NamedDeclaration
+{
+    PTR(PropertyName) name;
+};
+
+struct ClassStaticBlockDeclaration : ClassElement, LocalsContainer {
+    // kind: SyntaxKind.ClassStaticBlockDeclaration;
+    PTR(Node) parent;
+    PTR(Block) body;
+
+    // The following properties are used only to report grammar errors (see `isGrammarError` in utilities.ts)
+    /** @internal */ NodeArray<PTR(ModifierLike)> modifiers;
 };
 
 struct TypeElement : NamedDeclaration

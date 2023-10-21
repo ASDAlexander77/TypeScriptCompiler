@@ -1767,7 +1767,7 @@ static auto modifierToFlag(SyntaxKind token) -> ModifierFlags
     return ModifierFlags::None;
 }
 
-static auto modifiersToFlags(ModifiersArray modifiers) -> ModifierFlags
+static auto modifiersToFlags(ModifiersLikeArray modifiers) -> ModifierFlags
 {
     auto flags = ModifierFlags::None;
     if (!!modifiers)

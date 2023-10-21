@@ -112,6 +112,8 @@ class NodeFactory
 
     auto getTransformFlagsSubtreeExclusions(SyntaxKind kind) -> TransformFlags;
 
+    auto propagateNameFlags(Node node) -> TransformFlags;
+
     auto propagatePropertyNameFlagsOfChild(PropertyName node, TransformFlags transformFlags) -> TransformFlags;
 
     auto propagateChildFlags(Node child) -> TransformFlags;
@@ -253,17 +255,11 @@ class NodeFactory
         return node;
     }
 
-    template <typename T> auto createBaseDeclaration(SyntaxKind kind, NodeArray<ModifierLike> modifiers)
+    template <typename T> auto createBaseDeclaration(SyntaxKind kind)
     {
         auto node = createBaseNode<T>(kind);
-        node->modifiers = asNodeArray(modifiers);
-        node->transformFlags |= propagateChildrenFlags(node->modifiers);
-        // NOTE: The following properties are commonly set by the binder and are added here to
-        // ensure declarations have a stable shape.
-        //node->symbol = undefined;        // initialized by binder
-        //node->localSymbol = undefined;   // initialized by binder
-        //node->locals.clear();            // initialized by binder
-        //node->nextContainer = undefined; // initialized by binder
+        node->symbol = undefined; // initialized by binder
+        node->localSymbol = undefined; // initialized by binder
         return node;
     }
 
