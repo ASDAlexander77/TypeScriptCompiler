@@ -296,7 +296,7 @@ auto NodeFactory::createParameterDeclaration(NodeArray<ModifierLike> modifiers, 
             propagateNameFlags(node->name) |
             propagateChildFlags(node->questionToken) |
             propagateChildFlags(node->initializer);
-        if (questionToken || node->type)
+        if (!!questionToken || !!(node->type))
             node->transformFlags |= TransformFlags::ContainsTypeScript;
         if (!!initializer || !!dotDotDotToken)
             node->transformFlags |= TransformFlags::ContainsES2015;
@@ -431,7 +431,7 @@ auto NodeFactory::createMethodDeclaration(NodeArray<ModifierLike> modifiers, Ast
                 isAsync ? TransformFlags::ContainsES2017 :
                 isGenerator ? TransformFlags::ContainsGenerator :
                 TransformFlags::None) |
-            (node->questionToken || node->typeParameters || node->type ? TransformFlags::ContainsTypeScript : TransformFlags::None) |
+            (!!(node->questionToken) || !!(node->typeParameters) || !!(node->type) ? TransformFlags::ContainsTypeScript : TransformFlags::None) |
             TransformFlags::ContainsES2015;
     }
 
