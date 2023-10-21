@@ -1375,7 +1375,7 @@ struct ImportCall : CallExpression
     PTR(ImportExpression) expression;
 };
 
-struct NewExpression : PrimaryExpression
+struct NewExpression : /*PrimaryExpression*/ Declaration
 {
     // kind: SyntaxKind::NewExpression;
     PTR(LeftHandSideExpression) expression;

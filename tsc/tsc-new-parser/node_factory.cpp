@@ -1159,14 +1159,15 @@ auto NodeFactory::createCallChain(Expression expression, QuestionDotToken questi
 auto NodeFactory::createNewExpression(Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray)
     -> NewExpression
 {
-    auto node = createBaseExpression<NewExpression>(SyntaxKind::NewExpression);
+    auto node = createBaseDeclaration<NewExpression>(SyntaxKind::NewExpression);
     node->expression = parenthesizerRules.parenthesizeExpressionOfNew(expression);
     node->typeArguments = asNodeArray(typeArguments);
     node->arguments = argumentsArray ? parenthesizerRules.parenthesizeExpressionsOfCommaDelimitedList(argumentsArray) : undefined;
-    node->transformFlags |= propagateChildFlags(node->expression) | propagateChildrenFlags(node->typeArguments) |
-                            propagateChildrenFlags(node->arguments) | TransformFlags::ContainsES2020;
-    if (node->typeArguments)
-    {
+    node->transformFlags |= propagateChildFlags(node->expression) |
+        propagateChildrenFlags(node->typeArguments) |
+        propagateChildrenFlags(node->arguments) |
+        TransformFlags::ContainsES2020;
+    if (node->typeArguments) {
         node->transformFlags |= TransformFlags::ContainsTypeScript;
     }
     return node;
@@ -1178,18 +1179,18 @@ auto NodeFactory::createNewExpression(Expression expression, NodeArray<TypeNode>
 auto NodeFactory::createTaggedTemplateExpression(Expression tag, NodeArray<TypeNode> typeArguments, TemplateLiteral _template)
     -> TaggedTemplateExpression
 {
-    auto node = createBaseExpression<TaggedTemplateExpression>(SyntaxKind::TaggedTemplateExpression);
-    node->tag = parenthesizerRules.parenthesizeLeftSideOfAccess(tag);
+    auto node = createBaseNode<TaggedTemplateExpression>(SyntaxKind::TaggedTemplateExpression);
+    node->tag = parenthesizerRules.parenthesizeLeftSideOfAccess(tag, /*optionalChain*/ false);
     node->typeArguments = asNodeArray(typeArguments);
     node->_template = _template;
-    node->transformFlags |= propagateChildFlags(node->tag) | propagateChildrenFlags(node->typeArguments) |
-                            propagateChildFlags(node->_template) | TransformFlags::ContainsES2015;
-    if (node->typeArguments)
-    {
+    node->transformFlags |= propagateChildFlags(node->tag) |
+        propagateChildrenFlags(node->typeArguments) |
+        propagateChildFlags(node->_template) |
+        TransformFlags::ContainsES2015;
+    if (node->typeArguments) {
         node->transformFlags |= TransformFlags::ContainsTypeScript;
     }
-    if (hasInvalidEscape(node->_template))
-    {
+    if (hasInvalidEscape(node->_template)) {
         node->transformFlags |= TransformFlags::ContainsES2018;
     }
     return node;
