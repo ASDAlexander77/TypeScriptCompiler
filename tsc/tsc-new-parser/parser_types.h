@@ -377,7 +377,7 @@ struct ClassStaticBlockDeclaration : ClassElement, LocalsContainer {
     PTR(Block) body;
 
     // The following properties are used only to report grammar errors (see `isGrammarError` in utilities.ts)
-    /** @internal */ NodeArray<PTR(ModifierLike)> modifiers;
+    // NodeArray<PTR(ModifierLike)> modifiers;
 };
 
 struct TypeElement : ClassElement
@@ -1816,7 +1816,7 @@ struct ModuleDeclaration : ModuleBody, LocalsContainer
 {
     // kind: SyntaxKind::ModuleDeclaration;
     PTR(Node) parent;
-    NodeArray<PTR(ModifierLike)> modifiers;
+    //NodeArray<PTR(ModifierLike)> modifiers;
     PTR(ModuleName) name;
     PTR(Node) /**ModuleBody | JSDocNamespaceDeclaration*/ body;
 };
@@ -1870,7 +1870,7 @@ struct ImportDeclaration : Statement
 {
     // kind: SyntaxKind::ImportDeclaration;
     PTR(Node) parent; // SourceFile | ModuleBlock
-    NodeArray<PTR(ModifierLike)> modifiers;
+    //NodeArray<PTR(ModifierLike)> modifiers;
     PTR(ImportClause) importClause;
     /** If this is not a StringLiteral it will be a grammar error. */
     PTR(Expression) moduleSpecifier;
@@ -1911,7 +1911,7 @@ struct ExportDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::ExportDeclaration;
     PTR(Node) parent; // SourceFile | ModuleBlock;
-    NodeArray<PTR(ModifierLike)> modifiers;
+    //NodeArray<PTR(ModifierLike)> modifiers;
     boolean isTypeOnly;
     /** Will not be assigned in the case of `export * from "foo";` */
     PTR(NamedExportBindings) exportClause;

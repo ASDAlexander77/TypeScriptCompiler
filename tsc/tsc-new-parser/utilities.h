@@ -753,8 +753,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::ModuleBlock:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->modifiers);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node.template as<ModuleBlock>()->statements);
         return result;
     case SyntaxKind::SourceFile:
