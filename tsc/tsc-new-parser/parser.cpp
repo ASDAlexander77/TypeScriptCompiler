@@ -3101,20 +3101,19 @@ struct Parser
             return undefined;
         }
 
-        auto node = withJSDoc(
-            finishNode(
-                factory.createParameterDeclaration(
-                    modifiers,
-                    dotDotDotToken,
-                    parseNameOfParameter(modifiers),
-                    parseOptionalToken(SyntaxKind::QuestionToken),
-                    parseTypeAnnotation(),
-                    parseInitializer()
-                ),
-                pos
-            ),
-            hasJSDoc
+        auto name = parseNameOfParameter(modifiers);
+        auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
+        auto typeAnnotation = parseTypeAnnotation();
+        auto node = factory.createParameterDeclaration(
+            modifiers,
+            dotDotDotToken,
+            name,
+            questionToken,
+            typeAnnotation,
+            parseInitializer()
         );
+
+        auto node = withJSDoc(finishNode(node, pos), hasJSDoc);
         topLevel = savedTopLevel;
         return node;        
     }
@@ -3579,11 +3578,10 @@ struct Parser
     auto parseTupleType() -> TupleTypeNode
     {
         auto pos = getNodePos();
-        return finishNode(
-            factory.createTupleTypeNode(parseBracketedList<Node>(
-                ParsingContext::TupleElementTypes, std::bind(&Parser::parseTupleElementNameOrTupleElementType, this),
-                SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken)),
-            pos);
+        auto node = factory.createTupleTypeNode(parseBracketedList<Node>(
+            ParsingContext::TupleElementTypes, std::bind(&Parser::parseTupleElementNameOrTupleElementType, this),
+            SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken));
+        return finishNode(node, pos);
     }
 
     auto parseParenthesizedType() -> TypeNode
@@ -5452,12 +5450,15 @@ struct Parser
                 // restructure (<div>(...<span>...</div>)) --> (<div>(...<span>...</>)</div>)
                 // (no need to error; the parent will error)
                 auto end = lastChild->children->_end;
-                auto newLast = finishNode(
-                    factory.createJsxElement(
+                auto node2 = finishNode(factory.createIdentifier(S("")), end, end);
+                auto node1 = finishNode(factory.createJsxClosingElement(node2), end, end);
+                auto node = factory.createJsxElement(
                         lastChild->openingElement,
                         lastChild->children,
-                        finishNode(factory.createJsxClosingElement(finishNode(factory.createIdentifier(S("")), end, end)), end, end)
-                    ),
+                        node1
+                    );
+                auto newLast = finishNode(
+                    node,
                     lastChild->openingElement->pos,
                     end
                 );
@@ -5484,7 +5485,9 @@ struct Parser
             result = finishNode(factory.createJsxElement(opening, children, closingElement), pos);
         }
         else if (openingOrSelfClosingElement == SyntaxKind::JsxOpeningFragment) {
-            result = finishNode(factory.createJsxFragment(openingOrSelfClosingElement, parseJsxChildren(openingOrSelfClosingElement), parseJsxClosingFragment(inExpressionContext)), pos);
+            auto node1 = parseJsxChildren(openingOrSelfClosingElement);
+            auto node2 = parseJsxClosingFragment(inExpressionContext);
+            result = finishNode(factory.createJsxFragment(openingOrSelfClosingElement, node1, node2), pos);
         }
         else {
             Debug::_assert(openingOrSelfClosingElement == SyntaxKind::JsxSelfClosingElement);
@@ -5737,7 +5740,8 @@ struct Parser
         }
 
         auto pos = getNodePos();
-        return finishNode(factory.createJsxAttribute(parseJsxAttributeName(), parseJsxAttributeValue()), pos);
+        auto node = parseJsxAttributeName();
+        return finishNode(factory.createJsxAttribute(node, parseJsxAttributeValue()), pos);
     }
 
     auto parseJsxAttributeValue() -> Node {
@@ -7510,7 +7514,7 @@ struct Parser
     }
 
     auto parsePropertyOrMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> Node
-    {
+    {2
         auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
         auto name = parsePropertyName();
         // this Note is not legal.as<per>() the grammar.  But we allow it in the parser and
