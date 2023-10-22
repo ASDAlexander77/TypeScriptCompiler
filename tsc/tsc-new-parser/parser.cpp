@@ -2439,7 +2439,8 @@ struct Parser
     {
         auto saveParsingContext = parsingContext;
         parsingContext |= (ParsingContext)(1 << (number)kind);
-        NodeArray<T> list;
+        NodeArray<T> list = {};
+        list.isUndefined = false;
         auto listPos = getNodePos();
 
         auto commaStart = -1; // Meaning the previous token was not a comma
@@ -3977,7 +3978,7 @@ struct Parser
                     [&]() { return parseConstituentType(); };
         if (token() == operator_ || hasLeadingOperator)
         {
-            auto types = NodeArray<TypeNode>(type);
+            auto types = NodeArray<TypeNode>(type.as<TypeNode>());
             while (parseOptional(operator_))
             {
                 types.push_back(parseFunctionOrConstructorTypeToError(isUnionType) ||

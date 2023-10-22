@@ -105,6 +105,12 @@ template <typename T /*extends Node*/> struct NodeArray : ReadonlyArray<T>, Text
     {
     }
 
+    NodeArray(std::initializer_list<T> list)
+        : ReadonlyArray<T>(list), TextRange(), isUndefined(false), hasTrailingComma(false), isMissingList(false),
+          transformFlags(TransformFlags::None)
+    {
+    }    
+
     auto pop() -> T
     {
         auto v = back();
