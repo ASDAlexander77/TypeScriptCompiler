@@ -3104,7 +3104,7 @@ struct Parser
         auto name = parseNameOfParameter(modifiers);
         auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
         auto typeAnnotation = parseTypeAnnotation();
-        auto node = factory.createParameterDeclaration(
+        auto parameterDeclarationNode = factory.createParameterDeclaration(
             modifiers,
             dotDotDotToken,
             name,
@@ -3113,7 +3113,7 @@ struct Parser
             parseInitializer()
         );
 
-        auto node = withJSDoc(finishNode(node, pos), hasJSDoc);
+        auto node = withJSDoc(finishNode(parameterDeclarationNode, pos), hasJSDoc);
         topLevel = savedTopLevel;
         return node;        
     }
@@ -7514,7 +7514,7 @@ struct Parser
     }
 
     auto parsePropertyOrMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> Node
-    {2
+    {
         auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
         auto name = parsePropertyName();
         // this Note is not legal.as<per>() the grammar.  But we allow it in the parser and
