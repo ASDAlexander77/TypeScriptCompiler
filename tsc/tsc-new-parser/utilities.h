@@ -744,6 +744,12 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<NonNullExpression>()->expression);
         return result;
+    case SyntaxKind::SatisfiesExpression:
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<SatisfiesExpression>()->expression);
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<SatisfiesExpression>()->type);
+        return result;
     case SyntaxKind::MetaProperty:
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<MetaProperty>()->name);
