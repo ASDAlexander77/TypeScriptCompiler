@@ -470,6 +470,7 @@ std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::ExpressionWithTypeArguments, S("ExpressionWithTypeArguments")},
     {SyntaxKind::AsExpression, S("AsExpression")},
     {SyntaxKind::NonNullExpression, S("NonNullExpression")},
+    {SyntaxKind::SatisfiesExpression, S("SatisfiesExpression")},
     {SyntaxKind::MetaProperty, S("MetaProperty")},
     {SyntaxKind::SyntheticExpression, S("SyntheticExpression")},
     {SyntaxKind::TemplateSpan, S("TemplateSpan")},

@@ -1654,6 +1654,7 @@ inline auto getBinaryOperatorPrecedence(SyntaxKind kind) -> OperatorPrecedence
     case SyntaxKind::InstanceOfKeyword:
     case SyntaxKind::InKeyword:
     case SyntaxKind::AsKeyword:
+    case SyntaxKind::SatisfiesKeyword:
         return OperatorPrecedence::Relational;
     case SyntaxKind::LessThanLessThanToken:
     case SyntaxKind::GreaterThanGreaterThanToken:
