@@ -409,6 +409,7 @@ std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::PropertyDeclaration, S("PropertyDeclaration")},
     {SyntaxKind::MethodSignature, S("MethodSignature")},
     {SyntaxKind::MethodDeclaration, S("MethodDeclaration")},
+    {SyntaxKind::ClassStaticBlockDeclaration, S("ClassStaticBlockDeclaration")},
     {SyntaxKind::Constructor, S("Constructor")},
     {SyntaxKind::GetAccessor, S("GetAccessor")},
     {SyntaxKind::SetAccessor, S("SetAccessor")},

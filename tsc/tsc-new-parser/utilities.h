@@ -168,14 +168,20 @@ static auto formatStringFromArgs(int& replaceIndex, string text, string arg0, st
     if (pos != std::string::npos)
     {
         auto end = text.find('}', replaceIndex + 1);
-
-        auto index = to_number_base(text.substr(pos + 1, end - 1), 10);
-
         if (end != std::string::npos)
         {
-            auto subText = index == 0 ? arg0 : index == 1 ? arg1 : S("");
-            text.replace(pos, end - pos + 1, subText);
-            replaceIndex = pos + subText.size() + 1;
+            auto index = to_number_base(text.substr(pos + 1, end - 1), 10);
+
+            if (end != std::string::npos)
+            {
+                auto subText = index == 0 ? arg0 : index == 1 ? arg1 : S("");
+                text.replace(pos, end - pos + 1, subText);
+                replaceIndex = pos + subText.size() + 1;
+            }
+        }
+        else
+        {
+            replaceIndex = pos + 1;
         }
     }
 
@@ -509,6 +515,11 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<FunctionLikeDeclarationBase>()->body);
         return result;
+    case SyntaxKind::ClassStaticBlockDeclaration:
+        if (!result)
+            result = visitNodes(cbNode, cbNodes, node->modifiers);        
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<ClassStaticBlockDeclaration>()->body);
     case SyntaxKind::TypeReference:
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeReferenceNode>()->typeName);
@@ -526,6 +537,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
     case SyntaxKind::TypeQuery:
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeQueryNode>()->exprName);
+        if (!result)
+            result = visitNodes(cbNode, cbNodes, node.template as<TypeQueryNode>()->typeArguments);
         return result;
     case SyntaxKind::TypeLiteral:
         if (!result)
