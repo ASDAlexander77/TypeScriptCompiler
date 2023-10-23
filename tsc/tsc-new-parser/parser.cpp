@@ -1422,7 +1422,7 @@ struct Parser
         -> NodeArray<T>
     {
         auto array = factory.createNodeArray<T>(elements, hasTrailingComma);
-        setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getTokenFullStart());
+        array = setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getTokenFullStart());
         array->pos.textPos = pos.textPos;
         return array;
     }
