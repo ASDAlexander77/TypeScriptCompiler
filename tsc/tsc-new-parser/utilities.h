@@ -372,6 +372,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::TypeParameter:
         if (!result)
+            result = visitNodes(cbNode, cbNodes, node->modifiers);
+        if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeParameterDeclaration>()->name);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeParameterDeclaration>()->constraint);
@@ -996,6 +998,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ImportClause>()->namedBindings);
         return result;
     case SyntaxKind::NamespaceExportDeclaration:
+        if (!result)
+            result = visitNodes(cbNode, cbNodes, node->modifiers);    
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<NamespaceExportDeclaration>()->name);
         return result;
