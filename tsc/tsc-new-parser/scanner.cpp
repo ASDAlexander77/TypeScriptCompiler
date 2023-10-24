@@ -2054,7 +2054,8 @@ inline string fromCharCode(char_t code)
 
 inline string padStart(string s, int size, char_t pad)
 {
-    return string((size - s.length()), pad).append(s);
+    auto slen = s.length();
+    return string(size >= slen ? size - slen : 0, pad).append(s);
 }
 
 auto Scanner::scanEscapeSequence(boolean shouldEmitInvalidEscapeError) -> string
