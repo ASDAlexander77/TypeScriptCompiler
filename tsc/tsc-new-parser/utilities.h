@@ -582,6 +582,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ImportTypeNode>()->argument);
         if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<ImportTypeNode>()->attributes);
+        if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ImportTypeNode>()->qualifier);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node.template as<ImportTypeNode>()->typeArguments);
@@ -984,6 +986,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ImportDeclaration>()->importClause);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ImportDeclaration>()->moduleSpecifier);
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<ImportDeclaration>()->attributes);            
         return result;
     case SyntaxKind::ImportClause:
         if (!result)
@@ -1019,6 +1023,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ExportDeclaration>()->exportClause);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ExportDeclaration>()->moduleSpecifier);
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<ExportDeclaration>()->attributes);            
         return result;
     case SyntaxKind::ImportSpecifier:
         if (!result)
