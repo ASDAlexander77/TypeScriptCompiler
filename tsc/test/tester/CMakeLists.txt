@@ -233,6 +233,7 @@ add_test(NAME test-compile-00-optional COMMAND test-runner "${PROJECT_SOURCE_DIR
 add_test(NAME test-compile-01-optional COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01optional.ts")
 add_test(NAME test-compile-00-async-await COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
 add_test(NAME test-compile-00-for-await COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
+
 # TODO: in opt mode, error
 #add_test(NAME test-compile-00-for-await-yield COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await_yield.ts")
 add_test(NAME test-compile-00-types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00types.ts")
@@ -283,6 +284,7 @@ add_test(NAME test-compile-00-names-conflict COMMAND test-runner "${PROJECT_SOUR
 add_test(NAME test-compile-00-generic-arguments-name-conflict COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_arguments_name_conflict.ts")
 add_test(NAME test-compile-00-decorators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00decorators.ts")
 add_test(NAME test-compile-00-conditional-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_type.ts")
+add_test(NAME test-compile-00-disposable COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00disposable.ts")
 add_test(NAME test-compile-01-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01arguments.ts")
 add_test(NAME test-compile-02-numbers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02numbers.ts")
 add_test(NAME test-compile-05-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/05strings.ts")
@@ -560,6 +562,7 @@ add_test(NAME test-jit-00-names-conflict COMMAND test-runner -jit "${PROJECT_SOU
 add_test(NAME test-jit-00-generic-arguments-name-conflict COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generic_arguments_name_conflict.ts")
 add_test(NAME test-jit-00-decorators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00decorators.ts")
 add_test(NAME test-jit-00-conditional-type COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00conditional_type.ts")
+add_test(NAME test-jit-00-disposable COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00disposable.ts")
 add_test(NAME test-jit-01-arguments COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01arguments.ts")
 add_test(NAME test-jit-02-numbers COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/02numbers.ts")
 add_test(NAME test-jit-05-strings COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/05strings.ts")
