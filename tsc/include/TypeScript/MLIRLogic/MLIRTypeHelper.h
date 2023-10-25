@@ -2296,6 +2296,23 @@ class MLIRTypeHelper
                 }                  
             }
 
+            if (auto ifaceType = extendType.dyn_cast<mlir_ts::InterfaceType>())
+            {
+                for (auto extend : classInfo->implements)
+                {
+                    auto extResult = extendsType(extend.interface->interfaceType, extendType, typeParamsWithArgs);
+                    if (isTrue(extResult))
+                    {
+                        return extResult;
+                    }
+
+                    if (extResult == ExtendsResult::Never)
+                    {
+                        falseResult = ExtendsResult::Never;
+                    }                
+                }                
+            }
+
             return falseResult;
         }
 
