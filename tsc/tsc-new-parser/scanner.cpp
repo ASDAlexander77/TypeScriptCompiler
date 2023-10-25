@@ -1117,7 +1117,12 @@ auto Scanner::syntaxKindString(SyntaxKind t) -> string
 /* @internal */
 auto Scanner::stringToToken(string s) -> SyntaxKind
 {
-    return textToToken.at(s);
+    if (textToToken.find(s) != textToToken.end())
+    {
+        return textToToken.at(s);
+    }
+
+    return SyntaxKind::Identifier;
 }
 
 /* @internal */

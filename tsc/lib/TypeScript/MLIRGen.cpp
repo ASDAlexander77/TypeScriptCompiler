@@ -796,6 +796,42 @@ class MLIRGenImpl
         return mlirGenInclude(location, stringVal, genContext);
     }
 
+    boolean isStatement(SyntaxKind kind)
+    {
+        switch (kind)
+        {
+        case SyntaxKind::FunctionDeclaration:
+        case SyntaxKind::ExpressionStatement:
+        case SyntaxKind::VariableStatement:
+        case SyntaxKind::IfStatement:
+        case SyntaxKind::ReturnStatement:
+        case SyntaxKind::LabeledStatement:
+        case SyntaxKind::DoStatement:
+        case SyntaxKind::WhileStatement:
+        case SyntaxKind::ForStatement:
+        case SyntaxKind::ForInStatement:
+        case SyntaxKind::ForOfStatement:
+        case SyntaxKind::ContinueStatement:
+        case SyntaxKind::BreakStatement:
+        case SyntaxKind::SwitchStatement:
+        case SyntaxKind::ThrowStatement:
+        case SyntaxKind::TryStatement:
+        case SyntaxKind::TypeAliasDeclaration:
+        case SyntaxKind::Block:
+        case SyntaxKind::EnumDeclaration:
+        case SyntaxKind::ClassDeclaration:
+        case SyntaxKind::InterfaceDeclaration:
+        case SyntaxKind::ImportEqualsDeclaration:
+        case SyntaxKind::ImportDeclaration:
+        case SyntaxKind::ModuleDeclaration:
+        case SyntaxKind::DebuggerStatement:
+        case SyntaxKind::EmptyStatement:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     mlir::LogicalResult mlirGenBody(Node body, const GenContext &genContext)
     {
         auto kind = (SyntaxKind)body;
@@ -809,7 +845,7 @@ class MLIRGenImpl
             return mlirGen(body.as<ModuleBlock>(), genContext);
         }
 
-        if (body.is<Statement>() && !body.is<ArrowFunction>() && !body.is<FunctionExpression>() && !body.is<ClassExpression>())
+        if (isStatement(body))
         {
             return mlirGen(body.as<Statement>(), genContext);
         }
@@ -1090,10 +1126,6 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::TryStatement)
         {
             return mlirGen(statementAST.as<TryStatement>(), genContext);
-        }
-        else if (kind == SyntaxKind::LabeledStatement)
-        {
-            return mlirGen(statementAST.as<LabeledStatement>(), genContext);
         }
         else if (kind == SyntaxKind::TypeAliasDeclaration)
         {
@@ -4384,7 +4416,7 @@ class MLIRGenImpl
 
         // create method next in object
         auto nextMethodDecl =
-            nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S(ITERATOR_NEXT)), undefined,
+            nf.createMethodDeclaration(undefined, undefined, nf.createIdentifier(S(ITERATOR_NEXT)), undefined,
                                        undefined, undefined, undefined, nextBody);
         nextMethodDecl->internalFlags |= InternalFlags::VarsInObjectContext;
 
@@ -4436,7 +4468,7 @@ class MLIRGenImpl
         if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
             auto methodOp = nf.createMethodDeclaration(
-                functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
+                functionLikeDeclarationBaseAST->modifiers, undefined,
                 functionLikeDeclarationBaseAST->name, undefined, functionLikeDeclarationBaseAST->typeParameters,
                 functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
@@ -4452,7 +4484,7 @@ class MLIRGenImpl
         else
         {
             auto funcOp = nf.createFunctionDeclaration(
-                functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
+                functionLikeDeclarationBaseAST->modifiers, undefined,
                 functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
                 functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
@@ -13924,7 +13956,7 @@ class MLIRGenImpl
             modifiers.push_back(nf.createToken(SyntaxKind::PublicKeyword));
         }
 
-        auto generatedNew = nf.createMethodDeclaration(undefined, modifiers, undefined, nf.createIdentifier(S(NEW_METHOD_NAME)),
+        auto generatedNew = nf.createMethodDeclaration(modifiers, undefined, nf.createIdentifier(S(NEW_METHOD_NAME)),
                                                        undefined, undefined, undefined, nf.createThisTypeNode(), body);
 
         /*
@@ -13970,7 +14002,7 @@ genContext);
 
             auto body = nf.createBlock(statements, /*multiLine*/ false);
 
-            auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
+            auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, body);
             newClassPtr->extraMembers.push_back(generatedConstructor);
         }
 
@@ -13994,7 +14026,7 @@ genContext);
             auto body = nf.createBlock(statements, /*multiLine*/ false);
             ModifiersArray modifiers;
             modifiers.push_back(nf.createToken(SyntaxKind::StaticKeyword));
-            auto generatedConstructor = nf.createConstructorDeclaration(undefined, modifiers, undefined, body);
+            auto generatedConstructor = nf.createConstructorDeclaration(modifiers, undefined, body);
             newClassPtr->extraMembersPost.push_back(generatedConstructor);
         }
 
@@ -14318,7 +14350,7 @@ genContext);
             }
 
             NodeArray<ParameterDeclaration> parameters;
-            parameters.push_back(nf.createParameterDeclaration(undefined, undefined, undefined,
+            parameters.push_back(nf.createParameterDeclaration(undefined, undefined,
                                                                nf.createIdentifier(S(INSTANCEOF_PARAM_NAME)), undefined,
                                                                nf.createToken(SyntaxKind::StringKeyword), undefined));
 
@@ -14329,7 +14361,7 @@ genContext);
             }
 
             auto instanceOfMethod = nf.createMethodDeclaration(
-                undefined, modifiers, undefined, nf.createIdentifier(S(INSTANCEOF_NAME)), undefined, undefined,
+                modifiers, undefined, nf.createIdentifier(S(INSTANCEOF_NAME)), undefined, undefined,
                 parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
 
             instanceOfMethod->internalFlags |= InternalFlags::ForceVirtual;

@@ -211,6 +211,7 @@ auto NodeFactory::createBaseIdentifier(string text)
 /* @internal */ auto NodeFactory::createIdentifier(string text, SyntaxKind originalKeywordKind, boolean hasExtendedUnicodeEscape)
     -> Identifier // eslint-disable-line @typescript-eslint/unified-signatures
 {
+    // TODO: do I need this code at all? is originalKeywordKind used anywhere?
     if (originalKeywordKind == SyntaxKind::Unknown && text.length() > 0) {
         originalKeywordKind = scanner->stringToToken(text);
     }
