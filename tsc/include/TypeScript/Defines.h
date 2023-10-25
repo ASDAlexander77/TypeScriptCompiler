@@ -47,6 +47,7 @@
 #define ITERATOR_NEXT "next"
 #define SYMBOL_HAS_INSTANCE "hasInstance"
 #define SYMBOL_TO_PRIMITIVE "toPrimitive"
+#define SYMBOL_DISPOSE "dispose"
 
 #define SHARED_LIB_DECLARATIONS "__decls"
 #define DLL_EXPORT "dllexport"

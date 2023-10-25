@@ -63,6 +63,7 @@ struct GenContext
     {
         passResult = nullptr;
         capturedVars = nullptr;
+        usingVars = nullptr;
 
         currentOperation = nullptr;
         allocateVarsOutsideOfOperation = false;
@@ -149,6 +150,7 @@ struct GenContext
     mlir_ts::FuncOp funcOp;
     FunctionPrototypeDOM::TypePtr funcProto;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
+    llvm::SmallVector<ts::VariableDeclarationDOM::TypePtr> *usingVars;
     mlir::Type thisType;
     mlir::Type receiverFuncType;
     mlir::Type receiverType;

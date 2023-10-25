@@ -1006,22 +1006,28 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
     {
-        SymbolTableScopeT varScope(symbolTable);
+        auto location = loc(blockAST);
 
-        if (genContext.generatedStatements.size() > 0)
+        SymbolTableScopeT varScope(symbolTable);
+        GenContext genContextUsing(genContext);
+
+        auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
+        genContextUsing.usingVars = usingVars.get();
+
+        if (genContextUsing.generatedStatements.size() > 0)
         {
             // we need to process it only once (to prevent it processing in nested functions with body)
             NodeArray<Statement> generatedStatements;
-            std::copy(genContext.generatedStatements.begin(), genContext.generatedStatements.end(),
+            std::copy(genContextUsing.generatedStatements.begin(), genContextUsing.generatedStatements.end(),
                       std::back_inserter(generatedStatements));
 
             // clean up
-            const_cast<GenContext &>(genContext).generatedStatements.clear();
+            genContextUsing.generatedStatements.clear();
 
             // auto generated code
             for (auto statement : generatedStatements)
             {
-                if (failed(mlirGen(statement, genContext)))
+                if (failed(mlirGen(statement, genContextUsing)))
                 {
                     return mlir::failure();
                 }
@@ -1035,17 +1041,17 @@ class MLIRGenImpl
                 continue;
             }
 
-            if (failed(mlirGen(statement, genContext)))
+            if (failed(mlirGen(statement, genContextUsing)))
             {
                 // now try to process all internal declarations
                 // process all declrations
-                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContext)))
+                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContextUsing)))
                 {
                     return mlir::failure();
                 }
 
                 // try to process it again
-                if (failed(mlirGen(statement, genContext)))
+                if (failed(mlirGen(statement, genContextUsing)))
                 {
                     return mlir::failure();
                 }
@@ -1053,6 +1059,16 @@ class MLIRGenImpl
 
             statement->processed = true;
         }
+
+        // we need to call dispose for those which are in "using"
+        for (auto vi : *genContextUsing.usingVars)
+        {
+            auto varInTable = symbolTable.lookup(vi->getName());
+            auto callResult = mlirGenCallThisMethod(location, varInTable.first, SYMBOL_DISPOSE, undefined, {}, genContext);
+            EXIT_IF_FAILED(callResult);            
+        }
+
+        genContextUsing.usingVars = nullptr;
 
         // clear states to be able to run second time
         clearState(blockAST->statements);
@@ -2681,6 +2697,8 @@ class MLIRGenImpl
                 }
             }
 
+            varDecl->setUsing(varClass.isUsing);
+
             return varDecl;
         }
 
@@ -3059,6 +3077,11 @@ class MLIRGenImpl
 #endif
 
         auto varDecl = variableDeclarationInfo.createVariableDeclaration(location, genContext);
+        if (genContext.usingVars != nullptr && varDecl->getUsing())
+        {
+            genContext.usingVars->push_back(varDecl);
+        }
+
         registerVariableDeclaration(location, varDecl, variableDeclarationInfo, showWarnings, genContext);
         return varDecl->getType();
     }
@@ -3549,11 +3572,14 @@ class MLIRGenImpl
     {
         auto isLet = (variableDeclarationListAST->flags & NodeFlags::Let) == NodeFlags::Let;
         auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
+        auto isUsing = (variableDeclarationListAST->flags & NodeFlags::Using) == NodeFlags::Using;
         auto isExternal = (variableDeclarationListAST->flags & NodeFlags::Ambient) == NodeFlags::Ambient;
         VariableClass varClass = isExternal ? VariableType::External
                         : isLet    ? VariableType::Let
-                        : isConst  ? VariableType::Const
+                        : isConst || isUsing ? VariableType::Const
                                    : VariableType::Var;
+
+        varClass.isUsing = isUsing;
 
         if (variableDeclarationListAST->parent)
         {

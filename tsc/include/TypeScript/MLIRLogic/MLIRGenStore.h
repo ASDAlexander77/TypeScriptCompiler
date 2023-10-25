@@ -56,17 +56,18 @@ enum class VariableScope
 
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isAppendingLinkage{false}
+    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isUsing{false}, isAppendingLinkage{false}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isAppendingLinkage{false}
+    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isUsing{false}, isAppendingLinkage{false}
     {
     }
 
     VariableType type;
     bool isExport;
     bool isImport;
+    bool isUsing;
     bool isAppendingLinkage;
 
     inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
