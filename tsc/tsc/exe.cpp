@@ -340,7 +340,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     if (win)
     {
         args.push_back("-luser32");    
-        if (shared)
+        if (shared || !disableGC)
         {
             // needed to resolve DLL ref
             if (enableOpt)
@@ -417,8 +417,8 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (win && (shared || !disableGC))
     {
-        //args.push_back("-Wl,-nodefaultlib:libcmt");
-        //removeCommandArgs(c.get(), {"defaultlib:libcmt"});
+        args.push_back("-Wl,-nodefaultlib:libcmt");
+        removeCommandArgs(c.get(), {"defaultlib:libcmt"});
     }
 
     if (wasm)
