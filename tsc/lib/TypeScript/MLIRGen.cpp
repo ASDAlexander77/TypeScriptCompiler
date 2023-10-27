@@ -13693,7 +13693,20 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
                                                     PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
-        auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+        auto name = propertyDeclaration->name;
+        auto isAccessor = hasModifier(propertyDeclaration, SyntaxKind::AccessorKeyword);
+        if (isAccessor)
+        {
+            auto nameStr = MLIRHelper::getName(name);
+            nameStr.insert(0, "#__");
+
+            NodeFactory nf(NodeFactoryFlags::None);
+            name = nf.createIdentifier(stows(nameStr.c_str()));
+
+            // TODO: finish it
+        }
+        
+        auto fieldId = TupleFieldName(name, genContext);
 
         auto [type, init, typeProvided] = evaluateTypeAndInit(propertyDeclaration, genContext);
         if (init)
@@ -13724,18 +13737,82 @@ class MLIRGenImpl
 
         fieldInfos.push_back({fieldId, type});
 
+        // add accessor methods
+        if (isAccessor && (propertyDeclaration->internalFlags & InternalFlags::GenerationProcessed) != InternalFlags::GenerationProcessed)
+        {            
+            // set as generated
+            propertyDeclaration->internalFlags |= InternalFlags::GenerationProcessed;
+
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            {
+                NodeArray<Statement> statements;
+
+                auto thisToken = nf.createToken(SyntaxKind::ThisKeyword);
+
+                auto propAccess = nf.createPropertyAccessExpression(thisToken, name);
+
+                auto returnStat = nf.createReturnStatement(propAccess);
+                statements.push_back(returnStat);
+
+                auto body = nf.createBlock(statements, /*multiLine*/ false);
+
+                auto getMethod = nf.createGetAccessorDeclaration(undefined, propertyDeclaration->name, {}, undefined, body);
+
+                newClassPtr->extraMembersPost->push_back(getMethod);
+            }
+
+            {
+                NodeArray<Statement> statements;
+
+                auto thisToken = nf.createToken(SyntaxKind::ThisKeyword);
+
+                auto propAccess = nf.createPropertyAccessExpression(thisToken, name);
+
+                auto setValue =
+                    nf.createExpressionStatement(
+                        nf.createBinaryExpression(propAccess, nf.createToken(SyntaxKind::EqualsToken), nf.createIdentifier(S("value"))));
+                statements.push_back(setValue);
+
+                auto body = nf.createBlock(statements, /*multiLine*/ false);
+
+                auto setMethod = nf.createSetAccessorDeclaration(
+                    undefined, 
+                    propertyDeclaration->name, 
+                    { nf.createParameterDeclaration(undefined, undefined, nf.createIdentifier(S("value")), undefined, propertyDeclaration->type) }, 
+                    body);
+
+                newClassPtr->extraMembersPost->push_back(setMethod);
+            }
+        }        
+
         return mlir::success();
     }
 
     mlir::LogicalResult mlirGenClassStaticFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
-        auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+        auto isPublic = hasModifier(propertyDeclaration, SyntaxKind::PublicKeyword);
+        auto name = propertyDeclaration->name;
+
+        auto isAccessor = hasModifier(propertyDeclaration, SyntaxKind::AccessorKeyword);
+        if (isAccessor)
+        {
+            isPublic = false;
+            auto nameStr = MLIRHelper::getName(name);
+            nameStr.insert(0, "#__");
+
+            NodeFactory nf(NodeFactoryFlags::None);
+            name = nf.createIdentifier(stows(nameStr.c_str()));
+
+            // TODO: finish it
+        }
+
+        auto fieldId = TupleFieldName(name, genContext);
 
         // process static field - register global
         auto fullClassStaticFieldName =
             concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
         VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
-        auto isPublic = hasModifier(propertyDeclaration, SyntaxKind::PublicKeyword);
         varClass.isExport = newClassPtr->isExport && isPublic;
         varClass.isImport = newClassPtr->isImport && isPublic;
 
