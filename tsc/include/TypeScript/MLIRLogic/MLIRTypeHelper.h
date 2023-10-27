@@ -1153,8 +1153,42 @@ class MLIRTypeHelper
 
                 return emptyFieldInfo;
             },
-            [&](std::string, mlir_ts::FunctionType, bool, int) -> MethodInfo & {
+            [&](std::string methodName, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> MethodInfo & {
                 llvm_unreachable("not implemented yet");
+                /*
+                auto id = MLIRHelper::TupleFieldName(methodName, funcType.getContext());
+                auto foundIndex = tupleStorageType.getIndex(id);
+                if (foundIndex >= 0)
+                {
+                    auto foundField = tupleStorageType.getFieldInfo(foundIndex);
+                    auto test = foundField.type.isa<mlir_ts::FunctionType>()
+                                    ? TestFunctionTypesMatchWithObjectMethods(foundField.type, funcType).result ==
+                                          MatchResultType::Match
+                                    : funcType == foundField.type;
+                    if (!test)
+                    {
+                        LLVM_DEBUG(llvm::dbgs() << "method " << id << " not matching type: " << funcType << " and "
+                                            << foundField.type << " in interface '" << newInterfacePtr->fullName
+                                            << "' for object '" << tupleStorageType << "'";);                                    
+
+                        if (!suppressErrors)
+                        {
+                            emitError(location) << "method " << id << " not matching type: " << funcType << " and "
+                                                << foundField.type << " in interface '" << newInterfacePtr->fullName
+                                                << "' for object '" << tupleStorageType << "'";
+                        }
+
+                        return emptyMethod;
+                    }           
+
+                    MethodInfo foundMethod{};
+                    foundMethod.name = methodName;
+                    foundMethod.funcType = foundField.type.cast<mlir_ts::FunctionType>();
+                    // TODO: you need to load function from object
+                    //foundMethod.funcOp
+                    return foundMethod;
+                }
+                */
             });
 
         return result;
@@ -2294,6 +2328,23 @@ class MLIRTypeHelper
                 {
                     falseResult = ExtendsResult::Never;
                 }                  
+            }
+
+            if (auto ifaceType = extendType.dyn_cast<mlir_ts::InterfaceType>())
+            {
+                for (auto extend : classInfo->implements)
+                {
+                    auto extResult = extendsType(extend.interface->interfaceType, extendType, typeParamsWithArgs);
+                    if (isTrue(extResult))
+                    {
+                        return extResult;
+                    }
+
+                    if (extResult == ExtendsResult::Never)
+                    {
+                        falseResult = ExtendsResult::Never;
+                    }                
+                }                
             }
 
             return falseResult;

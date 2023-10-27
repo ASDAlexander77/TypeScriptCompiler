@@ -66,6 +66,10 @@ class NodeFactory
         return name;
     }
 
+    inline auto asInitializer(Expression node) -> Expression {
+        return !!node ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(node) : node;
+    }
+
     template <typename T> inline auto asNodeArray(NodeArray<T> array) -> NodeArray<T>
     {
         return createNodeArray(array);
@@ -112,6 +116,8 @@ class NodeFactory
 
     auto getTransformFlagsSubtreeExclusions(SyntaxKind kind) -> TransformFlags;
 
+    auto propagateNameFlags(Node node) -> TransformFlags;
+
     auto propagatePropertyNameFlagsOfChild(PropertyName node, TransformFlags transformFlags) -> TransformFlags;
 
     auto propagateChildFlags(Node child) -> TransformFlags;
@@ -139,6 +145,13 @@ class NodeFactory
         newNode->_kind = kind;
         createNodeCallback(newNode);
         return newNode;
+    }
+
+    template <typename T> auto createBaseDeclaration(SyntaxKind kind) {
+        auto node = createBaseNode<T>(kind);
+        node->symbol = undefined; // initialized by binder
+        node->localSymbol = undefined; // initialized by binder
+        return node;
     }
 
     template <typename T> auto createBaseToken(SyntaxKind kind)
@@ -253,144 +266,6 @@ class NodeFactory
         return node;
     }
 
-    template <typename T> auto createBaseDeclaration(SyntaxKind kind, DecoratorsArray decorators, ModifiersArray modifiers)
-    {
-        auto node = createBaseNode<T>(kind);
-        node->decorators = asNodeArray(decorators);
-        node->modifiers = asNodeArray(modifiers);
-        node->transformFlags |= propagateChildrenFlags(node->decorators) | propagateChildrenFlags(node->modifiers);
-        // NOTE: The following properties are commonly set by the binder and are added here to
-        // ensure declarations have a stable shape.
-        node->symbol = undefined;        // initialized by binder
-        node->localSymbol = undefined;   // initialized by binder
-        node->locals.clear();            // initialized by binder
-        //node->nextContainer = undefined; // initialized by binder
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseNamedDeclaration(SyntaxKind kind, DecoratorsArray decorators, ModifiersArray modifiers, Identifier name) -> T
-    {
-        auto node = createBaseDeclaration<T>(kind, decorators, modifiers);
-        name = asName(name);
-        node->name = name;
-
-        // The PropertyName of a member is allowed to be `await`.
-        // We don't need to exclude `await` for type signatures since types
-        // don't propagate child flags.
-        if (name)
-        {
-            switch ((SyntaxKind)node)
-            {
-            case SyntaxKind::MethodDeclaration:
-            case SyntaxKind::GetAccessor:
-            case SyntaxKind::SetAccessor:
-            case SyntaxKind::PropertyDeclaration:
-            case SyntaxKind::PropertyAssignment:
-                if (isIdentifier(name))
-                {
-                    node->transformFlags |= propagateIdentifierNameFlags(name);
-                    break;
-                }
-                // fall through
-            default:
-                node->transformFlags |= propagateChildFlags(name);
-                break;
-            }
-        }
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseBindingLikeDeclaration(SyntaxKind kind, DecoratorsArray decorators, ModifiersArray modifiers, BindingName name,
-                                          Expression initializer) -> T
-    {
-        auto node = createBaseNamedDeclaration<T>(kind, decorators, modifiers, name);
-        node->initializer = initializer;
-        node->transformFlags |= propagateChildFlags(node->initializer);
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseVariableLikeDeclaration(SyntaxKind kind, DecoratorsArray decorators, ModifiersArray modifiers, BindingName name,
-                                           TypeNode type, Expression initializer) -> T
-    {
-        auto node = createBaseBindingLikeDeclaration<T>(kind, decorators, modifiers, name, initializer);
-        node->type = type;
-        node->transformFlags |= propagateChildFlags(type);
-        if (type)
-            node->transformFlags |= TransformFlags::ContainsTypeScript;
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseGenericNamedDeclaration(SyntaxKind kind, DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name,
-                                           NodeArray<TypeParameterDeclaration> typeParameters)
-    {
-        auto node = createBaseNamedDeclaration<T>(kind, decorators, modifiers, name);
-        node->typeParameters = asNodeArray(typeParameters);
-        node->transformFlags |= propagateChildrenFlags(node->typeParameters);
-        if (!typeParameters.empty())
-            node->transformFlags |= TransformFlags::ContainsTypeScript;
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseSignatureDeclaration(SyntaxKind kind, DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name,
-                                        NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
-                                        TypeNode type)
-    {
-        auto node = createBaseGenericNamedDeclaration<T>(kind, decorators, modifiers, name, typeParameters);
-        node->parameters = createNodeArray(parameters);
-        node->type = type;
-        node->transformFlags |= propagateChildrenFlags(node->parameters) | propagateChildFlags(node->type);
-        if (type)
-            node->transformFlags |= TransformFlags::ContainsTypeScript;
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseFunctionLikeDeclaration(SyntaxKind kind, DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name,
-                                           NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
-                                           TypeNode type, Block body)
-    {
-        auto node = createBaseSignatureDeclaration<T>(kind, decorators, modifiers, name, typeParameters, parameters, type);
-        node->body = body;
-        node->transformFlags |= propagateChildFlags(node->body) & ~TransformFlags::ContainsPossibleTopLevelAwait;
-        if (!body)
-            node->transformFlags |= TransformFlags::ContainsTypeScript;
-        return node;
-    }
-
-    template <typename T> auto createBaseExpression(SyntaxKind kind)
-    {
-        auto node = createBaseNode<T>(kind);
-        // the following properties are commonly set by the checker/binder
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseInterfaceOrClassLikeDeclaration(SyntaxKind kind, DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
-                                                   NodeArray<TypeParameterDeclaration> typeParameters,
-                                                   NodeArray<HeritageClause> heritageClauses)
-    {
-        auto node = createBaseGenericNamedDeclaration<T>(kind, decorators, modifiers, name, typeParameters);
-        node->heritageClauses = asNodeArray(heritageClauses);
-        node->transformFlags |= propagateChildrenFlags(node->heritageClauses);
-        return node;
-    }
-
-    template <typename T>
-    auto createBaseClassLikeDeclaration(SyntaxKind kind, DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
-                                        NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
-                                        NodeArray<ClassElement> members)
-    {
-        auto node = createBaseInterfaceOrClassLikeDeclaration<T>(kind, decorators, modifiers, name, typeParameters, heritageClauses);
-        node->members = createNodeArray(members);
-        node->transformFlags |= propagateChildrenFlags(node->members);
-        return node;
-    }
-
     //
     // Literals
     //
@@ -409,9 +284,8 @@ class NodeFactory
     // Identifiers
     //
 
-    auto createBaseIdentifier(string text, SyntaxKind originalKeywordKind = SyntaxKind::Unknown);
-    /* @internal */ auto createIdentifier(string text, NodeArray</*TypeNode | TypeParameterDeclaration*/ Node> typeArguments = undefined,
-                                          SyntaxKind originalKeywordKind = SyntaxKind::Unknown)
+    auto createBaseIdentifier(string text);
+    /* @internal */ auto createIdentifier(string text, SyntaxKind originalKeywordKind = SyntaxKind::Unknown, boolean hasExtendedUnicodeEscape = false)
         -> Identifier; // eslint-disable-line @typescript-eslint/unified-signatures
                        ///* @internal */ auto updateIdentifier(Identifier node, NodeArray</*TypeNode | TypeParameterDeclaration*/Node>
                        /// typeArguments) -> Identifier;
@@ -480,19 +354,19 @@ class NodeFactory
 
     // auto createTypeParameterDeclaration(string name, TypeNode constraint = undefined, TypeNode defaultType = undefined) ->
     // TypeParameterDeclaration;
-    auto createTypeParameterDeclaration(Identifier name, TypeNode constraint = undefined, TypeNode defaultType = undefined)
+    auto createTypeParameterDeclaration(NodeArray<ModifierLike> modifiers, Identifier name, TypeNode constraint = undefined, TypeNode defaultType = undefined)
         -> TypeParameterDeclaration;
     // auto updateTypeParameterDeclaration(TypeParameterDeclaration node, Identifier name, TypeNode constraint, TypeNode defaultType) ->
     // TypeParameterDeclaration;
 
-    // auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, string name,
+    // auto createParameterDeclaration(NodeArray<ModifierLike> modifiers, DotDotDotToken dotDotDotToken, string name,
     // QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;
-    auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, BindingName name,
+    auto createParameterDeclaration(NodeArray<ModifierLike> modifiers, DotDotDotToken dotDotDotToken, BindingName name,
                                     QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined)
         -> ParameterDeclaration;
-    // auto updateParameterDeclaration(ParameterDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken
+    // auto updateParameterDeclaration(ParameterDeclaration node, NodeArray<ModifierLike> modifiers, DotDotDotToken
     // dotDotDotToken, string name, QuestionToken questionToken, TypeNode type, Expression initializer) -> ParameterDeclaration; auto
-    // updateParameterDeclaration(ParameterDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken
+    // updateParameterDeclaration(ParameterDeclaration node, NodeArray<ModifierLike> modifiers, DotDotDotToken
     // dotDotDotToken, BindingName name, QuestionToken questionToken, TypeNode type, Expression initializer) -> ParameterDeclaration;
     auto createDecorator(Expression expression) -> Decorator;
     // auto updateDecorator(Decorator node, Expression expression) -> Decorator;
@@ -505,13 +379,13 @@ class NodeFactory
     auto createPropertySignature(ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, TypeNode type)
         -> PropertySignature;
     // auto updatePropertySignature(PropertySignature node, ModifiersArray modifiers, PropertyName name, QuestionToken questionToken,
-    // TypeNode type) -> PropertySignature; auto createPropertyDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, string
+    // TypeNode type) -> PropertySignature; auto createPropertyDeclaration(NodeArray<ModifierLike> modifiers, string
     // name, Node questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration;
-    auto createPropertyDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name, Node questionOrExclamationToken,
+    auto createPropertyDeclaration(NodeArray<ModifierLike> modifiers, PropertyName name, Node questionOrExclamationToken,
                                    TypeNode type, Expression initializer) -> PropertyDeclaration;
-    // auto updatePropertyDeclaration(PropertyDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, string name, Node
+    // auto updatePropertyDeclaration(PropertyDeclaration node, NodeArray<ModifierLike> modifiers, string name, Node
     // questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration; auto
-    // updatePropertyDeclaration(PropertyDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name, Node
+    // updatePropertyDeclaration(PropertyDeclaration node, NodeArray<ModifierLike> modifiers, PropertyName name, Node
     // questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration;
 
     // auto createMethodSignature(ModifiersArray modifiers, string name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration>
@@ -521,31 +395,34 @@ class NodeFactory
                                TypeNode type) -> MethodSignature;
     // auto updateMethodSignature(MethodSignature node, ModifiersArray modifiers, PropertyName name, QuestionToken questionToken,
     // NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type) -> MethodSignature;
-    // auto createMethodDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken, string name,
+    // auto createMethodDeclaration(NodeArray<ModifierLike> modifiers, AsteriskToken asteriskToken, string name,
     // QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode
     // type, Block body) -> MethodDeclaration;
 
-    auto createMethodDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken, PropertyName name,
+    auto createMethodDeclaration(NodeArray<ModifierLike> modifiers, AsteriskToken asteriskToken, PropertyName name,
                                  QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters,
                                  NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;
-    // auto updateMethodDeclaration(MethodDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken
+
+    auto createClassStaticBlockDeclaration(Block body) -> ClassStaticBlockDeclaration;
+
+    // auto updateMethodDeclaration(MethodDeclaration node, NodeArray<ModifierLike> modifiers, AsteriskToken
     // asteriskToken, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters,
     // NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;
-    auto createConstructorDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, NodeArray<ParameterDeclaration> parameters,
+    auto createConstructorDeclaration(NodeArray<ModifierLike> modifiers, NodeArray<ParameterDeclaration> parameters,
                                       Block body) -> ConstructorDeclaration;
-    // auto updateConstructorDeclaration(ConstructorDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers,
+    // auto updateConstructorDeclaration(ConstructorDeclaration node, NodeArray<ModifierLike> modifiers,
     // NodeArray<ParameterDeclaration> parameters, Block body) -> ConstructorDeclaration; auto createGetAccessorDeclaration(DecoratorsArray
     // decorators, ModifiersArray modifiers, string name, NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) ->
     // GetAccessorDeclaration;
-    auto createGetAccessorDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name,
+    auto createGetAccessorDeclaration(NodeArray<ModifierLike> modifiers, PropertyName name,
                                       NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> GetAccessorDeclaration;
-    // auto updateGetAccessorDeclaration(GetAccessorDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, PropertyName
+    // auto updateGetAccessorDeclaration(GetAccessorDeclaration node, NodeArray<ModifierLike> modifiers, PropertyName
     // name, NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> GetAccessorDeclaration; auto
-    // createSetAccessorDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, string name, NodeArray<ParameterDeclaration>
+    // createSetAccessorDeclaration(NodeArray<ModifierLike> modifiers, string name, NodeArray<ParameterDeclaration>
     // parameters, Block body) -> SetAccessorDeclaration;
-    auto createSetAccessorDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name,
+    auto createSetAccessorDeclaration(NodeArray<ModifierLike> modifiers, PropertyName name,
                                       NodeArray<ParameterDeclaration> parameters, Block body) -> SetAccessorDeclaration;
-    // auto updateSetAccessorDeclaration(SetAccessorDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, PropertyName
+    // auto updateSetAccessorDeclaration(SetAccessorDeclaration node, NodeArray<ModifierLike> modifiers, PropertyName
     // name, NodeArray<ParameterDeclaration> parameters, Block body) -> SetAccessorDeclaration;
     auto createCallSignature(NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type)
         -> CallSignatureDeclaration;
@@ -555,9 +432,9 @@ class NodeFactory
                                   TypeNode type) -> ConstructSignatureDeclaration;
     // auto updateConstructSignature(ConstructSignatureDeclaration node, NodeArray<TypeParameterDeclaration> typeParameters,
     // NodeArray<ParameterDeclaration> parameters, TypeNode type) -> ConstructSignatureDeclaration;
-    auto createIndexSignature(DecoratorsArray decorators, ModifiersArray modifiers, NodeArray<ParameterDeclaration> parameters,
+    auto createIndexSignature(NodeArray<ModifierLike> modifiers, NodeArray<ParameterDeclaration> parameters,
                               TypeNode type) -> IndexSignatureDeclaration;
-    // auto updateIndexSignature(IndexSignatureDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers,
+    // auto updateIndexSignature(IndexSignatureDeclaration node, NodeArray<ModifierLike> modifiers,
     // NodeArray<ParameterDeclaration> parameters, TypeNode type) -> IndexSignatureDeclaration;
     auto createTemplateLiteralTypeSpan(TypeNode type, Node literal) -> TemplateLiteralTypeSpan;
     // auto updateTemplateLiteralTypeSpan(TemplateLiteralTypeSpan node, TypeNode type, Node literal) -> TemplateLiteralTypeSpan;
@@ -587,7 +464,7 @@ class NodeFactory
     // /** @deprecated */
     // auto updateConstructorTypeNode(ConstructorTypeNode node, NodeArray<TypeParameterDeclaration> typeParameters,
     // NodeArray<ParameterDeclaration> parameters, TypeNode type) -> ConstructorTypeNode;
-    auto createTypeQueryNode(EntityName exprName) -> TypeQueryNode;
+    auto createTypeQueryNode(EntityName exprName, NodeArray<TypeNode> typeArguments) -> TypeQueryNode;
     // auto updateTypeQueryNode(TypeQueryNode node, EntityName exprName) -> TypeQueryNode;
     auto createTypeLiteralNode(NodeArray<TypeElement> members) -> TypeLiteralNode;
     // auto updateTypeLiteralNode(TypeLiteralNode node, NodeArray<TypeElement> members) -> TypeLiteralNode;
@@ -612,7 +489,7 @@ class NodeFactory
     // falseType) -> ConditionalTypeNode;
     auto createInferTypeNode(TypeParameterDeclaration typeParameter) -> InferTypeNode;
     // auto updateInferTypeNode(InferTypeNode node, TypeParameterDeclaration typeParameter) -> InferTypeNode;
-    auto createImportTypeNode(TypeNode argument, EntityName qualifier = undefined, NodeArray<TypeNode> typeArguments = undefined,
+    auto createImportTypeNode(TypeNode argument, ImportAttributes attributes, EntityName qualifier = undefined, NodeArray<TypeNode> typeArguments = undefined,
                               boolean isTypeOf = false) -> ImportTypeNode;
     // auto updateImportTypeNode(ImportTypeNode node, TypeNode argument, EntityName qualifier, NodeArray<TypeNode> typeArguments, boolean
     // isTypeOf = false) -> ImportTypeNode;
@@ -624,7 +501,7 @@ class NodeFactory
     auto createIndexedAccessTypeNode(TypeNode objectType, TypeNode indexType) -> IndexedAccessTypeNode;
     // auto updateIndexedAccessTypeNode(IndexedAccessTypeNode node, TypeNode objectType, TypeNode indexType) -> IndexedAccessTypeNode;
     auto createMappedTypeNode(Node readonlyToken, TypeParameterDeclaration typeParameter, TypeNode nameType, Node questionToken,
-                              TypeNode type) -> MappedTypeNode;
+                              TypeNode type, NodeArray<TypeElement> members) -> MappedTypeNode;
     // auto updateMappedTypeNode(MappedTypeNode node, Node token, TypeParameterDeclaration typeParameter, TypeNode nameType, Node
     // questionToken, TypeNode type) -> MappedTypeNode;
     auto createLiteralTypeNode(LiteralTypeNode literal) -> LiteralTypeNode;
@@ -658,6 +535,9 @@ class NodeFactory
         -> ObjectLiteralExpression;
     // auto updateObjectLiteralExpression(ObjectLiteralExpression node, NodeArray<ObjectLiteralElementLike> properties) ->
     // ObjectLiteralExpression; auto createPropertyAccessExpression(Expression expression, string name) -> PropertyAccessExpression;
+
+    auto createBasePropertyAccessExpression(LeftHandSideExpression expression, QuestionDotToken questionDotToken, MemberName name) -> PropertyAccessExpression;
+
     auto createPropertyAccessExpression(Expression expression, MemberName name) -> PropertyAccessExpression;
     // auto updatePropertyAccessExpression(PropertyAccessExpression node, Expression expression, MemberName name) ->
     // PropertyAccessExpression; auto createPropertyAccessChain(Expression expression, QuestionDotToken questionDotToken, string name) ->
@@ -665,6 +545,9 @@ class NodeFactory
     auto createPropertyAccessChain(Expression expression, QuestionDotToken questionDotToken, MemberName name) -> PropertyAccessChain;
     // auto updatePropertyAccessChain(PropertyAccessChain node, Expression expression, QuestionDotToken questionDotToken, MemberName name)
     // -> PropertyAccessChain; auto createElementAccessExpression(Expression expression, number index) -> ElementAccessExpression;
+    
+    auto createBaseElementAccessExpression(LeftHandSideExpression expression, QuestionDotToken questionDotToken, Expression argumentExpression) -> ElementAccessExpression;
+
     auto createElementAccessExpression(Expression expression, Expression index) -> ElementAccessExpression;
     // auto updateElementAccessExpression(ElementAccessExpression node, Expression expression, Expression argumentExpression) ->
     // ElementAccessExpression; auto createElementAccessChain(Expression expression, QuestionDotToken questionDotToken, number index) ->
@@ -672,6 +555,7 @@ class NodeFactory
     auto createElementAccessChain(Expression expression, QuestionDotToken questionDotToken, Expression index) -> ElementAccessChain;
     // auto updateElementAccessChain(ElementAccessChain node, Expression expression, QuestionDotToken questionDotToken, Expression
     // argumentExpression) -> ElementAccessChain;
+    auto createBaseCallExpression(LeftHandSideExpression expression, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression;
     auto createCallExpression(Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray)
         -> CallExpression;
     auto updateCallExpression(CallExpression node, Expression expression, NodeArray<TypeNode> typeArguments,
@@ -741,12 +625,12 @@ class NodeFactory
     // auto updateYieldExpression(YieldExpression node, AsteriskToken asteriskToken, Expression expression) -> YieldExpression;
     auto createSpreadElement(Expression expression) -> SpreadElement;
     // auto updateSpreadElement(SpreadElement node, Expression expression) -> SpreadElement;
-    // auto createClassExpression(DecoratorsArray decorators, ModifiersArray modifiers, string name, NodeArray<TypeParameterDeclaration>
+    // auto createClassExpression(NodeArray<ModifierLike> modifiers, string name, NodeArray<TypeParameterDeclaration>
     // typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement> members) -> ClassExpression;
-    auto createClassExpression(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+    auto createClassExpression(NodeArray<ModifierLike> modifiers, Identifier name,
                                NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
                                NodeArray<ClassElement> members) -> ClassExpression;
-    // auto updateClassExpression(ClassExpression node, DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+    // auto updateClassExpression(ClassExpression node, NodeArray<ModifierLike> modifiers, Identifier name,
     // NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement> members) ->
     // ClassExpression;
     auto createOmittedExpression() -> OmittedExpression;
@@ -757,6 +641,7 @@ class NodeFactory
     // auto updateAsExpression(AsExpression node, Expression expression, TypeNode type) -> AsExpression;
     auto createNonNullExpression(Expression expression) -> NonNullExpression;
     // auto updateNonNullExpression(NonNullExpression node, Expression expression) -> NonNullExpression;
+    auto createSatisfiesExpression(Expression expression, TypeNode type) -> SatisfiesExpression;
     auto createNonNullChain(Expression expression) -> NonNullChain;
     // auto updateNonNullChain(NonNullChain node, Expression expression) -> NonNullChain;
     auto createMetaProperty(SyntaxKind keywordToken, Identifier name) -> MetaProperty;
@@ -828,45 +713,45 @@ class NodeFactory
     auto createVariableDeclarationList(NodeArray<VariableDeclaration> declarations, NodeFlags flags = (NodeFlags)0)
         -> VariableDeclarationList;
     // auto updateVariableDeclarationList(VariableDeclarationList node, NodeArray<VariableDeclaration> declarations) ->
-    // VariableDeclarationList; auto createFunctionDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken
+    // VariableDeclarationList; auto createFunctionDeclaration(NodeArray<ModifierLike> modifiers, AsteriskToken
     // asteriskToken, string name, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode
     // type, Block body) -> FunctionDeclaration;
-    auto createFunctionDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken, Identifier name,
+    auto createFunctionDeclaration(NodeArray<ModifierLike> modifiers, AsteriskToken asteriskToken, Identifier name,
                                    NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
                                    TypeNode type, Block body) -> FunctionDeclaration;
-    // auto updateFunctionDeclaration(FunctionDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken
+    // auto updateFunctionDeclaration(FunctionDeclaration node, NodeArray<ModifierLike> modifiers, AsteriskToken
     // asteriskToken, Identifier name, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters,
-    // TypeNode type, Block body) -> FunctionDeclaration; auto createClassDeclaration(DecoratorsArray decorators, ModifiersArray modifiers,
+    // TypeNode type, Block body) -> FunctionDeclaration; auto createClassDeclaration(NodeArray<ModifierLike> modifiers,
     // string name, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement>
     // members) -> ClassDeclaration;
-    auto createClassDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+    auto createClassDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
                                 NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
                                 NodeArray<ClassElement> members) -> ClassDeclaration;
-    // auto updateClassDeclaration(ClassDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+    // auto updateClassDeclaration(ClassDeclaration node, NodeArray<ModifierLike> modifiers, Identifier name,
     // NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement> members) ->
-    // ClassDeclaration; auto createInterfaceDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, string name,
+    // ClassDeclaration; auto createInterfaceDeclaration(NodeArray<ModifierLike> modifiers, string name,
     // NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<TypeElement> members) ->
     // InterfaceDeclaration;
-    auto createInterfaceDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+    auto createInterfaceDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
                                     NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses,
                                     NodeArray<TypeElement> members) -> InterfaceDeclaration;
-    // auto updateInterfaceDeclaration(InterfaceDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+    // auto updateInterfaceDeclaration(InterfaceDeclaration node, NodeArray<ModifierLike> modifiers, Identifier name,
     // NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<TypeElement> members) ->
-    // InterfaceDeclaration; auto createTypeAliasDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, string name,
+    // InterfaceDeclaration; auto createTypeAliasDeclaration(NodeArray<ModifierLike> modifiers, string name,
     // NodeArray<TypeParameterDeclaration> typeParameters, TypeNode type) -> TypeAliasDeclaration;
-    auto createTypeAliasDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+    auto createTypeAliasDeclaration(NodeArray<ModifierLike> modifiers, Identifier name,
                                     NodeArray<TypeParameterDeclaration> typeParameters, TypeNode type) -> TypeAliasDeclaration;
-    // auto updateTypeAliasDeclaration(TypeAliasDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+    // auto updateTypeAliasDeclaration(TypeAliasDeclaration node, NodeArray<ModifierLike> modifiers, Identifier name,
     // NodeArray<TypeParameterDeclaration> typeParameters, TypeNode type) -> TypeAliasDeclaration; auto
-    // createEnumDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, string name, NodeArray<EnumMember> members) ->
+    // createEnumDeclaration(NodeArray<ModifierLike> modifiers, string name, NodeArray<EnumMember> members) ->
     // EnumDeclaration;
-    auto createEnumDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, Identifier name, NodeArray<EnumMember> members)
+    auto createEnumDeclaration(NodeArray<ModifierLike> modifiers, Identifier name, NodeArray<EnumMember> members)
         -> EnumDeclaration;
-    // auto updateEnumDeclaration(EnumDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, Identifier name,
+    // auto updateEnumDeclaration(EnumDeclaration node, NodeArray<ModifierLike> modifiers, Identifier name,
     // NodeArray<EnumMember> members) -> EnumDeclaration;
-    auto createModuleDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, ModuleName name, ModuleBody body,
+    auto createModuleDeclaration(NodeArray<ModifierLike> modifiers, ModuleName name, ModuleBody body,
                                  NodeFlags flags = (NodeFlags)0) -> ModuleDeclaration;
-    // auto updateModuleDeclaration(ModuleDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, ModuleName name,
+    // auto updateModuleDeclaration(ModuleDeclaration node, NodeArray<ModifierLike> modifiers, ModuleName name,
     // ModuleBody body) -> ModuleDeclaration;
     auto createModuleBlock(NodeArray<Statement> statements) -> ModuleBlock;
     // auto updateModuleBlock(ModuleBlock node, NodeArray<Statement> statements) -> ModuleBlock;
@@ -875,38 +760,42 @@ class NodeFactory
     // auto createNamespaceExportDeclaration(string name) -> NamespaceExportDeclaration;
     auto createNamespaceExportDeclaration(Identifier name) -> NamespaceExportDeclaration;
     // auto updateNamespaceExportDeclaration(NamespaceExportDeclaration node, Identifier name) -> NamespaceExportDeclaration;
-    // auto createImportEqualsDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly, string name,
+    // auto createImportEqualsDeclaration(NodeArray<ModifierLike> modifiers, boolean isTypeOnly, string name,
     // ModuleReference moduleReference) -> ImportEqualsDeclaration;
-    auto createImportEqualsDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly, Identifier name,
+    auto createImportEqualsDeclaration(NodeArray<ModifierLike> modifiers, boolean isTypeOnly, Identifier name,
                                        ModuleReference moduleReference) -> ImportEqualsDeclaration;
-    // auto updateImportEqualsDeclaration(ImportEqualsDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, boolean
+    // auto updateImportEqualsDeclaration(ImportEqualsDeclaration node, NodeArray<ModifierLike> modifiers, boolean
     // isTypeOnly, Identifier name, ModuleReference moduleReference) -> ImportEqualsDeclaration;
-    auto createImportDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, ImportClause importClause,
-                                 Expression moduleSpecifier) -> ImportDeclaration;
-    // auto updateImportDeclaration(ImportDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, ImportClause importClause,
+    auto createImportDeclaration(NodeArray<ModifierLike> modifiers, ImportClause importClause,
+                                 Expression moduleSpecifier, ImportAttributes attributes) -> ImportDeclaration;
+    // auto updateImportDeclaration(ImportDeclaration node, NodeArray<ModifierLike> modifiers, ImportClause importClause,
     // Expression moduleSpecifier) -> ImportDeclaration;
     auto createImportClause(boolean isTypeOnly, Identifier name, NamedImportBindings namedBindings) -> ImportClause;
     // auto updateImportClause(ImportClause node, boolean isTypeOnly, Identifier name, NamedImportBindings namedBindings) -> ImportClause;
+
+    auto createImportAttributes(NodeArray<ImportAttribute> elements, boolean multiLine = false, SyntaxKind token = SyntaxKind::Unknown) -> ImportAttributes;
+    auto createImportAttribute(Node name, Expression value) -> ImportAttribute;
+
     auto createNamespaceImport(Identifier name) -> NamespaceImport;
     // auto updateNamespaceImport(NamespaceImport node, Identifier name) -> NamespaceImport;
     auto createNamespaceExport(Identifier name) -> NamespaceExport;
     // auto updateNamespaceExport(NamespaceExport node, Identifier name) -> NamespaceExport;
     auto createNamedImports(NodeArray<ImportSpecifier> elements) -> NamedImports;
     // auto updateNamedImports(NamedImports node, NodeArray<ImportSpecifier> elements) -> NamedImports;
-    auto createImportSpecifier(Identifier propertyName, Identifier name) -> ImportSpecifier;
+    auto createImportSpecifier(boolean isTypeOnly, Identifier propertyName, Identifier name) -> ImportSpecifier;
     // auto updateImportSpecifier(ImportSpecifier node, Identifier propertyName, Identifier name) -> ImportSpecifier;
-    auto createExportAssignment(DecoratorsArray decorators, ModifiersArray modifiers, boolean isExportEquals, Expression expression)
+    auto createExportAssignment(NodeArray<ModifierLike> modifiers, boolean isExportEquals, Expression expression)
         -> ExportAssignment;
-    // auto updateExportAssignment(ExportAssignment node, DecoratorsArray decorators, ModifiersArray modifiers, Expression expression) ->
+    // auto updateExportAssignment(ExportAssignment node, NodeArray<ModifierLike> modifiers, Expression expression) ->
     // ExportAssignment;
-    auto createExportDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly, NamedExportBindings exportClause,
-                                 Expression moduleSpecifier = undefined) -> ExportDeclaration;
-    // auto updateExportDeclaration(ExportDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly,
+    auto createExportDeclaration(NodeArray<ModifierLike> modifiers, boolean isTypeOnly, NamedExportBindings exportClause,
+                                 Expression moduleSpecifier = undefined, ImportAttributes attributes = undefined) -> ExportDeclaration;
+    // auto updateExportDeclaration(ExportDeclaration node, NodeArray<ModifierLike> modifiers, boolean isTypeOnly,
     // NamedExportBindings exportClause, Expression moduleSpecifier) -> ExportDeclaration;
     auto createNamedExports(NodeArray<ExportSpecifier> elements) -> NamedExports;
     // auto updateNamedExports(NamedExports node, NodeArray<ExportSpecifier> elements) -> NamedExports;
     // auto createExportSpecifier(string propertyName, string name) -> ExportSpecifier;
-    auto createExportSpecifier(Identifier propertyName, Identifier name) -> ExportSpecifier;
+    auto createExportSpecifier(boolean isTypeOnly, Identifier propertyName, Identifier name) -> ExportSpecifier;
     // auto updateExportSpecifier(ExportSpecifier node, Identifier propertyName, Identifier name) -> ExportSpecifier;
     /* @internal*/ auto createMissingDeclaration() -> MissingDeclaration;
 
@@ -924,9 +813,9 @@ class NodeFactory
     auto getDefaultTagName(JSDocTag node) -> Identifier;
     auto createJSDocAllType() -> JSDocAllType;
     auto createJSDocUnknownType() -> JSDocUnknownType;
-    auto createJSDocNonNullableType(TypeNode type) -> JSDocNonNullableType;
+    auto createJSDocNonNullableType(TypeNode type, boolean postfix) -> JSDocNonNullableType;
     // auto updateJSDocNonNullableType(JSDocNonNullableType node, TypeNode type) -> JSDocNonNullableType;
-    auto createJSDocNullableType(TypeNode type) -> JSDocNullableType;
+    auto createJSDocNullableType(TypeNode type, boolean postfix) -> JSDocNullableType;
     // auto updateJSDocNullableType(JSDocNullableType node, TypeNode type) -> JSDocNullableType;
     auto createJSDocOptionalType(TypeNode type) -> JSDocOptionalType;
     // auto updateJSDocOptionalType(JSDocOptionalType node, TypeNode type) -> JSDocOptionalType;
@@ -940,6 +829,9 @@ class NodeFactory
     // auto updateJSDocTypeExpression(JSDocTypeExpression node, TypeNode type) -> JSDocTypeExpression;
     auto createJSDocNameReference(EntityName name) -> JSDocNameReference;
     // auto updateJSDocNameReference(JSDocNameReference node, EntityName name) -> JSDocNameReference;
+
+    auto createJSDocMemberName(Node left, Identifier right) -> JSDocMemberName;
+
     auto createJSDocTypeLiteral(NodeArray<JSDocPropertyLikeTag> jsDocPropertyTags = undefined, boolean isArrayType = false)
         -> JSDocTypeLiteral;
     // auto updateJSDocTypeLiteral(JSDocTypeLiteral node, NodeArray<JSDocPropertyLikeTag> jsDocPropertyTags, boolean isArrayType) ->
@@ -1040,6 +932,7 @@ class NodeFactory
     // auto updateJsxSpreadAttribute(JsxSpreadAttribute node, Expression expression) -> JsxSpreadAttribute;
     auto createJsxExpression(DotDotDotToken dotDotDotToken, Expression expression) -> JsxExpression;
     // auto updateJsxExpression(JsxExpression node, Expression expression) -> JsxExpression;
+    auto createJsxNamespacedName(Identifier namespace_, Identifier name) -> JsxNamespacedName;
 
     // //
     // // Clauses

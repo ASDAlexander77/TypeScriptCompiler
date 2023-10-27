@@ -110,30 +110,30 @@ static std::wstring readFile(std::string file)
     auto enc = readEncoding(file);
 
     std::wifstream f(file);
+    std::locale fileLocale;
 
-    if (enc == ENCODING_ASCII || enc == ENCODING_UTF8)
+    if (enc == ENCODING_UTF8)
     {
         typedef std::codecvt_utf8_utf16<wchar_t, 0x10ffff, std::codecvt_mode::consume_header> conv;
-        std::locale loc(f.getloc(), new conv());
-        f.imbue(loc);
+        fileLocale = std::locale(f.getloc(), new conv());
     }
-
-    if (enc == ENCODING_UTF16BE)
+    else if (enc == ENCODING_UTF16BE)
     {
         typedef std::codecvt_utf16<wchar_t, 0x10ffff, std::consume_header> conv16be;
-        std::locale loc16be(f.getloc(), new conv16be());
-        f.imbue(loc16be);
+        fileLocale = std::locale(f.getloc(), new conv16be());
     }
-
-    if (enc == ENCODING_UTF16LE)
+    else if (enc == ENCODING_UTF16LE)
     {
-        typedef std::codecvt_utf16<wchar_t, 0x10ffff, (std::codecvt_mode)(std::consume_header | std::little_endian)> conv16be;
-        std::locale loc16be(f.getloc(), new conv16be());
-        f.imbue(loc16be);
+        typedef std::codecvt_utf16<wchar_t, 0x10ffff, (std::codecvt_mode)(std::consume_header | std::little_endian)> conv16le;
+        fileLocale = std::locale(f.getloc(), new conv16le());
     }
 
-    std::wstring str((std::istreambuf_iterator<char_t>(f)), std::istreambuf_iterator<char_t>());
-    return str;
+    f.imbue(fileLocale);
+
+    std::wstringstream wss;
+    wss << f.rdbuf();
+    f.close();
+    return wss.str();    
 }
 
 #endif // FILE_HELPER_H_

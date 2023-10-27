@@ -5,9 +5,11 @@
 namespace ts
 {
 std::map<string, SyntaxKind> Scanner::textToKeyword = {{S("abstract"), SyntaxKind::AbstractKeyword},
+                                                       {S("accessor"), SyntaxKind::AccessorKeyword},
                                                        {S("any"), SyntaxKind::AnyKeyword},
                                                        {S("as"), SyntaxKind::AsKeyword},
                                                        {S("asserts"), SyntaxKind::AssertsKeyword},
+                                                       {S("assert"), SyntaxKind::AssertKeyword},
                                                        {S("bigint"), SyntaxKind::BigIntKeyword},
                                                        {S("boolean"), SyntaxKind::BooleanKeyword},
                                                        {S("break"), SyntaxKind::BreakKeyword},
@@ -54,10 +56,13 @@ std::map<string, SyntaxKind> Scanner::textToKeyword = {{S("abstract"), SyntaxKin
                                                        {S("private"), SyntaxKind::PrivateKeyword},
                                                        {S("protected"), SyntaxKind::ProtectedKeyword},
                                                        {S("public"), SyntaxKind::PublicKeyword},
+                                                       {S("override"), SyntaxKind::OverrideKeyword},
+                                                       {S("out"), SyntaxKind::OutKeyword},
                                                        {S("readonly"), SyntaxKind::ReadonlyKeyword},
                                                        {S("require"), SyntaxKind::RequireKeyword},
                                                        {S("global"), SyntaxKind::GlobalKeyword},
                                                        {S("return"), SyntaxKind::ReturnKeyword},
+                                                       {S("satisfies"), SyntaxKind::SatisfiesKeyword},
                                                        {S("set"), SyntaxKind::SetKeyword},
                                                        {S("static"), SyntaxKind::StaticKeyword},
                                                        {S("string"), SyntaxKind::StringKeyword},
@@ -73,6 +78,7 @@ std::map<string, SyntaxKind> Scanner::textToKeyword = {{S("abstract"), SyntaxKin
                                                        {S("undefined"), SyntaxKind::UndefinedKeyword},
                                                        {S("unique"), SyntaxKind::UniqueKeyword},
                                                        {S("unknown"), SyntaxKind::UnknownKeyword},
+                                                       {S("using"), SyntaxKind::UsingKeyword},
                                                        {S("var"), SyntaxKind::VarKeyword},
                                                        {S("void"), SyntaxKind::VoidKeyword},
                                                        {S("while"), SyntaxKind::WhileKeyword},
@@ -82,144 +88,153 @@ std::map<string, SyntaxKind> Scanner::textToKeyword = {{S("abstract"), SyntaxKin
                                                        {S("await"), SyntaxKind::AwaitKeyword},
                                                        {S("of"), SyntaxKind::OfKeyword}};
 
-std::map<string, SyntaxKind> Scanner::textToToken = {{S("abstract"), SyntaxKind::AbstractKeyword},
-                                                     {S("any"), SyntaxKind::AnyKeyword},
-                                                     {S("as"), SyntaxKind::AsKeyword},
-                                                     {S("asserts"), SyntaxKind::AssertsKeyword},
-                                                     {S("bigint"), SyntaxKind::BigIntKeyword},
-                                                     {S("boolean"), SyntaxKind::BooleanKeyword},
-                                                     {S("break"), SyntaxKind::BreakKeyword},
-                                                     {S("case"), SyntaxKind::CaseKeyword},
-                                                     {S("catch"), SyntaxKind::CatchKeyword},
-                                                     {S("class"), SyntaxKind::ClassKeyword},
-                                                     {S("continue"), SyntaxKind::ContinueKeyword},
-                                                     {S("const"), SyntaxKind::ConstKeyword},
-                                                     {S("constructor"), SyntaxKind::ConstructorKeyword},
-                                                     {S("debugger"), SyntaxKind::DebuggerKeyword},
-                                                     {S("declare"), SyntaxKind::DeclareKeyword},
-                                                     {S("default"), SyntaxKind::DefaultKeyword},
-                                                     {S("delete"), SyntaxKind::DeleteKeyword},
-                                                     {S("do"), SyntaxKind::DoKeyword},
-                                                     {S("else"), SyntaxKind::ElseKeyword},
-                                                     {S("enum"), SyntaxKind::EnumKeyword},
-                                                     {S("export"), SyntaxKind::ExportKeyword},
-                                                     {S("extends"), SyntaxKind::ExtendsKeyword},
-                                                     {S("false"), SyntaxKind::FalseKeyword},
-                                                     {S("finally"), SyntaxKind::FinallyKeyword},
-                                                     {S("for"), SyntaxKind::ForKeyword},
-                                                     {S("from"), SyntaxKind::FromKeyword},
-                                                     {S("function"), SyntaxKind::FunctionKeyword},
-                                                     {S("get"), SyntaxKind::GetKeyword},
-                                                     {S("if"), SyntaxKind::IfKeyword},
-                                                     {S("implements"), SyntaxKind::ImplementsKeyword},
-                                                     {S("import"), SyntaxKind::ImportKeyword},
-                                                     {S("in"), SyntaxKind::InKeyword},
-                                                     {S("infer"), SyntaxKind::InferKeyword},
-                                                     {S("instanceof"), SyntaxKind::InstanceOfKeyword},
-                                                     {S("interface"), SyntaxKind::InterfaceKeyword},
-                                                     {S("intrinsic"), SyntaxKind::IntrinsicKeyword},
-                                                     {S("is"), SyntaxKind::IsKeyword},
-                                                     {S("keyof"), SyntaxKind::KeyOfKeyword},
-                                                     {S("let"), SyntaxKind::LetKeyword},
-                                                     {S("module"), SyntaxKind::ModuleKeyword},
-                                                     {S("namespace"), SyntaxKind::NamespaceKeyword},
-                                                     {S("never"), SyntaxKind::NeverKeyword},
-                                                     {S("new"), SyntaxKind::NewKeyword},
-                                                     {S("null"), SyntaxKind::NullKeyword},
-                                                     {S("number"), SyntaxKind::NumberKeyword},
-                                                     {S("object"), SyntaxKind::ObjectKeyword},
-                                                     {S("package"), SyntaxKind::PackageKeyword},
-                                                     {S("private"), SyntaxKind::PrivateKeyword},
-                                                     {S("protected"), SyntaxKind::ProtectedKeyword},
-                                                     {S("public"), SyntaxKind::PublicKeyword},
-                                                     {S("readonly"), SyntaxKind::ReadonlyKeyword},
-                                                     {S("require"), SyntaxKind::RequireKeyword},
-                                                     {S("global"), SyntaxKind::GlobalKeyword},
-                                                     {S("return"), SyntaxKind::ReturnKeyword},
-                                                     {S("set"), SyntaxKind::SetKeyword},
-                                                     {S("static"), SyntaxKind::StaticKeyword},
-                                                     {S("string"), SyntaxKind::StringKeyword},
-                                                     {S("super"), SyntaxKind::SuperKeyword},
-                                                     {S("switch"), SyntaxKind::SwitchKeyword},
-                                                     {S("symbol"), SyntaxKind::SymbolKeyword},
-                                                     {S("this"), SyntaxKind::ThisKeyword},
-                                                     {S("throw"), SyntaxKind::ThrowKeyword},
-                                                     {S("true"), SyntaxKind::TrueKeyword},
-                                                     {S("try"), SyntaxKind::TryKeyword},
-                                                     {S("type"), SyntaxKind::TypeKeyword},
-                                                     {S("typeof"), SyntaxKind::TypeOfKeyword},
-                                                     {S("undefined"), SyntaxKind::UndefinedKeyword},
-                                                     {S("unique"), SyntaxKind::UniqueKeyword},
-                                                     {S("unknown"), SyntaxKind::UnknownKeyword},
-                                                     {S("var"), SyntaxKind::VarKeyword},
-                                                     {S("void"), SyntaxKind::VoidKeyword},
-                                                     {S("while"), SyntaxKind::WhileKeyword},
-                                                     {S("with"), SyntaxKind::WithKeyword},
-                                                     {S("yield"), SyntaxKind::YieldKeyword},
-                                                     {S("async"), SyntaxKind::AsyncKeyword},
-                                                     {S("await"), SyntaxKind::AwaitKeyword},
-                                                     {S("of"), SyntaxKind::OfKeyword},
+std::map<string, SyntaxKind> Scanner::textToToken = {
+                                                    {S("abstract"), SyntaxKind::AbstractKeyword},
+                                                    {S("accessor"), SyntaxKind::AccessorKeyword},
+                                                    {S("any"), SyntaxKind::AnyKeyword},
+                                                    {S("as"), SyntaxKind::AsKeyword},
+                                                    {S("asserts"), SyntaxKind::AssertsKeyword},
+                                                    {S("assert"), SyntaxKind::AssertsKeyword},
+                                                    {S("bigint"), SyntaxKind::BigIntKeyword},
+                                                    {S("boolean"), SyntaxKind::BooleanKeyword},
+                                                    {S("break"), SyntaxKind::BreakKeyword},
+                                                    {S("case"), SyntaxKind::CaseKeyword},
+                                                    {S("catch"), SyntaxKind::CatchKeyword},
+                                                    {S("class"), SyntaxKind::ClassKeyword},
+                                                    {S("continue"), SyntaxKind::ContinueKeyword},
+                                                    {S("const"), SyntaxKind::ConstKeyword},
+                                                    {S("constructor"), SyntaxKind::ConstructorKeyword},
+                                                    {S("debugger"), SyntaxKind::DebuggerKeyword},
+                                                    {S("declare"), SyntaxKind::DeclareKeyword},
+                                                    {S("default"), SyntaxKind::DefaultKeyword},
+                                                    {S("delete"), SyntaxKind::DeleteKeyword},
+                                                    {S("do"), SyntaxKind::DoKeyword},
+                                                    {S("else"), SyntaxKind::ElseKeyword},
+                                                    {S("enum"), SyntaxKind::EnumKeyword},
+                                                    {S("export"), SyntaxKind::ExportKeyword},
+                                                    {S("extends"), SyntaxKind::ExtendsKeyword},
+                                                    {S("false"), SyntaxKind::FalseKeyword},
+                                                    {S("finally"), SyntaxKind::FinallyKeyword},
+                                                    {S("for"), SyntaxKind::ForKeyword},
+                                                    {S("from"), SyntaxKind::FromKeyword},
+                                                    {S("function"), SyntaxKind::FunctionKeyword},
+                                                    {S("get"), SyntaxKind::GetKeyword},
+                                                    {S("if"), SyntaxKind::IfKeyword},
+                                                    {S("implements"), SyntaxKind::ImplementsKeyword},
+                                                    {S("import"), SyntaxKind::ImportKeyword},
+                                                    {S("in"), SyntaxKind::InKeyword},
+                                                    {S("infer"), SyntaxKind::InferKeyword},
+                                                    {S("instanceof"), SyntaxKind::InstanceOfKeyword},
+                                                    {S("interface"), SyntaxKind::InterfaceKeyword},
+                                                    {S("intrinsic"), SyntaxKind::IntrinsicKeyword},
+                                                    {S("is"), SyntaxKind::IsKeyword},
+                                                    {S("keyof"), SyntaxKind::KeyOfKeyword},
+                                                    {S("let"), SyntaxKind::LetKeyword},
+                                                    {S("module"), SyntaxKind::ModuleKeyword},
+                                                    {S("namespace"), SyntaxKind::NamespaceKeyword},
+                                                    {S("never"), SyntaxKind::NeverKeyword},
+                                                    {S("new"), SyntaxKind::NewKeyword},
+                                                    {S("null"), SyntaxKind::NullKeyword},
+                                                    {S("number"), SyntaxKind::NumberKeyword},
+                                                    {S("object"), SyntaxKind::ObjectKeyword},
+                                                    {S("package"), SyntaxKind::PackageKeyword},
+                                                    {S("private"), SyntaxKind::PrivateKeyword},
+                                                    {S("protected"), SyntaxKind::ProtectedKeyword},
+                                                    {S("public"), SyntaxKind::PublicKeyword},
+                                                    {S("override"), SyntaxKind::OverrideKeyword},
+                                                    {S("out"), SyntaxKind::OutKeyword},
+                                                    {S("readonly"), SyntaxKind::ReadonlyKeyword},
+                                                    {S("require"), SyntaxKind::RequireKeyword},
+                                                    {S("global"), SyntaxKind::GlobalKeyword},
+                                                    {S("return"), SyntaxKind::ReturnKeyword},
+                                                    {S("satisfies"), SyntaxKind::SatisfiesKeyword},
+                                                    {S("set"), SyntaxKind::SetKeyword},
+                                                    {S("static"), SyntaxKind::StaticKeyword},
+                                                    {S("string"), SyntaxKind::StringKeyword},
+                                                    {S("super"), SyntaxKind::SuperKeyword},
+                                                    {S("switch"), SyntaxKind::SwitchKeyword},
+                                                    {S("symbol"), SyntaxKind::SymbolKeyword},
+                                                    {S("this"), SyntaxKind::ThisKeyword},
+                                                    {S("throw"), SyntaxKind::ThrowKeyword},
+                                                    {S("true"), SyntaxKind::TrueKeyword},
+                                                    {S("try"), SyntaxKind::TryKeyword},
+                                                    {S("type"), SyntaxKind::TypeKeyword},
+                                                    {S("typeof"), SyntaxKind::TypeOfKeyword},
+                                                    {S("undefined"), SyntaxKind::UndefinedKeyword},
+                                                    {S("unique"), SyntaxKind::UniqueKeyword},
+                                                    {S("unknown"), SyntaxKind::UnknownKeyword},
+                                                    {S("using"), SyntaxKind::UsingKeyword},
+                                                    {S("var"), SyntaxKind::VarKeyword},
+                                                    {S("void"), SyntaxKind::VoidKeyword},
+                                                    {S("while"), SyntaxKind::WhileKeyword},
+                                                    {S("with"), SyntaxKind::WithKeyword},
+                                                    {S("yield"), SyntaxKind::YieldKeyword},
+                                                    {S("async"), SyntaxKind::AsyncKeyword},
+                                                    {S("await"), SyntaxKind::AwaitKeyword},
+                                                    {S("of"), SyntaxKind::OfKeyword},
 
-                                                     {S("{"), SyntaxKind::OpenBraceToken},
-                                                     {S("}"), SyntaxKind::CloseBraceToken},
-                                                     {S("("), SyntaxKind::OpenParenToken},
-                                                     {S(")"), SyntaxKind::CloseParenToken},
-                                                     {S("["), SyntaxKind::OpenBracketToken},
-                                                     {S("]"), SyntaxKind::CloseBracketToken},
-                                                     {S("."), SyntaxKind::DotToken},
-                                                     {S("..."), SyntaxKind::DotDotDotToken},
-                                                     {S(";"), SyntaxKind::SemicolonToken},
-                                                     {S(","), SyntaxKind::CommaToken},
-                                                     {S("<"), SyntaxKind::LessThanToken},
-                                                     {S(">"), SyntaxKind::GreaterThanToken},
-                                                     {S("<="), SyntaxKind::LessThanEqualsToken},
-                                                     {S(">="), SyntaxKind::GreaterThanEqualsToken},
-                                                     {S("=="), SyntaxKind::EqualsEqualsToken},
-                                                     {S("!="), SyntaxKind::ExclamationEqualsToken},
-                                                     {S("==="), SyntaxKind::EqualsEqualsEqualsToken},
-                                                     {S("!=="), SyntaxKind::ExclamationEqualsEqualsToken},
-                                                     {S("=>"), SyntaxKind::EqualsGreaterThanToken},
-                                                     {S("+"), SyntaxKind::PlusToken},
-                                                     {S("-"), SyntaxKind::MinusToken},
-                                                     {S("**"), SyntaxKind::AsteriskAsteriskToken},
-                                                     {S("*"), SyntaxKind::AsteriskToken},
-                                                     {S("/"), SyntaxKind::SlashToken},
-                                                     {S("%"), SyntaxKind::PercentToken},
-                                                     {S("++"), SyntaxKind::PlusPlusToken},
-                                                     {S("--"), SyntaxKind::MinusMinusToken},
-                                                     {S("<<"), SyntaxKind::LessThanLessThanToken},
-                                                     {S("</"), SyntaxKind::LessThanSlashToken},
-                                                     {S(">>"), SyntaxKind::GreaterThanGreaterThanToken},
-                                                     {S(">>>"), SyntaxKind::GreaterThanGreaterThanGreaterThanToken},
-                                                     {S("&"), SyntaxKind::AmpersandToken},
-                                                     {S("|"), SyntaxKind::BarToken},
-                                                     {S("^"), SyntaxKind::CaretToken},
-                                                     {S("!"), SyntaxKind::ExclamationToken},
-                                                     {S("~"), SyntaxKind::TildeToken},
-                                                     {S("&&"), SyntaxKind::AmpersandAmpersandToken},
-                                                     {S("||"), SyntaxKind::BarBarToken},
-                                                     {S("?"), SyntaxKind::QuestionToken},
-                                                     {S("??"), SyntaxKind::QuestionQuestionToken},
-                                                     {S("?."), SyntaxKind::QuestionDotToken},
-                                                     {S(":"), SyntaxKind::ColonToken},
-                                                     {S("="), SyntaxKind::EqualsToken},
-                                                     {S("+="), SyntaxKind::PlusEqualsToken},
-                                                     {S("-="), SyntaxKind::MinusEqualsToken},
-                                                     {S("*="), SyntaxKind::AsteriskEqualsToken},
-                                                     {S("**="), SyntaxKind::AsteriskAsteriskEqualsToken},
-                                                     {S("/="), SyntaxKind::SlashEqualsToken},
-                                                     {S("%="), SyntaxKind::PercentEqualsToken},
-                                                     {S("<<="), SyntaxKind::LessThanLessThanEqualsToken},
-                                                     {S(">>="), SyntaxKind::GreaterThanGreaterThanEqualsToken},
-                                                     {S(">>>="), SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken},
-                                                     {S("&="), SyntaxKind::AmpersandEqualsToken},
-                                                     {S("|="), SyntaxKind::BarEqualsToken},
-                                                     {S("^="), SyntaxKind::CaretEqualsToken},
-                                                     {S("||="), SyntaxKind::BarBarEqualsToken},
-                                                     {S("&&="), SyntaxKind::AmpersandAmpersandEqualsToken},
-                                                     {S("??="), SyntaxKind::QuestionQuestionEqualsToken},
-                                                     {S("@"), SyntaxKind::AtToken},
-                                                     {S("`"), SyntaxKind::BacktickToken}};
+                                                    {S("{"), SyntaxKind::OpenBraceToken},
+                                                    {S("}"), SyntaxKind::CloseBraceToken},
+                                                    {S("("), SyntaxKind::OpenParenToken},
+                                                    {S(")"), SyntaxKind::CloseParenToken},
+                                                    {S("["), SyntaxKind::OpenBracketToken},
+                                                    {S("]"), SyntaxKind::CloseBracketToken},
+                                                    {S("."), SyntaxKind::DotToken},
+                                                    {S("..."), SyntaxKind::DotDotDotToken},
+                                                    {S(";"), SyntaxKind::SemicolonToken},
+                                                    {S(","), SyntaxKind::CommaToken},
+                                                    {S("<"), SyntaxKind::LessThanToken},
+                                                    {S(">"), SyntaxKind::GreaterThanToken},
+                                                    {S("<="), SyntaxKind::LessThanEqualsToken},
+                                                    {S(">="), SyntaxKind::GreaterThanEqualsToken},
+                                                    {S("=="), SyntaxKind::EqualsEqualsToken},
+                                                    {S("!="), SyntaxKind::ExclamationEqualsToken},
+                                                    {S("==="), SyntaxKind::EqualsEqualsEqualsToken},
+                                                    {S("!=="), SyntaxKind::ExclamationEqualsEqualsToken},
+                                                    {S("=>"), SyntaxKind::EqualsGreaterThanToken},
+                                                    {S("+"), SyntaxKind::PlusToken},
+                                                    {S("-"), SyntaxKind::MinusToken},
+                                                    {S("**"), SyntaxKind::AsteriskAsteriskToken},
+                                                    {S("*"), SyntaxKind::AsteriskToken},
+                                                    {S("/"), SyntaxKind::SlashToken},
+                                                    {S("%"), SyntaxKind::PercentToken},
+                                                    {S("++"), SyntaxKind::PlusPlusToken},
+                                                    {S("--"), SyntaxKind::MinusMinusToken},
+                                                    {S("<<"), SyntaxKind::LessThanLessThanToken},
+                                                    {S("</"), SyntaxKind::LessThanSlashToken},
+                                                    {S(">>"), SyntaxKind::GreaterThanGreaterThanToken},
+                                                    {S(">>>"), SyntaxKind::GreaterThanGreaterThanGreaterThanToken},
+                                                    {S("&"), SyntaxKind::AmpersandToken},
+                                                    {S("|"), SyntaxKind::BarToken},
+                                                    {S("^"), SyntaxKind::CaretToken},
+                                                    {S("!"), SyntaxKind::ExclamationToken},
+                                                    {S("~"), SyntaxKind::TildeToken},
+                                                    {S("&&"), SyntaxKind::AmpersandAmpersandToken},
+                                                    {S("||"), SyntaxKind::BarBarToken},
+                                                    {S("?"), SyntaxKind::QuestionToken},
+                                                    {S("??"), SyntaxKind::QuestionQuestionToken},
+                                                    {S("?."), SyntaxKind::QuestionDotToken},
+                                                    {S(":"), SyntaxKind::ColonToken},
+                                                    {S("="), SyntaxKind::EqualsToken},
+                                                    {S("+="), SyntaxKind::PlusEqualsToken},
+                                                    {S("-="), SyntaxKind::MinusEqualsToken},
+                                                    {S("*="), SyntaxKind::AsteriskEqualsToken},
+                                                    {S("**="), SyntaxKind::AsteriskAsteriskEqualsToken},
+                                                    {S("/="), SyntaxKind::SlashEqualsToken},
+                                                    {S("%="), SyntaxKind::PercentEqualsToken},
+                                                    {S("<<="), SyntaxKind::LessThanLessThanEqualsToken},
+                                                    {S(">>="), SyntaxKind::GreaterThanGreaterThanEqualsToken},
+                                                    {S(">>>="), SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken},
+                                                    {S("&="), SyntaxKind::AmpersandEqualsToken},
+                                                    {S("|="), SyntaxKind::BarEqualsToken},
+                                                    {S("^="), SyntaxKind::CaretEqualsToken},
+                                                    {S("||="), SyntaxKind::BarBarEqualsToken},
+                                                    {S("&&="), SyntaxKind::AmpersandAmpersandEqualsToken},
+                                                    {S("??="), SyntaxKind::QuestionQuestionEqualsToken},
+                                                    {S("@"), SyntaxKind::AtToken},
+                                                    {S("`"), SyntaxKind::BacktickToken}
+                                                    
+                                                    };
 
 std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::Unknown, S("Unknown")},
@@ -327,6 +342,7 @@ std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::NewKeyword, S("NewKeyword")},
     {SyntaxKind::NullKeyword, S("NullKeyword")},
     {SyntaxKind::ReturnKeyword, S("ReturnKeyword")},
+    {SyntaxKind::SatisfiesKeyword, S("SatisfiesKeyword")},
     {SyntaxKind::SuperKeyword, S("SuperKeyword")},
     {SyntaxKind::SwitchKeyword, S("SwitchKeyword")},
     {SyntaxKind::ThisKeyword, S("ThisKeyword")},
@@ -345,11 +361,15 @@ std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::PrivateKeyword, S("PrivateKeyword")},
     {SyntaxKind::ProtectedKeyword, S("ProtectedKeyword")},
     {SyntaxKind::PublicKeyword, S("PublicKeyword")},
+    {SyntaxKind::OverrideKeyword, S("OverrideKeyword")},
+    {SyntaxKind::OutKeyword, S("OutKeyword")},
     {SyntaxKind::StaticKeyword, S("StaticKeyword")},
     {SyntaxKind::YieldKeyword, S("YieldKeyword")},
     {SyntaxKind::AbstractKeyword, S("AbstractKeyword")},
+    {SyntaxKind::AccessorKeyword, S("AccessorKeyword")},
     {SyntaxKind::AsKeyword, S("AsKeyword")},
     {SyntaxKind::AssertsKeyword, S("AssertsKeyword")},
+    {SyntaxKind::AssertKeyword, S("AssertKeyword")},
     {SyntaxKind::AnyKeyword, S("AnyKeyword")},
     {SyntaxKind::AsyncKeyword, S("AsyncKeyword")},
     {SyntaxKind::AwaitKeyword, S("AwaitKeyword")},
@@ -375,6 +395,7 @@ std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::UndefinedKeyword, S("UndefinedKeyword")},
     {SyntaxKind::UniqueKeyword, S("UniqueKeyword")},
     {SyntaxKind::UnknownKeyword, S("UnknownKeyword")},
+    {SyntaxKind::UsingKeyword, S("UsingKeyword")},
     {SyntaxKind::FromKeyword, S("FromKeyword")},
     {SyntaxKind::GlobalKeyword, S("GlobalKeyword")},
     {SyntaxKind::BigIntKeyword, S("BigIntKeyword")},
@@ -388,6 +409,7 @@ std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::PropertyDeclaration, S("PropertyDeclaration")},
     {SyntaxKind::MethodSignature, S("MethodSignature")},
     {SyntaxKind::MethodDeclaration, S("MethodDeclaration")},
+    {SyntaxKind::ClassStaticBlockDeclaration, S("ClassStaticBlockDeclaration")},
     {SyntaxKind::Constructor, S("Constructor")},
     {SyntaxKind::GetAccessor, S("GetAccessor")},
     {SyntaxKind::SetAccessor, S("SetAccessor")},
@@ -448,6 +470,7 @@ std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::ExpressionWithTypeArguments, S("ExpressionWithTypeArguments")},
     {SyntaxKind::AsExpression, S("AsExpression")},
     {SyntaxKind::NonNullExpression, S("NonNullExpression")},
+    {SyntaxKind::SatisfiesExpression, S("SatisfiesExpression")},
     {SyntaxKind::MetaProperty, S("MetaProperty")},
     {SyntaxKind::SyntheticExpression, S("SyntheticExpression")},
     {SyntaxKind::TemplateSpan, S("TemplateSpan")},
@@ -560,8 +583,6 @@ std::map<SyntaxKind, string> Scanner::tokenToText = {
     {SyntaxKind::NotEmittedStatement, S("NotEmittedStatement")},
     {SyntaxKind::PartiallyEmittedExpression, S("PartiallyEmittedExpression")},
     {SyntaxKind::CommaListExpression, S("CommaListExpression")},
-    {SyntaxKind::MergeDeclarationMarker, S("MergeDeclarationMarker")},
-    {SyntaxKind::EndOfDeclarationMarker, S("EndOfDeclarationMarker")},
     {SyntaxKind::SyntheticReferenceExpression, S("SyntheticReferenceExpression")}};
 
 /*
@@ -928,12 +949,14 @@ std::vector<number> Scanner::unicodeESNextIdentifierPart = {
 /**
  * Test for whether a single line comment's text contains a directive.
  */
-regex Scanner::commentDirectiveRegExSingleLine = regex(S("^\\s*\\/\\/\\/?\\s*@(ts-expect-error|ts-ignore)"));
+regex Scanner::commentDirectiveRegExSingleLine = regex(S("^\\/\\/\\/?\\s*@(ts-expect-error|ts-ignore)"));
 
 /**
  * Test for whether a multi-line comment's last line contains a directive.
  */
-regex Scanner::commentDirectiveRegExMultiLine = regex(S("^\\s*(?:\\/|\\*)*\\s*@(ts-expect-error|ts-ignore)"));
+regex Scanner::commentDirectiveRegExMultiLine = regex(S("^(?:\\/|\\*)*\\s*@(ts-expect-error|ts-ignore)"));
+
+regex Scanner::jsDocSeeOrLink = regex(S("@(?:see|link)"));
 
 // Creates a scanner over a (possibly unspecified) range of a piece of text.
 Scanner::Scanner(ScriptTarget languageVersion, boolean skipTrivia, LanguageVariant languageVariant, string textInitial,
@@ -943,29 +966,29 @@ Scanner::Scanner(ScriptTarget languageVersion, boolean skipTrivia, LanguageVaria
     setText(textInitial, start, length);
 }
 
+auto Scanner::getTokenFullStart() -> number
+{
+    return fullStartPos;
+}
+
+auto Scanner::getTokenEnd() -> number
+{
+    return pos;
+}
+
 auto Scanner::getToken() -> SyntaxKind
 {
     return token;
 }
 
-auto Scanner::getTextPos() -> number
+auto Scanner::getTokenStart() -> number
 {
-    return pos;
-}
-
-auto Scanner::getStartPos() -> number
-{
-    return startPos;
-}
-
-auto Scanner::getTokenPos() -> number
-{
-    return tokenPos;
+    return tokenStart;
 }
 
 auto Scanner::getTokenText() -> string
 {
-    return text.substring(tokenPos, pos);
+    return text.substring(tokenStart, pos);
 }
 
 auto Scanner::getTokenValue() -> string
@@ -1094,7 +1117,12 @@ auto Scanner::syntaxKindString(SyntaxKind t) -> string
 /* @internal */
 auto Scanner::stringToToken(string s) -> SyntaxKind
 {
-    return textToToken.at(s);
+    if (textToToken.find(s) != textToToken.end())
+    {
+        return textToToken.at(s);
+    }
+
+    return SyntaxKind::Identifier;
 }
 
 /* @internal */
@@ -1329,13 +1357,14 @@ auto Scanner::couldStartTrivia(safe_string &text, number pos) -> boolean
 }
 
 /* @internal */
-auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak, bool stopAtComments) -> number
+auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak, bool stopAtComments, bool inJSDoc) -> number
 {
     if (positionIsSynthesized(pos))
     {
         return pos;
     }
 
+    auto canConsumeStar = false;
     // Keep in sync with couldStartTrivia
     while (true)
     {
@@ -1354,6 +1383,8 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
             {
                 return pos;
             }
+
+            canConsumeStar = !!inJSDoc;
             continue;
         case CharacterCodes::tab:
         case CharacterCodes::verticalTab:
@@ -1377,6 +1408,8 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
                     }
                     pos++;
                 }
+
+                canConsumeStar = false;
                 continue;
             }
             if (text[pos + 1] == CharacterCodes::asterisk)
@@ -1391,6 +1424,8 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
                     }
                     pos++;
                 }
+
+                canConsumeStar = false;
                 continue;
             }
             break;
@@ -1402,6 +1437,7 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(text, pos);
+                canConsumeStar = false;
                 continue;
             }
             break;
@@ -1410,6 +1446,15 @@ auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak,
             if (pos == 0 && isShebangTrivia(text, pos))
             {
                 pos = scanShebangTrivia(text, pos);
+                canConsumeStar = false;
+                continue;
+            }
+            break;
+
+        case CharacterCodes::asterisk:
+            if (canConsumeStar) {
+                pos++;
+                canConsumeStar = false;                
                 continue;
             }
             break;
@@ -1456,12 +1501,11 @@ auto Scanner::isConflictMarkerTrivia(safe_string &text, number pos) -> boolean
     return false;
 }
 
-auto Scanner::scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number)> error)
-    -> number
+auto Scanner::scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number, string)> error) -> number
 {
     if (error)
     {
-        error(data::DiagnosticMessage(Diagnostics::Merge_conflict_marker_encountered), pos, mergeConflictMarkerLength);
+        error(_E(Diagnostics::Merge_conflict_marker_encountered), pos, mergeConflictMarkerLength, string());
     }
 
     auto ch = text[pos];
@@ -1596,7 +1640,7 @@ auto Scanner::isIdentifierText(safe_string &name, ScriptTarget languageVersion, 
     return true;
 }
 
-auto Scanner::error(DiagnosticMessage message, number errPos, number length) -> void
+auto Scanner::error(DiagnosticMessage message, number errPos, number length, string arg0) -> void
 {
     if (errPos < 0)
     {
@@ -1607,7 +1651,7 @@ auto Scanner::error(DiagnosticMessage message, number errPos, number length) -> 
     {
         auto oldPos = pos;
         pos = errPos;
-        onError(message, length);
+        onError(message, length, arg0);
         pos = oldPos;
     }
 }
@@ -1630,13 +1674,17 @@ auto Scanner::scanNumberFragment() -> string
                 isPreviousTokenSeparator = true;
                 result += text.substring(start, pos);
             }
-            else if (isPreviousTokenSeparator)
+            else 
             {
-                error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
-            }
-            else
-            {
-                error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+                tokenFlags |= TokenFlags::ContainsInvalidSeparator;
+                if (isPreviousTokenSeparator)
+                {
+                    error(_E(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
+                }
+                else
+                {
+                    error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+                }
             }
             pos++;
             start = pos;
@@ -1653,15 +1701,53 @@ auto Scanner::scanNumberFragment() -> string
     }
     if (text[pos - 1] == CharacterCodes::_)
     {
-        error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
+        tokenFlags |= TokenFlags::ContainsInvalidSeparator;
+        error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
     }
     return result + text.substring(start, pos);
 }
 
-auto Scanner::scanNumber() -> ScanResult
+auto Scanner::scanNumber() -> SyntaxKind
 {
     auto start = pos;
-    auto mainFragment = scanNumberFragment();
+    string mainFragment;
+    if (text[pos] == CharacterCodes::_0) {
+        pos++;
+        if (text[pos] == CharacterCodes::_) {
+            tokenFlags |= TokenFlags::ContainsSeparator | TokenFlags::ContainsInvalidSeparator;
+            error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+            // treat it as a normal number literal
+            pos--;
+            mainFragment = scanNumberFragment();
+        }
+        // Separators are not allowed in the below cases
+        else if (!scanDigits()) {
+            // NonOctalDecimalIntegerLiteral, emit error later
+            // Separators in decimal and exponent parts are still allowed according to the spec
+            tokenFlags |= TokenFlags::ContainsLeadingZero;
+            mainFragment = to_string_val(+to_float_val(tokenValue));
+        }
+        else if (tokenValue.empty()) {
+            // a single zero
+            mainFragment = S("0");
+        }
+        else {
+            // LegacyOctalIntegerLiteral
+            auto tokenValueOctal = tokenValue;
+            tokenValue = to_string_val(to_number_base(tokenValue, 8));
+            tokenFlags |= TokenFlags::Octal;
+            auto withMinus = token == SyntaxKind::MinusToken;
+            // TODO: finish it
+            string literal = (withMinus ? S("-0o") : S("0o")) + tokenValueOctal;
+            if (withMinus) start--;
+            error(_E(Diagnostics::Octal_literals_are_not_allowed_Use_the_syntax_0), start, pos - start, literal);
+            return SyntaxKind::NumericLiteral;
+        }
+    }
+    else {
+        mainFragment = scanNumberFragment();
+    }
+
     string decimalFragment;
     string scientificFragment;
     if (text[pos] == CharacterCodes::dot)
@@ -1680,7 +1766,7 @@ auto Scanner::scanNumber() -> ScanResult
         auto finalFragment = scanNumberFragment();
         if (finalFragment.empty())
         {
-            error(data::DiagnosticMessage(Diagnostics::Digit_expected));
+            error(_E(Diagnostics::Digit_expected));
         }
         else
         {
@@ -1706,20 +1792,26 @@ auto Scanner::scanNumber() -> ScanResult
         result = text.substring(start, end); // No need to use all the fragments; no _ removal needed
     }
 
+    if ((tokenFlags & TokenFlags::ContainsLeadingZero) == TokenFlags::ContainsLeadingZero) {
+        error(_E(Diagnostics::Decimals_with_leading_zeros_are_not_allowed), start, end - start);
+        // if a literal has a leading zero, it must not be bigint
+        tokenValue = to_string_val(+to_float_val(result));
+        return SyntaxKind::NumericLiteral;
+    }
+
     if (!decimalFragment.empty() || !!(tokenFlags & TokenFlags::Scientific))
     {
         checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
-        return {
-            SyntaxKind::NumericLiteral,
-            to_string_val(+to_float_val(result)) // if value is not an integer, it can be safely coerced to a number
-        };
+        // if value is not an integer, it can be safely coerced to a number
+        tokenValue = to_string_val(+to_float_val(result));
+        return SyntaxKind::NumericLiteral;
     }
     else
     {
         tokenValue = result;
         auto type = checkBigIntSuffix(); // if value is an integer, check whether it is a bigint
         checkForIdentifierStartAfterNumericLiteral(start);
-        return {type, tokenValue};
+        return type;
     }
 }
 
@@ -1737,31 +1829,35 @@ auto Scanner::checkForIdentifierStartAfterNumericLiteral(number numericStart, bo
     {
         if (isScientific)
         {
-            error(data::DiagnosticMessage(Diagnostics::A_bigint_literal_cannot_use_exponential_notation), numericStart,
+            error(_E(Diagnostics::A_bigint_literal_cannot_use_exponential_notation), numericStart,
                   identifierStart - numericStart + 1);
         }
         else
         {
-            error(data::DiagnosticMessage(Diagnostics::A_bigint_literal_must_be_an_integer), numericStart,
+            error(_E(Diagnostics::A_bigint_literal_must_be_an_integer), numericStart,
                   identifierStart - numericStart + 1);
         }
     }
     else
     {
-        error(data::DiagnosticMessage(Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal), identifierStart,
+        error(_E(Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal), identifierStart,
               length);
         pos = identifierStart;
     }
 }
 
-auto Scanner::scanOctalDigits() -> number
-{
+auto Scanner::scanDigits() -> boolean {
     auto start = pos;
-    while (isOctalDigit(text[pos]))
-    {
+    auto isOctal = true;
+    while (isDigit(text[pos])) {
+        if (!isOctalDigit(text[pos])) {
+            isOctal = false;
+        }
         pos++;
     }
-    return +std::stod((text.substring(start, pos)));
+
+    tokenValue = text.substring(start, pos);
+    return isOctal;
 }
 
 /**
@@ -1801,11 +1897,11 @@ auto Scanner::scanHexDigits(number minCount, boolean scanAsManyAsPossible, boole
             }
             else if (isPreviousTokenSeparator)
             {
-                error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
+                error(_E(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
             }
             else
             {
-                error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+                error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
             }
             pos++;
             continue;
@@ -1830,7 +1926,7 @@ auto Scanner::scanHexDigits(number minCount, boolean scanAsManyAsPossible, boole
     }
     if (text[pos - 1] == CharacterCodes::_)
     {
-        error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
+        error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
     }
     return string(valueChars.begin(), valueChars.end());
 }
@@ -1847,7 +1943,7 @@ auto Scanner::scanString(boolean jsxAttributeString) -> string
         {
             result += text.substring(start, pos);
             tokenFlags |= TokenFlags::Unterminated;
-            error(data::DiagnosticMessage(Diagnostics::Unterminated_string_literal));
+            error(_E(Diagnostics::Unterminated_string_literal));
             break;
         }
         auto ch = text[pos];
@@ -1860,15 +1956,15 @@ auto Scanner::scanString(boolean jsxAttributeString) -> string
         if (ch == CharacterCodes::backslash && !jsxAttributeString)
         {
             result += text.substring(start, pos);
-            result += scanEscapeSequence();
+            result += scanEscapeSequence(/*shouldEmitInvalidEscapeError*/ true);
             start = pos;
             continue;
         }
-        if (isLineBreak(ch) && !jsxAttributeString)
+        if ((ch == CharacterCodes::lineFeed || ch == CharacterCodes::carriageReturn) && !jsxAttributeString)
         {
             result += text.substring(start, pos);
             tokenFlags |= TokenFlags::Unterminated;
-            error(data::DiagnosticMessage(Diagnostics::Unterminated_string_literal));
+            error(_E(Diagnostics::Unterminated_string_literal));
             break;
         }
         pos++;
@@ -1880,7 +1976,7 @@ auto Scanner::scanString(boolean jsxAttributeString) -> string
  * Sets the current 'tokenValue' and returns a NoSubstitutionTemplateLiteral or
  * a literal component of a TemplateExpression.
  */
-auto Scanner::scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKind
+auto Scanner::scanTemplateAndSetTokenValue(boolean shouldEmitInvalidEscapeError) -> SyntaxKind
 {
     auto startedWithBacktick = text[pos] == CharacterCodes::backtick;
 
@@ -1895,7 +1991,7 @@ auto Scanner::scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKi
         {
             contents += text.substring(start, pos);
             tokenFlags |= TokenFlags::Unterminated;
-            error(data::DiagnosticMessage(Diagnostics::Unterminated_template_literal));
+            error(_E(Diagnostics::Unterminated_template_literal));
             resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
             break;
         }
@@ -1924,7 +2020,7 @@ auto Scanner::scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKi
         if (currChar == CharacterCodes::backslash)
         {
             contents += text.substring(start, pos);
-            contents += scanEscapeSequence(isTaggedTemplate);
+            contents += scanEscapeSequence(shouldEmitInvalidEscapeError);
             start = pos;
             continue;
         }
@@ -1955,13 +2051,25 @@ auto Scanner::scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKi
     return resultingToken;
 }
 
-auto Scanner::scanEscapeSequence(boolean isTaggedTemplate) -> string
+inline string fromCharCode(char_t code)
+{
+    string s(1, code);
+    return s;
+}
+
+inline string padStart(string s, int size, char_t pad)
+{
+    auto slen = s.length();
+    return string(size >= slen ? size - slen : 0, pad).append(s);
+}
+
+auto Scanner::scanEscapeSequence(boolean shouldEmitInvalidEscapeError) -> string
 {
     auto start = pos;
     pos++;
     if (pos >= end)
     {
-        error(data::DiagnosticMessage(Diagnostics::Unexpected_end_of_text));
+        error(_E(Diagnostics::Unexpected_end_of_text));
         return string();
     }
     auto ch = text[pos];
@@ -1969,14 +2077,48 @@ auto Scanner::scanEscapeSequence(boolean isTaggedTemplate) -> string
     switch (ch)
     {
     case CharacterCodes::_0:
-        // '\01'
-        if (isTaggedTemplate && pos < end && isDigit(text[pos]))
-        {
-            pos++;
-            tokenFlags |= TokenFlags::ContainsInvalidEscape;
-            return text.substring(start, pos);
+        // Although '0' preceding any digit is treated as LegacyOctalEscapeSequence,
+        // '\08' should separately be interpreted as '\0' + '8'.
+        if (pos >= end || !isDigit(text[pos])) {
+            return S("\0");
         }
-        return S("\0");
+    // '\01', '\011'
+    // falls through
+    case CharacterCodes::_1:
+    case CharacterCodes::_2:
+    case CharacterCodes::_3:
+        // '\1', '\17', '\177'
+        if (pos < end && isOctalDigit(text[pos])) {
+            pos++;
+        }
+    // '\17', '\177'
+    // falls through
+    case CharacterCodes::_4:
+    case CharacterCodes::_5:
+    case CharacterCodes::_6:
+    case CharacterCodes::_7:
+        // '\4', '\47' but not '\477'
+        if (pos < end && isOctalDigit(text[pos])) {
+            pos++;
+        }
+        // '\47'
+        tokenFlags |= TokenFlags::ContainsInvalidEscape;
+        if (shouldEmitInvalidEscapeError) {
+            auto code = to_number_base(text.substring(start + 1, pos), 8);
+            // TODO: finish it
+            error(_E(Diagnostics::Octal_escape_sequences_are_not_allowed_Use_the_syntax_0), start, pos - start, S("\\x") + padStart(to_string_val(code), 2, S('0')));
+            return fromCharCode(code);
+        }
+        return text.substring(start, pos);
+    case CharacterCodes::_8:
+    case CharacterCodes::_9:
+        // the invalid '\8' and '\9'
+        tokenFlags |= TokenFlags::ContainsInvalidEscape;
+        if (shouldEmitInvalidEscapeError) {
+            error(_E(Diagnostics::Escape_sequence_0_is_not_allowed), start, pos - start, text.substring(start, pos));
+            return  fromCharCode((int)ch);
+        }
+        return text.substring(start, pos);
     case CharacterCodes::b:
         return S("\b");
     case CharacterCodes::t:
@@ -1990,77 +2132,74 @@ auto Scanner::scanEscapeSequence(boolean isTaggedTemplate) -> string
     case CharacterCodes::r:
         return S("\r");
     case CharacterCodes::singleQuote:
-        return S("\'");
+        return S("'");
     case CharacterCodes::doubleQuote:
         return S("\"");
     case CharacterCodes::u:
-        if (isTaggedTemplate)
-        {
-            // '\u' or '\u0' or '\u00' or '\u000'
-            for (auto escapePos = pos; escapePos < pos + 4; escapePos++)
-            {
-                if (escapePos < end && !isHexDigit(text[escapePos]) && text[escapePos] != CharacterCodes::openBrace)
-                {
-                    pos = escapePos;
-                    tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                    return text.substring(start, pos);
-                }
-            }
-        }
-        // '\u{DDDDDDDD}'
-        if (pos < end && text[pos] == CharacterCodes::openBrace)
-        {
+        if (pos < end && text[pos] == CharacterCodes::openBrace) {
+            // '\u{DDDDDDDD}'
             pos++;
-
-            // '\u{'
-            if (isTaggedTemplate && !isHexDigit(text[pos]))
-            {
+            auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
+            auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
+            // '\u{Not Code Point' or '\u{CodePoint'
+            if (escapedValue < 0) {
                 tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Hexadecimal_digit_expected));
+                }
                 return text.substring(start, pos);
             }
-
-            if (isTaggedTemplate)
-            {
-                auto savePos = pos;
-                auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-                auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
-
-                // '\u{Not Code Point' or '\u{CodePoint'
-                if (!isCodePoint(escapedValue) || text[pos] != CharacterCodes::closeBrace)
-                {
-                    tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                    return text.substring(start, pos);
+            if (!isCodePoint(escapedValue)) {
+                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive));
                 }
-                else
-                {
-                    pos = savePos;
-                }
+                return text.substring(start, pos);
             }
+            if (pos >= end) {
+                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Unexpected_end_of_text));
+                }
+                return text.substring(start, pos);
+            }
+            if (text[pos] != CharacterCodes::closeBrace) {
+                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Unterminated_Unicode_escape_sequence));
+                }
+                return text.substring(start, pos);
+            }
+            pos++;
             tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
-            return scanExtendedUnicodeEscape();
+            return utf16EncodeAsString((CharacterCodes)escapedValue);
         }
-
-        tokenFlags |= TokenFlags::UnicodeEscape;
         // '\uDDDD'
-        return scanHexadecimalEscape(/*numDigits*/ 4);
+        for (; pos < start + 6; pos++) {
+            if (!(pos < end && isHexDigit(text[pos]))) {
+                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Hexadecimal_digit_expected));
+                }
+                return text.substring(start, pos);
+            }
+        }
+        tokenFlags |= TokenFlags::UnicodeEscape;
+        return fromCharCode(to_number_base(text.substring(start + 2, pos), 16));
 
     case CharacterCodes::x:
-        if (isTaggedTemplate)
-        {
-            if (!isHexDigit(text[pos]))
-            {
+        // '\xDD'
+        for (; pos < start + 4; pos++) {
+            if (!(pos < end && isHexDigit(text[pos]))) {
                 tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                return text.substring(start, pos);
-            }
-            else if (!isHexDigit(text[pos + 1]))
-            {
-                pos++;
-                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                if (shouldEmitInvalidEscapeError) {
+                    error(_E(Diagnostics::Hexadecimal_digit_expected));
+                }
                 return text.substring(start, pos);
             }
         }
-        // '\xDD'
-        return scanHexadecimalEscape(/*numDigits*/ 2);
+        tokenFlags |= TokenFlags::HexEscape;
+        return fromCharCode(to_number_base(text.substring(start + 2, pos), 16));
 
     // when encountering a LineContinuation (i.e. a backslash and a line terminator sequence),
     // the line terminator is interpreted to be "the empty code unit sequence".
@@ -2079,21 +2218,6 @@ auto Scanner::scanEscapeSequence(boolean isTaggedTemplate) -> string
     }
 }
 
-auto Scanner::scanHexadecimalEscape(number numDigits) -> string
-{
-    auto escapedValue = scanExactNumberOfHexDigits(numDigits, /*canHaveSeparators*/ false);
-
-    if (escapedValue >= 0)
-    {
-        return string(1, (char_t)escapedValue);
-    }
-    else
-    {
-        error(data::DiagnosticMessage(Diagnostics::Hexadecimal_digit_expected));
-        return string();
-    }
-}
-
 auto Scanner::scanExtendedUnicodeEscape() -> string
 {
     auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
@@ -2103,18 +2227,18 @@ auto Scanner::scanExtendedUnicodeEscape() -> string
     // Validate the value of the digit
     if (escapedValue < 0)
     {
-        error(data::DiagnosticMessage(Diagnostics::Hexadecimal_digit_expected));
+        error(_E(Diagnostics::Hexadecimal_digit_expected));
         isInvalidExtendedEscape = true;
     }
     else if (escapedValue > 0x10FFFF)
     {
-        error(data::DiagnosticMessage(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive));
+        error(_E(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive));
         isInvalidExtendedEscape = true;
     }
 
     if (pos >= end)
     {
-        error(data::DiagnosticMessage(Diagnostics::Unexpected_end_of_text));
+        error(_E(Diagnostics::Unexpected_end_of_text));
         isInvalidExtendedEscape = true;
     }
     else if (text[pos] == CharacterCodes::closeBrace)
@@ -2124,7 +2248,7 @@ auto Scanner::scanExtendedUnicodeEscape() -> string
     }
     else
     {
-        error(data::DiagnosticMessage(Diagnostics::Unterminated_Unicode_escape_sequence));
+        error(_E(Diagnostics::Unterminated_Unicode_escape_sequence));
         isInvalidExtendedEscape = true;
     }
 
@@ -2153,15 +2277,14 @@ auto Scanner::peekUnicodeEscape() -> CharacterCodes
 
 auto Scanner::peekExtendedUnicodeEscape() -> CharacterCodes
 {
-    if (languageVersion >= ScriptTarget::ES2015 && codePointAt(text, pos + 1) == CharacterCodes::u &&
-        codePointAt(text, pos + 2) == CharacterCodes::openBrace)
+    if (codePointAt(text, pos + 1) == CharacterCodes::u && codePointAt(text, pos + 2) == CharacterCodes::openBrace)
     {
         auto start = pos;
         pos += 3;
         auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-        auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
+        auto escapedValue = !escapedValueString.empty() ? (CharacterCodes)to_number_base(escapedValueString, 16) : CharacterCodes::outOfBoundary;
         pos = start;
-        return (CharacterCodes)escapedValue;
+        return escapedValue;
     }
     return CharacterCodes::outOfBoundary;
 }
@@ -2249,11 +2372,11 @@ auto Scanner::scanBinaryOrOctalDigits(number base) -> string
             }
             else if (isPreviousTokenSeparator)
             {
-                error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
+                error(_E(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
             }
             else
             {
-                error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
+                error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
             }
             pos++;
             continue;
@@ -2270,7 +2393,7 @@ auto Scanner::scanBinaryOrOctalDigits(number base) -> string
     if (text[pos - 1] == CharacterCodes::_)
     {
         // Literal ends with underscore - not allowed
-        error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
+        error(_E(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
     }
     return value;
 }
@@ -2289,42 +2412,65 @@ auto Scanner::checkBigIntSuffix() -> SyntaxKind
         return SyntaxKind::BigIntLiteral;
     }
     else
-    { // not a bigint, so can convert to number in simplified form
-        // Number() may not support 0b or 0o, so use stoi() instead
-        auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string_val(to_bignumber_base(tokenValue.substr(2), 2))  // skip "0b"
-                            : !!(tokenFlags & TokenFlags::OctalSpecifier) ? to_string_val(to_bignumber_base(string(S("0")) + tokenValue.substr(2), 8))  // skip "0o"
-                            : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string_val(to_bignumber_base(tokenValue.substr(2), 16))  // skip "0x"
-                                                                          : to_string_val(to_bignumber(tokenValue));
-        tokenValue = numericValue;
+    {
+        try
+        {
+            // not a bigint, so can convert to number in simplified form
+            // Number() may not support 0b or 0o, so use stoi() instead
+            auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string_val(to_bignumber_base(tokenValue.substr(2), 2))                  // skip "0b"
+                                : !!(tokenFlags & TokenFlags::OctalSpecifier) ? to_string_val(to_bignumber_base(string(S("0")) + tokenValue.substr(2), 8)) // skip "0o"
+                                : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string_val(to_bignumber_base(tokenValue.substr(2), 16))                 // skip "0x"
+                                                                              : to_string_val(to_bignumber(tokenValue));
+            tokenValue = numericValue;
+        }
+        catch (const std::out_of_range &)
+        {
+            auto numericValue = to_string_val(to_float_val(tokenValue));
+            tokenValue = numericValue;
+        }
+
         return SyntaxKind::NumericLiteral;
     }
 }
 
 auto Scanner::scan() -> SyntaxKind
 {
-    startPos = pos;
+    fullStartPos = pos;
     tokenFlags = TokenFlags::None;
     auto asteriskSeen = false;
     while (true)
     {
-        tokenPos = pos;
+        tokenStart = pos;
         if (pos >= end)
         {
             return token = SyntaxKind::EndOfFileToken;
         }
-        auto ch = codePointAt(text, pos);
 
-        // Special handling for shebang
-        if (ch == CharacterCodes::hash && pos == 0 && isShebangTrivia(text, pos))
-        {
-            pos = scanShebangTrivia(text, pos);
-            if (_skipTrivia)
-            {
-                continue;
+        auto ch = codePointAt(text, pos);
+        if (pos == 0) {
+            // If a file wasn't valid text at all, it will usually be apparent at
+            // position 0 because UTF-8 decode will fail and produce U+FFFD.
+            // If that happens, just issue one error and refuse to try to scan further;
+            // this is likely a binary file that cannot be parsed
+            if (ch == CharacterCodes::replacementCharacter) {
+                // Jump to the end of the file and fail.
+                error(_E(Diagnostics::File_appears_to_be_binary));
+                pos = end;
+                return token = SyntaxKind::NonTextFileMarkerTrivia;
             }
-            else
+
+            // Special handling for shebang
+            if (ch == CharacterCodes::hash && isShebangTrivia(text, pos))
             {
-                return token = SyntaxKind::ShebangTrivia;
+                pos = scanShebangTrivia(text, pos);
+                if (_skipTrivia)
+                {
+                    continue;
+                }
+                else
+                {
+                    return token = SyntaxKind::ShebangTrivia;
+                }
             }
         }
 
@@ -2402,7 +2548,7 @@ auto Scanner::scan() -> SyntaxKind
             tokenValue = scanString();
             return token = SyntaxKind::StringLiteral;
         case CharacterCodes::backtick:
-            return token = scanTemplateAndSetTokenValue(/* isTaggedTemplate */ false);
+            return token = scanTemplateAndSetTokenValue(/*shouldEmitInvalidEscapeError*/ false);
         case CharacterCodes::percent:
             if (text[pos + 1] == CharacterCodes::equals)
             {
@@ -2480,7 +2626,7 @@ auto Scanner::scan() -> SyntaxKind
         case CharacterCodes::dot:
             if (isDigit(text[pos + 1]))
             {
-                tokenValue = scanNumber().value;
+                scanNumber();
                 return token = SyntaxKind::NumericLiteral;
             }
             if (text[pos + 1] == CharacterCodes::dot && text[pos + 2] == CharacterCodes::dot)
@@ -2505,7 +2651,7 @@ auto Scanner::scan() -> SyntaxKind
                 }
 
                 commentDirectives =
-                    appendIfCommentDirective(commentDirectives, text.substring(tokenPos, pos), commentDirectiveRegExSingleLine, tokenPos);
+                    appendIfCommentDirective(commentDirectives, text.substring(tokenStart, pos), commentDirectiveRegExSingleLine, tokenStart);
 
                 if (_skipTrivia)
                 {
@@ -2520,13 +2666,10 @@ auto Scanner::scan() -> SyntaxKind
             if (text[pos + 1] == CharacterCodes::asterisk)
             {
                 pos += 2;
-                if (text[pos] == CharacterCodes::asterisk && text[pos + 1] != CharacterCodes::slash)
-                {
-                    tokenFlags |= TokenFlags::PrecedingJSDocComment;
-                }
+                auto isJSDoc = text[pos] == CharacterCodes::asterisk && text[pos + 1] != CharacterCodes::slash;
 
                 auto commentClosed = false;
-                auto lastLineStart = tokenPos;
+                auto lastLineStart = tokenStart;
                 while (pos < end)
                 {
                     auto ch = text[pos];
@@ -2547,12 +2690,16 @@ auto Scanner::scan() -> SyntaxKind
                     }
                 }
 
+                if (isJSDoc && shouldParseJSDoc()) {
+                    tokenFlags |= TokenFlags::PrecedingJSDocComment;
+                }                
+
                 commentDirectives = appendIfCommentDirective(commentDirectives, text.substring(lastLineStart, pos),
                                                              commentDirectiveRegExMultiLine, lastLineStart);
 
                 if (!commentClosed)
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Asterisk_Slash_expected));
+                    error(_E(Diagnostics::Asterisk_Slash_expected));
                 }
 
                 if (_skipTrivia)
@@ -2584,7 +2731,7 @@ auto Scanner::scan() -> SyntaxKind
                 tokenValue = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ true);
                 if (tokenValue.empty())
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Hexadecimal_digit_expected));
+                    error(_E(Diagnostics::Hexadecimal_digit_expected));
                     tokenValue = S("0");
                 }
                 tokenValue = S("0x") + tokenValue;
@@ -2597,7 +2744,7 @@ auto Scanner::scan() -> SyntaxKind
                 tokenValue = scanBinaryOrOctalDigits(/* base */ 2);
                 if (tokenValue.empty())
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Binary_digit_expected));
+                    error(_E(Diagnostics::Binary_digit_expected));
                     tokenValue = S("0");
                 }
                 tokenValue = S("0b") + tokenValue;
@@ -2610,23 +2757,13 @@ auto Scanner::scan() -> SyntaxKind
                 tokenValue = scanBinaryOrOctalDigits(/* base */ 8);
                 if (tokenValue.empty())
                 {
-                    error(data::DiagnosticMessage(Diagnostics::Octal_digit_expected));
+                    error(_E(Diagnostics::Octal_digit_expected));
                     tokenValue = S("0");
                 }
                 tokenValue = S("0o") + tokenValue;
                 tokenFlags |= TokenFlags::OctalSpecifier;
                 return token = checkBigIntSuffix();
             }
-            // Try to parse as an octal
-            if (pos + 1 < end && isOctalDigit(text[pos + 1]))
-            {
-                tokenValue = to_string_val(scanOctalDigits());
-                tokenFlags |= TokenFlags::Octal;
-                return token = SyntaxKind::NumericLiteral;
-            }
-        // This fall-through is a deviation from the EcmaScript grammar. The grammar says that a leading zero
-        // can only be followed by an octal digit, a dot, or the end of the number literal. However, we are being
-        // permissive and allowing decimal digits of the form 08* and 09* (which many browsers also do).
         // falls through
         case CharacterCodes::_1:
         case CharacterCodes::_2:
@@ -2637,10 +2774,7 @@ auto Scanner::scan() -> SyntaxKind
         case CharacterCodes::_7:
         case CharacterCodes::_8:
         case CharacterCodes::_9: {
-            auto res = scanNumber();
-            token = res.kind;
-            tokenValue = res.value;
-            return token;
+            return token = scanNumber();
         }
         case CharacterCodes::colon:
             pos++;
@@ -2652,7 +2786,7 @@ auto Scanner::scan() -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 if (_skipTrivia)
                 {
                     continue;
@@ -2686,7 +2820,7 @@ auto Scanner::scan() -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 if (_skipTrivia)
                 {
                     continue;
@@ -2715,7 +2849,7 @@ auto Scanner::scan() -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 if (_skipTrivia)
                 {
                     continue;
@@ -2763,7 +2897,7 @@ auto Scanner::scan() -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 if (_skipTrivia)
                 {
                     continue;
@@ -2816,35 +2950,56 @@ auto Scanner::scan() -> SyntaxKind
                 return token = getIdentifierToken();
             }
 
-            error(data::DiagnosticMessage(Diagnostics::Invalid_character));
+            error(_E(Diagnostics::Invalid_character));
             pos++;
             return token = SyntaxKind::Unknown;
         }
-        case CharacterCodes::hash:
+        case CharacterCodes::hash: {
             if (pos != 0 && text[pos + 1] == CharacterCodes::exclamation)
             {
-                error(data::DiagnosticMessage(Diagnostics::can_only_be_used_at_the_start_of_a_file));
+                error(_E(Diagnostics::can_only_be_used_at_the_start_of_a_file));
                 pos++;
                 return token = SyntaxKind::Unknown;
             }
-            pos++;
-            if (isIdentifierStart(ch = text[pos], languageVersion))
-            {
+
+            auto charAfterHash = codePointAt(text, pos + 1);
+            if (charAfterHash == CharacterCodes::backslash) {
                 pos++;
-                while (pos < end && isIdentifierPart(ch = text[pos], languageVersion))
-                    pos++;
-                tokenValue = text.substring(tokenPos, pos);
-                if (ch == CharacterCodes::backslash)
-                {
-                    tokenValue += scanIdentifierParts();
+                auto extendedCookedChar = peekExtendedUnicodeEscape();
+                if ((int)extendedCookedChar >= 0 && isIdentifierStart(extendedCookedChar, languageVersion)) {
+                    pos += 3;
+                    tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
+                    tokenValue = S("#") + scanExtendedUnicodeEscape() + scanIdentifierParts();
+                    return token = SyntaxKind::PrivateIdentifier;
                 }
+
+                auto cookedChar = peekUnicodeEscape();
+                if ((int)cookedChar >= 0 && isIdentifierStart(cookedChar, languageVersion)) {
+                    pos += 6;
+                    tokenFlags |= TokenFlags::UnicodeEscape;
+                    tokenValue = S("#") + fromCharCode((int)cookedChar) + scanIdentifierParts();
+                    return token = SyntaxKind::PrivateIdentifier;
+                }
+                pos--;
+            }
+
+            if (isIdentifierStart(charAfterHash, languageVersion)) {
+                pos++;
+                // We're relying on scanIdentifier's behavior and adjusting the token kind after the fact.
+                // Notably absent from this block is the fact that calling a function named "scanIdentifier",
+                // but identifiers don't include '#', and that function doesn't deal with it at all.
+                // This works because 'scanIdentifier' tries to reuse source characters and builds up substrings;
+                // however, it starts at the 'tokenPos' which includes the '#', and will "accidentally" prepend the '#' for us.
+                scanIdentifier(charAfterHash, languageVersion);
             }
             else
             {
                 tokenValue = S("#");
-                error(data::DiagnosticMessage(Diagnostics::Invalid_character));
+                error(_E(Diagnostics::Invalid_character), pos++, charSize(ch));
             }
+            
             return token = SyntaxKind::PrivateIdentifier;
+        }
         default:
             auto identifierKind = scanIdentifier(ch, languageVersion);
             if (identifierKind != SyntaxKind::Unknown)
@@ -2862,18 +3017,43 @@ auto Scanner::scan() -> SyntaxKind
                 pos += charSize(ch);
                 continue;
             }
-            error(data::DiagnosticMessage(Diagnostics::Invalid_character));
-            pos += charSize(ch);
+            auto size = charSize(ch);
+            error(_E(Diagnostics::Invalid_character), pos, size);
+            pos += size;
             return token = SyntaxKind::Unknown;
         }
     }
+}
+
+auto Scanner::shouldParseJSDoc() -> bool {
+    switch (jsDocParsingMode) {
+        case JSDocParsingMode::ParseAll:
+            return true;
+        case JSDocParsingMode::ParseNone:
+            return false;
+    }
+
+    if (scriptKind != ScriptKind::TS && scriptKind != ScriptKind::TSX) {
+        // If outside of TS, we need JSDoc to get any type info.
+        return true;
+    }
+
+    if (jsDocParsingMode == JSDocParsingMode::ParseForTypeInfo) {
+        // If we're in TS, but we don't need to produce reliable errors,
+        // we don't need to parse to find @see or @link.
+        return false;
+    }
+
+    auto words_begin = sregex_iterator(((string&)text).begin() + fullStartPos, ((string&)text).begin() + pos, jsDocSeeOrLink);
+    auto words_end = sregex_iterator();
+    return (words_begin != words_end);
 }
 
 auto Scanner::reScanInvalidIdentifier() -> SyntaxKind
 {
     debug(token == SyntaxKind::Unknown,
           S("'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'."));
-    pos = tokenPos = startPos;
+    pos = tokenStart = fullStartPos;
     tokenFlags = TokenFlags::None;
     auto ch = codePointAt(text, pos);
     auto identifierKind = scanIdentifier(ch, ScriptTarget::ESNext);
@@ -2893,7 +3073,7 @@ auto Scanner::scanIdentifier(CharacterCodes startCharacter, ScriptTarget languag
         pos += charSize(ch);
         while (pos < end && isIdentifierPart(ch = codePointAt(text, pos), languageVersion))
             pos += charSize(ch);
-        tokenValue = text.substring(tokenPos, pos);
+        tokenValue = text.substring(tokenStart, pos);
         if (ch == CharacterCodes::backslash)
         {
             tokenValue += scanIdentifierParts();
@@ -2937,7 +3117,7 @@ auto Scanner::reScanGreaterToken() -> SyntaxKind
 auto Scanner::reScanAsteriskEqualsToken() -> SyntaxKind
 {
     debug(token == SyntaxKind::AsteriskEqualsToken, S("'reScanAsteriskEqualsToken' should only be called on a '*='"));
-    pos = tokenPos + 1;
+    pos = tokenStart + 1;
     return token = SyntaxKind::EqualsToken;
 }
 
@@ -2945,7 +3125,7 @@ auto Scanner::reScanSlashToken() -> SyntaxKind
 {
     if (token == SyntaxKind::SlashToken || token == SyntaxKind::SlashEqualsToken)
     {
-        auto p = tokenPos + 1;
+        auto p = tokenStart + 1;
         auto inEscape = false;
         auto inCharacterClass = false;
         while (true)
@@ -2955,7 +3135,7 @@ auto Scanner::reScanSlashToken() -> SyntaxKind
             if (p >= end)
             {
                 tokenFlags |= TokenFlags::Unterminated;
-                error(data::DiagnosticMessage(Diagnostics::Unterminated_regular_expression_literal));
+                error(_E(Diagnostics::Unterminated_regular_expression_literal));
                 break;
             }
 
@@ -2963,7 +3143,7 @@ auto Scanner::reScanSlashToken() -> SyntaxKind
             if (isLineBreak(ch))
             {
                 tokenFlags |= TokenFlags::Unterminated;
-                error(data::DiagnosticMessage(Diagnostics::Unterminated_regular_expression_literal));
+                error(_E(Diagnostics::Unterminated_regular_expression_literal));
                 break;
             }
 
@@ -3000,7 +3180,7 @@ auto Scanner::reScanSlashToken() -> SyntaxKind
             p++;
         }
         pos = p;
-        tokenValue = text.substring(tokenPos, pos);
+        tokenValue = text.substring(tokenStart, pos);
         token = SyntaxKind::RegularExpressionLiteral;
     }
     return token;
@@ -3046,20 +3226,19 @@ auto Scanner::getDirectiveFromComment(string &text, regex commentDirectiveRegEx)
  */
 auto Scanner::reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind
 {
-    debug(token == SyntaxKind::CloseBraceToken, S("'reScanTemplateToken' should only be called on a '}'"));
-    pos = tokenPos;
-    return token = scanTemplateAndSetTokenValue(isTaggedTemplate);
+    pos = tokenStart;
+    return token = scanTemplateAndSetTokenValue(!isTaggedTemplate);
 }
 
 auto Scanner::reScanTemplateHeadOrNoSubstitutionTemplate() -> SyntaxKind
 {
-    pos = tokenPos;
-    return token = scanTemplateAndSetTokenValue(/* isTaggedTemplate */ true);
+    pos = tokenStart;
+    return token = scanTemplateAndSetTokenValue(/*shouldEmitInvalidEscapeError*/ true);
 }
 
 auto Scanner::reScanJsxToken(boolean allowMultilineJsxText) -> SyntaxKind
 {
-    pos = tokenPos = startPos;
+    pos = tokenStart = fullStartPos;
     return token = scanJsxToken(allowMultilineJsxText);
 }
 
@@ -3067,8 +3246,16 @@ auto Scanner::reScanLessThanToken() -> SyntaxKind
 {
     if (token == SyntaxKind::LessThanLessThanToken)
     {
-        pos = tokenPos + 1;
+        pos = tokenStart + 1;
         return token = SyntaxKind::LessThanToken;
+    }
+    return token;
+}
+
+auto Scanner::reScanHashToken() -> SyntaxKind {
+    if (token == SyntaxKind::PrivateIdentifier) {
+        pos = tokenStart + 1;
+        return token = SyntaxKind::HashToken;
     }
     return token;
 }
@@ -3076,13 +3263,13 @@ auto Scanner::reScanLessThanToken() -> SyntaxKind
 auto Scanner::reScanQuestionToken() -> SyntaxKind
 {
     debug(token == SyntaxKind::QuestionQuestionToken, S("'reScanQuestionToken' should only be called on a '\?\?'"));
-    pos = tokenPos + 1;
+    pos = tokenStart + 1;
     return token = SyntaxKind::QuestionToken;
 }
 
 auto Scanner::scanJsxToken(boolean allowMultilineJsxText) -> SyntaxKind
 {
-    startPos = tokenPos = pos;
+    fullStartPos = tokenStart = pos;
 
     if (pos >= end)
     {
@@ -3125,18 +3312,18 @@ auto Scanner::scanJsxToken(boolean allowMultilineJsxText) -> SyntaxKind
             if (isConflictMarkerTrivia(text, pos))
             {
                 pos = scanConflictMarkerTrivia(
-                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                    text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4));
                 return token = SyntaxKind::ConflictMarkerTrivia;
             }
             break;
         }
         if (char_ == CharacterCodes::greaterThan)
         {
-            error(data::DiagnosticMessage(Diagnostics::Unexpected_token_Did_you_mean_or_gt), pos, 1);
+            error(_E(Diagnostics::Unexpected_token_Did_you_mean_or_gt), pos, 1);
         }
         if (char_ == CharacterCodes::closeBrace)
         {
-            error(data::DiagnosticMessage(Diagnostics::Unexpected_token_Did_you_mean_or_rbrace), pos, 1);
+            error(_E(Diagnostics::Unexpected_token_Did_you_mean_or_rbrace), pos, 1);
         }
 
         // FirstNonWhitespace is 0, then we only see whitespaces so far. If we see a linebreak, we want to ignore that whitespaces.
@@ -3163,7 +3350,7 @@ auto Scanner::scanJsxToken(boolean allowMultilineJsxText) -> SyntaxKind
         pos++;
     }
 
-    tokenValue = text.substring(startPos, pos);
+    tokenValue = text.substring(fullStartPos, pos);
 
     return firstNonWhitespace == -1 ? SyntaxKind::JsxTextAllWhiteSpaces : SyntaxKind::JsxText;
 }
@@ -3190,7 +3377,6 @@ auto Scanner::scanJsxIdentifier() -> SyntaxKind
         // everything after it to the token
         // Do note that this means that `scanJsxIdentifier` effectively _mutates_ the visible token without advancing to a new token
         // Any caller should be expecting this behavior and should only read the pos or token value after calling it.
-        auto namespaceSeparator = false;
         while (pos < end)
         {
             auto ch = text[pos];
@@ -3200,13 +3386,6 @@ auto Scanner::scanJsxIdentifier() -> SyntaxKind
                 pos++;
                 continue;
             }
-            else if (ch == CharacterCodes::colon && !namespaceSeparator)
-            {
-                tokenValue += S(":");
-                pos++;
-                namespaceSeparator = true;
-                continue;
-            }
             auto oldPos = pos;
             tokenValue += scanIdentifierParts(); // reuse `scanIdentifierParts` so unicode escapes are handled
             if (pos == oldPos)
@@ -3214,19 +3393,15 @@ auto Scanner::scanJsxIdentifier() -> SyntaxKind
                 break;
             }
         }
-        // Do not include a trailing namespace separator in the token, since this is against the spec.
-        if (tokenValue.substr(tokenValue.length() - 1) == S(":"))
-        {
-            tokenValue = tokenValue.substr(0, tokenValue.length() - 1);
-            pos--;
-        }
+        
+        return getIdentifierToken();
     }
     return token;
 }
 
 auto Scanner::scanJsxAttributeValue() -> SyntaxKind
 {
-    startPos = pos;
+    fullStartPos = pos;
 
     switch (text[pos])
     {
@@ -3242,13 +3417,43 @@ auto Scanner::scanJsxAttributeValue() -> SyntaxKind
 
 auto Scanner::reScanJsxAttributeValue() -> SyntaxKind
 {
-    pos = tokenPos = startPos;
+    pos = tokenStart = fullStartPos;
     return scanJsxAttributeValue();
+}
+
+auto Scanner::scanJSDocCommentTextToken(bool inBackticks) -> SyntaxKind {
+    fullStartPos = tokenStart = pos;
+    tokenFlags = TokenFlags::None;
+    if (pos >= end) {
+        return token = SyntaxKind::EndOfFileToken;
+    }
+    for (auto ch = text[pos]; pos < end && (!isLineBreak(ch) && ch != CharacterCodes::backtick); ch = codePointAt(text, ++pos)) {
+        if (!inBackticks) {
+            if (ch == CharacterCodes::openBrace) {
+                break;
+            }
+            else if (
+                ch == CharacterCodes::at
+                && pos - 1 >= 0 && isWhiteSpaceSingleLine(text[pos - 1])
+                && !(pos + 1 < end && isWhiteSpaceLike(text[pos + 1]))
+            ) {
+                // @ doesn't start a new tag inside ``, and elsewhere, only after whitespace and before non-whitespace
+                break;
+            }
+        }
+    }
+
+    if (pos == tokenStart) {
+        return scanJsDocToken();
+    }
+
+    tokenValue = text.substring(tokenStart, pos);
+    return token = SyntaxKind::JSDocCommentTextToken;
 }
 
 auto Scanner::scanJsDocToken() -> SyntaxKind
 {
-    startPos = tokenPos = pos;
+    fullStartPos = tokenStart = pos;
     tokenFlags = TokenFlags::None;
     if (pos >= end)
     {
@@ -3301,6 +3506,8 @@ auto Scanner::scanJsDocToken() -> SyntaxKind
         return token = SyntaxKind::DotToken;
     case CharacterCodes::backtick:
         return token = SyntaxKind::BacktickToken;
+    case CharacterCodes::hash:
+        return token = SyntaxKind::HashToken;        
     case CharacterCodes::backslash:
         pos--;
         auto extendedCookedChar = peekExtendedUnicodeEscape();
@@ -3329,7 +3536,7 @@ auto Scanner::scanJsDocToken() -> SyntaxKind
         auto char_ = ch;
         while (pos < end && isIdentifierPart(char_ = codePointAt(text, pos), languageVersion) || text[pos] == CharacterCodes::minus)
             pos += charSize(char_);
-        tokenValue = text.substring(tokenPos, pos);
+        tokenValue = text.substring(tokenStart, pos);
         if (char_ == CharacterCodes::backslash)
         {
             tokenValue += scanIdentifierParts();
@@ -3361,7 +3568,7 @@ auto Scanner::setText(string newText, number start, number length) -> void
 {
     text = newText;
     end = length == -1 ? text.length() : start + length;
-    setTextPos(start);
+    resetTokenState(start);
 }
 
 auto Scanner::setOnError(ErrorCallback errorCallback) -> void
@@ -3374,17 +3581,26 @@ auto Scanner::setScriptTarget(ScriptTarget scriptTarget) -> void
     languageVersion = scriptTarget;
 }
 
+auto Scanner::setScriptKind(ScriptKind kind) -> void
+{
+    scriptKind = kind;
+}
+
+auto Scanner::setJSDocParsingMode(JSDocParsingMode kind) -> void {
+    jsDocParsingMode = kind;
+}
+
 auto Scanner::setLanguageVariant(LanguageVariant variant) -> void
 {
     languageVariant = variant;
 }
 
-auto Scanner::setTextPos(number textPos) -> void
+auto Scanner::resetTokenState(number position) -> void
 {
-    debug(textPos >= 0);
-    pos = textPos;
-    startPos = textPos;
-    tokenPos = textPos;
+    debug(position >= 0);
+    pos = position;
+    fullStartPos = position;
+    tokenStart = position;
     token = SyntaxKind::Unknown;
     tokenValue = string();
     tokenFlags = TokenFlags::None;
@@ -3396,29 +3612,10 @@ auto Scanner::setInJSDocType(boolean inType) -> void
 }
 
 /* @internal */
+// TODO: I don't think I need to update it
 auto Scanner::codePointAt(safe_string &str, number i) -> CharacterCodes
 {
-    // from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/codePointAt
-    auto size = str.length();
-    // Account for out-of-bounds indices:
-    if (i < 0 || i >= size)
-    {
-        return CharacterCodes::outOfBoundary; // String.codePointAt returns `-1` for OOB indexes
-    }
-    // Get the first code unit
-    auto first = str[i];
-    // check if it’s the start of a surrogate pair
-    if (first >= CharacterCodes::_startOfSurrogate && first <= CharacterCodes::_endOfSurrogate && size > i + 1)
-    { // high surrogate and there is a next code unit
-        auto second = str[i + 1];
-        if (second >= CharacterCodes::_startOfSurrogateLow && second <= CharacterCodes::_endOfSurrogateLow)
-        { // low surrogate
-            // https://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
-            return (CharacterCodes)(((number)first - (number)CharacterCodes::_startOfSurrogate) * 0x400 + (number)second -
-                                    (number)CharacterCodes::_startOfSurrogateLow + (number)CharacterCodes::_2bytes);
-        }
-    }
-    return first;
+    return str[i];
 };
 
 /* @internal */
@@ -3431,22 +3628,7 @@ auto Scanner::charSize(CharacterCodes ch) -> number
 auto Scanner::utf16EncodeAsStringFallback(number codePoint) -> string
 {
     debug(0x0 <= codePoint && codePoint <= 0x10FFFF);
-
-    // TODO: review code
-    /*
-if (codePoint <= 65535)
-{
-    return string(1, (char_t)codePoint);
-}
-
-auto codeUnit1 = (number)((codePoint - 65536) / 1024) + 0xD800;
-auto codeUnit2 = ((codePoint - 65536) % 1024) + 0xDC00;
-
-// unit code
-return string({codeUnit1, codeUnit2});
-*/
-
-    return string(1, (char_t)codePoint);
+    return fromCharCode(codePoint);
 }
 
 /* @internal */

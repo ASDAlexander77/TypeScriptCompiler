@@ -796,6 +796,42 @@ class MLIRGenImpl
         return mlirGenInclude(location, stringVal, genContext);
     }
 
+    boolean isStatement(SyntaxKind kind)
+    {
+        switch (kind)
+        {
+        case SyntaxKind::FunctionDeclaration:
+        case SyntaxKind::ExpressionStatement:
+        case SyntaxKind::VariableStatement:
+        case SyntaxKind::IfStatement:
+        case SyntaxKind::ReturnStatement:
+        case SyntaxKind::LabeledStatement:
+        case SyntaxKind::DoStatement:
+        case SyntaxKind::WhileStatement:
+        case SyntaxKind::ForStatement:
+        case SyntaxKind::ForInStatement:
+        case SyntaxKind::ForOfStatement:
+        case SyntaxKind::ContinueStatement:
+        case SyntaxKind::BreakStatement:
+        case SyntaxKind::SwitchStatement:
+        case SyntaxKind::ThrowStatement:
+        case SyntaxKind::TryStatement:
+        case SyntaxKind::TypeAliasDeclaration:
+        case SyntaxKind::Block:
+        case SyntaxKind::EnumDeclaration:
+        case SyntaxKind::ClassDeclaration:
+        case SyntaxKind::InterfaceDeclaration:
+        case SyntaxKind::ImportEqualsDeclaration:
+        case SyntaxKind::ImportDeclaration:
+        case SyntaxKind::ModuleDeclaration:
+        case SyntaxKind::DebuggerStatement:
+        case SyntaxKind::EmptyStatement:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     mlir::LogicalResult mlirGenBody(Node body, const GenContext &genContext)
     {
         auto kind = (SyntaxKind)body;
@@ -809,7 +845,7 @@ class MLIRGenImpl
             return mlirGen(body.as<ModuleBlock>(), genContext);
         }
 
-        if (body.is<Statement>() && !body.is<ArrowFunction>() && !body.is<FunctionExpression>() && !body.is<ClassExpression>())
+        if (isStatement(body))
         {
             return mlirGen(body.as<Statement>(), genContext);
         }
@@ -970,22 +1006,28 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
     {
-        SymbolTableScopeT varScope(symbolTable);
+        auto location = loc(blockAST);
 
-        if (genContext.generatedStatements.size() > 0)
+        SymbolTableScopeT varScope(symbolTable);
+        GenContext genContextUsing(genContext);
+
+        auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
+        genContextUsing.usingVars = usingVars.get();
+
+        if (genContextUsing.generatedStatements.size() > 0)
         {
             // we need to process it only once (to prevent it processing in nested functions with body)
             NodeArray<Statement> generatedStatements;
-            std::copy(genContext.generatedStatements.begin(), genContext.generatedStatements.end(),
+            std::copy(genContextUsing.generatedStatements.begin(), genContextUsing.generatedStatements.end(),
                       std::back_inserter(generatedStatements));
 
             // clean up
-            const_cast<GenContext &>(genContext).generatedStatements.clear();
+            genContextUsing.generatedStatements.clear();
 
             // auto generated code
             for (auto statement : generatedStatements)
             {
-                if (failed(mlirGen(statement, genContext)))
+                if (failed(mlirGen(statement, genContextUsing)))
                 {
                     return mlir::failure();
                 }
@@ -999,17 +1041,17 @@ class MLIRGenImpl
                 continue;
             }
 
-            if (failed(mlirGen(statement, genContext)))
+            if (failed(mlirGen(statement, genContextUsing)))
             {
                 // now try to process all internal declarations
                 // process all declrations
-                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContext)))
+                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContextUsing)))
                 {
                     return mlir::failure();
                 }
 
                 // try to process it again
-                if (failed(mlirGen(statement, genContext)))
+                if (failed(mlirGen(statement, genContextUsing)))
                 {
                     return mlir::failure();
                 }
@@ -1017,6 +1059,16 @@ class MLIRGenImpl
 
             statement->processed = true;
         }
+
+        // we need to call dispose for those which are in "using"
+        for (auto vi : *genContextUsing.usingVars)
+        {
+            auto varInTable = symbolTable.lookup(vi->getName());
+            auto callResult = mlirGenCallThisMethod(location, varInTable.first, SYMBOL_DISPOSE, undefined, {}, genContext);
+            EXIT_IF_FAILED(callResult);            
+        }
+
+        genContextUsing.usingVars = nullptr;
 
         // clear states to be able to run second time
         clearState(blockAST->statements);
@@ -1090,10 +1142,6 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::TryStatement)
         {
             return mlirGen(statementAST.as<TryStatement>(), genContext);
-        }
-        else if (kind == SyntaxKind::LabeledStatement)
-        {
-            return mlirGen(statementAST.as<LabeledStatement>(), genContext);
         }
         else if (kind == SyntaxKind::TypeAliasDeclaration)
         {
@@ -2649,6 +2697,8 @@ class MLIRGenImpl
                 }
             }
 
+            varDecl->setUsing(varClass.isUsing);
+
             return varDecl;
         }
 
@@ -3027,6 +3077,11 @@ class MLIRGenImpl
 #endif
 
         auto varDecl = variableDeclarationInfo.createVariableDeclaration(location, genContext);
+        if (genContext.usingVars != nullptr && varDecl->getUsing())
+        {
+            genContext.usingVars->push_back(varDecl);
+        }
+
         registerVariableDeclaration(location, varDecl, variableDeclarationInfo, showWarnings, genContext);
         return varDecl->getType();
     }
@@ -3517,11 +3572,14 @@ class MLIRGenImpl
     {
         auto isLet = (variableDeclarationListAST->flags & NodeFlags::Let) == NodeFlags::Let;
         auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
+        auto isUsing = (variableDeclarationListAST->flags & NodeFlags::Using) == NodeFlags::Using;
         auto isExternal = (variableDeclarationListAST->flags & NodeFlags::Ambient) == NodeFlags::Ambient;
         VariableClass varClass = isExternal ? VariableType::External
                         : isLet    ? VariableType::Let
-                        : isConst  ? VariableType::Const
+                        : isConst || isUsing ? VariableType::Const
                                    : VariableType::Var;
+
+        varClass.isUsing = isUsing;
 
         if (variableDeclarationListAST->parent)
         {
@@ -4384,7 +4442,7 @@ class MLIRGenImpl
 
         // create method next in object
         auto nextMethodDecl =
-            nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S(ITERATOR_NEXT)), undefined,
+            nf.createMethodDeclaration(undefined, undefined, nf.createIdentifier(S(ITERATOR_NEXT)), undefined,
                                        undefined, undefined, undefined, nextBody);
         nextMethodDecl->internalFlags |= InternalFlags::VarsInObjectContext;
 
@@ -4436,7 +4494,7 @@ class MLIRGenImpl
         if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
             auto methodOp = nf.createMethodDeclaration(
-                functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
+                functionLikeDeclarationBaseAST->modifiers, undefined,
                 functionLikeDeclarationBaseAST->name, undefined, functionLikeDeclarationBaseAST->typeParameters,
                 functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
@@ -4452,7 +4510,7 @@ class MLIRGenImpl
         else
         {
             auto funcOp = nf.createFunctionDeclaration(
-                functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
+                functionLikeDeclarationBaseAST->modifiers, undefined,
                 functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
                 functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
@@ -13167,8 +13225,6 @@ class MLIRGenImpl
             }
         }
 
-        mlirGenClassMembersPost(location, classDeclarationAST, newClassPtr, classGenContext);
-
         if (!newClassPtr->isStatic)
         {
             if (mlir::failed(mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext)))
@@ -13506,6 +13562,14 @@ class MLIRGenImpl
                 }
             }
 
+            for (auto &classMember : newClassPtr->extraMembersPost)
+            {
+                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
+                {
+                    notResolved++;
+                }
+            }            
+
             // repeat if not all resolved
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
@@ -13516,7 +13580,7 @@ class MLIRGenImpl
 
         } while (notResolved > 0);
 
-        // to be ablt to run next time, code succeeded, and we know where to continue from
+        // to be able to run next time, code succeeded, and we know where to continue from
         for (auto &classMember : newClassPtr->extraMembers)
         {
             classMember->processed = false;
@@ -13527,43 +13591,10 @@ class MLIRGenImpl
             classMember->processed = false;
         }
 
-        return mlir::success();
-    }
-
-    mlir::LogicalResult mlirGenClassMembersPost(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
-                                                ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
-    {
-        // clear all flags
-        // extra fields - first, we need .instanceOf first for typr Any
         for (auto &classMember : newClassPtr->extraMembersPost)
         {
             classMember->processed = false;
         }
-
-        // add methods when we have classType
-        auto notResolved = 0;
-        do
-        {
-            auto lastTimeNotResolved = notResolved;
-            notResolved = 0;
-
-            for (auto &classMember : newClassPtr->extraMembersPost)
-            {
-                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
-                {
-                    notResolved++;
-                }
-            }
-
-            // repeat if not all resolved
-            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
-            {
-                // class can depend on other class declarations
-                // theModule.emitError("can't resolve dependencies in class: ") << newClassPtr->name;
-                return mlir::failure();
-            }
-
-        } while (notResolved > 0);
 
         return mlir::success();
     }
@@ -13632,10 +13663,111 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    Node getFieldNameForAccessor(Node name) {
+        auto nameStr = MLIRHelper::getName(name);
+        nameStr.insert(0, "#__");
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        auto newName = nf.createIdentifier(stows(nameStr.c_str()));
+        return newName;
+    }
+
+    mlir::LogicalResult mlirGenClassDataFieldAccessor(mlir::Location location, ClassInfo::TypePtr newClassPtr, 
+            PropertyDeclaration propertyDeclaration, MemberName name, mlir::Type typeIfNotProvided, const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        NodeArray<ModifierLike> modifiers;
+        for (auto modifier : propertyDeclaration->modifiers)
+        {
+            if (modifier == SyntaxKind::AccessorKeyword)
+            {
+                continue;
+            }
+
+            modifiers.push_back(modifier);
+        }
+
+        // add accessor methods
+        if ((propertyDeclaration->internalFlags & InternalFlags::GenerationProcessed) != InternalFlags::GenerationProcessed)
+        {            
+            // set as generated
+            propertyDeclaration->internalFlags |= InternalFlags::GenerationProcessed;
+
+            {
+                NodeArray<Statement> statements;
+
+                auto thisToken = nf.createToken(SyntaxKind::ThisKeyword);
+
+                auto propAccess = nf.createPropertyAccessExpression(thisToken, name);
+
+                auto returnStat = nf.createReturnStatement(propAccess);
+                statements.push_back(returnStat);
+
+                auto body = nf.createBlock(statements, /*multiLine*/ false);
+
+                auto getMethod = nf.createGetAccessorDeclaration(modifiers, propertyDeclaration->name, {}, undefined, body);
+
+                newClassPtr->extraMembersPost->push_back(getMethod);
+            }
+
+            {
+                NodeArray<Statement> statements;
+
+                auto thisToken = nf.createToken(SyntaxKind::ThisKeyword);
+
+                auto propAccess = nf.createPropertyAccessExpression(thisToken, name);
+
+                auto setValue =
+                    nf.createExpressionStatement(
+                        nf.createBinaryExpression(propAccess, nf.createToken(SyntaxKind::EqualsToken), nf.createIdentifier(S("value"))));
+                statements.push_back(setValue);
+
+                auto body = nf.createBlock(statements, /*multiLine*/ false);
+
+                auto type = propertyDeclaration->type;
+                if (!type && typeIfNotProvided)
+                {
+                    std::string fieldTypeAlias;
+                    fieldTypeAlias += ".";
+                    fieldTypeAlias += newClassPtr->fullName.str();
+                    fieldTypeAlias += ".";
+                    fieldTypeAlias += MLIRHelper::getName(name);
+                    type = nf.createTypeReferenceNode(nf.createIdentifier(stows(fieldTypeAlias)), undefined);    
+
+                    getTypeAliasMap().insert({fieldTypeAlias, typeIfNotProvided});
+                }
+
+                if (!type)
+                {
+                    emitError(location) << "type for field accessor '" << MLIRHelper::getName(propertyDeclaration->name) << "' must be provided";
+                    return mlir::failure();
+                }
+
+                auto setMethod = nf.createSetAccessorDeclaration(
+                    modifiers, 
+                    propertyDeclaration->name, 
+                    { nf.createParameterDeclaration(undefined, undefined, nf.createIdentifier(S("value")), undefined, type) }, 
+                    body);
+
+                newClassPtr->extraMembersPost->push_back(setMethod);
+            }
+        }        
+
+        return mlir::success();
+    }    
+
     mlir::LogicalResult mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
                                                     PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
-        auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+        auto name = propertyDeclaration->name;
+        auto isAccessor = hasModifier(propertyDeclaration, SyntaxKind::AccessorKeyword);
+        if (isAccessor)
+        {
+            name = getFieldNameForAccessor(name);
+        }
+        
+        auto fieldId = TupleFieldName(name, genContext);
 
         auto [type, init, typeProvided] = evaluateTypeAndInit(propertyDeclaration, genContext);
         if (init)
@@ -13666,18 +13798,34 @@ class MLIRGenImpl
 
         fieldInfos.push_back({fieldId, type});
 
+        // add accessor methods
+        if (isAccessor)
+        {            
+            auto res = mlirGenClassDataFieldAccessor(location, newClassPtr, propertyDeclaration, name, type, genContext);
+            EXIT_IF_FAILED(res)
+        }        
+
         return mlir::success();
     }
 
     mlir::LogicalResult mlirGenClassStaticFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
-        auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+        auto isPublic = hasModifier(propertyDeclaration, SyntaxKind::PublicKeyword);
+        auto name = propertyDeclaration->name;
+
+        auto isAccessor = hasModifier(propertyDeclaration, SyntaxKind::AccessorKeyword);
+        if (isAccessor)
+        {
+            isPublic = false;
+            name = getFieldNameForAccessor(name);
+        }
+
+        auto fieldId = TupleFieldName(name, genContext);
 
         // process static field - register global
         auto fullClassStaticFieldName =
             concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
         VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
-        auto isPublic = hasModifier(propertyDeclaration, SyntaxKind::PublicKeyword);
         varClass.isExport = newClassPtr->isExport && isPublic;
         varClass.isImport = newClassPtr->isImport && isPublic;
 
@@ -13711,6 +13859,13 @@ class MLIRGenImpl
 
         auto &staticFieldInfos = newClassPtr->staticFields;
         staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+
+        // add accessor methods
+        if (isAccessor)
+        {            
+            auto res = mlirGenClassDataFieldAccessor(location, newClassPtr, propertyDeclaration, name, staticFieldType, genContext);
+            EXIT_IF_FAILED(res)
+        }  
 
         return mlir::success();
     }
@@ -13924,7 +14079,7 @@ class MLIRGenImpl
             modifiers.push_back(nf.createToken(SyntaxKind::PublicKeyword));
         }
 
-        auto generatedNew = nf.createMethodDeclaration(undefined, modifiers, undefined, nf.createIdentifier(S(NEW_METHOD_NAME)),
+        auto generatedNew = nf.createMethodDeclaration(modifiers, undefined, nf.createIdentifier(S(NEW_METHOD_NAME)),
                                                        undefined, undefined, undefined, nf.createThisTypeNode(), body);
 
         /*
@@ -13970,7 +14125,7 @@ genContext);
 
             auto body = nf.createBlock(statements, /*multiLine*/ false);
 
-            auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
+            auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, body);
             newClassPtr->extraMembers.push_back(generatedConstructor);
         }
 
@@ -13994,7 +14149,7 @@ genContext);
             auto body = nf.createBlock(statements, /*multiLine*/ false);
             ModifiersArray modifiers;
             modifiers.push_back(nf.createToken(SyntaxKind::StaticKeyword));
-            auto generatedConstructor = nf.createConstructorDeclaration(undefined, modifiers, undefined, body);
+            auto generatedConstructor = nf.createConstructorDeclaration(modifiers, undefined, body);
             newClassPtr->extraMembersPost.push_back(generatedConstructor);
         }
 
@@ -14318,7 +14473,7 @@ genContext);
             }
 
             NodeArray<ParameterDeclaration> parameters;
-            parameters.push_back(nf.createParameterDeclaration(undefined, undefined, undefined,
+            parameters.push_back(nf.createParameterDeclaration(undefined, undefined,
                                                                nf.createIdentifier(S(INSTANCEOF_PARAM_NAME)), undefined,
                                                                nf.createToken(SyntaxKind::StringKeyword), undefined));
 
@@ -14329,7 +14484,7 @@ genContext);
             }
 
             auto instanceOfMethod = nf.createMethodDeclaration(
-                undefined, modifiers, undefined, nf.createIdentifier(S(INSTANCEOF_NAME)), undefined, undefined,
+                modifiers, undefined, nf.createIdentifier(S(INSTANCEOF_NAME)), undefined, undefined,
                 parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
 
             instanceOfMethod->internalFlags |= InternalFlags::ForceVirtual;

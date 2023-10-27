@@ -241,13 +241,18 @@ class MLIRHelper
 
     static bool hasDecorator(Node node, const char* decoratorStr)
     {
-        for (auto decorator : node->decorators)
+        for (auto decorator : node->modifiers)
         {
+            if (decorator != SyntaxKind::Decorator)
+            {
+                continue;
+            }
+
             SmallVector<std::string> args;
-            Expression expr = decorator->expression;
+            auto expr = decorator.as<Decorator>()->expression;
             if (expr == SyntaxKind::CallExpression)
             {
-                auto callExpression = decorator->expression.as<CallExpression>();
+                auto callExpression = expr.as<CallExpression>();
                 expr = callExpression->expression;
             }            
 
@@ -266,13 +271,18 @@ class MLIRHelper
 
     static void iterateDecorators(Node node, std::function<void(std::string, SmallVector<std::string>)> functor)
     {
-        for (auto decorator : node->decorators)
+        for (auto decorator : node->modifiers)
         {
+            if (decorator != SyntaxKind::Decorator)
+            {
+                continue;
+            }
+
             SmallVector<std::string> args;
-            Expression expr = decorator->expression;
+            auto expr = decorator.as<Decorator>()->expression;
             if (expr == SyntaxKind::CallExpression)
             {
-                auto callExpression = decorator->expression.as<CallExpression>();
+                auto callExpression = expr.as<CallExpression>();
                 expr = callExpression->expression;
                 for (auto argExpr : callExpression->arguments)
                 {
@@ -291,11 +301,17 @@ class MLIRHelper
     static void addDecoratorIfNotPresent(Node node, StringRef decoratorName)
     {
         NodeFactory nf(NodeFactoryFlags::None);
-        for (auto decorator : node->decorators)
+        for (auto decorator : node->modifiers)
         {
-            if (decorator->expression == SyntaxKind::Identifier)
+            if (decorator != SyntaxKind::Decorator)
             {
-                auto name = getName(decorator->expression.as<Node>());
+                continue;
+            }
+
+            auto expr = decorator.as<Decorator>()->expression;
+            if (expr == SyntaxKind::Identifier)
+            {
+                auto name = getName(expr.as<Node>());
                 if (name == decoratorName)
                 {
                     return;
@@ -303,7 +319,7 @@ class MLIRHelper
             }
         }            
 
-        node->decorators.push_back(nf.createDecorator(nf.createIdentifier(ConvertUTF8toWide(decoratorName.str()))));
+        node->modifiers.push_back(nf.createDecorator(nf.createIdentifier(ConvertUTF8toWide(decoratorName.str()))));
     }
 
     static std::string replaceAll(const char* source, const char* oldStr, const char* newStr)

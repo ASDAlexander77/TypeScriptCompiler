@@ -100,17 +100,9 @@ static void error(string msg)
     std::wcerr << msg;
 }
 
-struct ScanResult
-{
-    ScanResult() = default;
-
-    SyntaxKind kind;
-    string value;
-};
-
 template <typename T, typename U> using cb_type = std::function<U(number, number, SyntaxKind, boolean, T, U)>;
 
-using ErrorCallback = std::function<void(DiagnosticMessage, number)>;
+using ErrorCallback = std::function<void(DiagnosticMessage, number, string)>;
 
 template <typename T> auto identity(T x, number i) -> T
 {
@@ -221,11 +213,15 @@ class Scanner
 
     static regex commentDirectiveRegExMultiLine;
 
+    static regex jsDocSeeOrLink;
+
     static number mergeConflictMarkerLength;
 
     static regex shebangTriviaRegex;
 
   protected:
+    ScriptKind scriptKind;
+
     ScriptTarget languageVersion;
 
     boolean _skipTrivia;
@@ -242,10 +238,10 @@ class Scanner
     number end;
 
     // Start position of whitespace before current token
-    number startPos;
+    number fullStartPos;
 
     // Start position of text of current token
-    number tokenPos;
+    number tokenStart;
 
     SyntaxKind token;
     string tokenValue;
@@ -253,6 +249,8 @@ class Scanner
 
     std::vector<CommentDirective> commentDirectives;
     number inJSDocType = 0;
+
+    JSDocParsingMode jsDocParsingMode = JSDocParsingMode::ParseAll;
 
     ErrorCallback onError = nullptr;
 
@@ -263,11 +261,11 @@ class Scanner
 
     auto getToken() -> SyntaxKind;
 
-    auto getTextPos() -> number;
+    auto getTokenFullStart() -> number;
 
-    auto getStartPos() -> number;
-
-    auto getTokenPos() -> number;
+    auto getTokenStart() -> number;
+    
+    auto getTokenEnd() -> number;
 
     auto getTokenText() -> string;
 
@@ -357,11 +355,11 @@ class Scanner
     auto couldStartTrivia(safe_string &text, number pos) -> boolean;
 
     /* @internal */
-    auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number;
+    auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false, bool inJSDoc = false) -> number;
 
     auto isConflictMarkerTrivia(safe_string &text, number pos) -> boolean;
 
-    auto scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number)> error = nullptr)
+    auto scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number, string)> error = nullptr)
         -> number;
 
     /*@internal*/
@@ -561,15 +559,15 @@ class Scanner
     auto isIdentifierText(safe_string &name, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard)
         -> boolean;
 
-    auto error(DiagnosticMessage message, number errPos = -1, number length = 0) -> void;
+    auto error(DiagnosticMessage message, number errPos = -1, number length = 0, string arg0 = S("")) -> void;
 
     auto scanNumberFragment() -> string;
 
-    auto scanNumber() -> ScanResult;
+    auto scanNumber() -> SyntaxKind;
 
     auto checkForIdentifierStartAfterNumericLiteral(number numericStart, bool isScientific = false) -> void;
 
-    auto scanOctalDigits() -> number;
+    auto scanDigits() -> bool;
 
     /**
      * Scans the given number of hexadecimal digits in the text,
@@ -591,9 +589,9 @@ class Scanner
      * Sets the current 'tokenValue' and returns a NoSubstitutionTemplateLiteral or
      * a literal component of a TemplateExpression.
      */
-    auto scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKind;
+    auto scanTemplateAndSetTokenValue(boolean scanTemplateAndSetTokenValue) -> SyntaxKind;
 
-    auto scanEscapeSequence(boolean isTaggedTemplate = false) -> string;
+    auto scanEscapeSequence(boolean shouldEmitInvalidEscapeError = false) -> string;
 
     auto scanHexadecimalEscape(number numDigits) -> string;
 
@@ -613,7 +611,12 @@ class Scanner
 
     auto checkBigIntSuffix() -> SyntaxKind;
 
+/** @internal */
+    auto scanJSDocCommentTextToken(boolean inBackticks) -> SyntaxKind; /*JSDocSyntaxKind | SyntaxKind.JSDocCommentTextToken*/
+
     auto scan() -> SyntaxKind;
+
+    auto shouldParseJSDoc() -> bool;
 
     auto reScanInvalidIdentifier() -> SyntaxKind;
 
@@ -632,11 +635,14 @@ class Scanner
 
     auto reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind;
 
+    /** @deprecated use {@link reScanTemplateToken}(false) */
     auto reScanTemplateHeadOrNoSubstitutionTemplate() -> SyntaxKind;
 
     auto reScanJsxToken(boolean allowMultilineJsxText = true) -> SyntaxKind;
 
     auto reScanLessThanToken() -> SyntaxKind;
+
+    auto reScanHashToken() -> SyntaxKind;
 
     auto reScanQuestionToken() -> SyntaxKind;
 
@@ -655,8 +661,8 @@ class Scanner
     template <typename T> auto speculationHelper(std::function<T()> callback, boolean isLookahead) -> T
     {
         auto savePos = pos;
-        auto saveStartPos = startPos;
-        auto saveTokenPos = tokenPos;
+        auto saveStartPos = fullStartPos;
+        auto saveTokenPos = tokenStart;
         auto saveToken = token;
         auto saveTokenValue = tokenValue;
         auto saveTokenFlags = tokenFlags;
@@ -667,8 +673,8 @@ class Scanner
         if (!result || isLookahead)
         {
             pos = savePos;
-            startPos = saveStartPos;
-            tokenPos = saveTokenPos;
+            fullStartPos = saveStartPos;
+            tokenStart = saveTokenPos;
             token = saveToken;
             tokenValue = saveTokenValue;
             tokenFlags = saveTokenFlags;
@@ -680,8 +686,8 @@ class Scanner
     {
         auto saveEnd = end;
         auto savePos = pos;
-        auto saveStartPos = startPos;
-        auto saveTokenPos = tokenPos;
+        auto saveStartPos = fullStartPos;
+        auto saveTokenPos = tokenStart;
         auto saveToken = token;
         auto saveTokenValue = tokenValue;
         auto saveTokenFlags = tokenFlags;
@@ -692,8 +698,8 @@ class Scanner
 
         end = saveEnd;
         pos = savePos;
-        startPos = saveStartPos;
-        tokenPos = saveTokenPos;
+        fullStartPos = saveStartPos;
+        tokenStart = saveTokenPos;
         token = saveToken;
         tokenValue = saveTokenValue;
         tokenFlags = saveTokenFlags;
@@ -726,8 +732,13 @@ class Scanner
 
     auto setLanguageVariant(LanguageVariant variant) -> void;
 
-    auto setTextPos(number textPos) -> void;
+    auto setScriptKind(ScriptKind scriptKind) -> void;
+    
+    auto setJSDocParsingMode(JSDocParsingMode kind) -> void;
 
+    auto resetTokenState(number pos) -> void;
+
+    /** @internal */
     auto setInJSDocType(boolean inType) -> void;
 
     /* @internal */

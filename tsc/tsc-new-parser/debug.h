@@ -58,10 +58,9 @@ namespace ts
         }
 
         template <typename T>
-        static auto _assertNever(T value) -> T
+        static auto _assertNever(T value)
         {
             assert(false);
-            return value;
         }    
 
         template <typename T>

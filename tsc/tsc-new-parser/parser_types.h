@@ -105,6 +105,12 @@ template <typename T /*extends Node*/> struct NodeArray : ReadonlyArray<T>, Text
     {
     }
 
+    NodeArray(std::initializer_list<T> list)
+        : ReadonlyArray<T>(list), TextRange(), isUndefined(false), hasTrailingComma(false), isMissingList(false),
+          transformFlags(TransformFlags::None)
+    {
+    }    
+
     auto pop() -> T
     {
         auto v = back();
@@ -181,8 +187,7 @@ struct Symbol
     /* @internal */ number mergeId;           // Merge id (used to look up merged symbol)
     /* @internal */ PTR(Symbol) parent;       // Parent symbol
     /* @internal */ PTR(Symbol) exportSymbol; // Exported symbol associated with this symbol
-    /* @internal */ boolean
-        constEnumOnlyModule; // True if module contains only const enums or other modules with only const enums
+    /* @internal */ boolean constEnumOnlyModule; // True if module contains only const enums or other modules with only const enums
     /* @internal */ SymbolFlags isReferenced; // True if the symbol is referenced elsewhere. Keeps track of the meaning
                                               // of a reference in case a symbol is both a type parameter and parameter.
     /* @internal */ boolean isReplaceableByMethod; // Can this Javascript class property be replaced by a method symbol?
@@ -227,15 +232,10 @@ struct Node : TextRange
     NodeFlags flags;
     /* @internal */ ModifierFlags modifierFlagsCache;
     /* @internal */ TransformFlags transformFlags; // Flags for transforms
-    DecoratorsArray decorators;                    // Array of decorators (in document order)
-    ModifiersArray modifiers;                      // Array of modifiers
+    NodeArray<PTR(ModifierLike)> modifiers;             // Array of modifiers
     /* @internal */ NodeId id;                     // Unique id (used to look up NodeLinks)
     PTR(Node) parent;                              // Parent node (initialized by binding)
     /* @internal */ PTR(Node) original;            // The original node if this is an updated node.
-    /* @internal */ PTR(Symbol) symbol;            // Symbol declared by node (initialized by binding)
-    /* @internal */ SymbolTable locals;            // Locals associated with node (initialized by binding)
-    /* @internal */ //PTR(Node) nextContainer;       // Next container in declaration order (initialized by binding)
-    /* @internal */ PTR(Symbol) localSymbol;       // Local symbol declared by node (initialized by binding only for exported nodes)
     ///* @internal */ PTR(FlowNode) flowNode;                  // Associated FlowNode (initialized by binding)
     ///* @internal */ PTR(EmitNode) emitNode;                  // Associated EmitNode (initialized by transforms)
     ///* @internal */ PTR(Type) contextualType;                // Used to temporarily assign a contextual type during
@@ -243,6 +243,24 @@ struct Node : TextRange
     ///* @internal */ PTR(InferenceContext) inferenceContext;  // Inference context for contextual type
     /* @internal */ InternalFlags internalFlags;
     /* @internal */ bool processed; // internal field to mark processed node
+};
+
+struct LocalsContainer {
+    /** @internal */ SymbolTable locals; // Locals associated with node (initialized by binding)
+    /** @internal */ PTR(Node) nextContainer; // Next container in declaration order (initialized by binding)
+};
+
+struct ImportAttribute : Node {
+    PTR(ImportAttributes) parent;
+    PTR(Node) /*Identifier | StringLiteral*/ name;
+    PTR(Expression) value;
+};
+
+struct ImportAttributes : Node {
+    SyntaxKind token;
+    PTR(Node) /*ImportDeclaration | ExportDeclaration*/ parent;
+    NodeArray<PTR(ImportAttribute)> elements;
+    boolean multiLine;
 };
 
 struct JSDocContainer : Node
@@ -282,11 +300,7 @@ struct QualifiedName : Node
     /*@internal*/ number jsdocDotPos; // QualifiedName occurs in JSDoc-style generic: Id1.Id2.<T>
 };
 
-struct ClassElement : JSDocContainer
-{
-};
-
-struct TypeNode : ClassElement
+struct TypeNode : JSDocContainer
 {
     // kind: TypeNodeSyntaxKind;
     //any _typeNodeBrand;
@@ -301,7 +315,18 @@ struct OmittedExpression : Expression
     // kind: SyntaxKind::OmittedExpression;
 };
 
-struct UnaryExpression : Expression
+struct NodeWithTypeArguments : Expression
+{
+    NodeArray<PTR(TypeNode)> typeArguments;
+};
+
+struct ExpressionWithTypeArguments : NodeWithTypeArguments
+{
+    // kind: SyntaxKind::ExpressionWithTypeArguments;
+    PTR(LeftHandSideExpression) expression;
+};
+
+struct UnaryExpression : ExpressionWithTypeArguments
 {
     //any _unaryExpressionBrand;
     PTR(Expression) expression;
@@ -333,13 +358,13 @@ struct Statement : PrimaryExpression
     //any _statementBrand;
 };
 
-struct Declaration : Statement
-{
-    //any _declarationBrand;
-};
-
 struct DeclarationStatement : Statement
 {
+};
+
+struct Declaration : DeclarationStatement {
+    /** @internal */ PTR(Symbol) symbol; // Symbol declared by node (initialized by binding)
+    /** @internal */ PTR(Symbol) localSymbol; // Local symbol declared by node (initialized by binding only for exported nodes)
 };
 
 struct NamedDeclaration : Declaration
@@ -347,7 +372,21 @@ struct NamedDeclaration : Declaration
     PTR(DeclarationName) name;
 };
 
-struct TypeElement : NamedDeclaration
+struct ClassElement : NamedDeclaration
+{
+    PTR(PropertyName) name;
+};
+
+struct ClassStaticBlockDeclaration : ClassElement, LocalsContainer {
+    // kind: SyntaxKind.ClassStaticBlockDeclaration;
+    PTR(Node) parent;
+    PTR(Block) body;
+
+    // The following properties are used only to report grammar errors (see `isGrammarError` in utilities.ts)
+    // NodeArray<PTR(ModifierLike)> modifiers;
+};
+
+struct TypeElement : ClassElement
 {
     //any _typeElementBrand;
     PTR(QuestionToken) questionToken;
@@ -402,8 +441,6 @@ struct TypeParameterDeclaration : NamedDeclaration
     /** Note: Consider calling `getEffectiveConstraintOfTypeParameter` */
     PTR(TypeNode) constraint;
     PTR(TypeNode) _default;
-
-    // For error recovery purposes.
     //PTR(Expression) expression;
 };
 
@@ -417,12 +454,12 @@ struct SignatureDeclarationBase : TypeElement
         typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
 };
 
-struct CallSignatureDeclaration : SignatureDeclarationBase
+struct CallSignatureDeclaration : SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::CallSignature;
 };
 
-struct ConstructSignatureDeclaration : SignatureDeclarationBase
+struct ConstructSignatureDeclaration : SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::ConstructSignature;
 };
@@ -472,7 +509,7 @@ struct PropertySignature : TypeElement
     PTR(Expression) initializer;      // Present for use with reporting a grammar error
 };
 
-struct PropertyDeclaration : NamedDeclaration
+struct PropertyDeclaration : ClassElement /*NamedDeclaration*/
 {
     // kind: SyntaxKind::PropertyDeclaration;
     PTR(QuestionToken) questionToken; // Present for use with reporting a grammar error
@@ -494,6 +531,7 @@ struct InitializedPropertyDeclaration : PropertyDeclaration
 
 struct ObjectLiteralElement : NamedDeclaration
 {
+    PTR(PropertyName) name;
 };
 
 struct PropertyAssignment : ObjectLiteralElement
@@ -516,7 +554,7 @@ struct ShorthandPropertyAssignment : PropertyAssignment
 struct SpreadAssignment : ObjectLiteralElement
 {
     // kind: SyntaxKind::SpreadAssignment;
-    //PTR(Expression) expression;
+    PTR(Expression) expression;
 };
 
 struct PropertyLikeDeclaration : NamedDeclaration
@@ -555,12 +593,12 @@ struct FunctionLikeDeclarationBase : SignatureDeclarationBase
     ///* @internal */ PTR(FlowNode) returnFlowNode;
 };
 
-struct FunctionDeclaration : FunctionLikeDeclarationBase
+struct FunctionDeclaration : FunctionLikeDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::FunctionDeclaration;
 };
 
-struct MethodSignature : SignatureDeclarationBase
+struct MethodSignature : SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::MethodSignature;
 };
@@ -574,13 +612,13 @@ struct MethodSignature : SignatureDeclarationBase
 // Because of this, it may be necessary to determine what sort of MethodDeclaration you have
 // at later stages of the compiler pipeline.  In that case, you can either check the parent kind
 // of the method, or use helpers like isObjectLiteralMethodDeclaration
-struct MethodDeclaration : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/
+struct MethodDeclaration : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/, LocalsContainer/*, FlowContainer*/
 {
     // kind: SyntaxKind::MethodDeclaration;
     /* @internal*/ PTR(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
 };
 
-struct ConstructorDeclaration : FunctionLikeDeclarationBase
+struct ConstructorDeclaration : FunctionLikeDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::Constructor;
     /* @internal */ //NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
@@ -594,8 +632,7 @@ struct SemicolonClassElement : ClassElement
 };
 
 struct AccessorDeclaration
-    : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/ // ClassElement and ObjectLiteralElement contains all
-                                                             // fields in FunctionLikeDeclarationBase
+    : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/, LocalsContainer
 {
     /* @internal */ //NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
 };
@@ -614,7 +651,7 @@ struct SetAccessorDeclaration : AccessorDeclaration
     // kind: SyntaxKind::SetAccessor;
 };
 
-struct IndexSignatureDeclaration : SignatureDeclarationBase
+struct IndexSignatureDeclaration : SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::IndexSignature;
 };
@@ -623,16 +660,12 @@ template <SyntaxKind TKind> struct KeywordTypeNode : KeywordToken<TKind>, TypeNo
 {
 };
 
-struct NodeWithTypeArguments : TypeNode
-{
-    NodeArray<PTR(TypeNode)> typeArguments;
-};
-
 struct ImportTypeNode : NodeWithTypeArguments
 {
     // kind: SyntaxKind::ImportType;
     boolean isTypeOf;
     PTR(TypeNode) argument;
+    PTR(ImportAttributes) attributes;
     PTR(EntityName) qualifier;
 };
 
@@ -663,12 +696,12 @@ struct FunctionOrConstructorTypeNodeBase : SignatureDeclarationBase /*, TypeNode
     // kind: SyntaxKind::FunctionType | SyntaxKind::ConstructorType;
 };
 
-struct FunctionTypeNode : FunctionOrConstructorTypeNodeBase
+struct FunctionTypeNode : FunctionOrConstructorTypeNodeBase, LocalsContainer
 {
     // kind: SyntaxKind::FunctionType;
 };
 
-struct ConstructorTypeNode : FunctionOrConstructorTypeNodeBase
+struct ConstructorTypeNode : FunctionOrConstructorTypeNodeBase, LocalsContainer
 {
     // kind: SyntaxKind::ConstructorType;
 };
@@ -691,6 +724,7 @@ struct TypeQueryNode : TypeNode
 {
     // kind: SyntaxKind::TypeQuery;
     PTR(EntityName) exprName;
+    NodeArray<PTR(TypeNode)> typeArguments;
 };
 
 // A TypeLiteral is the declaration node for an anonymous symbol.
@@ -786,7 +820,7 @@ struct IndexedAccessTypeNode : TypeNode
     PTR(TypeNode) indexType;
 };
 
-struct MappedTypeNode : TypeNode
+struct MappedTypeNode : TypeNode, LocalsContainer
 {
     // kind: SyntaxKind::MappedType;
     PTR(Node) /**ReadonlyToken | PlusToken | MinusToken*/ readonlyToken;
@@ -794,6 +828,7 @@ struct MappedTypeNode : TypeNode
     PTR(TypeNode) nameType;
     PTR(Node) /**QuestionToken | PlusToken | MinusToken*/ questionToken;
     PTR(TypeNode) type;
+    NodeArray<PTR(TypeElement)> members;
 };
 
 struct TemplateLiteralTypeNode : TypeNode
@@ -855,11 +890,20 @@ struct LiteralLikeNode : PrimaryExpression
     boolean hasExtendedUnicodeEscape;
 };
 
+struct TemplateLiteralLikeNode : LiteralLikeNode
+{
+    PTR(TemplateHead) head;
+    NodeArray<PTR(TemplateSpan)> templateSpans;
+    string rawText;
+    /* @internal */
+    TokenFlags templateFlags;
+};
+
 // The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a
 // StringLiteral, or any literal of a template, this means quotes have been removed and escapes have been converted to
 // actual characters. For a NumericLiteral, the stored value is the toString() representation of the number. For example
 // 1, 1.00, and 1e0 are all stored as just "1".
-struct LiteralExpression : LiteralLikeNode
+struct LiteralExpression : TemplateLiteralLikeNode
 {
     //any _literalExpressionBrand;
 };
@@ -1051,7 +1095,7 @@ using BinaryOperator = SyntaxKind;
 
 using LogicalOrCoalescingAssignmentOperator = SyntaxKind;
 
-struct BinaryExpression : Expression
+struct BinaryExpression : /*Expression*/ Declaration
 {
     // kind: SyntaxKind::BinaryExpression;
     PTR(Expression) left;
@@ -1101,24 +1145,15 @@ struct ConditionalExpression : Expression
     PTR(Expression) whenFalse;
 };
 
-struct FunctionExpression : /*PrimaryExpression, */ FunctionLikeDeclarationBase
+struct FunctionExpression : /*PrimaryExpression, */ FunctionLikeDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::FunctionExpression;
 };
 
-struct ArrowFunction : /*Expression, */ FunctionLikeDeclarationBase
+struct ArrowFunction : /*Expression, */ FunctionLikeDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::ArrowFunction;
     PTR(EqualsGreaterThanToken) equalsGreaterThanToken;
-};
-
-struct TemplateLiteralLikeNode : LiteralLikeNode
-{
-    PTR(TemplateHead) head;
-    NodeArray<PTR(TemplateSpan)> templateSpans;
-    string rawText;
-    /* @internal */
-    TokenFlags templateFlags;
 };
 
 struct RegularExpressionLiteral : LiteralExpression
@@ -1199,20 +1234,20 @@ struct SpreadElement : Expression
  * only be JSXAttribute or JSXSpreadAttribute. ObjectLiteralExpression, on the other hand, can only have properties of
  * type ObjectLiteralElement (e.g. PropertyAssignment, ShorthandPropertyAssignment etc.)
  */
-template <typename T /*: ObjectLiteralElement*/> struct ObjectLiteralExpressionBase : PrimaryExpression
+template <typename T /*: ObjectLiteralElement*/> struct ObjectLiteralExpressionBase : Declaration
 {
     NodeArray<PTR(T)> properties;
 };
 
 // An ObjectLiteralExpression is the declaration node for an anonymous symbol.
-struct ObjectLiteralExpression : ObjectLiteralExpressionBase<ObjectLiteralElementLike>
+struct ObjectLiteralExpression : ObjectLiteralExpressionBase<ObjectLiteralElementLike>, LocalsContainer
 {
     // kind: SyntaxKind::ObjectLiteralExpression;
     /* @internal */
     boolean multiLine;
 };
 
-struct PropertyAccessExpression : MemberExpression
+struct PropertyAccessExpression : Declaration /*MemberExpression*/, LocalsContainer
 {
     // kind: SyntaxKind::PropertyAccessExpression;
     PTR(LeftHandSideExpression) expression;
@@ -1249,7 +1284,7 @@ struct PropertyAccessEntityNameExpression : PropertyAccessExpression
     PTR(EntityNameExpression) expression;
 };
 
-struct ElementAccessExpression : MemberExpression
+struct ElementAccessExpression : Declaration /*MemberExpression*/
 {
     // kind: SyntaxKind::ElementAccessExpression;
     PTR(LeftHandSideExpression) expression;
@@ -1279,7 +1314,7 @@ struct SuperElementAccessExpression : ElementAccessExpression
     PTR(SuperExpression) expression;
 };
 
-struct CallExpression : LeftHandSideExpression
+struct CallExpression : /*LeftHandSideExpression*/ Declaration
 {
     // kind: SyntaxKind::CallExpression;
     PTR(LeftHandSideExpression) expression;
@@ -1346,13 +1381,7 @@ struct ImportCall : CallExpression
     PTR(ImportExpression) expression;
 };
 
-struct ExpressionWithTypeArguments : NodeWithTypeArguments
-{
-    // kind: SyntaxKind::ExpressionWithTypeArguments;
-    PTR(LeftHandSideExpression) expression;
-};
-
-struct NewExpression : PrimaryExpression
+struct NewExpression : /*PrimaryExpression*/ Declaration
 {
     // kind: SyntaxKind::NewExpression;
     PTR(LeftHandSideExpression) expression;
@@ -1378,6 +1407,12 @@ struct AsExpression : UnaryExpression
 struct TypeAssertion : UnaryExpression
 {
     // kind: SyntaxKind::TypeAssertionExpression;
+    PTR(TypeNode) type;
+};
+
+struct SatisfiesExpression : Expression {
+    // kind: SyntaxKind.SatisfiesExpression;
+    PTR(Expression) expression;
     PTR(TypeNode) type;
 };
 
@@ -1420,9 +1455,17 @@ struct JsxTagNamePropertyAccess : PropertyAccessExpression
     PTR(JsxTagNameExpression) expression;
 };
 
-struct JsxAttributes : ObjectLiteralExpressionBase<JsxAttributeLike>
+struct JsxAttributes : PrimaryExpression
 {
-    // kind: SyntaxKind::JsxAttributes;
+    // kind: SyntaxKind.JsxAttributes;
+    NodeArray<PTR(JsxAttributeLike)> properties;
+    PTR(JsxOpeningLikeElement) parent;
+};
+
+struct JsxNamespacedName : Node {
+    // kind: SyntaxKind.JsxNamespacedName;
+    PTR(Identifier) name;
+    PTR(Identifier) _namespace;
 };
 
 /// The opening element of a <Tag>...</Tag> JsxElement
@@ -1547,7 +1590,7 @@ struct DebuggerStatement : Statement
     // kind: SyntaxKind::DebuggerStatement;
 };
 
-struct MissingDeclaration : DeclarationStatement
+struct MissingDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::MissingDeclaration;
     PTR(Identifier) name;
@@ -1732,7 +1775,7 @@ struct ClassExpression : ClassLikeDeclaration /*, PrimaryExpression*/
     // kind: SyntaxKind::ClassExpression;
 };
 
-struct InterfaceDeclaration : DeclarationStatement
+struct InterfaceDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::InterfaceDeclaration;
     PTR(Identifier) name;
@@ -1748,7 +1791,7 @@ struct HeritageClause : Node
     NodeArray<PTR(ExpressionWithTypeArguments)> types;
 };
 
-struct TypeAliasDeclaration : DeclarationStatement
+struct TypeAliasDeclaration : Declaration/*DeclarationStatement*/, LocalsContainer
 {
     // kind: SyntaxKind::TypeAliasDeclaration;
     PTR(Identifier) name;
@@ -1764,20 +1807,22 @@ struct EnumMember : NamedDeclaration
     PTR(Expression) initializer;
 };
 
-struct EnumDeclaration : DeclarationStatement
+struct EnumDeclaration : Declaration/*DeclarationStatement*/
 {
     // kind: SyntaxKind::EnumDeclaration;
     PTR(Identifier) name;
     NodeArray<PTR(EnumMember)> members;
 };
 
-struct ModuleBody : DeclarationStatement
+struct ModuleBody : NamedDeclaration
 {
 };
 
-struct ModuleDeclaration : ModuleBody
+struct ModuleDeclaration : ModuleBody, LocalsContainer
 {
     // kind: SyntaxKind::ModuleDeclaration;
+    PTR(Node) parent;
+    //NodeArray<PTR(ModifierLike)> modifiers;
     PTR(ModuleName) name;
     PTR(Node) /**ModuleBody | JSDocNamespaceDeclaration*/ body;
 };
@@ -1806,7 +1851,7 @@ struct ModuleBlock : ModuleBody
  * - import x = require("mod");
  * - import x = M.x;
  */
-struct ImportEqualsDeclaration : DeclarationStatement
+struct ImportEqualsDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::ImportEqualsDeclaration;
     PTR(Identifier) name;
@@ -1830,9 +1875,12 @@ struct ExternalModuleReference : Node
 struct ImportDeclaration : Statement
 {
     // kind: SyntaxKind::ImportDeclaration;
+    PTR(Node) parent; // SourceFile | ModuleBlock
+    //NodeArray<PTR(ModifierLike)> modifiers;
     PTR(ImportClause) importClause;
     /** If this is not a StringLiteral it will be a grammar error. */
     PTR(Expression) moduleSpecifier;
+    PTR(ImportAttributes) attributes;
 };
 
 // In case of:
@@ -1859,20 +1907,23 @@ struct NamespaceExport : NamedDeclaration
     // kind: SyntaxKind::NamespaceExport;
 };
 
-struct NamespaceExportDeclaration : DeclarationStatement
+struct NamespaceExportDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::NamespaceExportDeclaration name;
     PTR(Identifier) name;
 };
 
-struct ExportDeclaration : DeclarationStatement
+struct ExportDeclaration : Declaration /*DeclarationStatement*/
 {
     // kind: SyntaxKind::ExportDeclaration;
+    PTR(Node) parent; // SourceFile | ModuleBlock;
+    //NodeArray<PTR(ModifierLike)> modifiers;
     boolean isTypeOnly;
     /** Will not be assigned in the case of `export * from "foo";` */
     PTR(NamedExportBindings) exportClause;
     /** If this is not a StringLiteral it will be a grammar error. */
     PTR(Expression) moduleSpecifier;
+    PTR(ImportAttributes) attributes;
 };
 
 struct NamedImportsOrExports : Node
@@ -1893,7 +1944,10 @@ struct NamedExports : NamedImportsOrExports
 
 struct ImportOrExportSpecifier : NamedDeclaration
 {
+    PTR(NamedImports) parent;
     PTR(Identifier) propertyName; // Name preceding "as" keyword (or undefined when "as" is absent)
+    PTR(Identifier) name;
+    boolean isTypeOnly;
 };
 
 struct ImportSpecifier : ImportOrExportSpecifier
@@ -1974,6 +2028,13 @@ struct JSDocNameReference : Node
     PTR(EntityName) name;
 };
 
+/** Class#method reference in JSDoc */
+struct JSDocMemberName : Node {
+    //kind: SyntaxKind.JSDocMemberName;
+    PTR(Node) left;
+    PTR(Identifier) right;
+};
+
 struct JSDocType : TypeNode
 {
     //any _jsDocTypeBrand;
@@ -1993,12 +2054,14 @@ struct JSDocNonNullableType : JSDocType
 {
     // kind: SyntaxKind::JSDocNonNullableType;
     PTR(TypeNode) type;
+    boolean postfix;
 };
 
 struct JSDocNullableType : JSDocType
 {
     // kind: SyntaxKind::JSDocNullableType;
     PTR(TypeNode) type;
+    boolean postfix;
 };
 
 struct JSDocOptionalType : JSDocType
@@ -2007,7 +2070,7 @@ struct JSDocOptionalType : JSDocType
     PTR(TypeNode) type;
 };
 
-struct JSDocFunctionType : /*JSDocType, */ SignatureDeclarationBase
+struct JSDocFunctionType : /*JSDocType, */ SignatureDeclarationBase, LocalsContainer
 {
     // kind: SyntaxKind::JSDocFunctionType;
 };
@@ -2423,6 +2486,9 @@ struct SourceFile : SourceFileLike
      * but could be arbitrarily nested (e.g. `import.meta`).
      */
     /* @internal */ PTR(Node) externalModuleIndicator;
+
+    std::function<void(SourceFile)> setExternalModuleIndicator;
+
     // The first node that causes this file to be a CommonJS module
     /* @internal */ PTR(Node) commonJsModuleIndicator;
     // JS identifier-declarations that are intended to merge with globals
@@ -2469,7 +2535,9 @@ struct SourceFile : SourceFileLike
     /* @internal */ PTR(EntityName) localJsxFactory;
     /* @internal */ PTR(EntityName) localJsxFragmentFactory;
 
-    /* @internal */ ExportedModulesFromDeclarationEmit exportedModulesFromDeclarationEmit;
+    /* @internal */ ExportedModulesFromDeclarationEmit exportedModulesFromDeclarationEmit;    
+
+    /* @internal */ JSDocParsingMode jsDocParsingMode;
 };
 
 struct UnparsedSection : Node

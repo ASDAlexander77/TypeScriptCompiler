@@ -53,12 +53,13 @@ class VariableDeclarationDOM : public BaseDOM
     mlir_ts::FuncOp functionScope;
     bool captured;
     bool ignoreCapturing;
+    bool _using;
 
   public:
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
     VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = undefined)
-        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), readWrite(false)
+        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), _using(false), readWrite(false)
     {
     }
 
@@ -109,6 +110,14 @@ class VariableDeclarationDOM : public BaseDOM
     void setIgnoreCapturing(bool value = true)
     {
         ignoreCapturing = value;
+    };
+    bool getUsing() const
+    {
+        return _using;
+    };
+    void setUsing(bool value = true)
+    {
+        _using = value;
     };
 
   protected:

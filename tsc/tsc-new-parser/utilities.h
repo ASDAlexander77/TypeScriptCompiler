@@ -143,17 +143,11 @@ static auto getLocaleSpecificMessage(DiagnosticMessage message) -> string
     return string(message->message);
 }
 
-static auto createDetachedDiagnostic(string fileName, number start, number length, DiagnosticMessage message)
+static auto createDetachedDiagnostic(string fileName, string sourceText, number start, number length, DiagnosticMessage message)
     -> DiagnosticWithDetachedLocation
 {
     assertDiagnosticLocation(/*file*/ SourceFile(), start, length);
     auto text = getLocaleSpecificMessage(message);
-
-    /*
-if (arguments.length > 4) {
-    text = formatStringFromArgs(text, arguments, 4);
-}
-*/
 
     DiagnosticWithDetachedLocation d{data::DiagnosticWithDetachedLocation()};
     d->start = start;
@@ -168,28 +162,46 @@ if (arguments.length > 4) {
     return d;
 }
 
-static auto formatStringFromArgs(string text, string arg0) -> string {
-    auto pos = text.find('{');
+// TODO: finish it with detecting index
+static auto formatStringFromArgs(int& replaceIndex, string text, string arg0, string arg1) -> string {
+    auto pos = text.find('{', replaceIndex);
     if (pos != std::string::npos)
     {
-        auto end = text.find('}');
+        auto end = text.find('}', replaceIndex + 1);
         if (end != std::string::npos)
         {
-            text.replace(pos, end, arg0);
+            auto index = to_number_base(text.substr(pos + 1, end - 1), 10);
+
+            if (end != std::string::npos)
+            {
+                auto subText = index == 0 ? arg0 : index == 1 ? arg1 : S("");
+                text.replace(pos, end - pos + 1, subText);
+                replaceIndex = pos + subText.size() + 1;
+            }
+        }
+        else
+        {
+            replaceIndex = pos + 1;
         }
     }
 
     return text;
 }
 
-static auto createDetachedDiagnostic(string fileName, number start, number length, DiagnosticMessage message, string arg0, ...)
+// TODO: finish sourceText
+static auto createDetachedDiagnostic(string fileName, string sourceText, number start, number length, DiagnosticMessage message, string arg0, string arg1 = S(""))
     -> DiagnosticWithDetachedLocation
 {
+    if ((start + length) > sourceText.size()) {
+        length = sourceText.size() - start;
+    }
+
     assertDiagnosticLocation(/*file*/ SourceFile(), start, length);
     auto text = getLocaleSpecificMessage(message);
 
-    if (text.find('{') >= 0) {
-        text = formatStringFromArgs(text, arg0);
+    auto replaceIndex = 0;
+    while (text.find('{', replaceIndex) != std::string::npos) {
+        text = formatStringFromArgs(replaceIndex, text, arg0, arg1);
     }
 
     DiagnosticWithDetachedLocation d{data::DiagnosticWithDetachedLocation()};
@@ -236,7 +248,7 @@ inline auto fileExtensionIs(string path, string extension) -> boolean
     return path.length() > extension.length() && endsWith(path, extension);
 }
 
-template <typename T> inline auto setTextRangePos(T range, number pos)
+template <typename T> inline auto setTextRangePos(T range, number pos) -> T
 {
     range->pos = pos;
     return range;
@@ -248,12 +260,12 @@ template <typename T> inline auto setTextRangeEnd(T range, number end) -> T
     return range;
 }
 
-template <typename T> inline auto setTextRangePosEnd(T range, number pos, number end)
+template <typename T> inline auto setTextRangePosEnd(T range, number pos, number end) -> T
 {
     return setTextRangeEnd(setTextRangePos(range, pos), end);
 }
 
-template <typename T> inline auto setTextRangePosWidth(T range, number pos, number width)
+template <typename T> inline auto setTextRangePosWidth(T range, number pos, number width) -> T
 {
     return setTextRangePosEnd(range, pos, pos + width);
 }
@@ -360,6 +372,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::TypeParameter:
         if (!result)
+            result = visitNodes(cbNode, cbNodes, node->modifiers);
+        if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeParameterDeclaration>()->name);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeParameterDeclaration>()->constraint);
@@ -369,8 +383,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<TypeParameterDeclaration>()->expression);
         return result;
     case SyntaxKind::ShorthandPropertyAssignment:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -390,8 +402,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::Parameter:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ParameterDeclaration>()->dotDotDotToken);
@@ -405,8 +415,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ParameterDeclaration>()->initializer);
         return result;
     case SyntaxKind::PropertyDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -422,8 +430,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::PropertySignature:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<PropertySignature>()->name);
@@ -436,8 +442,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::PropertyAssignment:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<PropertyAssignment>()->name);
@@ -447,8 +451,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<PropertyAssignment>()->initializer);
         return result;
     case SyntaxKind::VariableDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -461,8 +463,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<VariableDeclaration>()->initializer);
         return result;
     case SyntaxKind::BindingElement:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -480,8 +480,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
     case SyntaxKind::ConstructSignature:
     case SyntaxKind::IndexSignature:
     case SyntaxKind::MethodSignature:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (kind == SyntaxKind::MethodSignature && !result)
@@ -503,8 +501,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
     case SyntaxKind::FunctionDeclaration:
     case SyntaxKind::ArrowFunction:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<FunctionLikeDeclarationBase>()->asteriskToken);
@@ -525,6 +521,11 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<FunctionLikeDeclarationBase>()->body);
         return result;
+    case SyntaxKind::ClassStaticBlockDeclaration:
+        if (!result)
+            result = visitNodes(cbNode, cbNodes, node->modifiers);        
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<ClassStaticBlockDeclaration>()->body);
     case SyntaxKind::TypeReference:
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeReferenceNode>()->typeName);
@@ -542,6 +543,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
     case SyntaxKind::TypeQuery:
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeQueryNode>()->exprName);
+        if (!result)
+            result = visitNodes(cbNode, cbNodes, node.template as<TypeQueryNode>()->typeArguments);
         return result;
     case SyntaxKind::TypeLiteral:
         if (!result)
@@ -580,6 +583,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
     case SyntaxKind::ImportType:
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ImportTypeNode>()->argument);
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<ImportTypeNode>()->attributes);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ImportTypeNode>()->qualifier);
         if (!result)
@@ -743,6 +748,12 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<NonNullExpression>()->expression);
         return result;
+    case SyntaxKind::SatisfiesExpression:
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<SatisfiesExpression>()->expression);
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<SatisfiesExpression>()->type);
+        return result;
     case SyntaxKind::MetaProperty:
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<MetaProperty>()->name);
@@ -764,9 +775,12 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<SpreadElement>()->expression);
         return result;
     case SyntaxKind::Block:
-    case SyntaxKind::ModuleBlock:
         if (!result)
             result = visitNodes(cbNode, cbNodes, node.template as<Block>()->statements);
+        return result;
+    case SyntaxKind::ModuleBlock:
+        if (!result)
+            result = visitNodes(cbNode, cbNodes, node.template as<ModuleBlock>()->statements);
         return result;
     case SyntaxKind::SourceFile:
         if (!result)
@@ -775,8 +789,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<SourceFile>()->endOfFileToken);
         return result;
     case SyntaxKind::VariableStatement:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -907,8 +919,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
     case SyntaxKind::ClassDeclaration:
     case SyntaxKind::ClassExpression:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ClassLikeDeclaration>()->name);
@@ -920,8 +930,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNodes(cbNode, cbNodes, node.template as<ClassLikeDeclaration>()->members);
         return result;
     case SyntaxKind::InterfaceDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -935,8 +943,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::TypeAliasDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<TypeAliasDeclaration>()->name);
@@ -946,8 +952,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<TypeAliasDeclaration>()->type);
         return result;
     case SyntaxKind::EnumDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -963,8 +967,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::ModuleDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ModuleDeclaration>()->name);
@@ -972,8 +974,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ModuleDeclaration>()->body);
         return result;
     case SyntaxKind::ImportEqualsDeclaration:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -983,13 +983,13 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::ImportDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ImportDeclaration>()->importClause);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ImportDeclaration>()->moduleSpecifier);
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<ImportDeclaration>()->attributes);            
         return result;
     case SyntaxKind::ImportClause:
         if (!result)
@@ -998,6 +998,8 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ImportClause>()->namedBindings);
         return result;
     case SyntaxKind::NamespaceExportDeclaration:
+        if (!result)
+            result = visitNodes(cbNode, cbNodes, node->modifiers);    
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<NamespaceExportDeclaration>()->name);
         return result;
@@ -1020,13 +1022,13 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::ExportDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
-        if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ExportDeclaration>()->exportClause);
         if (!result)
             result = visitNode<R, T>(cbNode, node.template as<ExportDeclaration>()->moduleSpecifier);
+        if (!result)
+            result = visitNode<R, T>(cbNode, node.template as<ExportDeclaration>()->attributes);            
         return result;
     case SyntaxKind::ImportSpecifier:
         if (!result)
@@ -1041,8 +1043,6 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
             result = visitNode<R, T>(cbNode, node.template as<ExportSpecifier>()->name);
         return result;
     case SyntaxKind::ExportAssignment:
-        if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
         if (!result)
             result = visitNodes(cbNode, cbNodes, node->modifiers);
         if (!result)
@@ -1092,7 +1092,7 @@ static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = 
         return result;
     case SyntaxKind::MissingDeclaration:
         if (!result)
-            result = visitNodes(cbNode, cbNodes, node->decorators);
+            result = visitNodes(cbNode, cbNodes, node->modifiers);
         return result;
     case SyntaxKind::CommaListExpression:
         if (!result)
@@ -1470,6 +1470,14 @@ inline auto isKeyword(SyntaxKind token) -> boolean
     return SyntaxKind::FirstKeyword <= token && token <= SyntaxKind::LastKeyword;
 }
 
+inline auto isPunctuation(SyntaxKind token) -> boolean {
+    return SyntaxKind::FirstPunctuation <= token && token <= SyntaxKind::LastPunctuation;
+}
+
+inline auto isKeywordOrPunctuation(SyntaxKind token) -> boolean {
+    return isKeyword(token) || isPunctuation(token);
+}
+
 inline auto isTemplateLiteralKind(SyntaxKind kind) -> boolean
 {
     return SyntaxKind::FirstTemplateToken <= kind && kind <= SyntaxKind::LastTemplateToken;
@@ -1479,18 +1487,22 @@ inline auto isModifierKind(SyntaxKind token) -> boolean
 {
     switch (token)
     {
-    case SyntaxKind::AbstractKeyword:
-    case SyntaxKind::AsyncKeyword:
-    case SyntaxKind::ConstKeyword:
-    case SyntaxKind::DeclareKeyword:
-    case SyntaxKind::DefaultKeyword:
-    case SyntaxKind::ExportKeyword:
-    case SyntaxKind::PublicKeyword:
-    case SyntaxKind::PrivateKeyword:
-    case SyntaxKind::ProtectedKeyword:
-    case SyntaxKind::ReadonlyKeyword:
-    case SyntaxKind::StaticKeyword:
-        return true;
+        case SyntaxKind::AbstractKeyword:
+        case SyntaxKind::AccessorKeyword:
+        case SyntaxKind::AsyncKeyword:
+        case SyntaxKind::ConstKeyword:
+        case SyntaxKind::DeclareKeyword:
+        case SyntaxKind::DefaultKeyword:
+        case SyntaxKind::ExportKeyword:
+        case SyntaxKind::InKeyword:
+        case SyntaxKind::PublicKeyword:
+        case SyntaxKind::PrivateKeyword:
+        case SyntaxKind::ProtectedKeyword:
+        case SyntaxKind::ReadonlyKeyword:
+        case SyntaxKind::StaticKeyword:
+        case SyntaxKind::OutKeyword:
+        case SyntaxKind::OverrideKeyword:
+            return true;
     }
     return false;
 }
@@ -1577,34 +1589,37 @@ inline auto isLeftHandSideExpressionKind(SyntaxKind kind) -> boolean
 {
     switch (kind)
     {
-    case SyntaxKind::PropertyAccessExpression:
-    case SyntaxKind::ElementAccessExpression:
-    case SyntaxKind::NewExpression:
-    case SyntaxKind::CallExpression:
-    case SyntaxKind::JsxElement:
-    case SyntaxKind::JsxSelfClosingElement:
-    case SyntaxKind::JsxFragment:
-    case SyntaxKind::TaggedTemplateExpression:
-    case SyntaxKind::ArrayLiteralExpression:
-    case SyntaxKind::ParenthesizedExpression:
-    case SyntaxKind::ObjectLiteralExpression:
-    case SyntaxKind::ClassExpression:
-    case SyntaxKind::FunctionExpression:
-    case SyntaxKind::Identifier:
-    case SyntaxKind::RegularExpressionLiteral:
-    case SyntaxKind::NumericLiteral:
-    case SyntaxKind::BigIntLiteral:
-    case SyntaxKind::StringLiteral:
-    case SyntaxKind::NoSubstitutionTemplateLiteral:
-    case SyntaxKind::TemplateExpression:
-    case SyntaxKind::FalseKeyword:
-    case SyntaxKind::NullKeyword:
-    case SyntaxKind::ThisKeyword:
-    case SyntaxKind::TrueKeyword:
-    case SyntaxKind::SuperKeyword:
-    case SyntaxKind::NonNullExpression:
-    case SyntaxKind::MetaProperty:
-    case SyntaxKind::ImportKeyword: // technically this is only an Expression if it's in a CallExpression
+        case SyntaxKind::PropertyAccessExpression:
+        case SyntaxKind::ElementAccessExpression:
+        case SyntaxKind::NewExpression:
+        case SyntaxKind::CallExpression:
+        case SyntaxKind::JsxElement:
+        case SyntaxKind::JsxSelfClosingElement:
+        case SyntaxKind::JsxFragment:
+        case SyntaxKind::TaggedTemplateExpression:
+        case SyntaxKind::ArrayLiteralExpression:
+        case SyntaxKind::ParenthesizedExpression:
+        case SyntaxKind::ObjectLiteralExpression:
+        case SyntaxKind::ClassExpression:
+        case SyntaxKind::FunctionExpression:
+        case SyntaxKind::Identifier:
+        case SyntaxKind::PrivateIdentifier: // technically this is only an Expression if it's in a `#field in expr` BinaryExpression
+        case SyntaxKind::RegularExpressionLiteral:
+        case SyntaxKind::NumericLiteral:
+        case SyntaxKind::BigIntLiteral:
+        case SyntaxKind::StringLiteral:
+        case SyntaxKind::NoSubstitutionTemplateLiteral:
+        case SyntaxKind::TemplateExpression:
+        case SyntaxKind::FalseKeyword:
+        case SyntaxKind::NullKeyword:
+        case SyntaxKind::ThisKeyword:
+        case SyntaxKind::TrueKeyword:
+        case SyntaxKind::SuperKeyword:
+        case SyntaxKind::NonNullExpression:
+        case SyntaxKind::ExpressionWithTypeArguments:
+        case SyntaxKind::MetaProperty:
+        case SyntaxKind::ImportKeyword: // technically this is only an Expression if it's in a CallExpression
+        case SyntaxKind::MissingDeclaration:
         return true;
     default:
         return false;
@@ -1649,6 +1664,7 @@ inline auto getBinaryOperatorPrecedence(SyntaxKind kind) -> OperatorPrecedence
     case SyntaxKind::InstanceOfKeyword:
     case SyntaxKind::InKeyword:
     case SyntaxKind::AsKeyword:
+    case SyntaxKind::SatisfiesKeyword:
         return OperatorPrecedence::Relational;
     case SyntaxKind::LessThanLessThanToken:
     case SyntaxKind::GreaterThanGreaterThanToken:
@@ -1788,7 +1804,7 @@ static auto modifierToFlag(SyntaxKind token) -> ModifierFlags
     return ModifierFlags::None;
 }
 
-static auto modifiersToFlags(ModifiersArray modifiers) -> ModifierFlags
+static auto modifiersToFlags(ModifiersLikeArray modifiers) -> ModifierFlags
 {
     auto flags = ModifierFlags::None;
     if (!!modifiers)
@@ -1944,6 +1960,81 @@ inline static auto getJSDocModifierFlagsNoCache(Node node) -> ModifierFlags
     }
 
     return flags;
+}
+
+/** @internal */
+inline static auto canHaveJSDoc(Node node) -> boolean {
+    switch ((SyntaxKind)node) {
+        case SyntaxKind::ArrowFunction:
+        case SyntaxKind::BinaryExpression:
+        case SyntaxKind::Block:
+        case SyntaxKind::BreakStatement:
+        case SyntaxKind::CallSignature:
+        case SyntaxKind::CaseClause:
+        case SyntaxKind::ClassDeclaration:
+        case SyntaxKind::ClassExpression:
+        case SyntaxKind::ClassStaticBlockDeclaration:
+        case SyntaxKind::Constructor:
+        case SyntaxKind::ConstructorType:
+        case SyntaxKind::ConstructSignature:
+        case SyntaxKind::ContinueStatement:
+        case SyntaxKind::DebuggerStatement:
+        case SyntaxKind::DoStatement:
+        case SyntaxKind::ElementAccessExpression:
+        case SyntaxKind::EmptyStatement:
+        case SyntaxKind::EndOfFileToken:
+        case SyntaxKind::EnumDeclaration:
+        case SyntaxKind::EnumMember:
+        case SyntaxKind::ExportAssignment:
+        case SyntaxKind::ExportDeclaration:
+        case SyntaxKind::ExportSpecifier:
+        case SyntaxKind::ExpressionStatement:
+        case SyntaxKind::ForInStatement:
+        case SyntaxKind::ForOfStatement:
+        case SyntaxKind::ForStatement:
+        case SyntaxKind::FunctionDeclaration:
+        case SyntaxKind::FunctionExpression:
+        case SyntaxKind::FunctionType:
+        case SyntaxKind::GetAccessor:
+        case SyntaxKind::Identifier:
+        case SyntaxKind::IfStatement:
+        case SyntaxKind::ImportDeclaration:
+        case SyntaxKind::ImportEqualsDeclaration:
+        case SyntaxKind::IndexSignature:
+        case SyntaxKind::InterfaceDeclaration:
+        case SyntaxKind::JSDocFunctionType:
+        case SyntaxKind::JSDocSignature:
+        case SyntaxKind::LabeledStatement:
+        case SyntaxKind::MethodDeclaration:
+        case SyntaxKind::MethodSignature:
+        case SyntaxKind::ModuleDeclaration:
+        case SyntaxKind::NamedTupleMember:
+        case SyntaxKind::NamespaceExportDeclaration:
+        case SyntaxKind::ObjectLiteralExpression:
+        case SyntaxKind::Parameter:
+        case SyntaxKind::ParenthesizedExpression:
+        case SyntaxKind::PropertyAccessExpression:
+        case SyntaxKind::PropertyAssignment:
+        case SyntaxKind::PropertyDeclaration:
+        case SyntaxKind::PropertySignature:
+        case SyntaxKind::ReturnStatement:
+        case SyntaxKind::SemicolonClassElement:
+        case SyntaxKind::SetAccessor:
+        case SyntaxKind::ShorthandPropertyAssignment:
+        case SyntaxKind::SpreadAssignment:
+        case SyntaxKind::SwitchStatement:
+        case SyntaxKind::ThrowStatement:
+        case SyntaxKind::TryStatement:
+        case SyntaxKind::TypeAliasDeclaration:
+        case SyntaxKind::TypeParameter:
+        case SyntaxKind::VariableDeclaration:
+        case SyntaxKind::VariableStatement:
+        case SyntaxKind::WhileStatement:
+        case SyntaxKind::WithStatement:
+            return true;
+        default:
+            return false;
+    }
 }
 
 inline static auto getModifierFlagsWorker(Node node, boolean includeJSDoc, boolean alwaysIncludeJSDoc = false) -> ModifierFlags
@@ -2364,6 +2455,15 @@ inline static auto isUnaryExpression(Node node) -> boolean
     return isUnaryExpressionKind(skipPartiallyEmittedExpressions(node));
 }
 
+inline static auto isOptionalChain(Node node) -> boolean {
+    auto kind = node->_kind;
+    return !!(node->flags & NodeFlags::OptionalChain) &&
+        (kind == SyntaxKind::PropertyAccessExpression
+            || kind == SyntaxKind::ElementAccessExpression
+            || kind == SyntaxKind::CallExpression
+            || kind == SyntaxKind::NonNullExpression);
+}
+
 inline static auto getOperatorAssociativity(SyntaxKind kind, SyntaxKind _operator, boolean hasArguments = false) -> Associativity
 {
     switch (kind)
@@ -2406,6 +2506,34 @@ inline static auto getOperatorAssociativity(SyntaxKind kind, SyntaxKind _operato
     return Associativity::Left;
 }
 
+inline static auto canHaveModifiers(SyntaxKind kind) -> boolean {
+    return kind == SyntaxKind::TypeParameter
+        || kind == SyntaxKind::Parameter
+        || kind == SyntaxKind::PropertySignature
+        || kind == SyntaxKind::PropertyDeclaration
+        || kind == SyntaxKind::MethodSignature
+        || kind == SyntaxKind::MethodDeclaration
+        || kind == SyntaxKind::Constructor
+        || kind == SyntaxKind::GetAccessor
+        || kind == SyntaxKind::SetAccessor
+        || kind == SyntaxKind::IndexSignature
+        || kind == SyntaxKind::ConstructorType
+        || kind == SyntaxKind::FunctionExpression
+        || kind == SyntaxKind::ArrowFunction
+        || kind == SyntaxKind::ClassExpression
+        || kind == SyntaxKind::VariableStatement
+        || kind == SyntaxKind::FunctionDeclaration
+        || kind == SyntaxKind::ClassDeclaration
+        || kind == SyntaxKind::InterfaceDeclaration
+        || kind == SyntaxKind::TypeAliasDeclaration
+        || kind == SyntaxKind::EnumDeclaration
+        || kind == SyntaxKind::ModuleDeclaration
+        || kind == SyntaxKind::ImportEqualsDeclaration
+        || kind == SyntaxKind::ImportDeclaration
+        || kind == SyntaxKind::ExportAssignment
+        || kind == SyntaxKind::ExportDeclaration;
+}
+
 inline static auto getExpressionAssociativity(Expression expression)
 {
     auto _operator = getOperator(expression);
@@ -2422,6 +2550,22 @@ inline static auto isFunctionOrConstructorTypeNode(Node node) -> boolean
         return true;
     }
 
+    return false;
+}
+
+// TODO: for emitNode
+static auto isGeneratedIdentifier(Node node) -> boolean {
+    //return isIdentifier(node) && node->emitNode->autoGenerate != undefined;
+    return false;
+}
+
+//static auto getEmitFlags(Node node) -> EmitFlags {
+//    auto emitNode = node->emitNode;
+//    return emitNode && emitNode->flags || 0;
+//}
+
+static auto isLocalName(Identifier node) -> boolean {
+    //return (getEmitFlags(node) & EmitFlags::LocalName) != EmitFlags::None;
     return false;
 }
 
@@ -2454,6 +2598,26 @@ inline static auto regex_exec(string &text, regex regEx) -> boolean
 inline static auto hasModifier(Node node, SyntaxKind key) -> boolean
 {
     return some(node->modifiers, [=](auto m) { return m == key; });
+}
+
+/**
+ * Remove extra underscore from escaped identifier text content.
+ *
+ * @param identifier The escaped identifier text.
+ * @returns The unescaped identifier text.
+ */
+inline static auto unescapeLeadingUnderscores(string identifier) -> string {
+    auto id = identifier;
+    return id.length() >= 3 && id[0] == (char_t) CharacterCodes::_ && id[1] == (char_t) CharacterCodes::_ && id[2] == (char_t) CharacterCodes::_ ? id.substr(1) : id;
+}
+
+inline static auto idText(Node identifierOrPrivateName) -> string {
+    if (identifierOrPrivateName == SyntaxKind::Identifier)
+        return unescapeLeadingUnderscores(identifierOrPrivateName.as<Identifier>() ->escapedText);
+    if (identifierOrPrivateName == SyntaxKind::PrivateIdentifier)
+        return unescapeLeadingUnderscores(identifierOrPrivateName.as<PrivateIdentifier>()->escapedText);
+
+    return S("");
 }
 
 } // namespace ts

@@ -33,4 +33,6 @@ using smatch = std::wsmatch;
 #define to_bignumber_base(x, y) std::stoull(x, nullptr, y)
 #define to_bignumber(x) std::stoull(x)
 
+#define _E(x) data::DiagnosticMessage(x)
+
 #endif // CONFIG_H
