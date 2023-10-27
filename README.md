@@ -9,42 +9,43 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new 
-- Migrated to LLVM 17.0.2
+- Accessor
+```TypeScript
+class Person {
+    static accessor sname: string;
+    accessor name = "no value";
+    constructor(name: string) {
+        this.name = name;
+    }
+}
+```
 
-- Literal Type Widening
+- Explicit Resource Management 
 ```TypeScript
 function main()
 {
-    let a: 10 = 11; // error
-    let b = 11; // ok
-    b = 10; // ok
-
+    using file = new TempFile(".some_temp_file");
     print("done.");
 }
 
-```
-
-- Shared libraries:
-``shared.ts`` - shared library file: 
-```TypeScript
-export const val_num = 2.5;
-export const val_str = "Hello World! - val";
-
-export function test1()
-{
-	print("Hello World! test 1");
-}
-
-export function test2()
-{
-	print("Hello World! test 2");
+class TempFile {
+    #path: string;
+    #handle: number;
+    constructor(path: string) {
+        this.#path = path;
+        this.#handle = 1;
+    }
+    // other methods
+    [Symbol.dispose]() {
+        // Close the file and delete it.
+        this.#handle = 0;
+        print("dispose");
+    }
 }
 ```
 
-- Build option `--emit=exe` in `tsc` to generate executable file
-```cmd
-tsc --opt --emit=exe <file>.ts
-```
+- Migrated to LLVM 17.0.2
+
 - [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
 # Planning
