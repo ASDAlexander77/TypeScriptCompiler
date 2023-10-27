@@ -5,6 +5,7 @@
 #include "undefined.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace ts
 {
