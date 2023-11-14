@@ -165,6 +165,8 @@ struct GenContext
     int *state;
     bool disableSpreadParams;
     const GenContext* parentBlockContext;
+    bool isLoop;
+    std::string loopLabel;
 };
 
 struct ValueOrLogicalResult 
