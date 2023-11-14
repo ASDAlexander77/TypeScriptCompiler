@@ -112,6 +112,13 @@ enum class TypeProvided
     Yes
 };
 
+enum class DisposeDepth
+{
+    CurrentScope,
+    LoopScope,
+    FullStack
+};
+
 typedef std::tuple<mlir::Type, mlir::Value, TypeProvided> TypeValueInitType;
 typedef std::function<TypeValueInitType(mlir::Location, const GenContext &)> TypeValueInitFuncType;
 
@@ -1010,6 +1017,7 @@ class MLIRGenImpl
 
         SymbolTableScopeT varScope(symbolTable);
         GenContext genContextUsing(genContext);
+        genContextUsing.parentBlockContext = &genContext;
 
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         genContextUsing.usingVars = usingVars.get();
@@ -1061,17 +1069,34 @@ class MLIRGenImpl
         }
 
         // we need to call dispose for those which are in "using"
-        for (auto vi : *genContextUsing.usingVars)
-        {
-            auto varInTable = symbolTable.lookup(vi->getName());
-            auto callResult = mlirGenCallThisMethod(location, varInTable.first, SYMBOL_DISPOSE, undefined, {}, genContext);
-            EXIT_IF_FAILED(callResult);            
-        }
-
-        genContextUsing.usingVars = nullptr;
+        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &genContextUsing));
 
         // clear states to be able to run second time
         clearState(blockAST->statements);
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenDisposable(mlir::Location location, DisposeDepth disposeDepth, std::string loopLabel, const GenContext* genContext)
+    {
+        if (genContext->usingVars != nullptr)
+        {
+            for (auto vi : *genContext->usingVars)
+            {
+                auto varInTable = symbolTable.lookup(vi->getName());
+                auto callResult = mlirGenCallThisMethod(location, varInTable.first, SYMBOL_DISPOSE, undefined, {}, *genContext);
+                EXIT_IF_FAILED(callResult);            
+            }
+
+            const_cast<GenContext *>(genContext)->usingVars = nullptr;
+
+            auto continueIntoDepth = disposeDepth == DisposeDepth::FullStack
+                    || disposeDepth == DisposeDepth::LoopScope && genContext->isLoop && genContext->loopLabel != loopLabel;
+            if (continueIntoDepth)
+            {
+                EXIT_IF_FAILED(mlirGenDisposable(location, disposeDepth, {}, genContext->parentBlockContext));
+            }
+        }
 
         return mlir::success();
     }
@@ -5390,9 +5415,13 @@ class MLIRGenImpl
             }
 
             VALIDATE(expressionValue, location)
-            
+
+            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::FullStack, {}, &genContext));
+
             return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
+
+        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::FullStack, {}, &genContext));
 
         builder.create<mlir_ts::ReturnOp>(location);
         return mlir::success();
@@ -6102,6 +6131,9 @@ class MLIRGenImpl
             label = "";
         }
 
+        const_cast<GenContext &>(genContext).isLoop = true;
+        const_cast<GenContext &>(genContext).loopLabel = label;
+
         /*auto *cond =*/builder.createBlock(&doWhileOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&doWhileOp.getBody(), {}, types);
 
@@ -6142,6 +6174,9 @@ class MLIRGenImpl
             whileOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
             label = "";
         }
+
+        const_cast<GenContext &>(genContext).isLoop = true;
+        const_cast<GenContext &>(genContext).loopLabel = label;
 
         /*auto *cond =*/builder.createBlock(&whileOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&whileOp.getBody(), {}, types);
@@ -6218,6 +6253,9 @@ class MLIRGenImpl
             forOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
             label = "";
         }
+
+        const_cast<GenContext &>(genContext).isLoop = true;
+        const_cast<GenContext &>(genContext).loopLabel = label;
 
         /*auto *cond =*/builder.createBlock(&forOp.getCond(), {}, types);
         /*auto *body =*/builder.createBlock(&forOp.getBody(), {}, types);
@@ -6581,6 +6619,8 @@ class MLIRGenImpl
 
         auto label = MLIRHelper::getName(continueStatementAST->label);
 
+        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::LoopScope, label, &genContext));
+
         builder.create<mlir_ts::ContinueOp>(location, builder.getStringAttr(label));
         return mlir::success();
     }
@@ -6590,6 +6630,8 @@ class MLIRGenImpl
         auto location = loc(breakStatementAST);
 
         auto label = MLIRHelper::getName(breakStatementAST->label);
+
+        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::LoopScope, label, &genContext));
 
         builder.create<mlir_ts::BreakOp>(location, builder.getStringAttr(label));
         return mlir::success();
