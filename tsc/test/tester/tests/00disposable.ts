@@ -1,7 +1,15 @@
 let called = false;
 
 function main() {
-    doSomeWork();
+    doSomeWork1();
+
+    assert(called, "Disposable is not called");
+
+    called = false;
+
+    {
+        using file = new TempFile(".some_temp_file");
+    }    
 
     assert(called, "Disposable is not called");
 
@@ -12,14 +20,13 @@ interface Disposable {
     [Symbol.dispose](): void;
 }
 
-function doSomeWork() {
+function doSomeWork1() {
     const file = new TempFile(".some_temp_file");
     try {
         // ...
     }
     finally {
         file[Symbol.dispose]();
-        called = true;
     }
 }
 
@@ -34,6 +41,7 @@ class TempFile implements Disposable {
     [Symbol.dispose]() {
         // Close the file and delete it.
         this.#handle = 0;
+        called = true;
         print("dispose");
     }
 }

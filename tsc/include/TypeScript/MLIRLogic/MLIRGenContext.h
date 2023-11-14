@@ -164,6 +164,7 @@ struct GenContext
     ArrayRef<mlir::Value> callOperands;
     int *state;
     bool disableSpreadParams;
+    const GenContext* parentBlockContext;
 };
 
 struct ValueOrLogicalResult 

@@ -1010,6 +1010,7 @@ class MLIRGenImpl
 
         SymbolTableScopeT varScope(symbolTable);
         GenContext genContextUsing(genContext);
+        genContextUsing.parentBlockContext = &genContext;
 
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         genContextUsing.usingVars = usingVars.get();
@@ -1061,17 +1062,32 @@ class MLIRGenImpl
         }
 
         // we need to call dispose for those which are in "using"
-        for (auto vi : *genContextUsing.usingVars)
-        {
-            auto varInTable = symbolTable.lookup(vi->getName());
-            auto callResult = mlirGenCallThisMethod(location, varInTable.first, SYMBOL_DISPOSE, undefined, {}, genContext);
-            EXIT_IF_FAILED(callResult);            
-        }
-
-        genContextUsing.usingVars = nullptr;
+        EXIT_IF_FAILED(mlirGenDisposable(location, false, &genContextUsing));
 
         // clear states to be able to run second time
         clearState(blockAST->statements);
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenDisposable(mlir::Location location, bool fullStack, const GenContext* genContext)
+    {
+        if (genContext->usingVars != nullptr)
+        {
+            for (auto vi : *genContext->usingVars)
+            {
+                auto varInTable = symbolTable.lookup(vi->getName());
+                auto callResult = mlirGenCallThisMethod(location, varInTable.first, SYMBOL_DISPOSE, undefined, {}, *genContext);
+                EXIT_IF_FAILED(callResult);            
+            }
+
+            const_cast<GenContext *>(genContext)->usingVars = nullptr;
+
+            if (fullStack)
+            {
+                EXIT_IF_FAILED(mlirGenDisposable(location, false, genContext->parentBlockContext));
+            }
+        }
 
         return mlir::success();
     }
@@ -5390,9 +5406,13 @@ class MLIRGenImpl
             }
 
             VALIDATE(expressionValue, location)
-            
+
+            EXIT_IF_FAILED(mlirGenDisposable(location, true, &genContext));
+
             return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
+
+        EXIT_IF_FAILED(mlirGenDisposable(location, true, &genContext));
 
         builder.create<mlir_ts::ReturnOp>(location);
         return mlir::success();

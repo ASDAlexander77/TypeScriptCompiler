@@ -1,31 +1,34 @@
-let called = false;
+let count = 0;
+
+function loggy(id: string) {
+    print(`Creating ${id}`);
+    return {
+        [Symbol.dispose]() {
+            print(`Disposing ${id}`);
+	    count++;
+        }
+    }
+}
+
+function func() {
+    using a = loggy("a");
+    using b = loggy("b");
+    {
+        using c = loggy("c");
+        using d = loggy("d");
+    }
+    using e = loggy("e");
+    return;
+    // Unreachable.
+    // Never created, never disposed.
+    using f = loggy("f");
+}
 
 function main()
 {
-    {
-    	using file = new TempFile(".some_temp_file");
-    }
+	func();
+	
+	assert(count == 5, "Not all 'dispose' called");
 
-    assert(called, "Disposable is not called");
-    print("done.");
-}
-
-interface Disposable {
-    [Symbol.dispose](): void;
-}
-
-class TempFile implements Disposable {
-    #path: string;
-    #handle: number;
-    constructor(path: string) {
-        this.#path = path;
-        this.#handle = 1;
-    }
-    // other methods
-    [Symbol.dispose]() {
-        // Close the file and delete it.
-	this.#handle = 0;
-	print("dispose");
-	called = true;
-    }
+	print("done.");
 }
