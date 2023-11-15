@@ -27,7 +27,7 @@ function main() {
         new(x: number, y: number, ...z: string[]): B;
     } = B;
 
-    const b = new weakB(1, 2, "string");
+    const b0 = new weakB(1, 2, "string");
     const b1 = new weakB(1, 2, ...a);
     const b2 = new weakB(1, 2, ...a, "string");
 
