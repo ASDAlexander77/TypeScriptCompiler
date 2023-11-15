@@ -1,11 +1,12 @@
-let count = 0;
-
+let count_created = 0;
+let count_disp = 0;
 function loggy(id: string) {
     print(`Creating ${id}`);
+    count_created++;
     return {
         [Symbol.dispose]() {
             print(`Disposing ${id}`);
-	    count++;
+	    count_disp++;
         }
     }
 }
@@ -24,11 +25,16 @@ function func() {
     using f = loggy("f");
 }
 
-function main()
-{
-	func();
-	
-	assert(count == 5, "Not all 'dispose' called");
+function func2(i = 0) {
+    using a = loggy("a");
+    if (i > 0) return;
+}
 
-	print("done.");
+function main() {
+    func();
+    func2();
+
+    assert(count_created == count_disp, "not equal create-dispose");
+
+    print("done.");
 }
