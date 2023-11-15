@@ -1088,7 +1088,11 @@ class MLIRGenImpl
                 EXIT_IF_FAILED(callResult);            
             }
 
-            const_cast<GenContext *>(genContext)->usingVars = nullptr;
+            // remove when used
+            if (disposeDepth == DisposeDepth::CurrentScope)
+            {
+                const_cast<GenContext *>(genContext)->usingVars = nullptr;
+            }
 
             auto continueIntoDepth = disposeDepth == DisposeDepth::FullStack
                     || disposeDepth == DisposeDepth::LoopScope && genContext->isLoop && genContext->loopLabel != loopLabel;
