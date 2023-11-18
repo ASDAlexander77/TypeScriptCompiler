@@ -924,6 +924,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
     {
         Location loc = tryOp.getLoc();
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!!  TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+
         MLIRTypeHelper mth(rewriter.getContext());
         CodeLogicHelper clh(tryOp, rewriter);
 
@@ -957,6 +959,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         tryOp.getCatches().walk(visitorTryOps);
         tryOp.getFinallyBlock().walk(visitorTryOps);
 
+        /*
         mlir::SmallVector<Operation *> returns;
         auto visitorReturnOps = [&](Operation *op) {
             if (auto returnOp = dyn_cast_or_null<mlir_ts::ReturnOp>(op))
@@ -969,6 +972,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
         };
         tryOp.getBody().walk(visitorReturnOps);
+        */
 
         // inline structure
         OpBuilder::InsertionGuard guard(rewriter);
@@ -1034,6 +1038,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         if (finallyHasOps)
         {
             // inline 'finally' before each 'return'
+            // it is not working for all cases
+            /*
             for (auto retOp : returns)
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!!  BEFORE INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
@@ -1071,6 +1077,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
             }
+            */
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
