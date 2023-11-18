@@ -30,21 +30,6 @@
             }
         },
         {
-            "label": "unit test TSC",
-            "detail": "build_tsc_debug-unittests",
-            "type": "shell",
-            "command": "./build_tsc_debug-unittests.bat",
-            "args": [],
-            "problemMatcher": [],
-            "options": {
-                "cwd": "${workspaceFolder}/.."
-            },
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            }
-        },
-        {
             "label": "CTest - All - Debug",
             "type": "shell",
             "command": "ctest -C Debug -j16 --output-on-failure",

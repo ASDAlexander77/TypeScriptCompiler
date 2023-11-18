@@ -145,6 +145,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     mlir::ExecutionEngineOptions engineOptions;
     engineOptions.transformer = optPipeline;
     engineOptions.enableObjectDump = dumpObjectFile;
+    engineOptions.enableGDBNotificationListener = !enableOpt;
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
     assert(maybeEngine && "failed to construct an execution engine");
     auto &engine = maybeEngine.get();
