@@ -899,6 +899,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 {
     using TsPattern<mlir_ts::TryOp>::TsPattern;
 
+    // TODO: set 'loc' correctly to newly created ops
     LogicalResult matchAndRewrite(mlir_ts::TryOp tryOp, PatternRewriter &rewriter) const final
     {
         Location loc = tryOp.getLoc();
@@ -1025,8 +1026,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             //     rewriter.create<mlir::cf::BranchOp>(loc, continuationWithRet->getPrevNode(), ValueRange{});
             //     auto terminatorAsResultOp = continuationWithRet->getPrevNode()->getTerminator();
             //     rewriter.setInsertionPoint(terminatorAsResultOp);
-            //     rewriter.create<mlir::cf::BranchOp>(loc, continuationWithRet, ValueRange{});
-            //     terminatorAsResultOp->erase();
+            //     rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(terminatorAsResultOp, continuationWithRet, ValueRange{});
 
             //     LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
             // }
@@ -1053,7 +1053,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
         }
 
-        auto exitBlock = finallyHasOps ? finallyBlock : continuation;
+        auto exitBlock = finallyHasOps ? exitFinallyBlockLast : continuation;
         auto landingBlock = catchHasOps ? catchesBlock : finallyBlock;
         tsContext->landingBlockOf[tryOp.getOperation()] = landingBlock;
         if (landingBlock)
@@ -1110,14 +1110,15 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                                                                          undefArrayValue, MLIRHelper::getStructIndex(rewriter, 0));
         }
 
-        rewriter.setInsertionPointToEnd(bodyBlock);
-
         LLVM_DEBUG(llvm::dbgs() << "\n!!  BODY BLOCK - create jump to exit: \n");
         LLVM_DEBUG(bodyBlockLast->print(llvm::dbgs()));
 
+        rewriter.setInsertionPoint(bodyBlockLast->getTerminator());
         auto resultOp = cast<mlir_ts::ResultOp>(bodyBlockLast->getTerminator());
-        // rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
         rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOp, exitBlock, ValueRange{});
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER BODY BLOCK - create jump to exit: \n");
+        LLVM_DEBUG(bodyBlockLast->print(llvm::dbgs()));
 
         mlir::Value cmpValue;
         if (catchHasOps)
@@ -1202,7 +1203,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 }
 
                 auto resultOpFinally = cast<mlir_ts::ResultOp>(finallyBlockLast->getTerminator());
-                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpFinally, landingPadCleanupOp, unwindDests);
+                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpFinally, landingPadCleanupOp, unwindDests);                
             }
             else
             {
@@ -1225,8 +1226,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                         rewriter.create<mlir_ts::EndCatchOp>(loc);
                     }
 
-                    auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockLast->getTerminator());
-                    rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(yieldOpFinally, landingPadCleanupOp, unwindDests);
+                    auto resultOpFinally = cast<mlir_ts::ResultOp>(finallyBlockLast->getTerminator());
+                    rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpFinally, landingPadCleanupOp, unwindDests);
                 }
                 else
                 {
@@ -1254,10 +1255,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         if (catchHasOps)
         {
             // exit br
-            rewriter.setInsertionPointToEnd(catchesBlockLast);
+            rewriter.setInsertionPoint(catchesBlockLast->getTerminator());
 
             auto resultOpCatches = cast<mlir_ts::ResultOp>(catchesBlockLast->getTerminator());
-            // rewriter.replaceOpWithNewOp<BranchOp>(resultOpCatches, continuation, ValueRange{});
             rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpCatches, exitBlock, ValueRange{});
         }
 
@@ -1281,7 +1281,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         if (finallyHasOps)
         {
             // finally:exit
-            rewriter.setInsertionPointToEnd(exitFinallyBlockLast);
+            rewriter.setInsertionPoint(exitFinallyBlockLast->getTerminator());
 
             auto resultOpOfFinallyBlock = cast<mlir_ts::ResultOp>(exitFinallyBlockLast->getTerminator());
             rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpOfFinallyBlock, continuation, resultOpOfFinallyBlock.getResults());
