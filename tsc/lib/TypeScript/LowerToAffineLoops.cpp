@@ -899,6 +899,26 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 {
     using TsPattern<mlir_ts::TryOp>::TsPattern;
 
+    bool isBelongTo(mlir::Block *current, mlir::Block *begin, mlir::Block *end) const
+    {
+        auto it = begin;
+        do
+        {
+            if (it == current)
+            {
+                return true;
+            }
+
+            if (it != end)
+            {
+                it = it->getNextNode();
+                continue;
+            }
+        } while (false);      
+
+        return false;
+    }
+
     // TODO: set 'loc' correctly to newly created ops
     LogicalResult matchAndRewrite(mlir_ts::TryOp tryOp, PatternRewriter &rewriter) const final
     {
@@ -1018,19 +1038,36 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!!  BEFORE INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
-                OpBuilder::InsertionGuard guard(rewriter);
-                auto currentBlock = retOp->getBlock();
-                mlir::Block *continuationWithRet = currentBlock->splitBlock(retOp);
-                rewriter.cloneRegionBefore(tryOp.getFinallyBlock(), continuationWithRet);
-                rewriter.setInsertionPointToEnd(currentBlock);
-                rewriter.create<mlir::cf::BranchOp>(loc, continuationWithRet->getPrevNode(), ValueRange{});
-                auto finallyBlockReturn = continuationWithRet->getPrevNode();
-                auto resultOpFinallyBlockReturn =  cast<mlir_ts::ResultOp>(finallyBlockReturn->getTerminator());
-                rewriter.setInsertionPoint(resultOpFinallyBlockReturn);
-                rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpFinallyBlockReturn, continuationWithRet, ValueRange{});
+                if (isBelongTo(retOp->getBlock(), bodyBlock, bodyBlockLast))
+                {
+                    OpBuilder::InsertionGuard guard(rewriter);
+                    auto currentBlock = retOp->getBlock();
+                    mlir::Block *continuationWithRet = currentBlock->splitBlock(retOp);
+                    rewriter.cloneRegionBefore(tryOp.getFinallyBlock(), continuationWithRet);
+                    rewriter.setInsertionPointToEnd(currentBlock);
+                    rewriter.create<mlir::cf::BranchOp>(loc, continuationWithRet->getPrevNode(), ValueRange{});
+                    auto finallyBlockReturn = continuationWithRet->getPrevNode();
+                    auto resultOpFinallyBlockReturn =  cast<mlir_ts::ResultOp>(finallyBlockReturn->getTerminator());
+                    rewriter.setInsertionPoint(resultOpFinallyBlockReturn);
+                    rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpFinallyBlockReturn, continuationWithRet, ValueRange{});
 
-                // as we inserted new block we need to update last block of "body"
-                bodyBlockLast = continuationWithRet;
+                    // as we inserted new block we need to update last block of "body"
+                    bodyBlockLast = continuationWithRet;
+                }
+                else
+                {
+                    // just inject before return
+                    rewriter.setInsertionPoint(retOp);
+
+                    SmallVector<mlir::Block*> blocks;
+                    for (auto &block : tryOp.getFinallyBlock())
+                    {
+                        for (auto &op : block.without_terminator())
+                        {
+                            rewriter.clone(op);
+                        }
+                    }
+                }
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
             }
