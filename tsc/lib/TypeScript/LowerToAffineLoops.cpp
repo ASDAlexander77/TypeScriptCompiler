@@ -1014,22 +1014,26 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         if (finallyHasOps)
         {
             // inline 'finally' before each 'return'
-            // for (auto retOp : returns)
-            // {
-            //     LLVM_DEBUG(llvm::dbgs() << "\n!!  BEFORE INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+            for (auto retOp : returns)
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!!  BEFORE INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
-            //     OpBuilder::InsertionGuard guard(rewriter);
-            //     auto currentBlock = retOp->getBlock();
-            //     mlir::Block *continuationWithRet = currentBlock->splitBlock(retOp);
-            //     rewriter.cloneRegionBefore(tryOp.getFinallyBlock(), continuationWithRet);
-            //     rewriter.setInsertionPointToEnd(currentBlock);
-            //     rewriter.create<mlir::cf::BranchOp>(loc, continuationWithRet->getPrevNode(), ValueRange{});
-            //     auto terminatorAsResultOp = continuationWithRet->getPrevNode()->getTerminator();
-            //     rewriter.setInsertionPoint(terminatorAsResultOp);
-            //     rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(terminatorAsResultOp, continuationWithRet, ValueRange{});
+                OpBuilder::InsertionGuard guard(rewriter);
+                auto currentBlock = retOp->getBlock();
+                mlir::Block *continuationWithRet = currentBlock->splitBlock(retOp);
+                rewriter.cloneRegionBefore(tryOp.getFinallyBlock(), continuationWithRet);
+                rewriter.setInsertionPointToEnd(currentBlock);
+                rewriter.create<mlir::cf::BranchOp>(loc, continuationWithRet->getPrevNode(), ValueRange{});
+                auto finallyBlockReturn = continuationWithRet->getPrevNode();
+                auto resultOpFinallyBlockReturn =  cast<mlir_ts::ResultOp>(finallyBlockReturn->getTerminator());
+                rewriter.setInsertionPoint(resultOpFinallyBlockReturn);
+                rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpFinallyBlockReturn, continuationWithRet, ValueRange{});
 
-            //     LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
-            // }
+                // as we inserted new block we need to update last block of "body"
+                bodyBlockLast = continuationWithRet;
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+            }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
