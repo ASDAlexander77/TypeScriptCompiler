@@ -6928,19 +6928,12 @@ class MLIRGenImpl
         const_cast<GenContext &>(genContext).funcOp.setPersonalityAttr(builder.getBoolAttr(true));
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
-        /*
-        tryOp->setAttr("try_id", builder.getI64IntegerAttr((int64_t)tryOp.getOperation()));
-
-        auto parentTryOp = tryOp->getParentOfType<mlir_ts::TryOp>();
-        if (parentTryOp)
-        {
-            tryOp->setAttr("unwind_to", builder.getI64IntegerAttr((int64_t)parentTryOp.getOperation()));
-        }
-        */
 
         GenContext tryGenContext(genContext);
-        tryGenContext.allocateVarsOutsideOfOperation = true;
-        tryGenContext.currentOperation = tryOp;
+        // TODO: why do I need to allocate variables outside of "try" block?
+        // well - short answer: I don't
+        //tryGenContext.allocateVarsOutsideOfOperation = true;
+        //tryGenContext.currentOperation = tryOp;
 
         SmallVector<mlir::Type, 0> types;
 
@@ -8524,6 +8517,18 @@ class MLIRGenImpl
     {
         auto name = cl.getName();
         auto actualType = objectValue.getType();
+
+        // load reference if needed, except TupleTuple, ConstTupleType
+        if (auto refType = actualType.dyn_cast<mlir_ts::RefType>())
+        {
+            auto elementType = refType.getElementType();
+            if (!elementType.isa<mlir_ts::TupleType>() && !elementType.isa<mlir_ts::ConstTupleType>())
+            {
+                objectValue = builder.create<mlir_ts::LoadOp>(location, elementType, objectValue);
+                actualType = objectValue.getType();
+            }
+        }
+
         mlir::Value value = 
             TypeSwitch<mlir::Type, mlir::Value>(actualType)
                 .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
