@@ -1320,9 +1320,19 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
         }
 
         // just replace
-        rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, op.getCalleeAttr(), transformed.getCallOperands(),
-                                                    op.getNormalDest(), transformed.getNormalDestOperands(), op.getUnwindDest(),
-                                                    transformed.getUnwindDestOperands());
+        if (op.getCalleeAttr())
+        {
+            rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, op.getCalleeAttr(), transformed.getCallOperands(),
+                op.getNormalDest(), transformed.getNormalDestOperands(), op.getUnwindDest(),
+                transformed.getUnwindDestOperands());
+        }
+        else
+        {
+            rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, transformed.getOperands(),
+                op.getNormalDest(), transformed.getNormalDestOperands(), op.getUnwindDest(),
+                transformed.getUnwindDestOperands());
+        }
+        
         return success();
     }
 };

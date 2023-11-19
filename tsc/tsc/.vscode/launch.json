@@ -98,7 +98,7 @@
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=mlir-llvm",
-                "-debug-only=llvm",
+                "-debug-only=affine,llvm",
                 "-mlir-disable-threading",
                 "C:/temp/1.ts"
             ],

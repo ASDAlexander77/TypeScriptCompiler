@@ -1444,6 +1444,7 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
                 CodeLogicHelper clh(op, rewriter);
                 auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
+                LLVM_DEBUG(llvm::dbgs() << "!! ...! call indirect:\n";);
                 LLVM_DEBUG(for (auto opit
                                 : op.getOperands()) llvm::dbgs()
                                << "!! ...call -> invoke operands: " << opit << "\n";);
