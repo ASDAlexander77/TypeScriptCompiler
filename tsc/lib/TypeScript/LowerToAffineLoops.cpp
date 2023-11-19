@@ -118,18 +118,20 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
 
-        if (auto cleanup = tsContext->cleanup[op])
-        {
-            // TODO: finish logic to jump into cleanup block
-        }
-
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        rewriter.create<mlir::cf::BranchOp>(loc, retBlock);
+        if (auto cleanup = tsContext->cleanup[op])
+        {
+            rewriter.create<mlir::cf::BranchOp>(loc, cleanup);
+        }
+        else
+        {
+            rewriter.create<mlir::cf::BranchOp>(loc, retBlock);
+        }
 
         rewriter.setInsertionPointToStart(continuationBlock);
 
@@ -156,11 +158,6 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
         {
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
-
-        if (auto cleanup = tsContext->cleanup[op])
-        {
-            // TODO: finish logic to jump into cleanup block
-        }
         
         // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
@@ -169,7 +166,14 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        rewriter.create<mlir::cf::BranchOp>(loc, retBlock);
+        if (auto cleanup = tsContext->cleanup[op])
+        {
+            rewriter.create<mlir::cf::BranchOp>(loc, cleanup);
+        }
+        else
+        {
+            rewriter.create<mlir::cf::BranchOp>(loc, retBlock);
+        }
 
         rewriter.setInsertionPointToStart(continuationBlock);
 
@@ -1096,16 +1100,25 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER CLONE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
+            // add clone for 'return'
+            if (returns.size() > 0)
+            {
+                rewriter.cloneRegionBefore(tryOp.getFinallyBlock(), continuation);
+                auto returnFinallyBlockLast = continuation->getPrevNode();
+                rewriter.setInsertionPoint(returnFinallyBlockLast->getTerminator());
+                auto resultOpOfReturnFinallyBlock = cast<mlir_ts::ResultOp>(returnFinallyBlockLast->getTerminator());
+                rewriter.replaceOpWithNewOp<mlir_ts::ReturnOp>(resultOpOfReturnFinallyBlock);
+                // if has returns we need to create return cleanup block
+                for (auto retOp : returns)
+                {
+                    tsContext->cleanup[retOp] = returnFinallyBlockLast;                
+                }
+            }
+
             rewriter.inlineRegionBefore(tryOp.getFinallyBlock(), continuation);
-            exitFinallyBlockLast = continuation->getPrevNode();
+            exitFinallyBlockLast = continuation->getPrevNode();            
 
             LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
-
-            // if has returns we need to create return cleanup block
-            for (auto retOp : returns)
-            {
-                tsContext->cleanup[retOp] = exitFinallyBlockLast;                
-            }
         }
         else
         {
