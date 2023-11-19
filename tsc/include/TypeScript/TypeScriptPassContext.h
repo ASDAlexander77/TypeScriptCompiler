@@ -22,6 +22,7 @@ struct TSContext
     mlir::DenseMap<Operation *, mlir::Block *> jumps;
     mlir::DenseMap<Operation *, mlir::Value> catchOpData;
     mlir::DenseMap<Operation *, mlir::Block *> unwind;
+    mlir::DenseMap<Operation *, mlir::Block *> cleanup;
     mlir::DenseMap<Operation *, Operation *> parentTryOp;
     mlir::DenseMap<Operation *, mlir::Block *> landingBlockOf;
     mlir::Block *returnBlock;

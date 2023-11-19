@@ -301,8 +301,9 @@
                 "C:/temp/1.ts",
                 "-debug-only=llvm",
                 "-mlir-disable-threading",
+                "-di",
                 "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll",
-                "--shared-libs=C:/temp/jslib/lib.dll"
+                "--shared-libs=C:/temp/jslib/dll/lib.dll"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
