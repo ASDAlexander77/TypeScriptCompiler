@@ -24,7 +24,7 @@ function func2(a = 0) {
         print("In try");
         may_throw(1);
         if (a > 20)
-            return;
+            return 1;
     }
     catch (e: TypeOf<1>) {
         print("catch");
@@ -37,13 +37,14 @@ function func2(a = 0) {
 
     called = false;
     print("end");
+    return 0;
 }
 
 function main() {
     func1();
     assert(called, "finally is not called");
     called = false;
-    func2(100);
+    assert(func2(100) == 1);
     assert(called, "finally is not called");
     print("done.");
 }
