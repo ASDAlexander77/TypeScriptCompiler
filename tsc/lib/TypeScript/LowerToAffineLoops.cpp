@@ -118,6 +118,11 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
 
+        if (auto cleanup = tsContext->cleanup[op])
+        {
+            // TODO: finish logic to jump into cleanup block
+        }
+
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
@@ -152,6 +157,11 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
 
+        if (auto cleanup = tsContext->cleanup[op])
+        {
+            // TODO: finish logic to jump into cleanup block
+        }
+        
         // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
@@ -959,7 +969,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         tryOp.getCatches().walk(visitorTryOps);
         tryOp.getFinallyBlock().walk(visitorTryOps);
 
-        /*
         mlir::SmallVector<Operation *> returns;
         auto visitorReturnOps = [&](Operation *op) {
             if (auto returnOp = dyn_cast_or_null<mlir_ts::ReturnOp>(op))
@@ -972,7 +981,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
         };
         tryOp.getBody().walk(visitorReturnOps);
-        */
 
         // inline structure
         OpBuilder::InsertionGuard guard(rewriter);
@@ -1092,6 +1100,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             exitFinallyBlockLast = continuation->getPrevNode();
 
             LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+
+            // if has returns we need to create return cleanup block
+            for (auto retOp : returns)
+            {
+                tsContext->cleanup[retOp] = exitFinallyBlockLast;                
+            }
         }
         else
         {
