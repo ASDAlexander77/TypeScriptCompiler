@@ -67,6 +67,7 @@ struct GenContext
 
         currentOperation = nullptr;
         allocateVarsOutsideOfOperation = false;
+        allocateUsingVarsOutsideOfOperation = false;
     }
 
     void clearReceiverTypes()
@@ -142,6 +143,7 @@ struct GenContext
     bool allowConstEval;
     bool allocateVarsInContextThis;
     bool allocateVarsOutsideOfOperation;
+    bool allocateUsingVarsOutsideOfOperation;
     bool skipProcessed;
     bool forceDiscover;
     bool discoverParamsOnly;

@@ -115,6 +115,7 @@ enum class TypeProvided
 enum class DisposeDepth
 {
     CurrentScope,
+    CurrentScopeKeepAfterUse,
     LoopScope,
     FullStack
 };
@@ -1022,20 +1023,33 @@ class MLIRGenImpl
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         genContextUsing.usingVars = usingVars.get();
 
-        if (genContextUsing.generatedStatements.size() > 0)
+        EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, genContextUsing));
+
+        // we need to call dispose for those which are in "using"
+        // default value for genContext.cleanUpUsingVarsFlag = CurrentScope
+        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &genContextUsing));
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(Block blockAST, const GenContext &genContext)
+    {
+        auto location = loc(blockAST);
+
+        if (genContext.generatedStatements.size() > 0)
         {
             // we need to process it only once (to prevent it processing in nested functions with body)
             NodeArray<Statement> generatedStatements;
-            std::copy(genContextUsing.generatedStatements.begin(), genContextUsing.generatedStatements.end(),
+            std::copy(genContext.generatedStatements.begin(), genContext.generatedStatements.end(),
                       std::back_inserter(generatedStatements));
 
             // clean up
-            genContextUsing.generatedStatements.clear();
+            const_cast<GenContext&>(genContext).generatedStatements.clear();
 
             // auto generated code
             for (auto statement : generatedStatements)
             {
-                if (failed(mlirGen(statement, genContextUsing)))
+                if (failed(mlirGen(statement, genContext)))
                 {
                     return mlir::failure();
                 }
@@ -1049,17 +1063,17 @@ class MLIRGenImpl
                 continue;
             }
 
-            if (failed(mlirGen(statement, genContextUsing)))
+            if (failed(mlirGen(statement, genContext)))
             {
                 // now try to process all internal declarations
                 // process all declrations
-                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContextUsing)))
+                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContext)))
                 {
                     return mlir::failure();
                 }
 
                 // try to process it again
-                if (failed(mlirGen(statement, genContextUsing)))
+                if (failed(mlirGen(statement, genContext)))
                 {
                     return mlir::failure();
                 }
@@ -1067,9 +1081,6 @@ class MLIRGenImpl
 
             statement->processed = true;
         }
-
-        // we need to call dispose for those which are in "using"
-        EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &genContextUsing));
 
         // clear states to be able to run second time
         clearState(blockAST->statements);
@@ -1084,6 +1095,11 @@ class MLIRGenImpl
             for (auto vi : *genContext->usingVars)
             {
                 auto varInTable = symbolTable.lookup(vi->getName());
+                if (!varInTable.first)
+                {
+                    llvm_unreachable("can't find local variable");
+                }
+
                 auto callResult = mlirGenCallThisMethod(location, varInTable.first, SYMBOL_DISPOSE, undefined, {}, *genContext);
                 EXIT_IF_FAILED(callResult);            
             }
@@ -2590,7 +2606,8 @@ class MLIRGenImpl
     struct VariableDeclarationInfo
     {
         VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
-            scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, deleted{false} 
+            scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
+            allocateOutsideOfOperation{false}, allocateInContextThis{false}, deleted{false}
         {
         };
 
@@ -2647,9 +2664,13 @@ class MLIRGenImpl
                 scope = VariableScope::Global;
             }
 
+            allocateOutsideOfOperation = genContext.allocateVarsOutsideOfOperation
+                || genContext.allocateUsingVarsOutsideOfOperation && varClass_.isUsing;
+            allocateInContextThis = genContext.allocateVarsInContextThis;
+
             isGlobal = scope == VariableScope::Global || varClass == VariableType::Var;
             isConst = (varClass == VariableType::Const || varClass == VariableType::ConstRef) &&
-                       !genContext.allocateVarsOutsideOfOperation && !genContext.allocateVarsInContextThis;
+                       !allocateOutsideOfOperation && !allocateInContextThis;
             isExternal = varClass == VariableType::External;
             isExport = varClass.isExport;
             isImport = varClass.isImport;
@@ -2756,6 +2777,8 @@ class MLIRGenImpl
         bool isExport;
         bool isImport;
         bool isAppendingLinkage;
+        bool allocateOutsideOfOperation;
+        bool allocateInContextThis;
         bool deleted;
     };
 
@@ -2825,12 +2848,12 @@ class MLIRGenImpl
         // scope to restore inserting point
         {
             mlir::OpBuilder::InsertionGuard insertGuard(builder);
-            if (genContext.allocateVarsOutsideOfOperation)
+            if (variableDeclarationInfo.allocateOutsideOfOperation)
             {
                 builder.setInsertionPoint(genContext.currentOperation);
             }
 
-            if (genContext.allocateVarsInContextThis)
+            if (variableDeclarationInfo.allocateInContextThis)
             {
                 auto varValueInThisContext = registerVariableInThisContext(location, variableDeclarationInfo.variableName, variableDeclarationInfo.type, genContext);
                 variableDeclarationInfo.setStorage(varValueInThisContext);
@@ -2841,7 +2864,7 @@ class MLIRGenImpl
                 // default case
                 auto varOpValue = builder.create<mlir_ts::VariableOp>(
                     location, mlir_ts::RefType::get(variableDeclarationInfo.type),
-                    genContext.allocateVarsOutsideOfOperation ? mlir::Value() : variableDeclarationInfo.initial,
+                    variableDeclarationInfo.allocateOutsideOfOperation ? mlir::Value() : variableDeclarationInfo.initial,
                     builder.getBoolAttr(false));
 
                 variableDeclarationInfo.setStorage(varOpValue);
@@ -2849,7 +2872,7 @@ class MLIRGenImpl
         }
 
         // init must be in its normal place
-        if ((genContext.allocateVarsInContextThis || genContext.allocateVarsOutsideOfOperation) 
+        if ((variableDeclarationInfo.allocateInContextThis || variableDeclarationInfo.allocateOutsideOfOperation) 
             && variableDeclarationInfo.initial 
             && variableDeclarationInfo.storage)
         {
@@ -6931,27 +6954,46 @@ class MLIRGenImpl
 
         GenContext tryGenContext(genContext);
         // TODO: why do I need to allocate variables outside of "try" block?
-        // well - short answer: I don't
-        //tryGenContext.allocateVarsOutsideOfOperation = true;
-        //tryGenContext.currentOperation = tryOp;
+        // well - short answer: to get access to vars in nested blocks for example 'cleanup'
+        tryGenContext.allocateUsingVarsOutsideOfOperation = true;
+        tryGenContext.currentOperation = tryOp;
 
         SmallVector<mlir::Type, 0> types;
 
         /*auto *body =*/builder.createBlock(&tryOp.getBody(), {}, types);
+        /*auto cleanup =*/builder.createBlock(&tryOp.getCleanup(), {}, types);
         /*auto *catches =*/builder.createBlock(&tryOp.getCatches(), {}, types);
         /*auto *finallyBlock =*/builder.createBlock(&tryOp.getFinally(), {}, types);
 
-        // body
-        builder.setInsertionPointToStart(&tryOp.getBody().front());
-        auto result = mlirGen(tryStatementAST->tryBlock, tryGenContext);
-        EXIT_IF_FAILED(result)
-        if (mlir::failed(result))
         {
-            return mlir::failure();
-        }
+            // body
+            builder.setInsertionPointToStart(&tryOp.getBody().front());
 
-        // terminator
-        builder.create<mlir_ts::ResultOp>(location);
+            // prepare custom scope
+            SymbolTableScopeT varScope(symbolTable);
+            GenContext tryBodyGenContext(tryGenContext);
+            tryBodyGenContext.parentBlockContext = &tryGenContext;
+
+            auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
+            tryBodyGenContext.usingVars = usingVars.get();
+
+            auto result = mlirGenNoScopeVarsAndDisposable(tryStatementAST->tryBlock, tryBodyGenContext);
+            EXIT_IF_FAILED(result)
+
+            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScopeKeepAfterUse, {}, &tryBodyGenContext));
+
+            // terminator
+            builder.create<mlir_ts::ResultOp>(location);
+
+            // cleanup
+            builder.setInsertionPointToStart(&tryOp.getCleanup().front());
+            // we need to call dispose for those which are in "using"
+            // usingVars are empty here
+            EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::CurrentScope, {}, &tryBodyGenContext));
+
+            // terminator
+            builder.create<mlir_ts::ResultOp>(location);
+        }
 
         // catches
         builder.setInsertionPointToStart(&tryOp.getCatches().front());
@@ -6979,11 +7021,8 @@ class MLIRGenImpl
                 }
             }
 
-            result = mlirGen(tryStatementAST->catchClause->block, tryGenContext);
-            if (mlir::failed(result))
-            {
-                return mlir::failure();
-            }
+            auto result = mlirGen(tryStatementAST->catchClause->block, tryGenContext);
+            EXIT_IF_FAILED(result)
         }
 
         // terminator
@@ -6993,18 +7032,15 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(&tryOp.getFinally().front());
         if (tryStatementAST->finallyBlock)
         {
-            result = mlirGen(tryStatementAST->finallyBlock, tryGenContext);
-            if (mlir::failed(result))
-            {
-                return mlir::failure();
-            }
+            auto result = mlirGen(tryStatementAST->finallyBlock, tryGenContext);
+            EXIT_IF_FAILED(result)
         }
 
         // terminator
         builder.create<mlir_ts::ResultOp>(location);
 
         builder.setInsertionPointAfter(tryOp);
-        return result;
+        return mlir::success();
     }
 
     ValueOrLogicalResult mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
