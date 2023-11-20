@@ -6939,7 +6939,7 @@ class MLIRGenImpl
 
         /*auto *body =*/builder.createBlock(&tryOp.getBody(), {}, types);
         /*auto *catches =*/builder.createBlock(&tryOp.getCatches(), {}, types);
-        /*auto *finallyBlock =*/builder.createBlock(&tryOp.getFinallyBlock(), {}, types);
+        /*auto *finallyBlock =*/builder.createBlock(&tryOp.getFinally(), {}, types);
 
         // body
         builder.setInsertionPointToStart(&tryOp.getBody().front());
@@ -6990,7 +6990,7 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location);
 
         // finally
-        builder.setInsertionPointToStart(&tryOp.getFinallyBlock().front());
+        builder.setInsertionPointToStart(&tryOp.getFinally().front());
         if (tryStatementAST->finallyBlock)
         {
             result = mlirGen(tryStatementAST->finallyBlock, tryGenContext);
