@@ -57,7 +57,6 @@ function func2() {
         called = true;
     }
 
-    called = false;
     print("end");
 }
 
