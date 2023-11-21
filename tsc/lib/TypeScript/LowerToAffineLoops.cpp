@@ -973,7 +973,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
         auto cleanupHasOps =
-            llvm::any_of(tryOp.getCatches(), [](auto &block) { return &block.front() != block.getTerminator(); });
+            llvm::any_of(tryOp.getCleanup(), [](auto &block) { return &block.front() != block.getTerminator(); });
         auto catchHasOps =
             llvm::any_of(tryOp.getCatches(), [](auto &block) { return &block.front() != block.getTerminator(); });
         auto finallyHasOps =

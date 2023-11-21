@@ -133,73 +133,79 @@ struct Win32ExceptionPassCode
 
             if (auto *CI = dyn_cast<CallInst>(&I))
             {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! Call: " << CI->getCalledFunction()->getName() << "");
-
-                if (CI->getCalledFunction()->getName() == "__cxa_begin_catch")
+                if (CI->getCalledFunction() != nullptr && CI->getCalledFunction()->hasName())
                 {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! __cxa_begin_catch : " << *CI << "\n";);
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! __cxa_begin_catch op 0 : " << *CI->getOperand(0) << "\n";);
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! Call: " << CI->getCalledFunction()->getName() << "");
 
-                    toRemoveWorkSet.push_back(&I);
-                    auto extractOp = cast<llvm::ExtractValueInst>(CI->getOperand(0));
-                    toRemoveWorkSet.push_back(extractOp);
-                    catchRegion->cxaBeginCatch = &I;
-                    beginOfCatch = true;
-                    continue;
-                }
+                    if (CI->getCalledFunction()->getName() == "__cxa_begin_catch")
+                    {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! __cxa_begin_catch : " << *CI << "\n";);
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! __cxa_begin_catch op 0 : " << *CI->getOperand(0) << "\n";);
 
-                if (CI->getCalledFunction()->getName() == "ts.internal.save_catch_var")
-                {
-                    catchRegion->saveCatch = &I;
-                    continue;
-                }
+                        toRemoveWorkSet.push_back(&I);
+                        auto extractOp = cast<llvm::ExtractValueInst>(CI->getOperand(0));
+                        toRemoveWorkSet.push_back(extractOp);
+                        catchRegion->cxaBeginCatch = &I;
+                        beginOfCatch = true;
+                        continue;
+                    }
 
-                if (CI->getCalledFunction()->getName() == "__cxa_end_catch")
-                {
-                    toRemoveWorkSet.push_back(&I);
-                    catchRegion->cxaEndCatch = &I;
-                    endOfCatch = true;
-                    continue;
-                }
+                    if (CI->getCalledFunction()->getName() == "ts.internal.save_catch_var")
+                    {
+                        catchRegion->saveCatch = &I;
+                        continue;
+                    }
 
-                // possible end
-                if (CI->getCalledFunction()->getName() == "_CxxThrowException")
-                {
-                    // do not put continue, we need to add facelet
-                    catchRegion->end = &I;
-                }
-                else
-                {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! WARNING Must be Invoke: " << I << "\n");
+                    if (CI->getCalledFunction()->getName() == "__cxa_end_catch")
+                    {
+                        toRemoveWorkSet.push_back(&I);
+                        catchRegion->cxaEndCatch = &I;
+                        endOfCatch = true;
+                        continue;
+                    }
 
-                    // TODO: uncomment me
-                    /*
-                    llvm_unreachable("CallInst must not be used in Try/Catch/Finally block as it will cause issue with incorrect unwind "
-                                     "destination when Inliner inlines body of method");
-                    */
+                    // possible end
+                    if (CI->getCalledFunction()->getName() == "_CxxThrowException")
+                    {
+                        // do not put continue, we need to add facelet
+                        catchRegion->end = &I;
+                    }
+                    else
+                    {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! WARNING Must be Invoke: " << I << "\n");
+
+                        // TODO: uncomment me
+                        /*
+                        llvm_unreachable("CallInst must not be used in Try/Catch/Finally block as it will cause issue with incorrect unwind "
+                                        "destination when Inliner inlines body of method");
+                        */
+                    }
                 }
             }
 
             if (auto *II = dyn_cast<InvokeInst>(&I))
             {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! Invoke: " << II->getCalledFunction()->getName() << "");
-
-                if (II->getCalledFunction()->getName() == "__cxa_end_catch")
+                if (II->getCalledFunction() != nullptr && II->getCalledFunction()->hasName())
                 {
-                    toRemoveWorkSet.push_back(&I);
-                    catchRegion->cxaEndCatch = &I;
-                    catchRegion->end = &I;
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! Invoke: " << II->getCalledFunction()->getName() << "");
 
-                    endOfCatchIfResume = true;
+                    if (II->getCalledFunction()->getName() == "__cxa_end_catch")
+                    {
+                        toRemoveWorkSet.push_back(&I);
+                        catchRegion->cxaEndCatch = &I;
+                        catchRegion->end = &I;
 
-                    continue;
-                }
+                        endOfCatchIfResume = true;
 
-                // possible end
-                if (II->getCalledFunction()->getName() == "_CxxThrowException")
-                {
-                    // do not put continue, we need to add facelet
-                    catchRegion->end = &I;
+                        continue;
+                    }
+
+                    // possible end
+                    if (II->getCalledFunction()->getName() == "_CxxThrowException")
+                    {
+                        // do not put continue, we need to add facelet
+                        catchRegion->end = &I;
+                    }
                 }
             }
 

@@ -220,6 +220,7 @@
             "args": [
                 "-emit=exe",
                 "-di",
+                "-debug-only=llvm,pass",
                 "--no-default-lib=true",
                 "-mtriple=x86_64-pc-windows-msvc",
                 "C:/temp/1.ts",
