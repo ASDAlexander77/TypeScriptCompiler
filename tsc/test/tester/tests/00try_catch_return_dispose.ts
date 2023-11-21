@@ -41,8 +41,33 @@ function func1() {
     print("end");
 }
 
+function func2() {
+
+    try {
+        using file = new TempFile(".some_temp_file");
+        print("In try");
+        may_throw(1);
+    }
+    catch (e: TypeOf<1>) {
+        print("catch");
+        return;
+    }
+    finally {
+        print("finally");
+        called = true;
+    }
+
+    called = false;
+    print("end");
+}
+
 function main() {
     func1();
+    assert(called, "finally is not called");
+    assert(dispose_called, "dispose is not called");
+    called = false;
+    dispose_called = false;
+    func2();
     assert(called, "finally is not called");
     assert(dispose_called, "dispose is not called");
     print("done.");
