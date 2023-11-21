@@ -979,22 +979,40 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto finallyHasOps =
             llvm::any_of(tryOp.getFinally(), [](auto &block) { return &block.front() != block.getTerminator(); });
 
-        auto beforeBodyBlock = currentBlock; //continuation->getPrevNode();
+        // body
         rewriter.inlineRegionBefore(tryOp.getBody(), continuation);
-        auto bodyBlock = beforeBodyBlock->getNextNode();
+        auto bodyBlock = currentBlock->getNextNode();
         auto bodyBlockLast = continuation->getPrevNode();
 
         // Branch to the "body" region.
         rewriter.setInsertionPointToEnd(currentBlock);
         rewriter.create<mlir::cf::BranchOp>(loc, bodyBlock, ValueRange{});
 
+        // cleanup
+        mlir::Block * cleanupBlock = nullptr;
+        mlir::Block * cleanupBlockLast = nullptr;
+        if (cleanupHasOps)
+        {
+            rewriter.inlineRegionBefore(tryOp.getCleanup(), continuation);
+            cleanupBlock = bodyBlockLast->getNextNode();
+            cleanupBlockLast = continuation->getPrevNode();
+        }
+        else
+        {
+            while (!tryOp.getCleanup().empty())
+            {
+                rewriter.eraseBlock(&tryOp.getCleanup().front());
+            }
+        }
+
+        // catch
         // in case of WIN32 we do not need catch logic if we have only finally
         mlir::Block * catchesBlock = nullptr;
         mlir::Block * catchesBlockLast = nullptr;
         if (catchHasOps)
         {
             rewriter.inlineRegionBefore(tryOp.getCatches(), continuation);
-            catchesBlock = bodyBlockLast->getNextNode();
+            catchesBlock = (cleanupBlockLast ? cleanupBlockLast : bodyBlockLast)->getNextNode();
             catchesBlockLast = continuation->getPrevNode();        
 
             // logic to set Invoke attribute CallOp
@@ -1029,7 +1047,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         mlir::Block *finallyBlock = nullptr;
         mlir::Block *finallyBlockLast = nullptr;
-        mlir::Block *exitFinallyBlockLast = nullptr;
+        mlir::Block *exitBlockLast = nullptr;
         if (finallyHasOps)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
@@ -1057,7 +1075,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
 
             rewriter.inlineRegionBefore(tryOp.getFinally(), continuation);
-            exitFinallyBlockLast = continuation->getPrevNode();            
+            exitBlockLast = continuation->getPrevNode();            
 
             LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
         }
@@ -1069,8 +1087,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
         }
 
-        auto exitBlock = finallyHasOps ? exitFinallyBlockLast : continuation;
-        auto landingBlock = catchHasOps ? catchesBlock : finallyBlock;
+        auto exitBlock = finallyHasOps ? exitBlockLast : continuation;
+        auto landingBlock = cleanupHasOps ? cleanupBlock : catchHasOps ? catchesBlock : finallyBlock;
         tsContext->landingBlockOf[tryOp.getOperation()] = landingBlock;
         if (landingBlock)
         {
@@ -1114,7 +1132,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         }
 
         mlir::Value undefArrayValue;
-        if (finallyHasOps)
+        if (finallyHasOps || cleanupHasOps)
         {
             // BUG: HACK, i need to add marker type to treat it as cleanup landing pad later
             auto arrTy = mth.getConstArrayValueType(mth.getOpaqueType(), 1);
@@ -1135,6 +1153,38 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER BODY BLOCK - create jump to exit: \n");
         LLVM_DEBUG(bodyBlockLast->print(llvm::dbgs()));
+
+        if (cleanupHasOps)
+        {
+            rewriter.setInsertionPointToStart(cleanupBlock);
+
+            if (tsContext->compileOptions.isWindows)
+            {
+                auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                    loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
+                auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
+
+                rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
+                mlir::SmallVector<mlir::Block *> unwindDests;
+                unwindDests.push_back(catchesBlock);
+
+                auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);                
+            }
+            else
+            {
+                auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                    loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
+                auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
+
+                rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
+                mlir::SmallVector<mlir::Block *> unwindDests;
+                unwindDests.push_back(catchesBlock);
+
+                auto resultOpFinally = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpFinally, landingPadCleanupOp, unwindDests);
+            }
+        }
 
         mlir::Value cmpValue;
         if (catchHasOps)
@@ -1297,9 +1347,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         if (finallyHasOps)
         {
             // finally:exit
-            rewriter.setInsertionPoint(exitFinallyBlockLast->getTerminator());
+            rewriter.setInsertionPoint(exitBlockLast->getTerminator());
 
-            auto resultOpOfFinallyBlock = cast<mlir_ts::ResultOp>(exitFinallyBlockLast->getTerminator());
+            auto resultOpOfFinallyBlock = cast<mlir_ts::ResultOp>(exitBlockLast->getTerminator());
             rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpOfFinallyBlock, continuation, resultOpOfFinallyBlock.getResults());
         }
 
