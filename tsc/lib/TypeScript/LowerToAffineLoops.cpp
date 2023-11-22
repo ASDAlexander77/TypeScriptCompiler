@@ -1166,7 +1166,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
                 rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
                 mlir::SmallVector<mlir::Block *> unwindDests;
-                unwindDests.push_back(catchesBlock);
+                unwindDests.push_back(catchesBlock ? catchesBlock : finallyBlock);
 
                 auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
                 rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);                
@@ -1179,7 +1179,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
                 rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
                 mlir::SmallVector<mlir::Block *> unwindDests;
-                unwindDests.push_back(catchesBlock);
+                unwindDests.push_back(catchesBlock ? catchesBlock : finallyBlock);
 
                 auto resultOpFinally = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
                 rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpFinally, landingPadCleanupOp, unwindDests);
