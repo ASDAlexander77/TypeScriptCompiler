@@ -913,26 +913,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 {
     using TsPattern<mlir_ts::TryOp>::TsPattern;
 
-    bool isBelongTo(mlir::Block *current, mlir::Block *begin, mlir::Block *end) const
-    {
-        auto it = begin;
-        do
-        {
-            if (it == current)
-            {
-                return true;
-            }
-
-            if (it != end)
-            {
-                it = it->getNextNode();
-                continue;
-            }
-        } while (false);      
-
-        return false;
-    }
-
     // TODO: set 'loc' correctly to newly created ops
     LogicalResult matchAndRewrite(mlir_ts::TryOp tryOp, PatternRewriter &rewriter) const final
     {
@@ -971,7 +951,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         };
         tryOp.getBody().walk(visitorTryOps);
         tryOp.getCatches().walk(visitorTryOps);
-        tryOp.getFinallyBlock().walk(visitorTryOps);
+        tryOp.getFinally().walk(visitorTryOps);
 
         mlir::SmallVector<Operation *> returns;
         auto visitorReturnOps = [&](Operation *op) {
@@ -985,33 +965,54 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
         };
         tryOp.getBody().walk(visitorReturnOps);
+        tryOp.getCatches().walk(visitorReturnOps);
 
         // inline structure
         OpBuilder::InsertionGuard guard(rewriter);
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
         mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
+        auto cleanupHasOps =
+            llvm::any_of(tryOp.getCleanup(), [](auto &block) { return &block.front() != block.getTerminator(); });
         auto catchHasOps =
             llvm::any_of(tryOp.getCatches(), [](auto &block) { return &block.front() != block.getTerminator(); });
         auto finallyHasOps =
-            llvm::any_of(tryOp.getFinallyBlock(), [](auto &block) { return &block.front() != block.getTerminator(); });
+            llvm::any_of(tryOp.getFinally(), [](auto &block) { return &block.front() != block.getTerminator(); });
 
-        auto beforeBodyBlock = currentBlock; //continuation->getPrevNode();
+        // body
         rewriter.inlineRegionBefore(tryOp.getBody(), continuation);
-        auto bodyBlock = beforeBodyBlock->getNextNode();
+        auto bodyBlock = currentBlock->getNextNode();
         auto bodyBlockLast = continuation->getPrevNode();
 
         // Branch to the "body" region.
         rewriter.setInsertionPointToEnd(currentBlock);
         rewriter.create<mlir::cf::BranchOp>(loc, bodyBlock, ValueRange{});
 
+        // cleanup
+        mlir::Block * cleanupBlock = nullptr;
+        mlir::Block * cleanupBlockLast = nullptr;
+        if (cleanupHasOps)
+        {
+            rewriter.inlineRegionBefore(tryOp.getCleanup(), continuation);
+            cleanupBlock = bodyBlockLast->getNextNode();
+            cleanupBlockLast = continuation->getPrevNode();
+        }
+        else
+        {
+            while (!tryOp.getCleanup().empty())
+            {
+                rewriter.eraseBlock(&tryOp.getCleanup().front());
+            }
+        }
+
+        // catch
         // in case of WIN32 we do not need catch logic if we have only finally
         mlir::Block * catchesBlock = nullptr;
         mlir::Block * catchesBlockLast = nullptr;
         if (catchHasOps)
         {
             rewriter.inlineRegionBefore(tryOp.getCatches(), continuation);
-            catchesBlock = bodyBlockLast->getNextNode();
+            catchesBlock = (cleanupBlockLast ? cleanupBlockLast : bodyBlockLast)->getNextNode();
             catchesBlockLast = continuation->getPrevNode();        
 
             // logic to set Invoke attribute CallOp
@@ -1046,55 +1047,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         mlir::Block *finallyBlock = nullptr;
         mlir::Block *finallyBlockLast = nullptr;
-        mlir::Block *exitFinallyBlockLast = nullptr;
+        mlir::Block *exitBlockLast = nullptr;
         if (finallyHasOps)
         {
-            // inline 'finally' before each 'return'
-            // it is not working for all cases
-            /*
-            for (auto retOp : returns)
-            {
-                LLVM_DEBUG(llvm::dbgs() << "\n!!  BEFORE INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
-
-                if (isBelongTo(retOp->getBlock(), bodyBlock, bodyBlockLast))
-                {
-                    OpBuilder::InsertionGuard guard(rewriter);
-                    auto currentBlock = retOp->getBlock();
-                    mlir::Block *continuationWithRet = currentBlock->splitBlock(retOp);
-                    rewriter.cloneRegionBefore(tryOp.getFinallyBlock(), continuationWithRet);
-                    rewriter.setInsertionPointToEnd(currentBlock);
-                    rewriter.create<mlir::cf::BranchOp>(loc, continuationWithRet->getPrevNode(), ValueRange{});
-                    auto finallyBlockReturn = continuationWithRet->getPrevNode();
-                    auto resultOpFinallyBlockReturn =  cast<mlir_ts::ResultOp>(finallyBlockReturn->getTerminator());
-                    rewriter.setInsertionPoint(resultOpFinallyBlockReturn);
-                    rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpFinallyBlockReturn, continuationWithRet, ValueRange{});
-
-                    // as we inserted new block we need to update last block of "body"
-                    bodyBlockLast = continuationWithRet;
-                }
-                else
-                {
-                    // just inject before return
-                    rewriter.setInsertionPoint(retOp);
-
-                    SmallVector<mlir::Block*> blocks;
-                    for (auto &block : tryOp.getFinallyBlock())
-                    {
-                        for (auto &op : block.without_terminator())
-                        {
-                            rewriter.clone(op);
-                        }
-                    }
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE BEFORE RETURN: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
-            }
-            */
-
             LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
             auto beforeFinallyBlock = continuation->getPrevNode();
-            rewriter.cloneRegionBefore(tryOp.getFinallyBlock(), continuation);
+            rewriter.cloneRegionBefore(tryOp.getFinally(), continuation);
             finallyBlock = beforeFinallyBlock->getNextNode();
             finallyBlockLast = continuation->getPrevNode();
 
@@ -1103,7 +1062,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // add clone for 'return'
             if (returns.size() > 0)
             {
-                rewriter.cloneRegionBefore(tryOp.getFinallyBlock(), continuation);
+                rewriter.cloneRegionBefore(tryOp.getFinally(), continuation);
                 auto returnFinallyBlockLast = continuation->getPrevNode();
                 rewriter.setInsertionPoint(returnFinallyBlockLast->getTerminator());
                 auto resultOpOfReturnFinallyBlock = cast<mlir_ts::ResultOp>(returnFinallyBlockLast->getTerminator());
@@ -1115,21 +1074,21 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 }
             }
 
-            rewriter.inlineRegionBefore(tryOp.getFinallyBlock(), continuation);
-            exitFinallyBlockLast = continuation->getPrevNode();            
+            rewriter.inlineRegionBefore(tryOp.getFinally(), continuation);
+            exitBlockLast = continuation->getPrevNode();            
 
             LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
         }
         else
         {
-            while (!tryOp.getFinallyBlock().empty())
+            while (!tryOp.getFinally().empty())
             {
-                rewriter.eraseBlock(&tryOp.getFinallyBlock().front());
+                rewriter.eraseBlock(&tryOp.getFinally().front());
             }
         }
 
-        auto exitBlock = finallyHasOps ? exitFinallyBlockLast : continuation;
-        auto landingBlock = catchHasOps ? catchesBlock : finallyBlock;
+        auto exitBlock = finallyHasOps ? exitBlockLast : continuation;
+        auto landingBlock = cleanupHasOps ? cleanupBlock : catchHasOps ? catchesBlock : finallyBlock;
         tsContext->landingBlockOf[tryOp.getOperation()] = landingBlock;
         if (landingBlock)
         {
@@ -1173,7 +1132,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         }
 
         mlir::Value undefArrayValue;
-        if (finallyHasOps)
+        if (finallyHasOps || cleanupHasOps)
         {
             // BUG: HACK, i need to add marker type to treat it as cleanup landing pad later
             auto arrTy = mth.getConstArrayValueType(mth.getOpaqueType(), 1);
@@ -1194,6 +1153,38 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER BODY BLOCK - create jump to exit: \n");
         LLVM_DEBUG(bodyBlockLast->print(llvm::dbgs()));
+
+        if (cleanupHasOps)
+        {
+            rewriter.setInsertionPointToStart(cleanupBlock);
+
+            if (tsContext->compileOptions.isWindows)
+            {
+                auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                    loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
+                auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
+
+                rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
+                mlir::SmallVector<mlir::Block *> unwindDests;
+                unwindDests.push_back(catchesBlock);
+
+                auto resultOpCleanup = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpCleanup, landingPadCleanupOp, unwindDests);                
+            }
+            else
+            {
+                auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
+                    loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
+                auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
+
+                rewriter.setInsertionPoint(cleanupBlockLast->getTerminator());
+                mlir::SmallVector<mlir::Block *> unwindDests;
+                unwindDests.push_back(catchesBlock);
+
+                auto resultOpFinally = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
+                rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(resultOpFinally, landingPadCleanupOp, unwindDests);
+            }
+        }
 
         mlir::Value cmpValue;
         if (catchHasOps)
@@ -1356,9 +1347,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         if (finallyHasOps)
         {
             // finally:exit
-            rewriter.setInsertionPoint(exitFinallyBlockLast->getTerminator());
+            rewriter.setInsertionPoint(exitBlockLast->getTerminator());
 
-            auto resultOpOfFinallyBlock = cast<mlir_ts::ResultOp>(exitFinallyBlockLast->getTerminator());
+            auto resultOpOfFinallyBlock = cast<mlir_ts::ResultOp>(exitBlockLast->getTerminator());
             rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOpOfFinallyBlock, continuation, resultOpOfFinallyBlock.getResults());
         }
 
@@ -1444,6 +1435,7 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
                 CodeLogicHelper clh(op, rewriter);
                 auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
+                LLVM_DEBUG(llvm::dbgs() << "!! ...! call indirect:\n";);
                 LLVM_DEBUG(for (auto opit
                                 : op.getOperands()) llvm::dbgs()
                                << "!! ...call -> invoke operands: " << opit << "\n";);

@@ -1866,13 +1866,13 @@ def TypeScript_TryOp : TypeScript_Op<"Try",
 
   let arguments = (ins );
   let results = (outs );
-  let regions = (region AnyRegion:$body, AnyRegion:$catches, AnyRegion:$finallyBlock);
+  let regions = (region AnyRegion:$body, AnyRegion:$cleanup, AnyRegion:$catches, AnyRegion:$finally);
 
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
   }];
 
-  let assemblyFormat = "$body $catches $finallyBlock attr-dict";
+  let assemblyFormat = "$body $cleanup $catches $finally attr-dict";
 }
 
 def TypeScript_CatchOp : TypeScript_Op<"Catch",
