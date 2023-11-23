@@ -1194,14 +1194,10 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             // catch: begin catch
             auto beginCatchCallInfo = rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadOp);
-
             if (catchOpPtr)
             {
                 tsContext->catchOpData[catchOpPtr] = beginCatchCallInfo->getResult(0);
             }
-
-            // catch: load value
-            // TODO:
 
             // catches: end catch
             rewriter.setInsertionPoint(catchesBlockLast->getTerminator());
@@ -1211,7 +1207,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         if (finallyHasOps)
         {
-            // cleanup begin
+            auto linuxHasCleanupsForFinally = !catchHasOps && linuxHasCleanups;
 
             // point all throw in catch block to clean up block
             auto visitorCallOpContinueCleanup = [&](Operation *op) {
@@ -1265,19 +1261,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             {
                 if (!parentTryOpLandingPad)
                 {
-                    if (linuxHasCleanups)
-                    {
-                        rewriter.setInsertionPointToStart(cleanupBlock);
-                    }
-                    else
-                    {
-                        rewriter.setInsertionPointToStart(finallyBlock);
-                    }
+                    rewriter.setInsertionPointToStart(linuxHasCleanupsForFinally ? cleanupBlock : finallyBlock);
 
                     auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
                         loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
 
-                    if (linuxHasCleanups)
+                    if (linuxHasCleanupsForFinally)
                     {
                         rewriter.setInsertionPointToStart(finallyBlock);
                     }                        
@@ -1302,19 +1291,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 }
                 else
                 {
-                    if (linuxHasCleanups)
-                    {
-                        rewriter.setInsertionPointToStart(cleanupBlock);
-                    }
-                    else
-                    {
-                        rewriter.setInsertionPointToStart(finallyBlock);
-                    }
+                    rewriter.setInsertionPointToStart(linuxHasCleanupsForFinally ? cleanupBlock : finallyBlock);
 
                     auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(
                         loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
 
-                    if (linuxHasCleanups)
+                    if (linuxHasCleanupsForFinally)
                     {
                         rewriter.setInsertionPointToStart(finallyBlock);
                     }                        
