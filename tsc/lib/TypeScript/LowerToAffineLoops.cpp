@@ -991,20 +991,17 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // cleanup
         mlir::Block * cleanupBlock = nullptr;
         mlir::Block * cleanupBlockLast = nullptr;
-        if (tsContext->compileOptions.isWindows)
+        if (cleanupHasOps)
         {
-            if (cleanupHasOps)
+            rewriter.inlineRegionBefore(tryOp.getCleanup(), continuation);
+            cleanupBlock = bodyBlockLast->getNextNode();
+            cleanupBlockLast = continuation->getPrevNode();
+        }
+        else
+        {
+            while (!tryOp.getCleanup().empty())
             {
-                rewriter.inlineRegionBefore(tryOp.getCleanup(), continuation);
-                cleanupBlock = bodyBlockLast->getNextNode();
-                cleanupBlockLast = continuation->getPrevNode();
-            }
-            else
-            {
-                while (!tryOp.getCleanup().empty())
-                {
-                    rewriter.eraseBlock(&tryOp.getCleanup().front());
-                }
+                rewriter.eraseBlock(&tryOp.getCleanup().front());
             }
         }
 
@@ -1184,20 +1181,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             if (!tsContext->compileOptions.isWindows)
             {
-                // add cleanup in linux mode
-                if (cleanupHasOps)
-                {
-                    // inline code into catch block in linux
-                    rewriter.inlineRegionBefore(tryOp.getCleanup(), continuation);
-                }
-                else
-                {
-                    while (!tryOp.getCleanup().empty())
-                    {
-                        rewriter.eraseBlock(&tryOp.getCleanup().front());
-                    }
-                }
-
                 if (rttih.hasType())
                 {
                     cmpValue = rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp,
@@ -1282,20 +1265,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                         loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{undefArrayValue});
                     auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
 
-                    // add cleanup in linux mode
-                    if (cleanupHasOps && !catchHasOps)
-                    {
-                        // inline code into catch block in linux
-                        rewriter.inlineRegionBefore(tryOp.getCleanup(), continuation);
-                    }
-                    else
-                    {
-                        while (!tryOp.getCleanup().empty())
-                        {
-                            rewriter.eraseBlock(&tryOp.getCleanup().front());
-                        }
-                    }
-
                     rewriter.setInsertionPoint(finallyBlockLast->getTerminator());
                     mlir::SmallVector<mlir::Block *> unwindDests;
                     if (parentTryOpLandingPad)
@@ -1318,20 +1287,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                         loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catchAll});
                     auto beginCleanupCallInfo =
                         rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
-
-                    // add cleanup in linux mode
-                    if (cleanupHasOps && !catchHasOps)
-                    {
-                        // inline code into catch block in linux
-                        rewriter.inlineRegionBefore(tryOp.getCleanup(), continuation);
-                    }
-                    else
-                    {
-                        while (!tryOp.getCleanup().empty())
-                        {
-                            rewriter.eraseBlock(&tryOp.getCleanup().front());
-                        }
-                    }
 
                     // We do not need EndCatch as throw will redirect execution anyway
                     // rethrow
