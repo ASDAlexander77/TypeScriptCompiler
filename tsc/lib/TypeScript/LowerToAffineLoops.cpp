@@ -918,7 +918,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
     {
         Location loc = tryOp.getLoc();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!!  TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
         MLIRTypeHelper mth(rewriter.getContext());
         CodeLogicHelper clh(tryOp, rewriter);
@@ -1051,14 +1051,10 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         mlir::Block *exitBlockLast = nullptr;
         if (finallyHasOps)
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
-
             auto beforeFinallyBlock = continuation->getPrevNode();
             rewriter.cloneRegionBefore(tryOp.getFinally(), continuation);
             finallyBlock = beforeFinallyBlock->getNextNode();
             finallyBlockLast = continuation->getPrevNode();
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER CLONE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
             // add clone for 'return'
             if (returns.size() > 0)
@@ -1077,8 +1073,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             rewriter.inlineRegionBefore(tryOp.getFinally(), continuation);
             exitBlockLast = continuation->getPrevNode();            
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
         }
         else
         {
@@ -1145,15 +1139,9 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                                                                          undefArrayValue, MLIRHelper::getStructIndex(rewriter, 0));
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!!  BODY BLOCK - create jump to exit: \n");
-        LLVM_DEBUG(bodyBlockLast->print(llvm::dbgs()));
-
         rewriter.setInsertionPoint(bodyBlockLast->getTerminator());
         auto resultOp = cast<mlir_ts::ResultOp>(bodyBlockLast->getTerminator());
         rewriter.replaceOpWithNewOp<mlir::cf::BranchOp>(resultOp, exitBlock, ValueRange{});
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER BODY BLOCK - create jump to exit: \n");
-        LLVM_DEBUG(bodyBlockLast->print(llvm::dbgs()));
 
         if (cleanupHasOps && tsContext->compileOptions.isWindows)
         {
@@ -1177,8 +1165,15 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // catches:landingpad
             rewriter.setInsertionPointToStart(linuxHasCleanups ? cleanupBlock : catchesBlock);
 
+            auto catchTypes = ValueRange{catch1};
+            if (linuxHasCleanups && rttih.hasType())
+            {
+                // we need to catch all exceptions for cleanup code
+                catchTypes = ValueRange{catch1, catchAll};
+            }
+
             auto landingPadOp = rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(),
-                                                                       rewriter.getBoolAttr(false), ValueRange{catch1});
+                                                                       rewriter.getBoolAttr(false), catchTypes);
 
             if (!tsContext->compileOptions.isWindows && rttih.hasType())
             {
@@ -1313,9 +1308,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     auto throwOp = rewriter.replaceOpWithNewOp<mlir_ts::ThrowOp>(resultOpOfFinally, nullVal);
                     tsContext->unwind[throwOp] = parentTryOpLandingPad;
                 }
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER INSERT CLEANUP AS CATCH: TRY OP DUMP: \n"
-                                        << *tryOp->getParentOp() << "\n";);
                 // cleanup end
             }
         }
@@ -1359,25 +1351,20 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         {
             auto resultOp = cast<mlir_ts::ResultOp>(cleanupBlockLast->getTerminator());
             rewriter.eraseOp(resultOp);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! MERGING BLOCK: TRY OP DUMP: \n"; cleanupBlockLast->dump(););
 
             if (catchHasOps)
             {
                 rewriter.mergeBlocks(catchesBlock, cleanupBlockLast);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! MERGED BLOCK: TRY OP DUMP: \n"; catchesBlock->dump(););
             }        
             else if (finallyHasOps)
             {
                 rewriter.mergeBlocks(finallyBlock, cleanupBlockLast);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! MERGED BLOCK: TRY OP DUMP: \n"; finallyBlock->dump(););
             }
         }        
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER - TRY_OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
         return success();
     }
