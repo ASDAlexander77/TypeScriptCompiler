@@ -64,7 +64,6 @@
                 "-emit=mlir-affine",
                 "--opt",
                 "-debug-only=mlir,affine",
-                "-mtriple=x86_64-pc-linux-gnu",
                 "-mlir-disable-threading",
                 "C:/temp/1.ts"
             ],

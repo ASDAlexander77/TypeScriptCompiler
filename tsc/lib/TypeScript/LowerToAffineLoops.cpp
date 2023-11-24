@@ -1165,11 +1165,11 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             // catches:landingpad
             rewriter.setInsertionPointToStart(linuxHasCleanups ? cleanupBlock : catchesBlock);
 
-            auto catchTypes = ValueRange{catch1};
+            SmallVector<mlir::Value> catchTypes{catch1};
             if (linuxHasCleanups && rttih.hasType())
             {
                 // we need to catch all exceptions for cleanup code
-                catchTypes = ValueRange{catch1, catchAll};
+                catchTypes.push_back(catchAll);
             }
 
             auto landingPadOp = rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(),
