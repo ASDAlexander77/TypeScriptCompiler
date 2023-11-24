@@ -221,6 +221,7 @@
                 "-emit=exe",
                 "-di",
                 "-debug-only=llvm,pass",
+                "-mlir-disable-threading",
                 "--no-default-lib=true",
                 "-mtriple=x86_64-pc-windows-msvc",
                 "C:/temp/1.ts",
