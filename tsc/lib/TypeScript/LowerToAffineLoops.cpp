@@ -1121,7 +1121,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                           : /*catch all*/ (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
 
         mlir::Value catchAll;
-        if (parentTryOpLandingPad && finallyHasOps)
+        if (parentTryOpLandingPad && finallyHasOps || linuxHasCleanups && rttih.hasType())
         {
             catchAll = (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
         }
