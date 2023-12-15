@@ -3749,7 +3749,9 @@ class MLIRGenImpl
 
         SyntaxKind kind = parametersContextAST;
         // add this param
-        auto isStatic = hasModifier(parametersContextAST, SyntaxKind::StaticKeyword);
+        auto isStatic = 
+            hasModifier(parametersContextAST->parent, SyntaxKind::StaticKeyword) 
+            || hasModifier(parametersContextAST, SyntaxKind::StaticKeyword);
         if (!isStatic &&
             (kind == SyntaxKind::MethodDeclaration || kind == SyntaxKind::Constructor ||
              kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor))
@@ -3939,7 +3941,9 @@ class MLIRGenImpl
         else if (signatureDeclarationBaseAST == SyntaxKind::Constructor)
         {
             // class method name
-            auto isStatic = hasModifier(signatureDeclarationBaseAST, SyntaxKind::StaticKeyword);
+            auto isStatic = 
+                hasModifier(signatureDeclarationBaseAST->parent, SyntaxKind::StaticKeyword)
+                || hasModifier(signatureDeclarationBaseAST, SyntaxKind::StaticKeyword);
             if (isStatic)
             {
                 name = objectOwnerName + "." + STATIC_NAME + "_" + name;
@@ -8565,20 +8569,108 @@ class MLIRGenImpl
             }
         }
 
+        // class member access
+        auto classAccess = [&](mlir_ts::ClassType classType) {
+            if (auto value = cl.Class(classType))
+            {
+                return value;
+            }
+
+            return ClassMembers(location, objectValue, classType.getName().getValue(), name, false, genContext);
+        };
+
         mlir::Value value = 
             TypeSwitch<mlir::Type, mlir::Value>(actualType)
                 .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
                 .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
                 .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
-                .Case<mlir_ts::BooleanType>([&](auto intType) { return cl.Bool(intType); })
+                .Case<mlir_ts::BooleanType>([&](auto intType) { 
+                    if (auto value = cl.Bool(intType))
+                    {
+                        return value;
+                    }
+
+                    // find Boolean type
+                    if (auto classInfo = getClassInfoByFullName("Boolean"))
+                    {
+                        return classAccess(classInfo->classType);
+                    }
+                    
+                    return mlir::Value();                    
+                })
                 .Case<mlir::IntegerType>([&](auto intType) { return cl.Int(intType); })
                 .Case<mlir::FloatType>([&](auto floatType) { return cl.Float(floatType); })
-                .Case<mlir_ts::NumberType>([&](auto numberType) { return cl.Number(numberType); })
-                .Case<mlir_ts::StringType>([&](auto stringType) { return cl.String(stringType); })
-                .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { return cl.Array(arrayType); })
-                .Case<mlir_ts::ArrayType>([&](auto arrayType) { return cl.Array(arrayType); })
+                .Case<mlir_ts::NumberType>([&](auto numberType) { 
+                    if (auto value = cl.Number(numberType))
+                    {
+                        return value;
+                    }
+                    
+                    // find Number type
+                    if (auto classInfo = getClassInfoByFullName("Number"))
+                    {
+                        return classAccess(classInfo->classType);
+                    }
+                    
+                    return mlir::Value();                        
+                })
+                .Case<mlir_ts::StringType>([&](auto stringType) { 
+                    if (auto value = cl.String(stringType))
+                    {
+                        return value;
+                    }
+
+                    // find String type
+                    if (auto classInfo = getClassInfoByFullName("String"))
+                    {
+                        return classAccess(classInfo->classType);
+                    }
+                    
+                    return mlir::Value();
+                })
+                .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { 
+                    if (auto value = cl.Array(arrayType))
+                    {
+                        return value;
+                    }
+
+                    // find Array type
+                    if (auto classInfo = getClassInfoByFullName("Array"))
+                    {
+                        return classAccess(classInfo->classType);
+                    }
+                    
+                    return mlir::Value();   
+                })
+                .Case<mlir_ts::ArrayType>([&](auto arrayType) { 
+                    if (auto value = cl.Array(arrayType))
+                    {
+                        return value;
+                    }
+
+                    // find Array type
+                    if (auto classInfo = getClassInfoByFullName("Array"))
+                    {
+                        return classAccess(classInfo->classType);
+                    }
+                    
+                    return mlir::Value();                      
+                })
                 .Case<mlir_ts::RefType>([&](auto refType) { return cl.Ref(refType); })
-                .Case<mlir_ts::ObjectType>([&](auto objectType) { return cl.Object(objectType); })
+                .Case<mlir_ts::ObjectType>([&](auto objectType) { 
+                    if (auto value = cl.Object(objectType))
+                    {
+                        return value;
+                    }
+
+                    // find Object type
+                    if (auto classInfo = getClassInfoByFullName("Object"))
+                    {
+                        return classAccess(classInfo->classType);
+                    }
+                    
+                    return mlir::Value();                    
+                })
                 .Case<mlir_ts::SymbolType>([&](auto symbolType) { return cl.Symbol(symbolType); })
                 .Case<mlir_ts::NamespaceType>([&](auto namespaceType) {
                     auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
@@ -8597,14 +8689,7 @@ class MLIRGenImpl
 
                     return ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, true, genContext);
                 })
-                .Case<mlir_ts::ClassType>([&](auto classType) {
-                    if (auto value = cl.Class(classType))
-                    {
-                        return value;
-                    }
-
-                    return ClassMembers(location, objectValue, classType.getName().getValue(), name, false, genContext);
-                })
+                .Case<mlir_ts::ClassType>(classAccess)
                 .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     return InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(),
                                             genContext);
@@ -8811,7 +8896,7 @@ class MLIRGenImpl
         {
             auto fieldInfo = classInfo->staticFields[staticFieldIndex];
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
-            if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>() || classInfo->isStatic)
             {
 #endif
                 auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
@@ -8864,17 +8949,36 @@ class MLIRGenImpl
             if (methodInfo.isStatic)
             {
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
-                if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
+                auto isThisValueClassRef = thisValue.getDefiningOp<mlir_ts::ClassRefOp>();
+                if (isThisValueClassRef || classInfo->isStatic)
                 {
 #endif
                     if (classInfo->isDynamicImport)
                     {
                         // need to resolve global variable
                         auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
+
+                        if (!isThisValueClassRef)
+                        {
+                            CAST_A(opaqueThisValue, location, getOpaqueType(), thisValue, genContext);
+                            auto boundMethodValue = builder.create<mlir_ts::CreateBoundFunctionOp>(
+                                location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);  
+                            return boundMethodValue;                          
+                        }
+
                         return globalFuncVar;
                     }
                     else
                     {
+                        if (!isThisValueClassRef)
+                        {
+                            auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                                location, getBoundFunctionType(effectiveFuncType), thisValue,
+                                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));                            
+                            
+                            return thisSymbOp;
+                        }
+
                         auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                             location, effectiveFuncType,
                             mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
@@ -14027,7 +14131,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenClassProcessClassPropertyByFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember)
     {
-        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+        auto isStatic = newClassPtr->isStatic || hasModifier(classMember, SyntaxKind::StaticKeyword);
         auto isConstructor = classMember == SyntaxKind::Constructor;
         if (isConstructor)
         {
@@ -14064,7 +14168,7 @@ class MLIRGenImpl
                                                 SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool staticOnly,
                                                 const GenContext &genContext)
     {
-        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+        auto isStatic = newClassPtr->isStatic || hasModifier(classMember, SyntaxKind::StaticKeyword);
         if (staticOnly != isStatic)
         {
             return mlir::success();
@@ -15197,7 +15301,7 @@ genContext);
         ClassMethodMemberInfo(ClassInfo::TypePtr newClassPtr, ClassElement classMember) : newClassPtr(newClassPtr), classMember(classMember)
         {
             isConstructor = classMember == SyntaxKind::Constructor;
-            isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+            isStatic = newClassPtr->isStatic || hasModifier(classMember, SyntaxKind::StaticKeyword);
             isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
             //auto isPrivate = hasModifier(classMember, SyntaxKind::PrivateKeyword);
             //auto isProtected = hasModifier(classMember, SyntaxKind::ProtectedKeyword);
@@ -15310,6 +15414,7 @@ genContext);
         auto location = loc(classMember);
         auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
         getMethodNameOrPropertyName(
+            newClassPtr->isStatic,
             funcLikeDeclaration, 
             classMethodMemberInfo.methodName, 
             classMethodMemberInfo.propertyName, 
@@ -15487,9 +15592,10 @@ genContext);
     {
         NodeFactory nf(NodeFactoryFlags::None);
 
+        auto isClassStatic = hasModifier(classDeclarationAST, SyntaxKind::StaticKeyword);
         for (auto &classMember : classDeclarationAST->members)
         {
-            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+            auto isStatic = isClassStatic || hasModifier(classMember, SyntaxKind::StaticKeyword);
             if (classMember == SyntaxKind::PropertyDeclaration)
             {
                 if (isStatic != staticConstructor)
@@ -15994,7 +16100,7 @@ genContext);
 
             std::string methodName;
             std::string propertyName;
-            getMethodNameOrPropertyName(methodSignature, methodName, propertyName, genContext);
+            getMethodNameOrPropertyName(false, methodSignature, methodName, propertyName, genContext);
 
             if (methodName.empty())
             {
@@ -16071,13 +16177,13 @@ genContext);
         return MLIRHelper::getName(methodSignature->name);
     }
 
-    mlir::LogicalResult getMethodNameOrPropertyName(SignatureDeclarationBase methodSignature, std::string &methodName,
+    mlir::LogicalResult getMethodNameOrPropertyName(bool isStaticClass, SignatureDeclarationBase methodSignature, std::string &methodName,
                                                     std::string &propertyName, const GenContext &genContext)
     {
         SyntaxKind kind = methodSignature;
         if (kind == SyntaxKind::Constructor)
         {
-            auto isStatic = hasModifier(methodSignature, SyntaxKind::StaticKeyword);
+            auto isStatic = isStaticClass || hasModifier(methodSignature, SyntaxKind::StaticKeyword);
             if (isStatic)
             {
                 methodName = std::string(STATIC_CONSTRUCTOR_NAME);

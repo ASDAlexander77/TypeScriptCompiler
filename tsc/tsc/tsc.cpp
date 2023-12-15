@@ -35,6 +35,7 @@ namespace cl = llvm::cl;
 CompileOptions prepareOptions();
 std::string getDefaultOutputFileName(enum Action);
 std::string getDefaultExt(enum Action);
+std::string getDefaultLibPath();
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int dumpAST();
@@ -102,6 +103,7 @@ cl::opt<enum Exports> exportAction("export", cl::desc("Export Symbols. (Useful t
                                        cl::values(clEnumValN(IgnoreAll, "none", "ignore all exports")),
                                        cl::cat(TypeScriptCompilerCategory));
 
+cl::opt<std::string> defaultlibpath("default-lib-path", cl::desc("JS library path. Should point to folder/directory with subfolder 'jslib' or DEFAULT_LIB_PATH environmental variable"), cl::value_desc("defaultlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gcmt-lib.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. Should point to file 'LLVMSupport.lib' and 'LLVMDemangle' in linux or LLVM_LIB_PATH environmental variable"), cl::value_desc("llvmlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> tsclibpath("tsc-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'TypeScriptAsyncRuntime.lib' or TSC_LIB_PATH environmental variable"), cl::value_desc("tsclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
@@ -135,6 +137,21 @@ std::string GetTemporaryPath(llvm::StringRef Prefix, llvm::StringRef Suffix)
     }
 
     return std::string(Path.str());
+}
+
+std::string mergeWithDefaultLibPath(std::string defaultlibpath, std::string subPath)
+{
+    if (defaultlibpath.empty())
+    {
+        return subPath;
+    }
+
+    llvm::SmallVector<char> path(0);
+    llvm::SmallVector<char> nativePath(0);
+    llvm::sys::path::append(path, defaultlibpath, subPath);
+    llvm::sys::path::native(path, nativePath);    
+    llvm::StringRef str(nativePath.data(), nativePath.size());
+    return str.str();
 }
 
 int main(int argc, char **argv)
@@ -222,8 +239,16 @@ int main(int argc, char **argv)
     auto compileOptions = prepareOptions();
 
     // TODO: temp hack
-    std::string fullPath = "jslib/";
-    compileOptions.noDefaultLib |= !llvm::sys::fs::exists(fullPath);
+    auto fullPath = mergeWithDefaultLibPath(getDefaultLibPath(), "jslib/");
+    auto isDir = llvm::sys::fs::is_directory(fullPath);
+    if (!defaultlibpath.empty() && !isDir) 
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Default lib path: " << fullPath
+                                    << " does not exist or is not a directory\n";
+        return 0;
+    }
+
+    compileOptions.noDefaultLib |= !isDir;
 
     llvm::SourceMgr sourceMgr;
     mlir::OwningOpRef<mlir::ModuleOp> module;
