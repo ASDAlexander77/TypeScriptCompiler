@@ -11,7 +11,7 @@ struct CompileOptions
     bool disableGC;
     bool enableBuiltins;
     bool noDefaultLib;
-    std::string defaultLib;
+    std::string defaultDeclarationTSFile;
     bool disableWarnings;
     bool generateDebugInfo;
     bool lldbDebugInfo;

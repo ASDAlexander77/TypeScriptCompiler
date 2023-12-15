@@ -216,7 +216,7 @@ class MLIRGenImpl
             if (!compileOptions.noDefaultLib)
             {
                 //  S("jslib/lib.d.ts")
-                filesToProcess.push_back(convertUTF8toWide(compileOptions.defaultLib));
+                filesToProcess.push_back(convertUTF8toWide(compileOptions.defaultDeclarationTSFile));
             }
         }
 

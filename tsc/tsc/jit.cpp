@@ -27,6 +27,9 @@ extern cl::opt<std::string> inputFilename;
 // obj
 extern cl::opt<std::string> TargetTriple;
 
+std::string getDefaultLibPath();
+std::string mergeWithDefaultLibPath(std::string, std::string);
+
 int registerMLIRDialects(mlir::ModuleOp);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
 
@@ -54,11 +57,13 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     if (!compileOptions.noDefaultLib)
     {
+        clSharedLibs.push_back(mergeWithDefaultLibPath(getDefaultLibPath(), 
 #if WIN32        
-        clSharedLibs.push_back("jslib/dll/lib.dll");
+            "jslib/dll/lib.dll"
 #else
-        clSharedLibs.push_back("jslib/dll/liblib.so");
+            "jslib/dll/liblib.so"
 #endif        
+        ));
     }      
 
     // Use absolute library path so that gdb can find the symbol table.

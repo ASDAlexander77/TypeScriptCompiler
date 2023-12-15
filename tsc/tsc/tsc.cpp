@@ -169,7 +169,7 @@ bool prepareDefaultLib(CompileOptions &compileOptions)
     compileOptions.noDefaultLib |= !isDir;
     if (!compileOptions.noDefaultLib)
     {
-        compileOptions.defaultLib = mergeWithDefaultLibPath(getDefaultLibPath(), "jslib/lib.d.ts");
+        compileOptions.defaultDeclarationTSFile = mergeWithDefaultLibPath(getDefaultLibPath(), "jslib/lib.d.ts");
     }
 
     return true;
