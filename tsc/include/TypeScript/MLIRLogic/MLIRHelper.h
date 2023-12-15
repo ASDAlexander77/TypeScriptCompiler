@@ -26,7 +26,7 @@ static std::string convertWideToUTF8(const std::wstring &ws)
     return s;
 }
 
-static std::wstring ConvertUTF8toWide(const std::string &s)
+static std::wstring convertUTF8toWide(const std::string &s)
 {
     std::wstring ws;
     llvm::ConvertUTF8toWide(s, ws);
@@ -319,7 +319,7 @@ class MLIRHelper
             }
         }            
 
-        node->modifiers.push_back(nf.createDecorator(nf.createIdentifier(ConvertUTF8toWide(decoratorName.str()))));
+        node->modifiers.push_back(nf.createDecorator(nf.createIdentifier(convertUTF8toWide(decoratorName.str()))));
     }
 
     static std::string replaceAll(const char* source, const char* oldStr, const char* newStr)

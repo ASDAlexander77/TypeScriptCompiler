@@ -215,7 +215,8 @@ class MLIRGenImpl
 
             if (!compileOptions.noDefaultLib)
             {
-                filesToProcess.push_back(S("jslib/lib.d.ts"));
+                //  S("jslib/lib.d.ts")
+                filesToProcess.push_back(convertUTF8toWide(compileOptions.defaultLib));
             }
         }
 
@@ -245,7 +246,7 @@ class MLIRGenImpl
 
             Parser parser;
             auto includeFile =
-                parser.parseSourceFile(ConvertUTF8toWide(actualFilePath), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
+                parser.parseSourceFile(convertUTF8toWide(actualFilePath), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
             for (auto refFile : includeFile->referencedFiles)
             {
                 filesToProcess.push_back(refFile.fileName);
@@ -740,7 +741,7 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
 
-            auto importData = ConvertUTF8toWide(dataPtr);
+            auto importData = convertUTF8toWide(dataPtr);
             if (mlir::failed(parsePartialStatements(importData, genContext, false)))
             {
                 //assert(false);
@@ -5912,7 +5913,7 @@ class MLIRGenImpl
                             {
                                 // enable safe cast found
                                 auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_");
-                                auto typeAliasName = ConvertUTF8toWide(typeAliasNameUTF8);
+                                auto typeAliasName = convertUTF8toWide(typeAliasNameUTF8);
                                 const_cast<GenContext &>(genContext)
                                     .typeAliasMap.insert({typeAliasNameUTF8, tupleType});
 
@@ -5935,7 +5936,7 @@ class MLIRGenImpl
                                 {
                                     // enable safe cast found
                                     auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_");
-                                    auto typeAliasName = ConvertUTF8toWide(typeAliasNameUTF8);
+                                    auto typeAliasName = convertUTF8toWide(typeAliasNameUTF8);
                                     const_cast<GenContext &>(genContext)
                                         .typeAliasMap.insert({typeAliasNameUTF8, interfaceType});
 
@@ -9736,7 +9737,7 @@ class MLIRGenImpl
         auto block = nf.createBlock(statements, false);
         auto funcIter =
             nf.createFunctionExpression(undefined, nf.createToken(SyntaxKind::AsteriskToken),
-                                        nf.createIdentifier(ConvertUTF8toWide(iterName)), undefined, undefined, undefined, block);
+                                        nf.createIdentifier(convertUTF8toWide(iterName)), undefined, undefined, undefined, block);
 
         funcIter->pos.pos = pos;
         funcIter->_end = _end;
@@ -9797,7 +9798,7 @@ class MLIRGenImpl
         auto block = nf.createBlock(statements, false);
         auto funcIter =
             nf.createFunctionExpression(undefined, nf.createToken(SyntaxKind::AsteriskToken),
-                                        nf.createIdentifier(ConvertUTF8toWide(iterName)), undefined, undefined, undefined, block);
+                                        nf.createIdentifier(convertUTF8toWide(iterName)), undefined, undefined, undefined, block);
         funcIter->pos.pos = pos;
         funcIter->_end = _end;
 
@@ -14641,7 +14642,7 @@ genContext);
 
                 auto cmpRttiToParam = nf.createBinaryExpression(
                      nf.createIdentifier(S(INSTANCEOF_PARAM_NAME)), nf.createToken(SyntaxKind::EqualsEqualsToken),
-                     nf.createIdentifier(ConvertUTF8toWide(std::string(fullClassStaticFieldName))));
+                     nf.createIdentifier(convertUTF8toWide(std::string(fullClassStaticFieldName))));
 
                 auto cmpLogic = cmpRttiToParam;
 

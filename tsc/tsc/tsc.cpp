@@ -154,6 +154,27 @@ std::string mergeWithDefaultLibPath(std::string defaultlibpath, std::string subP
     return str.str();
 }
 
+bool prepareDefaultLib(CompileOptions &compileOptions)
+{
+    // TODO: temp hack
+    auto fullPath = mergeWithDefaultLibPath(getDefaultLibPath(), "jslib/");
+    auto isDir = llvm::sys::fs::is_directory(fullPath);
+    if (!defaultlibpath.empty() && !isDir) 
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Default lib path: " << fullPath
+                                    << " does not exist or is not a directory\n";
+        return false;
+    }
+
+    compileOptions.noDefaultLib |= !isDir;
+    if (!compileOptions.noDefaultLib)
+    {
+        compileOptions.defaultLib = mergeWithDefaultLibPath(getDefaultLibPath(), "jslib/lib.d.ts");
+    }
+
+    return true;
+}
+
 int main(int argc, char **argv)
 {
     // version printer
@@ -238,17 +259,10 @@ int main(int argc, char **argv)
 
     auto compileOptions = prepareOptions();
 
-    // TODO: temp hack
-    auto fullPath = mergeWithDefaultLibPath(getDefaultLibPath(), "jslib/");
-    auto isDir = llvm::sys::fs::is_directory(fullPath);
-    if (!defaultlibpath.empty() && !isDir) 
+    if (!prepareDefaultLib(compileOptions))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Default lib path: " << fullPath
-                                    << " does not exist or is not a directory\n";
         return 0;
     }
-
-    compileOptions.noDefaultLib |= !isDir;
 
     llvm::SourceMgr sourceMgr;
     mlir::OwningOpRef<mlir::ModuleOp> module;
