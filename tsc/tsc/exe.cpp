@@ -223,7 +223,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     llvm::StringSaver saver(a);
     ExpandResponseFiles(saver, args);
 
-    // Check if flang-new is in the frontend mode
+    // Check if tslang-new is in the frontend mode
     auto firstArg = std::find_if(args.begin() + 1, args.end(),
                                  [](const char *a)
                                  { return a != nullptr; });
@@ -318,7 +318,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (!compileOptions.noDefaultLib)
     {
-        defaultLibPathOpt = getLibOpt(mergeWithDefaultLibPath(getGCLibPath(), shared ? "jslib/dll/lib" : "jslib/lib/lib"));
+        defaultLibPathOpt = getLibOpt(mergeWithDefaultLibPath(getDefaultLibPath(), shared ? "jslib/dll/lib" : "jslib/lib/lib"));
         if (!defaultLibPathOpt.empty())
         {
             args.push_back(defaultLibPathOpt.c_str());    
