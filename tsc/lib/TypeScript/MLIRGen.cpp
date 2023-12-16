@@ -2357,6 +2357,56 @@ class MLIRGenImpl
         return {mlir::success(), mlir::Type()};
     }
 
+    std::pair<mlir::LogicalResult, mlir::Type> instantiateSpecializedClassType(mlir::Location location,
+                                                                               mlir_ts::ClassType genericClassType,
+                                                                               ArrayRef<mlir::Type> typeArguments,
+                                                                               const GenContext &genContext,
+                                                                               bool allowNamedGenerics = false)
+    {
+        auto fullNameGenericClassTypeName = genericClassType.getName().getValue();
+        auto genericClassInfo = getGenericClassInfoByFullName(fullNameGenericClassTypeName);
+        if (genericClassInfo)
+        {
+            MLIRNamespaceGuard ng(currentNamespace);
+            currentNamespace = genericClassInfo->elementNamespace;
+
+            GenContext genericTypeGenContext(genContext);
+            auto typeParams = genericClassInfo->typeParams;
+            auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
+                location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
+            if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics))
+            {
+                return {mlir::failure(), mlir::Type()};
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized class: " << fullNameGenericClassTypeName << " ";
+                       for (auto &typeParam
+                            : genericTypeGenContext.typeParamsWithArgs) llvm::dbgs()
+                       << " param: " << std::get<0>(typeParam.getValue())->getName()
+                       << " type: " << std::get<1>(typeParam.getValue());
+                       llvm::dbgs() << "\n";);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: ";
+                       for (auto &typeAlias
+                            : genericTypeGenContext.typeAliasMap) llvm::dbgs()
+                       << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
+                       llvm::dbgs() << "\n";);
+
+            // create new instance of interface with TypeArguments
+            if (mlir::failed(std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext))))
+            {
+                return {mlir::failure(), mlir::Type()};
+            }
+
+            // get instance of generic interface type
+            auto specType = getSpecializationClassType(genericClassInfo, genericTypeGenContext);
+            return {mlir::success(), specType};
+        }
+
+        // can't find generic instance
+        return {mlir::success(), mlir::Type()};
+    }
+
     std::pair<mlir::LogicalResult, mlir::Type> instantiateSpecializedInterfaceType(
         mlir::Location location, mlir_ts::InterfaceType genericInterfaceType, NodeArray<TypeNode> typeArguments,
         const GenContext &genContext, bool allowNamedGenerics = false)
@@ -8635,11 +8685,24 @@ class MLIRGenImpl
                         return value;
                     }
 
-                    // find Array type
-                    if (auto classInfo = getClassInfoByFullName("Array"))
+                    if (auto genericClassTypeInfo = getGenericClassInfoByFullName("Array"))
                     {
-                        return classAccess(classInfo->classType);
+                        auto classType = genericClassTypeInfo->classType;
+                        SmallVector<mlir::Type> typeArg{arrayType.getElementType()};
+                        auto [result, specType] = instantiateSpecializedClassType(location, classType,
+                                typeArg, genContext, true);
+                        if (mlir::succeeded(result))
+                        {
+                            return classAccess(specType.cast<mlir_ts::ClassType>());
+                        }
                     }
+
+                    // find Array type
+                    // TODO: should I mix use of Array and Array<T>?
+                    // if (auto classInfo = getClassInfoByFullName("Array"))
+                    // {
+                    //     return classAccess(classInfo->classType);
+                    // }
                     
                     return mlir::Value();   
                 })
@@ -8649,11 +8712,24 @@ class MLIRGenImpl
                         return value;
                     }
 
-                    // find Array type
-                    if (auto classInfo = getClassInfoByFullName("Array"))
+                    if (auto genericClassTypeInfo = getGenericClassInfoByFullName("Array"))
                     {
-                        return classAccess(classInfo->classType);
+                        auto classType = genericClassTypeInfo->classType;
+                        SmallVector<mlir::Type> typeArg{arrayType.getElementType()};
+                        auto [result, specType] = instantiateSpecializedClassType(location, classType,
+                                typeArg, genContext, true);
+                        if (mlir::succeeded(result))
+                        {
+                            return classAccess(specType.cast<mlir_ts::ClassType>());
+                        }
                     }
+
+                    // find Array type
+                    // TODO: should I mix use of Array and Array<T>?
+                    // if (auto classInfo = getClassInfoByFullName("Array"))
+                    // {
+                    //     return classAccess(classInfo->classType);
+                    // }
                     
                     return mlir::Value();                      
                 })

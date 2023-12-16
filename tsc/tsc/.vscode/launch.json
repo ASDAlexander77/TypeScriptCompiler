@@ -220,15 +220,15 @@
             "args": [
                 "-emit=exe",
                 "-di",
-                "-debug-only=llvm,pass",
+                "-debug-only=mlir,llvm,pass",
                 "-mlir-disable-threading",
-                "--no-default-lib=true",
                 "-mtriple=x86_64-pc-windows-msvc",
                 "C:/temp/1.ts",
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [
+                { "name": "DEFAULT_LIB_PATH", "value": "C:\\temp" },
                 { "name": "GC_LIB_PATH", "value": "C:\\dev\\TypeScriptCompiler\\__build\\gc\\msbuild\\x64\\debug\\Debug" },
                 { "name": "LLVM_LIB_PATH", "value": "C:\\dev\\TypeScriptCompiler\\__build\\llvm\\msbuild\\x64\\debug\\Debug\\lib" },
                 { "name": "TSC_LIB_PATH", "value": "C:\\dev\\TypeScriptCompiler\\__build\\tsc\\windows-msbuild-debug\\lib" },
