@@ -8621,13 +8621,22 @@ class MLIRGenImpl
         }
 
         // class member access
-        auto classAccess = [&](mlir_ts::ClassType classType) {
+        auto classAccessWithObject = [&](mlir_ts::ClassType classType, mlir::Value objectValue) {
             if (auto value = cl.Class(classType))
             {
                 return value;
             }
 
             return ClassMembers(location, objectValue, classType.getName().getValue(), name, false, genContext);
+        };
+
+        auto classAccess = [&](mlir_ts::ClassType classType) {
+            if (auto value = cl.Class(classType))
+            {
+                return value;
+            }
+
+            return classAccessWithObject(classType, objectValue);
         };
 
         mlir::Value value = 
@@ -8693,7 +8702,13 @@ class MLIRGenImpl
                                 typeArg, genContext, true);
                         if (mlir::succeeded(result))
                         {
-                            return classAccess(specType.cast<mlir_ts::ClassType>());
+                            auto arrayNonConst = cast(location, mlir_ts::ArrayType::get(arrayType.getElementType()), objectValue, genContext);
+                            if (arrayNonConst.failed())
+                            {
+                                return mlir::Value();
+                            }
+
+                            return classAccessWithObject(specType.cast<mlir_ts::ClassType>(), arrayNonConst);
                         }
                     }
 
