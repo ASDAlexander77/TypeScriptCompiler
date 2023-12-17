@@ -14222,6 +14222,11 @@ class MLIRGenImpl
             }
         }
 
+        if (newClassPtr->isStatic)
+        {
+            return mlir::success();
+        }
+
         auto isMemberAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
         if (isMemberAbstract)
         {
