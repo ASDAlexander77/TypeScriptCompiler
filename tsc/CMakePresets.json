@@ -193,7 +193,6 @@
             "name": "test-linux-default",
             "hidden": true,
             "inherits": "test-default",
-            "configurePreset": "test-default",
             "condition": {
                 "type": "equals",
                 "lhs": "${hostSystemName}",
