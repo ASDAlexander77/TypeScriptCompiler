@@ -1,5 +1,7 @@
 @echo off
 set BUILD=debug
+rem set TOOL=vs
+set TOOL=ninja
 if not "%1"=="" (
 	set BUILD=%1
 )
@@ -15,10 +17,10 @@ IF EXIST ".\3rdParty\llvm\x64\%BUILD%\bin" (
   rem copy /Y .\docs\fix\AddCompilerRT.cmake .\3rdParty\llvm-project\compiler-rt\cmake\Modules\
   echo "Configuring LLVM (%BUILD%)"
   cd %p%
-  @call scripts\config_llvm_%BUILD%.bat
+  @call scripts\config_llvm_%BUILD%_%TOOL%.bat
   echo "Building LLVM (%BUILD%)"
   cd %p%
-  @call scripts\build_llvm_%BUILD%.bat
+  @call scripts\build_llvm_%BUILD%_%TOOL%.bat
 )
 
 IF EXIST ".\3rdParty\gc\x64\%BUILD%\gc-lib.lib" (
@@ -33,12 +35,12 @@ IF EXIST ".\3rdParty\gc\x64\%BUILD%\gc-lib.lib" (
   curl -o libatomic_ops-7.6.10.tar.gz https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz
   echo "Opening TAR.GZ Libatomic_ops"  
   tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
-  echo "Copy to  gc-<ver>/libatomic_ops"  
+  echo "Copy to gc-<ver>/libatomic_ops"  
   xcopy  /E /H /C /I /Y .\3rdParty\libatomic_ops-7.6.10\ .\3rdParty\gc-8.0.4\libatomic_ops\
   echo "Copy fixes"  
   xcopy  /E /H /C /I /Y .\docs\fix\gc\ .\3rdParty\gc-8.0.4\
   cd %p%
-  @call scripts\build_gc_%BUILD%.bat
+  @call scripts\build_gc_%BUILD%_%TOOL%.bat
   cd %p%
   if "%BUILD%"=="debug" ( xcopy  /E /H /C /I /Y .\__build\gc\msbuild\x64\%BUILD%\Debug\ .\3rdParty\gc\x64\debug\ )
   if "%BUILD%"=="release" ( xcopy  /E /H /C /I /Y .\__build\gc\msbuild\x64\%BUILD%\Release\ .\3rdParty\gc\x64\release\ )
