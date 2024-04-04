@@ -1,7 +1,6 @@
 @echo off
 set BUILD=debug
-rem set TOOL=vs
-set TOOL=ninja
+set TOOL=vs
 if not "%1"=="" (
 	set BUILD=%1
 )
