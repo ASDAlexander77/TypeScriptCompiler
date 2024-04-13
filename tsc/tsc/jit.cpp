@@ -59,9 +59,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     {
         clSharedLibs.push_back(mergeWithDefaultLibPath(getDefaultLibPath(), 
 #if WIN32        
-            "jslib/dll/lib.dll"
+            DEFAULT_LIB_DIR "/dll/lib.dll"
 #else
-            "jslib/dll/liblib.so"
+            DEFAULT_LIB_DIR "/dll/liblib.so"
 #endif        
         ));
     }      

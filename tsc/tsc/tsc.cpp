@@ -103,7 +103,7 @@ cl::opt<enum Exports> exportAction("export", cl::desc("Export Symbols. (Useful t
                                        cl::values(clEnumValN(IgnoreAll, "none", "ignore all exports")),
                                        cl::cat(TypeScriptCompilerCategory));
 
-cl::opt<std::string> defaultlibpath("default-lib-path", cl::desc("JS library path. Should point to folder/directory with subfolder 'jslib' or DEFAULT_LIB_PATH environmental variable"), cl::value_desc("defaultlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
+cl::opt<std::string> defaultlibpath("default-lib-path", cl::desc("JS library path. Should point to folder/directory with subfolder '" DEFAULT_LIB_DIR "' or DEFAULT_LIB_PATH environmental variable"), cl::value_desc("defaultlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gcmt-lib.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. Should point to file 'LLVMSupport.lib' and 'LLVMDemangle' in linux or LLVM_LIB_PATH environmental variable"), cl::value_desc("llvmlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> tsclibpath("tsc-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'TypeScriptAsyncRuntime.lib' or TSC_LIB_PATH environmental variable"), cl::value_desc("tsclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
@@ -157,7 +157,7 @@ std::string mergeWithDefaultLibPath(std::string defaultlibpath, std::string subP
 bool prepareDefaultLib(CompileOptions &compileOptions)
 {
     // TODO: temp hack
-    auto fullPath = mergeWithDefaultLibPath(getDefaultLibPath(), "jslib/");
+    auto fullPath = mergeWithDefaultLibPath(getDefaultLibPath(), DEFAULT_LIB_DIR "/");
     auto isDir = llvm::sys::fs::is_directory(fullPath);
     if (!defaultlibpath.empty() && !isDir) 
     {
@@ -169,7 +169,7 @@ bool prepareDefaultLib(CompileOptions &compileOptions)
     compileOptions.noDefaultLib |= !isDir;
     if (!compileOptions.noDefaultLib)
     {
-        compileOptions.defaultDeclarationTSFile = mergeWithDefaultLibPath(getDefaultLibPath(), "jslib/lib.d.ts");
+        compileOptions.defaultDeclarationTSFile = mergeWithDefaultLibPath(getDefaultLibPath(), DEFAULT_LIB_DIR "/lib.d.ts");
     }
 
     return true;

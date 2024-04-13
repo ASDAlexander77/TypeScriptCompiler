@@ -75,5 +75,6 @@
 #define UNION_TAG_VALUE_INDEX 0
 #define UNION_VALUE_INDEX 1
 
+#define DEFAULT_LIB_DIR "defaultlib"
 
 #endif // DEFINES_H_

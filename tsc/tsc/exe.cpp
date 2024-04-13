@@ -318,7 +318,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (!compileOptions.noDefaultLib)
     {
-        defaultLibPathOpt = getLibOpt(mergeWithDefaultLibPath(getDefaultLibPath(), shared ? "jslib/dll/lib" : "jslib/lib/lib"));
+        defaultLibPathOpt = getLibOpt(mergeWithDefaultLibPath(getDefaultLibPath(), shared ? DEFAULT_LIB_DIR "/dll/lib" : DEFAULT_LIB_DIR "/lib/lib"));
         if (!defaultLibPathOpt.empty())
         {
             args.push_back(defaultLibPathOpt.c_str());    
