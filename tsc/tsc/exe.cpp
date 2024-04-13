@@ -16,6 +16,7 @@
 
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/TypeScriptCompiler/Defines.h"
+#include "TypeScript/Defines.h"
 
 namespace cl = llvm::cl;
 

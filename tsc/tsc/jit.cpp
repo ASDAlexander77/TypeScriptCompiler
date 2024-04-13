@@ -10,6 +10,8 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/WithColor.h"
 
+#include "TypeScript/Defines.h"
+
 #define DEBUG_TYPE "tsc"
 
 namespace cl = llvm::cl;

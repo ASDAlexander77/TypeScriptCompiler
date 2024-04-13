@@ -27,6 +27,7 @@
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 #include "TypeScript/DataStructs.h"
+#include "TypeScript/Defines.h"
 
 #define DEBUG_TYPE "tsc"
 
