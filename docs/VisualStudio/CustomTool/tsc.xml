@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ProjectSchemaDefinitions xmlns="http://schemas.microsoft.com/build/2009/properties" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
+  <Rule Name="TSC" PageTemplate="tool" DisplayName="TypeScript Compiler" Order="200">
+    <Rule.DataSource>
+      <DataSource Persistence="ProjectFile" ItemType="TSC"/>
+    </Rule.DataSource>
+    <Rule.Categories>
+      <Category Name="General">
+        <Category.DisplayName>
+          <sys:String>General</sys:String>
+        </Category.DisplayName>
+      </Category>
+      <Category Name="TypeScript Compiler Options">
+        <Category.DisplayName>
+          <sys:String>TypeScript Compiler Options</sys:String>
+        </Category.DisplayName>
+      </Category>
+      <Category Name="Advanced">
+        <Category.DisplayName>
+          <sys:String>Advanced </sys:String>
+        </Category.DisplayName>
+      </Category>
+      <Category Name="Command Line" Subtype="CommandLine">
+        <Category.DisplayName>
+          <sys:String>Command Line</sys:String>
+        </Category.DisplayName>
+      </Category>
+    </Rule.Categories>
+    <StringProperty Name="Inputs" Category="Command Line" IsRequired="true">
+      <StringProperty.DataSource>
+        <DataSource Persistence="ProjectFile" ItemType="TSC" SourceType="Item"/>
+      </StringProperty.DataSource>
+    </StringProperty>
+    <BoolProperty Name="GenerateDebugInformation" Category="TypeScript Compiler Options" DisplayName="Generate Debug Information" Description="Generates Debug Information.     (-di)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="-di"/>
+    <StringProperty Name="CommandLineTemplate" DisplayName="Command Line" Visible="False" IncludeInCommandLine="False"/>
+    <DynamicEnumProperty Name="TSCBeforeTargets" Category="General" EnumProvider="Targets" IncludeInCommandLine="False">
+      <DynamicEnumProperty.DisplayName>
+        <sys:String>Execute Before</sys:String>
+      </DynamicEnumProperty.DisplayName>
+      <DynamicEnumProperty.Description>
+        <sys:String>Specifies the targets for the build customization to run before.</sys:String>
+      </DynamicEnumProperty.Description>
+      <DynamicEnumProperty.ProviderSettings>
+        <NameValuePair Name="Exclude" Value="^TSCBeforeTargets|^Compute"/>
+      </DynamicEnumProperty.ProviderSettings>
+      <DynamicEnumProperty.DataSource>
+        <DataSource Persistence="ProjectFile" ItemType="" HasConfigurationCondition="true"/>
+      </DynamicEnumProperty.DataSource>
+    </DynamicEnumProperty>
+    <DynamicEnumProperty Name="TSCAfterTargets" Category="General" EnumProvider="Targets" IncludeInCommandLine="False">
+      <DynamicEnumProperty.DisplayName>
+        <sys:String>Execute After</sys:String>
+      </DynamicEnumProperty.DisplayName>
+      <DynamicEnumProperty.Description>
+        <sys:String>Specifies the targets for the build customization to run after.</sys:String>
+      </DynamicEnumProperty.Description>
+      <DynamicEnumProperty.ProviderSettings>
+        <NameValuePair Name="Exclude" Value="^TSCAfterTargets|^Compute"/>
+      </DynamicEnumProperty.ProviderSettings>
+      <DynamicEnumProperty.DataSource>
+        <DataSource Persistence="ProjectFile" ItemType="" HasConfigurationCondition="true"/>
+      </DynamicEnumProperty.DataSource>
+    </DynamicEnumProperty>
+    <StringProperty Name="ExecutionDescription" DisplayName="Execution Description" IncludeInCommandLine="False" Visible="False"/>
+    <StringListProperty Name="AdditionalDependencies" DisplayName="Additional Dependencies" IncludeInCommandLine="False" Visible="False"/>
+    <StringProperty Subtype="AdditionalOptions" Name="AdditionalOptions" Category="Command Line">
+      <StringProperty.DisplayName>
+        <sys:String>Additional Options</sys:String>
+      </StringProperty.DisplayName>
+      <StringProperty.Description>
+        <sys:String>Additional Options</sys:String>
+      </StringProperty.Description>
+    </StringProperty>
+  </Rule>
+  <ItemType Name="TSC" DisplayName="TypeScript Compiler"/>
+  <FileExtension Name="*.ts" ContentType="TSC"/>
+  <ContentType Name="TSC" DisplayName="TypeScript Compiler" ItemType="TSC"/>
+</ProjectSchemaDefinitions>

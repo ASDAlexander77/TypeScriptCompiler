@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <PropertyPageSchema Include="$(MSBuildThisFileDirectory)$(MSBuildThisFileName).xml"/>
+    <AvailableItemName Include="TSC">
+      <Targets>_TSC</Targets>
+    </AvailableItemName>
+  </ItemGroup>
+  <PropertyGroup>
+    <ComputeLinkInputsTargets>
+      $(ComputeLinkInputsTargets);
+      ComputeTSCOutput;
+    </ComputeLinkInputsTargets>
+    <ComputeLibInputsTargets>
+      $(ComputeLibInputsTargets);
+      ComputeTSCOutput;
+    </ComputeLibInputsTargets>
+  </PropertyGroup>
+  <UsingTask TaskName="TSC" TaskFactory="XamlTaskFactory" AssemblyName="Microsoft.Build.Tasks.v4.0">
+    <Task>$(MSBuildThisFileDirectory)$(MSBuildThisFileName).xml</Task>
+  </UsingTask>
+  <Target Name="_TSC" BeforeTargets="$(TSCBeforeTargets)" AfterTargets="$(TSCAfterTargets)" Condition="'@(TSC)' != ''" Outputs="%(TSC.OutputFormat)" Inputs="%(TSC.Identity);%(TSC.AdditionalDependencies);$(MSBuildProjectFile)" DependsOnTargets="_SelectedFiles">
+    <ItemGroup Condition="'@(SelectedFiles)' != ''">
+      <TSC Remove="@(TSC)" Condition="'%(Identity)' != '@(SelectedFiles)'"/>
+    </ItemGroup>
+    <ItemGroup>
+      <TSC_tlog Include="%(TSC.OutputFormat)" Condition="'%(TSC.OutputFormat)' != '' and '%(TSC.ExcludedFromBuild)' != 'true'">
+        <Source>@(TSC, '|')</Source>
+      </TSC_tlog>
+    </ItemGroup>
+    <Message Importance="High" Text="%(TSC.ExecutionDescription)"/>
+    <WriteLinesToFile Condition="'@(TSC_tlog)' != '' and '%(TSC_tlog.ExcludedFromBuild)' != 'true'" File="$(IntDir)$(ProjectName).write.1.tlog" Lines="^%(TSC_tlog.Source);@(TSC_tlog-&gt;'%(Fullpath)')"/>
+    <TSC Condition="'@(TSC)' != '' and '%(TSC.ExcludedFromBuild)' != 'true'" Inputs="%(TSC.Inputs)" GenerateDebugInformation="%(TSC.GenerateDebugInformation)" CommandLineTemplate="%(TSC.CommandLineTemplate)" AdditionalOptions="%(TSC.AdditionalOptions)"/>
+  </Target>
+  <Target Name="ComputeTSCOutput" Condition="'@(TSC)' != ''">
+    <ItemGroup>
+      <Link Include="@(TSC-&gt;Metadata('OutputFormat')-&gt;Distinct()-&gt;ClearMetadata())" Condition="'%(TSC.ExcludedFromBuild)' != 'true'"/>
+      <Lib Include="@(TSC-&gt;Metadata('OutputFormat')-&gt;Distinct()-&gt;ClearMetadata())" Condition="'%(TSC.ExcludedFromBuild)' != 'true'"/>
+    </ItemGroup>
+  </Target>
+</Project>
