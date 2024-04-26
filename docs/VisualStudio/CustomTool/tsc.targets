@@ -30,7 +30,7 @@
     </ItemGroup>
     <Message Importance="High" Text="%(TSC.ExecutionDescription)"/>
     <WriteLinesToFile Condition="'@(TSC_tlog)' != '' and '%(TSC_tlog.ExcludedFromBuild)' != 'true'" File="$(IntDir)$(ProjectName).write.1.tlog" Lines="^%(TSC_tlog.Source);@(TSC_tlog-&gt;'%(Fullpath)')"/>
-    <TSC Condition="'@(TSC)' != '' and '%(TSC.ExcludedFromBuild)' != 'true'" Inputs="%(TSC.Inputs)" GenerateDebugInformation="%(TSC.GenerateDebugInformation)" CommandLineTemplate="%(TSC.CommandLineTemplate)" AdditionalOptions="%(TSC.AdditionalOptions)"/>
+    <TSC Condition="'@(TSC)' != '' and '%(TSC.ExcludedFromBuild)' != 'true'" Inputs="%(TSC.Inputs)" DisableGarbageCollection="%(TSC.DisableGarbageCollection)" DisableWarnings="%(TSC.DisableWarnings)" GenerateDebugInformation="%(TSC.GenerateDebugInformation)" DebugInformationForLLDB="%(TSC.DebugInformationForLLDB)" Optimization="%(TSC.Optimization)" OptimizationLevel="%(TSC.OptimizationLevel)" OptimizationSizeLevel="%(TSC.OptimizationSizeLevel)" CommandLineTemplate="%(TSC.CommandLineTemplate)" AdditionalOptions="%(TSC.AdditionalOptions)"/>
   </Target>
   <Target Name="ComputeTSCOutput" Condition="'@(TSC)' != ''">
     <ItemGroup>

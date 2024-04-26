@@ -31,7 +31,45 @@
         <DataSource Persistence="ProjectFile" ItemType="TSC" SourceType="Item"/>
       </StringProperty.DataSource>
     </StringProperty>
-    <BoolProperty Name="GenerateDebugInformation" Category="TypeScript Compiler Options" DisplayName="Generate Debug Information" Description="Generates Debug Information.     (-di)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="-di"/>
+    <BoolProperty Name="DisableGarbageCollection" Category="TypeScript Compiler Options" DisplayName="Disable Garbage Collection" Description="Disable Garbage Collection.     (--nogc)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--nogc"/>
+    <BoolProperty Name="DisableWarnings" Category="TypeScript Compiler Options" DisplayName="Disable Warnings" Description="Disable Warnings.     (--nowarn)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--nowarn"/>
+    <BoolProperty Name="GenerateDebugInformation" Category="TypeScript Compiler Options" DisplayName="Generate Debug Information" Description="Generates Debug Information.     (--di)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--di"/>
+    <BoolProperty Name="DebugInformationForLLDB" Category="TypeScript Compiler Options" DisplayName="Debug Information For LLDB" Description="Debug Information for LLDB.      (--lldb)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--lldb"/>
+    <BoolProperty Name="Optimization" Category="TypeScript Compiler Options" DisplayName="Optimization" Description="Enable Optimization.      (--opt)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--opt"/>
+    <EnumProperty
+      Name="OptimizationLevel" Category="TypeScript Compiler Options" DisplayName="Optimization Level" Description="Optimization Level.      (--opt_level)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc">
+      <EnumValue
+        Name="0"
+        DisplayName="0 (O0)"
+        Switch="--opt_level=0"/>
+      <EnumValue
+        Name="1"
+        DisplayName="1 (O1)"
+        Switch="--opt_level=1"/>
+      <EnumValue
+        Name="2"
+        DisplayName="2 (O2)"
+        Switch="--opt_level=2"/>
+      <EnumValue
+        Name="3"
+        DisplayName="3 (O3)"
+        Switch="--opt_level=3"/>
+    </EnumProperty>
+    <EnumProperty
+      Name="OptimizationSizeLevel" Category="TypeScript Compiler Options" DisplayName="Optimization Size Level" Description="Optimization Size Level.      (--size_level)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--size_level">
+      <EnumValue
+        Name="0"
+        DisplayName="0 (O2)"
+        Switch="--size_level=0"/>
+      <EnumValue
+        Name="1"
+        DisplayName="1 (Os)"
+        Switch="--size_level=1"/>
+      <EnumValue
+        Name="2"
+        DisplayName="2 (Oz)"
+        Switch="--size_level=2"/>
+    </EnumProperty>
     <StringProperty Name="CommandLineTemplate" DisplayName="Command Line" Visible="False" IncludeInCommandLine="False"/>
     <DynamicEnumProperty Name="TSCBeforeTargets" Category="General" EnumProvider="Targets" IncludeInCommandLine="False">
       <DynamicEnumProperty.DisplayName>
