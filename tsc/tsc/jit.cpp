@@ -35,6 +35,53 @@ std::string mergeWithDefaultLibPath(std::string, std::string);
 int registerMLIRDialects(mlir::ModuleOp);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
 
+using MlirRunnerInitFn = void (*)(llvm::StringMap<void *> &);
+using MlirRunnerDestroyFn = void (*)();
+
+int loadLibrary(mlir::SmallString<256> &libPath, llvm::StringMap<void *> &exportSymbols, mlir::SmallVector<MlirRunnerDestroyFn> &destroyFns)
+{
+    LLVM_DEBUG(llvm::dbgs() << "loading lib at path: " << libPath.c_str() << "\n";);
+
+    std::string errMsg;
+    auto lib = llvm::sys::DynamicLibrary::getPermanentLibrary(libPath.c_str(), &errMsg);
+
+    if (errMsg.size() > 0)
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Loading error lib: " << errMsg << "\n";
+        return -1;
+    }
+
+    LLVM_DEBUG(llvm::dbgs() << "loaded path: " << libPath.c_str() << "\n";);
+
+    void *initSym = lib.getAddressOfSymbol("__mlir_runner_init");
+    if (!initSym)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_init";);
+    }
+
+    void *destroySim = lib.getAddressOfSymbol("__mlir_runner_destroy");
+    if (!destroySim)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_destroy";);
+    }
+
+    // Library does not support mlir runner, load it with ExecutionEngine.
+    if (!initSym || !destroySim)
+    {
+        return 0;
+    }
+
+    LLVM_DEBUG(llvm::dbgs() << "added path: " << libPath.c_str() << "\n";);
+
+    auto initFn = reinterpret_cast<MlirRunnerInitFn>(initSym);
+    initFn(exportSymbols);
+
+    auto destroyFn = reinterpret_cast<MlirRunnerDestroyFn>(destroySim);
+    destroyFns.push_back(destroyFn);
+
+    return 0;
+}
+
 int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     // Print a stack trace if we signal out.
@@ -75,57 +122,15 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return absPath;
     });
 
-    // Libraries that we'll pass to the ExecutionEngine for loading.
-    mlir::SmallVector<mlir::StringRef, 4> executionEngineLibs;
-
-    using MlirRunnerInitFn = void (*)(llvm::StringMap<void *> &);
-    using MlirRunnerDestroyFn = void (*)();
-
     llvm::StringMap<void *> exportSymbols;
     mlir::SmallVector<MlirRunnerDestroyFn> destroyFns;
 
     // Handle libraries that do support mlir-runner init/destroy callbacks.
     for (auto &libPath : libPaths)
     {
-        LLVM_DEBUG(llvm::dbgs() << "loading lib at path: " << libPath.c_str() << "\n";);
-
-        std::string errMsg;
-        auto lib = llvm::sys::DynamicLibrary::getPermanentLibrary(libPath.c_str(), &errMsg);
-
-        if (errMsg.size() > 0)
-        {
-            llvm::WithColor::error(llvm::errs(), "tsc") << "Loading error lib: " << errMsg << "\n";
-            return -1;
-        }
-
-        LLVM_DEBUG(llvm::dbgs() << "loaded path: " << libPath.c_str() << "\n";);
-
-        void *initSym = lib.getAddressOfSymbol("__mlir_runner_init");
-        if (!initSym)
-        {
-            LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_init";);
-        }
-
-        void *destroySim = lib.getAddressOfSymbol("__mlir_runner_destroy");
-        if (!destroySim)
-        {
-            LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_destroy";);
-        }
-
-        // Library does not support mlir runner, load it with ExecutionEngine.
-        if (!initSym || !destroySim)
-        {
-            executionEngineLibs.push_back(libPath);
-            continue;
-        }
-
-        LLVM_DEBUG(llvm::dbgs() << "added path: " << libPath.c_str() << "\n";);
-
-        auto initFn = reinterpret_cast<MlirRunnerInitFn>(initSym);
-        initFn(exportSymbols);
-
-        auto destroyFn = reinterpret_cast<MlirRunnerDestroyFn>(destroySim);
-        destroyFns.push_back(destroyFn);
+        auto ret = loadLibrary(libPath, exportSymbols, destroyFns);
+        if (ret < 0)
+            return ret;
     }
 
     auto noGC = false;
@@ -167,9 +172,32 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 #define LIB_NAME "lib"
 #define LIB_EXT "so"
 #endif
-        llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                        "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
-        return -1;
+
+        std::string tsLibPath(LIB_NAME "TypeScriptRuntime." LIB_EXT);
+
+        mlir::SmallString<256> absPathTypeScriptLib(tsLibPath.begin(), tsLibPath.end());
+        cantFail(llvm::errorCodeToError(llvm::sys::fs::make_absolute(absPathTypeScriptLib)));        
+
+        if (llvm::sys::fs::exists(absPathTypeScriptLib))
+        {
+            // trying to load default TypeScript Library when GC is enabled
+            auto ret = loadLibrary(absPathTypeScriptLib, exportSymbols, destroyFns);
+            if (ret < 0)
+                return ret;        
+
+            // need to reset noGC to revalidate
+            noGC = false;
+
+            // re-registeting new symbols
+            engine->registerSymbols(runtimeSymbolMap);    
+        }
+
+        if (noGC)
+        {
+            llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
+                            "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
+            return -1;
+        }
     }
 
     if (dumpObjectFile)
