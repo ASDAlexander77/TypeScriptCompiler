@@ -434,7 +434,7 @@ static auto levenshteinWithMax(string s1, string s2, number max) -> number {
                 : (previous[j - 1] + 2);
             auto dist = c1 == s2[j - 1]
                 ? previous[j - 1]
-                : std::min((fnumber) (/*delete*/ previous[j] + 1, /*insert*/ current[j - 1] + 1), /*substitute*/ (fnumber) substitutionDistance);
+                : std::min(std::min(/*delete*/ previous[j] + 1, /*insert*/ current[j - 1] + 1), /*substitute*/ substitutionDistance);
             current[j] = dist;
             colMin = std::min((fnumber)colMin, dist);
         }
