@@ -17,5 +17,7 @@ function(add_mlir_unittest test_dirname)
 
 endfunction()
 
+set_Options()
+
 add_subdirectory(Example)
 add_subdirectory(MLIRGen)
