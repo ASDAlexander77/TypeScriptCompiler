@@ -173,23 +173,40 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 #define LIB_EXT "so"
 #endif
 
-        std::string tsLibPath(LIB_NAME "TypeScriptRuntime." LIB_EXT);
+        auto loadLib = [&] (std::string tsLibPath) {
+            mlir::SmallString<256> absPathTypeScriptLib(tsLibPath.begin(), tsLibPath.end());
+            cantFail(llvm::errorCodeToError(llvm::sys::fs::make_absolute(absPathTypeScriptLib)));        
 
-        mlir::SmallString<256> absPathTypeScriptLib(tsLibPath.begin(), tsLibPath.end());
-        cantFail(llvm::errorCodeToError(llvm::sys::fs::make_absolute(absPathTypeScriptLib)));        
+            if (llvm::sys::fs::exists(absPathTypeScriptLib))
+            {
+                // trying to load default TypeScript Library when GC is enabled
+                auto ret = loadLibrary(absPathTypeScriptLib, exportSymbols, destroyFns);
+                if (ret < 0)
+                    return ret;        
 
-        if (llvm::sys::fs::exists(absPathTypeScriptLib))
+                // need to reset noGC to revalidate
+                noGC = false;
+
+                // re-registeting new symbols
+                engine->registerSymbols(runtimeSymbolMap);    
+
+                return 0;
+            }
+
+            return 1;
+        };
+
+        // load lib at default paths
+        std::string tsLibPath1("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
+        auto ret = loadLib(tsLibPath1);
+        if (ret < 0)
+            return ret;        
+        else if (ret != 0)
         {
-            // trying to load default TypeScript Library when GC is enabled
-            auto ret = loadLibrary(absPathTypeScriptLib, exportSymbols, destroyFns);
+            std::string tsLibPath2(LIB_NAME "TypeScriptRuntime." LIB_EXT);
+            auto ret = loadLib(tsLibPath2);
             if (ret < 0)
                 return ret;        
-
-            // need to reset noGC to revalidate
-            noGC = false;
-
-            // re-registeting new symbols
-            engine->registerSymbols(runtimeSymbolMap);    
         }
 
         if (noGC)
