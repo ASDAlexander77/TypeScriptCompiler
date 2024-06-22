@@ -261,6 +261,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     std::string llvmLibPathOpt;
     std::string emsdkSysRootPathOpt;
     std::string defaultLibPathOpt;
+    std::string defaultLibFileOpt;
 
     auto isLLVMLibNeeded = true;
     auto isTscLibNeeded = true;
@@ -319,7 +320,11 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (!compileOptions.noDefaultLib)
     {
-        defaultLibPathOpt = getLibOpt(mergeWithDefaultLibPath(getDefaultLibPath(), shared ? DEFAULT_LIB_DIR "/dll/lib" : DEFAULT_LIB_DIR "/lib/lib"));
+        // default lib file
+        args.push_back("-lTypeScriptDefaultLib");    
+
+        // default lib path
+        defaultLibPathOpt = getLibsPathOpt(mergeWithDefaultLibPath(getDefaultLibPath(), shared ? DEFAULT_LIB_DIR "/dll" : DEFAULT_LIB_DIR "/lib"));
         if (!defaultLibPathOpt.empty())
         {
             args.push_back(defaultLibPathOpt.c_str());    
