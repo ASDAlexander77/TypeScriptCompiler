@@ -321,7 +321,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     if (!compileOptions.noDefaultLib)
     {
         // default lib file
-        args.push_back("-lTypeScriptDefaultLib");    
+        args.push_back("-l" DEFAULT_LIB_NAME);    
 
         // default lib path
         defaultLibPathOpt = getLibsPathOpt(mergeWithDefaultLibPath(getDefaultLibPath(), shared ? DEFAULT_LIB_DIR "/dll" : DEFAULT_LIB_DIR "/lib"));

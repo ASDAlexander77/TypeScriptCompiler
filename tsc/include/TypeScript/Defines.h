@@ -76,5 +76,6 @@
 #define UNION_VALUE_INDEX 1
 
 #define DEFAULT_LIB_DIR "defaultlib"
+#define DEFAULT_LIB_NAME "TypeScriptDefaultLib"
 
 #endif // DEFINES_H_
