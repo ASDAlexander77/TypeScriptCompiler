@@ -300,11 +300,11 @@
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=jit",
-                "C:/temp/1.ts",
+                "I:/Playground/1.ts",
                 "-debug-only=llvm",
                 "-mlir-disable-threading",
                 "-di",
-                "--default-lib-path=C:/temp",
+                "--default-lib-path=I:/TypeScriptCompilerDefaultLib/__build/debug",
                 "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,
