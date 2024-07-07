@@ -18776,7 +18776,7 @@ genContext);
 
         if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
         {
-            return getIndexAccessType(literalType.getElementType(), indexType);
+            return getIndexedAccessType(literalType.getElementType(), indexType, genContext);
         }
 
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
