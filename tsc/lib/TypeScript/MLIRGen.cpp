@@ -148,7 +148,17 @@ class MLIRGenImpl
           path(pathParam)
     {
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
-        const_cast<llvm::SourceMgr &>(sourceMgr).setIncludeDirs({pathParam.str()});
+
+        std::vector<std::string> includeDirs;
+        includeDirs.push_back(pathParam.str());
+        if (!compileOptions.noDefaultLib)
+        {
+            SmallString<256> defaultLibPath(compileOptions.defaultDeclarationTSFile);
+            sys::path::remove_filename(defaultLibPath);    
+            includeDirs.push_back(defaultLibPath.str().str());        
+        }
+
+        const_cast<llvm::SourceMgr &>(sourceMgr).setIncludeDirs(includeDirs);
     }
 
     mlir::LogicalResult report(SourceFile module, const std::vector<SourceFile> &includeFiles)
