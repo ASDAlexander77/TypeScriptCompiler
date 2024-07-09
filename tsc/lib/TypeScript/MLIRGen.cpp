@@ -4740,7 +4740,8 @@ class MLIRGenImpl
             auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, genContext);
 
             auto funcOp = lookupFunctionMap(functionName);
-            if (funcOp && theModule.lookupSymbol(functionName))
+            if (funcOp && theModule.lookupSymbol(functionName) 
+                || theModule.lookupSymbol(fullFunctionName))
             {
                 return {mlir::success(), funcOp, functionName, false};
             }
