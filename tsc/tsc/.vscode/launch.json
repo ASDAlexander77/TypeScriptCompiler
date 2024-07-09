@@ -28,7 +28,7 @@
                 "-emit=mlir",
                 "-debug-only=mlir",
                 "-mlir-disable-threading",
-                "C:/temp/1.ts"
+                "I:/Playground/1.ts"
             ],
             "stopAtEntry": false,
             "cwd": "C:/temp/",
