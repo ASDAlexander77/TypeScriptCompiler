@@ -304,7 +304,7 @@
                 "-debug-only=mlir,llvm",
                 "-mlir-disable-threading",
                 "-di",
-                "--default-lib-path=I:/TypeScriptCompilerDefaultLib/__build/debug",
+                "--default-lib-path=C:/temp",
                 "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,

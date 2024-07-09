@@ -238,9 +238,10 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
         auto loc = op->getLoc();
 
         auto i8PtrType = th.getI8PtrType();
+        auto ptrType = th.getPtrType();
 
         // Get a symbol reference to the printf function, inserting it if necessary.
-        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(rewriter.getI32Type(), i8PtrType, false));
+        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(rewriter.getI32Type(), ptrType, false));
 
         auto strType = mlir_ts::StringType::get(rewriter.getContext());
 
@@ -270,7 +271,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
                 rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values, rewriter.getBoolAttr(true));
 
             mlir::Value valueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(strType), result);
-            mlir::Value valueAsPtr = rewriter.create<LLVM::BitcastOp>(loc, i8PtrType, valueAsLLVMType);
+            mlir::Value valueAsPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, valueAsLLVMType);
 
             rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsPtr);
 
@@ -278,7 +279,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
         }
         else
         {
-            mlir::Value valueAsPtr = rewriter.create<LLVM::BitcastOp>(loc, i8PtrType, values.front());
+            mlir::Value valueAsPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, values.front());
             rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsPtr);
         }
 
