@@ -413,7 +413,7 @@ class MLIRTypeHelper
 
     mlir::Type wideStorageType(mlir::Type type)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! widing type: " << type << "\n";);        
+        LLVM_DEBUG(llvm::dbgs() << "\n!! widening type: " << type << "\n";);        
 
         auto actualType = type;
         if (actualType)
