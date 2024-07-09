@@ -228,10 +228,10 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [
-                { "name": "DEFAULT_LIB_PATH", "value": "C:\\temp" },
-                { "name": "GC_LIB_PATH", "value": "C:\\dev\\TypeScriptCompiler\\__build\\gc\\msbuild\\x64\\debug\\Debug" },
-                { "name": "LLVM_LIB_PATH", "value": "C:\\dev\\TypeScriptCompiler\\__build\\llvm\\msbuild\\x64\\debug\\Debug\\lib" },
-                { "name": "TSC_LIB_PATH", "value": "C:\\dev\\TypeScriptCompiler\\__build\\tsc\\windows-msbuild-debug\\lib" },
+                { "name": "DEFAULT_LIB_PATH", "value": "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build/release" },
+                { "name": "GC_LIB_PATH", "value": "${workspaceFolder}/../../__build/gc/msbuild/x64/debug/Debug" },
+                { "name": "LLVM_LIB_PATH", "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib" },
+                { "name": "TSC_LIB_PATH", "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/lib" },
             ],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
@@ -332,33 +332,29 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
-            "name": "(Windows-CodeLLDB) 1.exe",
-            "type": "lldb",
-            "request": "launch",
-            "program": "C:/temp/MLIR_to_exe/1.exe",
-            "stopOnEntry": true,
-            "cwd": "${workspaceRoot}"
-        },
-        {
-            "name": "(Windows-cppvsdbg) 1.exe",
+            "name": "(Windows) tsc.exe - DefaultLib Compile",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "C:/temp/MLIR_to_exe/1.exe",
-            "symbolSearchPath": "C:/temp/MLIR_to_exe/",
-            "args": [],
-            "stopAtEntry": true,
-            "cwd": "${workspaceRoot}",
-            "logging": {
-                "moduleLoad": true,
-                "trace": true
-            },            
-        },
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "args": [
+                "-emit=obj",
+                "-debug-only=mlir,llvm",
+                "-mlir-disable-threading",                
+                "-o=c:/temp/lib.obj",
+                "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/src/lib.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },             
         {
             "name": "(Windows-cppvsdbg) TypeScriptApp.exe",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "C:\\dev\\TypeScriptCompiler\\docs\\how\\cmake_winapp\\__build\\debug\\Debug\\TypeScriptApp.exe",
-            "symbolSearchPath": "C:\\dev\\TypeScriptCompiler\\docs\\how\\cmake_winapp\\__build\\debug\\Debug\\",
+            "program": "${workspaceFolder}/../../docs/how/cmake_winapp/__build/debug/Debug/TypeScriptApp.exe",
+            "symbolSearchPath": "${workspaceFolder}/../../docs/how/cmake_winapp/__build/debug/Debug/",
             "args": [],
             "stopAtEntry": true,
             "cwd": "${workspaceRoot}",
