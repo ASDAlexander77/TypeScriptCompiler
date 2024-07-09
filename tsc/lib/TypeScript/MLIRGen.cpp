@@ -9576,8 +9576,8 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: " << arrayType
                                     << "\n";);
 
-            emitError(location) << "ElementAccessExpression: " << arrayType;
-            llvm_unreachable("not implemented (ElementAccessExpression)");
+            emitError(location) << "access expression is not applicable to " << arrayType;
+            return mlir::failure();
         }
 
         auto indexType = argumentExpression.getType();
