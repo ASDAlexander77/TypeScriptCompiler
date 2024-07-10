@@ -10977,7 +10977,10 @@ class MLIRGenImpl
                 // TODO: review it, seems it should be resolved earlier
                 auto name = MLIRHelper::getName(typeExpression.as<Identifier>());
                 type = findEmbeddedType(name, newExpression->typeArguments, genContext);
-                result = V(builder.create<mlir_ts::TypeRefOp>(location, type));
+                if (type)
+                {
+                    result = V(builder.create<mlir_ts::TypeRefOp>(location, type));
+                }
             }
         }
 
