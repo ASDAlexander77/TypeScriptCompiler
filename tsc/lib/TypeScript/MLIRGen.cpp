@@ -10903,6 +10903,47 @@ class MLIRGenImpl
         return NewClassInstanceLogicAsOp(location, classInfo, false, genContext);
     }
 
+    ValueOrLogicalResult NewArray(mlir::Location location, mlir::Type type, NodeArray<Expression> arguments, const GenContext &genContext)
+    {
+        mlir::Type elementType;
+        if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
+        {
+            elementType = arrayType.getElementType();
+        }
+
+        if (!elementType)
+        {
+            return mlir::failure();
+        }
+
+        mlir::Value count;
+        if (arguments.size() == 0)
+        {
+            count = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerType(32, false), builder.getUI32IntegerAttr(0));
+        }
+        else if (arguments.size() == 1)
+        {
+            auto result = mlirGen(arguments.front(), genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            count = V(result);           
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+
+        if (count.getType() != builder.getI32Type())
+        {
+            // TODO: test cast result
+            count = cast(location, builder.getI32Type(), count, genContext);
+        }
+
+        elementType = mth.convertConstTupleTypeToTupleType(elementType);
+
+        auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(elementType), count);
+        return V(newArrOp);                     
+    }    
+
     ValueOrLogicalResult NewClassInstanceByCallingNewCtor(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
             NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
@@ -10924,24 +10965,6 @@ class MLIRGenImpl
     {
         auto location = loc(newExpression);
 
-        auto newArray = [&](auto type, auto count) -> ValueOrLogicalResult {
-            if (count.getType() != builder.getI32Type())
-            {
-                // TODO: test cast result
-                count = cast(location, builder.getI32Type(), count, genContext);
-            }
-
-            if (!type)
-            {
-                return mlir::failure();
-            }
-
-            type = mth.convertConstTupleTypeToTupleType(type);
-
-            auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(type), count);
-            return V(newArrOp);
-        };
-
         // 3 cases, name, index access, method call
         mlir::Type type;
         auto typeExpression = newExpression->expression;
@@ -10951,47 +10974,20 @@ class MLIRGenImpl
         {
             if (typeExpression == SyntaxKind::Identifier)
             {
+                // TODO: review it, seems it should be resolved earlier
                 auto name = MLIRHelper::getName(typeExpression.as<Identifier>());
                 type = findEmbeddedType(name, newExpression->typeArguments, genContext);
-
-                mlir::Type elementType;
-                if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
-                {
-                    elementType = arrayType.getElementType();
-                }
-                else if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
-                {
-                    elementType = constArrayType.getElementType();
-                }
-
-                if (elementType)
-                {
-                    mlir::Value count;
-
-                    if (newExpression->arguments.size() == 0)
-                    {
-                        count = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerType(32, false), builder.getUI32IntegerAttr(0));
-                    }
-                    else if (newExpression->arguments.size() == 1)
-                    {
-                        auto result = mlirGen(newExpression->arguments.front(), genContext);
-                        EXIT_IF_FAILED_OR_NO_VALUE(result)
-                        count = V(result);           
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
-                    }
-
-                    auto newArrOp = newArray(elementType, count);
-                    EXIT_IF_FAILED_OR_NO_VALUE(newArrOp)
-                    return V(newArrOp);                     
-                }
+                result = V(builder.create<mlir_ts::TypeRefOp>(location, type));
             }
         }
 
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto value = V(result);
+
+        if (auto arrayType = value.getType().dyn_cast<mlir_ts::ArrayType>())
+        {
+            return NewArray(location, arrayType, newExpression->arguments, genContext);
+        }
 
         if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
         {
