@@ -2363,6 +2363,13 @@ class MLIRGenImpl
             return {mlir::success(), specType};
         }
 
+        // special case: Array<T>
+        if (fullNameGenericClassTypeName == "Array" && typeArguments.size() == 1)
+        {
+            auto arraySpecType = getEmbeddedTypeWithParam(fullNameGenericClassTypeName, typeArguments, genContext);
+            return {mlir::success(), arraySpecType};
+        }
+
         // can't find generic instance
         return {mlir::success(), mlir::Type()};
     }
@@ -2563,6 +2570,11 @@ class MLIRGenImpl
                 return V(builder.create<mlir_ts::ClassRefOp>(
                     location, specClassType,
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), specClassType.getName().getValue())));
+            }
+
+            if (specType)
+            {
+                return V(builder.create<mlir_ts::TypeRefOp>(location, specType));
             }
 
             return genResult;
