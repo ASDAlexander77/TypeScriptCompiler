@@ -2115,6 +2115,11 @@ def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
   let results = (outs I32:$result);
 }
 
+def TypeScript_SetLengthOfOp : TypeScript_Op<"SetLengthOf"> {
+  let arguments = (ins TypeScript_ArrayLike:$op, I32:$newLength);
+  let results = (outs );
+}
+
 def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {
   let arguments = (ins TypeScript_String:$op);
   let results = (outs I32:$result);

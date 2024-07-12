@@ -7976,13 +7976,17 @@ class MLIRGenImpl
                                                            mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
         }
         /*
-        else if (auto createBoundFunction =
-        leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
             // TODO: i should not allow to change interface
             return mlirGenSaveLogicOneItem(location, createBoundFunction.getFunc(), rightExpressionValue, genContext);
         }
         */
+        else if (auto lengthOf = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LengthOfOp>())
+        {
+            // special case to resize array
+            builder.create<mlir_ts::SetLengthOfOp>(location, lengthOf.getOp(), savingValue);
+        }
         else
         {
             LLVM_DEBUG(dbgs() << "\n!! left expr.: " << leftExpressionValueBeforeCast << " ...\n";);

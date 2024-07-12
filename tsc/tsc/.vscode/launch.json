@@ -223,7 +223,7 @@
                 "-debug-only=mlir,llvm,pass",
                 "-mlir-disable-threading",
                 "-mtriple=x86_64-pc-windows-msvc",
-                "C:/temp/1.ts",
+                "I:/Playground/1.ts",
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
