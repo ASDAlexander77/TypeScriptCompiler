@@ -2116,7 +2116,7 @@ def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
 }
 
 def TypeScript_SetLengthOfOp : TypeScript_Op<"SetLengthOf"> {
-  let arguments = (ins TypeScript_ArrayLike:$op, I32:$newLength);
+  let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, I32:$newLength);
   let results = (outs );
 }
 

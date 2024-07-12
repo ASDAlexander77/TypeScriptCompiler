@@ -536,6 +536,8 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
+        rewriter.eraseOp(op);
+
         return success();
     }
 };

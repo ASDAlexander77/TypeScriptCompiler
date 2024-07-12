@@ -7984,8 +7984,17 @@ class MLIRGenImpl
         */
         else if (auto lengthOf = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LengthOfOp>())
         {
+            MLIRCodeLogic mcl(builder);
+            auto arrayValueLoaded = mcl.GetReferenceOfLoadOp(lengthOf.getOp());
+            if (!arrayValueLoaded)
+            {
+                emitError(location) << "Can't get reference of the array, ensure const array is not used";
+                return mlir::failure();
+            }
+
             // special case to resize array
-            builder.create<mlir_ts::SetLengthOfOp>(location, lengthOf.getOp(), savingValue);
+            syncSavingValue(lengthOf.getResult().getType());
+            builder.create<mlir_ts::SetLengthOfOp>(location, arrayValueLoaded, savingValue);
         }
         else
         {
