@@ -9591,7 +9591,16 @@ class MLIRGenImpl
 
             llvm_unreachable("not implemented (ElementAccessExpression)");
         }          
-        else if (auto enumType = arrayType.dyn_cast<mlir_ts::AnyType>())
+        else if (auto refType = arrayType.dyn_cast<mlir_ts::RefType>()) 
+        {
+            CAST_A(index, location, mth.getStructIndexType(), argumentExpression, genContext);
+
+            auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
+                location, refType, expression, index);            
+
+            return V(elemRef);
+        }
+        else if (auto anyType = arrayType.dyn_cast<mlir_ts::AnyType>())
         {
             emitError(location, "not supported");
             return mlir::failure();
