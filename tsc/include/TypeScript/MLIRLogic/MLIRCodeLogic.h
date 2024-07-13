@@ -221,7 +221,7 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }};
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
         return m[functionName.str()];    
     }    
 
@@ -229,7 +229,7 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }};
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
         return m[functionName.str()];    
     }   
 
@@ -286,6 +286,10 @@ class MLIRCustomMethods
         else if (functionName == "LoadReference")
         {
             return mlirGenLoadReference(location, operands);
+        }
+        else if (functionName == "ReferenceOf")
+        {
+            return mlirGenReferenceOf(location, operands);
         }
         else if (!genContext.allowPartialResolve)
         {
@@ -602,6 +606,13 @@ class MLIRCustomMethods
         auto loadedValue = builder.create<mlir_ts::LoadOp>(location, refValue.getType().cast<mlir_ts::RefType>().getElementType(), refValue);
         return V(loadedValue);
     }
+
+    ValueOrLogicalResult mlirGenReferenceOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        MLIRCodeLogic mcl(builder);
+        auto refValue = mcl.GetReferenceOfLoadOp(operands.front());        
+        return V(refValue);
+    }    
 };
 
 class MLIRPropertyAccessCodeLogic
