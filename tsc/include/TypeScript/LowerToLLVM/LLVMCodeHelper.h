@@ -677,9 +677,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        assert(elementRefType.isa<mlir_ts::RefType>());
-
         auto ptrType = tch.convertType(elementRefType);
+
+        assert(ptrType.isa<LLVM::LLVMPointerType>());
 
         auto dataPtr = refValue;
 

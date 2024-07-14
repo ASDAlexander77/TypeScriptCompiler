@@ -2454,7 +2454,7 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         // TODO: add size check !!!
 
         auto arrayPtr = rewriter.create<LLVM::ExtractValueOp>(loc,
-                tch.convertType(arrayType),
+                llvmPtrElementType,
                 transformed.getOp(), MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
 
         auto arrayOffset = ch.GetAddressOfPointerOffset(llvmPtrElementType, arrayPtr, transformed.getOffset());
