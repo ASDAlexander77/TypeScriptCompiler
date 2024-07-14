@@ -2253,10 +2253,10 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         auto llvmRtArrayStructType = tch.convertType(arrayType);
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
-                                                                 MLIRHelper::getStructIndex(rewriter, 0));
+                                                                 MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
 
         auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2,
-                                                                 transformed.getCount(), MLIRHelper::getStructIndex(rewriter, 1));
+                                                                 transformed.getCount(), MLIRHelper::getStructIndex(rewriter, ARRAY_SIZE_INDEX));
 
         rewriter.replaceOp(newArrOp, ValueRange{structValue3});
         return success();
@@ -2425,6 +2425,49 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
         rewriter.replaceOp(popOp, ValueRange{loadedElement});
+        return success();
+    }
+};
+
+struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
+{
+    using TsLlvmPattern<mlir_ts::ArrayViewOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ArrayViewOp arrayViewOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        
+
+        LLVMCodeHelper ch(arrayViewOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        CodeLogicHelper clh(arrayViewOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = arrayViewOp.getLoc();
+
+        auto arrayType = arrayViewOp.getOp().getType().cast<mlir_ts::ArrayType>();
+        auto elementType = arrayType.getElementType();
+        auto llvmElementType = tch.convertType(elementType);
+        auto llvmPtrElementType = th.getPointerType(llvmElementType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
+        // TODO: add size check !!!
+
+        auto arrayPtr = rewriter.create<LLVM::ExtractValueOp>(loc,
+                tch.convertType(arrayType),
+                transformed.getOp(), MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
+
+        auto arrayOffset = ch.GetAddressOfPointerOffset(llvmPtrElementType, arrayPtr, transformed.getOffset());
+        // create array type
+        auto llvmRtArrayStructType = tch.convertType(arrayType);
+        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
+        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, arrayOffset,
+                                                                 MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
+
+        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2,
+                                                                 transformed.getCount(), MLIRHelper::getStructIndex(rewriter, ARRAY_SIZE_INDEX));
+
+        rewriter.replaceOp(arrayViewOp, ValueRange{structValue3});
         return success();
     }
 };
@@ -2824,8 +2867,8 @@ struct PointerOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::PointerOffsetR
 
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        auto addr = ch.GetAddressOfPointerOffset(elementOp.getResult().getType(), elementOp.getRef().getType(),
-                                                transformed.getRef(), transformed.getIndex());
+        auto addr = ch.GetAddressOfPointerOffset(elementOp.getResult().getType(), 
+            transformed.getRef(), transformed.getIndex());
         rewriter.replaceOp(elementOp, addr);
         return success();
     }
@@ -5449,7 +5492,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering,
-        PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering,
+        PopOpLowering, ArrayViewOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering,
         StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering,
         StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering,
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering,

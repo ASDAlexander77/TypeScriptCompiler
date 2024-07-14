@@ -669,7 +669,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return addr;
     }
 
-    mlir::Value GetAddressOfPointerOffset(mlir::Type elementRefType, mlir::Type refValueType, mlir::Value refValue, mlir::Value index)
+    mlir::Value GetAddressOfPointerOffset(mlir::Type elementRefType, mlir::Value refValue, mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);

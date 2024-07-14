@@ -1875,7 +1875,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::AllocaOp,
         mlir_ts::InvokeOp, /*mlir_ts::ResultOp,*/ mlir_ts::VirtualSymbolRefOp,
         mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::ExtractInterfaceThisOp,
-        mlir_ts::ExtractInterfaceVTableOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp,
+        mlir_ts::ExtractInterfaceVTableOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::ArrayViewOp, mlir_ts::NewInterfaceOp,
         mlir_ts::VTableOffsetRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp,
         mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
         mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp,
