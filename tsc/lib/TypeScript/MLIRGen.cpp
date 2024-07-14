@@ -10938,6 +10938,8 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        elementType = mth.convertConstTupleTypeToTupleType(elementType);
+
         mlir::Value count;
         if (arguments.size() == 0)
         {
@@ -10951,7 +10953,15 @@ class MLIRGenImpl
         }
         else
         {
-            llvm_unreachable("not implemented");
+            SmallVector<ArrayElement> values;
+            struct ArrayInfo arrayInfo{};
+            arrayInfo.set(getArrayType(elementType).cast<mlir_ts::ArrayType>());
+            if (mlir::failed(processArrayValues(arguments, values, arrayInfo, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            return createArrayFromArrayInfo(location, values, arrayInfo, genContext);
         }
 
         if (count.getType() != builder.getI32Type())
@@ -10959,8 +10969,6 @@ class MLIRGenImpl
             // TODO: test cast result
             count = cast(location, builder.getI32Type(), count, genContext);
         }
-
-        elementType = mth.convertConstTupleTypeToTupleType(elementType);
 
         auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(elementType), count);
         return V(newArrOp);                     
@@ -17885,6 +17893,30 @@ genContext);
             {"Boolean", true },
             {"Function", true },
 #endif
+#ifdef ENABLE_NATIVE_TYPES
+            {"byte", true },
+            {"short", true },
+            {"ushort", true },
+            {"int", true },
+            {"uint", true },
+            {"long", true },
+            {"ulong", true },
+            {"char", true },
+            {"i16", true },
+            {"i32", true },
+            {"i64", true },
+            {"u16", true},
+            {"u32", true},
+            {"u64", true},
+            {"f16", true},
+            {"f32", true},
+            {"f64", true},
+            {"f128", true},
+            {"half", true},
+            {"float", true},
+            {"double", true},
+#endif
+#ifdef ENABLE_JS_TYPEDARRAYS
             {"Int8Array", true },
             {"Uint8Array", true },
             {"Int16Array", true },
@@ -17897,6 +17929,7 @@ genContext);
             {"Float32Array", true },
             {"Float64Array", true },
             {"Float128Array", true},
+#endif
 
             {"TypeOf", true },
             {"Opague", true }, // to support void*
@@ -17944,6 +17977,43 @@ genContext);
             {"Boolean", true },
             {"Function", true },
 #endif
+#ifdef ENABLE_NATIVE_TYPES
+            {"byte", true },
+            {"short", true },
+            {"ushort", true },
+            {"int", true },
+            {"uint", true },
+            {"long", true },
+            {"ulong", true },
+            {"char", true },
+            {"i16", true },
+            {"i32", true },
+            {"i64", true },
+            {"u16", true},
+            {"u32", true},
+            {"u64", true},
+            {"f16", true},
+            {"f32", true},
+            {"f64", true},
+            {"f128", true},
+            {"half", true},
+            {"float", true},
+            {"double", true},
+#endif
+#ifdef ENABLE_JS_TYPEDARRAYS
+            {"Int8Array", true },
+            {"Uint8Array", true },
+            {"Int16Array", true },
+            {"Uint16Array", true },
+            {"Int32Array", true },
+            {"Uint32Array", true },
+            {"BigInt64Array", true },
+            {"BigUint64Array", true },
+            {"Float16Array", true },
+            {"Float32Array", true },
+            {"Float64Array", true },
+            {"Float128Array", true},
+#endif
 
             {"TypeOf", true },
             {"Opague", true }, // to support void*
@@ -17977,6 +18047,30 @@ genContext);
             {"Boolean", getBooleanType()},
             {"Function", getFunctionType({getArrayType(getAnyType())}, {getAnyType()}, true)},
 #endif
+#ifdef ENABLE_NATIVE_TYPES
+            {"byte", builder.getIntegerType(8, false) },
+            {"short", builder.getIntegerType(16, true) },
+            {"ushort", builder.getIntegerType(16, false) },
+            {"int", builder.getIntegerType(32, true) },
+            {"uint", builder.getIntegerType(32, false) },
+            {"long", builder.getIntegerType(64, true) },
+            {"ulong", builder.getIntegerType(64, false) },
+            {"char", getCharType() },
+            {"i16", builder.getIntegerType(16, true) },
+            {"i32", builder.getIntegerType(32, true) },
+            {"i64", builder.getIntegerType(64, true) },
+            {"u16", builder.getIntegerType(16, false)},
+            {"u32", builder.getIntegerType(32, false)},
+            {"u64", builder.getIntegerType(64, false)},
+            {"f16", builder.getF16Type()},
+            {"f32", builder.getF32Type()},
+            {"f64", builder.getF64Type()},
+            {"f128", builder.getF128Type()},
+            {"half", builder.getF16Type()},
+            {"float", builder.getF32Type()},
+            {"double", builder.getF64Type()},
+#endif
+#ifdef ENABLE_JS_TYPEDARRAYS
             {"Int8Array", getArrayType(builder.getIntegerType(8, true)) },
             {"Uint8Array", getArrayType(builder.getIntegerType(8, false))},
             {"Int16Array", getArrayType(builder.getIntegerType(16, true)) },
@@ -17989,6 +18083,7 @@ genContext);
             {"Float32Array", getArrayType(builder.getF32Type())},
             {"Float64Array", getArrayType(builder.getF64Type())},
             {"Float128Array", getArrayType(builder.getF128Type())},
+#endif
             {"Opaque", getOpaqueType()},
         };
 
@@ -18008,6 +18103,44 @@ genContext);
             {"Boolean", getBooleanType()},
             {"Function", getFunctionType({getArrayType(getAnyType())}, {getAnyType()}, true)},
 #endif
+#ifdef ENABLE_NATIVE_TYPES
+            {"byte", builder.getIntegerType(8, false) },
+            {"short", builder.getIntegerType(16, true) },
+            {"ushort", builder.getIntegerType(16, false) },
+            {"int", builder.getIntegerType(32, true) },
+            {"uint", builder.getIntegerType(32, false) },
+            {"long", builder.getIntegerType(64, true) },
+            {"ulong", builder.getIntegerType(64, false) },
+            {"char", getCharType() },
+            {"i16", builder.getIntegerType(16, true) },
+            {"i32", builder.getIntegerType(32, true) },
+            {"i64", builder.getIntegerType(64, true) },
+            {"u16", builder.getIntegerType(16, false)},
+            {"u32", builder.getIntegerType(32, false)},
+            {"u64", builder.getIntegerType(64, false)},
+            {"f16", builder.getF16Type()},
+            {"f32", builder.getF32Type()},
+            {"f64", builder.getF64Type()},
+            {"f128", builder.getF128Type()},
+            {"half", builder.getF16Type()},
+            {"float", builder.getF32Type()},
+            {"double", builder.getF64Type()},
+#endif
+#ifdef ENABLE_JS_TYPEDARRAYS
+            {"Int8Array", getArrayType(builder.getIntegerType(8, true)) },
+            {"Uint8Array", getArrayType(builder.getIntegerType(8, false))},
+            {"Int16Array", getArrayType(builder.getIntegerType(16, true)) },
+            {"Uint16Array", getArrayType(builder.getIntegerType(16, false))},
+            {"Int32Array", getArrayType(builder.getIntegerType(32, true)) },
+            {"Uint32Array", getArrayType(builder.getIntegerType(32, false))},
+            {"BigInt64Array", getArrayType(builder.getIntegerType(64, true)) },
+            {"BigUint64Array", getArrayType(builder.getIntegerType(64, false))},
+            {"Float16Array", getArrayType(builder.getF16Type())},
+            {"Float32Array", getArrayType(builder.getF32Type())},
+            {"Float64Array", getArrayType(builder.getF64Type())},
+            {"Float128Array", getArrayType(builder.getF128Type())},
+#endif
+
             {"Opaque", getOpaqueType()},
         };
 
