@@ -1448,23 +1448,24 @@ class MLIRTypeHelper
         {
             if (auto srcIntType = srcType.dyn_cast<mlir::IntegerType>())
             {
-                if (srcIntType.getIntOrFloatBitWidth() < destIntType.getIntOrFloatBitWidth())
+                if (srcIntType.getSignedness() == destIntType.getSignedness()
+                    && srcIntType.getIntOrFloatBitWidth() <= destIntType.getIntOrFloatBitWidth())
                 {
                     return true;
                 }
 
-                if (srcIntType.getIntOrFloatBitWidth() > destIntType.getIntOrFloatBitWidth())
-                {
-                    return false;
-                }
-
-                if (srcIntType.isSigned() == destIntType.isSigned() 
-                    || srcIntType.isUnsigned() == destIntType.isUnsigned())
+                if (destIntType.getIntOrFloatBitWidth() - srcIntType.getIntOrFloatBitWidth() > 1)
                 {
                     return true;
                 }
 
-                return srcIntType.isSignless() || destIntType.isSignless();
+                if (srcIntType.getIntOrFloatBitWidth() == destIntType.getIntOrFloatBitWidth()
+                    && srcIntType.isSigned() == destIntType.isSigned())
+                {
+                    return true;
+                }
+
+                return false;
             }    
         }          
 
