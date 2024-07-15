@@ -52,6 +52,7 @@
 
 #define ENABLE_JS_BUILTIN_TYPES true
 #define ENABLE_JS_TYPEDARRAYS true
+#define ENABLE_JS_TYPEDARRAYS_NOBUILTINS true
 #define ENABLE_NATIVE_TYPES true
 #define NO_DEFAULT_LIB true
 
