@@ -332,7 +332,25 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - DefaultLib Compile",
+            "name": "(Windows) tsc.exe - DefaultLib Compile (DLL)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "args": [
+                "-emit=dll",
+                "-debug-only=mlir,llvm",
+                "-mlir-disable-threading",                
+                "-o=c:/temp/lib.dll",
+                "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/src/lib.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },             
+        {
+            "name": "(Windows) tsc.exe - DefaultLib Compile (OBJ)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
