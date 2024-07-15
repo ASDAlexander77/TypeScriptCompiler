@@ -7173,8 +7173,18 @@ class MLIRGenImpl
                 value = 
                     mlir::TypeSwitch<mlir::Attribute, mlir::Value>(valueAttr)
                         .Case<mlir::IntegerAttr>([&](auto intAttr) {
-                            return builder.create<mlir_ts::ConstantOp>(
-                                location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), -intAttr.getValue()));
+                            // TODO: convert unsiged int type into signed
+                            auto intType = intAttr.getType().cast<mlir::IntegerType>();
+                            auto constType = constantOp.getType();
+                            auto valAttr = intAttr;
+                            if (!intType.isSigned())
+                            {
+                                intType = builder.getIntegerType(intType.getWidth(), true);
+                                valAttr = builder.getIntegerAttr(intType, -intAttr.getValue());
+                                constType = mlir_ts::LiteralType::get(valAttr, intType);
+                            }
+
+                            return builder.create<mlir_ts::ConstantOp>(location, constType, valAttr);
                         })
                         .Case<mlir::FloatAttr>([&](auto floatAttr) {
                             return builder.create<mlir_ts::ConstantOp>(
@@ -10955,8 +10965,12 @@ class MLIRGenImpl
         {
             SmallVector<ArrayElement> values;
             struct ArrayInfo arrayInfo{};
-            arrayInfo.set(getArrayType(elementType).cast<mlir_ts::ArrayType>());
-            if (mlir::failed(processArrayValues(arguments, values, arrayInfo, genContext)))
+
+            GenContext noReceiverGenContext(genContext);
+            noReceiverGenContext.clearReceiverTypes();
+            noReceiverGenContext.receiverType = getArrayType(elementType).cast<mlir_ts::ArrayType>();
+
+            if (mlir::failed(processArrayValues(arguments, values, arrayInfo, noReceiverGenContext)))
             {
                 return mlir::failure();
             }
@@ -11269,18 +11283,37 @@ class MLIRGenImpl
         return mlirGenBooleanValue(loc(falseLiteral), false);
     }
 
+    mlir::Attribute getIntTypeAttribute(string text)
+    {
+        try
+        {
+            return builder.getI32IntegerAttr(to_signed_integer(text));
+        }
+        catch (const std::out_of_range &)
+        {
+            try
+            {
+                return builder.getUI32IntegerAttr(to_unsigned_integer(text));
+            }
+            catch (const std::out_of_range &)
+            {
+                try
+                {
+                    return builder.getI64IntegerAttr(to_signed_bignumber(text));
+                }
+                catch (const std::out_of_range &)
+                {
+                    return builder.getIntegerAttr(builder.getIntegerType(64, false), to_bignumber(text));
+                }
+            }
+        }        
+    }
+
     mlir::Attribute getNumericLiteralAttribute(NumericLiteral numericLiteral)
     {
         if (numericLiteral->text.find(S(".")) == string::npos)
         {
-            try
-            {
-                return builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text));
-            }
-            catch (const std::out_of_range &)
-            {
-                return builder.getI64IntegerAttr(to_bignumber(numericLiteral->text));
-            }
+            return getIntTypeAttribute(numericLiteral->text);
         }
 
 #ifdef NUMBER_F64
@@ -11294,18 +11327,9 @@ class MLIRGenImpl
     {
         if (numericLiteral->text.find(S(".")) == string::npos)
         {
-            try
-            {
-                auto attrVal = builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text));
-                auto literalType = mlir_ts::LiteralType::get(attrVal, builder.getI32Type());
-                return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
-            }
-            catch (const std::out_of_range &)
-            {
-                auto attrVal = builder.getI64IntegerAttr(to_bignumber(numericLiteral->text));
-                auto literalType = mlir_ts::LiteralType::get(attrVal, builder.getI64Type());
-                return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
-            }
+            auto attrVal = getIntTypeAttribute(numericLiteral->text);
+            auto literalType = mlir_ts::LiteralType::get(attrVal, attrVal.cast<mlir::TypedAttr>().getType());
+            return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
         }
 
 #ifdef NUMBER_F64

@@ -1443,6 +1443,47 @@ class MLIRTypeHelper
             }
         }        
 
+        // native types
+        if (auto destIntType = dstType.dyn_cast<mlir::IntegerType>())
+        {
+            if (auto srcIntType = srcType.dyn_cast<mlir::IntegerType>())
+            {
+                if (srcIntType.getIntOrFloatBitWidth() < destIntType.getIntOrFloatBitWidth())
+                {
+                    return true;
+                }
+
+                if (srcIntType.getIntOrFloatBitWidth() > destIntType.getIntOrFloatBitWidth())
+                {
+                    return false;
+                }
+
+                if (srcIntType.isSigned() == destIntType.isSigned() 
+                    || srcIntType.isUnsigned() == destIntType.isUnsigned())
+                {
+                    return true;
+                }
+
+                return srcIntType.isSignless() || destIntType.isSignless();
+            }    
+        }          
+
+        if (auto destFloatType = dstType.dyn_cast<mlir::FloatType>())
+        {
+            if (auto srcFloatType = srcType.dyn_cast<mlir::FloatType>())
+            {
+                if (srcFloatType.getIntOrFloatBitWidth() <= destFloatType.getIntOrFloatBitWidth())
+                {
+                    return true;
+                }
+            }
+
+            if (auto srcIntType = srcType.dyn_cast<mlir::IntegerType>())
+            {
+                return true;
+            }            
+        }           
+
         return false;
     }
 
