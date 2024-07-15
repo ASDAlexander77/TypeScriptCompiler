@@ -408,6 +408,17 @@ class MLIRTypeHelper
             }
         }
 
+        if (destType.isIntOrIndex())
+        {
+            if (srcType.isIntOrIndex())
+            {
+                auto val = attr.cast<mlir::IntegerAttr>().getValue();
+                APInt newVal(destType.getIntOrFloatBitWidth(), val.getZExtValue(), destType.isSignedInteger());
+                auto attrVal = builder.getIntegerAttr(destType, newVal);
+                return attrVal;                
+            }            
+        }        
+
         llvm_unreachable("not implemented");
     }
 
@@ -1336,6 +1347,46 @@ class MLIRTypeHelper
         }
 
         return false;
+    }
+
+    mlir::Type mergeIntTypes(mlir::Type typeLeft, mlir::Type typeRight, bool& found)
+    {
+        found = false;
+        auto intTypeLeft = typeLeft.dyn_cast<mlir::IntegerType>();
+        auto intTypeRight = typeRight.dyn_cast<mlir::IntegerType>();
+        if (intTypeLeft && intTypeRight)
+        {
+            auto width = std::max(intTypeLeft.getIntOrFloatBitWidth(), intTypeRight.getIntOrFloatBitWidth());
+            auto maxSignedWidth = std::max(
+                intTypeLeft.isSigned() ? intTypeLeft.getIntOrFloatBitWidth() : 0, 
+                intTypeRight.isSigned() ? intTypeRight.getIntOrFloatBitWidth() : 0);
+            auto maxUnsignedWidth = std::max(
+                intTypeLeft.isUnsigned() ? intTypeLeft.getIntOrFloatBitWidth() : 0, 
+                intTypeRight.isUnsigned() ? intTypeRight.getIntOrFloatBitWidth() : 0);
+
+            auto anySigned = intTypeLeft.isSigned() || intTypeRight.isSigned();
+            auto anyUnsigned = intTypeLeft.isUnsigned() || intTypeRight.isUnsigned();
+
+            if (anySigned && anyUnsigned && maxSignedWidth <= maxUnsignedWidth)
+            {
+                // if we have 64 - we can't extend it
+                if (width > 32)
+                    return mlir::Type();
+
+                width *= 2;
+            }
+
+            found = true;
+            return mlir::IntegerType::get(context, 
+                width, 
+                    anySigned 
+                        ? mlir::IntegerType::Signed 
+                        : anyUnsigned 
+                            ? mlir::IntegerType::Unsigned 
+                            : mlir::IntegerType::Signless);
+        }
+
+        return mlir::Type();
     }
 
     mlir::Type findBaseType(mlir::Type typeLeft, mlir::Type typeRight, bool& found, mlir::Type defaultType = mlir::Type())
@@ -2884,7 +2935,16 @@ class MLIRTypeHelper
             merged = true;
             return currentType;
         }
+
+        // in case of merging integer types with sign/no sign
+        auto mergedInts = false;
+        auto resNewIntType = mergeIntTypes(existType, currentType, mergedInts);
+        if (mergedInts)
+        {
+            return resNewIntType;
+        }
         
+        // wide type - remove const & literal
         auto resType = wideStorageType(currentType);
 
         // check if can merge tuple types
