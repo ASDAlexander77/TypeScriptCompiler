@@ -410,13 +410,25 @@ class MLIRTypeHelper
 
         if (destType.isIntOrIndex())
         {
-            if (srcType.isIntOrIndex())
+            if (srcType.isIndex())
             {
                 auto val = attr.cast<mlir::IntegerAttr>().getValue();
-                APInt newVal(destType.getIntOrFloatBitWidth(), val.getZExtValue(), destType.isSignedInteger());
+                APInt newVal(
+                    destType.getIntOrFloatBitWidth(), 
+                    val.getZExtValue());
                 auto attrVal = builder.getIntegerAttr(destType, newVal);
                 return attrVal;                
             }            
+            else 
+            {
+                auto val = attr.cast<mlir::IntegerAttr>().getValue();
+                APInt newVal(
+                    destType.getIntOrFloatBitWidth(), 
+                    destType.isSignedInteger() ? val.getSExtValue() : val.getZExtValue(), 
+                    destType.isSignedInteger());
+                auto attrVal = builder.getIntegerAttr(destType, newVal);
+                return attrVal;                
+            }
         }        
 
         llvm_unreachable("not implemented");

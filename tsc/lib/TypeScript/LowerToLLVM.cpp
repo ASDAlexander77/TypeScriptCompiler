@@ -830,8 +830,16 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         TypeConverterHelper tch(getTypeConverter());
 
         auto elementType = type.template cast<T>().getElementType();
+
+        LLVM_DEBUG(llvm::dbgs() << "constArrayType: elementType: "; elementType.dump(); llvm::dbgs() << "\n";);
+
         auto llvmElementType = tch.convertType(elementType);
+
+        LLVM_DEBUG(llvm::dbgs() << "constArrayType: llvmElementType: "; llvmElementType.dump(); llvm::dbgs() << "\n";);
+
         auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>();
+
+        LLVM_DEBUG(llvm::dbgs() << "constArrayType: arrayAttr: "; arrayAttr.dump(); llvm::dbgs() << "\n";);
 
         auto arrayFirstElementAddrCst =
             ch.getOrCreateGlobalArray(elementType, llvmElementType, arrayAttr.size(), arrayAttr);
@@ -891,6 +899,8 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         TypeConverterHelper tch(getTypeConverter());
         if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
         {
+            LLVM_DEBUG(llvm::dbgs() << "constArrayType: type: "; type.dump(); llvm::dbgs() << "\n";);
+
             getOrCreateGlobalArray(constantOp, constArrayType, rewriter);
             return success();
         }

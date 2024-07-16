@@ -393,13 +393,33 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             // dense value
             auto value = arrayAttr.getValue();
-            if (value.size() > 0 && llvmElementType.isIntOrFloat())
+            if (value.size() > 0 && llvmElementType.isIntOrIndexOrFloat())
             {
                 seekLast<DenseElementsAttr>(parentModule.getBody());
 
                 // end
                 auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
-                auto attr = DenseElementsAttr::get(dataType, value);
+
+                DenseElementsAttr attr;
+                if (llvmElementType.isIntOrIndex())
+                {
+                    SmallVector<APInt> values;
+                    std::for_each(std::begin(value), std::end(value), [&] (auto &value) {
+                        values.push_back(value.cast<mlir::IntegerAttr>().getAPSInt());
+                    });
+
+                    attr = DenseElementsAttr::get(dataType, values);
+                }
+                else
+                {
+                    SmallVector<APFloat> values;
+                    std::for_each(std::begin(value), std::end(value), [&] (auto &value) {
+                        values.push_back(value.cast<mlir::FloatAttr>().getValue());
+                    });
+
+                    attr = DenseElementsAttr::get(dataType, values);
+                }
+
                 global = rewriter.create<LLVM::GlobalOp>(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, attr);
             }
             else
