@@ -9625,12 +9625,7 @@ class MLIRGenImpl
         }
 
         auto indexType = argumentExpression.getType();
-        auto isAllowableType = indexType.isIntOrIndex() && indexType.getIntOrFloatBitWidth() == 32;
-        if (!isAllowableType)
-        {
-
-            CAST(argumentExpression, location, mth.getStructIndexType(), argumentExpression, genContext);
-        }
+        CAST(argumentExpression, location, mth.getStructIndexType(), argumentExpression, genContext);
   
         auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), expression,
                                                              argumentExpression);
