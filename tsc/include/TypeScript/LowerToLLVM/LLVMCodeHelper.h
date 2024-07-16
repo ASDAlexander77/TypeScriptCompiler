@@ -405,7 +405,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 {
                     SmallVector<APInt> values;
                     std::for_each(std::begin(value), std::end(value), [&] (auto &value) {
-                        values.push_back(value.cast<mlir::IntegerAttr>().getAPSInt());
+                        values.push_back(value.cast<mlir::IntegerAttr>().getValue());
                     });
 
                     attr = DenseElementsAttr::get(dataType, values);
