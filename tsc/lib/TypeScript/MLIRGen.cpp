@@ -7177,14 +7177,33 @@ class MLIRGenImpl
                             auto intType = intAttr.getType().cast<mlir::IntegerType>();
                             auto constType = constantOp.getType();
                             auto valAttr = intAttr;
-                            if (!intType.isSigned())
+                            if (intType.isSignless())
                             {
                                 intType = builder.getIntegerType(intType.getWidth(), true);
                                 valAttr = builder.getIntegerAttr(intType, -intAttr.getValue());
                                 constType = mlir_ts::LiteralType::get(valAttr, intType);
+                            } 
+                            else if (intType.isSigned())
+                            {
+                                valAttr = builder.getIntegerAttr(intType, -intAttr.getValue());
+                                constType = mlir_ts::LiteralType::get(valAttr, intType);
+                            }
+                            else if (intType.getWidth() <= 32)
+                            {
+                                intType = builder.getIntegerType(intType.getWidth() * 2, true);
+                                auto newVal = -(intAttr.getValue().zext(intType.getWidth()));
+                                valAttr = builder.getIntegerAttr(intType, newVal);
+                                constType = mlir_ts::LiteralType::get(valAttr, intType);
+                            }
+                            else
+                            {
+                                SmallVector<char> res;
+                                intAttr.getValue().toString(res, 10, false);
+                                emitError(location) << "tcan't apply '-'. Too big value: " << std::string(res.data(), res.size()) << "";
+                                return mlir::Value();
                             }
 
-                            return builder.create<mlir_ts::ConstantOp>(location, constType, valAttr);
+                            return (mlir::Value) builder.create<mlir_ts::ConstantOp>(location, constType, valAttr);
                         })
                         .Case<mlir::FloatAttr>([&](auto floatAttr) {
                             return builder.create<mlir_ts::ConstantOp>(
@@ -7210,6 +7229,8 @@ class MLIRGenImpl
                         });
                 break;
             case SyntaxKind::TildeToken:
+                // TODO: improvements required: use the same function to convert string into int as in LiteralNumeric
+                // check if you can use it on 64 bits, check JS code for it
                 value = 
                     mlir::TypeSwitch<mlir::Attribute, mlir::Value>(valueAttr)
                         .Case<mlir::IntegerAttr>([&](auto intAttr) {
