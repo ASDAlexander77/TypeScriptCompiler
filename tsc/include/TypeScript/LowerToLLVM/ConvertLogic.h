@@ -128,8 +128,10 @@ class ConvertLogic
         return sprintf(50, "%g", doubleValue);
     }
 
-    mlir::Value sprintfOfInt(mlir::Value value, int width, bool isSigned)
+    mlir::Value sprintfOfInt(mlir::Value valueIn, int width, bool isSigned)
     {
+        mlir::Value value = valueIn;
+
         std::string frm = "%";
 
         if (isSigned)
@@ -159,6 +161,18 @@ class ConvertLogic
         else
         {
             frm += "u";
+        }
+
+        if (width < 32)
+        {
+            if (isSigned)
+            {
+                value = rewriter.create<LLVM::SExtOp>(loc, tch.convertType(rewriter.getIntegerType(32)), value);
+            }
+            else
+            {
+                value = rewriter.create<LLVM::ZExtOp>(loc, tch.convertType(rewriter.getIntegerType(32)), value);
+            }
         }
 
         return sprintf(50, frm, value);

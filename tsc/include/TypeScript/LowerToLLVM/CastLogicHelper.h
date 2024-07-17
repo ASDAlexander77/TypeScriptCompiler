@@ -102,6 +102,11 @@ class CastLogicHelper
             return castF32orF64ToString(in);
         }
 
+        if (inType.isIntOrIndex() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
+        {
+            return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
+        }        
+
         auto isResAny = resType.isa<mlir_ts::AnyType>();
         if (isResAny)
         {
