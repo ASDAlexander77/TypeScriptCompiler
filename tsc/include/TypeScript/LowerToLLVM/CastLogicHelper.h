@@ -92,7 +92,12 @@ class CastLogicHelper
             return castBoolToString(in);
         }
 
-        if (inLLVMType.isIntOrIndex() && isResString)
+        if (inType.isa<mlir::IndexType>() && isResString)
+        {
+            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), false);
+        }
+
+        if (inLLVMType.isIntOrIndex() && inType.isa<mlir::IntegerType>() && isResString)
         {
             return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.cast<mlir::IntegerType>().isSignedInteger());
         }
@@ -491,6 +496,19 @@ class CastLogicHelper
                 }
             }
         }
+
+        if (auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>())
+        {
+            MLIRTypeHelper mth(inUnionType.getContext());
+            mlir::Type baseType;
+            bool needTag = mth.isUnionTypeNeedsTag(inUnionType, baseType);
+            if (!needTag)
+            {
+                return cast(in, baseType, tch.convertType(baseType), resType, resLLVMType);
+            }
+
+            // skip to next steps
+        }       
 
         if (auto undefType = inType.dyn_cast<mlir_ts::UndefinedType>())
         {
