@@ -118,11 +118,6 @@ class ConvertLogic
         return newStringValue;
     }
 
-    mlir::Value sprintfOfInt(mlir::Value value)
-    {
-        return sprintf(50, "%d", value);
-    }
-
     mlir::Value sprintfOfF32orF64(mlir::Value value)
     {
 #ifdef NUMBER_F64
@@ -133,26 +128,48 @@ class ConvertLogic
         return sprintf(50, "%g", doubleValue);
     }
 
-    mlir::Value sprintfOfI64(mlir::Value value)
+    mlir::Value sprintfOfInt(mlir::Value value, int width, bool isSigned)
     {
-        return sprintf(50, "%llu", value);
+        std::string frm = "%";
+
+        if (isSigned)
+        {
+            frm += "-";
+        }
+
+        switch (width)
+        {
+            case 8: 
+                frm += "hh";
+                break;
+            case 16: 
+                frm += "h";
+                break;
+            case 64: 
+                frm += "ll";
+                break;
+            default:
+                break;
+        }
+
+        if (isSigned)
+        {
+            frm += "i";
+        }
+        else
+        {
+            frm += "u";
+        }
+
+        return sprintf(50, frm, value);
     }
 
-    mlir::Value intToString(mlir::Value value)
+    mlir::Value intToString(mlir::Value value, int width, bool isSigned)
     {
 #ifndef USE_SPRINTF
         return itoa(value);
 #else
-        return sprintfOfInt(value);
-#endif
-    }
-
-    mlir::Value int64ToString(mlir::Value value)
-    {
-#ifndef USE_SPRINTF
-        return i64toa(value);
-#else
-        return sprintfOfI64(value);
+        return sprintfOfInt(value, width, isSigned);
 #endif
     }
 

@@ -92,14 +92,9 @@ class CastLogicHelper
             return castBoolToString(in);
         }
 
-        if (inLLVMType.isInteger(32) && isResString)
+        if (inLLVMType.isIntOrIndex() && isResString)
         {
-            return castI32ToString(in);
-        }
-
-        if (inLLVMType.isInteger(64) && isResString)
-        {
-            return castI64ToString(in);
+            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.cast<mlir::IntegerType>().isSignedInteger());
         }
 
         if ((inLLVMType.isF32() || inLLVMType.isF64()) && isResString)
@@ -799,16 +794,10 @@ class CastLogicHelper
 #endif
     }    
 
-    mlir::Value castI32ToString(mlir::Value in)
+    mlir::Value castIntToString(mlir::Value in, int width, bool isSigned)
     {
         ConvertLogic cl(op, rewriter, tch, loc, compileOptions);
-        return cl.intToString(in);
-    }
-
-    mlir::Value castI64ToString(mlir::Value in)
-    {
-        ConvertLogic cl(op, rewriter, tch, loc, compileOptions);
-        return cl.int64ToString(in);
+        return cl.intToString(in, width, isSigned);
     }
 
     mlir::Value castF32orF64ToString(mlir::Value in)
