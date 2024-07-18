@@ -118,7 +118,7 @@ class ConvertLogic
         return newStringValue;
     }
 
-    mlir::Value sprintfOfF32orF64(mlir::Value value)
+    mlir::Value sprintfOfF64(mlir::Value value)
     {
 #ifdef NUMBER_F64
         auto doubleValue = value;
@@ -187,12 +187,12 @@ class ConvertLogic
 #endif
     }
 
-    mlir::Value f32OrF64ToString(mlir::Value value)
+    mlir::Value f64ToString(mlir::Value value)
     {
 #ifndef USE_SPRINTF
         return gcvt(value);
 #else
-        return sprintfOfF32orF64(value);
+        return sprintfOfF64(value);
 #endif
     }
 };

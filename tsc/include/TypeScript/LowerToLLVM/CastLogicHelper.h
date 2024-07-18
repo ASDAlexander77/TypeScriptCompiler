@@ -102,9 +102,22 @@ class CastLogicHelper
             return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.cast<mlir::IntegerType>().isSignedInteger());
         }
 
-        if ((inLLVMType.isF32() || inLLVMType.isF64()) && isResString)
+        if ((inLLVMType.isF16() || inLLVMType.isF32() || inLLVMType.isF64() || inLLVMType.isF128()) && isResString)
         {
-            return castF32orF64ToString(in);
+            if (inLLVMType.isF16())
+            {
+                in = cast(in, inType, rewriter.getF64Type());
+            }
+            else if (inLLVMType.isF32())
+            {
+                in = cast(in, inType, rewriter.getF64Type());
+            }
+            else if (inLLVMType.isF128())
+            {
+                in = cast(in, inType, rewriter.getF64Type());
+            }
+
+            return castF64ToString(in);
         }
 
         if (inType.isIntOrIndex() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
@@ -823,10 +836,10 @@ class CastLogicHelper
         return cl.intToString(in, width, isSigned);
     }
 
-    mlir::Value castF32orF64ToString(mlir::Value in)
+    mlir::Value castF64ToString(mlir::Value in)
     {
         ConvertLogic cl(op, rewriter, tch, loc, compileOptions);
-        return cl.f32OrF64ToString(in);
+        return cl.f64ToString(in);
     }
 
     mlir::Value castToArrayType(mlir::Value in, mlir::Type type, mlir::Type arrayType)
