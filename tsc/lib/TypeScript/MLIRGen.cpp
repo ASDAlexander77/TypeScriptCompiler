@@ -8325,6 +8325,11 @@ class MLIRGenImpl
         return false;
     }
 
+    mlir::Type SInt(int width) 
+    {
+        return mlir::IntegerType::get(builder.getContext(), width, mlir::IntegerType::Signed);
+    }
+
     // TODO: review it, seems like big hack
     mlir::LogicalResult adjustTypesForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
@@ -8394,7 +8399,8 @@ class MLIRGenImpl
 
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
-                static SmallVector<mlir::Type> types = {getNumberType(), builder.getF64Type(), builder.getI64Type(), builder.getF32Type(), builder.getI32Type()};
+                static SmallVector<mlir::Type> types = {getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getF32Type(), SInt(32), 
+                    builder.getI32Type(), builder.getF16Type(), SInt(16), builder.getI16Type(), SInt(8), builder.getI8Type()};
                 for (auto type : types)
                 {
                     if (syncTypes(type, leftExpressionValue, rightExpressionValue, genContext))
