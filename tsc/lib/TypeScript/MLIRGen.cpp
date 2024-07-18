@@ -8300,6 +8300,31 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    bool syncTypes(mlir::Type type, mlir::Value & leftExpressionValue, mlir::Value & rightExpressionValue, const GenContext &genContext)
+    {
+        auto hasType = leftExpressionValue.getType() == type ||
+                            rightExpressionValue.getType() == type;
+        if (hasType)
+        {
+            auto leftLoc = leftExpressionValue.getLoc();
+            auto rightLoc = rightExpressionValue.getLoc();
+
+            if (leftExpressionValue.getType() != type)
+            {
+                CAST(leftExpressionValue, leftLoc, type, leftExpressionValue, genContext);
+            }
+
+            if (rightExpressionValue.getType() != type)
+            {
+                CAST(rightExpressionValue, rightLoc, type, rightExpressionValue, genContext);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
     // TODO: review it, seems like big hack
     mlir::LogicalResult adjustTypesForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                                mlir::Value &rightExpressionValue, const GenContext &genContext)
@@ -8369,36 +8394,12 @@ class MLIRGenImpl
 
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
-                // cast to base type
-                auto hasNumber = leftExpressionValue.getType() == getNumberType() ||
-                                 rightExpressionValue.getType() == getNumberType();
-                if (hasNumber)
+                static SmallVector<mlir::Type> types = {getNumberType(), builder.getF64Type(), builder.getI64Type(), builder.getF32Type(), builder.getI32Type()};
+                for (auto type : types)
                 {
-                    if (leftExpressionValue.getType() != getNumberType())
+                    if (syncTypes(type, leftExpressionValue, rightExpressionValue, genContext))
                     {
-                        CAST(leftExpressionValue, leftLoc, getNumberType(), leftExpressionValue, genContext);
-                    }
-
-                    if (rightExpressionValue.getType() != getNumberType())
-                    {
-                        CAST(rightExpressionValue, rightLoc, getNumberType(), rightExpressionValue, genContext);
-                    }
-                }
-                else
-                {
-                    auto hasI32 = leftExpressionValue.getType() == builder.getI32Type() ||
-                                  rightExpressionValue.getType() == builder.getI32Type();
-                    if (hasI32)
-                    {
-                        if (leftExpressionValue.getType() != builder.getI32Type())
-                        {
-                            CAST(leftExpressionValue, leftLoc, builder.getI32Type(), leftExpressionValue, genContext);
-                        }
-
-                        if (rightExpressionValue.getType() != builder.getI32Type())
-                        {
-                            CAST(rightExpressionValue, rightLoc, builder.getI32Type(), rightExpressionValue, genContext);
-                        }
+                        break;
                     }
                 }
             }
