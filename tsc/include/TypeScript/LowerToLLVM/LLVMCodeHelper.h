@@ -404,8 +404,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 if (llvmElementType.isIntOrIndex())
                 {
                     SmallVector<APInt> values;
-                    std::for_each(std::begin(value), std::end(value), [&] (auto &value) {
-                        values.push_back(value.cast<mlir::IntegerAttr>().getValue());
+                    std::for_each(std::begin(value), std::end(value), [&] (auto &value_) {
+                        values.push_back(value_.cast<mlir::IntegerAttr>().getValue());
                     });
 
                     attr = DenseElementsAttr::get(dataType, values);
