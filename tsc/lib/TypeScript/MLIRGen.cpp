@@ -11312,28 +11312,33 @@ class MLIRGenImpl
 
     mlir::Attribute getIntTypeAttribute(string text)
     {
-        try
+        APSInt newVal(wstos(text));
+
+        auto unsignedVal = false;
+        auto width = newVal.getBitWidth();
+        switch (width)
         {
-            return builder.getI32IntegerAttr(to_signed_integer(text));
+        //case 8:
+        //case 16:
+        case 32:
+        case 64:
+        case 128:
+            unsignedVal = true;
+        default:
+            //if (width < 8) width = 8; else 
+            //if (width < 16) width = 16; else 
+            if (width < 32) width = 32; else 
+            if (width < 64) width = 64; else 
+            if (width < 128) width = 128;
+            else llvm_unreachable("not implemented");
         }
-        catch (const std::out_of_range &)
-        {
-            try
-            {
-                return builder.getUI32IntegerAttr(to_unsigned_integer(text));
-            }
-            catch (const std::out_of_range &)
-            {
-                try
-                {
-                    return builder.getI64IntegerAttr(to_signed_bignumber(text));
-                }
-                catch (const std::out_of_range &)
-                {
-                    return builder.getIntegerAttr(builder.getIntegerType(64, false), to_bignumber(text));
-                }
-            }
-        }        
+
+        auto type = unsignedVal 
+            ? builder.getIntegerType(width, false) 
+            : newVal.isSigned() 
+                ? builder.getIntegerType(width, true)
+                : builder.getIntegerType(width);
+        return mlir::IntegerAttr::get(type, newVal.getExtValue());
     }
 
     mlir::Attribute getNumericLiteralAttribute(NumericLiteral numericLiteral)
