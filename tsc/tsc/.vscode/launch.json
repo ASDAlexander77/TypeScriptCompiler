@@ -77,7 +77,7 @@
             "name": "(Linux) ./tsc - MLIR-AFFINE",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=mlir-affine",
                 "-debug-only=affine",
@@ -112,7 +112,7 @@
             "name": "(Linux) ./tsc - MLIR-LLVM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=mlir-llvm",
                 "/mnt/c/temp/1.ts"
@@ -148,7 +148,7 @@
             "name": "(Linux) ./tsc - LLVM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=llvm",
                 "/mnt/c/temp/1.ts"
@@ -367,6 +367,24 @@
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },             
+        {
+            "name": "(Linux) tsc - DefaultLib Compile (OBJ)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "args": [
+                "-emit=obj",
+                "-debug-only=mlir,llvm",
+                "-mlir-disable-threading",                
+                "-o=~/home/dev/playground/lib.obj",
+                "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/src/lib.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },          
         {
             "name": "(Windows-cppvsdbg) TypeScriptApp.exe",
             "type": "cppvsdbg",

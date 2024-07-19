@@ -139,7 +139,13 @@
             "charconv": "cpp",
             "format": "cpp",
             "ranges": "cpp",
-            "span": "cpp"
+            "span": "cpp",
+            "*.tcc": "cpp",
+            "cwctype": "cpp",
+            "memory_resource": "cpp",
+            "string_view": "cpp",
+            "numbers": "cpp",
+            "semaphore": "cpp"
         },
         "cmake.sourceDirectory": "${workspaceFolder}/..",
         "cmake.useCMakePresets": "always",
