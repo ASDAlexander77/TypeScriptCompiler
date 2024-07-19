@@ -1794,8 +1794,7 @@ auto Scanner::scanNumber() -> SyntaxKind
 
     if ((tokenFlags & TokenFlags::ContainsLeadingZero) == TokenFlags::ContainsLeadingZero) {
         error(_E(Diagnostics::Decimals_with_leading_zeros_are_not_allowed), start, end - start);
-        // if a literal has a leading zero, it must not be bigint
-        tokenValue = to_string_val(+to_float_val(result));
+        tokenValue = result;
         return SyntaxKind::NumericLiteral;
     }
 
@@ -1803,7 +1802,7 @@ auto Scanner::scanNumber() -> SyntaxKind
     {
         checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
         // if value is not an integer, it can be safely coerced to a number
-        tokenValue = to_string_val(+to_float_val(result));
+        tokenValue = result;
         return SyntaxKind::NumericLiteral;
     }
     else
