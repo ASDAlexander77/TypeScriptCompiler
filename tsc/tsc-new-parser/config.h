@@ -31,7 +31,7 @@ using smatch = std::wsmatch;
 #define to_signed_integer(x) std::stol(x)
 #define to_unsigned_integer(x) std::stoul(x)
 // TODO: std::stod throws out of range
-#define to_float_val(x) std::strtod(x)
+#define to_float_val(x) std::stod(x.c_str())
 #define to_bignumber_base(x, y) std::stoull(x, nullptr, y)
 #define to_signed_bignumber(x) std::stoll(x)
 #define to_bignumber(x) std::stoull(x)
