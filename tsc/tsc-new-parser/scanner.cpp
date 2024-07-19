@@ -1725,7 +1725,7 @@ auto Scanner::scanNumber() -> SyntaxKind
             // NonOctalDecimalIntegerLiteral, emit error later
             // Separators in decimal and exponent parts are still allowed according to the spec
             tokenFlags |= TokenFlags::ContainsLeadingZero;
-            mainFragment = to_string_val(+to_float_val(tokenValue));
+            mainFragment = tokenValue;
         }
         else if (tokenValue.empty()) {
             // a single zero
@@ -2424,7 +2424,7 @@ auto Scanner::checkBigIntSuffix() -> SyntaxKind
         }
         catch (const std::out_of_range &)
         {
-            auto numericValue = to_string_val(to_float_val(tokenValue));
+            auto numericValue = tokenValue;
             tokenValue = numericValue;
         }
 
