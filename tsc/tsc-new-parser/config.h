@@ -29,8 +29,6 @@ using smatch = std::wsmatch;
 #define S(x) _S(x)
 #define to_string_val(x) std::to_wstring(x)
 #define to_bignumber_base(x, y) std::stoull(x, nullptr, y)
-#define to_signed_bignumber(x) std::stoll(x)
-#define to_bignumber(x) std::stoull(x)
 
 #define _E(x) data::DiagnosticMessage(x)
 

@@ -2419,7 +2419,7 @@ auto Scanner::checkBigIntSuffix() -> SyntaxKind
             auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string_val(to_bignumber_base(tokenValue.substr(2), 2))                  // skip "0b"
                                 : !!(tokenFlags & TokenFlags::OctalSpecifier) ? to_string_val(to_bignumber_base(string(S("0")) + tokenValue.substr(2), 8)) // skip "0o"
                                 : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string_val(to_bignumber_base(tokenValue.substr(2), 16))                 // skip "0x"
-                                                                              : to_string_val(to_bignumber(tokenValue));
+                                                                              : to_string_val(to_bignumber_base(tokenValue, 10));
             tokenValue = numericValue;
         }
         catch (const std::out_of_range &)
