@@ -11343,35 +11343,22 @@ class MLIRGenImpl
             return getIntTypeAttribute(numericLiteral->text);
         }
 
-#ifdef NUMBER_F64
-        return builder.getF64FloatAttr(to_float_val(numericLiteral->text));
+#ifdef NUMBER_F64        
+        auto f64 = builder.getF64Type();
+        llvm::APFloat val(f64.getFloatSemantics(), wstos(numericLiteral->text.c_str()));
+        return builder.getFloatAttr(f64, val.convertToDouble());
 #else
-        return builder.getF32FloatAttr(to_float_val(numericLiteral->text));
+        auto f32 = builder.getF32Type();
+        llvm::APFloat val(f32.getFloatSemantics(), wstos(numericLiteral->text.c_str()));
+        return builder.getFloatAttr(f32, val.convertToFloat());
 #endif
     }
 
     ValueOrLogicalResult mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
     {
-        if (numericLiteral->text.find_first_of(S(".eE")) == string::npos)
-        {
-            auto attrVal = getIntTypeAttribute(numericLiteral->text);
-            auto literalType = mlir_ts::LiteralType::get(attrVal, attrVal.cast<mlir::TypedAttr>().getType());
-            return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
-        }
-
-#ifdef NUMBER_F64        
-        auto f64 = builder.getF64Type();
-        llvm::APFloat val(f64.getFloatSemantics(), wstos(numericLiteral->text.c_str()));
-        auto attrVal = builder.getFloatAttr(f64, val.convertToDouble());
-        auto literalType = mlir_ts::LiteralType::get(attrVal, getNumberType());
+        auto attrVal = getNumericLiteralAttribute(numericLiteral);
+        auto literalType = mlir_ts::LiteralType::get(attrVal, attrVal.cast<mlir::TypedAttr>().getType());
         return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
-#else
-        auto f32 = builder.getF32Type();
-        llvm::APFloat val(f32.getFloatSemantics(), wstos(numericLiteral->text.c_str()));
-        auto attrVal = builder.getFloatAttr(f32, val.convertToFloat());
-        auto literalType = mlir_ts::LiteralType::get(attrVal, getNumberType());
-        return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
-#endif
     }
 
     ValueOrLogicalResult mlirGen(BigIntLiteral bigIntLiteral, const GenContext &genContext)
