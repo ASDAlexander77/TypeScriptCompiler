@@ -92,20 +92,38 @@ class CastLogicHelper
             return castBoolToString(in);
         }
 
-        if (inLLVMType.isInteger(32) && isResString)
+        if (inType.isa<mlir::IndexType>() && isResString)
         {
-            return castI32ToString(in);
+            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), false);
         }
 
-        if (inLLVMType.isInteger(64) && isResString)
+        if (inLLVMType.isIntOrIndex() && inType.isa<mlir::IntegerType>() && isResString)
         {
-            return castI64ToString(in);
+            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.cast<mlir::IntegerType>().isSignedInteger());
         }
 
-        if ((inLLVMType.isF32() || inLLVMType.isF64()) && isResString)
+        if ((inLLVMType.isF16() || inLLVMType.isF32() || inLLVMType.isF64() || inLLVMType.isF128()) && isResString)
         {
-            return castF32orF64ToString(in);
+            if (inLLVMType.isF16())
+            {
+                in = cast(in, inType, rewriter.getF64Type());
+            }
+            else if (inLLVMType.isF32())
+            {
+                in = cast(in, inType, rewriter.getF64Type());
+            }
+            else if (inLLVMType.isF128())
+            {
+                in = cast(in, inType, rewriter.getF64Type());
+            }
+
+            return castF64ToString(in);
         }
+
+        if (inType.isIntOrIndex() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
+        {
+            return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
+        }        
 
         auto isResAny = resType.isa<mlir_ts::AnyType>();
         if (isResAny)
@@ -492,6 +510,19 @@ class CastLogicHelper
             }
         }
 
+        if (auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>())
+        {
+            MLIRTypeHelper mth(inUnionType.getContext());
+            mlir::Type baseType;
+            bool needTag = mth.isUnionTypeNeedsTag(inUnionType, baseType);
+            if (!needTag)
+            {
+                return cast(in, baseType, tch.convertType(baseType), resType, resLLVMType);
+            }
+
+            // skip to next steps
+        }       
+
         if (auto undefType = inType.dyn_cast<mlir_ts::UndefinedType>())
         {
             in.getDefiningOp()->emitWarning("using casting to undefined value");
@@ -799,22 +830,16 @@ class CastLogicHelper
 #endif
     }    
 
-    mlir::Value castI32ToString(mlir::Value in)
+    mlir::Value castIntToString(mlir::Value in, int width, bool isSigned)
     {
         ConvertLogic cl(op, rewriter, tch, loc, compileOptions);
-        return cl.intToString(in);
+        return cl.intToString(in, width, isSigned);
     }
 
-    mlir::Value castI64ToString(mlir::Value in)
+    mlir::Value castF64ToString(mlir::Value in)
     {
         ConvertLogic cl(op, rewriter, tch, loc, compileOptions);
-        return cl.int64ToString(in);
-    }
-
-    mlir::Value castF32orF64ToString(mlir::Value in)
-    {
-        ConvertLogic cl(op, rewriter, tch, loc, compileOptions);
-        return cl.f32OrF64ToString(in);
+        return cl.f64ToString(in);
     }
 
     mlir::Value castToArrayType(mlir::Value in, mlir::Type type, mlir::Type arrayType)

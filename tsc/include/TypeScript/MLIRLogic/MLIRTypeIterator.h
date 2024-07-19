@@ -323,6 +323,12 @@ class MLIRTypeIterator
                           .Case<mlir_ts::VoidType>([&](auto) {
                               return true;
                           })                          
+                          .Case<mlir_ts::ByteType>([&](auto) {
+                              return true;
+                          })                          
+                          .Case<mlir_ts::CharType>([&](auto) {
+                              return true;
+                          })                          
                           .Case<mlir_ts::OpaqueType>([&](auto) {
                               return true;
                           })                          

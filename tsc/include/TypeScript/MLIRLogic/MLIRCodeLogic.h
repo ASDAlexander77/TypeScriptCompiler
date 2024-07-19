@@ -221,7 +221,7 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }};
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
         return m[functionName.str()];    
     }    
 
@@ -229,7 +229,7 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }};
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
         return m[functionName.str()];    
     }   
 
@@ -270,6 +270,10 @@ class MLIRCustomMethods
         {
             return mlirGenArrayPop(location, operands);
         }
+        else if (functionName == "__array_view")
+        {
+            return mlirGenArrayView(location, operands);
+        }
         else if (functionName == GENERATOR_SWITCHSTATE)
         {
             // switchstate - internal command;
@@ -286,6 +290,10 @@ class MLIRCustomMethods
         else if (functionName == "LoadReference")
         {
             return mlirGenLoadReference(location, operands);
+        }
+        else if (functionName == "ReferenceOf")
+        {
+            return mlirGenReferenceOf(location, operands);
         }
         else if (!genContext.allowPartialResolve)
         {
@@ -496,6 +504,41 @@ class MLIRCustomMethods
         return value;
     }
 
+    ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        auto indexType = builder.getI32Type();
+
+        SmallVector<mlir::Value> castedValues;
+        for (auto value : values)
+        {
+            if (value.getType() != indexType)
+            {
+                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, indexType, value));
+            }
+            else
+            {
+                castedValues.push_back(value);
+            }
+        }
+
+        mlir::Value arrayViewValue =
+            builder.create<mlir_ts::ArrayViewOp>(
+                location, 
+                thisValue.getType().cast<mlir_ts::ArrayType>(), 
+                thisValue, 
+                castedValues[0], 
+                castedValues[1]);
+
+        return arrayViewValue;
+    }    
+
+    ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        return mlirGenArrayView(location, operands.front(), operands.slice(1));
+    }    
+
     mlir::LogicalResult mlirGenSwitchState(const mlir::Location &location, ArrayRef<mlir::Value> operands,
                                            const GenContext &genContext)
     {
@@ -602,6 +645,13 @@ class MLIRCustomMethods
         auto loadedValue = builder.create<mlir_ts::LoadOp>(location, refValue.getType().cast<mlir_ts::RefType>().getElementType(), refValue);
         return V(loadedValue);
     }
+
+    ValueOrLogicalResult mlirGenReferenceOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        MLIRCodeLogic mcl(builder);
+        auto refValue = mcl.GetReferenceOfLoadOp(operands.front());        
+        return V(refValue);
+    }    
 };
 
 class MLIRPropertyAccessCodeLogic
@@ -872,34 +922,23 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
         
-        if (propName == "push")
+        if (propName == "push" || propName == "pop" || propName == "view")
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
+                std::string name = "__array_";
+                name += propName;
+
                 auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, builder.getNoneType(), expression,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_push"));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), name.c_str()));
                 symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return symbOp;
             }
 
             return mlir::Value();
         }
-        
-        if (propName == "pop")
-        {
-            if (expression.getType().isa<mlir_ts::ArrayType>())
-            {
-                auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
-                    location, builder.getNoneType(), expression,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_pop"));
-                symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-                return symbOp;
-            }
 
-            return mlir::Value();
-        }        
-        
         if (isArrayCustomMethod(propName))
         {
             auto arrayType = expression.getType().dyn_cast<mlir_ts::ArrayType>();

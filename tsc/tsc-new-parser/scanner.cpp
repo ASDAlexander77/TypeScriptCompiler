@@ -1725,7 +1725,7 @@ auto Scanner::scanNumber() -> SyntaxKind
             // NonOctalDecimalIntegerLiteral, emit error later
             // Separators in decimal and exponent parts are still allowed according to the spec
             tokenFlags |= TokenFlags::ContainsLeadingZero;
-            mainFragment = to_string_val(+to_float_val(tokenValue));
+            mainFragment = tokenValue;
         }
         else if (tokenValue.empty()) {
             // a single zero
@@ -1794,8 +1794,7 @@ auto Scanner::scanNumber() -> SyntaxKind
 
     if ((tokenFlags & TokenFlags::ContainsLeadingZero) == TokenFlags::ContainsLeadingZero) {
         error(_E(Diagnostics::Decimals_with_leading_zeros_are_not_allowed), start, end - start);
-        // if a literal has a leading zero, it must not be bigint
-        tokenValue = to_string_val(+to_float_val(result));
+        tokenValue = result;
         return SyntaxKind::NumericLiteral;
     }
 
@@ -1803,7 +1802,7 @@ auto Scanner::scanNumber() -> SyntaxKind
     {
         checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
         // if value is not an integer, it can be safely coerced to a number
-        tokenValue = to_string_val(+to_float_val(result));
+        tokenValue = result;
         return SyntaxKind::NumericLiteral;
     }
     else
@@ -2420,12 +2419,12 @@ auto Scanner::checkBigIntSuffix() -> SyntaxKind
             auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string_val(to_bignumber_base(tokenValue.substr(2), 2))                  // skip "0b"
                                 : !!(tokenFlags & TokenFlags::OctalSpecifier) ? to_string_val(to_bignumber_base(string(S("0")) + tokenValue.substr(2), 8)) // skip "0o"
                                 : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string_val(to_bignumber_base(tokenValue.substr(2), 16))                 // skip "0x"
-                                                                              : to_string_val(to_bignumber(tokenValue));
+                                                                              : to_string_val(to_bignumber_base(tokenValue, 10));
             tokenValue = numericValue;
         }
         catch (const std::out_of_range &)
         {
-            auto numericValue = to_string_val(to_float_val(tokenValue));
+            auto numericValue = tokenValue;
             tokenValue = numericValue;
         }
 

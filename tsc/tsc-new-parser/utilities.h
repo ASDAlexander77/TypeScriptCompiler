@@ -2597,7 +2597,7 @@ inline static auto regex_exec(string &text, regex regEx) -> boolean
 
 inline static auto hasModifier(Node node, SyntaxKind key) -> boolean
 {
-    return some(node->modifiers, [=](auto m) { return m == key; });
+    return !!node && some(node->modifiers, [=](auto m) { return m == key; });
 }
 
 /**

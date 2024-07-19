@@ -393,13 +393,33 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             // dense value
             auto value = arrayAttr.getValue();
-            if (value.size() > 0 && llvmElementType.isIntOrFloat())
+            if (value.size() > 0 && llvmElementType.isIntOrIndexOrFloat())
             {
                 seekLast<DenseElementsAttr>(parentModule.getBody());
 
                 // end
                 auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
-                auto attr = DenseElementsAttr::get(dataType, value);
+
+                DenseElementsAttr attr;
+                if (llvmElementType.isIntOrIndex())
+                {
+                    SmallVector<APInt> values;
+                    std::for_each(std::begin(value), std::end(value), [&] (auto &value_) {
+                        values.push_back(value_.template cast<mlir::IntegerAttr>().getValue());
+                    });
+
+                    attr = DenseElementsAttr::get(dataType, values);
+                }
+                else
+                {
+                    SmallVector<APFloat> values;
+                    std::for_each(std::begin(value), std::end(value), [&] (auto &value_) {
+                        values.push_back(value_.template cast<mlir::FloatAttr>().getValue());
+                    });
+
+                    attr = DenseElementsAttr::get(dataType, values);
+                }
+
                 global = rewriter.create<LLVM::GlobalOp>(loc, /*arrayType*/dataType, true, LLVM::Linkage::Internal, name, attr);
             }
             else
@@ -669,7 +689,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return addr;
     }
 
-    mlir::Value GetAddressOfPointerOffset(mlir::Type elementRefType, mlir::Type refValueType, mlir::Value refValue, mlir::Value index)
+    mlir::Value GetAddressOfPointerOffset(mlir::Type elementRefType, mlir::Value refValue, mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -677,9 +697,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        assert(elementRefType.isa<mlir_ts::RefType>());
-
         auto ptrType = tch.convertType(elementRefType);
+
+        assert(ptrType.isa<LLVM::LLVMPointerType>());
 
         auto dataPtr = refValue;
 

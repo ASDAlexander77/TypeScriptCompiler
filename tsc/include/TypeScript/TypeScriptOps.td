@@ -2110,9 +2110,19 @@ def TypeScript_PopOp : TypeScript_Op<"Pop"> {
   let results = (outs AnyType:$item);
 }
 
+def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView"> {
+  let arguments = (ins TypeScript_Array:$op, I32:$offset, I32:$count);
+  let results = (outs TypeScript_Array:$result);
+}
+
 def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
   let arguments = (ins TypeScript_ArrayLike:$op);
   let results = (outs I32:$result);
+}
+
+def TypeScript_SetLengthOfOp : TypeScript_Op<"SetLengthOf"> {
+  let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, I32:$newLength);
+  let results = (outs );
 }
 
 def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {

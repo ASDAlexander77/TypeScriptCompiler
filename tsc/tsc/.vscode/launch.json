@@ -28,7 +28,7 @@
                 "-emit=mlir",
                 "-debug-only=mlir",
                 "-mlir-disable-threading",
-                "C:/temp/1.ts"
+                "I:/Playground/1.ts"
             ],
             "stopAtEntry": false,
             "cwd": "C:/temp/",
@@ -77,7 +77,7 @@
             "name": "(Linux) ./tsc - MLIR-AFFINE",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=mlir-affine",
                 "-debug-only=affine",
@@ -112,7 +112,7 @@
             "name": "(Linux) ./tsc - MLIR-LLVM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=mlir-llvm",
                 "/mnt/c/temp/1.ts"
@@ -148,7 +148,7 @@
             "name": "(Linux) ./tsc - LLVM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=llvm",
                 "/mnt/c/temp/1.ts"
@@ -220,18 +220,18 @@
             "args": [
                 "-emit=exe",
                 "-di",
-                "-debug-only=llvm,pass",
+                "-debug-only=mlir,mlir-affine,llvm,pass",
                 "-mlir-disable-threading",
-                "--no-default-lib=true",
                 "-mtriple=x86_64-pc-windows-msvc",
-                "C:/temp/1.ts",
+                "I:/Playground/1.ts",
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [
-                { "name": "GC_LIB_PATH", "value": "C:\\dev\\TypeScriptCompiler\\__build\\gc\\msbuild\\x64\\debug\\Debug" },
-                { "name": "LLVM_LIB_PATH", "value": "C:\\dev\\TypeScriptCompiler\\__build\\llvm\\msbuild\\x64\\debug\\Debug\\lib" },
-                { "name": "TSC_LIB_PATH", "value": "C:\\dev\\TypeScriptCompiler\\__build\\tsc\\windows-msbuild-debug\\lib" },
+                { "name": "DEFAULT_LIB_PATH", "value": "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build/release" },
+                { "name": "GC_LIB_PATH", "value": "${workspaceFolder}/../../__build/gc/msbuild/x64/debug/Debug" },
+                { "name": "LLVM_LIB_PATH", "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib" },
+                { "name": "TSC_LIB_PATH", "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/lib" },
             ],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
@@ -300,12 +300,12 @@
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=jit",
-                "C:/temp/1.ts",
-                "-debug-only=llvm",
+                "I:/Playground/1.ts",
+                "-debug-only=mlir,llvm",
                 "-mlir-disable-threading",
                 "-di",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll",
-                "--shared-libs=C:/temp/jslib/dll/lib.dll"
+                "--default-lib-path=C:/temp",
+                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -332,33 +332,65 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
-            "name": "(Windows-CodeLLDB) 1.exe",
-            "type": "lldb",
-            "request": "launch",
-            "program": "C:/temp/MLIR_to_exe/1.exe",
-            "stopOnEntry": true,
-            "cwd": "${workspaceRoot}"
-        },
-        {
-            "name": "(Windows-cppvsdbg) 1.exe",
+            "name": "(Windows) tsc.exe - DefaultLib Compile (DLL)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "C:/temp/MLIR_to_exe/1.exe",
-            "symbolSearchPath": "C:/temp/MLIR_to_exe/",
-            "args": [],
-            "stopAtEntry": true,
-            "cwd": "${workspaceRoot}",
-            "logging": {
-                "moduleLoad": true,
-                "trace": true
-            },            
-        },
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "args": [
+                "-emit=dll",
+                "-debug-only=mlir,llvm",
+                "-mlir-disable-threading",                
+                "-o=c:/temp/lib.dll",
+                "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/src/lib.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },             
+        {
+            "name": "(Windows) tsc.exe - DefaultLib Compile (OBJ)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "args": [
+                "-emit=obj",
+                "-debug-only=mlir,llvm",
+                "-mlir-disable-threading",                
+                "-o=c:/temp/lib.obj",
+                "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/src/lib.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },             
+        {
+            "name": "(Linux) tsc - DefaultLib Compile (OBJ)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "args": [
+                "-emit=obj",
+                "-debug-only=mlir,llvm",
+                "-mlir-disable-threading",                
+                "-o=~/home/dev/playground/lib.obj",
+                "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/src/lib.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },          
         {
             "name": "(Windows-cppvsdbg) TypeScriptApp.exe",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "C:\\dev\\TypeScriptCompiler\\docs\\how\\cmake_winapp\\__build\\debug\\Debug\\TypeScriptApp.exe",
-            "symbolSearchPath": "C:\\dev\\TypeScriptCompiler\\docs\\how\\cmake_winapp\\__build\\debug\\Debug\\",
+            "program": "${workspaceFolder}/../../docs/how/cmake_winapp/__build/debug/Debug/TypeScriptApp.exe",
+            "symbolSearchPath": "${workspaceFolder}/../../docs/how/cmake_winapp/__build/debug/Debug/",
             "args": [],
             "stopAtEntry": true,
             "cwd": "${workspaceRoot}",

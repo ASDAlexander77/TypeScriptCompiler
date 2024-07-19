@@ -27,6 +27,7 @@
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 #include "TypeScript/DataStructs.h"
+#include "TypeScript/Defines.h"
 
 #define DEBUG_TYPE "tsc"
 
@@ -35,6 +36,7 @@ namespace cl = llvm::cl;
 CompileOptions prepareOptions();
 std::string getDefaultOutputFileName(enum Action);
 std::string getDefaultExt(enum Action);
+std::string getDefaultLibPath();
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int dumpAST();
@@ -47,7 +49,7 @@ int runJit(int, char **, mlir::ModuleOp, CompileOptions&);
 extern cl::OptionCategory ObjOrAssemblyCategory;
 cl::OptionCategory TypeScriptCompilerCategory("Compiler Options");
 cl::OptionCategory TypeScriptCompilerDebugCategory("JIT Debug Options");
-cl::OptionCategory TypeScriptCompilerBuildCategory("Executable/Shared library Build Options(used in -emit=BuildExe and -emit=BuildDll)");
+cl::OptionCategory TypeScriptCompilerBuildCategory("Executable/Shared library Build Options(used in -emit=exe and -emit=dll)");
 
 cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript>"), cl::init("-"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<std::string> outputFilename("o", cl::desc("Output filename"), cl::value_desc("filename"), cl::cat(TypeScriptCompilerCategory));
@@ -102,6 +104,7 @@ cl::opt<enum Exports> exportAction("export", cl::desc("Export Symbols. (Useful t
                                        cl::values(clEnumValN(IgnoreAll, "none", "ignore all exports")),
                                        cl::cat(TypeScriptCompilerCategory));
 
+cl::opt<std::string> defaultlibpath("default-lib-path", cl::desc("JS library path. Should point to folder/directory with subfolder '" DEFAULT_LIB_DIR "' or DEFAULT_LIB_PATH environmental variable"), cl::value_desc("defaultlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gcmt-lib.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. Should point to file 'LLVMSupport.lib' and 'LLVMDemangle' in linux or LLVM_LIB_PATH environmental variable"), cl::value_desc("llvmlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> tsclibpath("tsc-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'TypeScriptAsyncRuntime.lib' or TSC_LIB_PATH environmental variable"), cl::value_desc("tsclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
@@ -135,6 +138,42 @@ std::string GetTemporaryPath(llvm::StringRef Prefix, llvm::StringRef Suffix)
     }
 
     return std::string(Path.str());
+}
+
+std::string mergeWithDefaultLibPath(std::string defaultlibpath, std::string subPath)
+{
+    if (defaultlibpath.empty())
+    {
+        return subPath;
+    }
+
+    llvm::SmallVector<char> path(0);
+    llvm::SmallVector<char> nativePath(0);
+    llvm::sys::path::append(path, defaultlibpath, subPath);
+    llvm::sys::path::native(path, nativePath);    
+    llvm::StringRef str(nativePath.data(), nativePath.size());
+    return str.str();
+}
+
+bool prepareDefaultLib(CompileOptions &compileOptions)
+{
+    // TODO: temp hack
+    auto fullPath = mergeWithDefaultLibPath(getDefaultLibPath(), DEFAULT_LIB_DIR "/");
+    auto isDir = llvm::sys::fs::is_directory(fullPath);
+    if (!defaultlibpath.empty() && !isDir) 
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Default lib path: " << fullPath
+                                    << " does not exist or is not a directory\n";
+        return false;
+    }
+
+    compileOptions.noDefaultLib |= !isDir;
+    if (!compileOptions.noDefaultLib)
+    {
+        compileOptions.defaultDeclarationTSFile = mergeWithDefaultLibPath(getDefaultLibPath(), DEFAULT_LIB_DIR "/lib.d.ts");
+    }
+
+    return true;
 }
 
 int main(int argc, char **argv)
@@ -221,9 +260,10 @@ int main(int argc, char **argv)
 
     auto compileOptions = prepareOptions();
 
-    // TODO: temp hack
-    std::string fullPath = "jslib/";
-    compileOptions.noDefaultLib |= !llvm::sys::fs::exists(fullPath);
+    if (!prepareDefaultLib(compileOptions))
+    {
+        return 0;
+    }
 
     llvm::SourceMgr sourceMgr;
     mlir::OwningOpRef<mlir::ModuleOp> module;

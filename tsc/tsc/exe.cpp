@@ -7,8 +7,8 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Option/ArgList.h"
+#include "llvm/TargetParser/Host.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/VirtualFileSystem.h"
@@ -16,6 +16,7 @@
 
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/TypeScriptCompiler/Defines.h"
+#include "TypeScript/Defines.h"
 
 namespace cl = llvm::cl;
 
@@ -23,6 +24,7 @@ extern cl::opt<enum Action> emitAction;
 extern cl::opt<std::string> outputFilename;
 extern cl::opt<bool> disableGC;
 extern cl::opt<std::string> TargetTriple;
+extern cl::opt<std::string> defaultlibpath;
 extern cl::opt<std::string> gclibpath;
 extern cl::opt<std::string> llvmlibpath;
 extern cl::opt<std::string> tsclibpath;
@@ -31,6 +33,7 @@ extern cl::opt<bool> enableOpt;
 extern cl::list<std::string> libs;
 
 std::string getDefaultOutputFileName(enum Action);
+std::string mergeWithDefaultLibPath(std::string, std::string);
 
 using llvm::StringRef;
 
@@ -73,7 +76,22 @@ static void ExpandResponseFiles(llvm::StringSaver &saver,
     }
 }
 
-std::string getGCLibPath(std::string driverPath)
+std::string getDefaultLibPath()
+{
+    if (!defaultlibpath.empty())
+    {
+        return defaultlibpath;
+    }
+
+    if (std::optional<std::string> gcDefaultLibEnvValue = llvm::sys::Process::GetEnv("DEFAULT_LIB_PATH")) 
+    {
+        return gcDefaultLibEnvValue.value();
+    }    
+
+    return "";    
+}
+
+std::string getGCLibPath()
 {
     if (!gclibpath.empty())
     {
@@ -88,7 +106,7 @@ std::string getGCLibPath(std::string driverPath)
     return "";    
 }
 
-std::string getLLVMLibPath(std::string driverPath)
+std::string getLLVMLibPath()
 {
     if (!llvmlibpath.empty())
     {
@@ -103,7 +121,7 @@ std::string getLLVMLibPath(std::string driverPath)
     return "";    
 }
 
-std::string getTscLibPath(std::string driverPath)
+std::string getTscLibPath()
 {
     if (!tsclibpath.empty())
     {
@@ -118,7 +136,7 @@ std::string getTscLibPath(std::string driverPath)
     return "";    
 }
 
-std::string getEMSDKSysRootPath(std::string driverPath)
+std::string getEMSDKSysRootPath()
 {
     if (!emsdksysrootpath.empty())
     {
@@ -206,7 +224,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     llvm::StringSaver saver(a);
     ExpandResponseFiles(saver, args);
 
-    // Check if flang-new is in the frontend mode
+    // Check if tslang-new is in the frontend mode
     auto firstArg = std::find_if(args.begin() + 1, args.end(),
                                  [](const char *a)
                                  { return a != nullptr; });
@@ -243,6 +261,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     std::string llvmLibPathOpt;
     std::string emsdkSysRootPathOpt;
     std::string defaultLibPathOpt;
+    std::string defaultLibFileOpt;
 
     auto isLLVMLibNeeded = true;
     auto isTscLibNeeded = true;
@@ -301,7 +320,11 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (!compileOptions.noDefaultLib)
     {
-        defaultLibPathOpt = getLibOpt(shared ? "jslib/dll/lib" : "jslib/lib/lib");
+        // default lib file
+        args.push_back("-l" DEFAULT_LIB_NAME);    
+
+        // default lib path
+        defaultLibPathOpt = getLibsPathOpt(mergeWithDefaultLibPath(getDefaultLibPath(), shared ? DEFAULT_LIB_DIR "/dll" : DEFAULT_LIB_DIR "/lib"));
         if (!defaultLibPathOpt.empty())
         {
             args.push_back(defaultLibPathOpt.c_str());    
@@ -310,7 +333,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (!disableGC)
     {
-        gcLibPathOpt = getLibsPathOpt(getGCLibPath(driverPath));
+        gcLibPathOpt = getLibsPathOpt(getGCLibPath());
         if (!gcLibPathOpt.empty())
         {
             args.push_back(gcLibPathOpt.c_str());    
@@ -320,7 +343,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     // add logic to detect if libs are used and needed
     if (isLLVMLibNeeded)
     {
-        llvmLibPathOpt = getLibsPathOpt(getLLVMLibPath(driverPath));
+        llvmLibPathOpt = getLibsPathOpt(getLLVMLibPath());
         if (!llvmLibPathOpt.empty())
         {
             args.push_back(llvmLibPathOpt.c_str());    
@@ -329,7 +352,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (isTscLibNeeded)
     {
-        tscLibPathOpt = getLibsPathOpt(getTscLibPath(driverPath));
+        tscLibPathOpt = getLibsPathOpt(getTscLibPath());
         if (!tscLibPathOpt.empty())
         {
             args.push_back(tscLibPathOpt.c_str());    
@@ -388,7 +411,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     if (wasm && emscripten)
     {
         //args.push_back("--sysroot=C:/utils/emsdk/upstream/emscripten/cache/sysroot");
-        emsdkSysRootPathOpt = concatIfNotEmpty("--sysroot=", getEMSDKSysRootPath(driverPath));
+        emsdkSysRootPathOpt = concatIfNotEmpty("--sysroot=", getEMSDKSysRootPath());
         if (!emsdkSysRootPathOpt.empty())
         {
             args.push_back(emsdkSysRootPathOpt.c_str());

@@ -8,6 +8,7 @@
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
 
 #include "llvm/Support/Debug.h"
+#include "llvm/ADT/APSInt.h"
 
 #include <functional>
 
@@ -351,20 +352,55 @@ class MLIRTypeHelper
         return mlir::StringAttr::get(context, "<uknown>");
     }
 
+    mlir::Attribute convertFromFloatAttrIntoType(mlir::Attribute attr, mlir::Type destType, mlir::OpBuilder &builder)
+    {
+        mlir::Type srcType;
+        if (auto typedAttr = attr.dyn_cast<mlir::TypedAttr>())
+        {
+            srcType = typedAttr.getType();
+        }
+
+        auto isFloat = !destType.isIntOrIndex() && destType.isIntOrIndexOrFloat();
+        if (!isFloat)
+        {
+            return mlir::Attribute();
+        }
+
+        mlir::Type type;
+        auto width = destType.getIntOrFloatBitWidth();
+        switch (width)
+        {
+            case 16: type = builder.getF16Type();
+                break;
+            case 32: type = builder.getF32Type();
+                break;
+            case 64: type = builder.getF64Type();
+                break;
+            case 128: type = builder.getF128Type();
+                break;
+        }
+        
+        // this is Int
+        if (srcType.isIntOrIndex())
+        {
+            return builder.getFloatAttr(type, attr.cast<mlir::IntegerAttr>().getValue().signedRoundToDouble());
+        }
+
+        // this is Float
+        if (srcType.isIntOrIndexOrFloat())
+        {
+            return builder.getFloatAttr(type, attr.cast<mlir::FloatAttr>().getValue().convertToDouble());
+        }        
+
+        return mlir::Attribute();
+    }    
+
     mlir::Attribute convertAttrIntoType(mlir::Attribute attr, mlir::Type destType, mlir::OpBuilder &builder)
     {
         mlir::Type srcType;
-        if (auto intAttr = attr.dyn_cast<mlir::IntegerAttr>())
+        if (auto typedAttr = attr.dyn_cast<mlir::TypedAttr>())
         {
-            srcType = intAttr.getType();
-        }
-        else if (auto floatAttr = attr.dyn_cast<mlir::FloatAttr>())
-        {
-            srcType = floatAttr.getType();
-        }
-        else
-        {
-            llvm_unreachable("not implmeneted");
+            srcType = typedAttr.getType();
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! attr from type: " << srcType << " to: " << destType << "\n";);      
@@ -376,44 +412,62 @@ class MLIRTypeHelper
 
         if (destType.isa<mlir_ts::NumberType>())
         {
-            if (srcType.isIntOrIndex())
-            {
 #ifdef NUMBER_F64
-                auto attrVal = builder.getF64FloatAttr(attr.cast<mlir::IntegerAttr>().getValue().signedRoundToDouble());
-                return attrVal;
+            return convertFromFloatAttrIntoType(attr, builder.getF64Type(), builder);
 #else
-                auto attrVal = builder.getF32FloatAttr(static_cast<float>(attr.cast<mlir::IntegerAttr>().getValue().signedRoundToDouble()));
-                return attrVal;
+            return convertFromFloatAttrIntoType(attr, builder.getF32Type(), builder);
 #endif                
-            }
-
-#ifdef NUMBER_F64
-            if (srcType.isF64())
-#else
-            if (srcType.isF32())
-#endif                
-            {
-                return attr;
-            }            
-
-            if (srcType.isIntOrIndexOrFloat())
-            {
-#ifdef NUMBER_F64
-                auto attrVal = builder.getF64FloatAttr(attr.cast<mlir::FloatAttr>().getValue().convertToDouble());
-                return attrVal;
-#else
-                auto attrVal = builder.getF32FloatAttr(attr.cast<mlir::FloatAttr>().getValue().convertToFloat());
-                return attrVal;
-#endif                   
-            }
         }
+
+        // this is Int
+        if (destType.isIntOrIndex())
+        {
+            if (srcType.isIndex())
+            {
+                // index
+                auto val = attr.cast<mlir::IntegerAttr>().getValue();
+                APInt newVal(
+                    destType.getIntOrFloatBitWidth(), 
+                    val.getZExtValue());
+                auto attrVal = builder.getIntegerAttr(destType, newVal);
+                return attrVal;                
+            }            
+            else if (srcType.isIntOrIndex())
+            {
+                // integer
+                auto val = attr.cast<mlir::IntegerAttr>().getValue();
+                APInt newVal(
+                    destType.getIntOrFloatBitWidth(), 
+                    destType.isSignedInteger() ? val.getSExtValue() : val.getZExtValue(), 
+                    destType.isSignedInteger());
+                return builder.getIntegerAttr(destType, newVal);                
+            }
+            else if (srcType.isIntOrIndexOrFloat())
+            {
+                // float/double
+                bool lossy;
+                APSInt newVal(destType.getIntOrFloatBitWidth(), !destType.isIndex());
+                attr.cast<mlir::FloatAttr>().getValue().convertToInteger(newVal, llvm::APFloatBase::rmNearestTiesToEven, &lossy);
+                return builder.getIntegerAttr(destType, newVal);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }        
+
+        // this is Float
+        if (destType.isIntOrIndexOrFloat())
+        {
+            return convertFromFloatAttrIntoType(attr, destType, builder);
+        }        
 
         llvm_unreachable("not implemented");
     }
 
     mlir::Type wideStorageType(mlir::Type type)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! widing type: " << type << "\n";);        
+        LLVM_DEBUG(llvm::dbgs() << "\n!! widening type: " << type << "\n";);        
 
         auto actualType = type;
         if (actualType)
@@ -1338,6 +1392,46 @@ class MLIRTypeHelper
         return false;
     }
 
+    mlir::Type mergeIntTypes(mlir::Type typeLeft, mlir::Type typeRight, bool& found)
+    {
+        found = false;
+        auto intTypeLeft = typeLeft.dyn_cast<mlir::IntegerType>();
+        auto intTypeRight = typeRight.dyn_cast<mlir::IntegerType>();
+        if (intTypeLeft && intTypeRight)
+        {
+            auto width = std::max(intTypeLeft.getIntOrFloatBitWidth(), intTypeRight.getIntOrFloatBitWidth());
+            auto maxSignedWidth = std::max(
+                intTypeLeft.isSigned() ? intTypeLeft.getIntOrFloatBitWidth() : 0, 
+                intTypeRight.isSigned() ? intTypeRight.getIntOrFloatBitWidth() : 0);
+            auto maxUnsignedWidth = std::max(
+                intTypeLeft.isUnsigned() ? intTypeLeft.getIntOrFloatBitWidth() : 0, 
+                intTypeRight.isUnsigned() ? intTypeRight.getIntOrFloatBitWidth() : 0);
+
+            auto anySigned = intTypeLeft.isSigned() || intTypeRight.isSigned();
+            auto anyUnsigned = intTypeLeft.isUnsigned() || intTypeRight.isUnsigned();
+
+            if (anySigned && anyUnsigned && maxSignedWidth <= maxUnsignedWidth)
+            {
+                // if we have 64 - we can't extend it
+                if (width > 32)
+                    return mlir::Type();
+
+                width *= 2;
+            }
+
+            found = true;
+            return mlir::IntegerType::get(context, 
+                width, 
+                    anySigned 
+                        ? mlir::IntegerType::Signed 
+                        : anyUnsigned 
+                            ? mlir::IntegerType::Unsigned 
+                            : mlir::IntegerType::Signless);
+        }
+
+        return mlir::Type();
+    }
+
     mlir::Type findBaseType(mlir::Type typeLeft, mlir::Type typeRight, bool& found, mlir::Type defaultType = mlir::Type())
     {
         if (!typeLeft && !typeRight)
@@ -1442,6 +1536,48 @@ class MLIRTypeHelper
                 return canWideTypeWithoutDataLoss(constArrayType.getElementType(), arrayType.getElementType());
             }
         }        
+
+        // native types
+        if (auto destIntType = dstType.dyn_cast<mlir::IntegerType>())
+        {
+            if (auto srcIntType = srcType.dyn_cast<mlir::IntegerType>())
+            {
+                if (srcIntType.getSignedness() == destIntType.getSignedness()
+                    && srcIntType.getIntOrFloatBitWidth() <= destIntType.getIntOrFloatBitWidth())
+                {
+                    return true;
+                }
+
+                if (destIntType.getIntOrFloatBitWidth() - srcIntType.getIntOrFloatBitWidth() > 1)
+                {
+                    return true;
+                }
+
+                if (srcIntType.getIntOrFloatBitWidth() == destIntType.getIntOrFloatBitWidth()
+                    && srcIntType.isSigned() == destIntType.isSigned())
+                {
+                    return true;
+                }
+
+                return false;
+            }    
+        }          
+
+        if (auto destFloatType = dstType.dyn_cast<mlir::FloatType>())
+        {
+            if (auto srcFloatType = srcType.dyn_cast<mlir::FloatType>())
+            {
+                if (srcFloatType.getIntOrFloatBitWidth() <= destFloatType.getIntOrFloatBitWidth())
+                {
+                    return true;
+                }
+            }
+
+            if (auto srcIntType = srcType.dyn_cast<mlir::IntegerType>())
+            {
+                return true;
+            }            
+        }           
 
         return false;
     }
@@ -2842,7 +2978,16 @@ class MLIRTypeHelper
             merged = true;
             return currentType;
         }
+
+        // in case of merging integer types with sign/no sign
+        auto mergedInts = false;
+        auto resNewIntType = mergeIntTypes(existType, currentType, mergedInts);
+        if (mergedInts)
+        {
+            return resNewIntType;
+        }
         
+        // wide type - remove const & literal
         auto resType = wideStorageType(currentType);
 
         // check if can merge tuple types
