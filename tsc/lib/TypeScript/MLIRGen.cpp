@@ -11365,8 +11365,13 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(BigIntLiteral bigIntLiteral, const GenContext &genContext)
     {
-        auto attrVal = builder.getI64IntegerAttr(to_bignumber(bigIntLiteral->text));
-        auto literalType = mlir_ts::LiteralType::get(attrVal, builder.getI64Type());
+        APSInt newVal(wstos(
+            *(bigIntLiteral->text.end() - 1) == S('n') 
+                ? bigIntLiteral->text.substr(0, bigIntLiteral->text.length() - 1) 
+                : bigIntLiteral->text.c_str()));
+        auto type = builder.getI64Type();
+        auto attrVal = mlir::IntegerAttr::get(type, newVal.getExtValue());
+        auto literalType = mlir_ts::LiteralType::get(attrVal, type);
         return V(builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), literalType, attrVal));
     }
 
