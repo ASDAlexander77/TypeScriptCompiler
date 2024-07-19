@@ -405,7 +405,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 {
                     SmallVector<APInt> values;
                     std::for_each(std::begin(value), std::end(value), [&] (auto &value_) {
-                        values.push_back(value_.cast<typename mlir::IntegerAttr>().getValue());
+                        values.push_back(value_.template cast<mlir::IntegerAttr>().getValue());
                     });
 
                     attr = DenseElementsAttr::get(dataType, values);
@@ -414,7 +414,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 {
                     SmallVector<APFloat> values;
                     std::for_each(std::begin(value), std::end(value), [&] (auto &value_) {
-                        values.push_back(value_.cast<typename mlir::FloatAttr>().getValue());
+                        values.push_back(value_.template cast<mlir::FloatAttr>().getValue());
                     });
 
                     attr = DenseElementsAttr::get(dataType, values);
