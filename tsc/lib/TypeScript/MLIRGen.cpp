@@ -11357,7 +11357,9 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
     {
         auto attrVal = getNumericLiteralAttribute(numericLiteral);
-        auto literalType = mlir_ts::LiteralType::get(attrVal, attrVal.cast<mlir::TypedAttr>().getType());
+        auto attrType = attrVal.cast<mlir::TypedAttr>().getType();
+        auto valueType = attrType.isa<mlir::FloatType>() ? getNumberType() : attrType;
+        auto literalType = mlir_ts::LiteralType::get(attrVal, valueType);
         return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
     }
 
