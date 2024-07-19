@@ -11324,6 +11324,7 @@ class MLIRGenImpl
         case 64:
         case 128:
             unsignedVal = true;
+            break;
         default:
             //if (width < 8) width = 8; else 
             //if (width < 16) width = 16; else 
