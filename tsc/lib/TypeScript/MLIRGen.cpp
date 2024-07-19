@@ -7240,7 +7240,11 @@ class MLIRGenImpl
                         .Case<mlir::StringAttr>([&](auto strAttr) {
                             auto intType = mlir::IntegerType::get(builder.getContext(), 32);
                             APInt iValue(32, 0);
-                            iValue = llvm::to_integer(strAttr.getValue(), iValue);
+                            if (!llvm::to_integer(strAttr.getValue(), iValue))
+                            {
+                                return mlir::Value();
+                            }
+
                             return V(builder.create<mlir_ts::ConstantOp>(
                                 location, intType, builder.getIntegerAttr(intType, ~iValue)));
                         })                         
