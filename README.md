@@ -56,7 +56,7 @@ class TempFile {
 # Demo 
 [(click here)](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
 
-[![Demo](https://asdalexander77.github.io/img/tsc_emit.gif)](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
+[![Demo](https://raw.githubusercontent.com/ASDAlexander77/ASDAlexander77.github.io/main/img/tsc_emit.gif)](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
 
 
 # Try it 
