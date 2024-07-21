@@ -11,19 +11,20 @@
 # What's new 
 - Native types aliases
 ```TypeScript
-    // byte, short, ushort, int, uint, long, ulong, char, i8, i16, i32, i64, u8, u16, u32, u64, s8, s16, s32, s64, f16, f32, f64, f128, half, float, double
+// byte, short, ushort, int, uint, long, ulong, char, i8, i16, i32, i64,
+// u8, u16, u32, u64, s8, s16, s32, s64, f16, f32, f64, f128, half, float, double
 
-	const s1: s8 = -1;
-	const s2: u16 = 2;
-	const s3: i32 = 3;
-	const s4: f64 = 1.0;
+const s1: s8 = -1;
+const s2: u16 = 2;
+const s3: i32 = 3;
+const s4: f64 = 1.0;
 ```
 - Reference types (aka pointers)
 ```TypeScript
-	let a = [1, 2, 3];
-	const view: Reference<TypeOf<1>> = ReferenceOf(a[1]);
-	const data = LoadReference(view);
-	const data1 = LoadReference(view[1]);
+let a = [1, 2, 3];
+const view: Reference<TypeOf<1>> = ReferenceOf(a[1]);
+const data = LoadReference(view);
+const data1 = LoadReference(view[1]);
 ```
 - Accessor
 ```TypeScript
