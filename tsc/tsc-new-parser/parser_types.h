@@ -329,7 +329,7 @@ struct ExpressionWithTypeArguments : NodeWithTypeArguments
 struct UnaryExpression : ExpressionWithTypeArguments
 {
     //any _unaryExpressionBrand;
-    PTR(Expression) expression;
+    //PTR(Expression) expression;
 };
 
 /** Deprecated, please use UpdateExpression */
@@ -445,7 +445,6 @@ struct TypeParameterDeclaration : NamedDeclaration
 };
 
 struct SignatureDeclarationBase : TypeElement
-
 {
     NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
     NodeArray<PTR(ParameterDeclaration)> parameters;
@@ -531,7 +530,7 @@ struct InitializedPropertyDeclaration : PropertyDeclaration
 
 struct ObjectLiteralElement : NamedDeclaration
 {
-    PTR(PropertyName) name;
+    //PTR(PropertyName) name;
 };
 
 struct PropertyAssignment : ObjectLiteralElement

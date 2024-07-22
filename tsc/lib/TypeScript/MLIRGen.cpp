@@ -10321,7 +10321,7 @@ class MLIRGenImpl
     struct OperandsProcessingInfo
     {
         OperandsProcessingInfo(mlir::Type funcType, SmallVector<mlir::Value, 4> &operands, int offsetArgs, bool noReceiverTypesForGenericCall, MLIRTypeHelper &mth, bool disableSpreadParam) 
-            : operands{operands}, lastArgIndex{-1}, isVarArg{false}, hasType{false}, currentParameter{offsetArgs}, noReceiverTypesForGenericCall{noReceiverTypesForGenericCall}, mth{mth}
+            : operands{operands}, lastArgIndex{-1}, hasType{false}, currentParameter{offsetArgs}, noReceiverTypesForGenericCall{noReceiverTypesForGenericCall}, mth{mth}
         {
             detectVarArgTypeInfo(funcType, disableSpreadParam);
         }
@@ -10359,7 +10359,7 @@ class MLIRGenImpl
                 return mlir::Type();
             }
 
-            if (isVarArg && currentParameter >= lastArgIndex)
+            if (isVarArg() && currentParameter >= lastArgIndex)
             {
                 return varArgType;
             }
@@ -10405,7 +10405,12 @@ class MLIRGenImpl
 
         void nextParameter()
         {
-            isVarArg = ++currentParameter == lastArgIndex && varArgType;
+            ++currentParameter;
+        }
+
+        bool isVarArg() 
+        {
+            return currentParameter == lastArgIndex && varArgType;
         }
 
         auto restCount()
@@ -10427,7 +10432,6 @@ class MLIRGenImpl
         SmallVector<mlir::Value, 4> &operands;
         llvm::ArrayRef<mlir::typescript::FieldInfo> parameters;
         int lastArgIndex;
-        bool isVarArg;
         mlir::Type varArgType;
         bool hasType;
         int currentParameter;
@@ -10638,7 +10642,7 @@ class MLIRGenImpl
 
         for (auto it = arguments.begin(); it != arguments.end(); ++it)
         {
-            if (operandsProcessingInfo.isVarArg)
+            if (operandsProcessingInfo.isVarArg())
             {
                 auto proccessedArgs = std::distance(arguments.begin(), it);
                 return mlirGenOperandVarArgs(loc(arguments), proccessedArgs, arguments, operandsProcessingInfo, genContext);
