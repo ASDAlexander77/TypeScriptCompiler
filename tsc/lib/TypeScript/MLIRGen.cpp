@@ -9698,12 +9698,10 @@ class MLIRGenImpl
             return funcResult;
         }
 
-        auto noReceiverTypesForGenericCall = false;
-        if (funcResult.getDefiningOp()->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
-        {
-            // so if method is generic and you need to infer types you can cast to generic types
-            noReceiverTypesForGenericCall = callExpression->typeArguments.size() == 0;
-        }
+        // so if method is generic and you need to infer types you can cast to generic types
+        auto noReceiverTypesForGenericCall = 
+            mth.isGenericType(funcResult.getType()) 
+            && callExpression->typeArguments.size() == 0;
 
         SmallVector<mlir::Value, 4> operands;
         auto offsetArgs = funcType.isa<mlir_ts::BoundFunctionType>() || funcType.isa<mlir_ts::ExtensionFunctionType>() ? 1 : 0;
@@ -10340,11 +10338,13 @@ class MLIRGenImpl
             if (!disableSpreadParam && mth.getVarArgFromFuncRef(funcType))
             {
                 varArgType = parameters.back().type;
+                // unwrap array type to get elementType
                 if (auto arrayType = varArgType.dyn_cast<mlir_ts::ArrayType>())
                 {
                     varArgType = arrayType.getElementType();
                 }
-                else if (auto genericType = varArgType.dyn_cast<mlir_ts::NamedGenericType>())
+                
+                if (auto genericType = varArgType.dyn_cast<mlir_ts::NamedGenericType>())
                 {
                     // do nothing in case of generic, types will be adjusted later
                     varArgType = mlir::Type();
@@ -11543,7 +11543,9 @@ class MLIRGenImpl
             TypeSwitch<mlir::Type>(type)
                 .template Case<mlir_ts::ArrayType>([&](auto a) { isGenericType ? set(a) : setReceiver(a); })
                 .template Case<mlir_ts::TupleType>([&](auto t) { isGenericType ? set(t) : setReceiver(t); })
-                .Default([&](auto type) {});
+                .Default([&](auto type) {
+                    // just ignore it
+                });
         }        
 
         void adjustArrayType(mlir::Type defaultElementType)
