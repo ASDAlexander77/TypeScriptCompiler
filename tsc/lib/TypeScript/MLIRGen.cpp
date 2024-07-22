@@ -10616,7 +10616,9 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! varargs - receiver type: " << receiverType << "\n";);
         // TODO: isGenericType is applied as hack here, find out the issue
-        arrayInfo.setReceiver(receiverType, mth.isGenericType(receiverType));
+        // I think it should be operandsProcessingInfo.noReceiverTypesForGenericCall in setReceiver
+        arrayInfo.setReceiver(receiverType, 
+            operandsProcessingInfo.noReceiverTypesForGenericCall || mth.isGenericType(genContext.receiverType));
 
         for (auto it = arguments.begin() + processedArgs; it != arguments.end(); ++it)
         {
@@ -11510,39 +11512,42 @@ class MLIRGenImpl
         {
         }
 
-        void set(mlir_ts::ArrayType arrayType)
+        void set(mlir_ts::ArrayType arrayType, bool isReceiverGenericType)
         {
             dataType = TypeData::Array;
-            arrayElementType =
+            arrayElementType = arrayType.getElementType();
+            if (!isReceiverGenericType)
                 accumulatedArrayElementType = 
-                    arrayType.getElementType();
+                    arrayElementType;
         }        
 
-        void setReceiver(mlir_ts::ArrayType arrayType)
+        void setReceiverArray(mlir_ts::ArrayType arrayType, bool isReceiverGenericType)
         {        
-            set(arrayType);
+            set(arrayType, isReceiverGenericType);
             recevierContext.set(arrayType);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! array elements - receiver type: " << recevierContext.receiverElementType << "\n";);
         }
 
+        // TODO: check code if tupleType is genericType and merge is correct
         void set(mlir_ts::TupleType tupleType)
         {
             dataType = TypeData::Tuple;
             arrayElementType = tupleType;
         }
 
-        void setReceiver(mlir_ts::TupleType tupleType)
+        void setReceiverTuple(mlir_ts::TupleType tupleType)
         {  
             set(tupleType);
             recevierContext.set(tupleType);
         }        
 
-        void setReceiver(mlir::Type type, bool isGenericType)
+        // TODO: review all receivers in case of generic types in generic functions, to avoid merging T with actual types
+        void setReceiver(mlir::Type type, bool isReceiverGenericType)
         {
             TypeSwitch<mlir::Type>(type)
-                .template Case<mlir_ts::ArrayType>([&](auto a) { isGenericType ? set(a) : setReceiver(a); })
-                .template Case<mlir_ts::TupleType>([&](auto t) { isGenericType ? set(t) : setReceiver(t); })
+                .template Case<mlir_ts::ArrayType>([&](auto a) { isReceiverGenericType ? set(a, isReceiverGenericType) : setReceiverArray(a, isReceiverGenericType); })
+                .template Case<mlir_ts::TupleType>([&](auto t) { isReceiverGenericType ? set(t) : setReceiverTuple(t); })
                 .Default([&](auto type) {
                     // just ignore it
                 });
