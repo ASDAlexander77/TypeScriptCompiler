@@ -10339,7 +10339,7 @@ class MLIRGenImpl
                 if (auto arrayType = varArgType.dyn_cast<mlir_ts::ArrayType>())
                 {
                     varArgType = arrayType.getElementType();
-                    if (varArgType.isa<mlir_ts::NamedGenericType>())
+                    if (mth.isGenericType(varArgType))
                     {
                         // in case of generics which are not defined yet, array will be identified later in generic method call
                         varArgType = mlir::Type();
