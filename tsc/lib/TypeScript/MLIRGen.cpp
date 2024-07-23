@@ -11517,7 +11517,8 @@ class MLIRGenImpl
             dataType{TypeData::NotSet},
             isConst{true},
             anySpreadElement{false},
-            applyCast{false}
+            applyCast{false},
+            notAllItemsTheSameType{false}
         {
         }
 
@@ -11592,6 +11593,11 @@ class MLIRGenImpl
                     arrayElementType = recevierContext.receiverElementType;
                     applyCast = true;
                 }
+
+                if (notAllItemsTheSameType)
+                {
+                    applyCast = true;
+                }
             }
         }
 
@@ -11603,6 +11609,7 @@ class MLIRGenImpl
         bool isConst;
         bool anySpreadElement;
         bool applyCast;
+        bool notAllItemsTheSameType;
     };
 
     struct ArrayElement
@@ -11648,7 +11655,7 @@ class MLIRGenImpl
 
         arrayInfo.accumulatedArrayElementType = elementType;
 
-        arrayInfo.applyCast |= arrayInfo.accumulatedArrayElementType != wideType;
+        arrayInfo.notAllItemsTheSameType |= arrayInfo.accumulatedArrayElementType != wideType;
 
         return mlir::success();
     };
