@@ -2068,16 +2068,10 @@ class MLIRGenImpl
                     }
                     else
                     {
-                        auto anyFailed = false;
-                        struct ArrayInfo arrayInfo{};
-                        for (auto varArgIndex = paramIndex; varArgIndex < callOpsCount; varArgIndex++)
-                        {
-                            auto argOp = genericTypeGenContext.callOperands[varArgIndex];
+                        assert(paramIndex == callOpsCount - 1);
+                        auto arrayType = genericTypeGenContext.callOperands[paramIndex].getType();
 
-                            accumulateArrayItemType(argOp.getType(), arrayInfo);                            
-                        }
-
-                        mlir::Type arrayType = getArrayType(arrayInfo.accumulatedArrayElementType);
+                        assert(arrayType.isa<mlir_ts::ArrayType>() || arrayType.isa<mlir_ts::ConstArrayType>());
 
                         StringMap<mlir::Type> inferredTypes;
                         inferType(location, paramType, arrayType, inferredTypes, genericTypeGenContext);
@@ -2087,11 +2081,8 @@ class MLIRGenImpl
                             return mlir::failure();
                         }                        
 
-                        if (!anyFailed)
-                        {
-                            paramInfo->processed = true;
-                            processed++;
-                        }
+                        paramInfo->processed = true;
+                        processed++;
                     }
                 }
 
@@ -10319,7 +10310,7 @@ class MLIRGenImpl
     struct OperandsProcessingInfo
     {
         OperandsProcessingInfo(mlir::Type funcType, SmallVector<mlir::Value, 4> &operands, int offsetArgs, bool noReceiverTypesForGenericCall, MLIRTypeHelper &mth, bool disableSpreadParam) 
-            : operands{operands}, lastArgIndex{-1}, hasType{false}, currentParameter{offsetArgs}, noReceiverTypesForGenericCall{noReceiverTypesForGenericCall}, mth{mth}
+            : operands{operands}, lastArgIndex{-1}, hasType{false}, hasVarArgs{false}, currentParameter{offsetArgs}, noReceiverTypesForGenericCall{noReceiverTypesForGenericCall}, mth{mth}
         {
             detectVarArgTypeInfo(funcType, disableSpreadParam);
         }
@@ -10337,18 +10328,23 @@ class MLIRGenImpl
             lastArgIndex = parameters.size() - 1;
             if (!disableSpreadParam && mth.getVarArgFromFuncRef(funcType))
             {
+                hasVarArgs = true;
                 varArgType = parameters.back().type;
                 // unwrap array type to get elementType
                 if (auto arrayType = varArgType.dyn_cast<mlir_ts::ArrayType>())
                 {
                     varArgType = arrayType.getElementType();
                 }
-                
-                if (auto genericType = varArgType.dyn_cast<mlir_ts::NamedGenericType>())
+                else
                 {
-                    // do nothing in case of generic, types will be adjusted later
-                    varArgType = mlir::Type();
+                    llvm_unreachable("not implemented");
                 }
+
+                // if (auto genericType = varArgType.dyn_cast<mlir_ts::NamedGenericType>())
+                // {
+                //     // do nothing in case of generic, types will be adjusted later
+                //     varArgType = mlir::Type();
+                // }
             }
         }
 
@@ -10410,7 +10406,7 @@ class MLIRGenImpl
 
         bool isVarArg() 
         {
-            return currentParameter == lastArgIndex && varArgType;
+            return currentParameter == lastArgIndex && hasVarArgs;
         }
 
         auto restCount()
@@ -10434,6 +10430,7 @@ class MLIRGenImpl
         int lastArgIndex;
         mlir::Type varArgType;
         bool hasType;
+        bool hasVarArgs;
         int currentParameter;
         bool noReceiverTypesForGenericCall;
         MLIRTypeHelper &mth;
@@ -11638,6 +11635,8 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! result element type: " << elementType << "\n";);
 
         arrayInfo.accumulatedArrayElementType = elementType;
+
+        arrayInfo.applyCast |= arrayInfo.accumulatedArrayElementType != wideType;
 
         return mlir::success();
     };
