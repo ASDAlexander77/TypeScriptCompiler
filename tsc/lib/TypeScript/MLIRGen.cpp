@@ -2068,10 +2068,15 @@ class MLIRGenImpl
                     }
                     else
                     {
-                        assert(paramIndex == callOpsCount - 1);
-                        auto arrayType = genericTypeGenContext.callOperands[paramIndex].getType();
+                        struct ArrayInfo arrayInfo{};
+                        for (auto varArgIndex = paramIndex; varArgIndex < callOpsCount; varArgIndex++)
+                        {
+                            auto argOp = genericTypeGenContext.callOperands[varArgIndex];
 
-                        assert(arrayType.isa<mlir_ts::ArrayType>() || arrayType.isa<mlir_ts::ConstArrayType>());
+                            accumulateArrayItemType(argOp.getType(), arrayInfo);                            
+                        }
+
+                        mlir::Type arrayType = getArrayType(arrayInfo.accumulatedArrayElementType);
 
                         StringMap<mlir::Type> inferredTypes;
                         inferType(location, paramType, arrayType, inferredTypes, genericTypeGenContext);
@@ -10334,17 +10339,20 @@ class MLIRGenImpl
                 if (auto arrayType = varArgType.dyn_cast<mlir_ts::ArrayType>())
                 {
                     varArgType = arrayType.getElementType();
+                    if (varArgType.isa<mlir_ts::NamedGenericType>())
+                    {
+                        // in case of generics which are not defined yet, array will be identified later in generic method call
+                        varArgType = mlir::Type();
+                        hasVarArgs = false;
+                    }
                 }
                 else
                 {
-                    llvm_unreachable("not implemented");
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! VarArg type is: " << varArgType << "\n";);
+                    // in case of generics which are not defined yet, array will be identified later in generic method call
+                    varArgType = mlir::Type();
+                    hasVarArgs = false;
                 }
-
-                // if (auto genericType = varArgType.dyn_cast<mlir_ts::NamedGenericType>())
-                // {
-                //     // do nothing in case of generic, types will be adjusted later
-                //     varArgType = mlir::Type();
-                // }
             }
         }
 
@@ -10609,13 +10617,17 @@ class MLIRGenImpl
         struct ArrayInfo arrayInfo{};
 
         // set receiver type
-        auto receiverType = mlir_ts::ArrayType::get(operandsProcessingInfo.getReceiverType());
+        auto elementReceiverType = operandsProcessingInfo.getReceiverType();
+        if (elementReceiverType)
+        {
+            auto receiverType = mlir_ts::ArrayType::get(elementReceiverType);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! varargs - receiver type: " << receiverType << "\n";);
-        // TODO: isGenericType is applied as hack here, find out the issue
-        // I think it should be operandsProcessingInfo.noReceiverTypesForGenericCall in setReceiver
-        arrayInfo.setReceiver(receiverType, 
-            operandsProcessingInfo.noReceiverTypesForGenericCall || mth.isGenericType(genContext.receiverType));
+            LLVM_DEBUG(llvm::dbgs() << "\n!! varargs - receiver type: " << receiverType << "\n";);
+            // TODO: isGenericType is applied as hack here, find out the issue
+            // I think it should be operandsProcessingInfo.noReceiverTypesForGenericCall in setReceiver
+            arrayInfo.setReceiver(receiverType, 
+                operandsProcessingInfo.noReceiverTypesForGenericCall || mth.isGenericType(genContext.receiverType));
+        }
 
         for (auto it = arguments.begin() + processedArgs; it != arguments.end(); ++it)
         {
