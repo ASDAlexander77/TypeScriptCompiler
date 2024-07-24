@@ -17915,6 +17915,11 @@ genContext);
 
                 return interfaceType;
             }
+
+            if (auto embedType = findEmbeddedType(name, typeReferenceAST->typeArguments, genContext))
+            {
+                return embedType;
+            }
         }
 
         if (auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext))
