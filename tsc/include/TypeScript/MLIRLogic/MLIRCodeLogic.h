@@ -233,12 +233,12 @@ class MLIRCustomMethods
         return m[functionName.str()];    
     }   
 
-    ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
     {
         if (functionName == "print")
         {
             // print - internal command;
-            return mlirGenPrint(location, operands);
+            return mlirGenPrint(location, operands, castFn, genContext);
         }
         else if (functionName == "assert")
         {
@@ -303,7 +303,7 @@ class MLIRCustomMethods
         return mlir::failure();
     }
 
-    mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
     {
         SmallVector<mlir::Value> vals;
         for (auto &oper : operands)
@@ -330,8 +330,7 @@ class MLIRCustomMethods
                 }
                 else
                 {
-                    auto strCast =
-                        builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
+                    auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
                     vals.push_back(strCast);
                 }
             }

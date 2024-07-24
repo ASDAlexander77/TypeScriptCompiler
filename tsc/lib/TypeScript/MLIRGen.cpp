@@ -10063,7 +10063,11 @@ class MLIRGenImpl
 
             // resolve function
             MLIRCustomMethods cm(builder, location, compileOptions);
-            return cm.callMethod(functionName, operands, genContext);
+            return cm.callMethod(
+                functionName, 
+                operands, 
+                std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 
+                genContext);
         }
 
         if (auto optFuncRef = actualFuncRefValue.getType().dyn_cast<mlir_ts::OptionalType>())
@@ -17156,6 +17160,7 @@ genContext);
 
         if (!existGenericFunctionMap(funcName))
         {
+            // TODO: must be improved
             auto src = S("function __as<T>(a: any) : T \
                 { \
                     if (typeof a == 'number') return <T>a; \
