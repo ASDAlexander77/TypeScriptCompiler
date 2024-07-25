@@ -8719,55 +8719,50 @@ class MLIRGenImpl
                 .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
                 .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
                 .Case<mlir_ts::BooleanType>([&](auto intType) { 
-                    if (auto value = cl.Bool(intType))
-                    {
-                        return value;
-                    }
-
                     // find Boolean type
                     if (auto classInfo = getClassInfoByFullName("Boolean"))
                     {
                         return classAccess(classInfo->classType);
+                    }
+
+                    if (auto value = cl.Bool(intType))
+                    {
+                        return value;
                     }
                     
                     return mlir::Value();                    
                 })
                 .Case<mlir::IntegerType>([&](auto intType) { return cl.Int(intType); })
                 .Case<mlir::FloatType>([&](auto floatType) { return cl.Float(floatType); })
-                .Case<mlir_ts::NumberType>([&](auto numberType) { 
-                    if (auto value = cl.Number(numberType))
-                    {
-                        return value;
-                    }
-                    
+                .Case<mlir_ts::NumberType>([&](auto numberType) {                    
                     // find Number type
                     if (auto classInfo = getClassInfoByFullName("Number"))
                     {
                         return classAccess(classInfo->classType);
                     }
                     
-                    return mlir::Value();                        
-                })
-                .Case<mlir_ts::StringType>([&](auto stringType) { 
-                    if (auto value = cl.String(stringType))
+                    if (auto value = cl.Number(numberType))
                     {
                         return value;
                     }
 
+                    return mlir::Value();                        
+                })
+                .Case<mlir_ts::StringType>([&](auto stringType) { 
                     // find String type
                     if (auto classInfo = getClassInfoByFullName("String"))
                     {
                         return classAccess(classInfo->classType);
                     }
-                    
-                    return mlir::Value();
-                })
-                .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { 
-                    if (auto value = cl.Array(arrayType))
+
+                    if (auto value = cl.String(stringType))
                     {
                         return value;
                     }
 
+                    return mlir::Value();
+                })
+                .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { 
                     if (auto genericClassTypeInfo = getGenericClassInfoByFullName("Array"))
                     {
                         auto classType = genericClassTypeInfo->classType;
@@ -8792,15 +8787,15 @@ class MLIRGenImpl
                     // {
                     //     return classAccess(classInfo->classType);
                     // }
-                    
-                    return mlir::Value();   
-                })
-                .Case<mlir_ts::ArrayType>([&](auto arrayType) { 
+
                     if (auto value = cl.Array(arrayType))
                     {
                         return value;
                     }
-
+                    
+                    return mlir::Value();   
+                })
+                .Case<mlir_ts::ArrayType>([&](auto arrayType) { 
                     if (auto genericClassTypeInfo = getGenericClassInfoByFullName("Array"))
                     {
                         auto classType = genericClassTypeInfo->classType;
@@ -8819,6 +8814,11 @@ class MLIRGenImpl
                     // {
                     //     return classAccess(classInfo->classType);
                     // }
+
+                    if (auto value = cl.Array(arrayType))
+                    {
+                        return value;
+                    }
                     
                     return mlir::Value();                      
                 })
@@ -16857,6 +16857,14 @@ genContext);
                 
                 return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
             }
+
+            if (auto arrayType = valueType.dyn_cast<mlir_ts::ArrayType>())
+            {
+                if (auto toStringMethod = evaluateProperty(value, TO_STRING, genContext))
+                {
+                    return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
+                }
+            }
         }
 
         // <???> to interface
@@ -17163,11 +17171,11 @@ genContext);
             // TODO: must be improved
             auto src = S("function __as<T>(a: any) : T \
                 { \
-                    if (typeof a == 'number') return <T>a; \
-                    if (typeof a == 'string') return <T>a; \
-                    if (typeof a == 'i32') return <T>a; \
-                    if (typeof a == 'class') if (a instanceof T) return <T>a; \
-                    return <T>null; \
+                    if (typeof a == 'number') return a; \
+                    if (typeof a == 'string') return a; \
+                    if (typeof a == 'i32') return a; \
+                    if (typeof a == 'class') if (a instanceof T) return a; \
+                    return null; \
                 } \
                 ");
 
