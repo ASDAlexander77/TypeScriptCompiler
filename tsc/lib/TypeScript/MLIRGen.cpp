@@ -8738,7 +8738,10 @@ class MLIRGenImpl
                     // find Number type
                     if (auto classInfo = getClassInfoByFullName("Number"))
                     {
-                        return classAccess(classInfo->classType);
+                        if (auto value = classAccess(classInfo->classType))
+                        {
+                            return value;
+                        }
                     }
                     
                     if (auto value = cl.Number(numberType))
@@ -8752,7 +8755,10 @@ class MLIRGenImpl
                     // find String type
                     if (auto classInfo = getClassInfoByFullName("String"))
                     {
-                        return classAccess(classInfo->classType);
+                        if (auto value = classAccess(classInfo->classType))
+                        {
+                            return value;
+                        }
                     }
 
                     if (auto value = cl.String(stringType))
@@ -8824,17 +8830,20 @@ class MLIRGenImpl
                 })
                 .Case<mlir_ts::RefType>([&](auto refType) { return cl.Ref(refType); })
                 .Case<mlir_ts::ObjectType>([&](auto objectType) { 
+                    // find Object type
+                    if (auto classInfo = getClassInfoByFullName("Object"))
+                    {
+                        if (auto value = classAccess(classInfo->classType))
+                        {
+                            return value;
+                        }
+                    }
+
                     if (auto value = cl.Object(objectType))
                     {
                         return value;
                     }
 
-                    // find Object type
-                    if (auto classInfo = getClassInfoByFullName("Object"))
-                    {
-                        return classAccess(classInfo->classType);
-                    }
-                    
                     return mlir::Value();                    
                 })
                 .Case<mlir_ts::SymbolType>([&](auto symbolType) { return cl.Symbol(symbolType); })
