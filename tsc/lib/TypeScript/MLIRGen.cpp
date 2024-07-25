@@ -8783,7 +8783,10 @@ class MLIRGenImpl
                                 return mlir::Value();
                             }
 
-                            return classAccessWithObject(specType.cast<mlir_ts::ClassType>(), arrayNonConst);
+                            if (auto value = classAccessWithObject(specType.cast<mlir_ts::ClassType>(), arrayNonConst))
+                            {
+                                return value;
+                            }
                         }
                     }
 
@@ -8810,7 +8813,10 @@ class MLIRGenImpl
                                 typeArg, genContext, true);
                         if (mlir::succeeded(result))
                         {
-                            return classAccess(specType.cast<mlir_ts::ClassType>());
+                            if (auto value = classAccess(specType.cast<mlir_ts::ClassType>()))
+                            {
+                                return value;
+                            }
                         }
                     }
 
