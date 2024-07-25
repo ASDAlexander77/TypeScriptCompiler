@@ -11097,6 +11097,19 @@ class MLIRGenImpl
             return NewArray(location, arrayType, newExpression->arguments, genContext);
         }
 
+        // to support custom Array<T>
+        if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
+        {
+            if (newExpression->typeArguments > 0 && classType.getName().getValue().starts_with("Array<"))
+            {
+                auto arrayType = findEmbeddedType("Array", newExpression->typeArguments, genContext);
+                if (arrayType)
+                {
+                    return NewArray(location, arrayType, newExpression->arguments, genContext);
+                }
+            }
+        }
+
         if (auto interfaceType = value.getType().dyn_cast<mlir_ts::InterfaceType>())
         {
             return NewClassInstanceByCallingNewCtor(location, value, newExpression->arguments, newExpression->typeArguments, genContext);
