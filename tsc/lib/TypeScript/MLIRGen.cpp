@@ -2405,7 +2405,7 @@ class MLIRGenImpl
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
                        llvm::dbgs() << "\n";);
 
-            // create new instance of interface with TypeArguments
+            // create new instance of class with TypeArguments
             if (mlir::failed(std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext))))
             {
                 return {mlir::failure(), mlir::Type()};
@@ -4626,6 +4626,9 @@ class MLIRGenImpl
             // copy location info, to fix issue with names of anonymous functions
             methodOp->pos = functionLikeDeclarationBaseAST->pos;
             methodOp->_end = functionLikeDeclarationBaseAST->_end;        
+
+            // to ensure correct full name
+            methodOp->parent = functionLikeDeclarationBaseAST->parent;
 
             //LLVM_DEBUG(printDebug(methodOp););
 
