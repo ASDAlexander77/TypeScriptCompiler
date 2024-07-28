@@ -2405,8 +2405,27 @@ class MLIRGenImpl
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
                        llvm::dbgs() << "\n";);
 
+            static auto count = 0;
+            count++;
+            if (count > 99)
+            {
+                count--;
+                emitError(location) << "can't instantiate type. '" << genericClassType
+                                    << "'. Circular initialization is detected.";
+
+
+                std::string s;
+                s += "can't instantiate type. '";
+                s += fullNameGenericClassTypeName;
+                s += "'. Circular initialization is detected.";
+                llvm_unreachable(s.c_str());
+            }
+
+            auto res = std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext));
+            count--;
+
             // create new instance of class with TypeArguments
-            if (mlir::failed(std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext))))
+            if (mlir::failed(res))
             {
                 return {mlir::failure(), mlir::Type()};
             }
@@ -5093,7 +5112,9 @@ class MLIRGenImpl
         mlir::Value defaultValue;
         if (defaultExpr)
         {
-            defaultValue = mlirGen(defaultExpr, genContext);
+            auto result = mlirGen(defaultExpr, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result);
+            defaultValue = V(result);
         }
         else
         {
@@ -5122,7 +5143,9 @@ class MLIRGenImpl
         mlir::Value defaultValue;
         if (defaultExpr)
         {
-            defaultValue = mlirGen(defaultExpr, genContext);
+            auto result = mlirGen(defaultExpr, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result);
+            defaultValue = V(result);
         }
         else
         {
@@ -8791,6 +8814,11 @@ class MLIRGenImpl
                                 return value;
                             }
                         }
+
+                        if (mlir::failed(result))
+                        {
+                            return mlir::Value();
+                        }
                     }
 
                     // find Array type
@@ -8820,6 +8848,11 @@ class MLIRGenImpl
                             {
                                 return value;
                             }
+                        }
+
+                        if (mlir::failed(result))
+                        {
+                            return mlir::Value();
                         }
                     }
 
