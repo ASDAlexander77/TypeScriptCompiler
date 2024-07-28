@@ -8801,6 +8801,7 @@ class MLIRGenImpl
                         SmallVector<mlir::Type> typeArg{arrayType.getElementType()};
                         auto [result, specType] = instantiateSpecializedClassType(location, classType,
                                 typeArg, genContext, true);
+                        auto accessFailed = false;
                         if (mlir::succeeded(result))
                         {
                             auto arrayNonConst = cast(location, mlir_ts::ArrayType::get(arrayType.getElementType()), objectValue, genContext);
@@ -8813,9 +8814,11 @@ class MLIRGenImpl
                             {
                                 return value;
                             }
+
+                            accessFailed = true;
                         }
 
-                        if (mlir::failed(result))
+                        if (mlir::failed(result) && !accessFailed)
                         {
                             return mlir::Value();
                         }
@@ -8842,15 +8845,18 @@ class MLIRGenImpl
                         SmallVector<mlir::Type> typeArg{arrayType.getElementType()};
                         auto [result, specType] = instantiateSpecializedClassType(location, classType,
                                 typeArg, genContext, true);
+                        auto accessFailed = false;
                         if (mlir::succeeded(result))
                         {
                             if (auto value = classAccess(specType.cast<mlir_ts::ClassType>()))
                             {
                                 return value;
                             }
+
+                            accessFailed = true;
                         }
 
-                        if (mlir::failed(result))
+                        if (mlir::failed(result) && !accessFailed)
                         {
                             return mlir::Value();
                         }
