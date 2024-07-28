@@ -4353,6 +4353,7 @@ class MLIRGenImpl
             genContextWithPassResult.discoverParamsOnly = genContext.discoverParamsOnly;
             genContextWithPassResult.typeAliasMap = genContext.typeAliasMap;
             genContextWithPassResult.typeParamsWithArgs = genContext.typeParamsWithArgs;
+            genContextWithPassResult.postponedMessages = genContext.postponedMessages;
 
             registerNamespace(funcProto->getNameWithoutNamespace(), true);
 
@@ -8841,6 +8842,8 @@ class MLIRGenImpl
                             const_cast<GenContext &>(genContext).stop();
                             return mlir::Value();
                         }
+
+                        genContext.postponedMessages->clear();
                     }
 
                     // find Array type
@@ -8880,6 +8883,8 @@ class MLIRGenImpl
                             const_cast<GenContext &>(genContext).stop();
                             return mlir::Value();
                         }
+
+                        genContext.postponedMessages->clear();
                     }
 
                     // find Array type
