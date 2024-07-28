@@ -2412,13 +2412,13 @@ class MLIRGenImpl
                 count--;
                 emitError(location) << "can't instantiate type. '" << genericClassType
                                     << "'. Circular initialization is detected.";
+                return {mlir::failure(), mlir::Type()};
 
-
-                std::string s;
-                s += "can't instantiate type. '";
-                s += fullNameGenericClassTypeName;
-                s += "'. Circular initialization is detected.";
-                llvm_unreachable(s.c_str());
+                // std::string s;
+                // s += "can't instantiate type. '";
+                // s += fullNameGenericClassTypeName;
+                // s += "'. Circular initialization is detected.";
+                // llvm_unreachable(s.c_str());
             }
 
             auto res = std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext));
