@@ -388,15 +388,11 @@ class MLIRGenImpl
     }
 
     int processStatements(NodeArray<Statement> statements,
-                          mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
                           const GenContext &genContext)
     {
         auto notResolved = 0;
         do
         {
-            // clear previous errors
-            postponedMessages.clear();
-
             // main cycles
             auto noErrorLocation = true;
             mlir::Location errorLocation = mlir::UnknownLoc::get(builder.getContext());
@@ -409,6 +405,8 @@ class MLIRGenImpl
                     continue;
                 }
 
+                // clear previous errors
+                genContext.postponedMessages->clear();
                 if (failed(mlirGen(statement, genContext)))
                 {
                     emitError(loc(statement), "failed statement");
@@ -418,6 +416,11 @@ class MLIRGenImpl
                     {
                         errorLocation = loc(statement);
                         noErrorLocation = false;
+                    }
+
+                    if (genContext.isStopped())
+                    {
+                        return notResolved;
                     }
                 }
                 else
@@ -470,6 +473,8 @@ class MLIRGenImpl
         GenContext genContextPartial{};
         genContextPartial.allowPartialResolve = true;
         genContextPartial.dummyRun = true;
+        genContextPartial.rootContext = &genContextPartial;
+        genContextPartial.postponedMessages = &postponedMessages;
         // TODO: no need to clean up here as whole module will be removed
         //genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
         //genContextPartial.cleanUpOps = new mlir::SmallVector<mlir::Operation *>();
@@ -487,7 +492,7 @@ class MLIRGenImpl
             }
         }
 
-        auto notResolved = processStatements(module->statements, postponedMessages, genContextPartial);
+        auto notResolved = processStatements(module->statements, genContextPartial);
 
         genContextPartial.clean();
 
@@ -530,6 +535,8 @@ class MLIRGenImpl
         exports.str(S(""));
         exports.clear();
         GenContext genContext{};
+        genContext.rootContext = &genContext;
+        genContext.postponedMessages = &postponedMessages;
 
         for (auto includeFile : includeFiles)
         {
@@ -544,7 +551,7 @@ class MLIRGenImpl
             }
         }
 
-        auto notResolved = processStatements(module->statements, postponedMessages, genContext);
+        auto notResolved = processStatements(module->statements, genContext);
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
             return mlir::failure();
@@ -946,8 +953,10 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGen(NodeArray<Statement> statements, std::function<bool(Statement)> filter,
-                                const GenContext &genContext)
+    mlir::LogicalResult mlirGen(
+        NodeArray<Statement> statements, 
+        std::function<bool(Statement)> filter,
+        const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
@@ -970,6 +979,8 @@ class MLIRGenImpl
                     continue;
                 }
 
+                // clear previous errors
+                genContext.postponedMessages->clear();
                 if (failed(mlirGen(statement, genContext)))
                 {
                     if (noErrorLocation)
@@ -1043,7 +1054,9 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(Block blockAST, const GenContext &genContext)
+    mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(
+        Block blockAST, 
+        const GenContext &genContext)
     {
         auto location = loc(blockAST);
 
@@ -1076,6 +1089,12 @@ class MLIRGenImpl
 
             if (failed(mlirGen(statement, genContext)))
             {
+                // special case to show errors in case of discovery, generics & evaluates
+                if (genContext.isStopped())
+                {
+                    return mlir::failure();
+                }
+
                 // now try to process all internal declarations
                 // process all declrations
                 if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContext)))
@@ -6418,7 +6437,6 @@ class MLIRGenImpl
                 location, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
                 [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                     GenContext execOpBodyGenContext(genContext);
-                    execOpBodyGenContext.skipProcessed = true;
                     mlirGen(forStatementAST->statement, execOpBodyGenContext);
                     builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
                 });
@@ -8820,6 +8838,7 @@ class MLIRGenImpl
 
                         if (mlir::failed(result) && !accessFailed)
                         {
+                            const_cast<GenContext &>(genContext).stop();
                             return mlir::Value();
                         }
                     }
@@ -8858,6 +8877,7 @@ class MLIRGenImpl
 
                         if (mlir::failed(result) && !accessFailed)
                         {
+                            const_cast<GenContext &>(genContext).stop();
                             return mlir::Value();
                         }
                     }
