@@ -2347,7 +2347,6 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
-            genericTypeGenContext.specialization = true;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -13674,6 +13673,7 @@ class MLIRGenImpl
         // init this type (needed to use in property evaluations)
         GenContext classGenContext(genContext);
         classGenContext.thisType = newClassPtr->classType;
+        classGenContext.specialization = isGenericClass;
 
         newClassPtr->processingStorageClass = true;
         newClassPtr->enteredProcessingStorageClass = true;
