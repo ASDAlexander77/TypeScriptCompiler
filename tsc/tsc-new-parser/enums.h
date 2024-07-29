@@ -555,7 +555,7 @@ enum class InternalFlags : number
     ThisArgAlias = 1 << 6,
     DllExport = 1 << 7,
     DllImport = 1 << 8,
-    GenerationProcessed = 1 << 9,
+    GenerationProcessed = 1 << 9
 };
 
 ENUM_OPS(InternalFlags)

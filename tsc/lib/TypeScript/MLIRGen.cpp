@@ -2169,6 +2169,7 @@ class MLIRGenImpl
 
             // step 1, add type arguments first
             GenContext genericTypeGenContext(genContext);
+            genericTypeGenContext.specialization = true;
             auto typeParams = functionGenericTypeInfo->typeParams;
             if (typeArguments && typeParams.size() == typeArguments.size())
             {
@@ -2346,6 +2347,7 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
+            genericTypeGenContext.specialization = true;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2714,7 +2716,7 @@ class MLIRGenImpl
     {
         VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
-            allocateOutsideOfOperation{false}, allocateInContextThis{false}, deleted{false}
+            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, deleted{false}
         {
         };
 
@@ -2759,6 +2761,11 @@ class MLIRGenImpl
         void setStorage(mlir::Value storage_)
         {
             storage = storage_;
+        }   
+
+        void setSpecialization()
+        {
+            isSpecialization = true;
         }   
 
         void detectFlags(bool isFullName_, VariableClass varClass_, const GenContext &genContext)
@@ -2884,6 +2891,7 @@ class MLIRGenImpl
         bool isExport;
         bool isImport;
         bool isAppendingLinkage;
+        bool isSpecialization;
         bool allocateOutsideOfOperation;
         bool allocateInContextThis;
         bool deleted;
@@ -3075,6 +3083,10 @@ class MLIRGenImpl
             {
                 attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("Appending")});
             }
+            else if (variableDeclarationInfo.isSpecialization)
+            {
+                attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("LinkonceODR")});
+            }
 
             // add modifiers
             if (variableDeclarationInfo.isExport)
@@ -3216,6 +3228,7 @@ class MLIRGenImpl
         }
         else
         {
+            variableDeclarationInfo.isSpecialization = genContext.specialization;
             createGlobalVariable(location, variableDeclarationInfo, genContext);
 
             if (mlir::succeeded(isGlobalConstLambda(location, variableDeclarationInfo, genContext)))
@@ -4282,6 +4295,11 @@ class MLIRGenImpl
         if (dllImport)
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
+        }
+
+        if (genContext.specialization)
+        {
+            attrs.push_back({mlir::StringAttr::get(builder.getContext(), "specialization"), mlir::UnitAttr::get(builder.getContext())});
         }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());

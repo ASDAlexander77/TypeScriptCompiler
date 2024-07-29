@@ -183,6 +183,7 @@ struct GenContext
     std::string loopLabel;
     bool stopProcess;
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages;
+    bool specialization;
 };
 
 struct ValueOrLogicalResult 

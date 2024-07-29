@@ -1123,6 +1123,14 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         for (auto attr : funcOp->getAttrs())
         {
             auto name = attr.getName();
+            if (name == "specialization") {
+                auto inlineLinkage = LLVM::linkage::Linkage::LinkonceODR;
+                auto linkage = LLVM::LinkageAttr::get(getContext(), inlineLinkage);
+                newFuncOp->setAttr("llvm.linkage", linkage);
+                newFuncOp.setPrivate();
+                continue;
+            }
+
             auto addAttr = 
                 std::find(skipAttrs.begin(), skipAttrs.end(), name) == skipAttrs.end();
             if (addAttr) 
