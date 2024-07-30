@@ -16814,6 +16814,86 @@ genContext);
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
     }    
 
+    ValueOrLogicalResult castTupleToString(mlir::Location location, mlir::Value value, mlir_ts::TupleType tupleType,
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext)
+    {
+        auto stringType = getStringType();
+        SmallVector<mlir::Value, 4> strs;
+
+        auto spaceText = " ";
+        auto spaceValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(spaceText));
+
+        auto fieldSepText = ": ";
+        auto fieldSepValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(fieldSepText));
+
+        auto spanText = ",";
+        auto spanValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(spanText));
+
+        auto quotText = "'";
+        auto quotValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(quotText));
+
+        auto beginText = "{";
+        auto beginValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(beginText));
+
+        auto endText = "}";
+        auto endValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(endText));
+
+        strs.push_back(beginValue);
+
+        auto index = -1;
+        for (auto fieldInfo : fields)
+        {
+            index++;
+            LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
+
+            if (index > 0) 
+            {
+                // text
+                strs.push_back(spanValue);
+            }
+
+            auto fieldNameValue = builder.create<mlir_ts::ConstantOp>(location, stringType, fieldInfo.id);
+            strs.push_back(spaceValue);
+            strs.push_back(fieldNameValue);
+            strs.push_back(fieldSepValue);
+
+            MLIRPropertyAccessCodeLogic cl(builder, location, value, builder.getI32IntegerAttr(index));
+            auto fieldValue = cl.Tuple(tupleType, true);
+            VALIDATE(value, location)
+
+            if (fieldValue.getType() != stringType)
+            {
+                CAST(fieldValue, location, stringType, fieldValue, genContext);
+                // expr value
+                strs.push_back(fieldValue);
+            }
+            else
+            {
+                // expr value
+                strs.push_back(quotValue);
+                strs.push_back(fieldValue);
+                strs.push_back(quotValue);
+            }
+        }
+
+        if (index > 0)
+        {
+            strs.push_back(spaceValue);
+        }
+
+        strs.push_back(endValue);
+
+        if (strs.size() <= 0)
+        {
+            return V(builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr("")));
+        }
+
+        auto concatValues =
+            builder.create<mlir_ts::StringConcatOp>(location, stringType, mlir::ArrayRef<mlir::Value>{strs});
+
+        return V(concatValues);        
+    }       
+
     ValueOrLogicalResult generatingStaticNewCtorForClass(mlir::Location location, ClassInfo::TypePtr classInfo, int posIndex, const GenContext &genContext)
     {
         if (auto classConstrMethodInfo = classInfo->findMethod(CONSTRUCTOR_NAME))
@@ -17057,6 +17137,11 @@ genContext);
                 fields = constTupleType.getFields();
                 return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
             }
+            else if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
+            {
+                fields = srcConstTupleType.getFields();
+                return castTupleToString(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
+            }
         }
 
         // tuple to object
@@ -17072,6 +17157,11 @@ genContext);
             {
                 fields = constTupleType.getFields();
                 return castTupleToTuple(location, value, srcTupleType, fields, genContext);
+            }
+            else if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
+            {
+                fields = srcTupleType.getFields();
+                return castTupleToString(location, value, srcTupleType, fields, genContext);
             }
         }
 
