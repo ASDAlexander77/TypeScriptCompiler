@@ -3917,6 +3917,12 @@ class MLIRGenImpl
                 type = getType(typeParameter, genContext);
             }
 
+            // special case, setup 'this' and type provided 
+            if (namePtr == THIS_NAME && type) 
+            {
+                const_cast<GenContext &>(genContext).thisType = type;
+            }
+
             // process init value
             auto initializer = arg->initializer;
             if (initializer)
@@ -8745,6 +8751,8 @@ class MLIRGenImpl
         auto name = cl.getName();
         auto actualType = objectValue.getType();
 
+        LLVM_DEBUG(llvm::dbgs() << "Resolving property '" << name << "' of type " << objectValue.getType(););
+
         // load reference if needed, except TupleTuple, ConstTupleType
         if (auto refType = actualType.dyn_cast<mlir_ts::RefType>())
         {
@@ -13203,10 +13211,13 @@ class MLIRGenImpl
         // try to resolve 'this' if not resolved yet
         if (genContext.thisType && name == THIS_NAME)
         {
-            return builder.create<mlir_ts::ClassRefOp>(
-                location, genContext.thisType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(),
-                                             genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue()));
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(genContext.thisType)) {
+                return builder.create<mlir_ts::ClassRefOp>(
+                    location, genContext.thisType, mlir::FlatSymbolRefAttr::get(builder.getContext(), 
+                    classType.getName().getValue()));
+            }
+
+            return builder.create<mlir_ts::TypeRefOp>(location, genContext.thisType);
         }
 
         if (genContext.thisType && name == SUPER_NAME)
