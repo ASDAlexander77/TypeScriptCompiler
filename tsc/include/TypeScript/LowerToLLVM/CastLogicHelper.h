@@ -276,12 +276,12 @@ class CastLogicHelper
         {
             if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::ConstTupleType>())
             {
-                return castObjectToString<mlir_ts::ConstTupleType>(in, inType, tupleTypeIn);
+                return castTupleToString<mlir_ts::ConstTupleType>(in, inType, tupleTypeIn);
             }
 
             if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::TupleType>())
             {
-                return castObjectToString<mlir_ts::TupleType>(in, inType, tupleTypeIn);
+                return castTupleToString<mlir_ts::TupleType>(in, inType, tupleTypeIn);
             }
         }
 
@@ -1009,10 +1009,10 @@ class CastLogicHelper
         return clh.castToI8Ptr(valueAddrAsLLVMType);
     }
 
-    template <typename TupleTy> mlir::Value castObjectToString(mlir::Value in, mlir::Type inType, TupleTy tupleTypeIn)
+    template <typename TupleTy> mlir::Value castTupleToString(mlir::Value in, mlir::Type inType, TupleTy tupleTypeIn)
     {
         // calling method from object
-        auto fieldId = MLIRHelper::TupleFieldName("toString", rewriter.getContext());
+        auto fieldId = MLIRHelper::TupleFieldName(TO_STRING, rewriter.getContext());
         auto fieldIndex = tupleTypeIn.getIndex(fieldId);
         if (fieldIndex < 0)
         {

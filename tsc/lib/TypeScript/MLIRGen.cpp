@@ -3912,6 +3912,9 @@ class MLIRGenImpl
             auto isMultiArgs = !!arg->dotDotDotToken;
             auto isOptional = !!arg->questionToken;
             auto typeParameter = arg->type;
+
+            auto location = loc(typeParameter);
+
             if (typeParameter)
             {
                 type = getType(typeParameter, genContext);
@@ -3921,6 +3924,11 @@ class MLIRGenImpl
             if (namePtr == THIS_NAME && type) 
             {
                 const_cast<GenContext &>(genContext).thisType = type;
+                LLVM_DEBUG(dbgs() << "\n!! param " << THIS_NAME << " mapped to type " << type << "\n");
+
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, type, location);
+                auto typeRefVal = builder.create<mlir_ts::TypeRefOp>(location, type);
+                declare(location, varDecl, typeRefVal, genContext);
             }
 
             // process init value
@@ -3945,7 +3953,7 @@ class MLIRGenImpl
             {
                 type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
 
-                LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "");
+                LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "\n");
 
                 isGenericTypes |= mth.isGenericType(type);
             }
@@ -3954,7 +3962,7 @@ class MLIRGenImpl
             if (mth.isNoneType(type) && isBindingPattern)
             {
                 type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
-                LLVM_DEBUG(dbgs() << "\n!! binding param " << namePtr << " is type " << type << "");
+                LLVM_DEBUG(dbgs() << "\n!! binding param " << namePtr << " is type " << type << "\n");
             }
 
             if (mth.isNoneType(type))
@@ -3977,20 +3985,20 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    emitError(loc(typeParameter)) << "can't resolve type for parameter '" << namePtr << "'";
+                    emitError(location) << "can't resolve type for parameter '" << namePtr << "'";
                     return {mlir::failure(), isGenericTypes, params};
                 }
             }
 
             if (type.isa<mlir_ts::VoidType>())
             {
-                emitError(loc(typeParameter), "'Void' can't be used as parameter type");
+                emitError(location, "'Void' can't be used as parameter type");
                 return {mlir::failure(), isGenericTypes, params};
             }
 
             if (type.isa<mlir_ts::NeverType>())
             {
-                emitError(loc(typeParameter), "'Never' can't be used as parameter type");
+                emitError(location, "'Never' can't be used as parameter type");
                 return {mlir::failure(), isGenericTypes, params};
             }
 
@@ -4793,10 +4801,12 @@ class MLIRGenImpl
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionLikeDeclaration(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
+        auto funcDeclGenContext = GenContext(genContext);
+                
         auto isGenericFunction = functionLikeDeclarationBaseAST->typeParameters.size() > 0;
-        if (isGenericFunction && genContext.typeParamsWithArgs.size() == 0)
+        if (isGenericFunction && funcDeclGenContext.typeParamsWithArgs.size() == 0)
         {
-            auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, genContext);
+            auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);
             return {result, mlir_ts::FuncOp(), name, false};
         }
 
@@ -4804,13 +4814,13 @@ class MLIRGenImpl
         if (functionLikeDeclarationBaseAST->asteriskToken)
         {
             // this is generator, let's generate other function out of it
-            return mlirGenFunctionGenerator(functionLikeDeclarationBaseAST, genContext);
+            return mlirGenFunctionGenerator(functionLikeDeclarationBaseAST, funcDeclGenContext);
         }
 
         // do not process generic functions more then 1 time
-        if (isGenericFunction && genContext.typeParamsWithArgs.size() > 0)
+        if (isGenericFunction && funcDeclGenContext.typeParamsWithArgs.size() > 0)
         {
-            auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, genContext);
+            auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, funcDeclGenContext);
 
             auto funcOp = lookupFunctionMap(functionName);
             if (funcOp && theModule.lookupSymbol(functionName) 
@@ -4831,7 +4841,7 @@ class MLIRGenImpl
         auto location = loc(functionLikeDeclarationBaseAST);
 
         auto [funcOp, funcProto, result, isGeneric] =
-            mlirGenFunctionPrototype(functionLikeDeclarationBaseAST, genContext);
+            mlirGenFunctionPrototype(functionLikeDeclarationBaseAST, funcDeclGenContext);
         if (mlir::failed(result))
         {
             // in case of ArrowFunction without params and receiver is generic function as well
@@ -4840,7 +4850,7 @@ class MLIRGenImpl
 
         if (mlir::succeeded(result) && isGeneric)
         {
-            auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, true, genContext);
+            auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, true, funcDeclGenContext);
             return {result, funcOp, funcProto->getName().str(), isGeneric};
         }
 
@@ -4856,11 +4866,11 @@ class MLIRGenImpl
         if (dynamicImport)
         {
             // TODO: we do not need to register funcOp as we need to reference global variables
-            auto result = mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, funcProto->getNameWithoutNamespace(), genContext);
+            auto result = mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, funcProto->getNameWithoutNamespace(), funcDeclGenContext);
             return {result, funcOp, funcProto->getName().str(), false};
         }
 
-        auto funcGenContext = GenContext(genContext);
+        auto funcGenContext = GenContext(funcDeclGenContext);
         funcGenContext.clearScopeVars();
         funcGenContext.funcOp = funcOp;
         funcGenContext.state = new int(1);
@@ -4910,12 +4920,12 @@ class MLIRGenImpl
             funcOp.setPrivate();
         }
 
-        if (declarationMode && !genContext.dummyRun && funcProto->getNoBody())
+        if (declarationMode && !funcDeclGenContext.dummyRun && funcProto->getNoBody())
         {
             funcOp.setPrivate();
         }
 
-        if (!genContext.dummyRun)
+        if (!funcDeclGenContext.dummyRun)
         {
             theModule.push_back(funcOp);
         }
@@ -13213,7 +13223,7 @@ class MLIRGenImpl
         {
             if (auto classType = dyn_cast<mlir_ts::ClassType>(genContext.thisType)) {
                 return builder.create<mlir_ts::ClassRefOp>(
-                    location, genContext.thisType, mlir::FlatSymbolRefAttr::get(builder.getContext(), 
+                    location, classType, mlir::FlatSymbolRefAttr::get(builder.getContext(), 
                     classType.getName().getValue()));
             }
 
@@ -13685,6 +13695,9 @@ class MLIRGenImpl
         GenContext classGenContext(genContext);
         classGenContext.thisType = newClassPtr->classType;
         classGenContext.specialization = isGenericClass;
+
+        // we need THIS in params
+        SymbolTableScopeT varScope(symbolTable);
 
         newClassPtr->processingStorageClass = true;
         newClassPtr->enteredProcessingStorageClass = true;
@@ -17048,7 +17061,60 @@ genContext);
             }
         }
 
-        // class to string
+        // toPrimitive
+        if ((type.isa<mlir_ts::StringType>() 
+            || type.isa<mlir_ts::NumberType>() 
+            || type.isa<mlir_ts::BigIntType>() 
+            || type.isa<mlir_ts::BooleanType>() 
+            || type.isa<mlir_ts::UndefinedType>() 
+            || type.isa<mlir_ts::SymbolType>() 
+            || type.isa<mlir_ts::NullType>())
+            && (valueType.isa<mlir_ts::ClassType>()
+                || valueType.isa<mlir_ts::ClassStorageType>()
+                || valueType.isa<mlir_ts::ObjectType>()
+                || valueType.isa<mlir_ts::InterfaceType>()
+                || valueType.isa<mlir_ts::TupleType>()
+                || valueType.isa<mlir_ts::ConstTupleType>()))
+        {
+            // check if we need to call toPrimitive
+            if (auto toPrimitiveType = evaluateProperty(value, SYMBOL_TO_PRIMITIVE, genContext))
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+                Expression hint;
+
+                TypeSwitch<mlir::Type>(type)
+                    .template Case<mlir_ts::StringType>([&](auto) {
+                        hint = nf.createStringLiteral(S("string"));
+                    })
+                    .template Case<mlir_ts::NumberType>([&](auto) {
+                        hint = nf.createStringLiteral(S("number"));
+                    })
+                    .template Case<mlir_ts::BigIntType>([&](auto) {
+                        hint = nf.createStringLiteral(S("bigint"));
+                    })
+                    .template Case<mlir_ts::BooleanType>([&](auto) {
+                        hint = nf.createStringLiteral(S("boolean"));
+                    })
+                    .template Case<mlir_ts::UndefinedType>([&](auto) {
+                        hint = nf.createStringLiteral(S(UNDEFINED_NAME));
+                    })
+                    .template Case<mlir_ts::SymbolType>([&](auto) {
+                        hint = nf.createStringLiteral(S("symbol"));
+                    })
+                    .template Case<mlir_ts::NullType>([&](auto) {
+                        hint = nf.createStringLiteral(S("null"));
+                    })
+                    .Default([&](auto type) {});
+
+                auto callResult = mlirGenCallThisMethod(location, value, SYMBOL_TO_PRIMITIVE, undefined, {hint}, genContext);
+                EXIT_IF_FAILED(callResult);
+                auto castValue = cast(location, type, V(callResult), genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(castValue);
+                return castValue;
+            } 
+        }
+
+        // class or array or tuple to string
         if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
         {
             if (auto classType = valueType.dyn_cast<mlir_ts::ClassType>())
@@ -17068,6 +17134,26 @@ genContext);
                 {
                     return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
                 }
+            }
+
+            if (auto srcConstTupleType = valueType.dyn_cast<mlir_ts::ConstTupleType>())
+            {
+                if (auto toStringMethod = evaluateProperty(value, TO_STRING, genContext))
+                {
+                    return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
+                }
+
+                return castTupleToString(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), 
+                    srcConstTupleType.getFields(), genContext);
+            }
+            else if (auto srcTupleType = valueType.dyn_cast<mlir_ts::TupleType>())
+            {
+                if (auto toStringMethod = evaluateProperty(value, TO_STRING, genContext))
+                {
+                    return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
+                }
+
+                return castTupleToString(location, value, srcTupleType, srcTupleType.getFields(), genContext);
             }
         }
 
@@ -17134,7 +17220,7 @@ genContext);
             }
         }
 
-        // const tuple to object
+        // const tuple to tuple
         if (auto srcConstTupleType = valueType.dyn_cast<mlir_ts::ConstTupleType>())
         {
             ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
@@ -17148,14 +17234,9 @@ genContext);
                 fields = constTupleType.getFields();
                 return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
             }
-            else if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
-            {
-                fields = srcConstTupleType.getFields();
-                return castTupleToString(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
-            }
         }
 
-        // tuple to object
+        // tuple to tuple
         if (auto srcTupleType = valueType.dyn_cast<mlir_ts::TupleType>())
         {
             ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
@@ -17169,14 +17250,9 @@ genContext);
                 fields = constTupleType.getFields();
                 return castTupleToTuple(location, value, srcTupleType, fields, genContext);
             }
-            else if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
-            {
-                fields = srcTupleType.getFields();
-                return castTupleToString(location, value, srcTupleType, fields, genContext);
-            }
         }
 
-        // class to object
+        // class to tuple
         if (auto classType = valueType.dyn_cast<mlir_ts::ClassType>())
         {
             ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
@@ -17192,7 +17268,7 @@ genContext);
             }
         }
 
-        // interface to object
+        // interface to tuple
         if (auto interfaceType = valueType.dyn_cast<mlir_ts::InterfaceType>())
         {
             ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
@@ -17283,59 +17359,6 @@ genContext);
             {
                 return castFromAny(location, type, value, genContext);
             }
-        }
-
-        // toPrimitive
-        if ((type.isa<mlir_ts::StringType>() 
-            || type.isa<mlir_ts::NumberType>() 
-            || type.isa<mlir_ts::BigIntType>() 
-            || type.isa<mlir_ts::BooleanType>() 
-            || type.isa<mlir_ts::UndefinedType>() 
-            || type.isa<mlir_ts::SymbolType>() 
-            || type.isa<mlir_ts::NullType>())
-            && (valueType.isa<mlir_ts::ClassType>()
-                || valueType.isa<mlir_ts::ClassStorageType>()
-                || valueType.isa<mlir_ts::ObjectType>()
-                || valueType.isa<mlir_ts::InterfaceType>()
-                || valueType.isa<mlir_ts::TupleType>()
-                || valueType.isa<mlir_ts::ConstTupleType>()))
-        {
-            // check if we need to call toPrimitive
-            if (auto toPrimitiveType = evaluateProperty(value, SYMBOL_TO_PRIMITIVE, genContext))
-            {
-                NodeFactory nf(NodeFactoryFlags::None);
-                Expression hint;
-
-                TypeSwitch<mlir::Type>(type)
-                    .template Case<mlir_ts::StringType>([&](auto) {
-                        hint = nf.createStringLiteral(S("string"));
-                    })
-                    .template Case<mlir_ts::NumberType>([&](auto) {
-                        hint = nf.createStringLiteral(S("number"));
-                    })
-                    .template Case<mlir_ts::BigIntType>([&](auto) {
-                        hint = nf.createStringLiteral(S("bigint"));
-                    })
-                    .template Case<mlir_ts::BooleanType>([&](auto) {
-                        hint = nf.createStringLiteral(S("boolean"));
-                    })
-                    .template Case<mlir_ts::UndefinedType>([&](auto) {
-                        hint = nf.createStringLiteral(S(UNDEFINED_NAME));
-                    })
-                    .template Case<mlir_ts::SymbolType>([&](auto) {
-                        hint = nf.createStringLiteral(S("symbol"));
-                    })
-                    .template Case<mlir_ts::NullType>([&](auto) {
-                        hint = nf.createStringLiteral(S("null"));
-                    })
-                    .Default([&](auto type) {});
-
-                auto callResult = mlirGenCallThisMethod(location, value, SYMBOL_TO_PRIMITIVE, undefined, {hint}, genContext);
-                EXIT_IF_FAILED(callResult);
-                auto castValue = cast(location, type, V(callResult), genContext);
-                EXIT_IF_FAILED_OR_NO_VALUE(castValue);
-                return castValue;
-            }        
         }
 
         // cast ext method to bound method

@@ -799,7 +799,7 @@ class MLIRPropertyAccessCodeLogic
     mlir::Value Bool(mlir_ts::BooleanType intType)
     {
         auto propName = getName();
-        if (propName == "toString")
+        if (propName == TO_STRING)
         {
             return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
                                                    expression);
@@ -811,7 +811,7 @@ class MLIRPropertyAccessCodeLogic
     mlir::Value Int(mlir::IntegerType intType)
     {
         auto propName = getName();
-        if (propName == "toString")
+        if (propName == TO_STRING)
         {
             return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
                                                    expression);
@@ -823,7 +823,7 @@ class MLIRPropertyAccessCodeLogic
     mlir::Value Float(mlir::FloatType floatType)
     {
         auto propName = getName();
-        if (propName == "toString")
+        if (propName == TO_STRING)
         {
             return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
                                                    expression);
@@ -835,7 +835,7 @@ class MLIRPropertyAccessCodeLogic
     mlir::Value Number(mlir_ts::NumberType numberType)
     {
         auto propName = getName();
-        if (propName == "toString")
+        if (propName == TO_STRING)
         {
             return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
                                                    expression);
