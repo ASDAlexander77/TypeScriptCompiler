@@ -217,7 +217,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     //llvm::SmallVector<const char *, 256> args(argv, argv + argc);
     llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
 
-    clang::driver::ParsedClangName targetandMode("tsc", "--driver-mode=tsc");
+    clang::driver::ParsedClangName targetAndMode("tsc", "--driver-mode=tsc");
     std::string driverPath = getExecutablePath(args[0]);
 
     llvm::BumpPtrAllocator a;
@@ -420,6 +420,11 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
         args.push_back("-lcompiler_rt");
     }
 
+    if (compileOptions.generateDebugInfo)
+    {
+        args.push_back("-g");
+    }
+
     // Create DiagnosticsEngine for the compiler driver
     auto diagOpts = createAndPopulateDiagOpts(args);
     llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs> diagID(new clang::DiagnosticIDs());
@@ -435,7 +440,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
                                     targetTriple, diags,
                                     "tsc LLVM compiler");
 
-    theDriver.setTargetAndMode(targetandMode);
+    theDriver.setTargetAndMode(targetAndMode);
     std::unique_ptr<clang::driver::Compilation> c(theDriver.BuildCompilation(args));
 
     if (win && (shared || !disableGC))

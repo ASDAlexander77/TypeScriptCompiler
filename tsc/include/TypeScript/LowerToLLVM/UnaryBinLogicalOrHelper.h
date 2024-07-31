@@ -94,7 +94,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     {
         return UndefTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
-    else if (leftType.isIntOrIndex() || leftType.dyn_cast<mlir_ts::BooleanType>())
+    else if (leftType.isIntOrIndex() || leftType.dyn_cast<mlir_ts::BooleanType>() || leftType.dyn_cast<mlir_ts::CharType>())
     {
         auto value = builder.create<StdIOpTy>(loc, v1, left, right);
         return value;

@@ -138,13 +138,24 @@ struct GenContext
         }
     }
 
+    void stop()
+    {
+        if (stopProcess) return;
+        stopProcess = true;
+        if (rootContext) const_cast<GenContext *>(rootContext)->stop();
+    }
+
+    bool isStopped() const
+    {
+        return stopProcess || rootContext && rootContext->stopProcess;
+    }
+
     bool allowPartialResolve;
     bool dummyRun;
     bool allowConstEval;
     bool allocateVarsInContextThis;
     bool allocateVarsOutsideOfOperation;
     bool allocateUsingVarsOutsideOfOperation;
-    bool skipProcessed;
     bool forceDiscover;
     bool discoverParamsOnly;
     bool insertIntoParentScope;
@@ -167,8 +178,12 @@ struct GenContext
     int *state;
     bool disableSpreadParams;
     const GenContext* parentBlockContext;
+    const GenContext* rootContext;
     bool isLoop;
     std::string loopLabel;
+    bool stopProcess;
+    mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages;
+    bool specialization;
 };
 
 struct ValueOrLogicalResult 
