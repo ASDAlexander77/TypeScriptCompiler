@@ -3863,6 +3863,9 @@ class MLIRGenImpl
     std::tuple<mlir::LogicalResult, bool, std::vector<std::shared_ptr<FunctionParamDOM>>> mlirGenParameters(
         SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
+        // to remove variables such as "this" from scope after using it in params context
+        SymbolTableScopeT varScope(symbolTable);
+
         auto isGenericTypes = false;
         std::vector<std::shared_ptr<FunctionParamDOM>> params;
 
@@ -12760,7 +12763,7 @@ class MLIRGenImpl
         auto value = symbolTable.lookup(name);
         if (value.second && value.first)
         {
-            LLVM_DEBUG(dbgs() << "\n!! resolveIdentifierAsVariable: " << name << " value: " << value.first;);
+            LLVM_DEBUG(dbgs() << "\n!! resolveIdentifierAsVariable: " << name << " type: " << value.second->getType() <<  " value: " << value.first;);
 
             // begin of logic: outer vars
             auto valueRegion = value.first.getParentRegion();
@@ -14662,6 +14665,8 @@ genContext);
 
         newClassPtr->extraMembersPost.push_back(generatedNew);
         */
+
+        //LLVM_DEBUG(printDebug(generatedNew););
 
         newClassPtr->extraMembers.push_back(generatedNew);
 
