@@ -2170,6 +2170,7 @@ class MLIRGenImpl
             // step 1, add type arguments first
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.specialization = true;
+            genericTypeGenContext.instantiateSpecializedFunction = true;
             auto typeParams = functionGenericTypeInfo->typeParams;
             if (typeArguments && typeParams.size() == typeArguments.size())
             {
@@ -2347,6 +2348,7 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
+            genericTypeGenContext.instantiateSpecializedClass = true;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2404,6 +2406,7 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
+            genericTypeGenContext.instantiateSpecializedClass = true;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2471,6 +2474,7 @@ class MLIRGenImpl
             currentNamespace = genericInterfaceInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
+            genericTypeGenContext.instantiateSpecializedInterface = true;
             auto typeParams = genericInterfaceInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -4807,7 +4811,7 @@ class MLIRGenImpl
         auto funcDeclGenContext = GenContext(genContext);
                 
         auto isGenericFunction = functionLikeDeclarationBaseAST->typeParameters.size() > 0;
-        if (isGenericFunction && funcDeclGenContext.typeParamsWithArgs.size() == 0)
+        if (isGenericFunction && !funcDeclGenContext.instantiateSpecializedFunction)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);
             return {result, mlir_ts::FuncOp(), name, false};
