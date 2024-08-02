@@ -2275,7 +2275,7 @@ class MLIRGenImpl
                 functionGenericTypeInfo->processed = true;
 
                 // instatiate all ArrowFunctions which are not yet instantiated
-                auto opIndex = -1;
+                auto opIndex = skipThisParam ? 0 : -1;
                 for (auto op : genContext.callOperands)
                 {
                     opIndex++;
