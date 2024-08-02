@@ -2040,7 +2040,8 @@ class MLIRGenImpl
             {
                 auto paramIndex = -1;
                 auto processed = 0;
-                auto skipCount = skipThisParam ? 1 : 0;
+                auto startParamIndex = skipThisParam ? 1 : 0;
+                auto skipCount = startParamIndex;
                 for (auto paramInfo : funcOp->getParams())
                 {
                     if (skipCount-- > 0)
@@ -2078,7 +2079,7 @@ class MLIRGenImpl
                     if (!paramInfo->getIsMultiArgsParam())
                     {
                         auto [result, cont] = resolveGenericParamFromFunctionCall(
-                            location, paramType, argOp, paramIndex, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext);
+                            location, paramType, argOp, paramIndex + startParamIndex, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext);
                         if (mlir::succeeded(result))
                         {
                             paramInfo->processed = true;
@@ -2114,7 +2115,7 @@ class MLIRGenImpl
                     }
                 }
 
-                if (processed == 0)
+                if (processed <= startParamIndex)
                 {
                     emitError(location) << "not all types could be inferred";
                     return mlir::failure();
