@@ -33,6 +33,8 @@ struct GenericFunctionInfo
 
     NamespaceInfo_TypePtr elementNamespace;
 
+    llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
+
     bool processing;
     bool processed;
 

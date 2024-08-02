@@ -374,7 +374,7 @@ struct NamedDeclaration : Declaration
 
 struct ClassElement : NamedDeclaration
 {
-    PTR(PropertyName) name;
+    //PTR(PropertyName) name;
 };
 
 struct ClassStaticBlockDeclaration : ClassElement, LocalsContainer {

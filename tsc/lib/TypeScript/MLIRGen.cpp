@@ -1429,6 +1429,10 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<OmittedExpression>(), genContext);
         }
+        else if (kind == SyntaxKind::ExpressionWithTypeArguments)
+        {
+            return mlirGen(expressionAST.as<ExpressionWithTypeArguments>(), genContext);
+        }
         else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
         {
             return mlir::success();
@@ -2170,6 +2174,8 @@ class MLIRGenImpl
             // step 1, add type arguments first
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.specialization = true;
+            genericTypeGenContext.instantiateSpecializedFunction = true;
+            genericTypeGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
             auto typeParams = functionGenericTypeInfo->typeParams;
             if (typeArguments && typeParams.size() == typeArguments.size())
             {
@@ -2347,6 +2353,7 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
+            genericTypeGenContext.instantiateSpecializedClass = true;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2404,6 +2411,7 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
+            genericTypeGenContext.instantiateSpecializedClass = true;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2471,6 +2479,7 @@ class MLIRGenImpl
             currentNamespace = genericInterfaceInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
+            genericTypeGenContext.instantiateSpecializedInterface = true;
             auto typeParams = genericInterfaceInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -4244,7 +4253,7 @@ class MLIRGenImpl
                     auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
                         ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
                         : mlir::Type();
-                    if (retTypeFromReceiver && !mth.isNoneType(retTypeFromReceiver))
+                    if (retTypeFromReceiver && !mth.isNoneType(retTypeFromReceiver) && !mth.isGenericType(retTypeFromReceiver))
                     {
                         funcProto->setReturnType(retTypeFromReceiver);
                         LLVM_DEBUG(llvm::dbgs()
@@ -4756,6 +4765,7 @@ class MLIRGenImpl
         newGenericFunctionPtr->typeParams = typeParameters;
         newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
         newGenericFunctionPtr->elementNamespace = currentNamespace;
+        newGenericFunctionPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
 
         // TODO: review it, ignore in case of ArrowFunction,
         if (!ignoreFunctionArgsDetection)
@@ -4807,7 +4817,7 @@ class MLIRGenImpl
         auto funcDeclGenContext = GenContext(genContext);
                 
         auto isGenericFunction = functionLikeDeclarationBaseAST->typeParameters.size() > 0;
-        if (isGenericFunction && funcDeclGenContext.typeParamsWithArgs.size() == 0)
+        if (isGenericFunction && !funcDeclGenContext.instantiateSpecializedFunction)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);
             return {result, mlir_ts::FuncOp(), name, false};
@@ -9356,7 +9366,9 @@ class MLIRGenImpl
         {        
             auto genericMethodInfo = classInfo->staticGenericMethods[genericMethodIndex];
 
-            if (genericMethodInfo.isStatic)
+            auto paramsArray = genericMethodInfo.funcOp->getParams();
+            auto explicitThis = paramsArray.size() > 0 && paramsArray.front()->getName() == THIS_NAME;
+            if (genericMethodInfo.isStatic && !explicitThis)
             {
                 auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
                     location, genericMethodInfo.funcType,
