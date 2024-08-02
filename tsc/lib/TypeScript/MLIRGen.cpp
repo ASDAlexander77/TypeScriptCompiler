@@ -1429,6 +1429,10 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<OmittedExpression>(), genContext);
         }
+        else if (kind == SyntaxKind::ExpressionWithTypeArguments)
+        {
+            return mlirGen(expressionAST.as<ExpressionWithTypeArguments>(), genContext);
+        }
         else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
         {
             return mlir::success();
@@ -2171,6 +2175,7 @@ class MLIRGenImpl
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.specialization = true;
             genericTypeGenContext.instantiateSpecializedFunction = true;
+            genericTypeGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
             auto typeParams = functionGenericTypeInfo->typeParams;
             if (typeArguments && typeParams.size() == typeArguments.size())
             {
@@ -4760,6 +4765,7 @@ class MLIRGenImpl
         newGenericFunctionPtr->typeParams = typeParameters;
         newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
         newGenericFunctionPtr->elementNamespace = currentNamespace;
+        newGenericFunctionPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
 
         // TODO: review it, ignore in case of ArrowFunction,
         if (!ignoreFunctionArgsDetection)
@@ -9360,7 +9366,9 @@ class MLIRGenImpl
         {        
             auto genericMethodInfo = classInfo->staticGenericMethods[genericMethodIndex];
 
-            if (genericMethodInfo.isStatic)
+            auto paramsArray = genericMethodInfo.funcOp->getParams();
+            auto explicitThis = paramsArray.size() > 0 && paramsArray.front()->getName() == THIS_NAME;
+            if (genericMethodInfo.isStatic && !explicitThis)
             {
                 auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
                     location, genericMethodInfo.funcType,
