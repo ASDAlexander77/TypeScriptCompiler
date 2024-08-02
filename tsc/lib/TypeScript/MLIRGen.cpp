@@ -4253,7 +4253,7 @@ class MLIRGenImpl
                     auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
                         ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
                         : mlir::Type();
-                    if (retTypeFromReceiver && !mth.isNoneType(retTypeFromReceiver))
+                    if (retTypeFromReceiver && !mth.isNoneType(retTypeFromReceiver) && !mth.isGenericType(retTypeFromReceiver))
                     {
                         funcProto->setReturnType(retTypeFromReceiver);
                         LLVM_DEBUG(llvm::dbgs()
