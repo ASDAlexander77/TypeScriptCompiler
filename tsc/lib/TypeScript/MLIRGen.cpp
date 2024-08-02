@@ -2046,7 +2046,6 @@ class MLIRGenImpl
                 {
                     if (skipCount-- > 0)
                     {
-                        processed++;
                         continue;
                     }
 
@@ -2115,7 +2114,7 @@ class MLIRGenImpl
                     }
                 }
 
-                if (processed <= startParamIndex)
+                if (processed == 0)
                 {
                     emitError(location) << "not all types could be inferred";
                     return mlir::failure();
@@ -2123,7 +2122,7 @@ class MLIRGenImpl
 
                 totalProcessed += processed;
 
-                if (totalProcessed == funcOp->getParams().size())
+                if (totalProcessed == funcOp->getParams().size() - startParamIndex)
                 {
                     break;
                 }
