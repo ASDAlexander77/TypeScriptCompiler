@@ -13758,9 +13758,7 @@ class MLIRGenImpl
             builder.setInsertionPointToStart(theModule.getBody());
 
             // before processing generic class for example array<int> array<string> we need to drop all states of processed members
-            for (auto &member : classDeclarationAST->members) {
-                member->processed = false;
-            }
+            clearMembersProcessStates(classDeclarationAST, newClassPtr);
         }
 
         setProcessingState(newClassPtr, ProcessingStages::ProcessingBody, genContext);
@@ -14175,6 +14173,12 @@ class MLIRGenImpl
 
         } while (notResolved > 0);
 
+        clearMembersProcessStates(classDeclarationAST, newClassPtr);
+
+        return mlir::success();
+    }
+
+    void clearMembersProcessStates(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr) {
         // to be able to run next time, code succeeded, and we know where to continue from
         for (auto &classMember : newClassPtr->extraMembers)
         {
@@ -14190,8 +14194,6 @@ class MLIRGenImpl
         {
             classMember->processed = false;
         }
-
-        return mlir::success();
     }
 
     mlir::LogicalResult mlirGenClassHeritageClause(ClassLikeDeclaration classDeclarationAST,
