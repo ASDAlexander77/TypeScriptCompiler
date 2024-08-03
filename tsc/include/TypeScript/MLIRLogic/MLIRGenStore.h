@@ -456,13 +456,13 @@ struct ClassInfo
     bool fullyProcessed;
     bool processingStorageClass;
     bool processedStorageClass;
-    bool enteredProcessingStorageClass;
+    bool enteredProcessingClass;
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
           hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), isDynamicImport(false), hasRTTI(false),
           fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false),
-          processedStorageClass(false), enteredProcessingStorageClass(false)
+          processedStorageClass(false), enteredProcessingClass(false)
     {
     }
 
