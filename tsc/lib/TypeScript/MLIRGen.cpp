@@ -551,7 +551,7 @@ class MLIRGenImpl
             }
         }
 
-        auto notResolved = processStatements(module->statements, genContext);
+        auto notResolved = processStatements(module->statements, genContext);       
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
             return mlir::failure();
@@ -13756,6 +13756,11 @@ class MLIRGenImpl
         {
             savePoint = builder.saveInsertionPoint();
             builder.setInsertionPointToStart(theModule.getBody());
+
+            // before processing generic class for example array<int> array<string> we need to drop all states of processed members
+            for (auto &member : classDeclarationAST->members) {
+                member->processed = false;
+            }
         }
 
         setProcessingState(newClassPtr, ProcessingStages::ProcessingBody, genContext);
@@ -13835,6 +13840,7 @@ class MLIRGenImpl
         if (isGenericClass)
         {
             builder.restoreInsertionPoint(savePoint);
+            //LLVM_DEBUG(llvm::dbgs() << "\n>>>>>>>>>>>>>>>>> module: \n" << theModule << "\n";);
         }
 
         setProcessingState(newClassPtr, ProcessingStages::ProcessedBody, genContext);
