@@ -13741,7 +13741,7 @@ class MLIRGenImpl
         setProcessingState(newClassPtr, ProcessingStages::ProcessingStorageClass, genContext);
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
-            setProcessingState(newClassPtr, ProcessingStages::Processing, genContext);
+            setProcessingState(newClassPtr, ProcessingStages::ErrorInStorageClass, genContext);
             return {mlir::failure(), ""};
         }
 

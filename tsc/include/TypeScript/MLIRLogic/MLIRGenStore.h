@@ -411,12 +411,13 @@ struct ImplementInfo
 
 enum class ProcessingStages : int {
     NotSet = 0,
-    Processing = 1,
-    ProcessingStorageClass = 2,
-    ProcessedStorageClass = 3,
-    ProcessingBody = 4,
-    ProcessedBody = 5,
-    Processed = 6,
+    ErrorInStorageClass = 1,
+    Processing = 2,
+    ProcessingStorageClass = 3,
+    ProcessedStorageClass = 4,
+    ProcessingBody = 5,
+    ProcessedBody = 6,
+    Processed = 7,
 };
 
 struct ClassInfo
