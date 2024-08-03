@@ -630,7 +630,6 @@ struct ClassInfo
     {
         auto dist = std::distance(
             methods.begin(), std::find_if(methods.begin(), methods.end(), [&](auto methodInfo) {
-                LLVM_DEBUG(dbgs() << "\nmatching method: " << name << " to " << methodInfo.name << "\n\n";);
                 return name == methodInfo.name;
             }));
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
@@ -640,7 +639,6 @@ struct ClassInfo
     {
         auto dist = std::distance(
             staticGenericMethods.begin(), std::find_if(staticGenericMethods.begin(), staticGenericMethods.end(), [&](auto staticGenericMethodInfo) {
-                LLVM_DEBUG(dbgs() << "\nmatching static generic method: " << name << " to " << staticGenericMethodInfo.name << "\n\n";);
                 return name == staticGenericMethodInfo.name;
             }));
         return (signed)dist >= (signed)staticGenericMethods.size() ? -1 : dist;

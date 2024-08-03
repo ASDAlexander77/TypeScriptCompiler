@@ -4231,7 +4231,8 @@ class MLIRGenImpl
 
         // discover type & args
         // seems we need to discover it all the time due to captured vars
-        if (!funcType || genContext.forceDiscover || !functionDiscovered)
+        auto detectReturnType = (!funcType || genContext.forceDiscover || !functionDiscovered) && !funcProto->getIsGeneric();
+        if (detectReturnType)
         {
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
                                                                           argTypes, funcProto, genContext)))
@@ -4327,20 +4328,23 @@ class MLIRGenImpl
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "specialization"), mlir::UnitAttr::get(builder.getContext())});
         }
 
-        auto it = getCaptureVarsMap().find(funcProto->getName());
-        auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
-        if (hasCapturedVars)
+        if (funcType)
         {
-            // important set when it is discovered and in process second type
-            funcProto->setHasCapturedVars(true);
-            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
-        }
-        else
-        {
-            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
-        }
+            auto it = getCaptureVarsMap().find(funcProto->getName());
+            auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
+            if (hasCapturedVars)
+            {
+                // important set when it is discovered and in process second type
+                funcProto->setHasCapturedVars(true);
+                funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
+            }
+            else
+            {
+                funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
+            }
 
-        funcProto->setFuncType(funcType);
+            funcProto->setFuncType(funcType);
+        }
 
         if (!funcProto->getIsGeneric())
         {
@@ -4559,15 +4563,18 @@ class MLIRGenImpl
             isGeneric = isGenericRet;
         }
 
-        // if funcOp is null, means lambda is generic]
+        // if funcOp is null, means lambda is generic
         if (!funcOp)
         {
             // return reference to generic method
             if (getGenericFunctionMap().count(funcName))
             {
                 auto genericFunctionInfo = getGenericFunctionMap().lookup(funcName);
+
+                auto funcType = genericFunctionInfo->funcType ? genericFunctionInfo->funcType : getFunctionType({}, {}, false);
+
                 // info: it will not take any capture now
-                return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType,
+                return resolveFunctionWithCapture(location, genericFunctionInfo->name, funcType,
                                                   mlir::Value(), true, genContext);
             }
             else
@@ -4864,7 +4871,7 @@ class MLIRGenImpl
         if (mlir::succeeded(result) && isGeneric)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, true, funcDeclGenContext);
-            return {result, funcOp, funcProto->getName().str(), isGeneric};
+            return {result, funcOp, name, isGeneric};
         }
 
         // check decorator for class
@@ -8774,7 +8781,7 @@ class MLIRGenImpl
         auto name = cl.getName();
         auto actualType = objectValue.getType();
 
-        LLVM_DEBUG(llvm::dbgs() << "Resolving property '" << name << "' of type " << objectValue.getType(););
+        LLVM_DEBUG(llvm::dbgs() << "\n\tResolving property '" << name << "' of type " << objectValue.getType(););
 
         // load reference if needed, except TupleTuple, ConstTupleType
         if (auto refType = actualType.dyn_cast<mlir_ts::RefType>())
@@ -9009,7 +9016,7 @@ class MLIRGenImpl
                     return mlirGenPropertyAccessExpression(location, castedValue, name, false, genContext);
                 })
                 .Default([&](auto type) {
-                    LLVM_DEBUG(llvm::dbgs() << "Can't resolve property '" << name << "' of type " << objectValue.getType(););
+                    LLVM_DEBUG(llvm::dbgs() << "\n\tCan't resolve property '" << name << "' of type " << objectValue.getType(););
                     return mlir::Value();
                 });
 
