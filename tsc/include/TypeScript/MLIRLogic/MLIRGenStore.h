@@ -409,6 +409,16 @@ struct ImplementInfo
     bool processed;
 };
 
+enum class ProcessingStages : int {
+    NotSet = 0,
+    Processing = 1,
+    ProcessingStorageClass = 2,
+    ProcessedStorageClass = 3,
+    ProcessingBody = 4,
+    ProcessedBody = 5,
+    Processed = 6,
+};
+
 struct ClassInfo
 {
   public:
@@ -452,17 +462,13 @@ struct ClassInfo
     bool isImport;
     bool isDynamicImport;
     bool hasRTTI;
-    bool fullyProcessedAtEvaluation;
-    bool fullyProcessed;
-    bool processingStorageClass;
-    bool processedStorageClass;
-    bool enteredProcessingClass;
+    ProcessingStages processingAtEvaluation;
+    ProcessingStages processing;
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
           hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), isDynamicImport(false), hasRTTI(false),
-          fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false),
-          processedStorageClass(false), enteredProcessingClass(false)
+          processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
     {
     }
 

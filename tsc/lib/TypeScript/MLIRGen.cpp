@@ -13672,6 +13672,23 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    bool testProcessingState(ClassInfo::TypePtr &newClassPtr, ProcessingStages state, const GenContext &genContext) {
+        return (genContext.allowPartialResolve)
+            ? newClassPtr->processingAtEvaluation >= state
+            : newClassPtr->processing >= state;
+    }
+
+    void setProcessingState(ClassInfo::TypePtr &newClassPtr, ProcessingStages state, const GenContext &genContext) {
+        if (genContext.allowPartialResolve)
+        {
+            newClassPtr->processingAtEvaluation = state;
+        }
+        else
+        {
+            newClassPtr->processing = state;
+        }        
+    }
+
     std::pair<mlir::LogicalResult, mlir::StringRef> mlirGen(ClassLikeDeclaration classDeclarationAST,
                                                             const GenContext &genContext)
     {
@@ -13692,14 +13709,13 @@ class MLIRGenImpl
         if (isGenericClass && genContext.typeParamsWithArgs.size() > 0)
         {
             // TODO: investigate why classType is provided already for class
-            if ((genContext.allowPartialResolve && newClassPtr->fullyProcessedAtEvaluation) ||
-                (!genContext.allowPartialResolve && newClassPtr->fullyProcessed) ||
-                newClassPtr->enteredProcessingClass || 
-                newClassPtr->processedStorageClass)
+            if (testProcessingState(newClassPtr, ProcessingStages::Processing, genContext))
             {
                 return {mlir::success(), newClassPtr->classType.getName().getValue()};
             }
         }
+
+        setProcessingState(newClassPtr, ProcessingStages::Processing, genContext);
 
         auto location = loc(classDeclarationAST);
 
@@ -13722,18 +13738,14 @@ class MLIRGenImpl
         // we need THIS in params
         SymbolTableScopeT varScope(symbolTable);
 
-        newClassPtr->processingStorageClass = true;
-        newClassPtr->enteredProcessingClass = true;
-
+        setProcessingState(newClassPtr, ProcessingStages::ProcessingStorageClass, genContext);
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
-            newClassPtr->processingStorageClass = false;
-            newClassPtr->enteredProcessingClass = false;
+            setProcessingState(newClassPtr, ProcessingStages::Processing, genContext);
             return {mlir::failure(), ""};
         }
 
-        newClassPtr->processingStorageClass = false;
-        newClassPtr->processedStorageClass = true;
+        setProcessingState(newClassPtr, ProcessingStages::ProcessedStorageClass, genContext);
 
         // if it is ClassExpression we need to know if it is declaration
         mlirGenClassCheckIfDeclaration(location, classDeclarationAST, newClassPtr, classGenContext);
@@ -13745,6 +13757,8 @@ class MLIRGenImpl
             savePoint = builder.saveInsertionPoint();
             builder.setInsertionPointToStart(theModule.getBody());
         }
+
+        setProcessingState(newClassPtr, ProcessingStages::ProcessingBody, genContext);
 
         // prepare VTable
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
@@ -13823,23 +13837,15 @@ class MLIRGenImpl
             builder.restoreInsertionPoint(savePoint);
         }
 
-        newClassPtr->enteredProcessingClass = false;
-
-        // if we allow multiple class nodes, do we need to store that ClassLikeDecl. has been processed fully
-        if (classGenContext.allowPartialResolve)
-        {
-            newClassPtr->fullyProcessedAtEvaluation = true;
-        }
-        else
-        {
-            newClassPtr->fullyProcessed = true;
-        }
+        setProcessingState(newClassPtr, ProcessingStages::ProcessedBody, genContext);
 
         // support dynamic loading
         if (getExportModifier(classDeclarationAST))
         {
             addClassDeclarationToExport(classDeclarationAST);
         }
+
+        setProcessingState(newClassPtr, ProcessingStages::Processed, genContext);
 
         return {mlir::success(), newClassPtr->classType.getName().getValue()};
     }
