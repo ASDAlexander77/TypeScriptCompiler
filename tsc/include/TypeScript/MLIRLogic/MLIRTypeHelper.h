@@ -1777,7 +1777,7 @@ class MLIRTypeHelper
         return getUnionType(literalTypes);    
     }
 
-    mlir::Type getFieldTypeByIndex(mlir::Type srcType, mlir::Type index)
+    mlir::Type getFieldTypeByIndexType(mlir::Type srcType, mlir::Type index)
     { 
         llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
         if (mlir::failed(getFields(srcType, destTupleFields)))

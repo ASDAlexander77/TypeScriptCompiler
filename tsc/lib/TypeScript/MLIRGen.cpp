@@ -19388,23 +19388,23 @@ genContext);
 
         if (auto objType = type.dyn_cast<mlir_ts::ObjectType>())
         {
-            return mth.getFieldTypeByIndex(type, indexType);
+            return mth.getFieldTypeByIndexType(type, indexType);
         }
 
         if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
         {
-            return mth.getFieldTypeByIndex(type, indexType);
+            return mth.getFieldTypeByIndexType(type, indexType);
         }
 
         // TODO: sync it with mth.getFields
         if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
-            return mth.getFieldTypeByIndex(type, indexType);
+            return mth.getFieldTypeByIndexType(type, indexType);
         }
 
         if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
         {
-            return mth.getFieldTypeByIndex(type, indexType);
+            return mth.getFieldTypeByIndexType(type, indexType);
         }
 
         if (auto anyType = type.dyn_cast<mlir_ts::AnyType>())
