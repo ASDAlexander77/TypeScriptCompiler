@@ -1080,6 +1080,9 @@ class MLIRGenImpl
             }
         }
 
+        // clear states to be able to run second time
+        clearState(blockAST->statements);
+        
         for (auto statement : blockAST->statements)
         {
             if (statement->processed)
@@ -3252,9 +3255,7 @@ class MLIRGenImpl
             return variableDeclarationInfo.type;
         }
 
-#ifndef NDEBUG
-        variableDeclarationInfo.printDebugInfo();
-#endif
+        //LLVM_DEBUG(variableDeclarationInfo.printDebugInfo(););
 
         auto varDecl = variableDeclarationInfo.createVariableDeclaration(location, genContext);
         if (genContext.usingVars != nullptr && varDecl->getUsing())
@@ -12366,7 +12367,7 @@ class MLIRGenImpl
 
             if (receiverElementType)
             {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type and receiver type: " << type << " type: " << receiverElementType << "\n";);
+                //LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type and receiver type: " << type << " type: " << receiverElementType << "\n";);
 
                 if (type != receiverElementType)
                 {
@@ -12376,7 +12377,7 @@ class MLIRGenImpl
                 }
 
                 type = receiverElementType;
-                LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type (from receiver) - id: " << fieldId << " type: " << type << "\n";);
+                //LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type (from receiver) - id: " << fieldId << " type: " << type << "\n";);
             }
 
             values.push_back(value);
@@ -12806,6 +12807,10 @@ class MLIRGenImpl
                     // special case when "ForceConstRef" pointering to outer variable but it is not outer var
                     isOuterVar = false;
                 }
+
+                LLVM_DEBUG(if (isOuterVar) dbgs() << "\n!! outer var: [" << value.second->getName()
+                                  << "] \n\n\tvalue region: " << *valueRegion->getParentOp()
+                                  << " \n\n\tFuncOp: " << const_cast<GenContext &>(genContext).funcOp << "";);                
             }
 
             if (isOuterVar && genContext.passResult)
@@ -12829,7 +12834,7 @@ class MLIRGenImpl
                 return value.first;
             }
 
-            LLVM_DEBUG(dbgs() << "\n!! variable: " << name << " type: " << value.first.getType() << "\n");
+            //LLVM_DEBUG(dbgs() << "\n!! variable: " << name << " type: " << value.first.getType() << "\n");
 
             // load value if memref
             auto valueType = value.first.getType().cast<mlir_ts::RefType>().getElementType();
