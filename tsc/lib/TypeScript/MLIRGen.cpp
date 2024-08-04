@@ -63,9 +63,9 @@
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/WithColor.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 //#include "llvm/IR/DebugInfoMetadata.h"
-
 
 #include <algorithm>
 #include <iterator>
@@ -5388,7 +5388,7 @@ class MLIRGenImpl
                                             mlir_ts::FuncOp funcOp, FunctionPrototypeDOM::TypePtr funcProto,
                                             const GenContext &genContext)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION: '" << funcProto->getName() << "' ~~~ dummy run: " << genContext.dummyRun << " & allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION: '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") << genContext.dummyRun << (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         if (!functionLikeDeclarationBaseAST->body || declarationMode && !genContext.dummyRun)
         {
@@ -5463,7 +5463,7 @@ class MLIRGenImpl
             genContext.cleanUps->push_back(blockPtr);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ dummy run: " << genContext.dummyRun << " & allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") << genContext.dummyRun << (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         return mlir::success();
     }
@@ -5478,7 +5478,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION: '" << fullFuncName << "' is dummy run: " << genContext.dummyRun << " << allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION: '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") << genContext.dummyRun << (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         SymbolTableScopeT varScope(symbolTable);
 
@@ -5535,7 +5535,7 @@ class MLIRGenImpl
 
         funcOp.setPrivate();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' is dummy run: " << funcGenContext.dummyRun << " << allowed partial resolve: " << funcGenContext.allowPartialResolve << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") << genContext.dummyRun << (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         return mlir::success();
     }
@@ -9191,8 +9191,7 @@ class MLIRGenImpl
     {
         assert(classInfo);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! looking for member: " << name << " in class '" << classInfo->fullName << "' this value: " << thisValue 
-                                << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n\t looking for member: " << name << " in class '" << classInfo->fullName << "\n";);
 
         auto staticFieldIndex = classInfo->getStaticFieldIndex(MLIRHelper::TupleFieldName(name, builder.getContext()));
         if (staticFieldIndex >= 0)
@@ -12782,7 +12781,7 @@ class MLIRGenImpl
         auto value = symbolTable.lookup(name);
         if (value.second && value.first)
         {
-            LLVM_DEBUG(dbgs() << "\n!! resolveIdentifierAsVariable: " << name << " type: " << value.second->getType() <<  " value: " << value.first;);
+            //LLVM_DEBUG(dbgs() << "\n!! resolveIdentifierAsVariable: " << name << " type: " << value.second->getType() <<  " value: " << value.first;);
 
             // begin of logic: outer vars
             auto valueRegion = value.first.getParentRegion();
@@ -14147,15 +14146,35 @@ class MLIRGenImpl
 
             for (auto &classMember : classDeclarationAST->members)
             {
+                LLVM_DEBUG(ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);\
+                    auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();\
+                    getMethodNameOrPropertyName(\
+                        newClassPtr->isStatic,\
+                        funcLikeDeclaration,\
+                        classMethodMemberInfo.methodName,\
+                        classMethodMemberInfo.propertyName,\
+                        genContext);\
+                    llvm::dbgs() << "\n\tprocessing: " << classMethodMemberInfo.methodName;);
+
                 // static fields
                 if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos,
                                                          true, genContext)))
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "\n\tNOT RESOLVED FIELD.");
                     notResolved++;
                 }
 
                 if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
                 {
+                    LLVM_DEBUG(ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);\
+                        auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();\
+                        getMethodNameOrPropertyName(\
+                            newClassPtr->isStatic,\
+                            funcLikeDeclaration,\
+                            classMethodMemberInfo.methodName,\
+                            classMethodMemberInfo.propertyName,\
+                            genContext);\
+                        llvm::dbgs() << "\n\tNOT RESOLVED MEMBER: " << classMethodMemberInfo.methodName;);
                     notResolved++;
                 }
             }
@@ -17765,10 +17784,8 @@ genContext);
         if (foundAlias != genContext.typeAliasMap.end())
         {
             auto type = (*foundAlias).getValue();
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param as alias [" << typeParamName << "] -> [" << type
-                                    << "]\n";);
-
+            // LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param as alias [" << typeParamName << "] -> [" << type
+            //                         << "]\n";);
             return type;
         }
 
@@ -17776,9 +17793,7 @@ genContext);
         if (found != genContext.typeParamsWithArgs.end())
         {
             auto type = (*found).getValue().second;
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << typeParamName << "] -> [" << type << "]\n";);
-
+            //LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << typeParamName << "] -> [" << type << "]\n";);
             return type;
         }
 
@@ -20826,7 +20841,7 @@ genContext);
 
         const auto &name = var->getName();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
+        //LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
 
         if (showWarnings && symbolTable.count(name))
         {
