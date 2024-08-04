@@ -2227,7 +2227,7 @@ class MLIRGenImpl
                        << " type: " << std::get<1>(typeParam.getValue());
                        llvm::dbgs() << "\n";);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: ";
+            LLVM_DEBUG(if (genericTypeGenContext.typeAliasMap.size()) llvm::dbgs() << "\n!! type alias: ";
                        for (auto &typeAlias
                             : genericTypeGenContext.typeAliasMap) llvm::dbgs()
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
@@ -2369,7 +2369,7 @@ class MLIRGenImpl
                        << " type: " << std::get<1>(typeParam.getValue());
                        llvm::dbgs() << "\n";);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: ";
+            LLVM_DEBUG(if (genericTypeGenContext.typeAliasMap.size()) llvm::dbgs() << "\n!! type alias: ";
                        for (auto &typeAlias
                             : genericTypeGenContext.typeAliasMap) llvm::dbgs()
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
@@ -2427,7 +2427,7 @@ class MLIRGenImpl
                        << " type: " << std::get<1>(typeParam.getValue());
                        llvm::dbgs() << "\n";);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: ";
+            LLVM_DEBUG(if (genericTypeGenContext.typeAliasMap.size()) llvm::dbgs() << "\n!! type alias: ";
                        for (auto &typeAlias
                             : genericTypeGenContext.typeAliasMap) llvm::dbgs()
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
@@ -2496,7 +2496,7 @@ class MLIRGenImpl
                        << " type: " << std::get<1>(typeParam.getValue());
                        llvm::dbgs() << "\n";);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: ";
+            LLVM_DEBUG(if (genericTypeGenContext.typeAliasMap.size()) llvm::dbgs() << "\n!! type alias: ";
                        for (auto &typeAlias
                             : genericTypeGenContext.typeAliasMap) llvm::dbgs()
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
@@ -14139,6 +14139,8 @@ class MLIRGenImpl
         auto notResolved = 0;
         do
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n****** \tclass members: " << newClassPtr->fullName << " not resolved: " << notResolved;);
+
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
 
@@ -14153,19 +14155,15 @@ class MLIRGenImpl
             for (auto &classMember : classDeclarationAST->members)
             {
                 // DEBUG ON
-                ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);
-                    auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
-                    getMethodNameOrPropertyName(
-                        newClassPtr->isStatic,
-                        funcLikeDeclaration,
-                        classMethodMemberInfo.methodName,
-                        classMethodMemberInfo.propertyName,
-                        genContext);
-                LLVM_DEBUG(llvm::dbgs() << "\n\tprocessing: " << classMethodMemberInfo.methodName;);
-
-                if (classMethodMemberInfo.methodName.find("toString") != std::string::npos) {
-                    llvm::dbgs() << "...";    
-                }
+                LLVM_DEBUG(ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);\
+                    auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();\
+                    getMethodNameOrPropertyName(\
+                        newClassPtr->isStatic,\
+                        funcLikeDeclaration,\
+                        classMethodMemberInfo.methodName,\
+                        classMethodMemberInfo.propertyName,\
+                        genContext);\
+                llvm::dbgs() << "\n****** \tprocessing: " << newClassPtr->fullName << "." << classMethodMemberInfo.methodName;);
 
                 // static fields
                 if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos,
@@ -14242,11 +14240,13 @@ class MLIRGenImpl
 
     void restoreMembersProcessStates(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr, 
             llvm::SmallVector<bool> &membersProcessStates) {
+        auto index = 0;
         for (auto &classMember : classDeclarationAST->members)
         {
-            classMember->processed = membersProcessStates.back();
-            membersProcessStates.pop_back();
+            classMember->processed = membersProcessStates[index++];
         }
+
+        membersProcessStates.clear();
     }    
 
     mlir::LogicalResult mlirGenClassHeritageClause(ClassLikeDeclaration classDeclarationAST,
@@ -15868,6 +15868,7 @@ genContext);
     {
         if (classMember->processed)
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n\tALREADY PROCESSED.");
             return mlir::success();
         }
 

@@ -476,7 +476,7 @@ class MLIRTypeHelper
             actualType = removeConstType(actualType);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n\t\t widening type: " << type <<  " -> wide type: " << actualType << "\n";);        
+        LLVM_DEBUG(if (type != actualType) llvm::dbgs() << "\n\t\t widening type: " << type <<  " -> wide type: " << actualType << "\n";);        
 
         return actualType;
     }    
