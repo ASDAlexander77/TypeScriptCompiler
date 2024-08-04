@@ -13752,10 +13752,13 @@ class MLIRGenImpl
 
         // go to root
         mlir::OpBuilder::InsertPoint savePoint;
+        llvm::SmallVector<bool> membersProcessStates;
         if (isGenericClass)
         {
             savePoint = builder.saveInsertionPoint();
             builder.setInsertionPointToStart(theModule.getBody());
+
+            saveMembersProcessStates(classDeclarationAST, newClassPtr, membersProcessStates);
 
             // before processing generic class for example array<int> array<string> we need to drop all states of processed members
             clearMembersProcessStates(classDeclarationAST, newClassPtr);
@@ -13838,6 +13841,8 @@ class MLIRGenImpl
         if (isGenericClass)
         {
             builder.restoreInsertionPoint(savePoint);
+
+            restoreMembersProcessStates(classDeclarationAST, newClassPtr, membersProcessStates);
             //LLVM_DEBUG(llvm::dbgs() << "\n>>>>>>>>>>>>>>>>> module: \n" << theModule << "\n";);
         }
 
@@ -14195,6 +14200,24 @@ class MLIRGenImpl
             classMember->processed = false;
         }
     }
+
+    void saveMembersProcessStates(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr, 
+            llvm::SmallVector<bool> &membersProcessStates) {
+        // we need only members from class AST (not extraMembers and not extraMembersPost)
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            membersProcessStates.push_back(classMember->processed);
+        }
+    }
+
+    void restoreMembersProcessStates(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr, 
+            llvm::SmallVector<bool> &membersProcessStates) {
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            classMember->processed = membersProcessStates.back();
+            membersProcessStates.pop_back();
+        }
+    }    
 
     mlir::LogicalResult mlirGenClassHeritageClause(ClassLikeDeclaration classDeclarationAST,
                                                    ClassInfo::TypePtr newClassPtr, HeritageClause heritageClause,
