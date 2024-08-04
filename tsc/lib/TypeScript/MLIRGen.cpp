@@ -390,6 +390,8 @@ class MLIRGenImpl
     int processStatements(NodeArray<Statement> statements,
                           const GenContext &genContext)
     {
+        clearState(statements);
+
         auto notResolved = 0;
         do
         {
@@ -905,6 +907,8 @@ class MLIRGenImpl
     {
         SymbolTableScopeT varScope(symbolTable);
 
+        clearState(statements);
+
         auto notResolved = 0;
         do
         {
@@ -959,6 +963,8 @@ class MLIRGenImpl
         const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
+
+        clearState(statements);
 
         auto notResolved = 0;
         do
@@ -1081,8 +1087,9 @@ class MLIRGenImpl
         }
 
         // clear states to be able to run second time
+        // for generic methods/types
         clearState(blockAST->statements);
-        
+
         for (auto statement : blockAST->statements)
         {
             if (statement->processed)
