@@ -4371,7 +4371,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! discovering 'ret type' & 'captured vars' for : " << name << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n\tdiscovering 'return type' & 'captured variables' for : " << name << "\n";);
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -4459,6 +4459,9 @@ class MLIRGenImpl
                 }
 
                 genContextWithPassResult.clean();
+
+                LLVM_DEBUG(llvm::dbgs() << "\n\tSUCCESS - discovering 'return type' & 'captured variables' for : " << name << "\n";);
+
                 return mlir::success();
             }
             else
@@ -4466,6 +4469,9 @@ class MLIRGenImpl
                 exitNamespace();
 
                 genContextWithPassResult.clean();
+
+                LLVM_DEBUG(llvm::dbgs() << "\n\tFAILED - discovering 'return type' & 'captured variables' for : " << name << "\n";);
+
                 return mlir::failure();
             }
         }
@@ -5388,7 +5394,7 @@ class MLIRGenImpl
                                             mlir_ts::FuncOp funcOp, FunctionPrototypeDOM::TypePtr funcProto,
                                             const GenContext &genContext)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION: '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") << genContext.dummyRun << (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION: '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         if (!functionLikeDeclarationBaseAST->body || declarationMode && !genContext.dummyRun)
         {
@@ -5463,7 +5469,7 @@ class MLIRGenImpl
             genContext.cleanUps->push_back(blockPtr);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") << genContext.dummyRun << (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         return mlir::success();
     }
@@ -5478,7 +5484,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION: '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") << genContext.dummyRun << (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION: '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         SymbolTableScopeT varScope(symbolTable);
 
@@ -5535,7 +5541,7 @@ class MLIRGenImpl
 
         funcOp.setPrivate();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") << genContext.dummyRun << (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         return mlir::success();
     }
@@ -14146,15 +14152,20 @@ class MLIRGenImpl
 
             for (auto &classMember : classDeclarationAST->members)
             {
-                LLVM_DEBUG(ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);\
-                    auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();\
-                    getMethodNameOrPropertyName(\
-                        newClassPtr->isStatic,\
-                        funcLikeDeclaration,\
-                        classMethodMemberInfo.methodName,\
-                        classMethodMemberInfo.propertyName,\
-                        genContext);\
-                    llvm::dbgs() << "\n\tprocessing: " << classMethodMemberInfo.methodName;);
+                // DEBUG ON
+                ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);
+                    auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
+                    getMethodNameOrPropertyName(
+                        newClassPtr->isStatic,
+                        funcLikeDeclaration,
+                        classMethodMemberInfo.methodName,
+                        classMethodMemberInfo.propertyName,
+                        genContext);
+                LLVM_DEBUG(llvm::dbgs() << "\n\tprocessing: " << classMethodMemberInfo.methodName;);
+
+                if (classMethodMemberInfo.methodName.find("toString") != std::string::npos) {
+                    llvm::dbgs() << "...";    
+                }
 
                 // static fields
                 if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos,
