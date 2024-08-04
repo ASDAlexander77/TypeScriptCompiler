@@ -1040,7 +1040,7 @@ class MLIRGenImpl
         return false;
     }
 
-    mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
+    mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext, int skipStatements = 0)
     {
         auto location = loc(blockAST);
 
@@ -1051,7 +1051,7 @@ class MLIRGenImpl
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         genContextUsing.usingVars = usingVars.get();
 
-        EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, genContextUsing));
+        EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, genContextUsing, skipStatements));
 
         // we need to call dispose for those which are in "using"
         // default value for genContext.cleanUpUsingVarsFlag = CurrentScope
@@ -1060,9 +1060,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(
-        Block blockAST, 
-        const GenContext &genContext)
+    mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(Block blockAST, const GenContext &genContext, int skipStatements = 0)
     {
         auto location = loc(blockAST);
 
@@ -1092,6 +1090,11 @@ class MLIRGenImpl
 
         for (auto statement : blockAST->statements)
         {
+            if (skipStatements-- > 0) 
+            {
+                continue;
+            }
+
             if (statement->processed)
             {
                 continue;
@@ -6494,10 +6497,8 @@ class MLIRGenImpl
         {
             if (forStatementAST->statement == SyntaxKind::Block)
             {
-                // TODO: it is kind of hack, maybe you can find better solution
                 auto firstStatement = forStatementAST->statement.as<Block>()->statements.front();
                 mlirGen(firstStatement, genContext);
-                firstStatement->processed = true;
             }
 
             // async body
@@ -6505,7 +6506,12 @@ class MLIRGenImpl
                 location, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
                 [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                     GenContext execOpBodyGenContext(genContext);
-                    mlirGen(forStatementAST->statement, execOpBodyGenContext);
+                    if (forStatementAST->statement == SyntaxKind::Block)
+                    {
+                        mlirGen(forStatementAST->statement.as<Block>(), execOpBodyGenContext, 1);
+                    }
+                    else
+                        mlirGen(forStatementAST->statement, execOpBodyGenContext);
                     builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
                 });
 
@@ -6746,7 +6752,7 @@ class MLIRGenImpl
             forStatNode->internalFlags |= InternalFlags::ForAwait;
         }
 
-        //LLVM_DEBUG(printDebug(forStatNode););
+        LLVM_DEBUG(printDebug(forStatNode););
 
         return mlirGen(forStatNode, genContext);
     }
