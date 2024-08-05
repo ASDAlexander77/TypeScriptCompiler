@@ -185,8 +185,6 @@ struct GenContext
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages;
     bool specialization;
     // TODO: special hack to detect initializing specialized class and see that generic methods are not initialized at the same time
-    bool instantiateSpecializedClass;
-    bool instantiateSpecializedInterface;
     bool instantiateSpecializedFunction;
 };
 

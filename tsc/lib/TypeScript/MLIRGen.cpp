@@ -2366,7 +2366,7 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
-            genericTypeGenContext.instantiateSpecializedClass = true;
+            genericTypeGenContext.instantiateSpecializedFunction = false;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2424,7 +2424,7 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
-            genericTypeGenContext.instantiateSpecializedClass = true;
+            genericTypeGenContext.instantiateSpecializedFunction = false;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2492,7 +2492,6 @@ class MLIRGenImpl
             currentNamespace = genericInterfaceInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
-            genericTypeGenContext.instantiateSpecializedInterface = true;
             auto typeParams = genericInterfaceInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
