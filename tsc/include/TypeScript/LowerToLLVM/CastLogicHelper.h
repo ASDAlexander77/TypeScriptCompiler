@@ -701,10 +701,11 @@ class CastLogicHelper
 
         LLVM_DEBUG(llvm::dbgs() << "invalid cast operator type 1: '" << inLLVMType << "', type 2: '" << resLLVMType << "'\n";);
 
-        emitError(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
-        //llvm_unreachable("not implemented");
+        // emitError(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
 
-        return mlir::Value();
+        // return mlir::Value();
+        emitWarning(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
+        return rewriter.create<LLVM::UndefOp>(loc, resLLVMType);
     }
 
     mlir::Value castTupleToTuple(mlir::Value in, ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, mlir_ts::TupleType tupleTypeRes)
