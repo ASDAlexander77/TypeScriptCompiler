@@ -1127,7 +1127,10 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                 auto inlineLinkage = LLVM::linkage::Linkage::LinkonceODR;
                 auto linkage = LLVM::LinkageAttr::get(getContext(), inlineLinkage);
                 newFuncOp->setAttr("llvm.linkage", linkage);
+                newFuncOp->setAttr("dso_local", rewriter.getUnitAttr());
                 newFuncOp.setPrivate();
+
+                addComdat(newFuncOp, rewriter);
                 continue;
             }
 
@@ -1178,6 +1181,27 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         rewriter.eraseOp(funcOp);
 
         return success();
+    }
+
+    static void addComdat(mlir::func::FuncOp &func,
+                        mlir::ConversionPatternRewriter &rewriter) {
+        auto module = func->getParentOfType<mlir::ModuleOp>();
+
+        const char *comdatName = "__llvm_comdat";
+        mlir::LLVM::ComdatOp comdatOp = module.lookupSymbol<mlir::LLVM::ComdatOp>(comdatName);
+        if (!comdatOp) 
+        {
+            comdatOp = rewriter.create<mlir::LLVM::ComdatOp>(module.getLoc(), comdatName);
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(rewriter);
+        rewriter.setInsertionPointToEnd(&comdatOp.getBody().back());
+        auto selectorOp = rewriter.create<mlir::LLVM::ComdatSelectorOp>(
+            comdatOp.getLoc(), func.getSymName(),
+            mlir::LLVM::comdat::Comdat::Any);
+        func->setAttr("comdat", mlir::SymbolRefAttr::get(
+            rewriter.getContext(), comdatName,
+            mlir::FlatSymbolRefAttr::get(selectorOp.getSymNameAttr())));
     }
 };
 
@@ -3048,11 +3072,38 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 {
                     llvmGlobalOp.setSection(DLL_IMPORT);
                 }
+
+                if (attr.getName() == "Linkage" && attr.getValue().cast<mlir::StringAttr>().getValue() == "LinkonceODR") 
+                {
+                    addComdat(llvmGlobalOp, rewriter);
+                }
             }
         }
 
         rewriter.eraseOp(globalOp);
         return success();
+    }
+
+    static void addComdat(mlir::LLVM::GlobalOp &global,
+                        mlir::ConversionPatternRewriter &rewriter) {
+        auto module = global->getParentOfType<mlir::ModuleOp>();
+
+        const char *comdatName = "__llvm_comdat";
+        mlir::LLVM::ComdatOp comdatOp =
+            module.lookupSymbol<mlir::LLVM::ComdatOp>(comdatName);
+        if (!comdatOp) 
+        {
+            comdatOp = rewriter.create<mlir::LLVM::ComdatOp>(module.getLoc(), comdatName);
+        }
+
+        mlir::OpBuilder::InsertionGuard guard(rewriter);
+        rewriter.setInsertionPointToEnd(&comdatOp.getBody().back());
+        auto selectorOp = rewriter.create<mlir::LLVM::ComdatSelectorOp>(
+            comdatOp.getLoc(), global.getSymName(),
+            mlir::LLVM::comdat::Comdat::Any);
+        global.setComdatAttr(mlir::SymbolRefAttr::get(
+            rewriter.getContext(), comdatName,
+            mlir::FlatSymbolRefAttr::get(selectorOp.getSymNameAttr())));
     }
 };
 

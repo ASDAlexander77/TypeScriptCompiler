@@ -438,6 +438,9 @@ class MLIRGenImpl
 
         } while (notResolved > 0);
 
+        // clear states to be able to run second time
+        clearState(statements);
+        
         return notResolved;
     }
 
@@ -948,11 +951,8 @@ class MLIRGenImpl
             }
         } while (notResolved > 0);
 
-        // clear up state
-        for (auto &statement : statements)
-        {
-            statement->processed = false;
-        }
+        // clear states to be able to run second time
+        clearState(statements);
 
         return mlir::success();
     }
@@ -1012,11 +1012,8 @@ class MLIRGenImpl
             }
         } while (notResolved > 0);
 
-        // clear up state
-        for (auto &statement : statements)
-        {
-            statement->processed = false;
-        }
+        // clear states to be able to run second time
+        clearState(statements);
 
         return mlir::success();
     }
@@ -3106,6 +3103,7 @@ class MLIRGenImpl
             else if (variableDeclarationInfo.isSpecialization)
             {
                 attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("LinkonceODR")});
+                attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
             }
 
             // add modifiers
