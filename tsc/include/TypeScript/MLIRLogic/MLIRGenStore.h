@@ -409,6 +409,17 @@ struct ImplementInfo
     bool processed;
 };
 
+enum class ProcessingStages : int {
+    NotSet = 0,
+    ErrorInStorageClass = 1,
+    Processing = 2,
+    ProcessingStorageClass = 3,
+    ProcessedStorageClass = 4,
+    ProcessingBody = 5,
+    ProcessedBody = 6,
+    Processed = 7,
+};
+
 struct ClassInfo
 {
   public:
@@ -452,17 +463,13 @@ struct ClassInfo
     bool isImport;
     bool isDynamicImport;
     bool hasRTTI;
-    bool fullyProcessedAtEvaluation;
-    bool fullyProcessed;
-    bool processingStorageClass;
-    bool processedStorageClass;
-    bool enteredProcessingStorageClass;
+    ProcessingStages processingAtEvaluation;
+    ProcessingStages processing;
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
           hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), isDynamicImport(false), hasRTTI(false),
-          fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false),
-          processedStorageClass(false), enteredProcessingStorageClass(false)
+          processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
     {
     }
 
@@ -630,7 +637,6 @@ struct ClassInfo
     {
         auto dist = std::distance(
             methods.begin(), std::find_if(methods.begin(), methods.end(), [&](auto methodInfo) {
-                LLVM_DEBUG(dbgs() << "\nmatching method: " << name << " to " << methodInfo.name << "\n\n";);
                 return name == methodInfo.name;
             }));
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
@@ -640,7 +646,6 @@ struct ClassInfo
     {
         auto dist = std::distance(
             staticGenericMethods.begin(), std::find_if(staticGenericMethods.begin(), staticGenericMethods.end(), [&](auto staticGenericMethodInfo) {
-                LLVM_DEBUG(dbgs() << "\nmatching static generic method: " << name << " to " << staticGenericMethodInfo.name << "\n\n";);
                 return name == staticGenericMethodInfo.name;
             }));
         return (signed)dist >= (signed)staticGenericMethods.size() ? -1 : dist;

@@ -467,8 +467,6 @@ class MLIRTypeHelper
 
     mlir::Type wideStorageType(mlir::Type type)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! widening type: " << type << "\n";);        
-
         auto actualType = type;
         if (actualType)
         {
@@ -478,7 +476,7 @@ class MLIRTypeHelper
             actualType = removeConstType(actualType);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! wide type: " << actualType << "\n";);        
+        LLVM_DEBUG(if (type != actualType) llvm::dbgs() << "\n\t\t widening type: " << type <<  " -> wide type: " << actualType << "\n";);        
 
         return actualType;
     }    
@@ -678,7 +676,7 @@ class MLIRTypeHelper
             });
 
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! isAnyFunctionType for " << funcType << " = " << isFuncType << "\n";);
+        //LLVM_DEBUG(llvm::dbgs() << "\n!! isAnyFunctionType for " << funcType << " = " << isFuncType << "\n";);
 
         return isFuncType;
     }
@@ -1777,7 +1775,7 @@ class MLIRTypeHelper
         return getUnionType(literalTypes);    
     }
 
-    mlir::Type getFieldTypeByIndex(mlir::Type srcType, mlir::Type index)
+    mlir::Type getFieldTypeByIndexType(mlir::Type srcType, mlir::Type index)
     { 
         llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
         if (mlir::failed(getFields(srcType, destTupleFields)))

@@ -63,9 +63,9 @@
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/WithColor.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 //#include "llvm/IR/DebugInfoMetadata.h"
-
 
 #include <algorithm>
 #include <iterator>
@@ -390,6 +390,8 @@ class MLIRGenImpl
     int processStatements(NodeArray<Statement> statements,
                           const GenContext &genContext)
     {
+        clearState(statements);
+
         auto notResolved = 0;
         do
         {
@@ -436,6 +438,9 @@ class MLIRGenImpl
 
         } while (notResolved > 0);
 
+        // clear states to be able to run second time
+        clearState(statements);
+        
         return notResolved;
     }
 
@@ -551,7 +556,7 @@ class MLIRGenImpl
             }
         }
 
-        auto notResolved = processStatements(module->statements, genContext);
+        auto notResolved = processStatements(module->statements, genContext);       
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
             return mlir::failure();
@@ -905,6 +910,8 @@ class MLIRGenImpl
     {
         SymbolTableScopeT varScope(symbolTable);
 
+        clearState(statements);
+
         auto notResolved = 0;
         do
         {
@@ -944,11 +951,8 @@ class MLIRGenImpl
             }
         } while (notResolved > 0);
 
-        // clear up state
-        for (auto &statement : statements)
-        {
-            statement->processed = false;
-        }
+        // clear states to be able to run second time
+        clearState(statements);
 
         return mlir::success();
     }
@@ -959,6 +963,8 @@ class MLIRGenImpl
         const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
+
+        clearState(statements);
 
         auto notResolved = 0;
         do
@@ -1006,11 +1012,8 @@ class MLIRGenImpl
             }
         } while (notResolved > 0);
 
-        // clear up state
-        for (auto &statement : statements)
-        {
-            statement->processed = false;
-        }
+        // clear states to be able to run second time
+        clearState(statements);
 
         return mlir::success();
     }
@@ -1034,7 +1037,7 @@ class MLIRGenImpl
         return false;
     }
 
-    mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
+    mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext, int skipStatements = 0)
     {
         auto location = loc(blockAST);
 
@@ -1045,7 +1048,7 @@ class MLIRGenImpl
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         genContextUsing.usingVars = usingVars.get();
 
-        EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, genContextUsing));
+        EXIT_IF_FAILED(mlirGenNoScopeVarsAndDisposable(blockAST, genContextUsing, skipStatements));
 
         // we need to call dispose for those which are in "using"
         // default value for genContext.cleanUpUsingVarsFlag = CurrentScope
@@ -1054,9 +1057,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(
-        Block blockAST, 
-        const GenContext &genContext)
+    mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(Block blockAST, const GenContext &genContext, int skipStatements = 0)
     {
         auto location = loc(blockAST);
 
@@ -1080,8 +1081,17 @@ class MLIRGenImpl
             }
         }
 
+        // clear states to be able to run second time
+        // for generic methods/types
+        clearState(blockAST->statements);
+
         for (auto statement : blockAST->statements)
         {
+            if (skipStatements-- > 0) 
+            {
+                continue;
+            }
+
             if (statement->processed)
             {
                 continue;
@@ -2040,12 +2050,12 @@ class MLIRGenImpl
             {
                 auto paramIndex = -1;
                 auto processed = 0;
-                auto skipCount = skipThisParam ? 1 : 0;
+                auto startParamIndex = skipThisParam ? 1 : 0;
+                auto skipCount = startParamIndex;
                 for (auto paramInfo : funcOp->getParams())
                 {
                     if (skipCount-- > 0)
                     {
-                        processed++;
                         continue;
                     }
 
@@ -2078,7 +2088,7 @@ class MLIRGenImpl
                     if (!paramInfo->getIsMultiArgsParam())
                     {
                         auto [result, cont] = resolveGenericParamFromFunctionCall(
-                            location, paramType, argOp, paramIndex, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext);
+                            location, paramType, argOp, paramIndex + startParamIndex, functionGenericTypeInfo, anyNamedGenericType, genericTypeGenContext);
                         if (mlir::succeeded(result))
                         {
                             paramInfo->processed = true;
@@ -2122,7 +2132,7 @@ class MLIRGenImpl
 
                 totalProcessed += processed;
 
-                if (totalProcessed == funcOp->getParams().size())
+                if (totalProcessed == funcOp->getParams().size() - startParamIndex)
                 {
                     break;
                 }
@@ -2227,7 +2237,7 @@ class MLIRGenImpl
                        << " type: " << std::get<1>(typeParam.getValue());
                        llvm::dbgs() << "\n";);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: ";
+            LLVM_DEBUG(if (genericTypeGenContext.typeAliasMap.size()) llvm::dbgs() << "\n!! type alias: ";
                        for (auto &typeAlias
                             : genericTypeGenContext.typeAliasMap) llvm::dbgs()
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
@@ -2275,7 +2285,7 @@ class MLIRGenImpl
                 functionGenericTypeInfo->processed = true;
 
                 // instatiate all ArrowFunctions which are not yet instantiated
-                auto opIndex = -1;
+                auto opIndex = skipThisParam ? 0 : -1;
                 for (auto op : genContext.callOperands)
                 {
                     opIndex++;
@@ -2353,7 +2363,7 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
-            genericTypeGenContext.instantiateSpecializedClass = true;
+            genericTypeGenContext.instantiateSpecializedFunction = false;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2369,7 +2379,7 @@ class MLIRGenImpl
                        << " type: " << std::get<1>(typeParam.getValue());
                        llvm::dbgs() << "\n";);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: ";
+            LLVM_DEBUG(if (genericTypeGenContext.typeAliasMap.size()) llvm::dbgs() << "\n!! type alias: ";
                        for (auto &typeAlias
                             : genericTypeGenContext.typeAliasMap) llvm::dbgs()
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
@@ -2411,7 +2421,7 @@ class MLIRGenImpl
             currentNamespace = genericClassInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
-            genericTypeGenContext.instantiateSpecializedClass = true;
+            genericTypeGenContext.instantiateSpecializedFunction = false;
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2427,7 +2437,7 @@ class MLIRGenImpl
                        << " type: " << std::get<1>(typeParam.getValue());
                        llvm::dbgs() << "\n";);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: ";
+            LLVM_DEBUG(if (genericTypeGenContext.typeAliasMap.size()) llvm::dbgs() << "\n!! type alias: ";
                        for (auto &typeAlias
                             : genericTypeGenContext.typeAliasMap) llvm::dbgs()
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
@@ -2479,7 +2489,6 @@ class MLIRGenImpl
             currentNamespace = genericInterfaceInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
-            genericTypeGenContext.instantiateSpecializedInterface = true;
             auto typeParams = genericInterfaceInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
@@ -2496,7 +2505,7 @@ class MLIRGenImpl
                        << " type: " << std::get<1>(typeParam.getValue());
                        llvm::dbgs() << "\n";);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: ";
+            LLVM_DEBUG(if (genericTypeGenContext.typeAliasMap.size()) llvm::dbgs() << "\n!! type alias: ";
                        for (auto &typeAlias
                             : genericTypeGenContext.typeAliasMap) llvm::dbgs()
                        << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
@@ -3094,6 +3103,7 @@ class MLIRGenImpl
             else if (variableDeclarationInfo.isSpecialization)
             {
                 attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("LinkonceODR")});
+                attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
             }
 
             // add modifiers
@@ -3252,9 +3262,7 @@ class MLIRGenImpl
             return variableDeclarationInfo.type;
         }
 
-#ifndef NDEBUG
-        variableDeclarationInfo.printDebugInfo();
-#endif
+        //LLVM_DEBUG(variableDeclarationInfo.printDebugInfo(););
 
         auto varDecl = variableDeclarationInfo.createVariableDeclaration(location, genContext);
         if (genContext.usingVars != nullptr && varDecl->getUsing())
@@ -4231,7 +4239,8 @@ class MLIRGenImpl
 
         // discover type & args
         // seems we need to discover it all the time due to captured vars
-        if (!funcType || genContext.forceDiscover || !functionDiscovered)
+        auto detectReturnType = (!funcType || genContext.forceDiscover || !functionDiscovered) && !funcProto->getIsGeneric();
+        if (detectReturnType)
         {
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
                                                                           argTypes, funcProto, genContext)))
@@ -4327,20 +4336,23 @@ class MLIRGenImpl
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "specialization"), mlir::UnitAttr::get(builder.getContext())});
         }
 
-        auto it = getCaptureVarsMap().find(funcProto->getName());
-        auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
-        if (hasCapturedVars)
+        if (funcType)
         {
-            // important set when it is discovered and in process second type
-            funcProto->setHasCapturedVars(true);
-            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
-        }
-        else
-        {
-            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
-        }
+            auto it = getCaptureVarsMap().find(funcProto->getName());
+            auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
+            if (hasCapturedVars)
+            {
+                // important set when it is discovered and in process second type
+                funcProto->setHasCapturedVars(true);
+                funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
+            }
+            else
+            {
+                funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
+            }
 
-        funcProto->setFuncType(funcType);
+            funcProto->setFuncType(funcType);
+        }
 
         if (!funcProto->getIsGeneric())
         {
@@ -4367,7 +4379,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! discovering 'ret type' & 'captured vars' for : " << name << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n\tdiscovering 'return type' & 'captured variables' for : " << name << "\n";);
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -4455,6 +4467,9 @@ class MLIRGenImpl
                 }
 
                 genContextWithPassResult.clean();
+
+                LLVM_DEBUG(llvm::dbgs() << "\n\tSUCCESS - discovering 'return type' & 'captured variables' for : " << name << "\n";);
+
                 return mlir::success();
             }
             else
@@ -4462,6 +4477,9 @@ class MLIRGenImpl
                 exitNamespace();
 
                 genContextWithPassResult.clean();
+
+                LLVM_DEBUG(llvm::dbgs() << "\n\tFAILED - discovering 'return type' & 'captured variables' for : " << name << "\n";);
+
                 return mlir::failure();
             }
         }
@@ -4559,15 +4577,18 @@ class MLIRGenImpl
             isGeneric = isGenericRet;
         }
 
-        // if funcOp is null, means lambda is generic]
+        // if funcOp is null, means lambda is generic
         if (!funcOp)
         {
             // return reference to generic method
             if (getGenericFunctionMap().count(funcName))
             {
                 auto genericFunctionInfo = getGenericFunctionMap().lookup(funcName);
+
+                auto funcType = genericFunctionInfo->funcType ? genericFunctionInfo->funcType : getFunctionType({}, {}, false);
+
                 // info: it will not take any capture now
-                return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType,
+                return resolveFunctionWithCapture(location, genericFunctionInfo->name, funcType,
                                                   mlir::Value(), true, genContext);
             }
             else
@@ -4864,7 +4885,7 @@ class MLIRGenImpl
         if (mlir::succeeded(result) && isGeneric)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, true, funcDeclGenContext);
-            return {result, funcOp, funcProto->getName().str(), isGeneric};
+            return {result, funcOp, name, isGeneric};
         }
 
         // check decorator for class
@@ -5381,7 +5402,7 @@ class MLIRGenImpl
                                             mlir_ts::FuncOp funcOp, FunctionPrototypeDOM::TypePtr funcProto,
                                             const GenContext &genContext)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION: '" << funcProto->getName() << "' ~~~ dummy run: " << genContext.dummyRun << " & allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION: '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         if (!functionLikeDeclarationBaseAST->body || declarationMode && !genContext.dummyRun)
         {
@@ -5456,7 +5477,7 @@ class MLIRGenImpl
             genContext.cleanUps->push_back(blockPtr);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ dummy run: " << genContext.dummyRun << " & allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         return mlir::success();
     }
@@ -5471,7 +5492,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION: '" << fullFuncName << "' is dummy run: " << genContext.dummyRun << " << allowed partial resolve: " << genContext.allowPartialResolve << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION: '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         SymbolTableScopeT varScope(symbolTable);
 
@@ -5528,7 +5549,7 @@ class MLIRGenImpl
 
         funcOp.setPrivate();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' is dummy run: " << funcGenContext.dummyRun << " << allowed partial resolve: " << funcGenContext.allowPartialResolve << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         return mlir::success();
     }
@@ -6473,10 +6494,8 @@ class MLIRGenImpl
         {
             if (forStatementAST->statement == SyntaxKind::Block)
             {
-                // TODO: it is kind of hack, maybe you can find better solution
                 auto firstStatement = forStatementAST->statement.as<Block>()->statements.front();
                 mlirGen(firstStatement, genContext);
-                firstStatement->processed = true;
             }
 
             // async body
@@ -6484,7 +6503,12 @@ class MLIRGenImpl
                 location, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
                 [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                     GenContext execOpBodyGenContext(genContext);
-                    mlirGen(forStatementAST->statement, execOpBodyGenContext);
+                    if (forStatementAST->statement == SyntaxKind::Block)
+                    {
+                        mlirGen(forStatementAST->statement.as<Block>(), execOpBodyGenContext, 1);
+                    }
+                    else
+                        mlirGen(forStatementAST->statement, execOpBodyGenContext);
                     builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
                 });
 
@@ -6725,7 +6749,7 @@ class MLIRGenImpl
             forStatNode->internalFlags |= InternalFlags::ForAwait;
         }
 
-        //LLVM_DEBUG(printDebug(forStatNode););
+        LLVM_DEBUG(printDebug(forStatNode););
 
         return mlirGen(forStatNode, genContext);
     }
@@ -8774,7 +8798,7 @@ class MLIRGenImpl
         auto name = cl.getName();
         auto actualType = objectValue.getType();
 
-        LLVM_DEBUG(llvm::dbgs() << "Resolving property '" << name << "' of type " << objectValue.getType(););
+        LLVM_DEBUG(llvm::dbgs() << "\n\tResolving property '" << name << "' of type " << objectValue.getType(););
 
         // load reference if needed, except TupleTuple, ConstTupleType
         if (auto refType = actualType.dyn_cast<mlir_ts::RefType>())
@@ -9009,7 +9033,7 @@ class MLIRGenImpl
                     return mlirGenPropertyAccessExpression(location, castedValue, name, false, genContext);
                 })
                 .Default([&](auto type) {
-                    LLVM_DEBUG(llvm::dbgs() << "Can't resolve property '" << name << "' of type " << objectValue.getType(););
+                    LLVM_DEBUG(llvm::dbgs() << "\n\tCan't resolve property '" << name << "' of type " << objectValue.getType(););
                     return mlir::Value();
                 });
 
@@ -9184,8 +9208,7 @@ class MLIRGenImpl
     {
         assert(classInfo);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! looking for member: " << name << " in class '" << classInfo->fullName << "' this value: " << thisValue 
-                                << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n\t looking for member: " << name << " in class '" << classInfo->fullName << "\n";);
 
         auto staticFieldIndex = classInfo->getStaticFieldIndex(MLIRHelper::TupleFieldName(name, builder.getContext()));
         if (staticFieldIndex >= 0)
@@ -12354,7 +12377,7 @@ class MLIRGenImpl
 
             if (receiverElementType)
             {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type and receiver type: " << type << " type: " << receiverElementType << "\n";);
+                //LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type and receiver type: " << type << " type: " << receiverElementType << "\n";);
 
                 if (type != receiverElementType)
                 {
@@ -12364,7 +12387,7 @@ class MLIRGenImpl
                 }
 
                 type = receiverElementType;
-                LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type (from receiver) - id: " << fieldId << " type: " << type << "\n";);
+                //LLVM_DEBUG(llvm::dbgs() << "\n!! Object field type (from receiver) - id: " << fieldId << " type: " << type << "\n";);
             }
 
             values.push_back(value);
@@ -12775,7 +12798,7 @@ class MLIRGenImpl
         auto value = symbolTable.lookup(name);
         if (value.second && value.first)
         {
-            LLVM_DEBUG(dbgs() << "\n!! resolveIdentifierAsVariable: " << name << " type: " << value.second->getType() <<  " value: " << value.first;);
+            //LLVM_DEBUG(dbgs() << "\n!! resolveIdentifierAsVariable: " << name << " type: " << value.second->getType() <<  " value: " << value.first;);
 
             // begin of logic: outer vars
             auto valueRegion = value.first.getParentRegion();
@@ -12794,6 +12817,10 @@ class MLIRGenImpl
                     // special case when "ForceConstRef" pointering to outer variable but it is not outer var
                     isOuterVar = false;
                 }
+
+                LLVM_DEBUG(if (isOuterVar) dbgs() << "\n!! outer var: [" << value.second->getName()
+                                  << "] \n\n\tvalue region: " << *valueRegion->getParentOp()
+                                  << " \n\n\tFuncOp: " << const_cast<GenContext &>(genContext).funcOp << "";);                
             }
 
             if (isOuterVar && genContext.passResult)
@@ -12817,7 +12844,7 @@ class MLIRGenImpl
                 return value.first;
             }
 
-            LLVM_DEBUG(dbgs() << "\n!! variable: " << name << " type: " << value.first.getType() << "\n");
+            //LLVM_DEBUG(dbgs() << "\n!! variable: " << name << " type: " << value.first.getType() << "\n");
 
             // load value if memref
             auto valueType = value.first.getType().cast<mlir_ts::RefType>().getElementType();
@@ -13665,6 +13692,23 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
+    bool testProcessingState(ClassInfo::TypePtr &newClassPtr, ProcessingStages state, const GenContext &genContext) {
+        return (genContext.allowPartialResolve)
+            ? newClassPtr->processingAtEvaluation >= state
+            : newClassPtr->processing >= state;
+    }
+
+    void setProcessingState(ClassInfo::TypePtr &newClassPtr, ProcessingStages state, const GenContext &genContext) {
+        if (genContext.allowPartialResolve)
+        {
+            newClassPtr->processingAtEvaluation = state;
+        }
+        else
+        {
+            newClassPtr->processing = state;
+        }        
+    }
+
     std::pair<mlir::LogicalResult, mlir::StringRef> mlirGen(ClassLikeDeclaration classDeclarationAST,
                                                             const GenContext &genContext)
     {
@@ -13685,13 +13729,13 @@ class MLIRGenImpl
         if (isGenericClass && genContext.typeParamsWithArgs.size() > 0)
         {
             // TODO: investigate why classType is provided already for class
-            if ((genContext.allowPartialResolve && newClassPtr->fullyProcessedAtEvaluation) ||
-                (!genContext.allowPartialResolve && newClassPtr->fullyProcessed) ||
-                newClassPtr->enteredProcessingStorageClass)
+            if (testProcessingState(newClassPtr, ProcessingStages::Processing, genContext))
             {
                 return {mlir::success(), newClassPtr->classType.getName().getValue()};
             }
         }
+
+        setProcessingState(newClassPtr, ProcessingStages::Processing, genContext);
 
         auto location = loc(classDeclarationAST);
 
@@ -13714,29 +13758,33 @@ class MLIRGenImpl
         // we need THIS in params
         SymbolTableScopeT varScope(symbolTable);
 
-        newClassPtr->processingStorageClass = true;
-        newClassPtr->enteredProcessingStorageClass = true;
-
+        setProcessingState(newClassPtr, ProcessingStages::ProcessingStorageClass, genContext);
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
-            newClassPtr->processingStorageClass = false;
-            newClassPtr->enteredProcessingStorageClass = false;
+            setProcessingState(newClassPtr, ProcessingStages::ErrorInStorageClass, genContext);
             return {mlir::failure(), ""};
         }
 
-        newClassPtr->processingStorageClass = false;
-        newClassPtr->processedStorageClass = true;
+        setProcessingState(newClassPtr, ProcessingStages::ProcessedStorageClass, genContext);
 
         // if it is ClassExpression we need to know if it is declaration
         mlirGenClassCheckIfDeclaration(location, classDeclarationAST, newClassPtr, classGenContext);
 
         // go to root
         mlir::OpBuilder::InsertPoint savePoint;
+        llvm::SmallVector<bool> membersProcessStates;
         if (isGenericClass)
         {
             savePoint = builder.saveInsertionPoint();
             builder.setInsertionPointToStart(theModule.getBody());
+
+            saveMembersProcessStates(classDeclarationAST, newClassPtr, membersProcessStates);
+
+            // before processing generic class for example array<int> array<string> we need to drop all states of processed members
+            clearMembersProcessStates(classDeclarationAST, newClassPtr);
         }
+
+        setProcessingState(newClassPtr, ProcessingStages::ProcessingBody, genContext);
 
         // prepare VTable
         llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
@@ -13813,25 +13861,20 @@ class MLIRGenImpl
         if (isGenericClass)
         {
             builder.restoreInsertionPoint(savePoint);
+
+            restoreMembersProcessStates(classDeclarationAST, newClassPtr, membersProcessStates);
+            //LLVM_DEBUG(llvm::dbgs() << "\n>>>>>>>>>>>>>>>>> module: \n" << theModule << "\n";);
         }
 
-        newClassPtr->enteredProcessingStorageClass = false;
-
-        // if we allow multiple class nodes, do we need to store that ClassLikeDecl. has been processed fully
-        if (classGenContext.allowPartialResolve)
-        {
-            newClassPtr->fullyProcessedAtEvaluation = true;
-        }
-        else
-        {
-            newClassPtr->fullyProcessed = true;
-        }
+        setProcessingState(newClassPtr, ProcessingStages::ProcessedBody, genContext);
 
         // support dynamic loading
         if (getExportModifier(classDeclarationAST))
         {
             addClassDeclarationToExport(classDeclarationAST);
         }
+
+        setProcessingState(newClassPtr, ProcessingStages::Processed, genContext);
 
         return {mlir::success(), newClassPtr->classType.getName().getValue()};
     }
@@ -14111,6 +14154,8 @@ class MLIRGenImpl
         auto notResolved = 0;
         do
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n****** \tclass members: " << newClassPtr->fullName << " not resolved: " << notResolved;);
+
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
 
@@ -14124,15 +14169,36 @@ class MLIRGenImpl
 
             for (auto &classMember : classDeclarationAST->members)
             {
+                // DEBUG ON
+                LLVM_DEBUG(ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);\
+                    auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();\
+                    getMethodNameOrPropertyName(\
+                        newClassPtr->isStatic,\
+                        funcLikeDeclaration,\
+                        classMethodMemberInfo.methodName,\
+                        classMethodMemberInfo.propertyName,\
+                        genContext);\
+                llvm::dbgs() << "\n****** \tprocessing: " << newClassPtr->fullName << "." << classMethodMemberInfo.methodName;);
+
                 // static fields
                 if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos,
                                                          true, genContext)))
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "\n\tNOT RESOLVED FIELD.");
                     notResolved++;
                 }
 
                 if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
                 {
+                    LLVM_DEBUG(ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);\
+                        auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();\
+                        getMethodNameOrPropertyName(\
+                            newClassPtr->isStatic,\
+                            funcLikeDeclaration,\
+                            classMethodMemberInfo.methodName,\
+                            classMethodMemberInfo.propertyName,\
+                            genContext);\
+                        llvm::dbgs() << "\n\tNOT RESOLVED MEMBER: " << classMethodMemberInfo.methodName;);
                     notResolved++;
                 }
             }
@@ -14155,6 +14221,12 @@ class MLIRGenImpl
 
         } while (notResolved > 0);
 
+        clearMembersProcessStates(classDeclarationAST, newClassPtr);
+
+        return mlir::success();
+    }
+
+    void clearMembersProcessStates(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr) {
         // to be able to run next time, code succeeded, and we know where to continue from
         for (auto &classMember : newClassPtr->extraMembers)
         {
@@ -14170,9 +14242,27 @@ class MLIRGenImpl
         {
             classMember->processed = false;
         }
-
-        return mlir::success();
     }
+
+    void saveMembersProcessStates(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr, 
+            llvm::SmallVector<bool> &membersProcessStates) {
+        // we need only members from class AST (not extraMembers and not extraMembersPost)
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            membersProcessStates.push_back(classMember->processed);
+        }
+    }
+
+    void restoreMembersProcessStates(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr, 
+            llvm::SmallVector<bool> &membersProcessStates) {
+        auto index = 0;
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            classMember->processed = membersProcessStates[index++];
+        }
+
+        membersProcessStates.clear();
+    }    
 
     mlir::LogicalResult mlirGenClassHeritageClause(ClassLikeDeclaration classDeclarationAST,
                                                    ClassInfo::TypePtr newClassPtr, HeritageClause heritageClause,
@@ -15793,6 +15883,7 @@ genContext);
     {
         if (classMember->processed)
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n\tALREADY PROCESSED.");
             return mlir::success();
         }
 
@@ -17720,10 +17811,8 @@ genContext);
         if (foundAlias != genContext.typeAliasMap.end())
         {
             auto type = (*foundAlias).getValue();
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param as alias [" << typeParamName << "] -> [" << type
-                                    << "]\n";);
-
+            // LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param as alias [" << typeParamName << "] -> [" << type
+            //                         << "]\n";);
             return type;
         }
 
@@ -17731,9 +17820,7 @@ genContext);
         if (found != genContext.typeParamsWithArgs.end())
         {
             auto type = (*found).getValue().second;
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << typeParamName << "] -> [" << type << "]\n";);
-
+            //LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << typeParamName << "] -> [" << type << "]\n";);
             return type;
         }
 
@@ -19388,23 +19475,23 @@ genContext);
 
         if (auto objType = type.dyn_cast<mlir_ts::ObjectType>())
         {
-            return mth.getFieldTypeByIndex(type, indexType);
+            return mth.getFieldTypeByIndexType(type, indexType);
         }
 
         if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
         {
-            return mth.getFieldTypeByIndex(type, indexType);
+            return mth.getFieldTypeByIndexType(type, indexType);
         }
 
         // TODO: sync it with mth.getFields
         if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
-            return mth.getFieldTypeByIndex(type, indexType);
+            return mth.getFieldTypeByIndexType(type, indexType);
         }
 
         if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
         {
-            return mth.getFieldTypeByIndex(type, indexType);
+            return mth.getFieldTypeByIndexType(type, indexType);
         }
 
         if (auto anyType = type.dyn_cast<mlir_ts::AnyType>())
@@ -20781,7 +20868,7 @@ genContext);
 
         const auto &name = var->getName();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
+        //LLVM_DEBUG(llvm::dbgs() << "\n!! declare variable: " << name << " = [" << value << "]\n";);
 
         if (showWarnings && symbolTable.count(name))
         {
