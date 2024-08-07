@@ -269,6 +269,10 @@ class MLIRCustomMethods
         {
             return mlirGenArrayPop(location, operands);
         }
+        else if (functionName == "__array_shift")
+        {
+            return mlirGenArrayShift(location, operands);
+        }
         else if (functionName == "__array_view")
         {
             return mlirGenArrayView(location, operands);
@@ -476,7 +480,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value sizeOfValue =
-            builder.create<mlir_ts::PushOp>(location, builder.getI32Type(), thisValueLoaded, mlir::ValueRange{castedValues});
+            builder.create<mlir_ts::ArrayPushOp>(location, builder.getI32Type(), thisValueLoaded, mlir::ValueRange{castedValues});
 
         return sizeOfValue;
     }    
@@ -496,11 +500,27 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
-        mlir::Value value = builder.create<mlir_ts::PopOp>(
+        mlir::Value value = builder.create<mlir_ts::ArrayPopOp>(
             location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
 
         return value;
     }
+
+    ValueOrLogicalResult mlirGenArrayShift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        MLIRCodeLogic mcl(builder);
+        auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
+        if (!thisValue)
+        {
+            emitError(location) << "Can't get reference of the array, ensure const array is not used";
+            return mlir::failure();
+        }
+
+        mlir::Value value = builder.create<mlir_ts::ArrayShiftOp>(
+            location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
+
+        return value;
+    }    
 
     ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
     {
@@ -920,7 +940,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
         
-        if (propName == "push" || propName == "pop" || propName == "view")
+        if (propName == "push" || propName == "pop" || propName == "shift" || propName == "view")
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
