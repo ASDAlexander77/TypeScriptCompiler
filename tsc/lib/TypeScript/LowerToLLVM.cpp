@@ -3531,23 +3531,21 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
         values.push_back(clh.castToI8Ptr(transformed.getDst()));
         values.push_back(clh.castToI8Ptr(transformed.getSrc()));
 
+        auto countAsI32Type = memoryCopyOp.getCount();
+
+        auto newCountAsIndexType = 
+            llvmIndexType != countAsI32Type.getType()
+            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type)
+            : (mlir::Value) countAsI32Type;
+
         auto llvmSrcType = tch.convertType(memoryCopyOp.getSrc().getType());
         auto srcValueType = llvmSrcType.cast<LLVM::LLVMPointerType>().getElementType();
         auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), srcValueType);
         auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
+        auto multSizeOfTypeValue =
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{srcSize, newCountAsIndexType});
 
-        auto llvmDstType = tch.convertType(memoryCopyOp.getDst().getType());
-        auto dstValueType = llvmDstType.cast<LLVM::LLVMPointerType>().getElementType();
-        auto dstSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), dstValueType);
-        auto dstSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, dstSizeMLIR);
-
-        auto cmpVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, srcSize, dstSize);
-        auto minSize = rewriter.create<LLVM::SelectOp>(loc, cmpVal, srcSize, dstSize);
-
-        values.push_back(minSize);
-
-        auto immarg = clh.createI1ConstantOf(false);
-        values.push_back(immarg);
+        values.push_back(multSizeOfTypeValue);
 
         rewriter.create<LLVM::CallOp>(loc, copyMemFuncOp, values);
 
@@ -3573,7 +3571,7 @@ struct MemoryMoveOpLowering : public TsLlvmPattern<mlir_ts::MemoryMoveOp>
         CodeLogicHelper clh(memoryMoveOp, rewriter);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        auto copyMemFuncOp = ch.getOrInsertFunction(
+        auto moveMemFuncOp = ch.getOrInsertFunction(
             llvmIndexType.getIntOrFloatBitWidth() == 32 
                 ? "llvm.memmove.p0.p0.i32" 
                 : "llvm.memmove.p0.p0.i64", 
@@ -3583,25 +3581,23 @@ struct MemoryMoveOpLowering : public TsLlvmPattern<mlir_ts::MemoryMoveOp>
         values.push_back(clh.castToI8Ptr(transformed.getDst()));
         values.push_back(clh.castToI8Ptr(transformed.getSrc()));
 
+        auto countAsI32Type = memoryMoveOp.getCount();
+
+        auto newCountAsIndexType = 
+            llvmIndexType != countAsI32Type.getType()
+            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type)
+            : (mlir::Value) countAsI32Type;
+
         auto llvmSrcType = tch.convertType(memoryMoveOp.getSrc().getType());
         auto srcValueType = llvmSrcType.cast<LLVM::LLVMPointerType>().getElementType();
         auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), srcValueType);
         auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
+        auto multSizeOfTypeValue =
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{srcSize, newCountAsIndexType});
 
-        auto llvmDstType = tch.convertType(memoryMoveOp.getDst().getType());
-        auto dstValueType = llvmDstType.cast<LLVM::LLVMPointerType>().getElementType();
-        auto dstSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), dstValueType);
-        auto dstSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, dstSizeMLIR);
+        values.push_back(multSizeOfTypeValue);
 
-        auto cmpVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, srcSize, dstSize);
-        auto minSize = rewriter.create<LLVM::SelectOp>(loc, cmpVal, srcSize, dstSize);
-
-        values.push_back(minSize);
-
-        auto immarg = clh.createI1ConstantOf(false);
-        values.push_back(immarg);
-
-        rewriter.create<LLVM::CallOp>(loc, copyMemFuncOp, values);
+        rewriter.create<LLVM::CallOp>(loc, moveMemFuncOp, values);
 
         // Notify the rewriter that this operation has been removed.
         rewriter.eraseOp(memoryMoveOp);

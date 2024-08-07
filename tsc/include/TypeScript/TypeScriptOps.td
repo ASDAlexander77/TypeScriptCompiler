@@ -2150,8 +2150,8 @@ def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
   let results = (outs TypeScript_String:$result);
 }
 
-def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface]> {
-  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
+def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllTypesMatch<["dst", "src"]]> {
+  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, I32:$count);
   let results = (outs );
 
   let extraClassDeclaration = [{
@@ -2160,8 +2160,8 @@ def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface]> {
   }];
 }
 
-def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [CopyOpInterface]> {
-  let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
+def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [CopyOpInterface, AllTypesMatch<["dst", "src"]]> {
+  let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, I32:$count);
   let results = (outs );
 
   let extraClassDeclaration = [{
