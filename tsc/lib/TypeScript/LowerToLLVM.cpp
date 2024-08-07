@@ -2305,11 +2305,11 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
     }
 };
 
-struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
+struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
 {
-    using TsLlvmPattern<mlir_ts::PushOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::ArrayPushOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PushOp pushOp, Adaptor transformed,
+    LogicalResult matchAndRewrite(mlir_ts::ArrayPushOp pushOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         LLVMCodeHelper ch(pushOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
@@ -2400,11 +2400,11 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
     }
 };
 
-struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
+struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
 {
-    using TsLlvmPattern<mlir_ts::PopOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::ArrayPopOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PopOp popOp, Adaptor transformed,
+    LogicalResult matchAndRewrite(mlir_ts::ArrayPopOp popOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
         
@@ -2467,6 +2467,78 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
         rewriter.replaceOp(popOp, ValueRange{loadedElement});
+        return success();
+    }
+};
+
+
+struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
+{
+    using TsLlvmPattern<mlir_ts::ArrayShiftOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ArrayShiftOp shiftOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        
+
+        LLVMCodeHelper ch(shiftOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        CodeLogicHelper clh(shiftOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = shiftOp.getLoc();
+
+        auto arrayType = shiftOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto elementType = arrayType.getElementType();
+        auto llvmElementType = tch.convertType(elementType);
+        auto llvmPtrElementType = th.getPointerType(llvmElementType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
+        mlir::Type storageType;
+        mlir::TypeSwitch<mlir::Type>(shiftOp.getOp().getType())
+            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
+            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
+            .Default([&](auto type) { storageType = type; });
+
+        auto ind0 = clh.createI32ConstantOf(ARRAY_DATA_INDEX);
+        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(llvmPtrElementType), transformed.getOp(),
+                                                          ValueRange{ind0, ind0});
+        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmPtrElementType, currentPtrPtr);
+
+        auto ind1 = clh.createI32ConstantOf(ARRAY_SIZE_INDEX);
+        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(th.getI32Type()), transformed.getOp(),
+                                                              ValueRange{ind0, ind1});
+        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
+
+        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
+
+        auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
+        auto newCountAsIndexType =
+            rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
+
+        // load last element
+        auto offset =
+            rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, currentPtr, ValueRange{newCountAsIndexType});
+        auto loadedElement = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, offset);
+
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
+
+        auto multSizeOfTypeValue =
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
+
+        auto allocated = ch.MemoryReallocBitcast(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
+
+        rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
+
+        auto newCountAsI32Type = 
+            newCountAsIndexType.getType() != th.getI32Type()
+                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType)
+                : (mlir::Value) newCountAsIndexType;
+
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
+
+        rewriter.replaceOp(shiftOp, ValueRange{loadedElement});
         return success();
     }
 };
@@ -3478,6 +3550,58 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
 
         // Notify the rewriter that this operation has been removed.
         rewriter.eraseOp(memoryCopyOp);
+
+        return success();
+    }
+};
+
+struct MemoryMoveOpLowering : public TsLlvmPattern<mlir_ts::MemoryMoveOp>
+{
+    using TsLlvmPattern<mlir_ts::MemoryMoveOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::MemoryMoveOp memoryMoveOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = memoryMoveOp->getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(memoryMoveOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
+        CodeLogicHelper clh(memoryMoveOp, rewriter);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
+        auto copyMemFuncOp = ch.getOrInsertFunction(
+            llvmIndexType.getIntOrFloatBitWidth() == 32 
+                ? "llvm.memmove.p0.p0.i32" 
+                : "llvm.memmove.p0.p0.i64", 
+            th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(), llvmIndexType, th.getLLVMBoolType()}));
+
+        mlir::SmallVector<mlir::Value, 4> values;
+        values.push_back(clh.castToI8Ptr(transformed.getDst()));
+        values.push_back(clh.castToI8Ptr(transformed.getSrc()));
+
+        auto llvmSrcType = tch.convertType(memoryMoveOp.getSrc().getType());
+        auto srcValueType = llvmSrcType.cast<LLVM::LLVMPointerType>().getElementType();
+        auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), srcValueType);
+        auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
+
+        auto llvmDstType = tch.convertType(memoryMoveOp.getDst().getType());
+        auto dstValueType = llvmDstType.cast<LLVM::LLVMPointerType>().getElementType();
+        auto dstSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), dstValueType);
+        auto dstSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, dstSizeMLIR);
+
+        auto cmpVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, srcSize, dstSize);
+        auto minSize = rewriter.create<LLVM::SelectOp>(loc, cmpVal, srcSize, dstSize);
+
+        values.push_back(minSize);
+
+        auto immarg = clh.createI1ConstantOf(false);
+        values.push_back(immarg);
+
+        rewriter.create<LLVM::CallOp>(loc, copyMemFuncOp, values);
+
+        // Notify the rewriter that this operation has been removed.
+        rewriter.eraseOp(memoryMoveOp);
 
         return success();
     }
@@ -5560,10 +5684,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         HasValueOpLowering, ValueOpLowering, ValueOrDefaultOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,
         FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
-        DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering,
-        PopOpLowering, ArrayViewOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering,
-        StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering,
-        StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering,
+        DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
+        ArrayPopOpLowering, ArrayShiftOpLowering, ArrayViewOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, 
+        PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, 
+        StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering,
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering,
         AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
         ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
