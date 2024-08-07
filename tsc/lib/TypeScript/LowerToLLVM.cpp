@@ -2479,8 +2479,6 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
     LogicalResult matchAndRewrite(mlir_ts::ArrayShiftOp shiftOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         LLVMCodeHelper ch(shiftOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(shiftOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
@@ -2517,15 +2515,20 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
             rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
 
         // load last element
-        auto offset =
-            rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, currentPtr, ValueRange{newCountAsIndexType});
-        auto loadedElement = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, offset);
+        auto offset0 =
+            rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, currentPtr, ValueRange{clh.createIndexConstantOf(llvmIndexType, 0)});
+        auto loadedElement = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, offset0);
+
+        auto offset1 =
+            rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, currentPtr, ValueRange{incSize});
 
         auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
 
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
+
+        rewriter.create<mlir_ts::MemoryMoveOp>(loc, offset0, offset1, newCountAsIndexType);
 
         auto allocated = ch.MemoryReallocBitcast(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
 
