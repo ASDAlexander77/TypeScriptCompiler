@@ -2150,6 +2150,26 @@ def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
   let results = (outs TypeScript_String:$result);
 }
 
+def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
+  let results = (outs );
+
+  let extraClassDeclaration = [{
+    Value getSource() { return getSrc(); }
+    Value getTarget() { return getDst(); }
+  }];
+}
+
+def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
+  let results = (outs );
+
+  let extraClassDeclaration = [{
+    Value getSource() { return getSrc(); }
+    Value getTarget() { return getDst(); }
+  }];
+}
+
 def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, I32:$count);
   let results = (outs );
@@ -2162,16 +2182,6 @@ def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllT
 
 def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, I32:$count);
-  let results = (outs );
-
-  let extraClassDeclaration = [{
-    Value getSource() { return getSrc(); }
-    Value getTarget() { return getDst(); }
-  }];
-}
-
-def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
-  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
   let results = (outs );
 
   let extraClassDeclaration = [{

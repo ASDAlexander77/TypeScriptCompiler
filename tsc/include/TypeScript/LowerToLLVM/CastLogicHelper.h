@@ -683,7 +683,15 @@ class CastLogicHelper
             auto srcAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
             auto dstAddr =
                 rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), mlir::Value(), rewriter.getBoolAttr(false));
-            rewriter.create<mlir_ts::LoadSaveOp>(loc, dstAddr, srcAddr);
+            if (srcSize <= 8 && dstSize <= 8)
+            {
+                rewriter.create<mlir_ts::LoadSaveOp>(loc, dstAddr, srcAddr);
+            }
+            else
+            {
+                rewriter.create<mlir_ts::CopyStructOp>(loc, dstAddr, srcAddr);
+            }
+
             auto val = rewriter.create<mlir_ts::LoadOp>(loc, resType, dstAddr);
             return val;
         }

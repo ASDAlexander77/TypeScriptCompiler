@@ -3506,6 +3506,58 @@ struct LoadSaveValueLowering : public TsLlvmPattern<mlir_ts::LoadSaveOp>
     }
 };
 
+struct CopyStructOpLowering : public TsLlvmPattern<mlir_ts::CopyStructOp>
+{
+    using TsLlvmPattern<mlir_ts::CopyStructOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CopyStructOp memoryCopyOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = memoryCopyOp->getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(memoryCopyOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
+        CodeLogicHelper clh(memoryCopyOp, rewriter);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
+        auto copyMemFuncOp = ch.getOrInsertFunction(
+            llvmIndexType.getIntOrFloatBitWidth() == 32 
+                ? "llvm.memcpy.p0.p0.i32" 
+                : "llvm.memcpy.p0.p0.i64", 
+            th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(), llvmIndexType, th.getLLVMBoolType()}));
+
+        mlir::SmallVector<mlir::Value, 4> values;
+        values.push_back(clh.castToI8Ptr(transformed.getDst()));
+        values.push_back(clh.castToI8Ptr(transformed.getSrc()));
+
+        auto llvmSrcType = tch.convertType(memoryCopyOp.getSrc().getType());
+        auto srcValueType = llvmSrcType.cast<LLVM::LLVMPointerType>().getElementType();
+        auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), srcValueType);
+        auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
+
+        auto llvmDstType = tch.convertType(memoryCopyOp.getDst().getType());
+        auto dstValueType = llvmDstType.cast<LLVM::LLVMPointerType>().getElementType();
+        auto dstSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), dstValueType);
+        auto dstSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, dstSizeMLIR);
+
+        auto cmpVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, srcSize, dstSize);
+        auto minSize = rewriter.create<LLVM::SelectOp>(loc, cmpVal, srcSize, dstSize);
+
+        values.push_back(minSize);
+
+        auto immarg = clh.createI1ConstantOf(false);
+        values.push_back(immarg);
+
+        rewriter.create<LLVM::CallOp>(loc, copyMemFuncOp, values);
+
+        // Notify the rewriter that this operation has been removed.
+        rewriter.eraseOp(memoryCopyOp);
+
+        return success();
+    }
+};
+
 struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
 {
     using TsLlvmPattern<mlir_ts::MemoryCopyOp>::TsLlvmPattern;
@@ -5693,7 +5745,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ArrayPopOpLowering, ArrayShiftOpLowering, ArrayViewOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, 
         PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, 
         StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, 
-        MemoryCopyOpLowering, MemoryMoveOpLowering,
+        CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering,
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering,
         AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
         ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
