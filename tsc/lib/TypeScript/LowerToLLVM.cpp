@@ -3547,6 +3547,9 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
 
         values.push_back(multSizeOfTypeValue);
 
+        auto immarg = clh.createI1ConstantOf(false);
+        values.push_back(immarg);
+
         rewriter.create<LLVM::CallOp>(loc, copyMemFuncOp, values);
 
         // Notify the rewriter that this operation has been removed.
@@ -3597,6 +3600,9 @@ struct MemoryMoveOpLowering : public TsLlvmPattern<mlir_ts::MemoryMoveOp>
 
         values.push_back(multSizeOfTypeValue);
 
+        auto immarg = clh.createI1ConstantOf(false);
+        values.push_back(immarg);
+        
         rewriter.create<LLVM::CallOp>(loc, moveMemFuncOp, values);
 
         // Notify the rewriter that this operation has been removed.
@@ -5686,7 +5692,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayShiftOpLowering, ArrayViewOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, 
         PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, 
-        StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering,
+        StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, 
+        MemoryCopyOpLowering, MemoryMoveOpLowering,
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering,
         AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
         ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,

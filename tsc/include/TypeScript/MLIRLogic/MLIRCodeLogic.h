@@ -940,7 +940,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
         
-        if (propName == "push" || propName == "pop" || propName == "view")
+        if (propName == "push" || propName == "pop" || propName == "shift" || propName == "view")
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
