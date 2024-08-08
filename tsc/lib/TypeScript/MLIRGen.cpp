@@ -1923,6 +1923,10 @@ class MLIRGenImpl
                 LLVM_DEBUG(llvm::dbgs() << "\n!! can't find : " << typeParamName << " in type params: " << "\n";);
                 LLVM_DEBUG(for (auto typeParam : typeParams) llvm::dbgs() << "\t!! type param: " << typeParam->getName() << "\n";);
 
+                // experiment
+                //auto typeParameterDOM = std::make_shared<TypeParameterDOM>(typeParamName.str());
+                //genericTypeGenContext.typeParamsWithArgs[typeParamName] = {typeParameterDOM, inferredType};
+                
                 //return mlir::failure();
                 // just ignore it
                 continue;
@@ -3877,6 +3881,58 @@ class MLIRGenImpl
         return mlir::Type();
     }
 
+    bool isGenericParameters(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
+    {
+        auto isGenericTypes = false;
+        auto formalParams = parametersContextAST->parameters;
+        auto index = 0;
+        for (auto arg : formalParams)
+        {
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+
+            mlir::Type type;
+            auto typeParameter = arg->type;
+
+            auto location = loc(typeParameter);
+
+            if (typeParameter)
+            {
+                type = getType(typeParameter, genContext);
+            }
+
+            // process init value
+            auto initializer = arg->initializer;
+            if (initializer)
+            {
+                continue;
+            }
+
+            if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
+            {
+                type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
+                isGenericTypes |= mth.isGenericType(type);
+            }
+
+            // in case of binding
+            if (mth.isNoneType(type) && isBindingPattern)
+            {
+                type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
+            }
+
+            if (mth.isNoneType(type))
+            {
+                if (!typeParameter && !initializer)
+                {
+                    return true;
+                }
+            }
+
+            index++;
+        }
+
+        return false;
+    }
+
     std::tuple<mlir::LogicalResult, bool, std::vector<std::shared_ptr<FunctionParamDOM>>> mlirGenParameters(
         SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
@@ -3999,8 +4055,25 @@ class MLIRGenImpl
                     }
                     return {mlir::failure(), isGenericTypes, params};
 #else
-                    emitWarning(loc(parametersContextAST)) << "type for parameter '" << namePtr << "' is any";
-                    type = getAnyType();
+                    //emitWarning(loc(parametersContextAST)) << "type for parameter '" << namePtr << "' is any";
+                    //type = getAnyType();
+
+                    mlir::StringRef typeParamNamePtr;
+                    std::stringstream ss;
+                    ss << "P" << index;
+                    typeParamNamePtr = mlir::StringRef(ss.str()).copy(stringAllocator);      
+
+                    type = getNamedGenericType(typeParamNamePtr);
+
+                    auto &typeParams = parametersContextAST->typeParameters;
+                    auto found = std::find_if(typeParams.begin(), typeParams.end(),
+                                            [&](auto &paramItem) { return MLIRHelper::getName( paramItem->name) == typeParamNamePtr; });
+                    if (found == typeParams.end())
+                    {
+                        NodeFactory nf(NodeFactoryFlags::None);
+                        auto typeParameterDeclaration = nf.createTypeParameterDeclaration(undefined, nf.createIdentifier(stows(typeParamNamePtr.str())), undefined, undefined);
+                        parametersContextAST->typeParameters.push_back(typeParameterDeclaration);
+                    }                    
 #endif
                 }
                 else
@@ -4778,6 +4851,10 @@ class MLIRGenImpl
             return {mlir::failure(), name};
         }
 
+        if (functionLikeDeclarationBaseAST->typeParameters.size() == 0) {
+            processTypeParametersFromFunctionParameters(functionLikeDeclarationBaseAST, typeParameters, genContext);
+        }
+
         // register class
         auto namePtr = StringRef(name).copy(stringAllocator);
         auto fullNamePtr = StringRef(fullName).copy(stringAllocator);
@@ -4837,7 +4914,7 @@ class MLIRGenImpl
     {
         auto funcDeclGenContext = GenContext(genContext);
                 
-        auto isGenericFunction = functionLikeDeclarationBaseAST->typeParameters.size() > 0;
+        auto isGenericFunction = functionLikeDeclarationBaseAST->typeParameters.size() > 0 || isGenericParameters(functionLikeDeclarationBaseAST, genContext);
         if (isGenericFunction && !funcDeclGenContext.instantiateSpecializedFunction)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);
@@ -13397,6 +13474,60 @@ class MLIRGenImpl
         for (auto typeParameter : typeParameters)
         {
             typeParams.push_back(processTypeParameter(typeParameter, genContext));
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult processTypeParametersFromFunctionParameters(SignatureDeclarationBase signatureDeclarationBase,
+                                              llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams,
+                                              const GenContext &genContext)
+    {
+        auto isGenericTypes = false;
+        auto formalParams = signatureDeclarationBase->parameters;
+        auto index = 0;
+        for (auto arg : formalParams)
+        {
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+
+            mlir::Type type;
+            auto typeParameter = arg->type;
+
+            auto location = loc(typeParameter);
+
+            if (typeParameter)
+            {
+                type = getType(typeParameter, genContext);
+            }
+
+            // process init value
+            auto initializer = arg->initializer;
+            if (initializer)
+            {
+                continue;
+            }
+
+            if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
+            {
+                type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
+                isGenericTypes |= mth.isGenericType(type);
+            }
+
+            // in case of binding
+            if (mth.isNoneType(type) && isBindingPattern)
+            {
+                type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
+            }
+
+            if (mth.isNoneType(type))
+            {
+                if (!typeParameter && !initializer)
+                {
+                    return true;
+                }
+            }
+
+            index++;
         }
 
         return mlir::success();
