@@ -3933,6 +3933,19 @@ class MLIRGenImpl
         return false;
     }
 
+    mlir::StringRef getArgumentName(int index) {
+        std::stringstream ss;
+        ss << "arg" << index;
+        return mlir::StringRef(ss.str()).copy(stringAllocator);        
+    }
+
+    mlir::StringRef getParameterGenericTypeName(int index) {
+        mlir::StringRef typeParamNamePtr;
+        std::stringstream ss;
+        ss << "P" << index;
+        return mlir::StringRef(ss.str()).copy(stringAllocator);
+    }
+
     std::tuple<mlir::LogicalResult, bool, std::vector<std::shared_ptr<FunctionParamDOM>>> mlirGenParameters(
         SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
@@ -3977,9 +3990,7 @@ class MLIRGenImpl
             namePtr = MLIRHelper::getName(arg->name, stringAllocator);
             if (namePtr.empty())
             {
-                std::stringstream ss;
-                ss << "arg" << index;
-                namePtr = mlir::StringRef(ss.str()).copy(stringAllocator);
+                namePtr = getArgumentName(index);
             }
 
             auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
@@ -4058,22 +4069,7 @@ class MLIRGenImpl
                     //emitWarning(loc(parametersContextAST)) << "type for parameter '" << namePtr << "' is any";
                     //type = getAnyType();
 
-                    mlir::StringRef typeParamNamePtr;
-                    std::stringstream ss;
-                    ss << "P" << index;
-                    typeParamNamePtr = mlir::StringRef(ss.str()).copy(stringAllocator);      
-
-                    type = getNamedGenericType(typeParamNamePtr);
-
-                    auto &typeParams = parametersContextAST->typeParameters;
-                    auto found = std::find_if(typeParams.begin(), typeParams.end(),
-                                            [&](auto &paramItem) { return MLIRHelper::getName( paramItem->name) == typeParamNamePtr; });
-                    if (found == typeParams.end())
-                    {
-                        NodeFactory nf(NodeFactoryFlags::None);
-                        auto typeParameterDeclaration = nf.createTypeParameterDeclaration(undefined, nf.createIdentifier(stows(typeParamNamePtr.str())), undefined, undefined);
-                        parametersContextAST->typeParameters.push_back(typeParameterDeclaration);
-                    }                    
+                    emitError(loc(parametersContextAST)) << "type for parameter '" << namePtr << "' is not set";
 #endif
                 }
                 else
@@ -13523,7 +13519,21 @@ class MLIRGenImpl
             {
                 if (!typeParameter && !initializer)
                 {
-                    return true;
+                    auto typeParamNamePtr = getParameterGenericTypeName(index);      
+                    auto &typeParameters = signatureDeclarationBase->typeParameters;
+                    auto found = std::find_if(typeParameters.begin(), typeParameters.end(),
+                                            [&](auto &paramItem) { return MLIRHelper::getName( paramItem->name) == typeParamNamePtr; });
+                    if (found == typeParameters.end())
+                    {
+                        NodeFactory nf(NodeFactoryFlags::None);
+                        auto wname = stows(typeParamNamePtr.str());
+                        auto typeParameterDeclaration = nf.createTypeParameterDeclaration(undefined, nf.createIdentifier(wname), undefined, undefined);
+                        signatureDeclarationBase->typeParameters.push_back(typeParameterDeclaration);
+
+                        arg->type = nf.createTypeReferenceNode(nf.createIdentifier(wname));
+                    } 
+
+                    typeParams.push_back(std::make_shared<TypeParameterDOM>(typeParamNamePtr.str()));
                 }
             }
 
