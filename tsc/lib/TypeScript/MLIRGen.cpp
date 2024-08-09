@@ -1863,6 +1863,9 @@ class MLIRGenImpl
 
         GenContext arrowFuncGenContext(genContext);
         arrowFuncGenContext.receiverFuncType = recieverType;
+        arrowFuncGenContext.specialization = true;
+        arrowFuncGenContext.instantiateSpecializedFunction = true;
+        arrowFuncGenContext.typeParamsWithArgs = arrowFunctionGenericTypeInfo->typeParamsWithArgs;
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -1997,7 +2000,7 @@ class MLIRGenImpl
 
             if (!newArrowFuncType)
             {
-                return {mlir::failure(), false};
+                return {mlir::failure(), true};
             }
 
             // infer second type when ArrowType is fully built
