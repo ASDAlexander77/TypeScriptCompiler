@@ -3032,6 +3032,10 @@ class MLIRGenImpl
         {
             genContextWithNameReceiver.receiverName = variableDeclarationInfo.fullName;
         }
+        else
+        {
+            genContextWithNameReceiver.isGlobalVarReceiver = true;
+        }
 
         if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver)))
         {
@@ -4922,7 +4926,7 @@ class MLIRGenImpl
                 
         auto isGenericFunction = 
             functionLikeDeclarationBaseAST->typeParameters.size() > 0 
-            || isGenericParameters(functionLikeDeclarationBaseAST, genContext);
+            || !genContext.isGlobalVarReceiver && isGenericParameters(functionLikeDeclarationBaseAST, genContext);
         if (isGenericFunction && !funcDeclGenContext.instantiateSpecializedFunction)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);
