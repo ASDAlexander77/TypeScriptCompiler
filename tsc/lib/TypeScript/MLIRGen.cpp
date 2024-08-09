@@ -3910,6 +3910,11 @@ class MLIRGenImpl
             if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
             {
                 type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
+                if (!type)
+                {
+                    return false;
+                }
+
                 isGenericTypes |= mth.isGenericType(type);
             }
 
@@ -3939,10 +3944,10 @@ class MLIRGenImpl
         return mlir::StringRef(ss.str()).copy(stringAllocator);        
     }
 
-    mlir::StringRef getParameterGenericTypeName(int index) {
+    mlir::StringRef getParameterGenericTypeName(std::string name) {
         mlir::StringRef typeParamNamePtr;
         std::stringstream ss;
-        ss << "P" << index;
+        ss << "TGenParam_" << name;
         return mlir::StringRef(ss.str()).copy(stringAllocator);
     }
 
@@ -3986,8 +3991,7 @@ class MLIRGenImpl
         auto index = 0;
         for (auto arg : formalParams)
         {
-            mlir::StringRef namePtr;
-            namePtr = MLIRHelper::getName(arg->name, stringAllocator);
+            auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
             if (namePtr.empty())
             {
                 namePtr = getArgumentName(index);
@@ -4039,6 +4043,11 @@ class MLIRGenImpl
             if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
             {
                 type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
+                if (!type)
+                {
+                    emitError(location) << "can't resolve type for parameter '" << namePtr << "', the receiver function has less parameters.";
+                    return {mlir::failure(), isGenericTypes, params};                    
+                }
 
                 LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "\n");
 
@@ -4066,10 +4075,8 @@ class MLIRGenImpl
                     }
                     return {mlir::failure(), isGenericTypes, params};
 #else
-                    //emitWarning(loc(parametersContextAST)) << "type for parameter '" << namePtr << "' is any";
-                    //type = getAnyType();
-
-                    emitError(loc(parametersContextAST)) << "type for parameter '" << namePtr << "' is not set";
+                    emitWarning(loc(parametersContextAST)) << "type for parameter '" << namePtr << "' is any";
+                    type = getAnyType();
 #endif
                 }
                 else
@@ -4913,7 +4920,9 @@ class MLIRGenImpl
     {
         auto funcDeclGenContext = GenContext(genContext);
                 
-        auto isGenericFunction = functionLikeDeclarationBaseAST->typeParameters.size() > 0 || isGenericParameters(functionLikeDeclarationBaseAST, genContext);
+        auto isGenericFunction = 
+            functionLikeDeclarationBaseAST->typeParameters.size() > 0 
+            || isGenericParameters(functionLikeDeclarationBaseAST, genContext);
         if (isGenericFunction && !funcDeclGenContext.instantiateSpecializedFunction)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);
@@ -13526,7 +13535,13 @@ class MLIRGenImpl
             {
                 if (!typeParameter && !initializer)
                 {
-                    auto typeParamNamePtr = getParameterGenericTypeName(index);      
+                    auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
+                    if (namePtr.empty())
+                    {
+                        namePtr = getArgumentName(index);
+                    }                    
+
+                    auto typeParamNamePtr = getParameterGenericTypeName(namePtr.str());      
                     auto &typeParameters = signatureDeclarationBase->typeParameters;
                     auto found = std::find_if(typeParameters.begin(), typeParameters.end(),
                                             [&](auto &paramItem) { return MLIRHelper::getName( paramItem->name) == typeParamNamePtr; });

@@ -1,5 +1,5 @@
 class Array1 {
-    static [Symbol.hasInstance](instance) {
+    static [Symbol.hasInstance](instance: any) {
         if (typeof instance === "string")
             print("str: ", instance);
         if (typeof instance === "number")
@@ -23,7 +23,7 @@ function main() {
     Array1[Symbol.hasInstance](<number>10);
 
     const obj = {
-        [Symbol.hasInstance]: (instance) => {
+        [Symbol.hasInstance]: (instance: any) => {
             if (typeof instance === "string")
                 print("obj: str: ", instance);
             if (typeof instance === "number")
