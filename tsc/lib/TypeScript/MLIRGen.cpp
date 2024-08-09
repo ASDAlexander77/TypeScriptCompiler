@@ -4297,6 +4297,9 @@ class MLIRGenImpl
             return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
         }
 
+        GenContext funcProtoGenContext(genContext);
+        funcProtoGenContext.funcProto = funcProto;
+
         auto fullName = funcProto->getName();
 
         mlir_ts::FunctionType functionDiscovered;
@@ -4308,26 +4311,26 @@ class MLIRGenImpl
 
         // discover type & args
         // seems we need to discover it all the time due to captured vars
-        auto detectReturnType = (!funcType || genContext.forceDiscover || !functionDiscovered) && !funcProto->getIsGeneric();
+        auto detectReturnType = (!funcType || funcProtoGenContext.forceDiscover || !functionDiscovered) && !funcProto->getIsGeneric();
         if (detectReturnType)
         {
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
-                                                                          argTypes, funcProto, genContext)))
+                                                                          argTypes, funcProto, funcProtoGenContext)))
             {
-                if (!genContext.forceDiscover && funcType && funcType.getNumResults() > 0)
+                if (!funcProtoGenContext.forceDiscover && funcType && funcType.getNumResults() > 0)
                 {
                     funcProto->setReturnType(funcType.getResult(0));
                 }
                 else if (auto typeParameter = functionLikeDeclarationBaseAST->type)
                 {
                     // rewrite ret type with actual value in case of specialized generic
-                    auto returnType = getType(typeParameter, genContext);
+                    auto returnType = getType(typeParameter, funcProtoGenContext);
                     funcProto->setReturnType(returnType);
                 }
-                else if (genContext.receiverFuncType)
+                else if (funcProtoGenContext.receiverFuncType)
                 {
                     // rewrite ret type with actual value
-                    auto &argTypeDestFuncType = genContext.receiverFuncType;
+                    auto &argTypeDestFuncType = funcProtoGenContext.receiverFuncType;
                     auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
                         ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
                         : mlir::Type();
@@ -4400,7 +4403,7 @@ class MLIRGenImpl
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
         }
 
-        if (genContext.specialization)
+        if (funcProtoGenContext.specialization)
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "specialization"), mlir::UnitAttr::get(builder.getContext())});
         }
@@ -6274,6 +6277,10 @@ class MLIRGenImpl
                             callExpr->arguments[typePredicateType.getParameterIndex()], 
                             typePredicateType, 
                             genContext);
+                    }
+                    else
+                    {
+                        llvm_unreachable("type predicate can't find parameter index. check funcProto context");
                     }
                 }
             }
