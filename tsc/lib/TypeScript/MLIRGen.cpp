@@ -2080,6 +2080,12 @@ class MLIRGenImpl
                             continue;
                         }
 
+                        if (paramInfo->getIsMultiArgsParam())
+                        {
+                            processed++;
+                            continue;
+                        }
+
                         break;
                     }
 
@@ -2139,6 +2145,13 @@ class MLIRGenImpl
                 if (totalProcessed == funcOp->getParams().size() - startParamIndex)
                 {
                     break;
+                }
+
+                if (totalProcessed > funcOp->getParams().size() + 100)
+                {
+                    // TODO: find out the issue
+                    emitError(location) << "loop detected.";
+                    return mlir::failure();
                 }
             } while (true);
         }
