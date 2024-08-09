@@ -13503,6 +13503,8 @@ class MLIRGenImpl
             auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
 
             mlir::Type type;
+            auto isMultiArgs = !!arg->dotDotDotToken;
+            auto isOptional = !!arg->questionToken;            
             auto typeParameter = arg->type;
 
             auto location = loc(typeParameter);
@@ -13522,6 +13524,7 @@ class MLIRGenImpl
             if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
             {
                 type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
+                if (!type) continue;
                 isGenericTypes |= mth.isGenericType(type);
             }
 
@@ -13552,7 +13555,18 @@ class MLIRGenImpl
                         auto typeParameterDeclaration = nf.createTypeParameterDeclaration(undefined, nf.createIdentifier(wname), undefined, undefined);
                         signatureDeclarationBase->typeParameters.push_back(typeParameterDeclaration);
 
-                        arg->type = nf.createTypeReferenceNode(nf.createIdentifier(wname));
+                        TypeNode typeNode = nf.createTypeReferenceNode(nf.createIdentifier(wname));
+                        if (isMultiArgs)
+                        {
+                            typeNode = nf.createArrayTypeNode(typeNode);
+                        }
+
+                        if (isOptional)
+                        {
+                            typeNode = nf.createOptionalTypeNode(typeNode);
+                        }
+
+                        arg->type = typeNode;
                     } 
 
                     typeParams.push_back(std::make_shared<TypeParameterDOM>(typeParamNamePtr.str()));
