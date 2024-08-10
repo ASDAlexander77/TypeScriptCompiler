@@ -9,8 +9,9 @@ function init(f: (x:int, y:int) => int) {
 
 function main() {
 
-    init(getMax);
+    init(getMax); init(getMax);
 
+    assert(getMax(1, 2) == 2);
     assert(getMax(1, 2) == 2);
     assert(getMax(2.1, 3.2) == 3.2);
     assert(getMax("200", "400") == "400");
