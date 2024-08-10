@@ -13222,6 +13222,17 @@ class MLIRGenImpl
 
     mlir::Value resolveIdentifierInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
+        if (getGenericFunctionMap().count(name))
+        {
+            auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
+
+            auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
+                location, genericFunctionInfo->funcType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericFunctionInfo->name));
+            funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return funcSymbolOp;
+        }
+
         auto value = resolveFunctionNameInNamespace(location, name, genContext);
         if (value)
         {
@@ -13239,17 +13250,6 @@ class MLIRGenImpl
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
             return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first, enumTypeInfo.second), enumTypeInfo.second);
-        }
-
-        if (getGenericFunctionMap().count(name))
-        {
-            auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
-
-            auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
-                location, genericFunctionInfo->funcType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericFunctionInfo->name));
-            funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-            return funcSymbolOp;
         }
 
         if (getNamespaceMap().count(name))
