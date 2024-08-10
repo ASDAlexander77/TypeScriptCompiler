@@ -269,6 +269,10 @@ class MLIRCustomMethods
         {
             return mlirGenArrayPop(location, operands);
         }
+        else if (functionName == "__array_unshift")
+        {
+            return mlirGenArrayUnshift(location, operands);
+        }        
         else if (functionName == "__array_shift")
         {
             return mlirGenArrayShift(location, operands);
@@ -504,6 +508,43 @@ class MLIRCustomMethods
             location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
 
         return value;
+    }
+
+    ValueOrLogicalResult mlirGenArrayUnshift(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+
+        SmallVector<mlir::Value> castedValues;
+        for (auto value : values)
+        {
+            if (value.getType() != arrayElement)
+            {
+                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, arrayElement, value));
+            }
+            else
+            {
+                castedValues.push_back(value);
+            }
+        }
+
+        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(thisValue);
+        if (!thisValueLoaded)
+        {
+            emitError(location) << "Can't get reference of the array, ensure const array is not used";
+            return mlir::failure();
+        }
+
+        mlir::Value sizeOfValue =
+            builder.create<mlir_ts::ArrayUnshiftOp>(location, builder.getI32Type(), thisValueLoaded, mlir::ValueRange{castedValues});
+
+        return sizeOfValue;
+    }    
+
+    ValueOrLogicalResult mlirGenArrayUnshift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        return mlirGenArrayUnshift(location, operands.front(), operands.slice(1));
     }
 
     ValueOrLogicalResult mlirGenArrayShift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
@@ -940,7 +981,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
         
-        if (propName == "push" || propName == "pop" || propName == "shift" || propName == "view")
+        if (propName == "push" || propName == "pop" || propName == "unshift" || propName == "shift" || propName == "view")
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
