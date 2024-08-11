@@ -2120,6 +2120,11 @@ def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift"> {
   let results = (outs AnyType:$item);
 }
 
+def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice"> {
+  let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Index:$start, Index:$deleteCount, Variadic<AnyType>:$items);
+  let results = (outs I32:$new_size);
+}
+
 def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView"> {
   let arguments = (ins TypeScript_Array:$op, I32:$offset, I32:$count);
   let results = (outs TypeScript_Array:$result);

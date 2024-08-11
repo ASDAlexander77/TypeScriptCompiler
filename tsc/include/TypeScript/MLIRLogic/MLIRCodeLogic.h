@@ -277,6 +277,10 @@ class MLIRCustomMethods
         {
             return mlirGenArrayShift(location, operands);
         }
+        else if (functionName == "__array_splice")
+        {
+            return mlirGenArraySplice(location, operands);
+        }        
         else if (functionName == "__array_view")
         {
             return mlirGenArrayView(location, operands);
@@ -561,6 +565,43 @@ class MLIRCustomMethods
             location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
 
         return value;
+    }    
+
+    ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, mlir::Value thisValue, mlir::Value startValue, mlir::Value deleteCountValue, ArrayRef<mlir::Value> values)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+
+        SmallVector<mlir::Value> castedValues;
+        for (auto value : values)
+        {
+            if (value.getType() != arrayElement)
+            {
+                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, arrayElement, value));
+            }
+            else
+            {
+                castedValues.push_back(value);
+            }
+        }
+
+        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(thisValue);
+        if (!thisValueLoaded)
+        {
+            emitError(location) << "Can't get reference of the array, ensure const array is not used";
+            return mlir::failure();
+        }
+
+        mlir::Value sizeOfValue =
+            builder.create<mlir_ts::ArraySpliceOp>(location, builder.getI32Type(), thisValueLoaded, startValue, deleteCountValue, mlir::ValueRange{castedValues});
+
+        return sizeOfValue;
+    }    
+
+    ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        return mlirGenArraySplice(location, operands.front(), operands[1], operands[2], operands.slice(3));
     }    
 
     ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
@@ -981,7 +1022,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
         
-        if (propName == "push" || propName == "pop" || propName == "unshift" || propName == "shift" || propName == "view")
+        if (propName == "push" || propName == "pop" || propName == "unshift" || propName == "shift" || propName == "splice" || propName == "view")
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
