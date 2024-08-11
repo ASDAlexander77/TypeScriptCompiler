@@ -6880,21 +6880,25 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
-        auto iteratorIdent = (forOfStatementAST->awaitModifier) ? SYMBOL_ASYNC_ITERATOR : SYMBOL_ITERATOR;
-        if (auto iteratorType = evaluateProperty(exprValue, iteratorIdent, genContext))
+        // we need to ignore SYMBOL_ITERATOR for array to use simplier method and do not cause the stackoverflow
+        if (!exprValue.getType().isa<mlir_ts::ArrayType>())
         {
-            if (auto iteratorValue = mlirGenCallThisMethod(location, exprValue, iteratorIdent, undefined, undefined, genContext))
+            auto iteratorIdent = (forOfStatementAST->awaitModifier) ? SYMBOL_ASYNC_ITERATOR : SYMBOL_ITERATOR;
+            if (auto iteratorType = evaluateProperty(exprValue, iteratorIdent, genContext))
             {
-                exprValue = V(iteratorValue);
+                if (auto iteratorValue = mlirGenCallThisMethod(location, exprValue, iteratorIdent, undefined, undefined, genContext))
+                {
+                    exprValue = V(iteratorValue);
+                }
             }
-        }
 
-        auto propertyType = evaluateProperty(exprValue, ITERATOR_NEXT, genContext);
-        if (propertyType)
-        {
-            if (mlir::succeeded(mlirGenES2015(forOfStatementAST, exprValue, genContext)))
+            auto propertyType = evaluateProperty(exprValue, ITERATOR_NEXT, genContext);
+            if (propertyType)
             {
-                return mlir::success();
+                if (mlir::succeeded(mlirGenES2015(forOfStatementAST, exprValue, genContext)))
+                {
+                    return mlir::success();
+                }
             }
         }
 
@@ -9843,10 +9847,28 @@ class MLIRGenImpl
         mlir::Type elementType;
         if (auto arrayTyped = arrayType.dyn_cast<mlir_ts::ArrayType>())
         {
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto attr = fieldName.getValue();
+                if (attr.isa<mlir::StringAttr>()) 
+                {
+                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                }
+            }
+
             elementType = arrayTyped.getElementType();
         }
         else if (auto vectorType = arrayType.dyn_cast<mlir_ts::ConstArrayType>())
         {
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto attr = fieldName.getValue();
+                if (attr.isa<mlir::StringAttr>()) 
+                {
+                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                }
+            }
+
             elementType = vectorType.getElementType();
         }
         else if (arrayType.isa<mlir_ts::StringType>())
