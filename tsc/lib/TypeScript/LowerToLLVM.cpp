@@ -2698,7 +2698,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
             auto allocated = ch.MemoryReallocBitcast(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
 
             auto moveCountAsIndexType =
-                rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndex});
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndex});
 
             // realloc
             auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, allocated, ValueRange{startIndex});
@@ -2709,6 +2709,18 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         };
 
         auto decreaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+
+            auto moveCountAsIndexType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndex});
+            moveCountAsIndexType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{moveCountAsIndexType, decSize});
+
+            // realloc
+            auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, currentPtr, ValueRange{startIndex});
+            auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, offsetStart, ValueRange{decSize});
+            auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, offsetStart, ValueRange{incSize});
+            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexType);
+
             auto allocated = ch.MemoryReallocBitcast(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
             return allocated;
         };
