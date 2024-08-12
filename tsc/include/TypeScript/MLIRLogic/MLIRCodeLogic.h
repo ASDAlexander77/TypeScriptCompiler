@@ -571,6 +571,16 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
 
+        if (!startValue.getType().isa<mlir::IndexType>())
+        {
+            startValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), startValue);
+        }
+
+        if (!deleteCountValue.getType().isa<mlir::IndexType>())
+        {
+            deleteCountValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), deleteCountValue);
+        }
+
         auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
 
         SmallVector<mlir::Value> castedValues;

@@ -6880,8 +6880,10 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
+        auto skip = exprValue.getType().isa<mlir_ts::ArrayType>() 
+                 || exprValue.getType().isa<mlir_ts::StringType>();
         // we need to ignore SYMBOL_ITERATOR for array to use simplier method and do not cause the stackoverflow
-        if (!exprValue.getType().isa<mlir_ts::ArrayType>())
+        if (!skip)
         {
             auto iteratorIdent = (forOfStatementAST->awaitModifier) ? SYMBOL_ASYNC_ITERATOR : SYMBOL_ITERATOR;
             if (auto iteratorType = evaluateProperty(exprValue, iteratorIdent, genContext))
