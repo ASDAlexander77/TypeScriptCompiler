@@ -7686,6 +7686,11 @@ class MLIRGenImpl
         auto leftExpressionValue = V(result);
 
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
+        if (!resultWhenFalseType)
+        {
+            return mlir::failure();
+        }
+
         auto resultType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
 
         CAST_A(condValue, location, getBooleanType(), leftExpressionValue, genContext);
@@ -12014,6 +12019,16 @@ class MLIRGenImpl
 
             return mlir::success();
         }
+
+        if (auto array = type.dyn_cast<mlir_ts::StringType>())
+        {
+            // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
+            values.push_back({itemValue, true, true});
+
+            accumulateArrayItemType(getCharType(), arrayInfo);
+
+            return mlir::success();
+        }        
 
         auto nextPropertyType = evaluateProperty(itemValue, ITERATOR_NEXT, genContext);
         if (nextPropertyType)
