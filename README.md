@@ -9,6 +9,19 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new 
+- All functions without types are generics
+```TypeScript
+static class Array {
+    public of(...arg) {
+        return arg;
+    }
+
+    public from(arrayLike) {
+        return [...arrayLike];
+    }       
+}
+```
+
 - Native types aliases
 ```TypeScript
 // byte, short, ushort, int, uint, long, ulong, char, i8, i16, i32, i64,
