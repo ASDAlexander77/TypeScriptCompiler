@@ -244,6 +244,7 @@ int main(int argc, char **argv)
     mlirContext.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
     mlirContext.getOrLoadDialect<mlir::arith::ArithDialect>();
     mlirContext.getOrLoadDialect<mlir::math::MathDialect>();
+    mlirContext.getOrLoadDialect<mlir::index::IndexDialect>();
     mlirContext.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
     mlirContext.getOrLoadDialect<mlir::func::FuncDialect>();
     mlirContext.getOrLoadDialect<mlir::DLTIDialect>();

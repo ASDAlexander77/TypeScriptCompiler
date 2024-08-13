@@ -168,6 +168,7 @@ struct GenContext
     mlir::Type receiverFuncType;
     mlir::Type receiverType;
     mlir::StringRef receiverName;
+    bool isGlobalVarReceiver;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
     mlir::SmallVector<mlir::Operation *> *cleanUpOps;

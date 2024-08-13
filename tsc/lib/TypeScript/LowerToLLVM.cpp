@@ -13,6 +13,7 @@
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/LLVMCommon/Pattern.h"
 #include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Conversion/IndexToLLVM/IndexToLLVM.h"
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVMPass.h"
@@ -20,6 +21,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 
 #ifdef ENABLE_ASYNC
 #include "mlir/Conversion/AsyncToLLVM/AsyncToLLVM.h"
@@ -1703,7 +1705,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
             // create tagged union
             auto udefVal = rewriter.create<LLVM::UndefOp>(loc, unionPartialType);
             auto val0 =
-                rewriter.create<LLVM::InsertValueOp>(loc, udefVal, transformed.getTypeInfo(), MLIRHelper::getStructIndex(rewriter, UNION_TAG_VALUE_INDEX));
+                rewriter.create<LLVM::InsertValueOp>(loc, udefVal, transformed.getTypeInfo(), MLIRHelper::getStructIndex(rewriter, UNION_TAG_INDEX));
             auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, in, MLIRHelper::getStructIndex(rewriter, UNION_VALUE_INDEX));
 
             auto casted = castLogic.castLLVMTypes(val1, unionPartialType, op.getType(), resType);
@@ -1790,7 +1792,7 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
         if (needTag)
         {
             auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.getIn(),
-                                                              MLIRHelper::getStructIndex(rewriter, UNION_TAG_VALUE_INDEX));
+                                                              MLIRHelper::getStructIndex(rewriter, UNION_TAG_INDEX));
 
             rewriter.replaceOp(op, ValueRange{val0});
         }
@@ -2471,6 +2473,105 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
     }
 };
 
+struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
+{
+    using TsLlvmPattern<mlir_ts::ArrayUnshiftOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ArrayUnshiftOp unshiftOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(unshiftOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        CodeLogicHelper clh(unshiftOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = unshiftOp.getLoc();
+
+        auto arrayType = unshiftOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto elementType = arrayType.getElementType();
+        auto llvmElementType = tch.convertType(elementType);
+        auto llvmPtrElementType = th.getPointerType(llvmElementType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
+        auto ind0 = clh.createI32ConstantOf(ARRAY_DATA_INDEX);
+        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(llvmPtrElementType), transformed.getOp(),
+                                                          ValueRange{ind0, ind0});
+        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmPtrElementType, currentPtrPtr);
+
+        auto ind1 = clh.createI32ConstantOf(ARRAY_SIZE_INDEX);
+        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(th.getI32Type()), transformed.getOp(),
+                                                              ValueRange{ind0, ind1});
+        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
+
+        auto countAsIndexType = 
+            llvmIndexType != countAsI32Type.getType()
+            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type)
+            : (mlir::Value) countAsI32Type;
+
+        auto incSize = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
+        auto newCountAsIndexType =
+            rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{countAsIndexType, incSize});
+
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
+
+        auto multSizeOfTypeValue =
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
+
+        auto allocated = ch.MemoryReallocBitcast(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
+
+        // realloc
+        auto offset0 = allocated;
+        auto offsetN = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, allocated, ValueRange{incSize});
+        rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetN, offset0, newCountAsIndexType);
+
+        mlir::Value index = clh.createIndexConstantOf(llvmIndexType, 0);
+        auto next = false;
+        mlir::Value value1;
+        for (auto itemPair : llvm::zip(transformed.getItems(), unshiftOp.getItems()))
+        {
+            auto item = std::get<0>(itemPair);
+            auto itemOrig = std::get<1>(itemPair);
+
+            if (next)
+            {
+                if (!value1)
+                {
+                    value1 = clh.createIndexConstantOf(llvmIndexType, 1);
+                }
+
+                index = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{index, value1});
+            }
+
+            // save new element
+            auto offset = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, allocated, ValueRange{index});
+
+            auto effectiveItem = item;
+            if (elementType != itemOrig.getType())
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! push cast: store type: " << elementType
+                                        << " value type: " << item.getType() << "\n";);
+                llvm_unreachable("cast must happen earlier");
+                // effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, elementType, item);
+            }
+
+            auto save = rewriter.create<LLVM::StoreOp>(loc, effectiveItem, offset);
+            next = true;
+        }
+
+        rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
+
+        auto newCountAsI32Type = 
+            newCountAsIndexType.getType() != th.getI32Type()
+                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType)
+                : (mlir::Value) newCountAsIndexType;
+
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
+
+        rewriter.replaceOp(unshiftOp, ValueRange{newCountAsI32Type});
+        return success();
+    }
+};
 
 struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
 {
@@ -2542,6 +2643,164 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
         rewriter.replaceOp(shiftOp, ValueRange{loadedElement});
+        return success();
+    }
+};
+
+struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
+{
+    using TsLlvmPattern<mlir_ts::ArraySpliceOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ArraySpliceOp spliceOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(spliceOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        CodeLogicHelper clh(spliceOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = spliceOp.getLoc();
+
+        auto arrayType = spliceOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto elementType = arrayType.getElementType();
+        auto llvmElementType = tch.convertType(elementType);
+        auto llvmPtrElementType = th.getPointerType(llvmElementType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto llvmI32Type = tch.convertType(th.getI32Type());
+
+        auto ind0 = clh.createI32ConstantOf(ARRAY_DATA_INDEX);
+        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(llvmPtrElementType), transformed.getOp(),
+                                                          ValueRange{ind0, ind0});
+        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmPtrElementType, currentPtrPtr);
+
+        auto ind1 = clh.createI32ConstantOf(ARRAY_SIZE_INDEX);
+        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(th.getI32Type()), transformed.getOp(),
+                                                              ValueRange{ind0, ind1});
+        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
+
+        auto countAsIndexType = 
+            llvmIndexType != countAsI32Type.getType()
+            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type)
+            : (mlir::Value) countAsI32Type;
+
+        auto startIndexAsIndexType = spliceOp.getStart();
+        auto startIndexAsI32Type = 
+            llvmI32Type != startIndexAsIndexType.getType()
+            ? (mlir::Value) rewriter.create<mlir::index::CastUOp>(loc, llvmI32Type, startIndexAsIndexType)
+            : (mlir::Value) startIndexAsIndexType;
+
+        auto decSizeAsIndexType = spliceOp.getDeleteCount();
+        auto decSizeAsI32Type = 
+            llvmI32Type != decSizeAsIndexType.getType()
+            ? (mlir::Value) rewriter.create<mlir::index::CastUOp>(loc, llvmI32Type, decSizeAsIndexType)
+            : (mlir::Value) decSizeAsIndexType;
+
+        auto incSizeAsI32Type = clh.createI32ConstantOf(transformed.getItems().size());
+        auto incSizeAsIndexType = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
+
+        mlir::Value newCountAsI32Type = rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{countAsI32Type, decSizeAsI32Type});
+        auto newCountAsIndexType = 
+            llvmIndexType != newCountAsI32Type.getType()
+            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, newCountAsI32Type)
+            : (mlir::Value) newCountAsI32Type;
+
+        newCountAsIndexType = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{newCountAsIndexType, incSizeAsIndexType});
+
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
+
+        auto multSizeOfTypeValue =
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
+
+        auto increaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+            auto allocated = ch.MemoryReallocBitcast(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
+
+            auto moveCountAsI32Type =
+                rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{countAsI32Type, startIndexAsI32Type});
+            moveCountAsI32Type =
+                rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{moveCountAsI32Type, decSizeAsI32Type});
+            auto moveCountAsIndexType = 
+                llvmIndexType != moveCountAsI32Type.getType()
+                ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, moveCountAsI32Type)
+                : (mlir::Value) moveCountAsI32Type;
+
+            // realloc
+            auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, allocated, ValueRange{startIndexAsI32Type});
+            auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, offsetStart, ValueRange{decSizeAsI32Type});
+            auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, offsetStart, ValueRange{incSizeAsI32Type});
+            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexType);
+
+            return allocated;
+        };
+
+        auto decreaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+
+            auto moveCountAsI32Type =
+                rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{countAsI32Type, startIndexAsI32Type});
+            moveCountAsI32Type =
+                rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{moveCountAsI32Type, decSizeAsI32Type});
+            auto moveCountAsIndexType = 
+                llvmIndexType != moveCountAsI32Type.getType()
+                ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, moveCountAsI32Type)
+                : (mlir::Value) moveCountAsI32Type;
+
+            // realloc
+            auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, currentPtr, ValueRange{startIndexAsI32Type});
+            auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, offsetStart, ValueRange{decSizeAsI32Type});
+            auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, offsetStart, ValueRange{incSizeAsI32Type});
+            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexType);
+
+            auto allocated = ch.MemoryReallocBitcast(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
+            return allocated;
+        };
+
+        auto cond = rewriter.create<arith::CmpIOp>(loc, th.getLLVMBoolType(), arith::CmpIPredicateAttr::get(rewriter.getContext(), arith::CmpIPredicate::ugt), incSizeAsI32Type, decSizeAsI32Type);
+        auto allocated = clh.conditionalExpressionLowering(loc, llvmPtrElementType, cond, increaseArrayFunc, decreaseArrayFunc);
+
+        mlir::Value index = startIndexAsI32Type;
+        auto next = false;
+        mlir::Value value1;
+        for (auto itemPair : llvm::zip(transformed.getItems(), spliceOp.getItems()))
+        {
+            auto item = std::get<0>(itemPair);
+            auto itemOrig = std::get<1>(itemPair);
+
+            if (next)
+            {
+                if (!value1)
+                {
+                    value1 = clh.createIndexConstantOf(llvmIndexType, 1);
+                }
+
+                index = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{index, value1});
+            }
+
+            // save new element
+            auto offset = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, allocated, ValueRange{index});
+
+            auto effectiveItem = item;
+            if (elementType != itemOrig.getType())
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! push cast: store type: " << elementType
+                                        << " value type: " << item.getType() << "\n";);
+                llvm_unreachable("cast must happen earlier");
+                // effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, elementType, item);
+            }
+
+            auto save = rewriter.create<LLVM::StoreOp>(loc, effectiveItem, offset);
+            next = true;
+        }
+
+        rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
+
+        newCountAsI32Type = 
+            newCountAsIndexType.getType() != llvmI32Type
+                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, llvmI32Type, newCountAsIndexType)
+                : (mlir::Value) newCountAsIndexType;
+
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
+
+        rewriter.replaceOp(spliceOp, ValueRange{newCountAsI32Type});
         return success();
     }
 };
@@ -5725,6 +5984,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     RewritePatternSet patterns(&getContext());
     populateAffineToStdConversionPatterns(patterns);
     arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
+    index::populateIndexToLLVMConversionPatterns(typeConverter, patterns);
     cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
     populateMathToLLVMConversionPatterns(typeConverter, patterns);
     populateFuncToLLVMConversionPatterns(typeConverter, patterns);
@@ -5742,12 +6002,11 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
-        ArrayPopOpLowering, ArrayShiftOpLowering, ArrayViewOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, 
-        PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, 
-        StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, 
-        CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering,
-        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering,
-        AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
+        ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering,  PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, 
+        LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, 
+        UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, 
+        VariableOpLowering, AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
         ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
         LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
         GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,

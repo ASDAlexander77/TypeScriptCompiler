@@ -1776,9 +1776,9 @@ class MLIRGenImpl
         }
     }
 
-    bool isDelayedInstantiationForSpeecializedArrowFunctionReference(mlir::Value arrowFunctionRefValue)
+    bool isGenericFunctionReference(mlir::Value functionRefValue)
     {
-        auto currValue = arrowFunctionRefValue;
+        auto currValue = functionRefValue;
         if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
             currValue = createBoundFunctionOp.getFunc();
@@ -1843,11 +1843,10 @@ class MLIRGenImpl
         return funcOp->getFuncType();
     }
 
-    mlir::LogicalResult instantiateSpecializedArrowFunctionHelper(mlir::Location location,
-                                                                  mlir::Value arrowFunctionRefValue,
-                                                                  mlir::Type recieverType, const GenContext &genContext)
+    mlir::LogicalResult instantiateSpecializedFunction(mlir::Location location,
+        mlir::Value functionRefValue, mlir::Type recieverType, const GenContext &genContext)
     {
-        auto currValue = arrowFunctionRefValue;
+        auto currValue = functionRefValue;
         auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
         if (createBoundFunctionOp)
         {
@@ -1856,45 +1855,58 @@ class MLIRGenImpl
 
         auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>();
         assert(symbolOp);
-        auto arrowFunctionName = symbolOp.getIdentifier();
+        auto functionName = symbolOp.getIdentifier();
 
         // it is not generic arrow function
-        auto arrowFunctionGenericTypeInfo = getGenericFunctionInfoByFullName(arrowFunctionName);
+        auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(functionName);
 
-        GenContext arrowFuncGenContext(genContext);
-        arrowFuncGenContext.receiverFuncType = recieverType;
+        GenContext funcGenContext(genContext);
+        funcGenContext.receiverFuncType = recieverType;
+        funcGenContext.specialization = true;
+        funcGenContext.instantiateSpecializedFunction = true;
+        funcGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
+
+        if (mlir::failed(processTypeArgumentsFromFunctionParameters(functionGenericTypeInfo->functionDeclaration, funcGenContext)))
+        {
+            emitError(location) << "can't instantiate specialized function from function parameters.";
+            return mlir::failure();
+        }
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
             builder.setInsertionPointToStart(theModule.getBody());
 
             MLIRNamespaceGuard nsGuard(currentNamespace);
-            currentNamespace = arrowFunctionGenericTypeInfo->elementNamespace;
+            currentNamespace = functionGenericTypeInfo->elementNamespace;
 
-            auto [result, arrowFuncOp, arrowFuncName, isGeneric] =
-                mlirGenFunctionLikeDeclaration(arrowFunctionGenericTypeInfo->functionDeclaration, arrowFuncGenContext);
+            auto [result, specFuncOp, specFuncName, isGeneric] =
+                mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, funcGenContext);
             if (mlir::failed(result))
             {
-                emitError(location) << "can't instantiate specialized arrow function.";
+                emitError(location) << "can't instantiate specialized function.";
                 return mlir::failure();
             }
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! fixing arrow func: " << arrowFuncName << " type: ["
-                                    << arrowFuncOp.getFunctionType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! fixing spec. func: " << specFuncName << " type: ["
+                                    << specFuncOp.getFunctionType() << "\n";);
 
-            // fix symbolref
-            currValue.setType(arrowFuncOp.getFunctionType());
+            // update symbolref
+            currValue.setType(specFuncOp.getFunctionType());
+            if (functionName != specFuncName)
+            {
+                symbolOp.setIdentifier(specFuncName);
+            }
 
             if (createBoundFunctionOp)
             {
                 // fix create bound if any
                 TypeSwitch<mlir::Type>(createBoundFunctionOp.getType())
                     .template Case<mlir_ts::BoundFunctionType>([&](auto boundFunc) {
-                        arrowFunctionRefValue.setType(getBoundFunctionType(arrowFuncOp.getFunctionType()));
+                        functionRefValue.setType(getBoundFunctionType(specFuncOp.getFunctionType()));
                     })
                     .template Case<mlir_ts::HybridFunctionType>([&](auto hybridFuncType) {
-                        arrowFunctionRefValue.setType(
-                            mlir_ts::HybridFunctionType::get(builder.getContext(), arrowFuncOp.getFunctionType()));
+                        functionRefValue.setType(
+                            mlir_ts::HybridFunctionType::get(builder.getContext(), specFuncOp.getFunctionType()));
                     })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
             }
@@ -1923,6 +1935,10 @@ class MLIRGenImpl
                 LLVM_DEBUG(llvm::dbgs() << "\n!! can't find : " << typeParamName << " in type params: " << "\n";);
                 LLVM_DEBUG(for (auto typeParam : typeParams) llvm::dbgs() << "\t!! type param: " << typeParam->getName() << "\n";);
 
+                // experiment
+                //auto typeParameterDOM = std::make_shared<TypeParameterDOM>(typeParamName.str());
+                //genericTypeGenContext.typeParamsWithArgs[typeParamName] = {typeParameterDOM, inferredType};
+                
                 //return mlir::failure();
                 // just ignore it
                 continue;
@@ -1963,7 +1979,7 @@ class MLIRGenImpl
             return {mlir::failure(), true};
         }
 
-        if (isDelayedInstantiationForSpeecializedArrowFunctionReference(argOp))
+        if (isGenericFunctionReference(argOp))
         {
             GenContext typeGenContext(genericTypeGenContext);
             typeGenContext.dummyRun = true;
@@ -1993,7 +2009,7 @@ class MLIRGenImpl
 
             if (!newArrowFuncType)
             {
-                return {mlir::failure(), false};
+                return {mlir::failure(), true};
             }
 
             // infer second type when ArrowType is fully built
@@ -2076,6 +2092,12 @@ class MLIRGenImpl
                             continue;
                         }
 
+                        if (paramInfo->getIsMultiArgsParam())
+                        {
+                            processed++;
+                            continue;
+                        }
+
                         break;
                     }
 
@@ -2136,6 +2158,13 @@ class MLIRGenImpl
                 {
                     break;
                 }
+
+                if (totalProcessed > funcOp->getParams().size() + 100)
+                {
+                    // TODO: find out the issue
+                    emitError(location) << "loop detected.";
+                    return mlir::failure();
+                }
             } while (true);
         }
 
@@ -2163,7 +2192,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    std::tuple<mlir::LogicalResult, mlir_ts::FunctionType, std::string> instantiateSpecializedFunctionType(
+    std::tuple<mlir::LogicalResult, mlir_ts::FunctionType, std::string> instantiateSpecializedFunction(
         mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, bool skipThisParam, const GenContext &genContext)
     {
         auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(name);
@@ -2289,11 +2318,11 @@ class MLIRGenImpl
                 for (auto op : genContext.callOperands)
                 {
                     opIndex++;
-                    if (isDelayedInstantiationForSpeecializedArrowFunctionReference(op))
+                    if (isGenericFunctionReference(op))
                     {
                         LLVM_DEBUG(llvm::dbgs() << "\n!! delayed arrow func instantiation for func type: "
                                                 << funcOp.getFunctionType() << "\n";);
-                        auto result = instantiateSpecializedArrowFunctionHelper(
+                        auto result = instantiateSpecializedFunction(
                             location, op, funcOp.getFunctionType().getInput(opIndex), genContext);
                         if (mlir::failed(result))
                         {
@@ -2598,7 +2627,7 @@ class MLIRGenImpl
             }
 
             auto [result, funcType, funcSymbolName] =
-                instantiateSpecializedFunctionType(location, funcName, typeArguments, skipThisParam, initSpecGenContext);
+                instantiateSpecializedFunction(location, funcName, typeArguments, skipThisParam, initSpecGenContext);
             if (mlir::failed(result))
             {
                 emitError(location) << "can't instantiate function. '" << funcName
@@ -3027,6 +3056,10 @@ class MLIRGenImpl
         if (variableDeclarationInfo.isConst)
         {
             genContextWithNameReceiver.receiverName = variableDeclarationInfo.fullName;
+        }
+        else
+        {
+            genContextWithNameReceiver.isGlobalVarReceiver = true;
         }
 
         if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContextWithNameReceiver)))
@@ -3877,6 +3910,76 @@ class MLIRGenImpl
         return mlir::Type();
     }
 
+    bool isGenericParameters(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
+    {
+        auto isGenericTypes = false;
+        auto formalParams = parametersContextAST->parameters;
+        auto index = 0;
+        for (auto arg : formalParams)
+        {
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+
+            mlir::Type type;
+            auto typeParameter = arg->type;
+
+            auto location = loc(typeParameter);
+
+            if (typeParameter)
+            {
+                type = getType(typeParameter, genContext);
+            }
+
+            // process init value
+            auto initializer = arg->initializer;
+            if (initializer)
+            {
+                continue;
+            }
+
+            if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
+            {
+                type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
+                if (!type)
+                {
+                    return false;
+                }
+
+                isGenericTypes |= mth.isGenericType(type);
+            }
+
+            // in case of binding
+            if (mth.isNoneType(type) && isBindingPattern)
+            {
+                type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
+            }
+
+            if (mth.isNoneType(type))
+            {
+                if (!typeParameter && !initializer)
+                {
+                    return true;
+                }
+            }
+
+            index++;
+        }
+
+        return false;
+    }
+
+    mlir::StringRef getArgumentName(int index) {
+        std::stringstream ss;
+        ss << "arg" << index;
+        return mlir::StringRef(ss.str()).copy(stringAllocator);        
+    }
+
+    mlir::StringRef getParameterGenericTypeName(std::string name) {
+        mlir::StringRef typeParamNamePtr;
+        std::stringstream ss;
+        ss << "TGenParam_" << name;
+        return mlir::StringRef(ss.str()).copy(stringAllocator);
+    }
+
     std::tuple<mlir::LogicalResult, bool, std::vector<std::shared_ptr<FunctionParamDOM>>> mlirGenParameters(
         SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
@@ -3917,13 +4020,10 @@ class MLIRGenImpl
         auto index = 0;
         for (auto arg : formalParams)
         {
-            mlir::StringRef namePtr;
-            namePtr = MLIRHelper::getName(arg->name, stringAllocator);
+            auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
             if (namePtr.empty())
             {
-                std::stringstream ss;
-                ss << "arg" << index;
-                namePtr = mlir::StringRef(ss.str()).copy(stringAllocator);
+                namePtr = getArgumentName(index);
             }
 
             auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
@@ -3972,6 +4072,11 @@ class MLIRGenImpl
             if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
             {
                 type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
+                if (!type)
+                {
+                    emitError(location) << "can't resolve type for parameter '" << namePtr << "', the receiver function has less parameters.";
+                    return {mlir::failure(), isGenericTypes, params};                    
+                }
 
                 LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "\n");
 
@@ -4228,6 +4333,9 @@ class MLIRGenImpl
             return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
         }
 
+        GenContext funcProtoGenContext(genContext);
+        funcProtoGenContext.funcProto = funcProto;
+
         auto fullName = funcProto->getName();
 
         mlir_ts::FunctionType functionDiscovered;
@@ -4239,26 +4347,26 @@ class MLIRGenImpl
 
         // discover type & args
         // seems we need to discover it all the time due to captured vars
-        auto detectReturnType = (!funcType || genContext.forceDiscover || !functionDiscovered) && !funcProto->getIsGeneric();
+        auto detectReturnType = (!funcType || funcProtoGenContext.forceDiscover || !functionDiscovered) && !funcProto->getIsGeneric();
         if (detectReturnType)
         {
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
-                                                                          argTypes, funcProto, genContext)))
+                                                                          argTypes, funcProto, funcProtoGenContext)))
             {
-                if (!genContext.forceDiscover && funcType && funcType.getNumResults() > 0)
+                if (!funcProtoGenContext.forceDiscover && funcType && funcType.getNumResults() > 0)
                 {
                     funcProto->setReturnType(funcType.getResult(0));
                 }
                 else if (auto typeParameter = functionLikeDeclarationBaseAST->type)
                 {
                     // rewrite ret type with actual value in case of specialized generic
-                    auto returnType = getType(typeParameter, genContext);
+                    auto returnType = getType(typeParameter, funcProtoGenContext);
                     funcProto->setReturnType(returnType);
                 }
-                else if (genContext.receiverFuncType)
+                else if (funcProtoGenContext.receiverFuncType)
                 {
                     // rewrite ret type with actual value
-                    auto &argTypeDestFuncType = genContext.receiverFuncType;
+                    auto &argTypeDestFuncType = funcProtoGenContext.receiverFuncType;
                     auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
                         ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
                         : mlir::Type();
@@ -4331,7 +4439,7 @@ class MLIRGenImpl
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
         }
 
-        if (genContext.specialization)
+        if (funcProtoGenContext.specialization)
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "specialization"), mlir::UnitAttr::get(builder.getContext())});
         }
@@ -4778,6 +4886,10 @@ class MLIRGenImpl
             return {mlir::failure(), name};
         }
 
+        if (functionLikeDeclarationBaseAST->typeParameters.size() == 0) {
+            processTypeParametersFromFunctionParameters(functionLikeDeclarationBaseAST, typeParameters, genContext);
+        }
+
         // register class
         auto namePtr = StringRef(name).copy(stringAllocator);
         auto fullNamePtr = StringRef(fullName).copy(stringAllocator);
@@ -4837,7 +4949,9 @@ class MLIRGenImpl
     {
         auto funcDeclGenContext = GenContext(genContext);
                 
-        auto isGenericFunction = functionLikeDeclarationBaseAST->typeParameters.size() > 0;
+        auto isGenericFunction = 
+            functionLikeDeclarationBaseAST->typeParameters.size() > 0 
+            || !genContext.isGlobalVarReceiver && isGenericParameters(functionLikeDeclarationBaseAST, genContext);
         if (isGenericFunction && !funcDeclGenContext.instantiateSpecializedFunction)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);
@@ -4852,7 +4966,7 @@ class MLIRGenImpl
         }
 
         // do not process generic functions more then 1 time
-        if (isGenericFunction && funcDeclGenContext.typeParamsWithArgs.size() > 0)
+        if (isGenericFunction && funcDeclGenContext.instantiateSpecializedFunction)
         {
             auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, funcDeclGenContext);
 
@@ -6202,6 +6316,10 @@ class MLIRGenImpl
                             typePredicateType, 
                             genContext);
                     }
+                    else
+                    {
+                        llvm_unreachable("type predicate can't find parameter index. check funcProto context");
+                    }
                 }
             }
 
@@ -6762,21 +6880,27 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
-        auto iteratorIdent = (forOfStatementAST->awaitModifier) ? SYMBOL_ASYNC_ITERATOR : SYMBOL_ITERATOR;
-        if (auto iteratorType = evaluateProperty(exprValue, iteratorIdent, genContext))
+        auto skip = exprValue.getType().isa<mlir_ts::ArrayType>() 
+                 || exprValue.getType().isa<mlir_ts::StringType>();
+        // we need to ignore SYMBOL_ITERATOR for array to use simplier method and do not cause the stackoverflow
+        if (!skip)
         {
-            if (auto iteratorValue = mlirGenCallThisMethod(location, exprValue, iteratorIdent, undefined, undefined, genContext))
+            auto iteratorIdent = (forOfStatementAST->awaitModifier) ? SYMBOL_ASYNC_ITERATOR : SYMBOL_ITERATOR;
+            if (auto iteratorType = evaluateProperty(exprValue, iteratorIdent, genContext))
             {
-                exprValue = V(iteratorValue);
+                if (auto iteratorValue = mlirGenCallThisMethod(location, exprValue, iteratorIdent, undefined, undefined, genContext))
+                {
+                    exprValue = V(iteratorValue);
+                }
             }
-        }
 
-        auto propertyType = evaluateProperty(exprValue, ITERATOR_NEXT, genContext);
-        if (propertyType)
-        {
-            if (mlir::succeeded(mlirGenES2015(forOfStatementAST, exprValue, genContext)))
+            auto propertyType = evaluateProperty(exprValue, ITERATOR_NEXT, genContext);
+            if (propertyType)
             {
-                return mlir::success();
+                if (mlir::succeeded(mlirGenES2015(forOfStatementAST, exprValue, genContext)))
+                {
+                    return mlir::success();
+                }
             }
         }
 
@@ -7562,6 +7686,11 @@ class MLIRGenImpl
         auto leftExpressionValue = V(result);
 
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
+        if (!resultWhenFalseType)
+        {
+            return mlir::failure();
+        }
+
         auto resultType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
 
         CAST_A(condValue, location, getBooleanType(), leftExpressionValue, genContext);
@@ -9725,10 +9854,28 @@ class MLIRGenImpl
         mlir::Type elementType;
         if (auto arrayTyped = arrayType.dyn_cast<mlir_ts::ArrayType>())
         {
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto attr = fieldName.getValue();
+                if (attr.isa<mlir::StringAttr>()) 
+                {
+                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                }
+            }
+
             elementType = arrayTyped.getElementType();
         }
         else if (auto vectorType = arrayType.dyn_cast<mlir_ts::ConstArrayType>())
         {
+            if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                auto attr = fieldName.getValue();
+                if (attr.isa<mlir::StringAttr>()) 
+                {
+                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                }
+            }
+
             elementType = vectorType.getElementType();
         }
         else if (arrayType.isa<mlir_ts::StringType>())
@@ -11873,6 +12020,16 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+        if (auto array = type.dyn_cast<mlir_ts::StringType>())
+        {
+            // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
+            values.push_back({itemValue, true, true});
+
+            accumulateArrayItemType(getCharType(), arrayInfo);
+
+            return mlir::success();
+        }        
+
         auto nextPropertyType = evaluateProperty(itemValue, ITERATOR_NEXT, genContext);
         if (nextPropertyType)
         {
@@ -13114,6 +13271,17 @@ class MLIRGenImpl
 
     mlir::Value resolveIdentifierInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
+        if (getGenericFunctionMap().count(name))
+        {
+            auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
+
+            auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
+                location, genericFunctionInfo->funcType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericFunctionInfo->name));
+            funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return funcSymbolOp;
+        }
+
         auto value = resolveFunctionNameInNamespace(location, name, genContext);
         if (value)
         {
@@ -13131,17 +13299,6 @@ class MLIRGenImpl
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
             return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first, enumTypeInfo.second), enumTypeInfo.second);
-        }
-
-        if (getGenericFunctionMap().count(name))
-        {
-            auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
-
-            auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
-                location, genericFunctionInfo->funcType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericFunctionInfo->name));
-            funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-            return funcSymbolOp;
         }
 
         if (getNamespaceMap().count(name))
@@ -13401,6 +13558,154 @@ class MLIRGenImpl
 
         return mlir::success();
     }
+
+    mlir::LogicalResult processTypeParametersFromFunctionParameters(SignatureDeclarationBase signatureDeclarationBase,
+                                              llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams,
+                                              const GenContext &genContext)
+    {
+        auto isGenericTypes = false;
+        auto formalParams = signatureDeclarationBase->parameters;
+        auto index = 0;
+        for (auto arg : formalParams)
+        {
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+
+            mlir::Type type;
+            auto isMultiArgs = !!arg->dotDotDotToken;
+            auto isOptional = !!arg->questionToken;            
+            auto typeParameter = arg->type;
+
+            auto location = loc(typeParameter);
+
+            if (typeParameter)
+            {
+                type = getType(typeParameter, genContext);
+            }
+
+            // process init value
+            auto initializer = arg->initializer;
+            if (initializer)
+            {
+                continue;
+            }
+
+            if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
+            {
+                type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
+                if (!type) continue;
+                isGenericTypes |= mth.isGenericType(type);
+            }
+
+            // in case of binding
+            if (mth.isNoneType(type) && isBindingPattern)
+            {
+                type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
+            }
+
+            if (mth.isNoneType(type))
+            {
+                if (!typeParameter && !initializer)
+                {
+                    auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
+                    if (namePtr.empty())
+                    {
+                        namePtr = getArgumentName(index);
+                    }                    
+
+                    auto typeParamNamePtr = getParameterGenericTypeName(namePtr.str());      
+                    auto &typeParameters = signatureDeclarationBase->typeParameters;
+                    auto found = std::find_if(typeParameters.begin(), typeParameters.end(),
+                                            [&](auto &paramItem) { return MLIRHelper::getName( paramItem->name) == typeParamNamePtr; });
+                    if (found == typeParameters.end())
+                    {
+                        NodeFactory nf(NodeFactoryFlags::None);
+                        auto wname = stows(typeParamNamePtr.str());
+                        auto typeParameterDeclaration = nf.createTypeParameterDeclaration(undefined, nf.createIdentifier(wname), undefined, undefined);
+                        signatureDeclarationBase->typeParameters.push_back(typeParameterDeclaration);
+
+                        TypeNode typeNode = nf.createTypeReferenceNode(nf.createIdentifier(wname));
+                        if (isMultiArgs)
+                        {
+                            typeNode = nf.createArrayTypeNode(typeNode);
+                        }
+
+                        if (isOptional)
+                        {
+                            typeNode = nf.createOptionalTypeNode(typeNode);
+                        }
+
+                        arg->type = typeNode;
+                    } 
+
+                    typeParams.push_back(std::make_shared<TypeParameterDOM>(typeParamNamePtr.str()));
+                }
+            }
+
+            index++;
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult processTypeArgumentsFromFunctionParameters(SignatureDeclarationBase signatureDeclarationBase,
+                                              const GenContext &genContext)
+    {
+        auto isGenericTypes = false;
+        auto formalParams = signatureDeclarationBase->parameters;
+        auto index = 0;
+        for (auto arg : formalParams)
+        {
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+
+            mlir::Type type;
+            //auto isMultiArgs = !!arg->dotDotDotToken;
+            //auto isOptional = !!arg->questionToken;            
+            auto typeParameter = arg->type;
+
+            auto location = loc(typeParameter);
+
+            if (typeParameter)
+            {
+                type = getType(typeParameter, genContext);
+            }
+
+            // process init value
+            auto initializer = arg->initializer;
+            if (initializer)
+            {
+                continue;
+            }
+
+            if (mth.isNoneType(type) && genContext.receiverFuncType && mth.isAnyFunctionType(genContext.receiverFuncType))
+            {
+                type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
+                if (!type) continue;
+                isGenericTypes |= mth.isGenericType(type);
+
+                auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
+                if (namePtr.empty())
+                {
+                    namePtr = getArgumentName(index);
+                }                    
+
+                auto typeParamNamePtr = getParameterGenericTypeName(namePtr.str());      
+                auto typeParam = std::make_shared<TypeParameterDOM>(typeParamNamePtr.str());
+                auto result = zipTypeParameterWithArgument(
+                    location, const_cast<GenContext &>(genContext).typeParamsWithArgs, typeParam, type, false, genContext);
+                EXIT_IF_FAILED(result.first);
+            }
+
+            // in case of binding
+            if (mth.isNoneType(type) && isBindingPattern)
+            {
+                type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
+            }
+
+            index++;
+        }
+
+        return mlir::success();
+    }    
 
     mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
     {
@@ -17501,6 +17806,13 @@ genContext);
                     value);
                 return V(builder.create<mlir_ts::CastOp>(location, type, funcValue));
             }
+        }
+
+        if (mth.isAnyFunctionType(valueType) && mth.isAnyFunctionType(type) && mth.isGenericType(valueType)) {
+            // need to instantiate generic method
+            auto result = instantiateSpecializedFunction(location, value, type, genContext);
+            EXIT_IF_FAILED(result);
+            // fall through to finish cast operation
         }
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));

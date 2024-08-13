@@ -6,8 +6,8 @@ function main() {
     let lambda4 = (y = "hello", ...rest) => { }
 
     let x = function (str = "hello", ...rest) { }
-    let y = (function (num = 10, boo = false, ...rest) { })()
-    let z = (function (num: number, boo = false, ...rest) { })(10)
+    let y = (function (num = 10, boo = false, ...rest: any[]) { })()
+    let z = (function (num: number, boo = false, ...rest: any[]) { })(10)
 
     print("done.");
 }

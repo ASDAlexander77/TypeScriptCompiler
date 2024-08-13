@@ -935,7 +935,7 @@ class CastLogicHelper
 
             auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
             auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
-            rewriter.create<mlir_ts::LoadSaveOp>(loc, ptrToArrayDst, ptrToArraySrc);
+            rewriter.create<mlir_ts::CopyStructOp>(loc, ptrToArrayDst, ptrToArraySrc);
 
             arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, llvmDestArray, copyAllocated);
         }
