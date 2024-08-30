@@ -14464,9 +14464,11 @@ class MLIRGenImpl
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
 
+            auto orderWeight = 0;
             for (auto &classMember : newClassPtr->extraMembers)
             {
-                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
+                orderWeight++;
+                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, orderWeight, genContext)))
                 {
                     notResolved++;
                 }
@@ -14474,6 +14476,8 @@ class MLIRGenImpl
 
             for (auto &classMember : classDeclarationAST->members)
             {
+                orderWeight++;
+
                 // DEBUG ON
                 LLVM_DEBUG(ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);\
                     auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();\
@@ -14493,7 +14497,7 @@ class MLIRGenImpl
                     notResolved++;
                 }
 
-                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
+                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, orderWeight, genContext)))
                 {
                     LLVM_DEBUG(ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);\
                         auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();\
@@ -14510,7 +14514,9 @@ class MLIRGenImpl
 
             for (auto &classMember : newClassPtr->extraMembersPost)
             {
-                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
+                orderWeight++;
+
+                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, orderWeight, genContext)))
                 {
                     notResolved++;
                 }
@@ -16128,14 +16134,14 @@ genContext);
             funcOp = funcOp_;
         }
 
-        void registerClassMethodMember()
+        void registerClassMethodMember(int orderWeight)
         {
             auto &methodInfos = newClassPtr->methods;
 
             if (newClassPtr->getMethodIndex(methodName) < 0)
             {
                 methodInfos.push_back(
-                    {methodName, getFuncType(), funcOp, isStatic, isAbstract || isVirtual, isAbstract, -1});
+                    {methodName, getFuncType(), funcOp, isStatic, isAbstract || isVirtual, isAbstract, -1, orderWeight});
             }
 
             if (propertyName.size() > 0)
@@ -16184,6 +16190,7 @@ genContext);
 
     mlir::LogicalResult mlirGenClassMethodMember(ClassLikeDeclaration classDeclarationAST,
                                                  ClassInfo::TypePtr newClassPtr, ClassElement classMember,
+                                                 int orderWeight,
                                                  const GenContext &genContext)
     {
         if (classMember->processed)
@@ -16242,7 +16249,7 @@ genContext);
         if (newClassPtr->isDynamicImport 
             && (classMethodMemberInfo.isStatic || classMethodMemberInfo.isConstructor || classMethodMemberInfo.methodName == NEW_METHOD_NAME))
         {
-            return mlirGenClassMethodMemberDynamicImport(classMethodMemberInfo, genContext);
+            return mlirGenClassMethodMemberDynamicImport(classMethodMemberInfo, orderWeight, genContext);
         }
 
         if (classMethodMemberInfo.isExport)
@@ -16267,7 +16274,7 @@ genContext);
         {
             classMethodMemberInfo.setFuncOp(funcOp);
             funcLikeDeclaration->processed = true;
-            classMethodMemberInfo.registerClassMethodMember();
+            classMethodMemberInfo.registerClassMethodMember(orderWeight);
             return mlir::success();
         }
 
@@ -16330,7 +16337,7 @@ genContext);
         return mlir::failure();
     }
 
-    mlir::LogicalResult mlirGenClassMethodMemberDynamicImport(ClassMethodMemberInfo &classMethodMemberInfo, const GenContext &genContext)
+    mlir::LogicalResult mlirGenClassMethodMemberDynamicImport(ClassMethodMemberInfo &classMethodMemberInfo, int orderWeight, const GenContext &genContext)
     {
         auto funcLikeDeclaration = classMethodMemberInfo.classMember.as<FunctionLikeDeclarationBase>();
 
@@ -16349,7 +16356,7 @@ genContext);
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
-            classMethodMemberInfo.registerClassMethodMember();
+            classMethodMemberInfo.registerClassMethodMember(orderWeight);
             return mlir::success();
         }
 

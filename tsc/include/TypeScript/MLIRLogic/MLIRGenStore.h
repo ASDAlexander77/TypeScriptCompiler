@@ -96,6 +96,7 @@ struct MethodInfo
     bool isVirtual;
     bool isAbstract;
     int virtualIndex;
+    int orderWeight;
 };
 
 struct GenericMethodInfo
@@ -588,6 +589,10 @@ struct ClassInfo
         }
 
         // methods
+        std::sort(methods.begin(), methods.end(), [&] (auto &method1, auto &method2) {
+            return method1.orderWeight < method2.orderWeight;
+        });
+
         for (auto &method : methods)
         {
 #ifndef ADD_STATIC_MEMBERS_TO_VTABLE            
