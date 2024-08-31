@@ -580,9 +580,7 @@ def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
   let assemblyFormat = "`(` $reference `)` attr-dict `:` type($reference)";
 }
 
-def TypeScript_CallOp : TypeScript_Op<"Call",
-    [CallOpInterface,
-     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "call operation";
   let description = [{
     The `call` operation represents a direct call to a function that is within
@@ -596,7 +594,7 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
   }];
 
   let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$callOperands);
-  let results = (outs Variadic<AnyType>);
+  let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
     OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
@@ -644,9 +642,6 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
 def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       CallOpInterface,
       DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-      TypesMatchWith<"callee input types match argument types",
-                     "callee", "callOperands",
-                     "($_self.isa<HybridFunctionType>() ? $_self.cast<HybridFunctionType>().getInputs() : $_self.cast<FunctionType>().getInputs())">,
       TypesMatchWith<"callee result types match result types",
                      "callee", "results",
                      "($_self.isa<HybridFunctionType>() ? $_self.cast<HybridFunctionType>().getResults() : $_self.cast<FunctionType>().getResults())">
@@ -699,7 +694,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "$callee `(` $callOperands `)` attr-dict `:` type($callee)";
+  let assemblyFormat = "$callee `[` type($callee) `]` `(` $callOperands `)` attr-dict `:` functional-type($callOperands, results)";
 }
 
 def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [

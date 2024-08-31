@@ -997,7 +997,10 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
     auto fnType = fn.getFunctionType();
 
     auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
-    for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
+    auto e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size();
+    if (fnType.getIsVarArg()) e--;
+
+    for (auto i = 0; i < e; ++i)
     {
         if (getOperand(i).getType() != fnType.getInput(i))
         {
@@ -1006,7 +1009,8 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
         }
     }
 
-    for (unsigned i = 0, e = fnType.getNumResults(); i != e; ++i)
+    e = fnType.getNumResults();
+    for (auto i = 0; i < e; ++i)
     {
         if (getResult(i).getType() != fnType.getResult(i))
         {
@@ -1025,21 +1029,27 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
 {
     mlir::ArrayRef<mlir::Type> input;
     mlir::ArrayRef<mlir::Type> results;
+    auto isVarArgs = false;
 
     // Verify that the operand and result types match the callee.
     if (auto funcType = getCallee().getType().dyn_cast<mlir_ts::FunctionType>())
     {
         input = funcType.getInputs();
         results = funcType.getResults();
+        isVarArgs = funcType.getIsVarArg();
     }
     else if (auto hybridFuncType = getCallee().getType().dyn_cast<mlir_ts::HybridFunctionType>())
     {
         input = hybridFuncType.getInputs();
         results = hybridFuncType.getResults();
+        isVarArgs = hybridFuncType.getIsVarArg();
     }
 
     auto optionalFromValue = (int)input.size() - (int)getNumOperands();
-    for (unsigned i = 0, e = optionalFromValue == -1 ? (int)input.size() : getOperands().size(); i != e; ++i)
+    auto e = optionalFromValue == -1 ? (int)input.size() : getOperands().size(); 
+    if (isVarArgs) e--;
+
+    for (auto i = 0; i < e; ++i)
     {
         if (getOperand(i + 1).getType() != input[i])
         {
@@ -1048,13 +1058,16 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
         }
     }
 
-    for (unsigned i = 0, e = results.size(); i != e; ++i)
+    // it is matched in TypesMatchWith in .td file
+    /*
+    for (auto i = 0, e = results.size(); i != e; ++i)
     {
         if (getResult(i).getType() != results[i])
         {
             return emitOpError("result type mismatch");
         }
     }
+    */
 
     return success();
 }

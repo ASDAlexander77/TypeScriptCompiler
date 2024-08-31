@@ -4327,7 +4327,10 @@ class MLIRGenImpl
         mlir_ts::FuncOp funcOp;
 
         auto [funcProto, funcType, argTypes] =
-            mlirGenFunctionSignaturePrototype(functionLikeDeclarationBaseAST, false, genContext);
+            mlirGenFunctionSignaturePrototype(
+                functionLikeDeclarationBaseAST, 
+                hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::DeclareKeyword), 
+                genContext);
         if (!funcProto)
         {
             return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
@@ -10523,9 +10526,11 @@ class MLIRGenImpl
             }
 
             // if last is vararg
+            auto isNativeVarArgsCall = false;
             if (calledFuncType.isVarArg())
             {
                 auto varArgsType = calledFuncType.getInputs().back();
+                isNativeVarArgsCall = varArgsType.isa<mlir_ts::AnyType>();
                 auto fromIndex = calledFuncType.getInputs().size() - 1;
                 auto toIndex = operands.size();
 
@@ -10533,7 +10538,8 @@ class MLIRGenImpl
                 LLVM_DEBUG(llvm::dbgs() << "\t last value = " << operands.back() << "\n";);
 
                 // check if vararg is prepared earlier
-                auto isVarArgPreparedAlready = (toIndex - fromIndex) == 1 && operands.back().getType() == varArgsType;
+                auto isVarArgPreparedAlready = (toIndex - fromIndex) == 1 && (operands.back().getType() == varArgsType)
+                  || isNativeVarArgsCall;
                 if (!isVarArgPreparedAlready)
                 {
                     SmallVector<mlir::Value, 4> varArgOperands;
@@ -10556,7 +10562,7 @@ class MLIRGenImpl
 
             VALIDATE_FUNC(calledFuncType, location)
 
-            // default call by name
+            // default
             auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(
                 MLIRHelper::getCallSiteLocation(funcRefValue, location),
                 funcRefValue, operands);
@@ -10980,6 +10986,7 @@ class MLIRGenImpl
     {
         auto i = 0; // we need to shift in case of 'this'
         auto lastArgIndex = argFuncTypes.size() - 1;
+        auto isVarArgsNonArray = false;
         mlir::Type varArgType;
         if (isVarArg)
         {
@@ -10987,6 +10994,10 @@ class MLIRGenImpl
             if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(lastType))
             {
                 lastType = arrayType.getElementType();
+            }
+            else
+            {
+                isVarArgsNonArray = true;
             }
 
             varArgType = lastType;
@@ -11011,7 +11022,7 @@ class MLIRGenImpl
                 // if we have processed VarArg - do nothing
                 if (i == lastArgIndex 
                     && lastArgIndex == operands.size() - 1
-                    && value.getType() == getArrayType(varArgType))
+                    && (isVarArgsNonArray || value.getType() == getArrayType(varArgType)))
                 {
                     // nothing todo 
                     break;

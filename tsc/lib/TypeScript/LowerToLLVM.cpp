@@ -1029,6 +1029,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         auto &typeConverter = *getTypeConverter();
         auto fnType = funcOp.getFunctionType();
+        auto isNativeVarArgs = fnType.getIsVarArg() && fnType.getInputs().back().isa<mlir_ts::AnyType>();
 
         TypeConverter::SignatureConversion signatureInputsConverter(fnType.getNumInputs());
         for (auto argType : enumerate(funcOp.getFunctionType().getInputs()))
@@ -1088,11 +1089,17 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             }
         }
 
-        auto newFuncOp =
-            rewriter.create<mlir::func::FuncOp>(location, funcOp.getName(),
-                                          rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(),
-                                                                   signatureResultsConverter.getConvertedTypes()),
-                                          ArrayRef<NamedAttribute>{}, argDictAttrs);
+        auto convertedFuncType = rewriter.getFunctionType(
+            !isNativeVarArgs 
+                ? signatureInputsConverter.getConvertedTypes() 
+                : ArrayRef<mlir::Type>(signatureInputsConverter.getConvertedTypes().begin(), signatureInputsConverter.getConvertedTypes().end() - 1),
+            signatureResultsConverter.getConvertedTypes());
+        auto newFuncOp = 
+            rewriter.create<mlir::func::FuncOp>(location, funcOp.getName(), convertedFuncType, ArrayRef<NamedAttribute>{}, argDictAttrs);
+        if (isNativeVarArgs)
+        {
+            newFuncOp->setAttr("func.varargs", BoolAttr::get(rewriter.getContext(), true));
+        }
 
         for (const auto &namedAttr : funcOp->getAttrs())
         {
