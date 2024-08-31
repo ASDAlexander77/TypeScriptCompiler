@@ -996,10 +996,7 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
     // Verify that the operand and result types match the callee.
     auto fnType = fn.getFunctionType();
 
-    auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
-    auto e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size();
-    if (fnType.getIsVarArg()) e--;
-
+    auto e = (int) fnType.getNumInputs();
     for (auto i = 0; i < e; ++i)
     {
         if (getOperand(i).getType() != fnType.getInput(i))
@@ -1029,26 +1026,20 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
 {
     mlir::ArrayRef<mlir::Type> input;
     mlir::ArrayRef<mlir::Type> results;
-    auto isVarArgs = false;
 
     // Verify that the operand and result types match the callee.
     if (auto funcType = getCallee().getType().dyn_cast<mlir_ts::FunctionType>())
     {
         input = funcType.getInputs();
         results = funcType.getResults();
-        isVarArgs = funcType.getIsVarArg();
     }
     else if (auto hybridFuncType = getCallee().getType().dyn_cast<mlir_ts::HybridFunctionType>())
     {
         input = hybridFuncType.getInputs();
         results = hybridFuncType.getResults();
-        isVarArgs = hybridFuncType.getIsVarArg();
     }
 
-    auto optionalFromValue = (int)input.size() - (int)getNumOperands();
-    auto e = optionalFromValue == -1 ? (int)input.size() : getOperands().size(); 
-    if (isVarArgs) e--;
-
+    auto e = (int)input.size(); 
     for (auto i = 0; i < e; ++i)
     {
         if (getOperand(i + 1).getType() != input[i])

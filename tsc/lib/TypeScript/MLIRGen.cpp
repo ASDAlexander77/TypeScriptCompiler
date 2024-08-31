@@ -4420,6 +4420,11 @@ class MLIRGenImpl
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
             }
+
+            if (name == "varargs") 
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), "func.varargs"), mlir::BoolAttr::get(builder.getContext(), true)});
+            }
         });
 
         // add modifiers
@@ -4446,7 +4451,7 @@ class MLIRGenImpl
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "specialization"), mlir::UnitAttr::get(builder.getContext())});
         }
-
+            
         if (funcType)
         {
             auto it = getCaptureVarsMap().find(funcProto->getName());
@@ -10530,7 +10535,6 @@ class MLIRGenImpl
             if (calledFuncType.isVarArg())
             {
                 auto varArgsType = calledFuncType.getInputs().back();
-                isNativeVarArgsCall = varArgsType.isa<mlir_ts::AnyType>();
                 auto fromIndex = calledFuncType.getInputs().size() - 1;
                 auto toIndex = operands.size();
 
@@ -10986,7 +10990,6 @@ class MLIRGenImpl
     {
         auto i = 0; // we need to shift in case of 'this'
         auto lastArgIndex = argFuncTypes.size() - 1;
-        auto isVarArgsNonArray = false;
         mlir::Type varArgType;
         if (isVarArg)
         {
@@ -10994,10 +10997,6 @@ class MLIRGenImpl
             if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(lastType))
             {
                 lastType = arrayType.getElementType();
-            }
-            else
-            {
-                isVarArgsNonArray = true;
             }
 
             varArgType = lastType;
@@ -11010,9 +11009,12 @@ class MLIRGenImpl
             mlir::Type argTypeDestFuncType;
             if (i >= argFuncTypes.size() && !isVarArg)
             {
-                emitError(value.getLoc())
-                    << "function does not have enough parameters to accept all arguments, arg #" << i;
-                return mlir::failure();
+                // emitError(value.getLoc())
+                //     << "function does not have enough parameters to accept all arguments, arg #" << i;
+                // return mlir::failure();
+
+                // to support native variadic calls
+                break;
             }
 
             if (isVarArg && i >= lastArgIndex)
@@ -11022,7 +11024,7 @@ class MLIRGenImpl
                 // if we have processed VarArg - do nothing
                 if (i == lastArgIndex 
                     && lastArgIndex == operands.size() - 1
-                    && (isVarArgsNonArray || value.getType() == getArrayType(varArgType)))
+                    && value.getType() == getArrayType(varArgType))
                 {
                     // nothing todo 
                     break;
