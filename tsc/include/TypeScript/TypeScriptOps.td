@@ -372,8 +372,7 @@ def TypeScript_ConvertFOp : TypeScript_Op<"ConvertF"> {
   }];
 
   let arguments = (ins Index:$bufferSize, TypeScript_String:$format, Variadic<AnyType>:$inputs);
-
-  let assemblyFormat = "`(` $bufferSize `,` $format `,` $inputs `)` attr-dict `:` type($inputs) ";  
+  let results = (outs TypeScript_String:$result);
 }
 
 def TypeScript_AssertOp : TypeScript_Op<"Assert"> {

@@ -361,7 +361,7 @@ class MLIRCustomMethods
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenConvertF(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenConvertF(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
     {
         mlir::Value bufferSize;
         mlir::Value format;
@@ -376,10 +376,11 @@ class MLIRCustomMethods
             bufferSize = castFn(location, mlir::IndexType::get(builder.getContext()), bufferSize, genContext);
         }
 
+        auto stringType = mlir_ts::StringType::get(builder.getContext());
         format = operands[1];
         if (!format.getType().isa<mlir_ts::StringType>())
         {
-            format = castFn(location, mlir_ts::StringType::get(builder.getContext()), format, genContext);
+            format = castFn(location, stringType, format, genContext);
         }
 
         SmallVector<mlir::Value> vals;
@@ -388,9 +389,9 @@ class MLIRCustomMethods
             vals.push_back(oper);
         }
 
-        auto printOp = builder.create<mlir_ts::ConvertFOp>(location, bufferSize, format, vals);
+        auto convertFOp = builder.create<mlir_ts::ConvertFOp>(location, stringType, bufferSize, format, vals);
 
-        return mlir::success();
+        return V(convertFOp);
     }
 
     mlir::LogicalResult mlirGenAssert(const mlir::Location &location, ArrayRef<mlir::Value> operands)
