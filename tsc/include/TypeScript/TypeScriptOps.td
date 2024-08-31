@@ -365,6 +365,17 @@ def TypeScript_PrintOp : TypeScript_Op<"Print"> {
   let assemblyFormat = "`(` $inputs `)` attr-dict `:` type($inputs) ";  
 }
 
+def TypeScript_ConvertFOp : TypeScript_Op<"ConvertF"> {
+  let summary = "format convert operation";
+  let description = [{
+    The "convertf" builtin operation to convert values into string with format.
+  }];
+
+  let arguments = (ins Index:$bufferSize, TypeScript_String:$format, Variadic<AnyType>:$inputs);
+
+  let assemblyFormat = "`(` $bufferSize `,` $format `,` $inputs `)` attr-dict `:` type($inputs) ";  
+}
+
 def TypeScript_AssertOp : TypeScript_Op<"Assert"> {
   let summary = "Assert operation";
   let description = [{
