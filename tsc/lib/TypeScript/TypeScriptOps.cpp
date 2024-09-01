@@ -995,6 +995,13 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
 
     // Verify that the operand and result types match the callee.
     auto fnType = fn.getFunctionType();
+    auto isVarArgAttr = fn->getAttrOfType<BoolAttr>("func.varargs");
+    auto isVarArg = (isVarArgAttr) ? isVarArgAttr.getValue() : false;
+
+    if (!isVarArg && fnType.getNumInputs() != getNumOperands())
+    {
+        return emitOpError("Expected ") << fnType.getNumInputs() << " arguments, but got " << getNumOperands() << ".";
+    }
 
     auto e = (int) fnType.getNumInputs();
     for (auto i = 0; i < e; ++i)
