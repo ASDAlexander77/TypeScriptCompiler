@@ -3300,6 +3300,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 if (attr.getName() == "export")
                 {
                     llvmGlobalOp.setSection("export");
+                    llvmGlobalOp.setPublic();
                 }
 
                 if (attr.getName() == "import")

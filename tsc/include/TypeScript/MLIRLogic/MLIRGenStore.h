@@ -69,6 +69,7 @@ struct VariableClass
     VariableType type;
     bool isExport;
     bool isImport;
+    bool isPublic;
     bool isUsing;
     bool isAppendingLinkage;
 

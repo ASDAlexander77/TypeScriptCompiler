@@ -2834,6 +2834,7 @@ class MLIRGenImpl
             isExternal = varClass == VariableType::External;
             isExport = varClass.isExport;
             isImport = varClass.isImport;
+            isPublic = varClass.isPublic;
             isAppendingLinkage = varClass.isAppendingLinkage;
         }
 
@@ -2934,6 +2935,7 @@ class MLIRGenImpl
         bool isGlobal;
         bool isConst;
         bool isExternal;
+        bool isPublic;
         bool isExport;
         bool isImport;
         bool isAppendingLinkage;
@@ -3164,6 +3166,7 @@ class MLIRGenImpl
             {
                 if (variableDeclarationInfo.isExternal)
                 {
+                    globalOp.setPublic();
                     if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext)))
                     {
                         return mlir::failure();
@@ -3178,6 +3181,15 @@ class MLIRGenImpl
                 }
                 else
                 {
+                    if (!variableDeclarationInfo.isExport && !variableDeclarationInfo.isPublic)
+                    {
+                        globalOp.setPrivate();
+                    }
+                    else 
+                    {
+                        globalOp.setPublic();
+                    }
+
                     createGlobalVariableInitialization(location, globalOp, variableDeclarationInfo, genContext);
                 }
 
@@ -3804,6 +3816,7 @@ class MLIRGenImpl
 
         if (variableDeclarationListAST->parent)
         {
+            varClass.isPublic = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
             varClass.isExport = getExportModifier(variableDeclarationListAST->parent);
             if (varClass.isExport)
             {
@@ -5068,9 +5081,12 @@ class MLIRGenImpl
             return {mlir::failure(), funcOp, "", false};
         }
 
+        funcOp.setPublic();
         // set visibility index
         auto hasExport = getExportModifier(functionLikeDeclarationBaseAST)
-            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport);
+            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport)
+            /* we need to forcebly set to Public to prevent SymbolDCEPass to remove unsed name */
+            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword);
         if (!hasExport && funcProto->getName() != MAIN_ENTRY_NAME)
         {
             funcOp.setPrivate();
