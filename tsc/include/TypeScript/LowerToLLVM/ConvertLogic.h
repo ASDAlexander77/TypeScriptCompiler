@@ -29,14 +29,10 @@ class ConvertLogic
     CodeLogicHelper clh;
     Location loc;
 
-  protected:
-    mlir::Type typeOfValueType;
-
   public:
     ConvertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
     {
-        typeOfValueType = th.getI8PtrType();
     }
 
     mlir::Value itoa(mlir::Value value)
@@ -92,17 +88,8 @@ class ConvertLogic
     {
         auto i8PtrTy = th.getI8PtrType();
 
-#ifdef WIN32
-        auto sprintfFuncOp = ch.getOrInsertFunction(
-            "sprintf_s", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), rewriter.getI32Type(), th.getI8PtrType()}, true));
-#else
-        auto sprintfFuncOp = ch.getOrInsertFunction(
-            "snprintf", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), rewriter.getI32Type(), th.getI8PtrType()}, true));
-#endif
-
-        auto bufferSizeValue = clh.createI32ConstantOf(buffSize);
-        // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto bufferSizeValue = clh.createIndexConstantOf(llvmIndexType, buffSize);
 
         auto opHash = std::hash<std::string>{}(format);
 
@@ -111,11 +98,8 @@ class ConvertLogic
 
         auto formatSpecifierCst = ch.getOrCreateGlobalString(formatVarName.str(), format);
 
-        mlir::Value valueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(value.getType()), value);
-
-        rewriter.create<LLVM::CallOp>(loc, sprintfFuncOp, ValueRange{newStringValue, bufferSizeValue, formatSpecifierCst, valueAsLLVMType});
-
-        return newStringValue;
+        auto newVal = rewriter.create<mlir_ts::ConvertFOp>(loc, th.getStringType(), bufferSizeValue, formatSpecifierCst, ValueRange{value});
+        return newVal;
     }
 
     mlir::Value sprintfOfF64(mlir::Value value)
