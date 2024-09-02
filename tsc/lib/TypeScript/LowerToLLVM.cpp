@@ -21,6 +21,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 
 #ifdef ENABLE_ASYNC
@@ -94,13 +95,14 @@ class ConvertFOpLowering : public TsLlvmPattern<mlir_ts::ConvertFOp>
 
         auto i8PtrTy = th.getI8PtrType();
         auto llvmI32Type = tch.convertType(th.getI32Type());
+        auto llvmIndexType = tch.convertType(rewriter.getIndexType());
 
 #ifdef WIN32
         auto sprintfFuncOp = ch.getOrInsertFunction(
-            "sprintf_s", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), rewriter.getI32Type(), th.getI8PtrType()}, true));
+            "sprintf_s", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), llvmIndexType, th.getI8PtrType()}, true));
 #else
         auto sprintfFuncOp = ch.getOrInsertFunction(
-            "snprintf", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), rewriter.getI32Type(), th.getI8PtrType()}, true));
+            "snprintf", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), llvmIndexType, th.getI8PtrType()}, true));
 #endif
 
         auto bufferSizeValue = transformed.getBufferSize();
@@ -108,11 +110,9 @@ class ConvertFOpLowering : public TsLlvmPattern<mlir_ts::ConvertFOp>
 
         auto formatSpecifierValue = transformed.getFormat();
 
-        auto bufferSizeValueAsInt32 = rewriter.create<mlir::index::CastUOp>(loc, llvmI32Type, bufferSizeValue);
-
         SmallVector<mlir::Value> values;
         values.push_back(newStringValue);
-        values.push_back(bufferSizeValueAsInt32);
+        values.push_back(bufferSizeValue);
         values.push_back(formatSpecifierValue);
         for (auto inputVal : transformed.getInputs()) values.push_back(inputVal);
 
@@ -5599,10 +5599,6 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return mlir::Type();
     }); 
 
-    converter.addConversion([&](mlir::IndexType type) {
-        return converter.getIndexType();
-    }); 
-
     /*
     converter.addSourceMaterialization(
         [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> std::optional<mlir::Value> {
@@ -5655,7 +5651,8 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
             mlir::math::MathDialect, 
             mlir::arith::ArithDialect, 
             mlir::cf::ControlFlowDialect, 
-            mlir::func::FuncDialect>();            
+            mlir::func::FuncDialect,
+            mlir::index::IndexDialect>();            
     }
 
     void runOnOperation() final;

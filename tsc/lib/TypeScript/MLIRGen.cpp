@@ -6149,6 +6149,7 @@ class MLIRGenImpl
                 {
                     typeToken = nf.createToken(SyntaxKind::BooleanKeyword);
                 }
+                // TODO: review using those types
                 else if (text == S("i32"))
                 {
                     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
@@ -18690,6 +18691,7 @@ genContext);
             {"ushort", true },
             {"int", true },
             {"uint", true },
+            {"index", true },
             {"long", true },
             {"ulong", true },
             {"char", true },
@@ -18780,6 +18782,7 @@ genContext);
             {"ushort", true },
             {"int", true },
             {"uint", true },
+            {"index", true },
             {"long", true },
             {"ulong", true },
             {"char", true },
@@ -18856,6 +18859,7 @@ genContext);
             {"ushort", builder.getIntegerType(16, false) },
             {"int", builder.getIntegerType(32) },
             {"uint", builder.getIntegerType(32, false) },
+            {"index", builder.getIndexType() },
             {"long", builder.getIntegerType(64) },
             {"ulong", builder.getIntegerType(64, false) },
             {"char", getCharType() },
@@ -18918,6 +18922,7 @@ genContext);
             {"ushort", builder.getIntegerType(16, false) },
             {"int", builder.getIntegerType(32) },
             {"uint", builder.getIntegerType(32, false) },
+            {"index", builder.getIndexType() },
             {"long", builder.getIntegerType(64) },
             {"ulong", builder.getIntegerType(64, false) },
             {"char", getCharType() },
