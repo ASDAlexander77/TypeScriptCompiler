@@ -383,6 +383,7 @@ class MLIRGenImpl
 
         VariableClass varClass = VariableType::Var;
         varClass.isExport = true;
+        varClass.isPublic = true;
         registerVariable(mlir::UnknownLoc::get(builder.getContext()), SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
         return mlir::success();
     }
@@ -14304,6 +14305,7 @@ class MLIRGenImpl
                 declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
             newClassPtr->isStatic = hasModifier(classDeclarationAST, SyntaxKind::StaticKeyword);
             newClassPtr->isExport = getExportModifier(classDeclarationAST);
+            newClassPtr->isPublic = hasModifier(classDeclarationAST, SyntaxKind::ExportKeyword);
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             // check decorator for class
@@ -14834,6 +14836,7 @@ class MLIRGenImpl
         VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
         varClass.isExport = newClassPtr->isExport && isPublic;
         varClass.isImport = newClassPtr->isImport && isPublic;
+        varClass.isPublic = isPublic;
 
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, varClass,
@@ -15189,6 +15192,7 @@ genContext);
             VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
             varClass.isExport = newClassPtr->isExport;
             varClass.isImport = newClassPtr->isImport;
+            varClass.isPublic = newClassPtr->isPublic;
             registerVariable(
                 location, fullClassStaticFieldName, true, varClass,
                 [&](mlir::Location location, const GenContext &genContext) {
@@ -21261,6 +21265,12 @@ genContext);
 
     void addDeclarationToExport(ts::Node node, const char* prefix = nullptr)
     {
+        // we do not add declarations to DLL export declarations to prevent generating declExports with rubish data
+        if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
+        {
+            return;
+        }
+
         Printer printer(declExports);
         printer.setDeclarationMode(true);
 

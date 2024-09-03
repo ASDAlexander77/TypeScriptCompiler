@@ -58,11 +58,11 @@ enum class VariableScope
 
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isUsing{false}, isAppendingLinkage{false}
+    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isUsing{false}, isAppendingLinkage{false}
+    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}
     {
     }
 
@@ -463,6 +463,7 @@ struct ClassInfo
     bool isAbstract;
     bool isExport;
     bool isImport;
+    bool isPublic;
     bool isDynamicImport;
     bool hasRTTI;
     ProcessingStages processingAtEvaluation;
@@ -470,7 +471,8 @@ struct ClassInfo
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
-          hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), isDynamicImport(false), hasRTTI(false),
+          hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), 
+          isPublic(false), isDynamicImport(false), hasRTTI(false),
           processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
     {
     }
