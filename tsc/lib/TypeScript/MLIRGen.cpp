@@ -16029,7 +16029,7 @@ genContext);
     mlir::LogicalResult mlirGenClassVirtualTableDefinition(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                            const GenContext &genContext)
     {
-        if (!newClassPtr->getHasVirtualTable() || newClassPtr->isAbstract || newClassPtr->isDeclaration)
+        if (!newClassPtr->getHasVirtualTable() || newClassPtr->isAbstract)
         {
             return mlir::success();
         }
@@ -16047,20 +16047,22 @@ genContext);
         }
 
         // register global
+        VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+        varClass.isExport = newClassPtr->isExport;
+        varClass.isImport = newClassPtr->isImport;
+        varClass.isPublic = newClassPtr->isPublic;            
         auto vtableRegisteredType = registerVariable(
             location, fullClassVTableFieldName, true,
-            newClassPtr->isDeclaration ? VariableType::External : VariableType::Var,
+            varClass,
             [&](mlir::Location location, const GenContext &genContext) {
-                // build vtable from names of methods
-
-                MLIRCodeLogic mcl(builder);
-
                 auto virtTuple = getVirtualTableType(virtualTable);
                 if (newClassPtr->isDeclaration)
                 {
                     return TypeValueInitType{virtTuple, mlir::Value(), TypeProvided::Yes};
                 }
 
+                // build vtable from names of methods
+                MLIRCodeLogic mcl(builder);
                 mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
                 auto fieldIndex = 0;
                 for (auto vtRecord : virtualTable)
