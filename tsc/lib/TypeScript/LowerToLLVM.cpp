@@ -350,13 +350,9 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 
         auto storageType = op.getType();
 
-        auto actualSizeAttr = op->getAttrOfType<mlir::BoolAttr>(ACTUAL_ATTR_NAME);
-        auto actualSize = actualSizeAttr && actualSizeAttr.getValue();
         auto stripPtr = false;
-        auto isClassType = false;
-        mlir_ts::ClassType classType;
         mlir::TypeSwitch<mlir::Type>(storageType)
-            .Case<mlir_ts::ClassType>([&](auto classType_) { stripPtr = true; isClassType = true; classType = classType_; })
+            .Case<mlir_ts::ClassType>([&](auto classType_) { stripPtr = true; })
             .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { stripPtr = true; })
             .Default([&](auto type) { });
 
@@ -368,30 +364,16 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
             llvmStorageTypePtr = llvmStorageType;
         }
 
-        if (!isClassType || actualSize)
-        {
-            auto nullPtrToTypeValue = rewriter.create<LLVM::NullOp>(loc, llvmStorageTypePtr);
+        auto nullPtrToTypeValue = rewriter.create<LLVM::NullOp>(loc, llvmStorageTypePtr);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! size of - storage type: [" << storageType << "] llvm storage type: ["
-                                    << llvmStorageType << "] llvm ptr: [" << llvmStorageTypePtr << "]\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! size of - storage type: [" << storageType << "] llvm storage type: ["
+                                << llvmStorageType << "] llvm ptr: [" << llvmStorageTypePtr << "]\n";);
 
-            auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 1));
-            auto sizeOfSetAddr =
-                rewriter.create<LLVM::GEPOp>(loc, llvmStorageTypePtr, nullPtrToTypeValue, ArrayRef<mlir::Value>({cst1}));
+        auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 1));
+        auto sizeOfSetAddr =
+            rewriter.create<LLVM::GEPOp>(loc, llvmStorageTypePtr, nullPtrToTypeValue, ArrayRef<mlir::Value>({cst1}));
 
-            rewriter.replaceOpWithNewOp<LLVM::PtrToIntOp>(op, llvmIndexType, sizeOfSetAddr);
-        }
-        else
-        {
-            // load size from static global field
-            std::string classSizeStaticFieldName = classType.getName().getValue().str();
-            classSizeStaticFieldName += ".";
-            classSizeStaticFieldName += SIZE_NAME;
-
-            auto addressOfOp = rewriter.create<mlir_ts::AddressOfOp>(
-                loc, mlir_ts::RefType::get(rewriter.getIndexType()), classSizeStaticFieldName, ::mlir::IntegerAttr());
-            rewriter.replaceOpWithNewOp<mlir_ts::LoadOp>(op, rewriter.getIndexType(), addressOfOp);
-        }
+        rewriter.replaceOpWithNewOp<LLVM::PtrToIntOp>(op, llvmIndexType, sizeOfSetAddr);
 
         return success();
     }

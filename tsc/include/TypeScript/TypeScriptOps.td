@@ -470,6 +470,8 @@ def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf"> {
 
   let arguments = (ins TypeAttr:$type);
   let results = (outs Index:$size);
+
+  let hasCanonicalizer = 1;
 }
 
 def TypeScript_NewOp : TypeScript_Op<"New"> {
