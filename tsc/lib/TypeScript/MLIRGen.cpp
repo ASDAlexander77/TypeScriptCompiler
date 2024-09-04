@@ -5082,13 +5082,18 @@ class MLIRGenImpl
             return {mlir::failure(), funcOp, "", false};
         }
 
-        funcOp.setPublic();
         // set visibility index
-        auto hasExport = getExportModifier(functionLikeDeclarationBaseAST)
+        auto isPublic = getExportModifier(functionLikeDeclarationBaseAST)
             || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport)
             /* we need to forcebly set to Public to prevent SymbolDCEPass to remove unsed name */
-            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword);
-        if (!hasExport && funcProto->getName() != MAIN_ENTRY_NAME)
+            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword)
+            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::IsPublic) == InternalFlags::IsPublic)
+            || funcProto->getName() == MAIN_ENTRY_NAME;
+        if (isPublic)
+        {
+            funcOp.setPublic();
+        }
+        else
         {
             funcOp.setPrivate();
         }
@@ -14429,6 +14434,8 @@ class MLIRGenImpl
             newClassPtr->hasVirtualTable = true;
             mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, genContext);
         }
+
+        mlirGenClassSizeStaticField(location, classDeclarationAST, newClassPtr, genContext);
 #endif
 
         // non-static first
@@ -15170,6 +15177,53 @@ genContext);
         }
 
         return mlir::success();
+    }
+
+    // to support crearting classes in Stack
+    mlir::LogicalResult mlirGenClassSizeStaticField(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                          ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
+        auto &staticFieldInfos = newClassPtr->staticFields;
+
+        auto fieldId = MLIRHelper::TupleFieldName(SIZE_NAME, builder.getContext());
+
+        // register global
+        auto fullClassStaticFieldName = concat(newClassPtr->fullName, SIZE_NAME);
+
+        auto staticFieldType = getIndexType();
+
+        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            // prevent double generating
+            VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+            varClass.isExport = newClassPtr->isExport;
+            varClass.isImport = newClassPtr->isImport;
+            varClass.isPublic = newClassPtr->isPublic;
+            registerVariable(
+                location, fullClassStaticFieldName, true, varClass,
+                [&](mlir::Location location, const GenContext &genContext) {
+                    if (newClassPtr->isDeclaration)
+                    {
+                        return std::make_tuple(staticFieldType, mlir::Value(), TypeProvided::Yes);
+                    }
+
+                    auto sizeOfType =
+                        builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
+
+                    sizeOfType->setAttr(ACTUAL_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+
+                    mlir::Value init = sizeOfType;
+                    return std::make_tuple(staticFieldType, init, TypeProvided::Yes);
+                },
+                genContext);
+        }
+
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id = fieldId; }))
+        {
+            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+        }
+
+        return mlir::success();    
     }
 
     // INFO: you can't use standart Static Field declarastion because of RTTI should be declared before used
@@ -16297,6 +16351,11 @@ genContext);
         {
             funcLikeDeclaration->internalFlags |= InternalFlags::DllImport;
             //MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
+        }
+
+        if (newClassPtr->isPublic && hasModifier(classMember, SyntaxKind::PublicKeyword))
+        {
+            funcLikeDeclaration->internalFlags |= InternalFlags::IsPublic;
         }
 
         auto [result, funcOp, funcName, isGeneric] =
@@ -20100,6 +20159,11 @@ genContext);
     mlir_ts::BigIntType getBigIntType()
     {
         return mlir_ts::BigIntType::get(builder.getContext());
+    }
+
+    mlir::IndexType getIndexType()
+    {
+        return mlir::IndexType::get(builder.getContext());
     }
 
     mlir_ts::StringType getStringType()
