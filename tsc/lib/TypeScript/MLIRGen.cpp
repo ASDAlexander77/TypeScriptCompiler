@@ -15218,7 +15218,7 @@ genContext);
                 genContext);
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id = fieldId; }))
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
         {
             staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
         }
@@ -15262,7 +15262,7 @@ genContext);
                 genContext);
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id = fieldId; }))
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
         {
             staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
         }
@@ -15299,7 +15299,7 @@ genContext);
                 genContext);
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id = fieldId; }))
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
         {
             staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
         }
