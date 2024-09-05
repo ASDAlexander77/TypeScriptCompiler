@@ -2763,7 +2763,7 @@ class MLIRGenImpl
     {
         VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
-            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, deleted{false}
+            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}
         {
         };
 
@@ -2837,6 +2837,7 @@ class MLIRGenImpl
             isImport = varClass.isImport;
             isPublic = varClass.isPublic;
             isAppendingLinkage = varClass.isAppendingLinkage;
+            comdat = varClass.comdat;
         }
 
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
@@ -2943,6 +2944,7 @@ class MLIRGenImpl
         bool isSpecialization;
         bool allocateOutsideOfOperation;
         bool allocateInContextThis;
+        Select comdat;
         bool deleted;
     };
 
@@ -3128,7 +3130,7 @@ class MLIRGenImpl
             theModule.getBody()->walk(lastUse);
 
             SmallVector<mlir::NamedAttribute> attrs;
-            if (variableDeclarationInfo.isExternal)
+            if (variableDeclarationInfo.isExternal || variableDeclarationInfo.comdat != Select::NotSet)
             {
                 attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("External")});
             }
@@ -3151,6 +3153,14 @@ class MLIRGenImpl
             if (variableDeclarationInfo.isImport)
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
+            }  
+
+            if (variableDeclarationInfo.comdat != Select::NotSet)
+            {
+                attrs.push_back({
+                    mlir::StringAttr::get(builder.getContext(), "comdat"), 
+                    builder.getUI32IntegerAttr(static_cast<uint32_t>(variableDeclarationInfo.comdat))
+                });
             }  
 
             globalOp = builder.create<mlir_ts::GlobalOp>(
@@ -14434,9 +14444,12 @@ class MLIRGenImpl
             newClassPtr->hasVirtualTable = true;
             mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, genContext);
         }
-
-        mlirGenClassSizeStaticField(location, classDeclarationAST, newClassPtr, genContext);
 #endif
+
+        if (!newClassPtr->isStatic)
+        {
+            mlirGenClassSizeStaticField(location, classDeclarationAST, newClassPtr, genContext);
+        }
 
         // non-static first
         for (auto &classMember : classDeclarationAST->members)
@@ -15195,22 +15208,22 @@ genContext);
         if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
         {
             // prevent double generating
-            VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+            //VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+            VariableClass varClass = VariableType::Var;
             varClass.isExport = newClassPtr->isExport;
             varClass.isImport = newClassPtr->isImport;
-            varClass.isPublic = newClassPtr->isPublic;
+            varClass.isPublic = true;
+            varClass.comdat = Select::ExactMatch;
             registerVariable(
                 location, fullClassStaticFieldName, true, varClass,
                 [&](mlir::Location location, const GenContext &genContext) {
-                    if (newClassPtr->isDeclaration)
-                    {
-                        return std::make_tuple(staticFieldType, mlir::Value(), TypeProvided::Yes);
-                    }
+                    // if (newClassPtr->isDeclaration)
+                    // {
+                    //     return std::make_tuple(staticFieldType, mlir::Value(), TypeProvided::Yes);
+                    // }
 
                     auto sizeOfType =
                         builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
-
-                    sizeOfType->setAttr(ACTUAL_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
 
                     mlir::Value init = sizeOfType;
                     return std::make_tuple(staticFieldType, init, TypeProvided::Yes);

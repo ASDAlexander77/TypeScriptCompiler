@@ -503,49 +503,6 @@ void mlir_ts::UndefOp::getCanonicalizationPatterns(RewritePatternSet &results, M
 }
 
 //===----------------------------------------------------------------------===//
-// SizeOp
-//===----------------------------------------------------------------------===//
-
-namespace
-{
-struct NormalizeSizeOfOp : public OpRewritePattern<mlir_ts::SizeOfOp>
-{
-    using OpRewritePattern<mlir_ts::SizeOfOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::SizeOfOp sizeOfOp, PatternRewriter &rewriter) const override
-    {
-        auto actualSizeAttr = sizeOfOp->getAttrOfType<mlir::BoolAttr>(ACTUAL_ATTR_NAME);
-        auto actualSize = actualSizeAttr && actualSizeAttr.getValue();
-        if (actualSize)
-        {
-            return success();
-        }
-
-        if (auto classType = dyn_cast<mlir_ts::ClassType>(sizeOfOp.getType()))
-        {
-            // load size from static global field
-            std::string classSizeStaticFieldName = classType.getName().getValue().str();
-            classSizeStaticFieldName += ".";
-            classSizeStaticFieldName += SIZE_NAME;
-
-            auto addressOfOp = rewriter.create<mlir_ts::AddressOfOp>(
-                sizeOfOp->getLoc(), mlir_ts::RefType::get(rewriter.getIndexType()), classSizeStaticFieldName, ::mlir::IntegerAttr());
-            rewriter.replaceOpWithNewOp<mlir_ts::LoadOp>(sizeOfOp, rewriter.getIndexType(), addressOfOp);
-        }
-
-        // TODO:
-        return success();
-    }
-};
-
-} // end anonymous namespace.
-
-void mlir_ts::SizeOfOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
-{
-    results.insert<NormalizeSizeOfOp>(context);
-}
-
-//===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
 

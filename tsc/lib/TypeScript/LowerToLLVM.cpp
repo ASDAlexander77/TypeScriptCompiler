@@ -3253,7 +3253,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             }
             else if (auto castOp = dyn_cast<mlir_ts::CastOp>(op))
             {
-                if (castOp.getRes().getType().isa<mlir_ts::ArrayType>())
+                if (castOp.getRes().getType().isa<mlir_ts::ArrayType>()) 
                 {
                    createAsGlobalConstructor = true; 
                 }
@@ -3295,6 +3295,8 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         {
             auto attrs = globalOp->getAttrs();
 
+            auto toAddComdat = false;
+            auto comdat = mlir::LLVM::comdat::Comdat::Any;
             for (auto &attr : attrs)
             {
                 if (attr.getName() == "export")
@@ -3320,8 +3322,19 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
                 if (attr.getName() == "Linkage" && attr.getValue().cast<mlir::StringAttr>().getValue() == "LinkonceODR") 
                 {
-                    addComdat(llvmGlobalOp, rewriter);
+                    toAddComdat = true;
                 }
+
+                if (attr.getName() == "comdat") 
+                {
+                    toAddComdat = true;
+                    comdat = static_cast<mlir::LLVM::comdat::Comdat>(attr.getValue().cast<mlir::IntegerAttr>().getValue().getLimitedValue());
+                }                
+            }
+
+            if (toAddComdat)
+            {
+                addComdat(llvmGlobalOp, rewriter, comdat);
             }
         }
 
@@ -3330,7 +3343,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
     }
 
     static void addComdat(mlir::LLVM::GlobalOp &global,
-                        mlir::ConversionPatternRewriter &rewriter) {
+                        mlir::ConversionPatternRewriter &rewriter, mlir::LLVM::comdat::Comdat comdat = mlir::LLVM::comdat::Comdat::Any) {
         auto module = global->getParentOfType<mlir::ModuleOp>();
 
         const char *comdatName = "__llvm_comdat";
@@ -3344,8 +3357,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         mlir::OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPointToEnd(&comdatOp.getBody().back());
         auto selectorOp = rewriter.create<mlir::LLVM::ComdatSelectorOp>(
-            comdatOp.getLoc(), global.getSymName(),
-            mlir::LLVM::comdat::Comdat::Any);
+            comdatOp.getLoc(), global.getSymName(), comdat);
         global.setComdatAttr(mlir::SymbolRefAttr::get(
             rewriter.getContext(), comdatName,
             mlir::FlatSymbolRefAttr::get(selectorOp.getSymNameAttr())));
