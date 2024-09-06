@@ -107,7 +107,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     if (!compileOptions.noDefaultLib)
     {
         clSharedLibs.push_back(mergeWithDefaultLibPath(getDefaultLibPath(), 
-#if WIN32        
+#ifdef WIN32        
             DEFAULT_LIB_DIR "/dll/" DEFAULT_LIB_NAME ".dll"
 #else
             DEFAULT_LIB_DIR "/dll/lib" DEFAULT_LIB_NAME ".so"
