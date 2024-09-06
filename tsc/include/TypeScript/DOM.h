@@ -208,12 +208,7 @@ class FunctionPrototypeDOM
 
     bool isMultiArgs()
     {
-        if (params.size() == 0)
-        {
-            return false;
-        }
-
-        return params.back()->getIsMultiArgsParam();
+        return params.size() > 0 && params.back()->getIsMultiArgsParam();
     }
 
     const mlir_ts::FunctionType &getFuncType() const

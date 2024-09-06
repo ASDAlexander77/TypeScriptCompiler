@@ -21,6 +21,7 @@
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 
 #ifdef ENABLE_ASYNC
@@ -78,137 +79,51 @@ template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
     TsLlvmContext *tsLlvmContext;
 };
 
-#ifdef PRINTF_SUPPORT
-class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
+class ConvertFOpLowering : public TsLlvmPattern<mlir_ts::ConvertFOp>
 {
   public:
-    using TsLlvmPattern<mlir_ts::PrintOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::ConvertFOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PrintOp op, Adaptor transformed,
+    LogicalResult matchAndRewrite(mlir_ts::ConvertFOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeHelper th(rewriter);
-        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
         auto loc = op->getLoc();
 
-        // Get a symbol reference to the printf function, inserting it if necessary.
-        auto printfFuncOp =
-            ch.getOrInsertFunction("printf", th.getFunctionType(rewriter.getI32Type(), th.getI8PtrType(), true));
-
-        std::stringstream format;
-        auto count = 0;
-
-        std::function<void(mlir::Type)> processFormatForType = [&](mlir::Type type) {
-            auto llvmType = tch.convertType(type);
-
-            if (auto s = type.dyn_cast<mlir_ts::StringType>())
-            {
-                format << "%s";
-            }
-            else if (auto c = type.dyn_cast<mlir_ts::CharType>())
-            {
-                format << "%c";
-            }
-            else if (llvmType.isIntOrIndexOrFloat() && !llvmType.isIntOrIndex())
-            {
-                format << "%f";
-            }
-            else if (auto o = type.dyn_cast<mlir_ts::OptionalType>())
-            {
-                format << "%s:";
-                processFormatForType(o.getElementType());
-            }
-            else if (llvmType.isIntOrIndex())
-            {
-                if (llvmType.isInteger(1))
-                {
-                    format << "%s";
-                }
-                else
-                {
-                    format << "%d";
-                }
-            }
-            else
-            {
-                format << "%d";
-            }
-        };
-
-        for (auto item : op.inputs())
-        {
-            auto type = item.getType();
-
-            if (count++ > 0)
-            {
-                format << " ";
-            }
-
-            processFormatForType(type);
-        }
-
-        format << "\n";
-
-        auto opHash = std::hash<std::string>{}(format.str());
-
-        std::stringstream formatVarName;
-        formatVarName << "frmt_" << opHash;
-
-        auto formatSpecifierCst = ch.getOrCreateGlobalString(formatVarName.str(), format.str());
-
         auto i8PtrTy = th.getI8PtrType();
+        auto llvmI32Type = tch.convertType(th.getI32Type());
+        auto llvmIndexType = tch.convertType(rewriter.getIndexType());
 
-        mlir::SmallVector<mlir::Value, 4> values;
-        values.push_back(formatSpecifierCst);
+#ifdef WIN32
+        auto sprintfFuncOp = ch.getOrInsertFunction(
+            "sprintf_s", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), llvmIndexType, th.getI8PtrType()}, true));
+#else
+        auto sprintfFuncOp = ch.getOrInsertFunction(
+            "snprintf", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), llvmIndexType, th.getI8PtrType()}, true));
+#endif
 
-        std::function<void(mlir::Type, mlir::Value)> fval;
-        fval = [&](mlir::Type type, mlir::Value item) {
-            auto llvmType = tch.convertType(type);
+        auto bufferSizeValue = transformed.getBufferSize();
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
 
-            if (llvmType.isIntOrIndexOrFloat() && !llvmType.isIntOrIndex())
-            {
-                values.push_back(rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), item));
-            }
-            else if (llvmType.isInteger(1))
-            {
-                values.push_back(rewriter.create<LLVM::SelectOp>(
-                    item.getLoc(), item, ch.getOrCreateGlobalString("__true__", std::string("true")),
-                    ch.getOrCreateGlobalString("__false__", std::string("false"))));
-            }
-            else if (auto o = type.dyn_cast<mlir_ts::OptionalType>())
-            {
-                auto boolPart = rewriter.create<mlir_ts::HasValueOp>(item.getLoc(), th.getBooleanType(), item);
-                values.push_back(rewriter.create<LLVM::SelectOp>(
-                    item.getLoc(), boolPart, ch.getOrCreateGlobalString("__true__", std::string("true")),
-                    ch.getOrCreateGlobalString("__false__", std::string("false"))));
-                auto optVal = rewriter.create<mlir_ts::ValueOp>(item.getLoc(), o.getElementType(), item);
-                fval(optVal.getType(), optVal);
-            }
-            else
-            {
-                values.push_back(item);
-            }
-        };
+        auto formatSpecifierValue = transformed.getFormat();
 
-        for (auto item : transformed.inputs())
-        {
-            fval(item.getType(), item);
-        }
+        SmallVector<mlir::Value> values;
+        values.push_back(newStringValue);
+        values.push_back(bufferSizeValue);
+        values.push_back(formatSpecifierValue);
+        for (auto inputVal : transformed.getInputs()) values.push_back(inputVal);
 
-        // print new line
-        rewriter.create<LLVM::CallOp>(loc, printfFuncOp, values);
+        rewriter.create<LLVM::CallOp>(loc, sprintfFuncOp, values);
 
         // Notify the rewriter that this operation has been removed.
-        rewriter.eraseOp(op);
+        rewriter.replaceOp(op, newStringValue);
 
         return success();
     }
 };
-#else
 
 class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
 {
@@ -223,6 +138,7 @@ class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
         return al.logic(transformed.getArg(), op.getMsg().str());
     }
 };
+
 class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 {
   public:
@@ -291,7 +207,6 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
         return success();
     }
 };
-#endif
 
 class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
 {
@@ -301,8 +216,6 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
     LogicalResult matchAndRewrite(mlir_ts::ParseIntOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
@@ -439,7 +352,7 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 
         auto stripPtr = false;
         mlir::TypeSwitch<mlir::Type>(storageType)
-            .Case<mlir_ts::ClassType>([&](auto classType) { stripPtr = true; })
+            .Case<mlir_ts::ClassType>([&](auto classType_) { stripPtr = true; })
             .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { stripPtr = true; })
             .Default([&](auto type) { });
 
@@ -1088,11 +1001,8 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             }
         }
 
-        auto newFuncOp =
-            rewriter.create<mlir::func::FuncOp>(location, funcOp.getName(),
-                                          rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(),
-                                                                   signatureResultsConverter.getConvertedTypes()),
-                                          ArrayRef<NamedAttribute>{}, argDictAttrs);
+        auto convertedFuncType = rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes());
+        auto newFuncOp = rewriter.create<mlir::func::FuncOp>(location, funcOp.getName(), convertedFuncType, ArrayRef<NamedAttribute>{}, argDictAttrs);
 
         for (const auto &namedAttr : funcOp->getAttrs())
         {
@@ -3343,7 +3253,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             }
             else if (auto castOp = dyn_cast<mlir_ts::CastOp>(op))
             {
-                if (castOp.getRes().getType().isa<mlir_ts::ArrayType>())
+                if (castOp.getRes().getType().isa<mlir_ts::ArrayType>()) 
                 {
                    createAsGlobalConstructor = true; 
                 }
@@ -3385,11 +3295,14 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         {
             auto attrs = globalOp->getAttrs();
 
+            auto toAddComdat = false;
+            auto comdat = mlir::LLVM::comdat::Comdat::Any;
             for (auto &attr : attrs)
             {
                 if (attr.getName() == "export")
                 {
                     llvmGlobalOp.setSection("export");
+                    llvmGlobalOp.setPublic();
                 }
 
                 if (attr.getName() == "import")
@@ -3409,8 +3322,19 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
                 if (attr.getName() == "Linkage" && attr.getValue().cast<mlir::StringAttr>().getValue() == "LinkonceODR") 
                 {
-                    addComdat(llvmGlobalOp, rewriter);
+                    toAddComdat = true;
                 }
+
+                if (attr.getName() == "comdat") 
+                {
+                    toAddComdat = true;
+                    comdat = static_cast<mlir::LLVM::comdat::Comdat>(attr.getValue().cast<mlir::IntegerAttr>().getValue().getLimitedValue());
+                }                
+            }
+
+            if (toAddComdat)
+            {
+                addComdat(llvmGlobalOp, rewriter, comdat);
             }
         }
 
@@ -3419,7 +3343,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
     }
 
     static void addComdat(mlir::LLVM::GlobalOp &global,
-                        mlir::ConversionPatternRewriter &rewriter) {
+                        mlir::ConversionPatternRewriter &rewriter, mlir::LLVM::comdat::Comdat comdat = mlir::LLVM::comdat::Comdat::Any) {
         auto module = global->getParentOfType<mlir::ModuleOp>();
 
         const char *comdatName = "__llvm_comdat";
@@ -3433,8 +3357,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         mlir::OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPointToEnd(&comdatOp.getBody().back());
         auto selectorOp = rewriter.create<mlir::LLVM::ComdatSelectorOp>(
-            comdatOp.getLoc(), global.getSymName(),
-            mlir::LLVM::comdat::Comdat::Any);
+            comdatOp.getLoc(), global.getSymName(), comdat);
         global.setComdatAttr(mlir::SymbolRefAttr::get(
             rewriter.getContext(), comdatName,
             mlir::FlatSymbolRefAttr::get(selectorOp.getSymNameAttr())));
@@ -5688,10 +5611,6 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return mlir::Type();
     }); 
 
-    converter.addConversion([&](mlir::IndexType type) {
-        return converter.getIndexType();
-    }); 
-
     /*
     converter.addSourceMaterialization(
         [&](OpBuilder &builder, mlir::Type resultType, ValueRange inputs, Location loc) -> std::optional<mlir::Value> {
@@ -5744,7 +5663,8 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
             mlir::math::MathDialect, 
             mlir::arith::ArithDialect, 
             mlir::cf::ControlFlowDialect, 
-            mlir::func::FuncDialect>();            
+            mlir::func::FuncDialect,
+            mlir::index::IndexDialect>();            
     }
 
     void runOnOperation() final;
@@ -6003,10 +5923,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
-        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering,  PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, 
-        LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, 
-        UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, 
-        VariableOpLowering, AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
+        ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, 
+        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, 
+        CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, 
+        ThrowCallOpLowering, VariableOpLowering, AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
         ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
         LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
         GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,

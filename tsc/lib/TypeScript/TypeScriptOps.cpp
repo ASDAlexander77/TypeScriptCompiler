@@ -995,9 +995,16 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
 
     // Verify that the operand and result types match the callee.
     auto fnType = fn.getFunctionType();
+    auto isVarArgAttr = fn->getAttrOfType<BoolAttr>("func.varargs");
+    auto isVarArg = (isVarArgAttr) ? isVarArgAttr.getValue() : false;
 
-    auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
-    for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
+    if (!isVarArg && fnType.getNumInputs() != getNumOperands())
+    {
+        return emitOpError("Expected ") << fnType.getNumInputs() << " arguments, but got " << getNumOperands() << ".";
+    }
+
+    auto e = (int) fnType.getNumInputs();
+    for (auto i = 0; i < e; ++i)
     {
         if (getOperand(i).getType() != fnType.getInput(i))
         {
@@ -1006,7 +1013,8 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
         }
     }
 
-    for (unsigned i = 0, e = fnType.getNumResults(); i != e; ++i)
+    e = fnType.getNumResults();
+    for (auto i = 0; i < e; ++i)
     {
         if (getResult(i).getType() != fnType.getResult(i))
         {
@@ -1038,8 +1046,8 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
         results = hybridFuncType.getResults();
     }
 
-    auto optionalFromValue = (int)input.size() - (int)getNumOperands();
-    for (unsigned i = 0, e = optionalFromValue == -1 ? (int)input.size() : getOperands().size(); i != e; ++i)
+    auto e = (int)input.size(); 
+    for (auto i = 0; i < e; ++i)
     {
         if (getOperand(i + 1).getType() != input[i])
         {
@@ -1048,13 +1056,16 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
         }
     }
 
-    for (unsigned i = 0, e = results.size(); i != e; ++i)
+    // it is matched in TypesMatchWith in .td file
+    /*
+    for (auto i = 0, e = results.size(); i != e; ++i)
     {
         if (getResult(i).getType() != results[i])
         {
             return emitOpError("result type mismatch");
         }
     }
+    */
 
     return success();
 }
@@ -1123,12 +1134,12 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                     rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.getIdentifierAttr(), indirectCall.getResultTypes(),
                                                                  args);
 
-                    LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
+                    // LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
 
-                    LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
-                    LLVM_DEBUG(
-                        for (auto &use
-                             : createBoundFunctionOp->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
+                    // LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
+                    // LLVM_DEBUG(
+                    //     for (auto &use
+                    //          : createBoundFunctionOp->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
 
                     if (getMethodOp.use_empty())
                     {
@@ -1164,11 +1175,11 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                 rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRef.getIdentifierAttr(), indirectCall.getResultTypes(),
                                                              args);
 
-                LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
+                // LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
 
-                LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
-                LLVM_DEBUG(for (auto &use
-                                : thisSymbolRef->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
+                // LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
+                // LLVM_DEBUG(for (auto &use
+                //                 : thisSymbolRef->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
 
                 if (getMethodOp.use_empty())
                 {

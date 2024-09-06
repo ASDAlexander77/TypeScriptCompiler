@@ -219,7 +219,7 @@ class MLIRCustomMethods
     static bool isInternalFunctionNameBuiltin (StringRef functionName)
     {
         static std::map<std::string, bool> m { 
-            {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
+            {"print", true}, {"convertf", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
             {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
         return m[functionName.str()];    
     }    
@@ -227,7 +227,7 @@ class MLIRCustomMethods
     static bool isInternalFunctionNameNoBuiltin (StringRef functionName)
     {
         static std::map<std::string, bool> m { 
-            {"print", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
+            {"print", true}, {"convertf", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
             {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
         return m[functionName.str()];    
     }   
@@ -238,6 +238,11 @@ class MLIRCustomMethods
         {
             // print - internal command;
             return mlirGenPrint(location, operands, castFn, genContext);
+        }
+        else if (functionName == "convertf")
+        {
+            // print - internal command;
+            return mlirGenConvertF(location, operands, castFn, genContext);
         }
         else if (functionName == "assert")
         {
@@ -354,6 +359,39 @@ class MLIRCustomMethods
         auto printOp = builder.create<mlir_ts::PrintOp>(location, vals);
 
         return mlir::success();
+    }
+
+    ValueOrLogicalResult mlirGenConvertF(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
+    {
+        mlir::Value bufferSize;
+        mlir::Value format;
+
+        if (operands.size() < 3) {
+            return mlir::failure();
+        }
+
+        bufferSize = operands[0];
+        if (!bufferSize.getType().isa<mlir::IndexType>())
+        {
+            bufferSize = castFn(location, mlir::IndexType::get(builder.getContext()), bufferSize, genContext);
+        }
+
+        auto stringType = mlir_ts::StringType::get(builder.getContext());
+        format = operands[1];
+        if (!format.getType().isa<mlir_ts::StringType>())
+        {
+            format = castFn(location, stringType, format, genContext);
+        }
+
+        SmallVector<mlir::Value> vals;
+        for (auto &oper : operands.take_back(operands.size() - 2))
+        {
+            vals.push_back(oper);
+        }
+
+        auto convertFOp = builder.create<mlir_ts::ConvertFOp>(location, stringType, bufferSize, format, vals);
+
+        return V(convertFOp);
     }
 
     mlir::LogicalResult mlirGenAssert(const mlir::Location &location, ArrayRef<mlir::Value> operands)

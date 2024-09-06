@@ -19,6 +19,7 @@
 #define CONSTRUCTOR_TEMPVAR_NAME ".ctor"
 #define VTABLE_NAME ".vtbl"
 #define RTTI_NAME ".rtti"
+#define SIZE_NAME ".size"
 #define INSTANCEOF_NAME ".instanceOf"
 #define INSTANCEOF_PARAM_NAME "rttiParam"
 #define MAIN_ENTRY_NAME "main"

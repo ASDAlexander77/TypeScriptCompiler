@@ -31,6 +31,7 @@ extern cl::opt<std::string> tsclibpath;
 extern cl::opt<std::string> emsdksysrootpath;
 extern cl::opt<bool> enableOpt;
 extern cl::list<std::string> libs;
+extern cl::list<std::string> objs;
 
 std::string getDefaultOutputFileName(enum Action);
 std::string mergeWithDefaultLibPath(std::string, std::string);
@@ -280,6 +281,17 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     }
 
     args.push_back(objFileName.c_str());
+    llvm::SmallVector<std::string> objOpts;
+    for (auto obj : objs)
+    {
+        objOpts.push_back(obj);
+    }
+
+    for (auto &obj : objOpts)
+    {
+        args.push_back(obj.c_str());
+    }
+
     if (win && shared)
     {
         //args.push_back("-Wl,-nodefaultlib:libcmt");

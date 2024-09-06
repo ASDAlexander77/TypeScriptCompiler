@@ -383,6 +383,7 @@ class MLIRGenImpl
 
         VariableClass varClass = VariableType::Var;
         varClass.isExport = true;
+        varClass.isPublic = true;
         registerVariable(mlir::UnknownLoc::get(builder.getContext()), SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
         return mlir::success();
     }
@@ -2762,7 +2763,7 @@ class MLIRGenImpl
     {
         VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
-            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, deleted{false}
+            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}
         {
         };
 
@@ -2834,7 +2835,9 @@ class MLIRGenImpl
             isExternal = varClass == VariableType::External;
             isExport = varClass.isExport;
             isImport = varClass.isImport;
+            isPublic = varClass.isPublic;
             isAppendingLinkage = varClass.isAppendingLinkage;
+            comdat = varClass.comdat;
         }
 
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
@@ -2934,12 +2937,14 @@ class MLIRGenImpl
         bool isGlobal;
         bool isConst;
         bool isExternal;
+        bool isPublic;
         bool isExport;
         bool isImport;
         bool isAppendingLinkage;
         bool isSpecialization;
         bool allocateOutsideOfOperation;
         bool allocateInContextThis;
+        Select comdat;
         bool deleted;
     };
 
@@ -3125,7 +3130,7 @@ class MLIRGenImpl
             theModule.getBody()->walk(lastUse);
 
             SmallVector<mlir::NamedAttribute> attrs;
-            if (variableDeclarationInfo.isExternal)
+            if (variableDeclarationInfo.isExternal || variableDeclarationInfo.comdat != Select::NotSet)
             {
                 attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("External")});
             }
@@ -3150,6 +3155,14 @@ class MLIRGenImpl
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
             }  
 
+            if (variableDeclarationInfo.comdat != Select::NotSet)
+            {
+                attrs.push_back({
+                    mlir::StringAttr::get(builder.getContext(), "comdat"), 
+                    builder.getUI32IntegerAttr(static_cast<uint32_t>(variableDeclarationInfo.comdat))
+                });
+            }  
+
             globalOp = builder.create<mlir_ts::GlobalOp>(
                 location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, mlir::Attribute(), attrs);                
 
@@ -3164,6 +3177,7 @@ class MLIRGenImpl
             {
                 if (variableDeclarationInfo.isExternal)
                 {
+                    globalOp.setPublic();
                     if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext)))
                     {
                         return mlir::failure();
@@ -3178,6 +3192,15 @@ class MLIRGenImpl
                 }
                 else
                 {
+                    if (!variableDeclarationInfo.isExport && !variableDeclarationInfo.isPublic)
+                    {
+                        globalOp.setPrivate();
+                    }
+                    else 
+                    {
+                        globalOp.setPublic();
+                    }
+
                     createGlobalVariableInitialization(location, globalOp, variableDeclarationInfo, genContext);
                 }
 
@@ -3804,6 +3827,7 @@ class MLIRGenImpl
 
         if (variableDeclarationListAST->parent)
         {
+            varClass.isPublic = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
             varClass.isExport = getExportModifier(variableDeclarationListAST->parent);
             if (varClass.isExport)
             {
@@ -4327,7 +4351,10 @@ class MLIRGenImpl
         mlir_ts::FuncOp funcOp;
 
         auto [funcProto, funcType, argTypes] =
-            mlirGenFunctionSignaturePrototype(functionLikeDeclarationBaseAST, false, genContext);
+            mlirGenFunctionSignaturePrototype(
+                functionLikeDeclarationBaseAST, 
+                hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::DeclareKeyword), 
+                genContext);
         if (!funcProto)
         {
             return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
@@ -4417,6 +4444,11 @@ class MLIRGenImpl
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
             }
+
+            if (name == "varargs") 
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), "func.varargs"), mlir::BoolAttr::get(builder.getContext(), true)});
+            }
         });
 
         // add modifiers
@@ -4443,7 +4475,7 @@ class MLIRGenImpl
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "specialization"), mlir::UnitAttr::get(builder.getContext())});
         }
-
+            
         if (funcType)
         {
             auto it = getCaptureVarsMap().find(funcProto->getName());
@@ -5061,9 +5093,17 @@ class MLIRGenImpl
         }
 
         // set visibility index
-        auto hasExport = getExportModifier(functionLikeDeclarationBaseAST)
-            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport);
-        if (!hasExport && funcProto->getName() != MAIN_ENTRY_NAME)
+        auto isPublic = getExportModifier(functionLikeDeclarationBaseAST)
+            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport)
+            /* we need to forcebly set to Public to prevent SymbolDCEPass to remove unsed name */
+            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword)
+            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::IsPublic) == InternalFlags::IsPublic)
+            || funcProto->getName() == MAIN_ENTRY_NAME;
+        if (isPublic)
+        {
+            funcOp.setPublic();
+        }
+        else
         {
             funcOp.setPrivate();
         }
@@ -6125,6 +6165,7 @@ class MLIRGenImpl
                 {
                     typeToken = nf.createToken(SyntaxKind::BooleanKeyword);
                 }
+                // TODO: review using those types
                 else if (text == S("i32"))
                 {
                     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
@@ -10523,6 +10564,7 @@ class MLIRGenImpl
             }
 
             // if last is vararg
+            auto isNativeVarArgsCall = false;
             if (calledFuncType.isVarArg())
             {
                 auto varArgsType = calledFuncType.getInputs().back();
@@ -10533,7 +10575,8 @@ class MLIRGenImpl
                 LLVM_DEBUG(llvm::dbgs() << "\t last value = " << operands.back() << "\n";);
 
                 // check if vararg is prepared earlier
-                auto isVarArgPreparedAlready = (toIndex - fromIndex) == 1 && operands.back().getType() == varArgsType;
+                auto isVarArgPreparedAlready = (toIndex - fromIndex) == 1 && (operands.back().getType() == varArgsType)
+                  || isNativeVarArgsCall;
                 if (!isVarArgPreparedAlready)
                 {
                     SmallVector<mlir::Value, 4> varArgOperands;
@@ -10556,7 +10599,7 @@ class MLIRGenImpl
 
             VALIDATE_FUNC(calledFuncType, location)
 
-            // default call by name
+            // default
             auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(
                 MLIRHelper::getCallSiteLocation(funcRefValue, location),
                 funcRefValue, operands);
@@ -10999,9 +11042,12 @@ class MLIRGenImpl
             mlir::Type argTypeDestFuncType;
             if (i >= argFuncTypes.size() && !isVarArg)
             {
-                emitError(value.getLoc())
-                    << "function does not have enough parameters to accept all arguments, arg #" << i;
-                return mlir::failure();
+                // emitError(value.getLoc())
+                //     << "function does not have enough parameters to accept all arguments, arg #" << i;
+                // return mlir::failure();
+
+                // to support native variadic calls
+                break;
             }
 
             if (isVarArg && i >= lastArgIndex)
@@ -14274,6 +14320,7 @@ class MLIRGenImpl
                 declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
             newClassPtr->isStatic = hasModifier(classDeclarationAST, SyntaxKind::StaticKeyword);
             newClassPtr->isExport = getExportModifier(classDeclarationAST);
+            newClassPtr->isPublic = hasModifier(classDeclarationAST, SyntaxKind::ExportKeyword);
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             // check decorator for class
@@ -14398,6 +14445,11 @@ class MLIRGenImpl
             mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, genContext);
         }
 #endif
+
+        if (!newClassPtr->isStatic)
+        {
+            mlirGenClassSizeStaticField(location, classDeclarationAST, newClassPtr, genContext);
+        }
 
         // non-static first
         for (auto &classMember : classDeclarationAST->members)
@@ -14804,6 +14856,7 @@ class MLIRGenImpl
         VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
         varClass.isExport = newClassPtr->isExport && isPublic;
         varClass.isImport = newClassPtr->isImport && isPublic;
+        varClass.isPublic = isPublic;
 
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, varClass,
@@ -15139,6 +15192,68 @@ genContext);
         return mlir::success();
     }
 
+    // to support crearting classes in Stack
+    mlir::LogicalResult mlirGenClassSizeStaticField(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                          ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
+        auto &staticFieldInfos = newClassPtr->staticFields;
+
+        auto fieldId = MLIRHelper::TupleFieldName(SIZE_NAME, builder.getContext());
+
+        // register global
+        auto fullClassStaticFieldName = concat(newClassPtr->fullName, SIZE_NAME);
+
+        auto staticFieldType = getIndexType();
+
+        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            // saving state
+            auto declarationModeStore = declarationMode;
+
+            // prevent double generating
+            //VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+            VariableClass varClass = VariableType::Var;
+            varClass.isExport = newClassPtr->isExport;
+            varClass.isImport = newClassPtr->isImport;
+            varClass.isPublic = true;
+            if (!newClassPtr->isImport)
+            {                           
+                declarationMode = false;
+                varClass.comdat = Select::ExactMatch;
+            }
+            else if (newClassPtr->isDeclaration)
+            {
+                varClass.type = VariableType::External;
+            }
+
+            registerVariable(
+                location, fullClassStaticFieldName, true, varClass,
+                [&](mlir::Location location, const GenContext &genContext) {
+                    // if (newClassPtr->isDeclaration)
+                    // {
+                    //     return std::make_tuple(staticFieldType, mlir::Value(), TypeProvided::Yes);
+                    // }
+
+                    auto sizeOfType =
+                        builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
+
+                    mlir::Value init = sizeOfType;
+                    return std::make_tuple(staticFieldType, init, TypeProvided::Yes);
+                },
+                genContext);
+
+            // restore state
+            declarationMode = declarationModeStore;
+        }
+
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
+        {
+            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+        }
+
+        return mlir::success();    
+    }
+
     // INFO: you can't use standart Static Field declarastion because of RTTI should be declared before used
     // example: C:/dev/TypeScriptCompiler/tsc/test/tester/tests/dependencies.ts
     mlir::LogicalResult mlirGenCustomRTTI(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
@@ -15159,6 +15274,7 @@ genContext);
             VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
             varClass.isExport = newClassPtr->isExport;
             varClass.isImport = newClassPtr->isImport;
+            varClass.isPublic = newClassPtr->isPublic;
             registerVariable(
                 location, fullClassStaticFieldName, true, varClass,
                 [&](mlir::Location location, const GenContext &genContext) {
@@ -15174,7 +15290,7 @@ genContext);
                 genContext);
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id = fieldId; }))
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
         {
             staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
         }
@@ -15211,7 +15327,7 @@ genContext);
                 genContext);
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id = fieldId; }))
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
         {
             staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
         }
@@ -15995,7 +16111,7 @@ genContext);
     mlir::LogicalResult mlirGenClassVirtualTableDefinition(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                            const GenContext &genContext)
     {
-        if (!newClassPtr->getHasVirtualTable() || newClassPtr->isAbstract || newClassPtr->isDeclaration)
+        if (!newClassPtr->getHasVirtualTable() || newClassPtr->isAbstract)
         {
             return mlir::success();
         }
@@ -16013,20 +16129,22 @@ genContext);
         }
 
         // register global
+        VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
+        varClass.isExport = newClassPtr->isExport;
+        varClass.isImport = newClassPtr->isImport;
+        varClass.isPublic = newClassPtr->isPublic;            
         auto vtableRegisteredType = registerVariable(
             location, fullClassVTableFieldName, true,
-            newClassPtr->isDeclaration ? VariableType::External : VariableType::Var,
+            varClass,
             [&](mlir::Location location, const GenContext &genContext) {
-                // build vtable from names of methods
-
-                MLIRCodeLogic mcl(builder);
-
                 auto virtTuple = getVirtualTableType(virtualTable);
                 if (newClassPtr->isDeclaration)
                 {
                     return TypeValueInitType{virtTuple, mlir::Value(), TypeProvided::Yes};
                 }
 
+                // build vtable from names of methods
+                MLIRCodeLogic mcl(builder);
                 mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
                 auto fieldIndex = 0;
                 for (auto vtRecord : virtualTable)
@@ -16261,6 +16379,11 @@ genContext);
         {
             funcLikeDeclaration->internalFlags |= InternalFlags::DllImport;
             //MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
+        }
+
+        if (newClassPtr->isPublic && hasModifier(classMember, SyntaxKind::PublicKeyword))
+        {
+            funcLikeDeclaration->internalFlags |= InternalFlags::IsPublic;
         }
 
         auto [result, funcOp, funcName, isGeneric] =
@@ -18661,6 +18784,7 @@ genContext);
             {"ushort", true },
             {"int", true },
             {"uint", true },
+            {"index", true },
             {"long", true },
             {"ulong", true },
             {"char", true },
@@ -18751,6 +18875,7 @@ genContext);
             {"ushort", true },
             {"int", true },
             {"uint", true },
+            {"index", true },
             {"long", true },
             {"ulong", true },
             {"char", true },
@@ -18827,6 +18952,7 @@ genContext);
             {"ushort", builder.getIntegerType(16, false) },
             {"int", builder.getIntegerType(32) },
             {"uint", builder.getIntegerType(32, false) },
+            {"index", builder.getIndexType() },
             {"long", builder.getIntegerType(64) },
             {"ulong", builder.getIntegerType(64, false) },
             {"char", getCharType() },
@@ -18889,6 +19015,7 @@ genContext);
             {"ushort", builder.getIntegerType(16, false) },
             {"int", builder.getIntegerType(32) },
             {"uint", builder.getIntegerType(32, false) },
+            {"index", builder.getIndexType() },
             {"long", builder.getIntegerType(64) },
             {"ulong", builder.getIntegerType(64, false) },
             {"char", getCharType() },
@@ -20062,6 +20189,11 @@ genContext);
         return mlir_ts::BigIntType::get(builder.getContext());
     }
 
+    mlir::IndexType getIndexType()
+    {
+        return mlir::IndexType::get(builder.getContext());
+    }
+
     mlir_ts::StringType getStringType()
     {
         return mlir_ts::StringType::get(builder.getContext());
@@ -21227,6 +21359,12 @@ genContext);
 
     void addDeclarationToExport(ts::Node node, const char* prefix = nullptr)
     {
+        // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
+        if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
+        {
+            return;
+        }
+
         Printer printer(declExports);
         printer.setDeclarationMode(true);
 

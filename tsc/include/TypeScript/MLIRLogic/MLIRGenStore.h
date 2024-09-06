@@ -56,21 +56,33 @@ enum class VariableScope
     Global
 };
 
+enum class Select: int
+{
+    NotSet = -1, 
+    Any = 0, 	        //The linker may choose any COMDAT.
+    ExactMatch = 1,     //The data referenced by the COMDAT must be the same.
+    Largest = 2, 	    //The linker will choose the largest COMDAT.
+    NoDeduplicate = 3,  //No deduplication is performed.
+    SameSize = 4, 	    //The data referenced by the COMDAT must be the same size.
+};
+
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isUsing{false}, isAppendingLinkage{false}
+    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isUsing{false}, isAppendingLinkage{false}
+    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}
     {
     }
 
     VariableType type;
     bool isExport;
     bool isImport;
+    bool isPublic;
     bool isUsing;
     bool isAppendingLinkage;
+    Select comdat;
 
     inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
 
@@ -462,6 +474,7 @@ struct ClassInfo
     bool isAbstract;
     bool isExport;
     bool isImport;
+    bool isPublic;
     bool isDynamicImport;
     bool hasRTTI;
     ProcessingStages processingAtEvaluation;
@@ -469,7 +482,8 @@ struct ClassInfo
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
-          hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), isDynamicImport(false), hasRTTI(false),
+          hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), 
+          isPublic(false), isDynamicImport(false), hasRTTI(false),
           processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
     {
     }
