@@ -15207,13 +15207,25 @@ genContext);
 
         if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
         {
+            // saving state
+            auto declarationModeStore = declarationMode;
+
             // prevent double generating
             //VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
             VariableClass varClass = VariableType::Var;
             varClass.isExport = newClassPtr->isExport;
             varClass.isImport = newClassPtr->isImport;
             varClass.isPublic = true;
-            varClass.comdat = Select::ExactMatch;
+            if (!newClassPtr->isImport)
+            {                           
+                declarationMode = false;
+                varClass.comdat = Select::ExactMatch;
+            }
+            else if (newClassPtr->isDeclaration)
+            {
+                varClass.type = VariableType::External;
+            }
+
             registerVariable(
                 location, fullClassStaticFieldName, true, varClass,
                 [&](mlir::Location location, const GenContext &genContext) {
@@ -15229,6 +15241,9 @@ genContext);
                     return std::make_tuple(staticFieldType, init, TypeProvided::Yes);
                 },
                 genContext);
+
+            // restore state
+            declarationMode = declarationModeStore;
         }
 
         if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
@@ -21344,7 +21359,7 @@ genContext);
 
     void addDeclarationToExport(ts::Node node, const char* prefix = nullptr)
     {
-        // we do not add declarations to DLL export declarations to prevent generating declExports with rubish data
+        // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
         if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
         {
             return;
