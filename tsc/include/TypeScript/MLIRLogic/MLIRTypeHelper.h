@@ -1488,6 +1488,19 @@ class MLIRTypeHelper
             }
         }
 
+        if (srcType.isa<mlir_ts::BooleanType>())
+        {
+            if (dstType.isa<mlir::IntegerType>() && dstType.getIntOrFloatBitWidth() > 0)
+            {
+                return true;
+            }
+
+            if (dstType.isa<mlir_ts::NumberType>())
+            {
+                return true;
+            }
+        }
+
         if (auto dstEnumType = dstType.dyn_cast<mlir_ts::EnumType>())
         {
             if (dstEnumType.getElementType() == srcType)
