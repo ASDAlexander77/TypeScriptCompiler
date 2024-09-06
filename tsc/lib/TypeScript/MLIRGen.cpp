@@ -15219,7 +15219,11 @@ genContext);
             if (!newClassPtr->isImport)
             {                           
                 declarationMode = false;
+#ifdef WIN32                
                 varClass.comdat = Select::ExactMatch;
+#else
+                varClass.comdat = Select::Any;
+#endif                
             }
             else if (newClassPtr->isDeclaration)
             {
