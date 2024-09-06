@@ -6119,6 +6119,10 @@ class MLIRGenImpl
         {
             castedValue = builder.create<mlir_ts::ValueOp>(location, safeType, exprValue);
         }
+        else if (exprValue.getType().isa<mlir_ts::UnionType>())
+        {
+            castedValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, safeType, exprValue);
+        }
         else
         {
             CAST_A(result, location, safeType, exprValue, genContext);

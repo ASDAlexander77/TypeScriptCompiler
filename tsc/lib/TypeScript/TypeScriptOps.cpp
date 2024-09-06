@@ -690,6 +690,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
+        // TODO: review it, if you still need it as we are should be using "safeCast"
         if (inUnionType && !resUnionType)
         {
             ::typescript::MLIRTypeHelper mth(rewriter.getContext());
