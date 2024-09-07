@@ -9274,10 +9274,13 @@ class MLIRGenImpl
                     return mlirGenPropertyAccessExpression(location, loadedValue, name, false, genContext);                
                 })
                 .Case<mlir_ts::UnionType>([&](auto unionType) {
+                    // TODO: when access of property in union is finished use it instead of using first type
                     // all union types must have the same property
                     // 1) cast to first type
                     auto frontType = mth.getFirstNonNullUnionType(unionType);
-                    auto casted = cast(location, frontType, objectValue, genContext);
+                    //auto casted = cast(location, frontType, objectValue, genContext);
+                    auto casted = builder.create<mlir_ts::GetValueFromUnionOp>(location, frontType, objectValue);
+
                     return mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
                 })
                 .Case<mlir_ts::LiteralType>([&](auto literalType) {
@@ -20185,7 +20188,7 @@ genContext);
                                     << " \n\t\tconstraint item: " << typeParamItem << ", \n\t\tname: " << nameType
                                     << "] \n\ttype: " << type << "\n";);
 
-            if (mth.isNoneType(nameType) || nameType.isa<mlir_ts::NeverType>())
+            if (mth.isNoneType(nameType) || nameType.isa<mlir_ts::NeverType>() || mth.isEmptyTuple(nameType))
             {
                 // filterting out
                 LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... filtered.\n";);

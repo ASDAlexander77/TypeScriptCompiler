@@ -627,6 +627,21 @@ class MLIRTypeHelper
         return !type || type.isa<mlir::NoneType>();
     }
 
+    bool isEmptyTuple(mlir::Type type)
+    {
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        {
+            return tupleType.getFields().size() == 0;
+        }
+
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            return constTupleType.getFields().size() == 0;
+        }
+
+        return false;
+    }
+
     bool isVirtualFunctionType(mlir::Value actualFuncRefValue) 
     {
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
