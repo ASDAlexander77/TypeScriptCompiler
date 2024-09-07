@@ -43,15 +43,12 @@ function main() {
         c = boolOrC; // C
     }
 
-    // TODO: finish it
-/*
     if (typeof strOrNum === "boolean") {
         let z1: {} = strOrNum; // {}
     }
     else {
         let z2: string | number = strOrNum; // string | number
     }
-*/
 
     // A type guard of the form typeof x !== s, where s is a string literal,
     //  - when true, narrows the type of x by typeof x === s when false, or
@@ -81,15 +78,12 @@ function main() {
         bool = boolOrC; // boolean
     }
 
-    // TODO: finish it
-/*
     if (typeof strOrNum !== "boolean") {
         let z1: string | number = strOrNum; // string | number
     }
     else {
         let z2: {} = strOrNum; // {}
     }
-*/
 
     print("done.");
 
