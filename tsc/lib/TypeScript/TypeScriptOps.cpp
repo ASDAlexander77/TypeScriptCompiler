@@ -568,7 +568,7 @@ LogicalResult mlir_ts::CastOp::verify()
             {
                 ::typescript::MLIRTypeHelper mth(getContext());
                 mlir::Type baseType;
-                if (!mth.isUnionTypeNeedsTag(inUnionType, baseType) && mth.canCastFromTo(baseType, resType))
+                if (!mth.isUnionTypeNeedsTag(inUnionType, baseType)/* && mth.canCastFromTo(baseType, resType)*/)
                 {
                     // we need to ignore this case, for example if union<int, int, int> -> string, we need cast int to string
                     return success();
