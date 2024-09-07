@@ -2777,7 +2777,9 @@ class MLIRTypeHelper
     {
         if (types.size() == 0)
         {
-            return mlir_ts::NeverType::get(context);
+            // TODO:? should it be empty tuple or never type?
+            //return mlir_ts::NeverType::get(context);
+            return mlir_ts::TupleType::get(context, {});
         }
 
         if (types.size() == 1)
