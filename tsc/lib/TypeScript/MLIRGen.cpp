@@ -17737,7 +17737,13 @@ genContext);
 
                 auto callResult = mlirGenCallThisMethod(location, value, SYMBOL_TO_PRIMITIVE, undefined, {hint}, genContext);
                 EXIT_IF_FAILED(callResult);
-                auto castValue = cast(location, type, V(callResult), genContext);
+                auto callResultValue = V(callResult);
+                if (callResultValue.getType().isa<mlir_ts::UnionType>())
+                {
+                    return V(builder.create<mlir_ts::GetValueFromUnionOp>(location, type, callResultValue));                    
+                }
+
+                auto castValue = cast(location, type, callResultValue, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(castValue);
                 return castValue;
             } 
