@@ -1488,18 +1488,28 @@ class MLIRTypeHelper
             }
         }
 
+        // we should not treat boolean as integer
+        // if (srcType.isa<mlir_ts::BooleanType>())
+        // {
+        //     if (dstType.isa<mlir::IntegerType>() && dstType.getIntOrFloatBitWidth() > 0)
+        //     {
+        //         return true;
+        //     }
+
+        //     if (dstType.isa<mlir_ts::NumberType>())
+        //     {
+        //         return true;
+        //     }
+        // }
+
+        // but we can't cast TypePredicate to boolean as we will lose the information about type
         if (srcType.isa<mlir_ts::BooleanType>())
         {
-            if (dstType.isa<mlir::IntegerType>() && dstType.getIntOrFloatBitWidth() > 0)
+            if (dstType.isa<mlir_ts::TypePredicateType>())
             {
                 return true;
             }
-
-            if (dstType.isa<mlir_ts::NumberType>())
-            {
-                return true;
-            }
-        }
+        }        
 
         if (auto dstEnumType = dstType.dyn_cast<mlir_ts::EnumType>())
         {
@@ -2970,7 +2980,7 @@ class MLIRTypeHelper
     mlir::Type mergeType(mlir::Type existType, mlir::Type currentType, bool& merged)
     {
         merged = false;
-        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: \n\t" << existType << " with \n\t" << currentType << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing \n\ttype: \t" << existType << "\n\twith \t" << currentType << "\n";);
 
         if (existType == currentType)
         {
