@@ -6090,13 +6090,19 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult addSafeCastStatement(Expression expr, Node typeToken, const GenContext &genContext)
+    struct ElseSafeCase
+    {
+        Expression expr;
+        mlir::Type safeType;
+    };
+
+    mlir::LogicalResult addSafeCastStatement(Expression expr, Node typeToken, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto safeType = getType(typeToken, genContext);
-        return addSafeCastStatement(expr, safeType, genContext);
+        return addSafeCastStatement(expr, safeType, inverse, elseSafeCase, genContext);
     }
 
-    mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, const GenContext &genContext)
+    mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto location = loc(expr);
         auto nameStr = MLIRHelper::getName(expr.as<DeclarationName>());
@@ -6104,30 +6110,74 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
 
-        return addSafeCastStatement(location, nameStr, exprValue, safeType, genContext);
+        if (elseSafeCase)
+        {
+            elseSafeCase->expr = expr;
+        }
+
+        return addSafeCastStatement(location, nameStr, exprValue, safeType, inverse, elseSafeCase, genContext);
     }    
 
-    mlir::LogicalResult addSafeCastStatement(mlir::Location location, std::string parameterName, mlir::Value exprValue, mlir::Type safeType, const GenContext &genContext)
+    mlir::LogicalResult addSafeCastStatement(mlir::Location location, std::string parameterName, mlir::Value exprValue, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         mlir::Value castedValue;
         if (exprValue.getType().isa<mlir_ts::AnyType>())
         {
+            if (inverse) return mlir::failure();
             castedValue = builder.create<mlir_ts::UnboxOp>(location, safeType, exprValue);
         }
         else if (exprValue.getType().isa<mlir_ts::OptionalType>() 
                  && exprValue.getType().cast<mlir_ts::OptionalType>().getElementType() == safeType)
         {
+            // TODO: can u finish it?
+            if (inverse) return mlir::failure();
             castedValue = builder.create<mlir_ts::ValueOp>(location, safeType, exprValue);
         }
-        else if (exprValue.getType().isa<mlir_ts::UnionType>())
+        else if (auto unionType = dyn_cast<mlir_ts::UnionType>(exprValue.getType()))
         {
-            castedValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, safeType, exprValue);
+            // prepare else case first
+            if (elseSafeCase)
+            {
+                // add else case
+                auto types = unionType.getTypes();
+                SmallVector<mlir::Type> newTypes;
+                for (auto& subUnionType : types)
+                {
+                    if (inverse && subUnionType != safeType) continue;
+                    if (!inverse && subUnionType == safeType) continue;
+                    newTypes.push_back(subUnionType);
+                }
+
+                elseSafeCase->safeType = getUnionType(newTypes);
+            }
+
+            if (!inverse)
+            {
+                castedValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, safeType, exprValue);
+            }
+            else
+            {
+                auto types = unionType.getTypes();
+                SmallVector<mlir::Type> newTypes;
+                for (auto& subUnionType : types)
+                {
+                    if (subUnionType == safeType) continue;
+                    newTypes.push_back(subUnionType);
+                }
+
+                auto newSafeType = getUnionType(newTypes);
+
+                return addSafeCastStatement(location, parameterName, exprValue, newSafeType, false, nullptr, genContext);
+            }
         }
         else
         {
+            if (inverse) return mlir::failure();
             CAST_A(result, location, safeType, exprValue, genContext);
             castedValue = V(result);
         }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type: [" << parameterName << "] is [" << safeType << "]\n");
 
         return 
             !!registerVariable(
@@ -6139,7 +6189,7 @@ class MLIRGenImpl
                 genContext) ? mlir::success() : mlir::failure();        
     }    
 
-    mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, const GenContext &genContext)
+    mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         if (auto typeOfOp = typeOfVal.as<TypeOfExpression>())
         {
@@ -6185,7 +6235,7 @@ class MLIRGenImpl
 
                 if (typeToken)
                 {
-                    return addSafeCastStatement(expr, typeToken, genContext);
+                    return addSafeCastStatement(expr, typeToken, inverse, elseSafeCase, genContext);
                 }
 
                 return mlir::success();
@@ -6195,7 +6245,7 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
-    mlir::LogicalResult checkSafeCastUndefined(Expression optVal, Expression undefVal, const GenContext &genContext)
+    mlir::LogicalResult checkSafeCastUndefined(Expression optVal, Expression undefVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         auto expr = stripParentheses(undefVal);
         if (auto identifier = expr.as<ts::Identifier>())
@@ -6205,7 +6255,7 @@ class MLIRGenImpl
                 auto optEval = evaluate(optVal, genContext);
                 if (auto optType = optEval.dyn_cast_or_null<mlir_ts::OptionalType>())
                 {
-                    return addSafeCastStatement(optVal, optType.getElementType(), genContext);
+                    return addSafeCastStatement(optVal, optType.getElementType(), inverse, elseSafeCase, genContext);
                 }
             }
         }
@@ -6226,7 +6276,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult checkSafeCastPropertyAccessLogic(TextRange textRange, Expression objAccessExpression,
                                                          mlir::Type typeOfObject, Node name, mlir::Value constVal,
-                                                         const GenContext &genContext)
+                                                         bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         if (auto unionType = typeOfObject.dyn_cast<mlir_ts::UnionType>())
         {
@@ -6260,7 +6310,7 @@ class MLIRGenImpl
 
                                 NodeFactory nf(NodeFactoryFlags::None);
                                 auto typeRef = nf.createTypeReferenceNode(nf.createIdentifier(typeAliasName));
-                                return addSafeCastStatement(objAccessExpression, typeRef, genContext);
+                                return addSafeCastStatement(objAccessExpression, typeRef, inverse, elseSafeCase, genContext);
                             }
                         }
                     }
@@ -6283,7 +6333,7 @@ class MLIRGenImpl
 
                                     NodeFactory nf(NodeFactoryFlags::None);
                                     auto typeRef = nf.createTypeReferenceNode(nf.createIdentifier(typeAliasName));
-                                    return addSafeCastStatement(objAccessExpression, typeRef, genContext);
+                                    return addSafeCastStatement(objAccessExpression, typeRef, inverse, elseSafeCase, genContext);
                                 }
                             }
                         }
@@ -6296,7 +6346,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult checkSafeCastPropertyAccess(Expression exprVal, Expression constVal,
-                                                    const GenContext &genContext)
+                                                    bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         auto expr = stripParentheses(exprVal);
         if (expr.is<PropertyAccessExpression>())
@@ -6315,18 +6365,18 @@ class MLIRGenImpl
 
             auto val = mlirGen(constVal, genContext);
             return checkSafeCastPropertyAccessLogic(constVal, objAccessExpression, typeOfObject,
-                                                    propertyAccessExpressionOp->name, val, genContext);
+                                                    propertyAccessExpressionOp->name, val, inverse, elseSafeCase, genContext);
         }
 
         return mlir::failure();
     }
 
-    mlir::LogicalResult checkSafeCastTypePredicate(Expression expr, mlir_ts::TypePredicateType typePredicateType, const GenContext &genContext)
+    mlir::LogicalResult checkSafeCastTypePredicate(Expression expr, mlir_ts::TypePredicateType typePredicateType, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
-        return addSafeCastStatement(expr, typePredicateType.getElementType(), genContext);
+        return addSafeCastStatement(expr, typePredicateType.getElementType(), inverse, elseSafeCase, genContext);
     }
 
-    mlir::LogicalResult checkSafeCast(Expression expr, mlir::Value conditionValue, const GenContext &genContext)
+    mlir::LogicalResult checkSafeCast(Expression expr, mlir::Value conditionValue, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         if (expr == SyntaxKind::CallExpression)
         {
@@ -6350,6 +6400,8 @@ class MLIRGenImpl
                             return checkSafeCastTypePredicate(
                                 callExpr->expression.as<PropertyAccessExpression>()->expression, 
                                 typePredicateType, 
+                                false,
+                                elseSafeCase,
                                 genContext);                            
                         }
                     }
@@ -6358,7 +6410,9 @@ class MLIRGenImpl
                         // in case of parameters
                         return checkSafeCastTypePredicate(
                             callExpr->arguments[typePredicateType.getParameterIndex()], 
-                            typePredicateType, 
+                            typePredicateType,
+                            false,
+                            elseSafeCase, 
                             genContext);
                     }
                     else
@@ -6396,6 +6450,8 @@ class MLIRGenImpl
                 return checkSafeCastTypePredicate(
                     expr.as<PropertyAccessExpression>()->expression, 
                     propertyType, 
+                    false,
+                    elseSafeCase,
                     genContext);                            
             }
 
@@ -6405,37 +6461,35 @@ class MLIRGenImpl
         {
             auto binExpr = expr.as<BinaryExpression>();
             auto op = (SyntaxKind)binExpr->operatorToken;
-            if (op == SyntaxKind::EqualsEqualsToken || op == SyntaxKind::EqualsEqualsEqualsToken)
+            if (op == SyntaxKind::EqualsEqualsToken 
+                || op == SyntaxKind::EqualsEqualsEqualsToken 
+                || op == SyntaxKind::ExclamationEqualsToken 
+                || op == SyntaxKind::ExclamationEqualsEqualsToken)
             {
+                auto inverse = op == SyntaxKind::ExclamationEqualsToken || op == SyntaxKind::ExclamationEqualsEqualsToken;
+
                 auto left = binExpr->left;
                 auto right = binExpr->right;
 
-                if (mlir::failed(checkSafeCastTypeOf(left, right, genContext)))
+                if (mlir::failed(checkSafeCastTypeOf(left, right, inverse, elseSafeCase, genContext)))
                 {
-                    if (mlir::failed(checkSafeCastTypeOf(right, left, genContext)))
+                    if (mlir::failed(checkSafeCastTypeOf(right, left, inverse, elseSafeCase, genContext)))
                     {
-                        if (mlir::failed(checkSafeCastPropertyAccess(left, right, genContext)))
+                        if (mlir::failed(checkSafeCastPropertyAccess(left, right, inverse, elseSafeCase, genContext)))
                         {
-                            return checkSafeCastPropertyAccess(right, left, genContext);
+                            return checkSafeCastPropertyAccess(right, left, inverse, elseSafeCase, genContext);
                         }
                     }
                 }
 
-                return mlir::success();
-            }
-
-            if (op == SyntaxKind::ExclamationEqualsToken || op == SyntaxKind::ExclamationEqualsEqualsToken)
-            {
-                auto left = binExpr->left;
-                auto right = binExpr->right;
-
-                if (mlir::failed(checkSafeCastUndefined(left, right, genContext)))
+                // undefined case
+                if (mlir::failed(checkSafeCastUndefined(left, right, !inverse, elseSafeCase, genContext)))
                 {
-                    return checkSafeCastUndefined(right, left, genContext);
+                    return checkSafeCastUndefined(right, left, !inverse, elseSafeCase, genContext);
                 }
 
                 return mlir::success();
-            }            
+            }
 
             if (op == SyntaxKind::InstanceOfKeyword)
             {
@@ -6444,7 +6498,7 @@ class MLIRGenImpl
                 {
                     NodeFactory nf(NodeFactoryFlags::None);
                     return addSafeCastStatement(instanceOf->left, nf.createTypeReferenceNode(instanceOf->right),
-                                                genContext);
+                                                false, elseSafeCase, genContext);
                 }
             }
         }
@@ -6472,10 +6526,11 @@ class MLIRGenImpl
 
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
+        ElseSafeCase elseSafeCase{};
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
-            checkSafeCast(ifStatementAST->expression, V(result), genContext);
+            checkSafeCast(ifStatementAST->expression, V(result), hasElse ? &elseSafeCase : nullptr, genContext);
             auto result = mlirGen(ifStatementAST->thenStatement, genContext);
             EXIT_IF_FAILED(result)
         }
@@ -6483,6 +6538,13 @@ class MLIRGenImpl
         if (hasElse)
         {
             builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
+            SymbolTableScopeT varScope(symbolTable);
+            if (elseSafeCase.safeType)
+            {
+                // add case statement
+                addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
+            }
+
             auto result = mlirGen(ifStatementAST->elseStatement, genContext);
             EXIT_IF_FAILED(result)
         }
@@ -7234,10 +7296,10 @@ class MLIRGenImpl
                 switchGenContext.insertIntoParentScope = false;
 
                 // Safe Cast
-                if (mlir::failed(checkSafeCastTypeOf(switchExpr, caseExpr, switchGenContext)))
+                if (mlir::failed(checkSafeCastTypeOf(switchExpr, caseExpr, false, nullptr, switchGenContext)))
                 {
                     checkSafeCastPropertyAccessLogic(caseExpr, objAccessExpression, typeOfObject, name, constVal,
-                                                     switchGenContext);
+                                                     false, nullptr, switchGenContext);
                 }
             };
         }
@@ -7655,14 +7717,21 @@ class MLIRGenImpl
         // detect value type
         // TODO: sync types for 'when' and 'else'
 
-        auto resultWhenFalseType = evaluate(conditionalExpressionAST->whenFalse, genContext);
-
+        mlir::Type resultWhenFalseType;
         mlir::Type resultWhenTrueType;
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
-            checkSafeCast(conditionalExpressionAST->condition, V(result), genContext);
+            ElseSafeCase elseSafeCase;
+            checkSafeCast(conditionalExpressionAST->condition, V(result), &elseSafeCase, genContext);
             resultWhenTrueType = evaluate(conditionalExpressionAST->whenTrue, genContext);
+
+            if (elseSafeCase.safeType)
+            {
+                addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
+            }
+
+            resultWhenFalseType = evaluate(conditionalExpressionAST->whenFalse, genContext);
         }
 
         auto defaultUnionType = getUnionType(resultWhenTrueType, resultWhenFalseType);
@@ -7690,11 +7759,12 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
         auto whenTrueExpression = conditionalExpressionAST->whenTrue;
 
+        ElseSafeCase elseSafeCase;
         mlir::Value resultTrue;
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
-            checkSafeCast(conditionalExpressionAST->condition, V(result), genContext);
+            checkSafeCast(conditionalExpressionAST->condition, V(result), &elseSafeCase, genContext);
             auto result = mlirGen(whenTrueExpression, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             resultTrue = V(result);
@@ -7705,9 +7775,18 @@ class MLIRGenImpl
 
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
-        auto result2 = mlirGen(whenFalseExpression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(result2)
-        auto resultFalse = V(result2);
+
+        mlir::Value resultFalse;
+        {
+            SymbolTableScopeT varScope(symbolTable);
+            if (elseSafeCase.safeType)
+            {
+                addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
+            }        
+            auto result2 = mlirGen(whenFalseExpression, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result2)
+            resultFalse = V(result2);
+        }
 
         CAST_A(falseRes, location, resultType, resultFalse, genContext)
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{falseRes});
