@@ -17942,25 +17942,23 @@ genContext);
             mlir::Type baseType;
             if (mth.isUnionTypeNeedsTag(unionType, baseType))
             {
-                // auto types = unionType.getTypes();
-                // if (std::find(types.begin(), types.end(), valueType) == types.end())
-                // {
-                //     // find which type we can cast to
-                //     for (auto subType : types)
-                //     {
-                //         if (mth.canCastFromTo(valueType, subType))
-                //         {
-                //             CAST(value, location, subType, value, genContext);
-                //             return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
-                //         }
-                //     }
-                // }
-                // else
-                // {
-                //     return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
-                // }
-
-                return castFromUnion(location, type, value, genContext);
+                auto types = unionType.getTypes();
+                if (std::find(types.begin(), types.end(), valueType) == types.end())
+                {
+                    // find which type we can cast to
+                    for (auto subType : types)
+                    {
+                        if (mth.canCastFromTo(valueType, subType))
+                        {
+                            CAST(value, location, subType, value, genContext);
+                            return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
+                        }
+                    }
+                }
+                else
+                {
+                    return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
+                }
             }
         }
 
@@ -17981,6 +17979,12 @@ genContext);
             {
                 return value;
             }
+        }
+
+        // union type to <basic type>
+        if (auto unionType = valueType.dyn_cast<mlir_ts::UnionType>())
+        {
+            return castFromUnion(location, type, value, genContext);
         }
 
         // unboxing
@@ -18128,7 +18132,7 @@ genContext);
             }
 
             // TODO: finish it
-            ss << "throw 'Can't cast from union type';\n";                    
+            ss << "throw \"Can't cast from union type\";\n";                    
             ss << S("}");
 
             auto src = ss.str();
