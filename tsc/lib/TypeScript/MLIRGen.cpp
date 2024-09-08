@@ -6207,17 +6207,17 @@ class MLIRGenImpl
 
                 auto text = stringLiteral->text;
                 Node typeToken;
-                if (text == S("string"))
+                if (text == S("boolean"))
                 {
-                    typeToken = nf.createToken(SyntaxKind::StringKeyword);
+                    typeToken = nf.createToken(SyntaxKind::BooleanKeyword);
                 }
                 else if (text == S("number"))
                 {
                     typeToken = nf.createToken(SyntaxKind::NumberKeyword);
                 }
-                else if (text == S("boolean"))
+                else if (text == S("string"))
                 {
-                    typeToken = nf.createToken(SyntaxKind::BooleanKeyword);
+                    typeToken = nf.createToken(SyntaxKind::StringKeyword);
                 }
                 else if (text == S("bigint"))
                 {
@@ -6227,25 +6227,12 @@ class MLIRGenImpl
                 {
                     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("Opaque")));
                 }
-                // TODO: review using those types
-                // else if (text == S("i32"))
-                // {
-                //     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
-                //         nf.createLiteralTypeNode(nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("1")).as<Node>()) 
-                //     });
-                // }
-                // else if (text == S("i64"))
-                // {
-                //     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
-                //         nf.createLiteralTypeNode(nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("9223372036854775807")).as<Node>()) 
-                //     });
-                // }
                 else if (text == S("i8") || text == S("i16") || text == S("i32") || text == S("i64")
                         || text == S("s8") || text == S("s16") || text == S("s32") || text == S("s64")
                         || text == S("u8") || text == S("u16") || text == S("u32") || text == S("u64")
                         || text == S("u8") || text == S("u16") || text == S("u32") || text == S("u64")
                         || text == S("f16") || text == S("f32") || text == S("f64") || text == S("f128")
-                        || text == S("index"))
+                        || text == S("index") || text == S("char"))
                 {
                     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(text));
                 }
