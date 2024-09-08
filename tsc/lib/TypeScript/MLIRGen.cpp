@@ -18097,83 +18097,90 @@ genContext);
     {
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(value.getType()))
         {
-            // info, we add "_" extra as scanner append "_" in front of "__";
-            auto funcName = "___cast";
-
-            // we need to remove current implementation as we have different implementation per union type
-            removeGenericFunctionMap(funcName);
-            
-            // TODO: must be improved
-            stringstream ss;
-
-            ss << S("function __cast<T, U>(t: T) : U { \n");
-            for (auto subType : unionType.getTypes())
+            if (auto normalizedUnion = dyn_cast<mlir_ts::UnionType>(mth.getUnionTypeWithMerge(unionType.getTypes())))
             {
-            /*
-                    if (typeof a == 'number') return a; \
-                    if (typeof a == 'string') return a; \
-                    if (typeof a == 'i32') return a; \
-                    if (typeof a == 'class') if (a instanceof U) return a; \
-                    return null; \"
-            */
-                ss << S("if (typeof t == '");
-                auto addInstanceOf = false;
-                mlir::TypeSwitch<mlir::Type>(subType)
-                    .Case<mlir_ts::BooleanType>([&](auto _) { ss << S("boolean"); })
-                    .Case<mlir_ts::NumberType>([&](auto _) { ss << S("number"); })
-                    .Case<mlir_ts::StringType>([&](auto _) { ss << S("string"); })
-                    .Case<mlir_ts::CharType>([&](auto _) { ss << S("char"); })
-                    .Case<mlir::IntegerType>([&](auto intType_) {
-                        if (intType_.isSignless()) ss << "i"; else
-                        if (intType_.isSigned()) ss << "s"; else
-                        if (intType_.isUnsigned()) ss << "s"; 
-                        ss << intType_.getWidth(); })
-                    .Case<mlir::FloatType>([&](auto floatType_) { ss << "f"; ss << floatType_.getWidth(); })
-                    .Case<mlir::IndexType>([&](auto _) { ss << "index"; })
-                    .Case<mlir_ts::HybridFunctionType>([&](auto _) { ss << "function"; })
-                    .Case<mlir_ts::ClassType>([&](auto _) { ss << S("class"); addInstanceOf = true; })
-                    .Case<mlir_ts::InterfaceType>([&](auto _) { ss << S("interface') if (t instanceof U"); addInstanceOf = true; })
-                    .Default([&](auto type) { llvm_unreachable("not implemented yet"); });                
+                // info, we add "_" extra as scanner append "_" in front of "__";
+                auto funcName = "___cast";
+
+                // we need to remove current implementation as we have different implementation per union type
+                removeGenericFunctionMap(funcName);
                 
-                if (addInstanceOf)
-                    ss << S("') if (t instanceof U) return t;");
-                else
-                    ss << S("') return t;\n");
+                // TODO: must be improved
+                stringstream ss;
+
+                ss << S("function __cast<T, U>(t: T) : U { \n");
+                for (auto subType : normalizedUnion.getTypes())
+                {
+                /*
+                        if (typeof a == 'number') return a; \
+                        if (typeof a == 'string') return a; \
+                        if (typeof a == 'i32') return a; \
+                        if (typeof a == 'class') if (a instanceof U) return a; \
+                        return null; \"
+                */
+                    ss << S("if (typeof t == '");
+                    auto addInstanceOf = false;
+                    mlir::TypeSwitch<mlir::Type>(subType)
+                        .Case<mlir_ts::BooleanType>([&](auto _) { ss << S("boolean"); })
+                        .Case<mlir_ts::TypePredicateType>([&](auto _) { ss << S("boolean"); })
+                        .Case<mlir_ts::NumberType>([&](auto _) { ss << S("number"); })
+                        .Case<mlir_ts::StringType>([&](auto _) { ss << S("string"); })
+                        .Case<mlir_ts::CharType>([&](auto _) { ss << S("char"); })
+                        .Case<mlir::IntegerType>([&](auto intType_) {
+                            if (intType_.isSignless()) ss << "i"; else
+                            if (intType_.isSigned()) ss << "s"; else
+                            if (intType_.isUnsigned()) ss << "s"; 
+                            ss << intType_.getWidth(); })
+                        .Case<mlir::FloatType>([&](auto floatType_) { ss << "f"; ss << floatType_.getWidth(); })
+                        .Case<mlir::IndexType>([&](auto _) { ss << "index"; })
+                        .Case<mlir_ts::HybridFunctionType>([&](auto _) { ss << "function"; })
+                        .Case<mlir_ts::ClassType>([&](auto _) { ss << S("class"); addInstanceOf = true; })
+                        .Case<mlir_ts::InterfaceType>([&](auto _) { ss << S("interface') if (t instanceof U"); addInstanceOf = true; })
+                        .Default([&](auto type) { 
+                            LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
+                            llvm_unreachable("not implemented yet"); 
+                        });                
+                    
+                    if (addInstanceOf)
+                        ss << S("') if (t instanceof U) return t;");
+                    else
+                        ss << S("') return t;\n");
+                }
+
+                // TODO: finish it
+                ss << "throw \"Can't cast from union type\";\n";                    
+                ss << S("}");
+
+                auto src = ss.str();
+
+                if (mlir::failed(parsePartialStatements(src)))
+                {
+                    assert(false);
+                    return mlir::failure();
+                }
+
+                auto funcResult = resolveIdentifier(location, funcName, genContext);
+
+                assert(funcResult);
+
+                GenContext funcCallGenContext(genContext);
+                funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_T", value.getType()});
+                funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_U", type});
+
+                SmallVector<mlir::Value, 4> operands;
+                operands.push_back(value);
+
+                NodeFactory nf(NodeFactoryFlags::None);
+                return mlirGenCallExpression(
+                    location, 
+                    funcResult, 
+                    { 
+                        nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_T")).as<Node>()), 
+                        nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_U")).as<Node>()) 
+                    }, 
+                    operands, 
+                    funcCallGenContext);
             }
-
-            // TODO: finish it
-            ss << "throw \"Can't cast from union type\";\n";                    
-            ss << S("}");
-
-            auto src = ss.str();
-
-            if (mlir::failed(parsePartialStatements(src)))
-            {
-                assert(false);
-                return mlir::failure();
-            }
-
-            auto funcResult = resolveIdentifier(location, funcName, genContext);
-
-            assert(funcResult);
-
-            GenContext funcCallGenContext(genContext);
-            funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_T", value.getType()});
-            funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_U", type});
-
-            SmallVector<mlir::Value, 4> operands;
-            operands.push_back(value);
-
-            NodeFactory nf(NodeFactoryFlags::None);
-            return mlirGenCallExpression(
-                location, 
-                funcResult, 
-                { 
-                    nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_T")).as<Node>()), 
-                    nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_U")).as<Node>()) 
-                }, 
-                operands, 
-                funcCallGenContext);
         }
 
         return mlir::failure();
