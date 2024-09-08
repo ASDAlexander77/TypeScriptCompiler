@@ -6219,18 +6219,35 @@ class MLIRGenImpl
                 {
                     typeToken = nf.createToken(SyntaxKind::BooleanKeyword);
                 }
-                // TODO: review using those types
-                else if (text == S("i32"))
+                else if (text == S("bigint"))
                 {
-                    typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
-                        nf.createLiteralTypeNode(nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("1")).as<Node>()) 
-                    });
+                    typeToken = nf.createToken(SyntaxKind::BigIntKeyword);
                 }
-                else if (text == S("i64"))
+                else if (text == S("function") || text == S("class") || text == S("interface"))
                 {
-                    typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
-                        nf.createLiteralTypeNode(nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("9223372036854775807")).as<Node>()) 
-                    });
+                    typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("Opaque")));
+                }
+                // TODO: review using those types
+                // else if (text == S("i32"))
+                // {
+                //     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
+                //         nf.createLiteralTypeNode(nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("1")).as<Node>()) 
+                //     });
+                // }
+                // else if (text == S("i64"))
+                // {
+                //     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("TypeOf")), { 
+                //         nf.createLiteralTypeNode(nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("9223372036854775807")).as<Node>()) 
+                //     });
+                // }
+                else if (text == S("i8") || text == S("i16") || text == S("i32") || text == S("i64")
+                        || text == S("s8") || text == S("s16") || text == S("s32") || text == S("s64")
+                        || text == S("u8") || text == S("u16") || text == S("u32") || text == S("u64")
+                        || text == S("u8") || text == S("u16") || text == S("u32") || text == S("u64")
+                        || text == S("f16") || text == S("f32") || text == S("f64") || text == S("f128")
+                        || text == S("index"))
+                {
+                    typeToken = nf.createTypeReferenceNode(nf.createIdentifier(text));
                 }
 
                 if (typeToken)
@@ -18118,13 +18135,15 @@ genContext);
                     .Case<mlir_ts::BooleanType>([&](auto _) { ss << S("boolean"); })
                     .Case<mlir_ts::NumberType>([&](auto _) { ss << S("number"); })
                     .Case<mlir_ts::StringType>([&](auto _) { ss << S("string"); })
+                    .Case<mlir_ts::CharType>([&](auto _) { ss << S("char"); })
                     .Case<mlir::IntegerType>([&](auto intType_) {
                         if (intType_.isSignless()) ss << "i"; else
                         if (intType_.isSigned()) ss << "s"; else
                         if (intType_.isUnsigned()) ss << "s"; 
                         ss << intType_.getWidth(); })
                     .Case<mlir::FloatType>([&](auto floatType_) { ss << "f"; ss << floatType_.getWidth(); })
-                    .Case<mlir::IndexType>([&](auto intType_) { ss << "index"; })
+                    .Case<mlir::IndexType>([&](auto _) { ss << "index"; })
+                    .Case<mlir_ts::HybridFunctionType>([&](auto _) { ss << "function"; })
                     .Case<mlir_ts::ClassType>([&](auto _) { ss << S("class"); addInstanceOf = true; })
                     .Case<mlir_ts::InterfaceType>([&](auto _) { ss << S("interface') if (t instanceof U"); addInstanceOf = true; })
                     .Default([&](auto type) { llvm_unreachable("not implemented yet"); });                
