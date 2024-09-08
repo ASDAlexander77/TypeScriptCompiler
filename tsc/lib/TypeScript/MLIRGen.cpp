@@ -17984,7 +17984,11 @@ genContext);
         // union type to <basic type>
         if (auto unionType = valueType.dyn_cast<mlir_ts::UnionType>())
         {
-            return castFromUnion(location, type, value, genContext);
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(unionType, baseType))
+            {
+                return castFromUnion(location, type, value, genContext);
+            }
         }
 
         // unboxing
