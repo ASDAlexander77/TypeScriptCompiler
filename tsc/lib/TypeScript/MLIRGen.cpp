@@ -17988,8 +17988,10 @@ genContext);
         // union type to <basic type>
         if (auto unionType = valueType.dyn_cast<mlir_ts::UnionType>())
         {
+            // union -> any will be done later in CastLogic
+            auto toAny = type.dyn_cast<mlir_ts::AnyType>();
             mlir::Type baseType;
-            if (mth.isUnionTypeNeedsTag(unionType, baseType))
+            if (!toAny && mth.isUnionTypeNeedsTag(unionType, baseType))
             {
                 return castFromUnion(location, type, value, genContext);
             }
