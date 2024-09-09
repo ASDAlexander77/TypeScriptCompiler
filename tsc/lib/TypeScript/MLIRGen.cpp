@@ -8111,46 +8111,46 @@ class MLIRGenImpl
             return mlirGenCallThisMethod(location, resultRightValue, SYMBOL_HAS_INSTANCE, undefined, {binaryExpressionAST->left}, genContext);
         }        
 
-        auto result2 = mlirGen(binaryExpressionAST->left, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(result2)
-        auto result = V(result2);
+        auto resultLeft = mlirGen(binaryExpressionAST->left, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(resultLeft)
+        auto resultLeftValue = V(resultLeft);
 
-        auto resultType = result.getType();
-        if (auto refType = resultType.dyn_cast<mlir_ts::RefType>())
+        auto resultLeftfType = resultLeftValue.getType();
+        if (auto refType = resultLeftfType.dyn_cast<mlir_ts::RefType>())
         {
-            resultType = refType.getElementType();
+            resultLeftfType = refType.getElementType();
         }
 
-        resultType = mth.wideStorageType(resultType);
+        resultLeftfType = mth.wideStorageType(resultLeftfType);
 
         // TODO: should it be mlirGen?
-        auto classResult = mlirGen(binaryExpressionAST->right, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(classResult)
-        auto classRefVal = V(classResult);
+        auto resultRight = mlirGen(binaryExpressionAST->right, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(resultRight)
+        auto resultRightValue = V(resultRight);
 
-        auto type = classRefVal.getType();
-        if (mth.isNoneType(type))
+        auto rightType = resultRightValue.getType();
+        if (mth.isNoneType(rightType))
         {
             emitError(location, "type of instanceOf can't be resolved.");
             return mlir::failure();
         }
 
-        type = mth.wideStorageType(type);
+        rightType = mth.wideStorageType(rightType);
 
 #ifdef ENABLE_RTTI
-        if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
+        if (auto classType = rightType.dyn_cast<mlir_ts::ClassType>())
         {
-            if (resultType.isa<mlir_ts::ClassType>())
+            if (resultLeftfType.isa<mlir_ts::ClassType>())
             {
                 NodeFactory nf(NodeFactoryFlags::None);
                 NodeArray<Expression> argumentsArray;
                 argumentsArray.push_back(nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S(RTTI_NAME))));
-                return mlirGenCallThisMethod(location, result, INSTANCEOF_NAME, undefined, argumentsArray, genContext);
+                return mlirGenCallThisMethod(location, resultLeftValue, INSTANCEOF_NAME, undefined, argumentsArray, genContext);
             }
 
-            if (resultType.isa<mlir_ts::AnyType>())
+            if (resultLeftfType.isa<mlir_ts::AnyType>())
             {
-                auto typeOfAnyValue = builder.create<mlir_ts::TypeOfAnyOp>(location, getStringType(), result);
+                auto typeOfAnyValue = builder.create<mlir_ts::TypeOfAnyOp>(location, getStringType(), resultLeftValue);
                 auto classStrConst =
                     builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr("class"));
                 auto cmpResult = builder.create<mlir_ts::StringCompareOp>(
@@ -8162,8 +8162,8 @@ class MLIRGenImpl
                     getBooleanType(), cmpResult,
                     [&](mlir::OpBuilder &builder, mlir::Location location) {
                         // TODO: test cast value
-                        auto thisPtrValue = cast(location, getOpaqueType(), result, genContext);
-                        return mlirGenInstanceOfOpaque(location, thisPtrValue, classRefVal, genContext);
+                        auto thisPtrValue = cast(location, getOpaqueType(), resultLeftValue, genContext);
+                        return mlirGenInstanceOfOpaque(location, thisPtrValue, resultRightValue, genContext);
                     },
                     [&](mlir::OpBuilder &builder, mlir::Location location) { // default false value
                                                                              // compare typeOfValue
@@ -8173,15 +8173,20 @@ class MLIRGenImpl
 
                 return returnValue;
             }
+
+            if (resultLeftfType.isa<mlir_ts::OpaqueType>())
+            {
+                return mlirGenInstanceOfOpaque(location, resultLeftValue, resultRightValue, genContext);
+            }
         }
 #endif
 
-        LLVM_DEBUG(llvm::dbgs() << "!! instanceOf precalc value: " << (resultType == type) << " '" << resultType
-                                << "' is '" << type << "'\n";);
+        LLVM_DEBUG(llvm::dbgs() << "!! instanceOf precalc value: " << (resultLeftfType == rightType) << " '" << resultLeftfType
+                                << "' is '" << rightType << "'\n";);
 
         // default logic
         return V(
-            builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type)));
+            builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultLeftfType == rightType)));
     }
 
     ValueOrLogicalResult evaluateBinaryOp(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp leftConstOp,
@@ -18123,7 +18128,9 @@ genContext);
                 // TODO: must be improved
                 stringstream ss;
 
-                ss << S("function __cast<T, U>(t: T) : U { \n");
+                StringMap<boolean> typeOfs;
+                SmallVector<mlir::Type> classInstances;
+                ss << S("function __cast<T, U>(t: T) : U {\n");
                 for (auto subType : normalizedUnion.getTypes())
                 {
                 /*
@@ -18133,38 +18140,59 @@ genContext);
                         if (typeof a == 'class') if (a instanceof U) return a; \
                         return null; \"
                 */
-                    ss << S("if (typeof t == '");
-                    auto addInstanceOf = false;
                     mlir::TypeSwitch<mlir::Type>(subType)
-                        .Case<mlir_ts::BooleanType>([&](auto _) { ss << S("boolean"); })
-                        .Case<mlir_ts::TypePredicateType>([&](auto _) { ss << S("boolean"); })
-                        .Case<mlir_ts::NumberType>([&](auto _) { ss << S("number"); })
-                        .Case<mlir_ts::StringType>([&](auto _) { ss << S("string"); })
-                        .Case<mlir_ts::CharType>([&](auto _) { ss << S("char"); })
+                        .Case<mlir_ts::BooleanType>([&](auto _) { typeOfs["boolean"] = true; })
+                        .Case<mlir_ts::TypePredicateType>([&](auto _) { typeOfs["boolean"] = true; })
+                        .Case<mlir_ts::NumberType>([&](auto _) { typeOfs["number"] = true; })
+                        .Case<mlir_ts::StringType>([&](auto _) { typeOfs["string"] = true; })
+                        .Case<mlir_ts::CharType>([&](auto _) { typeOfs["char"] = true; })
                         .Case<mlir::IntegerType>([&](auto intType_) {
-                            if (intType_.isSignless()) ss << "i"; else
-                            if (intType_.isSigned()) ss << "s"; else
-                            if (intType_.isUnsigned()) ss << "s"; 
-                            ss << intType_.getWidth(); })
-                        .Case<mlir::FloatType>([&](auto floatType_) { ss << "f"; ss << floatType_.getWidth(); })
-                        .Case<mlir::IndexType>([&](auto _) { ss << "index"; })
-                        .Case<mlir_ts::HybridFunctionType>([&](auto _) { ss << "function"; })
-                        .Case<mlir_ts::ClassType>([&](auto _) { ss << S("class"); addInstanceOf = true; })
-                        .Case<mlir_ts::InterfaceType>([&](auto _) { ss << S("interface') if (t instanceof U"); addInstanceOf = true; })
+                            if (intType_.isSignless()) typeOfs["i" + std::to_string(intType_.getWidth())] = true; else
+                            if (intType_.isSigned()) typeOfs["s" + std::to_string(intType_.getWidth())] = true; else
+                            if (intType_.isUnsigned()) typeOfs["u" + std::to_string(intType_.getWidth())] = true; })
+                        .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = true; })
+                        .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = true; })
+                        .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
+                        .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
+                        .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
                         .Default([&](auto type) { 
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
                             llvm_unreachable("not implemented yet"); 
-                        });                
-                    
-                    if (addInstanceOf)
-                        ss << S("') if (t instanceof U) return t;");
-                    else
-                        ss << S("') return t;\n");
+                        });                                   
                 }
 
-                // TODO: finish it
-                ss << "throw \"Can't cast from union type\";\n";                    
-                ss << S("}");
+                auto next = false;
+                for (auto& pair : typeOfs)
+                {
+                    if (next) ss << S(" else ");
+
+                    ss << S("if (typeof t == '");
+                    ss << stows(pair.getKey().str());
+                    ss << S("') ");
+                    if (pair.getKey() == "class")
+                    {
+                        ss << S("{ \n");
+
+                        auto index = 0;
+                        for (auto& _ : classInstances)
+                        {
+                            ss << S("if (t instanceof TYPE_INST_ALIAS");
+                            ss << index++;
+                            ss << S(") return t;\n");
+                        }
+
+                        ss << S(" }\n");
+                    }
+                    else
+                    {
+                        ss << S("return t;\n");
+                    }
+
+                    next = true;
+                }
+
+                ss << "\nthrow \"Can't cast from union type\";\n";                    
+                ss << S("}\n");
 
                 auto src = ss.str();
 
@@ -18181,6 +18209,12 @@ genContext);
                 GenContext funcCallGenContext(genContext);
                 funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_T", value.getType()});
                 funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_U", type});
+
+                auto index = 0;
+                for (auto& instanceOfType : classInstances)
+                {
+                    funcCallGenContext.typeAliasMap.insert({"TYPE_INST_ALIAS" + std::to_string(index++), instanceOfType});
+                }
 
                 SmallVector<mlir::Value, 4> operands;
                 operands.push_back(value);
