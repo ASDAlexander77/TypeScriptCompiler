@@ -7814,7 +7814,7 @@ class MLIRGenImpl
         auto leftExpressionValue = V(result);
 
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
-        if (!resultWhenFalseType)
+        if (mth.isNoneType(resultWhenFalseType))
         {
             return mlir::failure();
         }
@@ -21055,7 +21055,7 @@ genContext);
 
     mlir::Type getUnionType(mlir::Type type1, mlir::Type type2)
     {
-        if (!type1 || !type2)
+        if (mth.isNoneType(type1) || mth.isNoneType(type2))
         {
             return mlir::Type();
         }
