@@ -8047,6 +8047,56 @@ class MLIRGenImpl
         return mlirGen(callLogic, genContext);
     }
 
+    mlir::Value mlirGenInstanceOfOpaque(mlir::Location location, mlir::Value thisPtrValue, mlir::Value classRefVal, const GenContext &genContext)
+    {
+        // get VTable we can use VTableOffset
+        auto vtablePtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(),
+                                                                    thisPtrValue, 0 /*VTABLE index*/);
+
+        // get InstanceOf method, this is 0 index in vtable
+        auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(
+            location, getOpaqueType(), vtablePtr, 0 /*InstanceOf index*/);
+
+        if (auto classType = dyn_cast<mlir_ts::ClassType>(classRefVal.getType()))
+        {
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+
+            auto resultRtti = mlirGenPropertyAccessExpression(location, classRefVal, RTTI_NAME, genContext);
+            auto rttiOfClassValue = V(resultRtti);
+            if (classInfo->isDynamicImport)
+            {
+                if (auto valueRefType = rttiOfClassValue.getType().dyn_cast<mlir_ts::RefType>())
+                {
+                    rttiOfClassValue = builder.create<mlir_ts::LoadOp>(location, valueRefType.getElementType(), rttiOfClassValue);
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            }
+
+            assert(rttiOfClassValue);
+
+            auto instanceOfFuncType = mlir_ts::FunctionType::get(
+                builder.getContext(), SmallVector<mlir::Type>{getOpaqueType(), getStringType()},
+                SmallVector<mlir::Type>{getBooleanType()});
+
+            // TODO: check result
+            auto result = cast(location, instanceOfFuncType, instanceOfPtr, genContext);
+            auto funcPtr = V(result);
+
+            // call methos, we need to send, this, and rtti info
+            auto callResult = builder.create<mlir_ts::CallIndirectOp>(
+                MLIRHelper::getCallSiteLocation(funcPtr, location),
+                funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
+
+            return callResult.getResult(0);
+        }
+
+        // error
+        return mlir::Value();
+    }    
+
     ValueOrLogicalResult mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
@@ -8074,7 +8124,11 @@ class MLIRGenImpl
         resultType = mth.wideStorageType(resultType);
 
         // TODO: should it be mlirGen?
-        auto type = getTypeByTypeName(binaryExpressionAST->right, genContext);
+        auto classResult = mlirGen(binaryExpressionAST->right, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(classResult)
+        auto classRefVal = V(classResult);
+
+        auto type = classRefVal.getType();
         if (mth.isNoneType(type))
         {
             emitError(location, "type of instanceOf can't be resolved.");
@@ -8086,7 +8140,6 @@ class MLIRGenImpl
 #ifdef ENABLE_RTTI
         if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
         {
-            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
             if (resultType.isa<mlir_ts::ClassType>())
             {
                 NodeFactory nf(NodeFactoryFlags::None);
@@ -8110,47 +8163,7 @@ class MLIRGenImpl
                     [&](mlir::OpBuilder &builder, mlir::Location location) {
                         // TODO: test cast value
                         auto thisPtrValue = cast(location, getOpaqueType(), result, genContext);
-
-                        // get VTable we can use VTableOffset
-                        auto vtablePtr = builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(),
-                                                                                    thisPtrValue, 0 /*VTABLE index*/);
-
-                        // get InstanceOf method, this is 0 index in vtable
-                        auto instanceOfPtr = builder.create<mlir_ts::VTableOffsetRefOp>(
-                            location, getOpaqueType(), vtablePtr, 0 /*InstanceOf index*/);
-
-                        auto classRefVal = mlirGen(binaryExpressionAST->right, genContext);
-
-                        auto resultRtti = mlirGenPropertyAccessExpression(location, classRefVal, RTTI_NAME, genContext);
-                        auto rttiOfClassValue = V(resultRtti);
-                        if (classInfo->isDynamicImport)
-                        {
-                            if (auto valueRefType = rttiOfClassValue.getType().dyn_cast<mlir_ts::RefType>())
-                            {
-                                rttiOfClassValue = builder.create<mlir_ts::LoadOp>(location, valueRefType.getElementType(), rttiOfClassValue);
-                            }
-                            else
-                            {
-                                llvm_unreachable("not implemented");
-                            }
-                        }
-
-                        assert(rttiOfClassValue);
-
-                        auto instanceOfFuncType = mlir_ts::FunctionType::get(
-                            builder.getContext(), SmallVector<mlir::Type>{getOpaqueType(), getStringType()},
-                            SmallVector<mlir::Type>{getBooleanType()});
-
-                        // TODO: check result
-                        auto result = cast(location, instanceOfFuncType, instanceOfPtr, genContext);
-                        auto funcPtr = V(result);
-
-                        // call methos, we need to send, this, and rtti info
-                        auto callResult = builder.create<mlir_ts::CallIndirectOp>(
-                            MLIRHelper::getCallSiteLocation(funcPtr, location),
-                            funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
-
-                        return callResult.getResult(0);
+                        return mlirGenInstanceOfOpaque(location, thisPtrValue, classRefVal, genContext);
                     },
                     [&](mlir::OpBuilder &builder, mlir::Location location) { // default false value
                                                                              // compare typeOfValue
