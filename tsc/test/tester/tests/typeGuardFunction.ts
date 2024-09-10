@@ -107,7 +107,9 @@ function main() {
 
     // Binary expressions
     let union2: C | B = new B();
-    let union3: boolean | B = isA(union2) || union2;
+    // TODO: should we finish it? as we know that union2 is B (not C | B) we can set union3 with direct value union2 but we do not have scope and we not sure what can change value in union2
+    //let union3: boolean | B = isA(union2) || union2;
+    let union3: boolean | B | C = isA(union2) || union2;
 
     print("done.");
 }

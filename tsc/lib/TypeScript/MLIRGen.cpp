@@ -15,6 +15,7 @@
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
 #include "TypeScript/MLIRLogic/MLIRNamespaceGuard.h"
+#include "TypeScript/MLIRLogic/MLIRLocationGuard.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIRValueGuard.h"
 
@@ -145,7 +146,8 @@ class MLIRGenImpl
           sourceMgr(const_cast<llvm::SourceMgr &>(sourceMgr)),
           sourceMgrHandler(const_cast<llvm::SourceMgr &>(sourceMgr), &const_cast<mlir::MLIRContext &>(context)),
           mainSourceFileName(fileNameParam),
-          path(pathParam)
+          path(pathParam),
+          overwriteLoc(mlir::UnknownLoc::get(builder.getContext()))
     {
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
 
@@ -763,6 +765,9 @@ class MLIRGenImpl
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
+
+            MLIRLocationGuard vgLoc(overwriteLoc); 
+            overwriteLoc = location;
 
             auto importData = convertUTF8toWide(dataPtr);
             if (mlir::failed(parsePartialStatements(importData, genContext, false)))
@@ -7820,6 +7825,10 @@ class MLIRGenImpl
         }
 
         auto resultType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
+        if (mth.isNoneType(resultType))
+        {
+            return mlir::failure();
+        }
 
         CAST_A(condValue, location, getBooleanType(), leftExpressionValue, genContext);
 
@@ -10430,6 +10439,9 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenArrayReduce(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
                                             const GenContext &genContext)
     {
+        MLIRLocationGuard vgLoc(overwriteLoc); 
+        overwriteLoc = location;
+
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "___array_reduce";
 
@@ -18076,12 +18088,15 @@ genContext);
 
     ValueOrLogicalResult castFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
+        MLIRLocationGuard vgLoc(overwriteLoc); 
+        overwriteLoc = location;
+
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "___as";
 
         if (!existGenericFunctionMap(funcName))
         {
-            // TODO: must be improved
+            // TODO: must be improved, outdated
             auto src = S("function __as<T>(a: any) : T \
                 { \
                     if (typeof a == 'number') return a; \
@@ -18195,6 +18210,9 @@ genContext);
                 ss << S("}\n");
 
                 auto src = ss.str();
+
+                MLIRLocationGuard vgLoc(overwriteLoc); 
+                overwriteLoc = location;
 
                 if (mlir::failed(parsePartialStatements(src)))
                 {
@@ -21986,6 +22004,11 @@ genContext);
   protected:
     mlir::Location loc(TextRange loc)
     {
+        if (!overwriteLoc.isa<mlir::UnknownLoc>())
+        {
+            return overwriteLoc;
+        }
+
         if (!loc)
         {
             return mlir::UnknownLoc::get(builder.getContext());
@@ -22216,6 +22239,7 @@ private:
     mlir::Block* tempEntryBlock;
     mlir::ModuleOp tempModule;
     mlir_ts::FuncOp tempFuncOp;
+    mlir::Location overwriteLoc;
 };
 } // namespace
 

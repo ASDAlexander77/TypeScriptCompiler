@@ -593,6 +593,8 @@ LogicalResult mlir_ts::CastOp::verify()
                 auto types = resUnionType.getTypes();
                 if (std::find_if(types.begin(), types.end(), pred) == types.end())
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "!! Location of CastOp: " << getLoc() << "\n";);
+
                     return emitOpError("type [") << inType << "] can't be stored in [" << resUnionType << "]";
                 }
             }
