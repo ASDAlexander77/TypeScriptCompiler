@@ -493,6 +493,9 @@ class MLIRGenImpl
             auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
             mainSourceFileName = fileNameUtf8;
 
+            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+            sourceFile = includeFile;
+
             if (failed(mlirGen(includeFile->statements, genContextPartial)))
             {
                 outputDiagnostics(postponedMessages, 1);
@@ -551,6 +554,9 @@ class MLIRGenImpl
             MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
             auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
             mainSourceFileName = fileNameUtf8;
+
+            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+            sourceFile = includeFile;
 
             if (failed(mlirGen(includeFile->statements, genContext)))
             {
