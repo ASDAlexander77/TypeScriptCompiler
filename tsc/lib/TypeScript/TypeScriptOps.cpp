@@ -564,17 +564,17 @@ LogicalResult mlir_ts::CastOp::verify()
                 return cmpTypes(item, resType); 
             };
             auto types = inUnionType.getTypes();
-            if (std::find_if(types.begin(), types.end(), pred) == types.end())
+            if (!std::all_of(types.begin(), types.end(), pred))
             {
                 ::typescript::MLIRTypeHelper mth(getContext());
                 mlir::Type baseType;
-                if (!mth.isUnionTypeNeedsTag(inUnionType, baseType))
+                if (!mth.isUnionTypeNeedsTag(inUnionType, baseType)/* && mth.canCastFromTo(baseType, resType)*/)
                 {
                     // we need to ignore this case, for example if union<int, int, int> -> string, we need cast int to string
                     return success();
                 }
 
-                return emitOpError("type [") << inUnionType << "] does not have [" << resType << "] type";
+                return emitOpError("not all types in [") << inUnionType << "] can be casted to [" << resType << "] type";
             }
 
             return success();
@@ -593,6 +593,8 @@ LogicalResult mlir_ts::CastOp::verify()
                 auto types = resUnionType.getTypes();
                 if (std::find_if(types.begin(), types.end(), pred) == types.end())
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "!! Location of CastOp: " << getLoc() << "\n";);
+
                     return emitOpError("type [") << inType << "] can't be stored in [" << resUnionType << "]";
                 }
             }
@@ -690,6 +692,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
+        // TODO: review it, if you still need it as we are should be using "safeCast"
         if (inUnionType && !resUnionType)
         {
             ::typescript::MLIRTypeHelper mth(rewriter.getContext());

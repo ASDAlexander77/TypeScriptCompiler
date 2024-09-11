@@ -476,8 +476,6 @@ class MLIRTypeHelper
             actualType = removeConstType(actualType);
         }
 
-        LLVM_DEBUG(if (type != actualType) llvm::dbgs() << "\n\t\t widening type: " << type <<  " -> wide type: " << actualType << "\n";);        
-
         return actualType;
     }    
 
@@ -625,6 +623,21 @@ class MLIRTypeHelper
     bool isNoneType(mlir::Type type)
     {
         return !type || type.isa<mlir::NoneType>();
+    }
+
+    bool isEmptyTuple(mlir::Type type)
+    {
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        {
+            return tupleType.getFields().size() == 0;
+        }
+
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            return constTupleType.getFields().size() == 0;
+        }
+
+        return false;
     }
 
     bool isVirtualFunctionType(mlir::Value actualFuncRefValue) 
@@ -1487,6 +1500,29 @@ class MLIRTypeHelper
                 return true;
             }
         }
+
+        // we should not treat boolean as integer
+        // if (srcType.isa<mlir_ts::BooleanType>())
+        // {
+        //     if (dstType.isa<mlir::IntegerType>() && dstType.getIntOrFloatBitWidth() > 0)
+        //     {
+        //         return true;
+        //     }
+
+        //     if (dstType.isa<mlir_ts::NumberType>())
+        //     {
+        //         return true;
+        //     }
+        // }
+
+        // but we can't cast TypePredicate to boolean as we will lose the information about type
+        if (srcType.isa<mlir_ts::BooleanType>())
+        {
+            if (dstType.isa<mlir_ts::TypePredicateType>())
+            {
+                return true;
+            }
+        }        
 
         if (auto dstEnumType = dstType.dyn_cast<mlir_ts::EnumType>())
         {
@@ -2754,7 +2790,9 @@ class MLIRTypeHelper
     {
         if (types.size() == 0)
         {
-            return mlir_ts::NeverType::get(context);
+            // TODO:? should it be empty tuple or never type?
+            //return mlir_ts::NeverType::get(context);
+            return mlir_ts::TupleType::get(context, {});
         }
 
         if (types.size() == 1)
@@ -2957,7 +2995,7 @@ class MLIRTypeHelper
     mlir::Type mergeType(mlir::Type existType, mlir::Type currentType, bool& merged)
     {
         merged = false;
-        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: \n\t" << existType << " with \n\t" << currentType << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing \n\ttype: \t" << existType << "\n\twith \t" << currentType << "\n";);
 
         if (existType == currentType)
         {
