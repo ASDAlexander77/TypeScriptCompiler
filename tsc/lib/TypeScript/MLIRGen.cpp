@@ -1855,7 +1855,7 @@ class MLIRGenImpl
         return funcOp->getFuncType();
     }
 
-    mlir::LogicalResult instantiateSpecializedFunction(mlir::Location location,
+    ValueOrLogicalResult instantiateSpecializedFunction(mlir::Location location,
         mlir::Value functionRefValue, mlir::Type recieverType, const GenContext &genContext)
     {
         auto currValue = functionRefValue;
@@ -1924,6 +1924,20 @@ class MLIRGenImpl
             }
 
             symbolOp->removeAttr(GENERIC_ATTR_NAME);
+
+            builder.setInsertionPoint(symbolOp);
+
+            // TODO: append captures vars to generic arrow function
+            auto newOpWithCapture = resolveFunctionWithCapture(location, StringRef(specFuncName), specFuncOp.getFunctionType(), mlir::Value(), false, genContext);
+            if (!newOpWithCapture.getDefiningOp<mlir_ts::SymbolRefOp>())
+            {
+                // symbolOp will be removed as unsed
+                return newOpWithCapture;
+            }
+            else
+            {
+                // newOpWithCapture will be removed as unsed
+            }
         }
 
         return mlir::success();
@@ -2205,7 +2219,8 @@ class MLIRGenImpl
     }
 
     std::tuple<mlir::LogicalResult, mlir_ts::FunctionType, std::string> instantiateSpecializedFunction(
-        mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, bool skipThisParam, const GenContext &genContext)
+        mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, bool skipThisParam, 
+        SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
         auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(name);
         if (functionGenericTypeInfo)
@@ -2327,7 +2342,7 @@ class MLIRGenImpl
 
                 // instatiate all ArrowFunctions which are not yet instantiated
                 auto opIndex = skipThisParam ? 0 : -1;
-                for (auto op : genContext.callOperands)
+                for (auto &op : genContext.callOperands)
                 {
                     opIndex++;
                     if (isGenericFunctionReference(op))
@@ -2339,6 +2354,12 @@ class MLIRGenImpl
                         if (mlir::failed(result))
                         {
                             return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                        }
+
+                        auto resultValue = V(result);
+                        if (resultValue)
+                        {
+                            operands[opIndex] = resultValue;
                         }
                     }
                 }
@@ -2571,7 +2592,8 @@ class MLIRGenImpl
     }
 
     ValueOrLogicalResult mlirGenSpecialized(mlir::Location location, mlir::Value genResult,
-                                            NodeArray<TypeNode> typeArguments, const GenContext &genContext)
+                                            NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
+                                            const GenContext &genContext)
     {
         // in case it is generic arrow function
         auto currValue = genResult;
@@ -2588,7 +2610,7 @@ class MLIRGenImpl
             GenContext specGenContext(genContext);
             specGenContext.callOperands = operands;
 
-            auto newFuncRefOrLogicResult = mlirGenSpecialized(location, currValue, typeArguments, specGenContext);
+            auto newFuncRefOrLogicResult = mlirGenSpecialized(location, currValue, typeArguments, operands, specGenContext);
             EXIT_IF_FAILED(newFuncRefOrLogicResult)
             if (newFuncRefOrLogicResult && currValue != newFuncRefOrLogicResult)
             {
@@ -2639,7 +2661,7 @@ class MLIRGenImpl
             }
 
             auto [result, funcType, funcSymbolName] =
-                instantiateSpecializedFunction(location, funcName, typeArguments, skipThisParam, initSpecGenContext);
+                instantiateSpecializedFunction(location, funcName, typeArguments, skipThisParam, operands, initSpecGenContext);
             if (mlir::failed(result))
             {
                 emitError(location) << "can't instantiate function. '" << funcName
@@ -2704,7 +2726,8 @@ class MLIRGenImpl
 
         auto location = loc(expression);
 
-        return mlirGenSpecialized(location, genResult, typeArguments, genContext);
+        SmallVector<mlir::Value, 4> emptyOperands;
+        return mlirGenSpecialized(location, genResult, typeArguments, emptyOperands, genContext);
     }
 
     ValueOrLogicalResult mlirGen(ExpressionWithTypeArguments expressionWithTypeArgumentsAST,
@@ -4385,7 +4408,8 @@ class MLIRGenImpl
 
         // discover type & args
         // seems we need to discover it all the time due to captured vars
-        auto detectReturnType = (!funcType || funcProtoGenContext.forceDiscover || !functionDiscovered) && !funcProto->getIsGeneric();
+        auto detectReturnType = (!funcType || funcProtoGenContext.forceDiscover || !functionDiscovered)
+            && !funcProto->getIsGeneric();
         if (detectReturnType)
         {
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
@@ -10482,7 +10506,7 @@ class MLIRGenImpl
         specGenContext.callOperands = operands;
 
         // get function ref.
-        auto result = mlirGenSpecialized(location, funcResult, typeArguments, specGenContext);
+        auto result = mlirGenSpecialized(location, funcResult, typeArguments, operands, specGenContext);
         EXIT_IF_FAILED(result)
         auto actualFuncRefValue = V(result);
 
@@ -12127,7 +12151,7 @@ class MLIRGenImpl
         // if we have receiver type we do not need to "adopt it"
         auto wideType = arrayInfo.recevierContext.receiverElementType ? type : mth.wideStorageType(type);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! element type: " << wideType << " original type: " << type << "\n";);
+        //LLVM_DEBUG(llvm::dbgs() << "\n!! element type: " << wideType << " original type: " << type << "\n";);
 
         elementType = elementType ? elementType : wideType;
         if (elementType != wideType)
@@ -12142,7 +12166,7 @@ class MLIRGenImpl
             elementType = mth.mergeType(elementType, wideType, merged);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! result element type: " << elementType << "\n";);
+        //LLVM_DEBUG(llvm::dbgs() << "\n!! result element type: " << elementType << "\n";);
 
         arrayInfo.accumulatedArrayElementType = elementType;
 
