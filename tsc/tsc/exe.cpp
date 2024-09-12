@@ -13,6 +13,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/Path.h"
+#include "llvm/CodeGen/CommandFlags.h"
 
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/TypeScriptCompiler/Defines.h"
@@ -274,6 +275,8 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     auto emscripten = os == llvm::Triple::Emscripten;
     auto shared = emitAction == BuildDll;
     
+    std::optional<llvm::Reloc::Model> RM = llvm::codegen::getExplicitRelocModel();
+
     if (wasm)
     {
         isLLVMLibNeeded = false;
@@ -411,6 +414,11 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (!win && !wasm)
     {
+        if (*RM == llvm::Reloc::PIC_)
+        {
+            args.push_back("-fPIC");
+        }        
+
         args.push_back("-frtti");
         args.push_back("-fexceptions");
         args.push_back("-lstdc++");

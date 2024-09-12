@@ -93,7 +93,8 @@ cl::opt<bool> dumpObjectFile{"dump-object-file", cl::Hidden, cl::desc("Dump JITt
 
 cl::opt<std::string> objectFilename{"object-filename", cl::Hidden, cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
 
-cl::opt<bool> printStackTrace{"print-stack-trace", cl::Hidden, cl::desc("Print stack trace"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
+cl::opt<bool> printOp{"print-op", cl::Hidden, cl::desc("Print Op on Diagnostic"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
+cl::opt<bool> printStackTrace{"print-stack-trace", cl::Hidden, cl::desc("Print stack trace on Diagnostic"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 
 // cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
@@ -256,13 +257,8 @@ int main(int argc, char **argv)
     mlirContext.getOrLoadDialect<mlir::async::AsyncDialect>();
 #endif
 
-#ifdef NDEBUG
-    mlirContext.printOpOnDiagnostic(false);
-#else 
-    mlirContext.printOpOnDiagnostic(true);
-#endif
-
-    mlirContext.printStackTraceOnDiagnostic(printStackTrace);
+    mlirContext.printOpOnDiagnostic(printOp.getValue());
+    mlirContext.printStackTraceOnDiagnostic(printStackTrace.getValue());
 
     auto compileOptions = prepareOptions();
 
