@@ -414,7 +414,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (!win && !wasm)
     {
-        if (*RM == llvm::Reloc::PIC_)
+        if (RM && *RM == llvm::Reloc::PIC_)
         {
             args.push_back("-fPIC");
         }        
