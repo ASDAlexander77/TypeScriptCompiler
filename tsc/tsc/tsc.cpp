@@ -89,9 +89,11 @@ cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dy
 cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called (default=main)"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
 
 cl::opt<bool> dumpObjectFile{"dump-object-file", cl::Hidden, cl::desc("Dump JITted-compiled object to file specified with "
-                                                                 "-object-filename (<input file>.o by default)."), cl::cat(TypeScriptCompilerDebugCategory)};
+        "-object-filename (<input file>.o by default)."), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 
 cl::opt<std::string> objectFilename{"object-filename", cl::Hidden, cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
+
+cl::opt<bool> printStackTrace{"print-stack-trace", cl::Hidden, cl::desc("Print stack trace"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 
 // cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
@@ -257,8 +259,10 @@ int main(int argc, char **argv)
 #ifdef NDEBUG
     mlirContext.printOpOnDiagnostic(false);
 #else 
-    mlirContext.printStackTraceOnDiagnostic(true);
+    mlirContext.printOpOnDiagnostic(true);
 #endif
+
+    mlirContext.printStackTraceOnDiagnostic(printStackTrace);
 
     auto compileOptions = prepareOptions();
 
