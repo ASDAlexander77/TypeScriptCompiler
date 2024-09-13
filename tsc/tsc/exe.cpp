@@ -421,7 +421,6 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
             args.push_back("-Wl,-pie");
         }        
 
-        // seems we are working with LD here not GCC
         args.push_back("-frtti");
         args.push_back("-fexceptions");
         args.push_back("-lstdc++");
