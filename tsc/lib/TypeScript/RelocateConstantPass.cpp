@@ -50,7 +50,6 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
 
     Operation *relocateConst(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
     {
-        Operation *lastOp = nullptr;
         // find fist non-constant op
         auto firstNonConstOp = seekFirstNonConstOp(f);
         if (firstNonConstOp)
@@ -70,8 +69,6 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
                 constantOp->replaceAllUsesWith(newOp);
 
                 constantOp->erase();
-
-                lastOp = newOp;
             }
         }
 

@@ -56,7 +56,7 @@ int main(int argc, char **argv)
     auto sourceFile = parser.parseSourceFile(stows(filePath), content, ScriptTarget::Latest);
 
     stringstream out;
-    Printer printer(out);
+    Printer<stringstream> printer(out);
     printer.setDeclarationMode(declareMode);
     printer.printNode(sourceFile);
 

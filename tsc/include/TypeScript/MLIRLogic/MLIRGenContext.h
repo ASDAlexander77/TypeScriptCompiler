@@ -191,7 +191,7 @@ struct GenContext
 
 struct ValueOrLogicalResult 
 {
-    ValueOrLogicalResult() = default;
+    ValueOrLogicalResult() : result(mlir::success()), value(mlir::Value()) {};
     ValueOrLogicalResult(mlir::LogicalResult result) : result(result) {};
     ValueOrLogicalResult(mlir::Value value) : result(mlir::success()), value(value) {};
 
