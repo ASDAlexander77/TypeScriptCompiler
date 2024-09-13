@@ -229,12 +229,12 @@ struct InterfaceInfo
 
         for (auto &method : methods)
         {
-            tupleFields.push_back({MLIRHelper::TupleFieldName(method.name, context), method.funcType});
+            tupleFields.push_back({MLIRHelper::TupleFieldName(method.name, context), method.funcType, false});
         }
 
         for (auto &field : fields)
         {
-            tupleFields.push_back({field.id, field.type});
+            tupleFields.push_back({field.id, field.type, false});
         }
 
         return mlir::success();

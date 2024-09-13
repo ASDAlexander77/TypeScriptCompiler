@@ -35,7 +35,7 @@ struct FieldInfo
     FieldInfo allocateInto(TypeStorageAllocator &alloc) const
     {
         // return FieldInfo{alloc.copyInto(name), type};
-        return FieldInfo{id, type};
+        return FieldInfo{id, type, false};
     }
 };
 

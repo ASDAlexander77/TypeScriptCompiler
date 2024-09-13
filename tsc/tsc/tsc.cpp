@@ -163,9 +163,10 @@ std::string mergeWithDefaultLibPath(std::string defaultlibpath, std::string subP
 bool prepareDefaultLib(CompileOptions &compileOptions)
 {
     // TODO: temp hack
-    auto fullPath = mergeWithDefaultLibPath(getDefaultLibPath(), DEFAULT_LIB_DIR "/");
+    auto defaultLibPathVariable = getDefaultLibPath();
+    auto fullPath = mergeWithDefaultLibPath(defaultLibPathVariable, DEFAULT_LIB_DIR "/");
     auto isDir = llvm::sys::fs::is_directory(fullPath);
-    if (!defaultlibpath.empty() && !isDir) 
+    if (!defaultLibPathVariable.empty() && !isDir) 
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "Default lib path: " << fullPath
                                     << " does not exist or is not a directory\n";
