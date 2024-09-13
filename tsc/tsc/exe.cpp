@@ -418,8 +418,10 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
         if (RM && *RM == llvm::Reloc::PIC_)
         {
             args.push_back("-fPIC");
+            args.push_back("-Wl,-pie");
         }        
 
+        // seems we are working with LD here not GCC
         args.push_back("-frtti");
         args.push_back("-fexceptions");
         args.push_back("-lstdc++");
@@ -469,11 +471,6 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
         args.push_back("-Wl,-nodefaultlib:libcmt");
         removeCommandArgs(c.get(), {"defaultlib:libcmt"});
     }
-
-    if (!win && shared)
-    {
-        addCommandArgs(c.get(), {"-pie"});
-    }    
 
     if (wasm)
     {
