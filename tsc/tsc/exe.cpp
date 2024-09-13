@@ -419,7 +419,11 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
         {
             args.push_back("-fPIC");
             args.push_back("-Wl,-pie");
-        }        
+        }
+        else
+        {
+            args.push_back("-Wl,-no-pie");
+        }
 
         args.push_back("-frtti");
         args.push_back("-fexceptions");
