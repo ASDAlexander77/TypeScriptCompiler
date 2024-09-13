@@ -382,7 +382,7 @@
             "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=exe",
-                "~/dev/playground/1.ts"
+                "${workspaceFolder}/../../../playground/1.ts"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -394,6 +394,27 @@
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },          
+        {
+            "name": "(Linux) tsc - Compile (DLL - PIC)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "args": [
+                "-emit=dll",
+                "-relocation-model=pic",
+                "-verbose",
+                "${workspaceFolder}/../../../playground/1.ts"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [
+                { "name": "GC_LIB_PATH", "value": "${workspaceFolder}/../../__build/gc/ninja/debug" },
+                { "name": "LLVM_LIB_PATH", "value": "${workspaceFolder}/../../__build/llvm/ninja/debug/lib" },
+                { "name": "TSC_LIB_PATH", "value": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib" }
+            ],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },         
         {
             "name": "(Windows) tsc.exe - DefaultLib Compile (DLL)",
             "type": "cppvsdbg",

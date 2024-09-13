@@ -33,6 +33,7 @@ extern cl::opt<std::string> emsdksysrootpath;
 extern cl::opt<bool> enableOpt;
 extern cl::list<std::string> libs;
 extern cl::list<std::string> objs;
+extern cl::opt<bool> verbose;
 
 std::string getDefaultOutputFileName(enum Action);
 std::string mergeWithDefaultLibPath(std::string, std::string);
@@ -469,6 +470,11 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
         removeCommandArgs(c.get(), {"defaultlib:libcmt"});
     }
 
+    if (!win && shared)
+    {
+        addCommandArgs(c.get(), {"-pie"});
+    }    
+
     if (wasm)
     {
         if (emscripten)
@@ -485,9 +491,8 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     llvm::SmallVector<std::pair<int, const clang::driver::Command *>, 4> failingCommands;
 
-#ifndef _NDEBUG
-    c->getJobs().Print(llvm::errs(), "\n", /*Quote=*/false);
-#endif    
+    if (verbose.getValue())
+        c->getJobs().Print(llvm::errs(), "\n", /*Quote=*/false);
 
     // Run the driver
     int res = 1;

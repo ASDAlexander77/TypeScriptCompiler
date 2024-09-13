@@ -93,6 +93,7 @@ cl::opt<bool> dumpObjectFile{"dump-object-file", cl::Hidden, cl::desc("Dump JITt
 
 cl::opt<std::string> objectFilename{"object-filename", cl::Hidden, cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
 
+cl::opt<bool> verbose{"verbose", cl::Hidden, cl::desc("Verbose output"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 cl::opt<bool> printOp{"print-op", cl::Hidden, cl::desc("Print Op on Diagnostic"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 cl::opt<bool> printStackTrace{"print-stack-trace", cl::Hidden, cl::desc("Print stack trace on Diagnostic"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 
