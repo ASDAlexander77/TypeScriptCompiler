@@ -135,13 +135,13 @@ class MLIRGenImpl
     MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam,
                 const llvm::StringRef &pathParam, const llvm::SourceMgr &sourceMgr, CompileOptions &compileOptions)
         : builder(&const_cast<mlir::MLIRContext &>(context)), 
+          sourceMgr(const_cast<llvm::SourceMgr &>(sourceMgr)),
+          sourceMgrHandler(const_cast<llvm::SourceMgr &>(sourceMgr), &const_cast<mlir::MLIRContext &>(context)),
           mth(&const_cast<mlir::MLIRContext &>(context), 
             std::bind(&MLIRGenImpl::getClassInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getGenericClassInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getGenericInterfaceInfoByFullName, this, std::placeholders::_1)),
-          sourceMgr(const_cast<llvm::SourceMgr &>(sourceMgr)),
-          sourceMgrHandler(const_cast<llvm::SourceMgr &>(sourceMgr), &const_cast<mlir::MLIRContext &>(context)),
           compileOptions(compileOptions), 
           mainSourceFileName(fileNameParam),
           path(pathParam),
@@ -20671,26 +20671,26 @@ genContext);
     mlir::Value getInfinity(mlir::Location location)
     {
 #ifdef NUMBER_F64
-        double infVal = 0.0;
-        *(int64_t *)&infVal = 0x7FF0000000000000;
-        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(infVal));
+        union { double dbl; int64_t int64; } val{};
+        val.int64 = 0x7FF0000000000000;
+        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(val.dbl));
 #else
-        float infVal = 0.0f;
-        *(int32_t *)&infVal = 0x7FF00000;
-        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(infVal));
+        union { float flt; int32_t int32; } val;
+        val.int32 = 0x7FF00000;
+        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(val.int32));
 #endif
     }
 
     mlir::Value getNaN(mlir::Location location)
     {
 #ifdef NUMBER_F64
-        double nanVal = 0.0;
-        *(int64_t *)&nanVal = 0x7FF0000000000001;
-        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(nanVal));
+        union { double dbl; int64_t int64; } val{};
+        val.int64 = 0x7FF0000000000001;
+        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(val.dbl));
 #else
-        float nanVal = 0.0f;
-        *(int32_t *)&nanVal = 0x7FF00001;
-        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(nanVal));
+        union { float flt; int32_t int32; } val;
+        val.int32 = 0x7FF00001;
+        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(val.int32));
 #endif
     }
 
