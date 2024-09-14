@@ -140,12 +140,12 @@ class MLIRGenImpl
             std::bind(&MLIRGenImpl::getGenericClassInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getGenericInterfaceInfoByFullName, this, std::placeholders::_1)),
-          compileOptions(compileOptions), 
-          declarationMode(false),
           sourceMgr(const_cast<llvm::SourceMgr &>(sourceMgr)),
           sourceMgrHandler(const_cast<llvm::SourceMgr &>(sourceMgr), &const_cast<mlir::MLIRContext &>(context)),
+          compileOptions(compileOptions), 
           mainSourceFileName(fileNameParam),
           path(pathParam),
+          declarationMode(false),
           tempEntryBlock(nullptr),
           overwriteLoc(mlir::UnknownLoc::get(builder.getContext()))
     {
