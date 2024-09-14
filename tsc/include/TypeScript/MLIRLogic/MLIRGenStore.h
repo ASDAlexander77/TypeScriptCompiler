@@ -284,9 +284,7 @@ struct InterfaceInfo
             {
                 if (field.isConditional)
                 {
-                    mlir_ts::FieldInfo missingField;
-                    missingField.id = field.id;
-                    missingField.type = field.type;
+                    mlir_ts::FieldInfo missingField{field.id, field.type};
                     vtable.push_back({missingField, true});
                 }
                 else
