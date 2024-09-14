@@ -20890,7 +20890,7 @@ genContext);
         mlir::SmallVector<mlir_ts::FieldInfo> types;
         getTupleFieldInfo(typeLiteral, types, genContext);
 
-        // == TODO: remove the following hack
+        // TODO: remove the following hack
         // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
         if (types.size() == 1)
         {
