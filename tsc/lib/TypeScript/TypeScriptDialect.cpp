@@ -87,7 +87,7 @@ Type mlir_ts::ConstTupleType::parse(AsmParser &parser)
             return Type();
         if (parser.parseRBrace())
             return Type();
-        parameters.push_back(FieldInfo{id, type});
+        parameters.push_back(FieldInfo{id, type, false});
         if (parser.parseOptionalComma())
             break;
     }
