@@ -162,6 +162,11 @@ std::string mergeWithDefaultLibPath(std::string defaultlibpath, std::string subP
 
 bool prepareDefaultLib(CompileOptions &compileOptions)
 {
+    if (noDefaultLib)
+    {
+        return true;
+    }
+
     // TODO: temp hack
     auto defaultLibPathVariable = getDefaultLibPath();
     auto fullPath = mergeWithDefaultLibPath(defaultLibPathVariable, DEFAULT_LIB_DIR "/");
