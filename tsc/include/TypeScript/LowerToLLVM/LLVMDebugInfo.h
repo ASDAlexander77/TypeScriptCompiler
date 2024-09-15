@@ -13,12 +13,13 @@ namespace typescript
 
 struct CompositeSizesTrack
 {
-    CompositeSizesTrack(LLVMTypeConverterHelper &llvmtch) : llvmtch(llvmtch),
+    CompositeSizesTrack(LLVMTypeConverterHelper &llvmtch) :
         elementSizeInBits(0),
         elementAlignInBits(0),
         sizeInBits(0),
         alignInBits(0),
-        offsetInBits(0)
+        offsetInBits(0),
+        llvmtch(llvmtch)
     {
     };
 

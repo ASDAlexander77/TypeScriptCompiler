@@ -13,6 +13,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/Path.h"
+#include "llvm/CodeGen/CommandFlags.h"
 
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/TypeScriptCompiler/Defines.h"
@@ -32,6 +33,7 @@ extern cl::opt<std::string> emsdksysrootpath;
 extern cl::opt<bool> enableOpt;
 extern cl::list<std::string> libs;
 extern cl::list<std::string> objs;
+extern cl::opt<bool> verbose;
 
 std::string getDefaultOutputFileName(enum Action);
 std::string mergeWithDefaultLibPath(std::string, std::string);
@@ -84,7 +86,7 @@ std::string getDefaultLibPath()
         return defaultlibpath;
     }
 
-    if (std::optional<std::string> gcDefaultLibEnvValue = llvm::sys::Process::GetEnv("DEFAULT_LIB_PATH")) 
+    if (auto gcDefaultLibEnvValue = llvm::sys::Process::GetEnv("DEFAULT_LIB_PATH")) 
     {
         return gcDefaultLibEnvValue.value();
     }    
@@ -99,7 +101,7 @@ std::string getGCLibPath()
         return gclibpath;
     }
 
-    if (std::optional<std::string> gcLibEnvValue = llvm::sys::Process::GetEnv("GC_LIB_PATH")) 
+    if (auto gcLibEnvValue = llvm::sys::Process::GetEnv("GC_LIB_PATH")) 
     {
         return gcLibEnvValue.value();
     }    
@@ -114,7 +116,7 @@ std::string getLLVMLibPath()
         return llvmlibpath;
     }
 
-    if (std::optional<std::string> llvmLibEnvValue = llvm::sys::Process::GetEnv("LLVM_LIB_PATH")) 
+    if (auto llvmLibEnvValue = llvm::sys::Process::GetEnv("LLVM_LIB_PATH")) 
     {
         return llvmLibEnvValue.value();
     }    
@@ -129,7 +131,7 @@ std::string getTscLibPath()
         return tsclibpath;
     }
 
-    if (std::optional<std::string> tscLibEnvValue = llvm::sys::Process::GetEnv("TSC_LIB_PATH")) 
+    if (auto tscLibEnvValue = llvm::sys::Process::GetEnv("TSC_LIB_PATH")) 
     {
         return tscLibEnvValue.value();
     }   
@@ -144,7 +146,7 @@ std::string getEMSDKSysRootPath()
         return emsdksysrootpath;
     }
 
-    if (std::optional<std::string> emsdksysrootpathEnvValue = llvm::sys::Process::GetEnv("EMSDK_SYSROOT_PATH")) 
+    if (auto emsdksysrootpathEnvValue = llvm::sys::Process::GetEnv("EMSDK_SYSROOT_PATH")) 
     {
         return emsdksysrootpathEnvValue.value();
     }   
@@ -274,6 +276,8 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     auto emscripten = os == llvm::Triple::Emscripten;
     auto shared = emitAction == BuildDll;
     
+    std::optional<llvm::Reloc::Model> RM = llvm::codegen::getExplicitRelocModel();
+
     if (wasm)
     {
         isLLVMLibNeeded = false;
@@ -411,6 +415,16 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     if (!win && !wasm)
     {
+        if (RM && *RM == llvm::Reloc::PIC_)
+        {
+            args.push_back("-fPIC");
+            args.push_back("-Wl,-pie");
+        }
+        else
+        {
+            args.push_back("-Wl,-no-pie");
+        }
+
         args.push_back("-frtti");
         args.push_back("-fexceptions");
         args.push_back("-lstdc++");
@@ -477,9 +491,8 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
 
     llvm::SmallVector<std::pair<int, const clang::driver::Command *>, 4> failingCommands;
 
-#ifndef _NDEBUG
-    c->getJobs().Print(llvm::errs(), "\n", /*Quote=*/false);
-#endif    
+    if (verbose.getValue())
+        c->getJobs().Print(llvm::errs(), "\n", /*Quote=*/false);
 
     // Run the driver
     int res = 1;
