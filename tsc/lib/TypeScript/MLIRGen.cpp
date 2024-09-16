@@ -2389,6 +2389,7 @@ class MLIRGenImpl
 
                 // instatiate all ArrowFunctions which are not yet instantiated
                 auto opIndex = skipThisParam ? 0 : -1;
+                auto callOpIndex = 0;
                 for (auto &op : genContext.callOperands)
                 {
                     opIndex++;
@@ -2406,9 +2407,13 @@ class MLIRGenImpl
                         auto resultValue = V(result);
                         if (resultValue)
                         {
-                            operands[opIndex] = resultValue;
+                            LLVM_DEBUG(llvm::dbgs() << "\n\tinstantiate lambda call, operands before: "; for (auto &op : operands) llvm::dbgs() << "\n\t\top: " << op << "\n"; );
+                            operands[callOpIndex] = resultValue;
+                            LLVM_DEBUG(llvm::dbgs() << "\n\tinstantiate lambda call, operands after: "; for (auto &op : operands) llvm::dbgs() << "\n\t\top: " << op << "\n"; );
                         }
                     }
+
+                    callOpIndex++;
                 }
 
                 return {mlir::success(), funcOp.getFunctionType(), funcOp.getName().str()};
@@ -10750,6 +10755,9 @@ class MLIRGenImpl
             operands.insert(operands.begin(), thisValue);
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n\tcalled func type, input types: " << calledFuncType.getInputs() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n\tcalled func type, operands: "; for (auto &op : operands) llvm::dbgs() << "\n\t\top: " << op << "\n"; );
+
         if (mlir::failed(mlirGenPrepareCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(),
                                              genContext)))
         {
@@ -11238,7 +11246,7 @@ class MLIRGenImpl
         {
             VALIDATE(value, value.getLoc())
 
-            mlir::Type argTypeDestFuncType;
+            mlir::Type argTypeDestFuncType = {};
             if (i >= argFuncTypes.size() && !isVarArg)
             {
                 // emitError(value.getLoc())
@@ -11266,6 +11274,8 @@ class MLIRGenImpl
             {
                 argTypeDestFuncType = argFuncTypes[i];
             }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n\tcalled func type, arg types: " << value.getType() << " and " << argTypeDestFuncType << "\n";);
 
             if (value.getType() != argTypeDestFuncType)
             {
@@ -18165,6 +18175,17 @@ genContext);
             EXIT_IF_FAILED(result);
             // fall through to finish cast operation
         }
+
+        // wrong casts
+        // TODO: put it into Cast::Verify
+        if (mth.isAnyFunctionType(valueType) && 
+            !mth.isAnyFunctionType(type, true) 
+            && !type.isa<mlir_ts::OpaqueType>() 
+            && !type.isa<mlir_ts::AnyType>()
+            && !type.isa<mlir_ts::BooleanType>()) {
+            emitError(location, "invalid cast from ") << valueType << " to " << type;
+            return mlir::failure();
+        }        
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
