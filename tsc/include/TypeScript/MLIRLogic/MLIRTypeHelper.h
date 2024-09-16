@@ -523,6 +523,16 @@ class MLIRTypeHelper
         return type;
     }    
 
+    mlir::Type stripRefType(mlir::Type type)
+    {
+        if (auto refType = type.dyn_cast<mlir_ts::RefType>())
+        {
+            return refType.getElementType();
+        }
+
+        return type;
+    }   
+
     mlir::Type convertConstArrayTypeToArrayType(mlir::Type type)
     {
         if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
@@ -673,9 +683,13 @@ class MLIRTypeHelper
         return mlir_ts::FunctionType::get(context, {mlir_ts::NumberType::get(context)}, {elementType}, false);
     }
 
-    bool isAnyFunctionType(mlir::Type funcType)
+    bool isAnyFunctionType(mlir::Type funcType, bool stripRefTypeOpt = false)
     {
         funcType = stripOptionalType(funcType);    
+        if (stripRefTypeOpt)
+        {
+            funcType = stripRefType(funcType);    
+        }
 
         bool isFuncType = true;
         mlir::TypeSwitch<mlir::Type>(funcType)
@@ -687,7 +701,6 @@ class MLIRTypeHelper
             .Default([&](auto type) {
                 isFuncType = false;
             });
-
 
         //LLVM_DEBUG(llvm::dbgs() << "\n!! isAnyFunctionType for " << funcType << " = " << isFuncType << "\n";);
 

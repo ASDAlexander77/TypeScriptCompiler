@@ -1918,6 +1918,11 @@ class MLIRGenImpl
 
         // it is not generic arrow function
         auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(functionName);
+        if (!functionGenericTypeInfo)
+        {
+            emitError(location) << "can't find information about generic function. " << functionName;
+            return mlir::failure();            
+        }
 
         GenContext funcGenContext(genContext);
         funcGenContext.receiverFuncType = recieverType;
@@ -2389,7 +2394,7 @@ class MLIRGenImpl
 
                 // instatiate all ArrowFunctions which are not yet instantiated
                 auto opIndex = skipThisParam ? 0 : -1;
-                for (auto &op : genContext.callOperands)
+                for (auto [callOpIndex, op] : enumerate(genContext.callOperands))
                 {
                     opIndex++;
                     if (isGenericFunctionReference(op))
@@ -2406,7 +2411,7 @@ class MLIRGenImpl
                         auto resultValue = V(result);
                         if (resultValue)
                         {
-                            operands[opIndex] = resultValue;
+                            operands[callOpIndex] = resultValue;
                         }
                     }
                 }
@@ -4017,7 +4022,6 @@ class MLIRGenImpl
 
     bool isGenericParameters(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
-        auto isGenericTypes = false;
         auto formalParams = parametersContextAST->parameters;
         auto index = 0;
         for (auto arg : formalParams)
@@ -4048,8 +4052,6 @@ class MLIRGenImpl
                 {
                     return false;
                 }
-
-                isGenericTypes |= mth.isGenericType(type);
             }
 
             // in case of binding
@@ -5080,7 +5082,8 @@ class MLIRGenImpl
         }
 
         // do not process generic functions more then 1 time
-        if (isGenericFunction && funcDeclGenContext.instantiateSpecializedFunction)
+        auto checkIfCreated = isGenericFunction && funcDeclGenContext.instantiateSpecializedFunction;
+        if (checkIfCreated)
         {
             auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, funcDeclGenContext);
 
@@ -11238,7 +11241,7 @@ class MLIRGenImpl
         {
             VALIDATE(value, value.getLoc())
 
-            mlir::Type argTypeDestFuncType;
+            mlir::Type argTypeDestFuncType = {};
             if (i >= argFuncTypes.size() && !isVarArg)
             {
                 // emitError(value.getLoc())
@@ -13225,7 +13228,7 @@ class MLIRGenImpl
                                   << " \n\n\tFuncOp: " << const_cast<GenContext &>(genContext).funcOp << "";);                
             }
 
-            if (isOuterVar && genContext.passResult)
+            if (isOuterVar && genContext.passResult && !isGenericFunctionReference(value.first))
             {
                 LLVM_DEBUG(dbgs() << "\n!! capturing var: [" << value.second->getName()
                                   << "] \n\tvalue pair: " << value.first << " \n\ttype: " << value.second->getType()
@@ -18165,6 +18168,17 @@ genContext);
             EXIT_IF_FAILED(result);
             // fall through to finish cast operation
         }
+
+        // wrong casts
+        // TODO: put it into Cast::Verify
+        if (mth.isAnyFunctionType(valueType) && 
+            !mth.isAnyFunctionType(type, true) 
+            && !type.isa<mlir_ts::OpaqueType>() 
+            && !type.isa<mlir_ts::AnyType>()
+            && !type.isa<mlir_ts::BooleanType>()) {
+            emitError(location, "invalid cast from ") << valueType << " to " << type;
+            return mlir::failure();
+        }        
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
