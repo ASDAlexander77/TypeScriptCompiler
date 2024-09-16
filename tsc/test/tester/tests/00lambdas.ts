@@ -20,6 +20,7 @@ static class Array<T>
 
 function main() {
     const add = (x: TypeOf<1>, y: TypeOf<1>) => x + y;
+    const add2 = (x, y) => x + y;
 
     let sum = [1, 2, 3, 4, 5].reduce((s, v) => add(s, v), 0);
     print(sum);
@@ -31,6 +32,10 @@ function main() {
     let sum2 = [1, 2, 3, 4, 5].reduce2((s, v) => add(s, v), 0);
     print(sum2);
     assert(sum2 == 15);
+
+    let sum3 = [1, 2, 3, 4, 5].reduce2((s, v) => add2(s, v), 0);
+    print(sum3);
+    assert(sum3 == 15);
 
     print("done.");
 }
