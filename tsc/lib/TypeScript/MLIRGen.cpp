@@ -1918,6 +1918,11 @@ class MLIRGenImpl
 
         // it is not generic arrow function
         auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(functionName);
+        if (!functionGenericTypeInfo)
+        {
+            emitError(location) << "can't find information about generic function. " << functionName;
+            return mlir::failure();            
+        }
 
         GenContext funcGenContext(genContext);
         funcGenContext.receiverFuncType = recieverType;
@@ -4015,9 +4020,53 @@ class MLIRGenImpl
         return mlir::Type();
     }
 
+    bool isParameterless(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
+    {
+        auto formalParams = parametersContextAST->parameters;
+        auto index = 0;
+        for (auto arg : formalParams)
+        {
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+
+            mlir::Type type;
+            auto typeParameter = arg->type;
+
+            auto location = loc(typeParameter);
+
+            if (typeParameter)
+            {
+                type = getType(typeParameter, genContext);
+            }
+
+            // process init value
+            auto initializer = arg->initializer;
+            if (initializer)
+            {
+                continue;
+            }
+
+            // in case of binding
+            if (mth.isNoneType(type) && isBindingPattern)
+            {
+                type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
+            }
+
+            if (mth.isNoneType(type))
+            {
+                if (!typeParameter && !initializer)
+                {
+                    return true;
+                }
+            }
+
+            index++;
+        }
+
+        return false;
+    }    
+
     bool isGenericParameters(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
-        auto isGenericTypes = false;
         auto formalParams = parametersContextAST->parameters;
         auto index = 0;
         for (auto arg : formalParams)
@@ -4048,8 +4097,6 @@ class MLIRGenImpl
                 {
                     return false;
                 }
-
-                isGenericTypes |= mth.isGenericType(type);
             }
 
             // in case of binding
@@ -5080,7 +5127,12 @@ class MLIRGenImpl
         }
 
         // do not process generic functions more then 1 time
-        if (isGenericFunction && funcDeclGenContext.instantiateSpecializedFunction)
+        auto checkIfCreated = isGenericFunction && funcDeclGenContext.instantiateSpecializedFunction;
+        auto arrowFuncWithoutParams = (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction || functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration)
+            && isParameterless(functionLikeDeclarationBaseAST, genContext);
+        checkIfCreated |= arrowFuncWithoutParams;
+
+        if (checkIfCreated)
         {
             auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, funcDeclGenContext);
 
