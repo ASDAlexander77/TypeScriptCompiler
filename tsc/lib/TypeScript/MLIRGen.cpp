@@ -2389,8 +2389,7 @@ class MLIRGenImpl
 
                 // instatiate all ArrowFunctions which are not yet instantiated
                 auto opIndex = skipThisParam ? 0 : -1;
-                auto callOpIndex = 0;
-                for (auto &op : genContext.callOperands)
+                for (auto [callOpIndex, op] : enumerate(genContext.callOperands))
                 {
                     opIndex++;
                     if (isGenericFunctionReference(op))
@@ -2407,13 +2406,9 @@ class MLIRGenImpl
                         auto resultValue = V(result);
                         if (resultValue)
                         {
-                            LLVM_DEBUG(llvm::dbgs() << "\n\tinstantiate lambda call, operands before: "; for (auto &op : operands) llvm::dbgs() << "\n\t\top: " << op << "\n"; );
                             operands[callOpIndex] = resultValue;
-                            LLVM_DEBUG(llvm::dbgs() << "\n\tinstantiate lambda call, operands after: "; for (auto &op : operands) llvm::dbgs() << "\n\t\top: " << op << "\n"; );
                         }
                     }
-
-                    callOpIndex++;
                 }
 
                 return {mlir::success(), funcOp.getFunctionType(), funcOp.getName().str()};
@@ -10755,9 +10750,6 @@ class MLIRGenImpl
             operands.insert(operands.begin(), thisValue);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n\tcalled func type, input types: " << calledFuncType.getInputs() << "\n";);
-        LLVM_DEBUG(llvm::dbgs() << "\n\tcalled func type, operands: "; for (auto &op : operands) llvm::dbgs() << "\n\t\top: " << op << "\n"; );
-
         if (mlir::failed(mlirGenPrepareCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(),
                                              genContext)))
         {
@@ -11274,8 +11266,6 @@ class MLIRGenImpl
             {
                 argTypeDestFuncType = argFuncTypes[i];
             }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n\tcalled func type, arg types: " << value.getType() << " and " << argTypeDestFuncType << "\n";);
 
             if (value.getType() != argTypeDestFuncType)
             {
