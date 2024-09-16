@@ -4020,51 +4020,6 @@ class MLIRGenImpl
         return mlir::Type();
     }
 
-    bool isParameterless(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
-    {
-        auto formalParams = parametersContextAST->parameters;
-        auto index = 0;
-        for (auto arg : formalParams)
-        {
-            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
-
-            mlir::Type type;
-            auto typeParameter = arg->type;
-
-            auto location = loc(typeParameter);
-
-            if (typeParameter)
-            {
-                type = getType(typeParameter, genContext);
-            }
-
-            // process init value
-            auto initializer = arg->initializer;
-            if (initializer)
-            {
-                continue;
-            }
-
-            // in case of binding
-            if (mth.isNoneType(type) && isBindingPattern)
-            {
-                type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
-            }
-
-            if (mth.isNoneType(type))
-            {
-                if (!typeParameter && !initializer)
-                {
-                    return true;
-                }
-            }
-
-            index++;
-        }
-
-        return false;
-    }    
-
     bool isGenericParameters(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
         auto formalParams = parametersContextAST->parameters;
@@ -5128,10 +5083,6 @@ class MLIRGenImpl
 
         // do not process generic functions more then 1 time
         auto checkIfCreated = isGenericFunction && funcDeclGenContext.instantiateSpecializedFunction;
-        auto arrowFuncWithoutParams = (functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction || functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration)
-            && isParameterless(functionLikeDeclarationBaseAST, genContext);
-        checkIfCreated |= arrowFuncWithoutParams;
-
         if (checkIfCreated)
         {
             auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, funcDeclGenContext);
@@ -13277,7 +13228,7 @@ class MLIRGenImpl
                                   << " \n\n\tFuncOp: " << const_cast<GenContext &>(genContext).funcOp << "";);                
             }
 
-            if (isOuterVar && genContext.passResult)
+            if (isOuterVar && genContext.passResult && !isGenericFunctionReference(value.first))
             {
                 LLVM_DEBUG(dbgs() << "\n!! capturing var: [" << value.second->getName()
                                   << "] \n\tvalue pair: " << value.first << " \n\ttype: " << value.second->getType()
