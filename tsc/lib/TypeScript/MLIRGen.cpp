@@ -1963,14 +1963,15 @@ class MLIRGenImpl
 
             if (createBoundFunctionOp)
             {
+                auto funcType = specFuncOp.getFunctionType();
                 // fix create bound if any
                 TypeSwitch<mlir::Type>(createBoundFunctionOp.getType())
                     .template Case<mlir_ts::BoundFunctionType>([&](auto boundFunc) {
-                        functionRefValue.setType(getBoundFunctionType(specFuncOp.getFunctionType()));
+                        functionRefValue.setType(getBoundFunctionType(funcType));
                     })
                     .template Case<mlir_ts::HybridFunctionType>([&](auto hybridFuncType) {
                         functionRefValue.setType(
-                            mlir_ts::HybridFunctionType::get(builder.getContext(), specFuncOp.getFunctionType()));
+                            mlir_ts::HybridFunctionType::get(builder.getContext(), funcType));
                     })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
             }
@@ -3621,7 +3622,6 @@ class MLIRGenImpl
         mlir::Value init = initRef;
         //TypeProvided typeProvided = typeProvidedRef;
 
-        auto index = 0;
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
             auto subValueFunc = [&] (mlir::Location location, const GenContext &genContext) {
@@ -3653,8 +3653,6 @@ class MLIRGenImpl
             { 
                 return mlir::failure();
             }
-
-            index++;
         }
 
         return mlir::success();;
@@ -3815,13 +3813,13 @@ class MLIRGenImpl
     {
         auto location = loc(item);
 
+#ifndef ANY_AS_DEFAULT
         auto isExternal = varClass == VariableType::External;
         if (declarationMode)
         {
             isExternal = true;
         }
 
-#ifndef ANY_AS_DEFAULT
         if (mth.isNoneType(item->type) && !item->initializer && !isExternal)
         {
             auto name = MLIRHelper::getName(item->name);
@@ -3985,11 +3983,9 @@ class MLIRGenImpl
 
             // we need to construct object type
             auto objectBindingPattern = name.as<ObjectBindingPattern>();
-            auto index = 0;
             for (auto objectBindingElement : objectBindingPattern->elements)
             {
                 mlirGenParameterBindingElement(objectBindingElement, fieldInfos, genContext);
-                index++;
             }
 
             return getTupleType(fieldInfos);
@@ -4343,7 +4339,6 @@ class MLIRGenImpl
         }
 
         SmallVector<mlir::Type> argTypes;
-        auto argNumber = 0;
         auto isMultiArgs = false;
 
         // auto isAsync = hasModifier(signatureDeclarationBaseAST, SyntaxKind::AsyncKeyword);
@@ -4366,8 +4361,6 @@ class MLIRGenImpl
             }
 
             isMultiArgs |= param->getIsMultiArgsParam();
-
-            argNumber++;
         }
 
         auto funcProto = std::make_shared<FunctionPrototypeDOM>(fullName, params);
@@ -4729,7 +4722,6 @@ class MLIRGenImpl
         auto location = loc(functionExpressionAST);
         mlir_ts::FuncOp funcOp;
         std::string funcName;
-        bool isGeneric;
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -4749,7 +4741,6 @@ class MLIRGenImpl
 
             funcOp = funcOpRet;
             funcName = funcNameRet;
-            isGeneric = isGenericRet;
         }
 
         // if funcOp is null, means lambda is generic]
@@ -8656,7 +8647,6 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto rightExpressionValue = V(result);
 
-        auto index = 0;
         for (auto item : objectLiteralExpression->properties)
         {
             if (item == SyntaxKind::PropertyAssignment)
@@ -8698,8 +8688,6 @@ class MLIRGenImpl
             {
                 llvm_unreachable("not implemented");
             }
-
-            index++;
         }
 
         // no passing value
@@ -13811,10 +13799,8 @@ class MLIRGenImpl
                                               llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams,
                                               const GenContext &genContext)
     {
-        auto isGenericTypes = false;
         auto formalParams = signatureDeclarationBase->parameters;
-        auto index = 0;
-        for (auto arg : formalParams)
+        for (auto [index, arg] : enumerate(formalParams))
         {
             auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
 
@@ -13841,7 +13827,6 @@ class MLIRGenImpl
             {
                 type = mth.getParamFromFuncRef(genContext.receiverFuncType, index);
                 if (!type) continue;
-                isGenericTypes |= mth.isGenericType(type);
             }
 
             // in case of binding
@@ -13888,8 +13873,6 @@ class MLIRGenImpl
                     typeParams.push_back(std::make_shared<TypeParameterDOM>(typeParamNamePtr.str()));
                 }
             }
-
-            index++;
         }
 
         return mlir::success();
@@ -15264,7 +15247,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenForwardDeclaration(const std::string &funcName, mlir_ts::FunctionType funcType,
                                                   bool isStatic, bool isVirtual, bool isAbstract,
-                                                  ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+                                                  ClassInfo::TypePtr newClassPtr, int orderWeight, const GenContext &genContext)
     {
         if (newClassPtr->getMethodIndex(funcName) < 0)
         {
@@ -15273,7 +15256,7 @@ class MLIRGenImpl
 
         mlir_ts::FuncOp dummyFuncOp;
         newClassPtr->methods.push_back({funcName, funcType, dummyFuncOp, isStatic,
-                                        isVirtual || isAbstract, isAbstract, -1});
+                                        isVirtual || isAbstract, isAbstract, -1, orderWeight});
         return mlir::success();
     }
 
@@ -16195,7 +16178,7 @@ genContext);
 
             auto &methodInfos = newClassPtr->methods;
             methodInfos.push_back(
-                {fullClassStaticName.str(), funcType, funcOp, true, false, false, -1});
+                {fullClassStaticName.str(), funcType, funcOp, true, false, false, -1, posIndex});
         }        
 
         return fullClassStaticName.str();

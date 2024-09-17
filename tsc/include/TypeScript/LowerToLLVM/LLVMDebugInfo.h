@@ -329,11 +329,8 @@ private:
         CompositeSizesTrack sizesTrack(llvmtch);
 
         llvm::SmallVector<LLVM::DINodeAttr> elements;
-        auto index = -1;
         for (auto elementType : unionType.getTypes())
         {
-            index++;
-
             auto llvmElementType = llvmtch.typeConverter.convertType(elementType);
             sizesTrack.nextElementType(llvmElementType);
             if (sizesTrack.elementSizeInBits > sizeInBits) sizeInBits = sizesTrack.elementSizeInBits;
