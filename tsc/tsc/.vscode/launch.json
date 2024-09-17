@@ -404,6 +404,7 @@
             "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=exe",
+                "--di",
                 "${workspaceFolder}/../../../playground/1.ts"
             ],
             "stopAtEntry": false,

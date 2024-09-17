@@ -432,6 +432,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
         args.push_back("-lpthread");
         args.push_back("-ltinfo");
         args.push_back("-ldl");
+        args.push_back("-lrt");
     }
 
     if (wasm && emscripten)
