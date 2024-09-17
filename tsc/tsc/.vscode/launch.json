@@ -364,15 +364,12 @@
                 "-emit=jit",
                 "-debug-only=tsc",
                 "--shared-libs=${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib/libTypeScriptRuntime.so",
+                "--default-lib-path=${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build/debug",
                 "${workspaceFolder}/../../../playground/1.ts"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [
-                { "name": "GC_LIB_PATH", "value": "${workspaceFolder}/../../__build/gc/ninja/debug" },
-                { "name": "LLVM_LIB_PATH", "value": "${workspaceFolder}/../../__build/llvm/ninja/debug/lib" },
-                { "name": "TSC_LIB_PATH", "value": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib" },
-                { "name": "DEFAULT_LIB_PATH", "value": "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build/debug" }
             ],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
