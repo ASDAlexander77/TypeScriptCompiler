@@ -418,11 +418,23 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
         if (RM && *RM == llvm::Reloc::PIC_)
         {
             args.push_back("-fPIC");
-            args.push_back("-Wl,-pie");
+            if (!shared)
+            {
+                args.push_back("-Wl,-pie");
+            }
         }
         else
         {
-            args.push_back("-Wl,-no-pie");
+            if (!shared)
+            {
+                args.push_back("-Wl,-no-pie");
+            }
+        }
+
+        if (shared)
+        {
+            // something missing in .so compiling        
+            args.push_back("-Wl,--build-id");
         }
 
         args.push_back("-frtti");
@@ -433,6 +445,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
         args.push_back("-ltinfo");
         args.push_back("-ldl");
         args.push_back("-lrt");
+        args.push_back("-rdynamic"); // do we need it?
     }
 
     if (wasm && emscripten)
