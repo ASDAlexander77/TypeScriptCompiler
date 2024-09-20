@@ -269,11 +269,8 @@ private:
         CompositeSizesTrack sizesTrack(llvmtch);
 
         llvm::SmallVector<LLVM::DINodeAttr> elements;
-        auto index = -1;
         for (auto field : fields)
         {
-            index++;
-
             // name
             StringAttr name = StringAttr::get(context, std::get<0>(field));
 
@@ -299,11 +296,8 @@ private:
         CompositeSizesTrack sizesTrack(llvmtch);
 
         llvm::SmallVector<LLVM::DINodeAttr> elements;
-        auto index = -1;
         for (auto field : fields)
         {
-            index++;
-
             // name
             StringAttr name = StringAttr::get(context, std::get<0>(field));
 
@@ -329,11 +323,8 @@ private:
         CompositeSizesTrack sizesTrack(llvmtch);
 
         llvm::SmallVector<LLVM::DINodeAttr> elements;
-        auto index = -1;
         for (auto elementType : unionType.getTypes())
         {
-            index++;
-
             auto llvmElementType = llvmtch.typeConverter.convertType(elementType);
             sizesTrack.nextElementType(llvmElementType);
             if (sizesTrack.elementSizeInBits > sizeInBits) sizeInBits = sizesTrack.elementSizeInBits;

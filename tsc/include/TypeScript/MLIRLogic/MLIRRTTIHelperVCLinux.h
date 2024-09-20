@@ -253,7 +253,6 @@ class MLIRRTTIHelperVCLinux
         seekLast(parentModule.getBody());
 
         // _ZTId
-        auto index = 0;
         for (auto type : types)
         {
             switch (type.infoType)
@@ -275,8 +274,6 @@ class MLIRRTTIHelperVCLinux
                 typeInfoValue(loc, type.typeName);
                 break;
             }
-
-            index++;
         }
 
         return true;

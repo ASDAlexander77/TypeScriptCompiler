@@ -1039,7 +1039,8 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
                 auto inlineLinkage = LLVM::linkage::Linkage::LinkonceODR;
                 auto linkage = LLVM::LinkageAttr::get(getContext(), inlineLinkage);
                 newFuncOp->setAttr("llvm.linkage", linkage);
-                newFuncOp->setAttr("dso_local", rewriter.getUnitAttr());
+                // TODO: dso_local somehow linked with -fno-pic
+                //newFuncOp->setAttr("dso_local", rewriter.getUnitAttr());
                 newFuncOp.setPrivate();
 
                 addComdat(newFuncOp, rewriter);
