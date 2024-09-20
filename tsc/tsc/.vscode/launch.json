@@ -423,6 +423,7 @@
                 "-emit=dll",
                 "-relocation-model=pic",
                 "-verbose",
+                "-o=${workspaceFolder}/../../../playground/lib1.so",
                 "${workspaceFolder}/../../../playground/1.ts"
             ],
             "stopAtEntry": false,

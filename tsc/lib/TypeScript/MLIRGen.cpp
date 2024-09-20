@@ -3228,7 +3228,8 @@ class MLIRGenImpl
             else if (variableDeclarationInfo.isSpecialization)
             {
                 attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("LinkonceODR")});
-                attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
+                // TODO: dso_local somehow linked with -fno-pic
+                //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
             }
 
             // add modifiers

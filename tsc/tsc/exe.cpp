@@ -446,7 +446,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
         args.push_back("-ltinfo");
         args.push_back("-ldl");
         args.push_back("-lrt");
-        args.push_back("-rdynamic"); // do we need it?
+        //args.push_back("-rdynamic"); // do we need it?
     }
 
     if (wasm && emscripten)

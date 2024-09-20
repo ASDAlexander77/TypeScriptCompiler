@@ -210,6 +210,13 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
         return -1;
     }
 
+    // TODO: research
+    if (RM && *RM == llvm::Reloc::PIC_)
+    {
+        llvmModule->setPICLevel(llvm::PICLevel::Level::BigPIC);
+        //llvmModule->setPIELevel(llvm::PIELevel::Level::Large);
+    }
+
     auto CPUStr = llvm::codegen::getCPUStr(), 
          FeaturesStr = llvm::codegen::getFeaturesStr();
 
