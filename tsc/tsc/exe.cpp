@@ -88,10 +88,7 @@ std::string getDefaultLibPath()
 
     if (auto gcDefaultLibEnvValue = llvm::sys::Process::GetEnv("DEFAULT_LIB_PATH")) 
     {
-        if (gcDefaultLibEnvValue.has_value())
-        {
-            return gcDefaultLibEnvValue.value();
-        }
+        return gcDefaultLibEnvValue.value();
     }    
 
     return "";    
