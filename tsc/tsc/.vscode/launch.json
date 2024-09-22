@@ -506,6 +506,7 @@
                 "--opt_level=3", 
                 "--export=none", 
                 "--no-default-lib",
+                "--verbose",
                 "-o=c:/temp/lib.win32.obj",
                 "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/src/lib.win32.ts"
             ],

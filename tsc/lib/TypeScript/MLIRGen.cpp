@@ -9177,11 +9177,6 @@ class MLIRGenImpl
         };
 
         auto classAccess = [&](mlir_ts::ClassType classType) {
-            if (auto value = cl.Class(classType))
-            {
-                return value;
-            }
-
             return classAccessWithObject(classType, objectValue);
         };
 
