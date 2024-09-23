@@ -457,7 +457,6 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
     }
 };
 
-
 class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
 {
   public:
@@ -488,6 +487,37 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
         {
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, strlenFuncOp, transformed.getOp());
         }
+
+        return success();
+    }
+};
+
+class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SetStringLengthOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SetStringLengthOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(op, rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto loc = op->getLoc();
+
+        // TODO implement str concat
+        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrPtrTy = th.getI8PtrPtrType();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
+        mlir::Value ptr = transformed.getOp();
+        mlir::Value size = transformed.getSize();
+
+        mlir::Value newStringValue = ch.MemoryReallocBitcast(i8PtrTy, ptr, size);
+
+        rewriter.replaceOp(op, ValueRange{newStringValue});
 
         return success();
     }
@@ -701,8 +731,10 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
         auto i8PtrTy = th.getI8PtrType();
 
         auto bufferSizeValue = clh.createI64ConstantOf(2);
-        // TODO: review it
-        auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        // TODO: review it, !! we can't allocate it in stack - otherwise when returned back from function, it will be poisned
+        // TODO: maybe you need to add mechanizm to convert stack values to heap when returned from function
+        //auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
 
         auto index0Value = clh.createI32ConstantOf(0);
         auto index1Value = clh.createI32ConstantOf(1);
@@ -5925,12 +5957,12 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, 
-        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, 
-        CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, 
-        ThrowCallOpLowering, VariableOpLowering, AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
-        ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
-        LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
-        GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
+        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
+        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
+        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
+        InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
+        NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
+        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
         ReturnInternalOpLowering, NoOpLowering, /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,

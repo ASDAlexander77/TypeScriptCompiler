@@ -8500,6 +8500,20 @@ class MLIRGenImpl
             syncSavingValue(lengthOf.getResult().getType());
             builder.create<mlir_ts::SetLengthOfOp>(location, arrayValueLoaded, savingValue);
         }
+        else if (auto stringLength = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::StringLengthOp>())
+        {
+            MLIRCodeLogic mcl(builder);
+            auto stringValueLoaded = mcl.GetReferenceOfLoadOp(stringLength.getOp());
+            if (!stringValueLoaded)
+            {
+                emitError(location) << "Can't get reference of the string, ensure const string is not used";
+                return mlir::failure();
+            }
+
+            // special case to resize array
+            syncSavingValue(stringLength.getResult().getType());
+            builder.create<mlir_ts::SetStringLengthOp>(location, stringValueLoaded, savingValue);
+        }
         else
         {
             LLVM_DEBUG(dbgs() << "\n!! left expr.: " << leftExpressionValueBeforeCast << " ...\n";);
@@ -9186,12 +9200,6 @@ class MLIRGenImpl
                 .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
                 .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
                 .Case<mlir_ts::BooleanType>([&](auto intType) { 
-                    // find Boolean type
-                    if (auto classInfo = getClassInfoByFullName("Boolean"))
-                    {
-                        return classAccess(classInfo->classType);
-                    }
-
                     if (auto value = cl.Bool(intType))
                     {
                         return value;
@@ -9202,15 +9210,6 @@ class MLIRGenImpl
                 .Case<mlir::IntegerType>([&](auto intType) { return cl.Int(intType); })
                 .Case<mlir::FloatType>([&](auto floatType) { return cl.Float(floatType); })
                 .Case<mlir_ts::NumberType>([&](auto numberType) {                    
-                    // find Number type
-                    if (auto classInfo = getClassInfoByFullName("Number"))
-                    {
-                        if (auto value = classAccess(classInfo->classType))
-                        {
-                            return value;
-                        }
-                    }
-                    
                     if (auto value = cl.Number(numberType))
                     {
                         return value;
@@ -9219,15 +9218,6 @@ class MLIRGenImpl
                     return mlir::Value();                        
                 })
                 .Case<mlir_ts::StringType>([&](auto stringType) { 
-                    // find String type
-                    if (auto classInfo = getClassInfoByFullName("String"))
-                    {
-                        if (auto value = classAccess(classInfo->classType))
-                        {
-                            return value;
-                        }
-                    }
-
                     if (auto value = cl.String(stringType))
                     {
                         return value;
@@ -9325,15 +9315,6 @@ class MLIRGenImpl
                 })
                 .Case<mlir_ts::RefType>([&](auto refType) { return cl.Ref(refType); })
                 .Case<mlir_ts::ObjectType>([&](auto objectType) { 
-                    // find Object type
-                    if (auto classInfo = getClassInfoByFullName("Object"))
-                    {
-                        if (auto value = classAccess(classInfo->classType))
-                        {
-                            return value;
-                        }
-                    }
-
                     if (auto value = cl.Object(objectType))
                     {
                         return value;
@@ -9393,8 +9374,7 @@ class MLIRGenImpl
         // extention logic: <obj>.<functionName>(this)
         if (!value)
         {
-            auto funcRef = extensionFunction(location, objectValue, name, genContext);
-            if (funcRef)
+            if (auto funcRef = extensionFunction(location, objectValue, name, genContext))
             {
                 return funcRef;
             }
@@ -13749,6 +13729,8 @@ class MLIRGenImpl
             return V(symbOp);
         }
 
+        // TODO: error, when we use  function_name(index: index) and index value is not provided in call function_name(index), index will be mistakenly tearted
+        // as embeded type "index"
         if (!isEmbededType(name))
             emitError(location, "can't resolve name: ") << name;
 
