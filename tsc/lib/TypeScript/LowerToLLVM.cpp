@@ -515,9 +515,15 @@ class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthO
         mlir::Value ptr = transformed.getOp();
         mlir::Value size = transformed.getSize();
 
-        mlir::Value newStringValue = ch.MemoryReallocBitcast(i8PtrTy, ptr, size);
+        mlir::Value strPtr = rewriter.create<LLVM::LoadOp>(
+            loc, 
+            ptr.getType().cast<LLVM::LLVMPointerType>().getElementType(), 
+            ptr);
 
-        rewriter.replaceOp(op, ValueRange{newStringValue});
+        mlir::Value newStringValue = ch.MemoryReallocBitcast(i8PtrTy, strPtr, size);
+
+        rewriter.create<LLVM::StoreOp>(loc, newStringValue, ptr);
+        rewriter.eraseOp(op);
 
         return success();
     }

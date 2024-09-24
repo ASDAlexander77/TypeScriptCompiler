@@ -2146,7 +2146,7 @@ def TypeScript_SetLengthOfOp : TypeScript_Op<"SetLengthOf"> {
 }
 
 def TypeScript_SetStringLengthOp : TypeScript_Op<"SetStringLength"> {
-  let arguments = (ins TypeScript_String:$op,  I32:$size);
+  let arguments = (ins Arg<TypeScript_StringRef, "", [MemAlloc, MemWrite]>:$op,  I32:$size);
   let results = (outs );
 }
 

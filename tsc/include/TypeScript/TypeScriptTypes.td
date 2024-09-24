@@ -1206,6 +1206,10 @@ def TypeScript_IsTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()
 
 def TypeScript_AnyTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsTupleRefType, "any tuple reference type">;
 
+def TypeScript_IsStringRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::StringType>()">;
+
+def TypeScript_StringRef : DialectType<TypeScript_Dialect, TypeScript_IsStringRefType, "string reference type">;
+
 def TypeScript_IsClassStorageType : CPred<"$_self.isa<::mlir::typescript::ClassStorageType>()">;
 
 def TypeScript_AnyClassStorageType : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageType, "any class storage type">;
