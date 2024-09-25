@@ -17599,10 +17599,13 @@ genContext);
                 strs.push_back(spanValue);
             }
 
-            auto fieldNameValue = builder.create<mlir_ts::ConstantOp>(location, stringType, fieldInfo.id);
             strs.push_back(spaceValue);
-            strs.push_back(fieldNameValue);
-            strs.push_back(fieldSepValue);
+            if (fieldInfo.id)
+            {
+                auto fieldNameValue = builder.create<mlir_ts::ConstantOp>(location, stringType, fieldInfo.id);
+                strs.push_back(fieldNameValue);
+                strs.push_back(fieldSepValue);
+            }
 
             MLIRPropertyAccessCodeLogic cl(builder, location, value, builder.getI32IntegerAttr(index));
             auto fieldValue = cl.Tuple(tupleType, true);

@@ -53,7 +53,7 @@ class TypeOfOpHelper
 
         if (type.isIndex())
         {
-            auto typeOfValue = strValue(loc, "ptrint");
+            auto typeOfValue = strValue(loc, "index");
             return typeOfValue;
         }
 
