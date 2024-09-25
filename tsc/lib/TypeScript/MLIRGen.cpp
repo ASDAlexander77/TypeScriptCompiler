@@ -10570,10 +10570,23 @@ class MLIRGenImpl
                 return mlirGenArrayReduce(location, operands, genContext);
             }
 
-            // resolve function
+            // resolve function           
             MLIRCustomMethods cm(builder, location, compileOptions);
+            mlir::SmallVector<mlir::Type> typeArgs;
+            for (auto typeArgNode : typeArguments)
+            {
+                auto typeArg = getType(typeArgNode, genContext);
+                if (!typeArg)
+                {
+                    return mlir::failure();
+                }
+
+                typeArgs.push_back(typeArg);
+            }
+
             return cm.callMethod(
                 functionName, 
+                typeArgs,
                 operands, 
                 std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 
                 genContext);
@@ -18831,9 +18844,8 @@ genContext);
     {
         auto anyNamedGenericType = IsGeneric::False;
         auto argsCount = typeArgs.size();
-        for (auto index = 0; index < typeParams.size(); index++)
+        for (auto [index, typeParam] : enumerate(typeParams))
         {
-            auto &typeParam = typeParams[index];
             auto isDefault = false;
             auto type = index < argsCount
                             ? getType(typeArgs[index], genContext)
@@ -18875,9 +18887,8 @@ genContext);
     {
         auto anyNamedGenericType = IsGeneric::False;
         auto argsCount = typeArgs ? typeArgs.size() : 0;
-        for (auto index = 0; index < typeParams.size(); index++)
+        for (auto [index, typeParam] : enumerate(typeParams))
         {
-            auto &typeParam = typeParams[index];
             auto isDefault = false;
             if (index < argsCount)
             {

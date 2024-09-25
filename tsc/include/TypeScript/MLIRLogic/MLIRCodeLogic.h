@@ -232,7 +232,7 @@ class MLIRCustomMethods
         return m[functionName.str()];    
     }   
 
-    ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
+    ValueOrLogicalResult callMethod(StringRef functionName, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
     {
         if (functionName == "print")
         {
@@ -264,7 +264,7 @@ class MLIRCustomMethods
         }
         else if (functionName == "sizeof")
         {
-            return mlirGenSizeOf(location, operands);
+            return mlirGenSizeOf(location, typeArgs, operands);
         }
         else if (functionName == "__array_push")
         {
@@ -491,12 +491,19 @@ class MLIRCustomMethods
         return isNaNOp;
     }
 
-    mlir::Value mlirGenSizeOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::Value mlirGenSizeOf(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
     {
-        auto sizeOfValue = builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(),
-                                                             mlir::TypeAttr::get(operands.front().getType()));
+        if (typeArgs.size() > 0)
+        {
+            return builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(), mlir::TypeAttr::get(typeArgs.front()));
+        }
 
-        return sizeOfValue;
+        if (operands.size() > 0)
+        {
+            return builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(), mlir::TypeAttr::get(operands.front().getType()));
+        }
+
+        return mlir::Value();
     }
 
     ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
