@@ -1768,10 +1768,8 @@ class MLIRGenImpl
                     return;
                 }
 
-                auto index = -1;
-                for (auto tempSubType : tempUnionType.getTypes())
+                for (auto [index, tempSubType] : enumerate(tempUnionType.getTypes()))
                 {
-                    index++;
                     auto typeSubType = types[index];
 
                     currentTemplateType = tempSubType;
@@ -2452,13 +2450,12 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! func name: " << funcProto->getName()
                                 << ", Op type (resolving from operands): " << funcOp.getFunctionType() << "\n";);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! func args: "; auto index = 0; for (auto paramInfo
-                                                                            : funcProto->getParams()) {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! func args: "; for (auto [index, paramInfo]
+                                                                            : enumerate(funcProto->getParams())) {
             llvm::dbgs() << "\n_ " << paramInfo->getName() << ": " << paramInfo->getType() << " = (" << index << ") ";
             if (genContext.callOperands.size() > index)
                 llvm::dbgs() << genContext.callOperands[index];
             llvm::dbgs() << "\n";
-            index++;
         });
 
         return {mlir::success(), funcProto};
@@ -3463,8 +3460,7 @@ class MLIRGenImpl
         mlir::Value init = initRef;
         //TypeProvided typeProvided = typeProvidedRef;
 
-        auto index = 0;
-        for (auto arrayBindingElement : arrayBindingPattern->elements)
+        for (auto [index, arrayBindingElement] : enumerate(arrayBindingPattern->elements))
         {
             auto subValueFunc = [&](mlir::Location location, const GenContext &genContext) { 
                 auto result = processDeclarationArrayBindingPatternSubPath(location, index, type, init, genContext);
@@ -3482,8 +3478,6 @@ class MLIRGenImpl
             {
                 return mlir::failure();
             }
-
-            index++;
         }
 
         return mlir::success();
@@ -4020,8 +4014,7 @@ class MLIRGenImpl
     bool isGenericParameters(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
         auto formalParams = parametersContextAST->parameters;
-        auto index = 0;
-        for (auto arg : formalParams)
+        for (auto [index, arg] : enumerate(formalParams))
         {
             auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
 
@@ -4064,8 +4057,6 @@ class MLIRGenImpl
                     return true;
                 }
             }
-
-            index++;
         }
 
         return false;
@@ -4121,8 +4112,7 @@ class MLIRGenImpl
         }
 
         auto formalParams = parametersContextAST->parameters;
-        auto index = 0;
-        for (auto arg : formalParams)
+        for (auto [index, arg] : enumerate(formalParams))
         {
             auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
             if (namePtr.empty())
@@ -4243,8 +4233,6 @@ class MLIRGenImpl
                     std::make_shared<FunctionParamDOM>(
                         namePtr, type, loc(arg), isOptional, isMultiArgs, initializer));
             }
-
-            index++;
         }
 
         return {mlir::success(), isGenericTypes, params};
@@ -5485,10 +5473,9 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenFunctionParams(int firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
                                               mlir::Block::BlockArgListType arguments, const GenContext &genContext)
     {
-        auto index = firstIndex;
-        for (const auto &param : funcProto->getParams())
+        for (auto [paramIndex, param] : enumerate(funcProto->getParams()))
         {
-            index++;
+            auto index = firstIndex + paramIndex;
             mlir::Value paramValue;
 
             // process init expression
@@ -8585,8 +8572,7 @@ class MLIRGenImpl
 
         if (!isTuple)
         {
-            auto index = 0;
-            for (auto leftItem : arrayLiteralExpression->elements)
+            for (auto [index, leftItem] : enumerate(arrayLiteralExpression->elements))
             {
                 auto result = mlirGen(leftItem, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
@@ -8603,7 +8589,7 @@ class MLIRGenImpl
 
                 // TODO: unify array access like Property access
                 auto indexValue =
-                    builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index++));
+                    builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index));
 
                 auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType),
                                                                     rightExpressionValue, indexValue);
@@ -8617,8 +8603,7 @@ class MLIRGenImpl
         }
         else
         {
-            auto index = 0;
-            for (auto leftItem : arrayLiteralExpression->elements)
+            for (auto [index, leftItem] : enumerate(arrayLiteralExpression->elements))
             {
                 auto result = mlirGen(leftItem, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
@@ -8644,8 +8629,6 @@ class MLIRGenImpl
                 {
                     return mlir::failure();
                 }
-
-                index++;
             }
 
         }
@@ -12218,11 +12201,10 @@ class MLIRGenImpl
         {
             auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
             auto arrayAttr = constantOp.getValue().cast<mlir::ArrayAttr>();
-            auto index = 0;
             // TODO: improve it with using array concat
-            for (auto val : arrayAttr)
+            for (auto [index, val] : enumerate(arrayAttr))
             {
-                auto indexVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), builder.getIntegerType(32), builder.getI32IntegerAttr(index++));
+                auto indexVal = builder.create<mlir_ts::ConstantOp>(itemValue.getLoc(), builder.getIntegerType(32), builder.getI32IntegerAttr(index));
                 auto result = mlirGenElementAccess(location, itemValue, indexVal, false, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result);
                 auto newConstVal = V(result);
@@ -13876,8 +13858,7 @@ class MLIRGenImpl
     {
         auto isGenericTypes = false;
         auto formalParams = signatureDeclarationBase->parameters;
-        auto index = 0;
-        for (auto arg : formalParams)
+        for (auto [index, arg] : enumerate(formalParams))
         {
             auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
 
@@ -13924,8 +13905,6 @@ class MLIRGenImpl
             {
                 type = mlirGenParameterObjectOrArrayBinding(arg->name, genContext);
             }
-
-            index++;
         }
 
         return mlir::success();
@@ -14041,9 +14020,8 @@ class MLIRGenImpl
 
         SmallVector<mlir::Type> enumLiteralTypes;
         SmallVector<mlir::NamedAttribute> enumValues;
-        int64_t index = 0;
         auto activeBits = 32;
-        for (auto enumMember : enumDeclarationAST->members)
+        for (auto [index, enumMember] : enumerate(enumDeclarationAST->members))
         {
             auto location = loc(enumMember);
 
@@ -14111,8 +14089,6 @@ class MLIRGenImpl
 
             // update enum to support req. access
             getEnumsMap()[namePtr].second = mlir::DictionaryAttr::get(builder.getContext(), enumValues /*adjustedEnumValues*/);
-
-            index++;
 
             // to make it available in enum context
             auto enumVal = enumValues.back();
@@ -14796,10 +14772,9 @@ class MLIRGenImpl
 
     void restoreMembersProcessStates(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr, 
             llvm::SmallVector<bool> &membersProcessStates) {
-        auto index = 0;
-        for (auto &classMember : classDeclarationAST->members)
+        for (auto [index, classMember] : enumerate(classDeclarationAST->members))
         {
-            classMember->processed = membersProcessStates[index++];
+            classMember->processed = membersProcessStates[index];
         }
 
         membersProcessStates.clear();
@@ -17498,10 +17473,8 @@ genContext);
     {
         SmallVector<mlir::Value> values;
         
-        auto index = -1;
-        for (auto fieldInfo : fields)
+        for (auto [index, fieldInfo] : enumerate(fields))
         {
-            index++;
             LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
 
             if (fieldInfo.id == mlir::Attribute() || (index < srcTupleType.size() && srcTupleType.getFieldInfo(index).id == mlir::Attribute()))
@@ -17563,6 +17536,80 @@ genContext);
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
     }    
 
+    // TODO: finish it
+    ValueOrLogicalResult castConstArrayToString(mlir::Location location, mlir::Value value, const GenContext &genContext)
+    {
+        if (auto constArray = value.getType().dyn_cast<mlir_ts::ConstArrayType>())
+        {
+            auto stringType = getStringType();
+            SmallVector<mlir::Value, 4> strs;
+
+            auto spaceText = " ";
+            auto spaceValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(spaceText));
+
+            auto spanText = ",";
+            auto spanValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(spanText));
+
+            auto beginText = "[";
+            auto beginValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(beginText));
+
+            auto endText = "]";
+            auto endValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(endText));
+
+            strs.push_back(beginValue);
+
+            auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>();
+            auto arrayAttr = constantOp.getValue().cast<mlir::ArrayAttr>();
+            for (auto [index, val] : enumerate(arrayAttr))
+            {
+                if (index > 1) 
+                {
+                    // text
+                    strs.push_back(spanValue);
+                }
+
+                // we need to convert it into string
+                if (auto typedAttr = val.dyn_cast<mlir::TypedAttr>())
+                {
+                    auto itemConstValue = builder.create<mlir_ts::ConstantOp>(location, typedAttr);
+
+                    if (itemConstValue.getType() != stringType)
+                    {
+                        CAST_A(convertedValue, location, stringType, itemConstValue, genContext);
+                        strs.push_back(convertedValue);
+                    }
+                    else
+                    {
+                        strs.push_back(itemConstValue);                
+                    }                    
+                }
+                else
+                {
+                    return mlir::failure();
+                }
+            }
+
+            if (strs.size() > 1)
+            {
+                strs.push_back(spaceValue);
+            }
+
+            strs.push_back(endValue);
+
+            if (strs.size() <= 0)
+            {
+                return V(builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr("")));
+            }
+
+            auto concatValues =
+                builder.create<mlir_ts::StringConcatOp>(location, stringType, mlir::ArrayRef<mlir::Value>{strs});
+
+            return V(concatValues);    
+        }    
+
+        return mlir::failure();
+    }     
+
     ValueOrLogicalResult castTupleToString(mlir::Location location, mlir::Value value, mlir_ts::TupleType tupleType,
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext)
     {
@@ -17589,13 +17636,11 @@ genContext);
 
         strs.push_back(beginValue);
 
-        auto index = -1;
-        for (auto fieldInfo : fields)
+        for (auto [index, fieldInfo] : enumerate(fields))
         {
-            index++;
             LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
 
-            if (index > 0) 
+            if (index > 1) 
             {
                 // text
                 strs.push_back(spanValue);
@@ -17628,7 +17673,7 @@ genContext);
             }
         }
 
-        if (index > 0)
+        if (strs.size() > 1)
         {
             strs.push_back(spaceValue);
         }
@@ -17862,7 +17907,11 @@ genContext);
                 return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
             }
 
-            if (auto arrayType = valueType.dyn_cast<mlir_ts::ArrayType>())
+            if (auto arrayType = valueType.dyn_cast<mlir_ts::ConstArrayType>())
+            {
+                return castConstArrayToString(location, value, genContext);
+            }
+            else if (auto arrayType = valueType.dyn_cast<mlir_ts::ArrayType>())
             {
                 if (auto toStringMethod = evaluateProperty(value, TO_STRING, genContext))
                 {
@@ -18264,11 +18313,10 @@ genContext);
                     {
                         ss << S("{ \n");
 
-                        auto index = 0;
-                        for (auto& _ : classInstances)
+                        for (auto [index, _] : enumerate(classInstances))
                         {
                             ss << S("if (t instanceof TYPE_INST_ALIAS");
-                            ss << index++;
+                            ss << index;
                             ss << S(") return t;\n");
                         }
 
@@ -18304,10 +18352,9 @@ genContext);
                 funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_T", value.getType()});
                 funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_U", type});
 
-                auto index = 0;
-                for (auto& instanceOfType : classInstances)
+                for (auto [index, instanceOfType] : enumerate(classInstances))
                 {
-                    funcCallGenContext.typeAliasMap.insert({"TYPE_INST_ALIAS" + std::to_string(index++), instanceOfType});
+                    funcCallGenContext.typeAliasMap.insert({"TYPE_INST_ALIAS" + std::to_string(index), instanceOfType});
                 }
 
                 SmallVector<mlir::Value, 4> operands;
@@ -18772,9 +18819,8 @@ genContext);
     {
         auto anyNamedGenericType = IsGeneric::False;
         auto argsCount = typeArgs.size();
-        for (auto index = 0; index < typeParams.size(); index++)
+        for (auto [index, typeParam] : enumerate(typeParams))
         {
-            auto &typeParam = typeParams[index];
             auto isDefault = false;
             auto type = index < argsCount
                             ? typeArgs[index]
@@ -18811,9 +18857,8 @@ genContext);
     {
         auto anyNamedGenericType = IsGeneric::False;
         auto argsCount = typeArgs.size();
-        for (auto index = 0; index < typeParams.size(); index++)
+        for (auto [index, typeParam] : enumerate(typeParams))
         {
-            auto &typeParam = typeParams[index];
             auto isDefault = false;
             auto type = index < argsCount
                             ? getType(typeArgs[index], genContext)
@@ -19893,11 +19938,9 @@ genContext);
         auto foundParamIndex = -1;
         if (genContext.funcProto)
         {
-            auto index = -1;
-            for (auto param : genContext.funcProto->getParams())
+            for (auto [index, param] : enumerate(genContext.funcProto->getParams()))
             {
-                index++;
-                if (param->getName() == namePtr)
+                if (foundParamIndex == -1 && param->getName() == namePtr)
                 {
                     foundParamIndex = index;
                 }

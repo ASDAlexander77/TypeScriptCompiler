@@ -2920,10 +2920,8 @@ class MLIRTypeHelper
             }
 
             auto found = false;
-            for (auto index = 0; index < mergedTypes.size(); index++)
+            for (auto [index, mergedType] : enumerate(mergedTypes))
             {
-                auto mergedType = mergedTypes[index];
-
                 auto merged = false;
                 auto resultType = mergeType(mergedType, typeItem, merged);
                 if (merged)

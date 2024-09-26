@@ -750,7 +750,6 @@ class CastLogicHelper
         };
 
         // map values
-        auto count = fields.size();
         auto dstIndex = -1;
         for (auto destField : tupleTypeRes.getFields())
         {
@@ -770,9 +769,8 @@ class CastLogicHelper
 
             auto found = false;
             auto anyFieldWithName = false;
-            for (auto index = 0; index < count; index++)
+            for (auto [index, srcField] : enumerate(fields))
             {
-                auto srcField = fields[index];
                 if (!srcField.id)
                 {
                     continue;

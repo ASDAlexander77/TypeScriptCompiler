@@ -1642,8 +1642,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
         mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value(),
                                                                             rewriter.getBoolAttr(inHeapMemory));
 
-        auto index = 0;
-        for (auto val : captureOp.getCaptured())
+        for (auto [index, val] : enumerate(captureOp.getCaptured()))
         {
             auto thisStoreFieldType = captureStoreType.getType(index);
             auto thisStoreFieldTypeRef = mlir_ts::RefType::get(thisStoreFieldType);
@@ -1667,8 +1666,6 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
             assert(val.getType() == fieldRef.getType().cast<mlir_ts::RefType>().getElementType());
 
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
-
-            index++;
         }
 
         rewriter.replaceOp(captureOp, allocTempStorage);

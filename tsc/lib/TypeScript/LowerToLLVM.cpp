@@ -1992,8 +1992,7 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
 
         // set values here
         mlir::Value zero = clh.createIndexConstantOf(llvmIndexType, 0);
-        auto index = 0;
-        for (auto itemPair : llvm::zip(transformed.getItems(), createTupleOp.getItems()))
+        for (auto [index, itemPair] : enumerate(llvm::zip(transformed.getItems(), createTupleOp.getItems())))
         {
             auto item = std::get<0>(itemPair);
             auto itemOrig = std::get<1>(itemPair);
@@ -2027,8 +2026,6 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
             }
 
             rewriter.create<LLVM::StoreOp>(loc, itemValue, offset);
-
-            index++;
         }
 
         auto loadedValue = rewriter.create<mlir_ts::LoadOp>(loc, tupleType, tupleVar);
@@ -2057,16 +2054,13 @@ struct DeconstructTupleOpLowering : public TsLlvmPattern<mlir_ts::DeconstructTup
         SmallVector<mlir::Value> results;
 
         // set values here
-        auto index = 0;
-        for (auto &item : tupleType.getBody())
+        for (auto [index, item] : enumerate(tupleType.getBody()))
         {
             auto llvmValueType = item;
             auto value =
                 rewriter.create<LLVM::ExtractValueOp>(loc, llvmValueType, tupleVar, MLIRHelper::getStructIndex(rewriter, index));
 
             results.push_back(value);
-
-            index++;
         }
 
         rewriter.replaceOp(deconstructTupleOp, ValueRange{results});
@@ -4966,7 +4960,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 
         {
             mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-            for (auto op : stateLabels)
+            for (auto [index, op] : enumerate(stateLabels))
             {
                 auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op);
                 rewriter.setInsertionPoint(stateLabelOp);
@@ -4976,7 +4970,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
                 rewriter.eraseOp(stateLabelOp);
 
                 // add switch
-                caseValues.push_back(index++);
+                caseValues.push_back(index);
                 caseDestinations.push_back(continuationBlock);
             }
         }
@@ -5049,10 +5043,9 @@ class SwitchStateInternalOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateI
         SmallVector<mlir::Block *> caseDestinations;
         SmallVector<ValueRange> caseOperands;
 
-        auto index = 0;
-        for (auto case1 : switchStateOp.getCases())
+        for (auto [index, case1] : enumerate(switchStateOp.getCases()))
         {
-            caseValues.push_back(index++);
+            caseValues.push_back(index);
             caseDestinations.push_back(case1);
             caseOperands.push_back(ValueRange());
         }
@@ -5115,8 +5108,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                     mlir::Value arrayInstance = rewriter.create<LLVM::UndefOp>(loc, arrayConstType);
 
 #ifndef ENABLE_MLIR_INIT
-                    auto index = 0;
-                    for (auto globalConstr : llvm::reverse(globalConstructs))
+                    for (auto [index, globalConstr] : enumerate(llvm::reverse(globalConstructs)))
                     {
                         mlir::Value instanceVal = rewriter.create<LLVM::UndefOp>(loc, elementType);
 
@@ -5132,7 +5124,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                         ch->setStructValue(loc, instanceVal, nullVal, 2);
 
                         // set array value
-                        ch->setStructValue(loc, arrayInstance, instanceVal, index++);
+                        ch->setStructValue(loc, arrayInstance, instanceVal, index);
                     }
 #else                
                     mlir::Value instanceVal = rewriter.create<LLVM::UndefOp>(loc, elementType);

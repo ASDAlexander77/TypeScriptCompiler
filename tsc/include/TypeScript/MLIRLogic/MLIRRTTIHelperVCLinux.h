@@ -91,19 +91,23 @@ class MLIRRTTIHelperVCLinux
     {
         auto first = true;
         auto countM1 = names.size() - 1;
-        auto index = 0;
-        for (auto name : names)
+        for (auto [index, name] : enumerate(names))
         {
             if (first)
             {
                 types.push_back({name.str(), TypeInfo::Pointer_TypeInfo, 1});
             }
 
-            types.push_back({name.str(), index < countM1 ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo,
-                             index < countM1 ? index + 2 : -1});
+            if (index < countM1)
+            {
+                types.push_back({ name.str(), TypeInfo::SingleInheritance_ClassTypeInfo, (int)index + 2 });
+            }
+            else
+            {
+                types.push_back({ name.str(), TypeInfo::ClassTypeInfo, -1 });
+            }
 
             first = false;
-            index++;
         }
     }
 
