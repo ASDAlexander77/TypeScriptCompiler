@@ -244,6 +244,7 @@
             "args": [
                 "-emit=exe",
                 "-di",
+                "--verbose",
                 "-debug-only=mlir,mlir-affine,llvm,pass",
                 "-mlir-disable-threading",
                 "-mtriple=x86_64-pc-windows-msvc",

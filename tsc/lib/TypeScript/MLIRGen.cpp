@@ -508,6 +508,7 @@ class MLIRGenImpl
         genContextPartial.clean();
 
         // clean up
+        clearTempModule();
         theModule.getBody()->clear();
 
         // clear state
