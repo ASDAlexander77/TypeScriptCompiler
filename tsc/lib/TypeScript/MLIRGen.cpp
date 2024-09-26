@@ -5475,7 +5475,7 @@ class MLIRGenImpl
     {
         for (auto [paramIndex, param] : enumerate(funcProto->getParams()))
         {
-            auto index = firstIndex + paramIndex;
+            auto index = firstIndex + (int)paramIndex;
             mlir::Value paramValue;
 
             // process init expression
@@ -5639,7 +5639,7 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(&entryBlock);
 
         auto arguments = entryBlock.getArguments();
-        auto firstIndex = -1;
+        auto firstIndex = 0;
 
         // add exit code
         if (failed(mlirGenFunctionEntry(location, funcProto, genContext)))
@@ -17562,7 +17562,7 @@ genContext);
             auto arrayAttr = constantOp.getValue().cast<mlir::ArrayAttr>();
             for (auto [index, val] : enumerate(arrayAttr))
             {
-                if (index > 1) 
+                if (index > 0) 
                 {
                     // text
                     strs.push_back(spanValue);
@@ -17571,8 +17571,9 @@ genContext);
                 // we need to convert it into string
                 if (auto typedAttr = val.dyn_cast<mlir::TypedAttr>())
                 {
-                    auto itemConstValue = builder.create<mlir_ts::ConstantOp>(location, typedAttr);
+                    strs.push_back(spaceValue);
 
+                    auto itemConstValue = builder.create<mlir_ts::ConstantOp>(location, typedAttr);
                     if (itemConstValue.getType() != stringType)
                     {
                         CAST_A(convertedValue, location, stringType, itemConstValue, genContext);
