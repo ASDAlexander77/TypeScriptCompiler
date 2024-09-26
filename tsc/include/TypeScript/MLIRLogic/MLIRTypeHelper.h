@@ -280,7 +280,11 @@ class MLIRTypeHelper
 
     mlir::StringAttr getLabelName(mlir::Type typeIn)
     {
-        if (typeIn.isIntOrIndex())
+        if (typeIn.isIndex())
+        {
+            return mlir::StringAttr::get(context, std::string("index"));
+        }
+        else if (typeIn.isIntOrIndex())
         {
             return mlir::StringAttr::get(context, std::string("i") + std::to_string(typeIn.getIntOrFloatBitWidth()));
         }
