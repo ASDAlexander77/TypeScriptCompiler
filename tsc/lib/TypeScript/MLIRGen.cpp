@@ -12690,7 +12690,9 @@ class MLIRGenImpl
 
         auto location = loc(objectLiteral);
 
-        if (receiverType && objectLiteral->properties.size() == 0)
+        if (receiverType 
+            && (receiverType.isa<mlir_ts::TupleType>() || receiverType.isa<mlir_ts::ConstTupleType>() || receiverType.isa<mlir_ts::InterfaceType>())
+            && objectLiteral->properties.size() == 0)
         {
             // return undef tuple
             llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
