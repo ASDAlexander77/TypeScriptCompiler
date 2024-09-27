@@ -6192,9 +6192,16 @@ class MLIRGenImpl
         else if (exprValue.getType().isa<mlir_ts::OptionalType>() 
                  && exprValue.getType().cast<mlir_ts::OptionalType>().getElementType() == safeType)
         {
-            // TODO: can u finish it?
-            if (inverse) return mlir::failure();
-            castedValue = builder.create<mlir_ts::ValueOp>(location, safeType, exprValue);
+            if (inverse) 
+            {
+                // it will be process in "else" clause
+                elseSafeCase->safeType = safeType;
+                return mlir::failure();
+            }
+            else
+            {
+                castedValue = builder.create<mlir_ts::ValueOp>(location, safeType, exprValue);
+            }
         }
         else if (auto unionType = dyn_cast<mlir_ts::UnionType>(exprValue.getType()))
         {
@@ -6459,7 +6466,6 @@ class MLIRGenImpl
     mlir::LogicalResult checkSafeCast(Expression exprIn, mlir::Value conditionValue, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         auto expr = stripParentheses(exprIn);
-
         if (expr == SyntaxKind::CallExpression)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCast: condition: " << conditionValue << "\n");
@@ -6550,8 +6556,8 @@ class MLIRGenImpl
             {
                 auto inverse = op == SyntaxKind::ExclamationEqualsToken || op == SyntaxKind::ExclamationEqualsEqualsToken;
 
-                auto left = binExpr->left;
-                auto right = binExpr->right;
+                auto left = stripParentheses(binExpr->left);
+                auto right = stripParentheses(binExpr->right);
 
                 // TODO: refactor it
                 // typeof
@@ -6588,6 +6594,16 @@ class MLIRGenImpl
                 }
             }
         }
+        else if (expr == SyntaxKind::PrefixUnaryExpression)
+        {
+            auto prefixExpr = expr.as<PrefixUnaryExpression>();
+            auto opCode = prefixExpr->_operator;
+            if (opCode == SyntaxKind::ExclamationToken)
+            {
+                auto expression = prefixExpr->operand;
+                return checkSafeCastBoolean(expression, true, elseSafeCase, genContext);
+            }
+        }        
         else if (expr == SyntaxKind::Identifier)
         {
             // in case of boolean value
