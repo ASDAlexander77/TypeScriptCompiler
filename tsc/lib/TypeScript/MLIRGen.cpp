@@ -2377,6 +2377,11 @@ class MLIRGenImpl
                         return {mlir::success(), funcType, fullName};
                     }
 
+                    if (genContext.allowPartialResolve)
+                    {
+                        return {mlir::success(), mlir_ts::FunctionType(), fullName};
+                    }
+
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
@@ -2718,6 +2723,11 @@ class MLIRGenImpl
                 emitError(location) << "can't instantiate function. '" << funcName
                                     << "' not all generic types can be identified";
                 return mlir::failure();
+            }
+
+            if (!funcType && genContext.allowPartialResolve)
+            {
+                return mlir::success();
             }
 
             return resolveFunctionWithCapture(location, StringRef(funcSymbolName), funcType, thisValue, false, genContext);
@@ -5845,7 +5855,10 @@ class MLIRGenImpl
                 emitError(location, "No return value");
             }
 
-            VALIDATE(expressionValue, location)
+            if (!genContext.allowPartialResolve)
+            {
+                VALIDATE(expressionValue, location)
+            }
 
             EXIT_IF_FAILED(mlirGenDisposable(location, DisposeDepth::FullStack, {}, &genContext));
 
@@ -7818,8 +7831,8 @@ class MLIRGenImpl
         auto condExpression = conditionalExpressionAST->condition;
         auto result = mlirGen(condExpression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
-        auto condValue = V(result);
 
+        auto condValue = V(result);
         if (condValue.getType() != getBooleanType())
         {
             CAST(condValue, location, getBooleanType(), condValue, genContext);
@@ -7828,44 +7841,7 @@ class MLIRGenImpl
         // detect value type
         // TODO: sync types for 'when' and 'else'
 
-        mlir::Type resultWhenFalseType;
-        mlir::Type resultWhenTrueType;
-        {
-            // check if we do safe-cast here
-            SymbolTableScopeT varScope(symbolTable);
-            ElseSafeCase elseSafeCase;
-            checkSafeCast(conditionalExpressionAST->condition, V(result), &elseSafeCase, genContext);
-            resultWhenTrueType = evaluate(conditionalExpressionAST->whenTrue, genContext);
-
-            if (elseSafeCase.safeType)
-            {
-                addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
-            }
-
-            resultWhenFalseType = evaluate(conditionalExpressionAST->whenFalse, genContext);
-        }
-
-        auto defaultUnionType = getUnionType(resultWhenTrueType, resultWhenFalseType);
-        auto merged = false;
-        auto resultType = mth.findBaseType(resultWhenTrueType, resultWhenFalseType, merged, defaultUnionType);
-
-        if (genContext.allowPartialResolve)
-        {
-            if (!resultType)
-            {
-                return mlir::failure();
-            }
-
-            if (!resultWhenTrueType || !resultWhenFalseType)
-            {
-                // return undef value
-            }
-
-            auto udef = builder.create<mlir_ts::UndefOp>(location, mlir::TypeRange{resultType});
-            return V(udef);
-        }
-
-        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{getVoidType()}, condValue, true);
 
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
         auto whenTrueExpression = conditionalExpressionAST->whenTrue;
@@ -7877,12 +7853,13 @@ class MLIRGenImpl
             SymbolTableScopeT varScope(symbolTable);
             checkSafeCast(conditionalExpressionAST->condition, V(result), &elseSafeCase, genContext);
             auto result = mlirGen(whenTrueExpression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            if (!genContext.allowPartialResolve)
+            {
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+            }
+            
             resultTrue = V(result);
         }
-
-        CAST_A(trueRes, location, resultType, resultTrue, genContext);
-        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{trueRes});
 
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
@@ -7894,13 +7871,46 @@ class MLIRGenImpl
             {
                 addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
             }        
+            
             auto result2 = mlirGen(whenFalseExpression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(result2)
+            if (!genContext.allowPartialResolve)
+            {
+                EXIT_IF_FAILED_OR_NO_VALUE(result2)
+            }
+
             resultFalse = V(result2);
         }
 
-        CAST_A(falseRes, location, resultType, resultFalse, genContext)
-        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{falseRes});
+        if (resultTrue && resultFalse)
+        {
+            auto defaultUnionType = getUnionType(resultTrue.getType(), resultFalse.getType());
+            auto merged = false;
+            auto resultType = mth.findBaseType(resultTrue.getType(), resultFalse.getType(), merged, defaultUnionType);
+
+            ifOp.getResult(0).setType(resultType);
+
+            CAST_A(falseRes, location, resultType, resultFalse, genContext)
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{falseRes});
+
+            // finish type of IfOp and WhenTrue clause
+            builder.setInsertionPointToEnd(&ifOp.getThenRegion().back());
+
+            CAST_A(trueRes, location, resultType, resultTrue, genContext);
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{trueRes});
+        }
+        else
+        {
+            // to support partial result
+            auto partialResult = resultTrue ? resultTrue : resultFalse;
+            if (partialResult)
+            {
+                ifOp.getResult(0).setType(partialResult.getType());
+            }
+            else
+            {
+                return mlir::failure();
+            }
+        }
 
         builder.setInsertionPointAfter(ifOp);
 
@@ -10545,6 +10555,11 @@ class MLIRGenImpl
         auto result = mlirGenSpecialized(location, funcResult, typeArguments, operands, specGenContext);
         EXIT_IF_FAILED(result)
         auto actualFuncRefValue = V(result);
+
+        if (!result.value && genContext.allowPartialResolve)
+        {
+            return mlir::success();
+        }
 
         if (mth.isVirtualFunctionType(actualFuncRefValue))
         {
