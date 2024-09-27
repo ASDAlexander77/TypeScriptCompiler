@@ -5281,9 +5281,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        firstIndex++;
-
-        auto capturedParam = arguments[firstIndex];
+        auto capturedParam = arguments[firstIndex++];
         auto capturedRefType = capturedParam.getType();
 
         auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, capturedRefType, location);
@@ -14022,7 +14020,8 @@ class MLIRGenImpl
         SmallVector<mlir::Type> enumLiteralTypes;
         SmallVector<mlir::NamedAttribute> enumValues;
         auto activeBits = 32;
-        for (auto [index, enumMember] : enumerate(enumDeclarationAST->members))
+        auto currentEnumValue = 0;
+        for (auto enumMember : enumDeclarationAST->members)
         {
             auto location = loc(enumMember);
 
@@ -14049,7 +14048,7 @@ class MLIRGenImpl
                     enumValueAttr = constOp.getValueAttr();
                     if (auto intAttr = enumValueAttr.dyn_cast<mlir::IntegerAttr>())
                     {
-                        index = intAttr.getInt();
+                        currentEnumValue = intAttr.getInt();
                         auto currentActiveBits = (int)intAttr.getValue().getActiveBits();
                         if (currentActiveBits > activeBits)
                         {
@@ -14073,7 +14072,7 @@ class MLIRGenImpl
             else
             {
                 auto typeInt = mlir::IntegerType::get(builder.getContext(), activeBits);
-                enumValueAttr = builder.getIntegerAttr(typeInt, index);
+                enumValueAttr = builder.getIntegerAttr(typeInt, currentEnumValue);
                 auto indexType = mlir_ts::LiteralType::get(enumValueAttr, typeInt);
                 enumLiteralTypes.push_back(indexType);
 
@@ -14091,8 +14090,7 @@ class MLIRGenImpl
             // update enum to support req. access
             getEnumsMap()[namePtr].second = mlir::DictionaryAttr::get(builder.getContext(), enumValues /*adjustedEnumValues*/);
 
-            // to make it available in enum context
-            auto enumVal = enumValues.back();
+            currentEnumValue++;
         }
 
         auto storeType = mth.getUnionTypeWithMerge(enumLiteralTypes);
