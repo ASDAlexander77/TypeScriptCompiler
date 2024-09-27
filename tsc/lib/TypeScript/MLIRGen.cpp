@@ -7935,39 +7935,63 @@ class MLIRGenImpl
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{leftExpressionValue.getType()}, condValue, true);
 
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-        mlir::Value resultTrue;
-        if (andOp)
-        {
-            auto result = mlirGen(rightExpression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(result)
-            resultTrue = V(result);
-        }
-        else
-        {
-            resultTrue = leftExpressionValue;
-        }
 
-        if (andOp)
+        ElseSafeCase elseSafeCase;
+        mlir::Value resultTrue;
         {
-            VALIDATE(resultTrue, location)
+            if (andOp)
+            {
+                // check if we do safe-cast here
+                SymbolTableScopeT varScope(symbolTable);
+                checkSafeCast(leftExpression, V(result), &elseSafeCase, genContext);
+
+                auto result = mlirGen(rightExpression, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                resultTrue = V(result);
+            }
+            else
+            {
+                resultTrue = leftExpressionValue;
+                if (auto optType = resultTrue.getType().dyn_cast<mlir_ts::OptionalType>())
+                {
+                    resultTrue = builder.create<mlir_ts::CastOp>(leftExpressionValue.getLoc(), optType.getElementType(), resultTrue);
+                }
+            }
+
+            if (andOp)
+            {
+                VALIDATE(resultTrue, location)
+            }
         }
 
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         mlir::Value resultFalse;
-        if (andOp)
-        {
-            resultFalse = leftExpressionValue;
-        }
-        else
-        {
-            auto result = mlirGen(rightExpression, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(result)
-            resultFalse = V(result);
-        }
+        {        
+            if (andOp)
+            {
+                resultFalse = leftExpressionValue;
+                if (auto optType = resultFalse.getType().dyn_cast<mlir_ts::OptionalType>())
+                {
+                    resultFalse = builder.create<mlir_ts::CastOp>(leftExpressionValue.getLoc(), optType.getElementType(), resultFalse);
+                }
+            }
+            else
+            {
+                SymbolTableScopeT varScope(symbolTable);
+                if (elseSafeCase.safeType)
+                {
+                    addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
+                }   
 
-        if (!andOp)
-        {
-            VALIDATE(resultFalse, location)
+                auto result = mlirGen(rightExpression, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                resultFalse = V(result);
+            }
+
+            if (!andOp)
+            {
+                VALIDATE(resultFalse, location)
+            }
         }
 
         auto resultType = getUnionType(resultTrue.getType(), resultFalse.getType());
