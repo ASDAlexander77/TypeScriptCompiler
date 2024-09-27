@@ -18,6 +18,8 @@
 #include "TypeScript/LowerToLLVM/AnyLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 using namespace mlir;
@@ -92,14 +94,14 @@ class CastLogicHelper
             return castBoolToString(in);
         }
 
-        if (inType.isa<mlir::IndexType>() && isResString)
+        if (inType.isIndex() && isResString)
         {
-            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), false);
+            return castIntToString(in, tch.getIndexTypeBitwidth(), false);
         }
 
-        if (inLLVMType.isIntOrIndex() && inType.isa<mlir::IntegerType>() && isResString)
+        if (inType.isa<mlir::IntegerType>() && isResString)
         {
-            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.cast<mlir::IntegerType>().isSignedInteger());
+            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.isSignedInteger());
         }
 
         if ((inLLVMType.isF16() || inLLVMType.isF32() || inLLVMType.isF64() || inLLVMType.isF128()) && isResString)
@@ -120,7 +122,19 @@ class CastLogicHelper
             return castF64ToString(in);
         }
 
-        if (inType.isIntOrIndex() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
+        if (inType.isIndex())
+        {
+            if (resType.isSignedInteger())
+            {
+                return rewriter.create<mlir::index::CastSOp>(loc, resLLVMType, in);
+            }
+            else
+            {
+                return rewriter.create<mlir::index::CastUOp>(loc, resLLVMType, in);
+            }
+        }
+
+        if (inType.isSignedInteger() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
         {
             return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
         }        
