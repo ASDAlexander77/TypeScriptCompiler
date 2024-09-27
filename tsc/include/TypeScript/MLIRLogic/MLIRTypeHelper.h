@@ -1593,7 +1593,7 @@ class MLIRTypeHelper
         {
             if (auto srcIntType = srcType.dyn_cast<mlir::IntegerType>())
             {
-                if (srcIntType.getSignedness() == destIntType.getSignedness()
+                if ((srcIntType.getSignedness() == destIntType.getSignedness() || srcIntType.isSignless() || destIntType.isSignless())
                     && srcIntType.getIntOrFloatBitWidth() <= destIntType.getIntOrFloatBitWidth())
                 {
                     return true;
@@ -2748,7 +2748,7 @@ class MLIRTypeHelper
         // check if type is nullable or undefinable
         for (auto type : types)
         {
-            if (type.isa<mlir_ts::UndefinedType>())
+            if (type.isa<mlir_ts::UndefinedType>() || type.isa<mlir_ts::OptionalType>())
             {
                 unionContext.isUndefined = true;
                 continue;
@@ -2829,6 +2829,13 @@ class MLIRTypeHelper
             if (type.isa<mlir_ts::UndefinedType>())
             {
                 isUndefined = true; 
+                continue;
+            }
+
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(type))
+            {
+                isUndefined = true; 
+                normalizedTypes.insert(optType.getElementType());
                 continue;
             }
 
