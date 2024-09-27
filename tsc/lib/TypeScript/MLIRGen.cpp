@@ -6194,8 +6194,12 @@ class MLIRGenImpl
         {
             if (inverse) 
             {
-                // it will be process in "else" clause
-                elseSafeCase->safeType = safeType;
+                if (elseSafeCase)
+                {
+                    // it will be process in "else" clause
+                    elseSafeCase->safeType = safeType;
+                }
+
                 return mlir::failure();
             }
             else
