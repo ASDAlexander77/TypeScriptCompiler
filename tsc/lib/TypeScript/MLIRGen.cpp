@@ -7920,21 +7920,9 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto leftExpressionValue = V(result);
 
-        auto resultWhenFalseType = evaluate(rightExpression, genContext);
-        if (mth.isNoneType(resultWhenFalseType))
-        {
-            return mlir::failure();
-        }
-
-        auto resultType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
-        if (mth.isNoneType(resultType))
-        {
-            return mlir::failure();
-        }
-
         CAST_A(condValue, location, getBooleanType(), leftExpressionValue, genContext);
 
-        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{leftExpressionValue.getType()}, condValue, true);
 
         builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
         mlir::Value resultTrue;
@@ -7954,14 +7942,6 @@ class MLIRGenImpl
             VALIDATE(resultTrue, location)
         }
 
-        // sync left part
-        if (resultType != resultTrue.getType())
-        {
-            CAST(resultTrue, location, resultType, resultTrue, genContext);
-        }
-
-        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
-
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         mlir::Value resultFalse;
         if (andOp)
@@ -7980,6 +7960,10 @@ class MLIRGenImpl
             VALIDATE(resultFalse, location)
         }
 
+        auto resultType = getUnionType(resultTrue.getType(), resultFalse.getType());
+
+        ifOp->getResult(0).setType(resultType);
+
         // sync right part
         if (resultType != resultFalse.getType())
         {
@@ -7987,6 +7971,18 @@ class MLIRGenImpl
         }
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
+
+        builder.setInsertionPointToEnd(&ifOp.getThenRegion().back());
+
+        // sync left part
+        if (resultType != resultTrue.getType())
+        {
+            CAST(resultTrue, location, resultType, resultTrue, genContext);
+        }
+
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
+
+        // end of setting result for left part
 
         builder.setInsertionPointAfter(ifOp);
 
