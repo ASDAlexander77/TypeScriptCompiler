@@ -6332,6 +6332,17 @@ class MLIRGenImpl
         return mlir::failure();
     }    
 
+    mlir::LogicalResult checkSafeCastBoolean(Expression exprVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
+    {
+        auto exprEval = evaluate(exprVal, genContext);
+        if (auto optType = exprEval.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            return addSafeCastStatement(exprVal, optType.getElementType(), inverse, elseSafeCase, genContext);
+        }
+
+        return mlir::failure();
+    }    
+
     Expression stripParentheses(Expression exprVal)
     {
         auto expr = exprVal;
@@ -6445,8 +6456,10 @@ class MLIRGenImpl
         return addSafeCastStatement(expr, typePredicateType.getElementType(), inverse, elseSafeCase, genContext);
     }
 
-    mlir::LogicalResult checkSafeCast(Expression expr, mlir::Value conditionValue, ElseSafeCase *elseSafeCase, const GenContext &genContext)
+    mlir::LogicalResult checkSafeCast(Expression exprIn, mlir::Value conditionValue, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
+        auto expr = stripParentheses(exprIn);
+
         if (expr == SyntaxKind::CallExpression)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCast: condition: " << conditionValue << "\n");
@@ -6540,21 +6553,25 @@ class MLIRGenImpl
                 auto left = binExpr->left;
                 auto right = binExpr->right;
 
+                // TODO: refactor it
+                // typeof
                 if (mlir::failed(checkSafeCastTypeOf(left, right, inverse, elseSafeCase, genContext)))
                 {
                     if (mlir::failed(checkSafeCastTypeOf(right, left, inverse, elseSafeCase, genContext)))
                     {
+                        // property access
                         if (mlir::failed(checkSafeCastPropertyAccess(left, right, inverse, elseSafeCase, genContext)))
                         {
-                            return checkSafeCastPropertyAccess(right, left, inverse, elseSafeCase, genContext);
+                            if (mlir::failed(checkSafeCastPropertyAccess(right, left, inverse, elseSafeCase, genContext)))
+                            {
+                                // undefined case
+                                if (mlir::failed(checkSafeCastUndefined(left, right, !inverse, elseSafeCase, genContext)))
+                                {
+                                    return checkSafeCastUndefined(right, left, !inverse, elseSafeCase, genContext);
+                                }
+                            }
                         }
                     }
-                }
-
-                // undefined case
-                if (mlir::failed(checkSafeCastUndefined(left, right, !inverse, elseSafeCase, genContext)))
-                {
-                    return checkSafeCastUndefined(right, left, !inverse, elseSafeCase, genContext);
                 }
 
                 return mlir::success();
@@ -6570,6 +6587,11 @@ class MLIRGenImpl
                                                 false, elseSafeCase, genContext);
                 }
             }
+        }
+        else if (expr == SyntaxKind::Identifier)
+        {
+            // in case of boolean value
+            return checkSafeCastBoolean(expr, false, elseSafeCase, genContext);
         }
 
         return mlir::success();
