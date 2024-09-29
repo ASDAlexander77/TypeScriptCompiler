@@ -1465,7 +1465,7 @@ def TypeScript_GetValueFromUnionOp : TypeScript_Op<"GetValueFromUnionOp", [Pure]
       %1 = ts.getvalue_from_union %v : ts.union to i32
   }];
   let arguments = (ins TypeScript_Union:$in);
-  let results = (outs AnyType:$res);
+  let results = (outs TypeScript_NonUnion:$res);
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 

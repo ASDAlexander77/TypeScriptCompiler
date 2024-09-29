@@ -6240,7 +6240,18 @@ class MLIRGenImpl
 
             if (!inverse)
             {
-                castedValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, safeType, exprValue);
+                if (safeType.isa<mlir_ts::UnionType>())
+                {
+                    // no need to cast union type <type1 | type2 | type3 > to <type 1 | type 3> as it will be
+                    // the same LLVMType structure
+                    //return mlir::failure();
+                    // in case of union we just want to have the same structured type but with less types in union
+                    castedValue = builder.create<mlir_ts::CastOp>(location, safeType, exprValue);
+                }
+                else
+                {
+                    castedValue = builder.create<mlir_ts::GetValueFromUnionOp>(location, safeType, exprValue);
+                }
             }
             else
             {
