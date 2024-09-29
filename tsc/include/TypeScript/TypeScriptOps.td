@@ -1390,7 +1390,7 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"ArithmeticBinary"> {
     AnyType:$result
   );
 
-  let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
+  let assemblyFormat = "`(` $opCode `)` $operand1 `,` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
 }
 
 def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
@@ -1410,7 +1410,8 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
     TypeScript_Boolean:$result
   );
 
-  let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
+  let assemblyFormat = "`(` $opCode `)` $operand1 `,` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
+  let hasCanonicalizer = 1;
 }
 
 def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpInterface>, Pure]> {

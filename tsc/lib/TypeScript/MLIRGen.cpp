@@ -18218,6 +18218,19 @@ genContext);
             }
         }
 
+        // TODO: issue is with casting to Boolean type from union type for example, you need to cast optional type to boolean to check value
+        // get rid of using "OptionalType" and use Union for it with "| undefined"
+        // unwrapping optional value to work with union inside, we need it as ' | undefined ' is part of union type
+        if (auto optType = valueType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            if (optType.getElementType().isa<mlir_ts::UnionType>())
+            {
+                auto val = V(builder.create<mlir_ts::ValueOrDefaultOp>(location, optType.getElementType(), value));
+                CAST_A(unwrappedValue, location, type, val, genContext);            
+                return unwrappedValue;
+            }
+        }        
+
         // unboxing
         if (auto anyType = valueType.dyn_cast<mlir_ts::AnyType>())
         {

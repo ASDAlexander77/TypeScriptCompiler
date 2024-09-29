@@ -1535,6 +1535,8 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
 
     LogicalResult matchAndRewrite(mlir_ts::IfOp op, PatternRewriter &rewriter) const override
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n\n\t IfOp RemoveStaticCondition: \n\n" << op << "'\n";);
+
         auto constant = op.getCondition().getDefiningOp<mlir_ts::ConstantOp>();
         if (!constant)
         {
@@ -1562,6 +1564,98 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
 void mlir_ts::IfOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert</*RemoveUnusedResults,*/ RemoveStaticCondition>(context);
+}
+
+namespace
+{
+
+struct SimplifyStaticExpression : public OpRewritePattern<mlir_ts::LogicalBinaryOp>
+{
+    using OpRewritePattern<mlir_ts::LogicalBinaryOp>::OpRewritePattern;
+
+    mlir::Attribute UnwrapConstant(mlir::Value op1) const
+    {
+        if (op1)
+        {
+            mlir::Value opConst = op1;
+            while (llvm::isa<mlir_ts::CastOp>(opConst.getDefiningOp())) 
+            {
+                opConst = opConst.getDefiningOp<mlir_ts::CastOp>().getOperand();
+            }
+
+            if (auto constOp = opConst.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                return constOp.getValue();
+            }
+        }
+
+        return mlir::Attribute();
+    }
+
+    // TODO: complete it
+    std::optional<bool> logicalOpResultOfConstants(unsigned int opCode, mlir::Attribute op1, mlir::Attribute op2) const {
+
+        auto op1Typed = op1.dyn_cast<mlir::TypedAttr>();
+        auto op2Typed = op2.dyn_cast<mlir::TypedAttr>();
+        if (!op1Typed || !op2Typed)
+        {
+            return {};
+        }
+        
+        if (op1Typed.getType() != op2Typed.getType())
+        {
+            return {};
+        }
+
+        // strings
+        if (op1Typed.isa<mlir::StringAttr>())
+        {
+            switch ((SyntaxKind)opCode)
+            {
+            case SyntaxKind::EqualsEqualsToken:
+            case SyntaxKind::EqualsEqualsEqualsToken:
+                return op1Typed.cast<mlir::StringAttr>().getValue().equals(op2Typed.cast<mlir::StringAttr>().getValue());
+            case SyntaxKind::ExclamationEqualsToken:
+            case SyntaxKind::ExclamationEqualsEqualsToken:
+                return !op1Typed.cast<mlir::StringAttr>().getValue().equals(op2Typed.cast<mlir::StringAttr>().getValue());
+            }
+        }
+
+        return {};
+    }
+
+    LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp op, PatternRewriter &rewriter) const override
+    {
+        auto op1 = op.getOperand1();
+        auto op2 = op.getOperand2();
+        
+        auto attrVal1 = UnwrapConstant(op1);
+        if (!attrVal1)
+        {
+            return mlir::failure();
+        }
+
+        auto attrVal2 = UnwrapConstant(op2);
+        if (!attrVal2)
+        {
+            return mlir::failure();
+        }
+
+        auto result = logicalOpResultOfConstants(op.getOpCode(), attrVal1, attrVal2);
+        if (result.has_value())
+        {
+            rewriter.replaceOpWithNewOp<mlir_ts::ConstantOp>(op, mlir_ts::BooleanType::get(rewriter.getContext()), rewriter.getBoolAttr(result.value()));
+            return mlir::success();
+        }
+
+        return mlir::failure();        
+    }
+};
+} // namespace
+
+void mlir_ts::LogicalBinaryOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<SimplifyStaticExpression>(context);
 }
 
 void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, Attribute value,
