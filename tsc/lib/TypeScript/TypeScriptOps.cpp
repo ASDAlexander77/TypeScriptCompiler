@@ -1575,18 +1575,20 @@ struct SimplifyStaticExpression : public OpRewritePattern<mlir_ts::LogicalBinary
 
     mlir::Attribute UnwrapConstant(mlir::Value op1) const
     {
-        if (op1)
+        mlir::Value opConst = op1;
+        while (opConst && opConst.getDefiningOp() && llvm::isa<mlir_ts::CastOp>(opConst.getDefiningOp())) 
         {
-            mlir::Value opConst = op1;
-            while (llvm::isa<mlir_ts::CastOp>(opConst.getDefiningOp())) 
-            {
-                opConst = opConst.getDefiningOp<mlir_ts::CastOp>().getOperand();
-            }
+            opConst = opConst.getDefiningOp<mlir_ts::CastOp>().getOperand();
+        }
 
-            if (auto constOp = opConst.getDefiningOp<mlir_ts::ConstantOp>())
-            {
-                return constOp.getValue();
-            }
+        if (!opConst || !opConst.getDefiningOp())
+        {
+            return mlir::Attribute();
+        }
+
+        if (auto constOp = opConst.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            return constOp.getValue();
         }
 
         return mlir::Attribute();
