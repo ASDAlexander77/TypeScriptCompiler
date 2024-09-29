@@ -3804,6 +3804,11 @@ class MLIRGenImpl
                 }
             }
         }
+        else if (typeProvided == TypeProvided::Yes && type)
+        {
+            // there is no initializer, var declration can be undefined
+            type = getUnionType(type, getUndefinedType());
+        }
 
 #ifdef ANY_AS_DEFAULT
         if (!type)
