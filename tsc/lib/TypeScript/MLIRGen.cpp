@@ -10121,14 +10121,11 @@ class MLIRGenImpl
             CAST(expression, location, arrayType, expression, genContext);
         }
 
-        if (isConditionalAccess)
+        if (auto optType = arrayType.dyn_cast<mlir_ts::OptionalType>())
         {
-            if (auto optType = arrayType.dyn_cast<mlir_ts::OptionalType>())
-            {
-                arrayType = optType.getElementType();
-                // loading value from opt value
-                expression = builder.create<mlir_ts::ValueOp>(location, arrayType, expression);
-            }
+            arrayType = optType.getElementType();
+            // loading value from opt value
+            expression = builder.create<mlir_ts::ValueOp>(location, arrayType, expression);
         }
 
         mlir::Type elementType;
