@@ -3804,12 +3804,11 @@ class MLIRGenImpl
                 }
             }
         }
-        // TODO: finish it for let a; to treat as "undefined" type
-        // else if (typeProvided == TypeProvided::Yes && type && item == SyntaxKind::VariableDeclaration)
-        // {
-        //     // there is no initializer, var declration can be undefined
-        //     type = getUnionType(type, getUndefinedType());
-        // }
+        else if (typeProvided == TypeProvided::Yes && type && item == SyntaxKind::VariableDeclaration)
+        {
+            // there is no initializer, var declration can be undefined
+            type = getUnionType(type, getUndefinedType());
+        }
 
 #ifdef ANY_AS_DEFAULT
         if (!type)
