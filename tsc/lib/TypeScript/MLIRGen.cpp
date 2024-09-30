@@ -3806,8 +3806,16 @@ class MLIRGenImpl
         }
         else if (typeProvided == TypeProvided::Yes && type && item == SyntaxKind::VariableDeclaration)
         {
-            // there is no initializer, var declration can be undefined
-            type = getUnionType(type, getUndefinedType());
+            auto parent = item->parent;
+            if (parent && parent == SyntaxKind::VariableDeclarationList)
+            {
+                parent = parent->parent;
+                if (parent && parent == SyntaxKind::VariableStatement)
+                {
+                    // there is no initializer, var declration can be undefined
+                    type = getUnionType(type, getUndefinedType());
+                }
+            }
         }
 
 #ifdef ANY_AS_DEFAULT
@@ -3932,6 +3940,8 @@ class MLIRGenImpl
 
         for (auto &item : variableDeclarationListAST->declarations)
         {
+            // we need it for support "undefined type" in 'let' without initialization
+            item->parent = variableDeclarationListAST;
             if (mlir::failed(mlirGen(item, varClass, genContext)))
             {
                 return mlir::failure();
@@ -10076,7 +10086,7 @@ class MLIRGenImpl
         auto expression = V(result);
 
         // default access <array>[index]
-        if (!conditinalAccess || conditinalAccess && expression.getType().isa<mlir_ts::OptionalType>())
+        if (!conditinalAccess)
         {
             auto result2 = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result2)
