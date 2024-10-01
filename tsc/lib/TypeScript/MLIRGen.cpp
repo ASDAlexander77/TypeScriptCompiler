@@ -8474,6 +8474,35 @@ class MLIRGenImpl
         return mlir::failure();    
     }
 
+    mlir::Value convertToRefValue(mlir::Location location, mlir::Value object, const GenContext &genContext)
+    {
+        if (auto loadOp = object.getDefiningOp<mlir_ts::LoadOp>())
+        {
+            // get PropertyRef out of extractPropertyOp
+            return loadOp.getReference();
+        }        
+
+        if (auto valueOp = object.getDefiningOp<mlir_ts::ValueOp>())
+        {
+            return builder.create<mlir_ts::PropertyRefOp>(
+                location, 
+                mlir_ts::RefType::get(valueOp.getType()), 
+                convertToRefValue(location, valueOp.getIn(), genContext), 
+                OPTIONAL_VALUE_INDEX);
+        }
+
+        if (auto extractPropertyOp = object.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+        {
+            return builder.create<mlir_ts::PropertyRefOp>(
+                location, 
+                mlir_ts::RefType::get(extractPropertyOp.getType()), 
+                convertToRefValue(location, extractPropertyOp.getObject(), genContext), 
+                extractPropertyOp.getPosition().front());
+        }
+
+        return mlir::Value();
+    }
+
     ValueOrLogicalResult mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
                                                  mlir::Value rightExpressionValue, const GenContext &genContext)
     {
@@ -8526,6 +8555,26 @@ class MLIRGenImpl
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have
             // writable array
             builder.create<mlir_ts::StoreOp>(location, savingValue, loadOp.getReference());
+        }
+        else if (auto extractPropertyOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+        {
+            syncSavingValue(extractPropertyOp.getType());
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            // access to conditional tuple
+            // let's see if we can get reference to it
+            auto propRef = convertToRefValue(location, leftExpressionValueBeforeCast, genContext);
+            if (!propRef)
+            {
+                return mlir::failure();
+            }
+
+            builder.create<mlir_ts::StoreOp>(location, savingValue, propRef);
+            return mlir::success();                
+
         }
         else if (auto accessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorOp>())
         {
