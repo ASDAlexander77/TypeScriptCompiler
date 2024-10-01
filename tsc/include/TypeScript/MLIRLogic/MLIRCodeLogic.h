@@ -65,20 +65,26 @@ class MLIRCodeLogic
 
         if (auto valueOp = object.getDefiningOp<mlir_ts::ValueOp>())
         {
-            return builder.create<mlir_ts::PropertyRefOp>(
-                object.getLoc(), 
-                mlir_ts::RefType::get(valueOp.getType()), 
-                GetReferenceOfLoadOp(valueOp.getIn()), 
-                OPTIONAL_VALUE_INDEX);
+            if (auto nestedRef = GetReferenceOfLoadOp(valueOp.getIn()))
+            {
+                return builder.create<mlir_ts::PropertyRefOp>(
+                    object.getLoc(), 
+                    mlir_ts::RefType::get(valueOp.getType()), 
+                    nestedRef, 
+                    OPTIONAL_VALUE_INDEX);
+            }
         }
 
         if (auto extractPropertyOp = object.getDefiningOp<mlir_ts::ExtractPropertyOp>())
         {
-            return builder.create<mlir_ts::PropertyRefOp>(
-                object.getLoc(), 
-                mlir_ts::RefType::get(extractPropertyOp.getType()), 
-                GetReferenceOfLoadOp(extractPropertyOp.getObject()), 
-                extractPropertyOp.getPosition().front());
+            if (auto nestedRef = GetReferenceOfLoadOp(extractPropertyOp.getObject()))
+            {
+                return builder.create<mlir_ts::PropertyRefOp>(
+                    object.getLoc(), 
+                    mlir_ts::RefType::get(extractPropertyOp.getType()), 
+                    nestedRef, 
+                    extractPropertyOp.getPosition().front());
+            }
         }
 
         return mlir::Value();
