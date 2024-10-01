@@ -8474,35 +8474,6 @@ class MLIRGenImpl
         return mlir::failure();    
     }
 
-    mlir::Value convertToRefValue(mlir::Location location, mlir::Value object, const GenContext &genContext)
-    {
-        if (auto loadOp = object.getDefiningOp<mlir_ts::LoadOp>())
-        {
-            // get PropertyRef out of extractPropertyOp
-            return loadOp.getReference();
-        }        
-
-        if (auto valueOp = object.getDefiningOp<mlir_ts::ValueOp>())
-        {
-            return builder.create<mlir_ts::PropertyRefOp>(
-                location, 
-                mlir_ts::RefType::get(valueOp.getType()), 
-                convertToRefValue(location, valueOp.getIn(), genContext), 
-                OPTIONAL_VALUE_INDEX);
-        }
-
-        if (auto extractPropertyOp = object.getDefiningOp<mlir_ts::ExtractPropertyOp>())
-        {
-            return builder.create<mlir_ts::PropertyRefOp>(
-                location, 
-                mlir_ts::RefType::get(extractPropertyOp.getType()), 
-                convertToRefValue(location, extractPropertyOp.getObject(), genContext), 
-                extractPropertyOp.getPosition().front());
-        }
-
-        return mlir::Value();
-    }
-
     ValueOrLogicalResult mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
                                                  mlir::Value rightExpressionValue, const GenContext &genContext)
     {
@@ -8566,7 +8537,8 @@ class MLIRGenImpl
 
             // access to conditional tuple
             // let's see if we can get reference to it
-            auto propRef = convertToRefValue(location, leftExpressionValueBeforeCast, genContext);
+            MLIRCodeLogic mcl(builder);
+            auto propRef = mcl.GetReferenceOfLoadOp(leftExpressionValueBeforeCast);
             if (!propRef)
             {
                 return mlir::failure();

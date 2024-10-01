@@ -26,13 +26,14 @@ namespace typescript
 class MLIRCodeLogic
 {
     mlir::MLIRContext *context;
+    mlir::OpBuilder builder;
 
   public:
-    MLIRCodeLogic(mlir::MLIRContext *context) : context(context)
+    MLIRCodeLogic(mlir::MLIRContext *context) : context(context), builder(context)
     {
     }
 
-    MLIRCodeLogic(mlir::OpBuilder builder) : context(builder.getContext())
+    MLIRCodeLogic(mlir::OpBuilder builder) : context(builder.getContext()), builder(builder)
     {
     }
 
@@ -54,14 +55,30 @@ class MLIRCodeLogic
         return mlir::Attribute();
     }
 
-    mlir::Value GetReferenceOfLoadOp(mlir::Value value)
+    mlir::Value GetReferenceOfLoadOp(mlir::Value object)
     {
-        // TODO: sync with Common Logic
-        if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(value.getDefiningOp()))
+        if (auto loadOp = object.getDefiningOp<mlir_ts::LoadOp>())
         {
-            // this LoadOp will be removed later as unused
-            auto refValue = loadOp.getReference();
-            return refValue;
+            // get PropertyRef out of extractPropertyOp
+            return loadOp.getReference();
+        }        
+
+        if (auto valueOp = object.getDefiningOp<mlir_ts::ValueOp>())
+        {
+            return builder.create<mlir_ts::PropertyRefOp>(
+                object.getLoc(), 
+                mlir_ts::RefType::get(valueOp.getType()), 
+                GetReferenceOfLoadOp(valueOp.getIn()), 
+                OPTIONAL_VALUE_INDEX);
+        }
+
+        if (auto extractPropertyOp = object.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+        {
+            return builder.create<mlir_ts::PropertyRefOp>(
+                object.getLoc(), 
+                mlir_ts::RefType::get(extractPropertyOp.getType()), 
+                GetReferenceOfLoadOp(extractPropertyOp.getObject()), 
+                extractPropertyOp.getPosition().front());
         }
 
         return mlir::Value();
