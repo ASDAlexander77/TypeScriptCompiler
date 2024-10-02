@@ -12207,6 +12207,9 @@ class MLIRGenImpl
         // TODO: review all receivers in case of generic types in generic functions, to avoid merging T with actual types
         void setReceiver(mlir::Type type, bool isReceiverGenericType)
         {
+            MLIRTypeHelper mth(nullptr);
+            type = mth.stripOptionalType(type);
+
             TypeSwitch<mlir::Type>(type)
                 .template Case<mlir_ts::ArrayType>([&](auto a) { isReceiverGenericType ? set(a, isReceiverGenericType) : setReceiverArray(a, isReceiverGenericType); })
                 .template Case<mlir_ts::TupleType>([&](auto t) { isReceiverGenericType ? set(t) : setReceiverTuple(t); })
@@ -18359,6 +18362,13 @@ genContext);
             emitError(location, "invalid cast from ") << valueType << " to " << type;
             return mlir::failure();
         }        
+
+        if (type.isa<mlir_ts::ArrayType>() && valueType.isa<mlir_ts::TupleType>() 
+            || type.isa<mlir_ts::TupleType>() && valueType.isa<mlir_ts::ArrayType>())
+        {
+            emitError(location, "invalid cast from ") << valueType << " to " << type;
+            return mlir::failure();
+        }
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
