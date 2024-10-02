@@ -349,29 +349,8 @@ class MLIRCustomMethods
         {
             if (!oper.getType().isa<mlir_ts::StringType>())
             {
-                if (oper.getType().isa<mlir_ts::OptionalType>())
-                {
-                    auto hasValue = builder.create<mlir_ts::HasValueOp>(location, mlir_ts::BooleanType::get(builder.getContext()), oper);
-                    MLIRCodeLogicHelper mclh(builder, location);
-
-                    auto strType = mlir_ts::StringType::get(builder.getContext());
-                    auto optValue = mclh.conditionalExpression(
-                        strType, hasValue,
-                        [&](mlir::OpBuilder &builder, mlir::Location location) {
-                            return builder.create<mlir_ts::CastOp>(location, strType, oper);
-                        },
-                        [&](mlir::OpBuilder &builder, mlir::Location location) {
-                            return builder.create<mlir_ts::ConstantOp>(
-                                location, strType, builder.getStringAttr(UNDEFINED_NAME));
-                        });
-
-                    vals.push_back(optValue);
-                }
-                else
-                {
-                    auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
-                    vals.push_back(strCast);
-                }
+                auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
+                vals.push_back(strCast);
             }
             else
             {
