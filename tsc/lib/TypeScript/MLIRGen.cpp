@@ -18204,6 +18204,19 @@ genContext);
             {
                 return V(builder.create<mlir_ts::OptionalUndefOp>(location, optType));
             }
+            else if (auto optValueType = valueType.dyn_cast<mlir_ts::OptionalType>())
+            {
+                auto condValue = builder.create<mlir_ts::HasValueOp>(location, getBooleanType(), value);
+                return optionalValueOrUndefined(
+                    location, 
+                    condValue, 
+                    [&](auto genContext) 
+                    { 
+                        auto valueFromOptional = builder.create<mlir_ts::ValueOp>(location, optValueType.getElementType(), value);
+                        return cast(location, optType.getElementType(), valueFromOptional, genContext);
+                    }, 
+                    genContext);
+            }
             else
             {
                 CAST_A(valueCasted, location, optType.getElementType(), value, genContext);
