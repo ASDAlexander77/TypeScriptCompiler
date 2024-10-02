@@ -3813,7 +3813,11 @@ class MLIRGenImpl
                 if (parent && parent == SyntaxKind::VariableStatement)
                 {
                     // there is no initializer, var declration can be undefined
-                    type = getUnionType(type, getUndefinedType());
+                    //type = getUnionType(type, getUndefinedType());
+                    if (!type.isa<mlir_ts::OptionalType>())
+                    {
+                        emitWarning(loc(item), "'let' does not have initializer, use undefined union type '<type> | undefined'.");
+                    }
                 }
             }
         }
