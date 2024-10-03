@@ -232,11 +232,8 @@ private:
         CompositeSizesTrack sizesTrack(llvmtch);
 
         llvm::SmallVector<LLVM::DINodeAttr> elements;
-        auto index = -1;
-        for (auto llvmElementType : structType.getBody())
+        for (auto [index, llvmElementType] : enumerate(structType.getBody()))
         {
-            index++;
-
             sizesTrack.nextElementType(llvmElementType);
 
             // name

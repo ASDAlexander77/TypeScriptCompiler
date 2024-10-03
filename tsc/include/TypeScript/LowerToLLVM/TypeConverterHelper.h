@@ -8,6 +8,7 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -45,6 +46,11 @@ class TypeConverterHelper
         }
 
         llvm_unreachable("not implemented");
+    }
+
+    int getIndexTypeBitwidth()
+    {
+        return (*(mlir::LLVMTypeConverter *)&typeConverter).getIndexTypeBitwidth();
     }
 };
 } // namespace typescript

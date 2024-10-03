@@ -52,7 +52,7 @@ class TypeOfOpHelper
 
         if (type.isIndex())
         {
-            auto typeOfValue = strValue(loc, "ptrint");
+            auto typeOfValue = strValue(loc, "index");
             return typeOfValue;
         }
 
@@ -78,6 +78,12 @@ class TypeOfOpHelper
         if (type.isa<mlir_ts::StringType>())
         {
             auto typeOfValue = strValue(loc, "string");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::CharType>())
+        {
+            auto typeOfValue = strValue(loc, "char");
             return typeOfValue;
         }
 

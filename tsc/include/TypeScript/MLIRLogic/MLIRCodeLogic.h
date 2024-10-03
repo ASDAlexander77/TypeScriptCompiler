@@ -26,13 +26,14 @@ namespace typescript
 class MLIRCodeLogic
 {
     mlir::MLIRContext *context;
+    mlir::OpBuilder builder;
 
   public:
-    MLIRCodeLogic(mlir::MLIRContext *context) : context(context)
+    MLIRCodeLogic(mlir::MLIRContext *context) : context(context), builder(context)
     {
     }
 
-    MLIRCodeLogic(mlir::OpBuilder builder) : context(builder.getContext())
+    MLIRCodeLogic(mlir::OpBuilder builder) : context(builder.getContext()), builder(builder)
     {
     }
 
@@ -54,14 +55,36 @@ class MLIRCodeLogic
         return mlir::Attribute();
     }
 
-    mlir::Value GetReferenceOfLoadOp(mlir::Value value)
+    mlir::Value GetReferenceOfLoadOp(mlir::Value object)
     {
-        // TODO: sync with Common Logic
-        if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(value.getDefiningOp()))
+        if (auto loadOp = object.getDefiningOp<mlir_ts::LoadOp>())
         {
-            // this LoadOp will be removed later as unused
-            auto refValue = loadOp.getReference();
-            return refValue;
+            // get PropertyRef out of extractPropertyOp
+            return loadOp.getReference();
+        }        
+
+        if (auto valueOp = object.getDefiningOp<mlir_ts::ValueOp>())
+        {
+            if (auto nestedRef = GetReferenceOfLoadOp(valueOp.getIn()))
+            {
+                return builder.create<mlir_ts::PropertyRefOp>(
+                    object.getLoc(), 
+                    mlir_ts::RefType::get(valueOp.getType()), 
+                    nestedRef, 
+                    OPTIONAL_VALUE_INDEX);
+            }
+        }
+
+        if (auto extractPropertyOp = object.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+        {
+            if (auto nestedRef = GetReferenceOfLoadOp(extractPropertyOp.getObject()))
+            {
+                return builder.create<mlir_ts::PropertyRefOp>(
+                    object.getLoc(), 
+                    mlir_ts::RefType::get(extractPropertyOp.getType()), 
+                    nestedRef, 
+                    extractPropertyOp.getPosition().front());
+            }
         }
 
         return mlir::Value();
@@ -232,7 +255,7 @@ class MLIRCustomMethods
         return m[functionName.str()];    
     }   
 
-    ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
+    ValueOrLogicalResult callMethod(StringRef functionName, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
     {
         if (functionName == "print")
         {
@@ -264,7 +287,7 @@ class MLIRCustomMethods
         }
         else if (functionName == "sizeof")
         {
-            return mlirGenSizeOf(location, operands);
+            return mlirGenSizeOf(location, typeArgs, operands);
         }
         else if (functionName == "__array_push")
         {
@@ -326,29 +349,8 @@ class MLIRCustomMethods
         {
             if (!oper.getType().isa<mlir_ts::StringType>())
             {
-                if (oper.getType().isa<mlir_ts::OptionalType>())
-                {
-                    auto hasValue = builder.create<mlir_ts::HasValueOp>(location, mlir_ts::BooleanType::get(builder.getContext()), oper);
-                    MLIRCodeLogicHelper mclh(builder, location);
-
-                    auto strType = mlir_ts::StringType::get(builder.getContext());
-                    auto optValue = mclh.conditionalExpression(
-                        strType, hasValue,
-                        [&](mlir::OpBuilder &builder, mlir::Location location) {
-                            return builder.create<mlir_ts::CastOp>(location, strType, oper);
-                        },
-                        [&](mlir::OpBuilder &builder, mlir::Location location) {
-                            return builder.create<mlir_ts::ConstantOp>(
-                                location, strType, builder.getStringAttr(UNDEFINED_NAME));
-                        });
-
-                    vals.push_back(optValue);
-                }
-                else
-                {
-                    auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
-                    vals.push_back(strCast);
-                }
+                auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
+                vals.push_back(strCast);
             }
             else
             {
@@ -491,12 +493,19 @@ class MLIRCustomMethods
         return isNaNOp;
     }
 
-    mlir::Value mlirGenSizeOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::Value mlirGenSizeOf(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
     {
-        auto sizeOfValue = builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(),
-                                                             mlir::TypeAttr::get(operands.front().getType()));
+        if (typeArgs.size() > 0)
+        {
+            return builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(), mlir::TypeAttr::get(typeArgs.front()));
+        }
 
-        return sizeOfValue;
+        if (operands.size() > 0)
+        {
+            return builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(), mlir::TypeAttr::get(operands.front().getType()));
+        }
+
+        return mlir::Value();
     }
 
     ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)

@@ -280,7 +280,11 @@ class MLIRTypeHelper
 
     mlir::StringAttr getLabelName(mlir::Type typeIn)
     {
-        if (typeIn.isIntOrIndex())
+        if (typeIn.isIndex())
+        {
+            return mlir::StringAttr::get(context, std::string("index"));
+        }
+        else if (typeIn.isIntOrIndex())
         {
             return mlir::StringAttr::get(context, std::string("i") + std::to_string(typeIn.getIntOrFloatBitWidth()));
         }
@@ -1589,7 +1593,7 @@ class MLIRTypeHelper
         {
             if (auto srcIntType = srcType.dyn_cast<mlir::IntegerType>())
             {
-                if (srcIntType.getSignedness() == destIntType.getSignedness()
+                if ((srcIntType.getSignedness() == destIntType.getSignedness() || srcIntType.isSignless() || destIntType.isSignless())
                     && srcIntType.getIntOrFloatBitWidth() <= destIntType.getIntOrFloatBitWidth())
                 {
                     return true;
@@ -2744,7 +2748,7 @@ class MLIRTypeHelper
         // check if type is nullable or undefinable
         for (auto type : types)
         {
-            if (type.isa<mlir_ts::UndefinedType>())
+            if (type.isa<mlir_ts::UndefinedType>() || type.isa<mlir_ts::OptionalType>())
             {
                 unionContext.isUndefined = true;
                 continue;
@@ -2825,6 +2829,13 @@ class MLIRTypeHelper
             if (type.isa<mlir_ts::UndefinedType>())
             {
                 isUndefined = true; 
+                continue;
+            }
+
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(type))
+            {
+                isUndefined = true; 
+                normalizedTypes.insert(optType.getElementType());
                 continue;
             }
 
@@ -2920,10 +2931,8 @@ class MLIRTypeHelper
             }
 
             auto found = false;
-            for (auto index = 0; index < mergedTypes.size(); index++)
+            for (auto [index, mergedType] : enumerate(mergedTypes))
             {
-                auto mergedType = mergedTypes[index];
-
                 auto merged = false;
                 auto resultType = mergeType(mergedType, typeItem, merged);
                 if (merged)

@@ -1206,6 +1206,14 @@ def TypeScript_IsTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()
 
 def TypeScript_AnyTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsTupleRefType, "any tuple reference type">;
 
+def TypeScript_IsOptionalRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::OptionalType>()">;
+
+def TypeScript_AnyOptionalRef : DialectType<TypeScript_Dialect, TypeScript_IsOptionalRefType, "any optional reference type">;
+
+def TypeScript_IsStringRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::StringType>()">;
+
+def TypeScript_StringRef : DialectType<TypeScript_Dialect, TypeScript_IsStringRefType, "string reference type">;
+
 def TypeScript_IsClassStorageType : CPred<"$_self.isa<::mlir::typescript::ClassStorageType>()">;
 
 def TypeScript_AnyClassStorageType : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageType, "any class storage type">;
@@ -1226,6 +1234,10 @@ def TypeScript_IsConstArrayValueRefType : CPred<"$_self.isa<::mlir::typescript::
 
 def TypeScript_AnyConstArrayValueRef : DialectType<TypeScript_Dialect, TypeScript_IsConstArrayValueRefType, "any const array value reference type">;
 
+def TypeScript_IsNotUnionType : CPred<"!$_self.isa<::mlir::typescript::UnionType>()">;
+
+def TypeScript_NonUnion : DialectType<TypeScript_Dialect, TypeScript_IsNotUnionType, "non-union type">;
+
 def TypeScript_ArrayLike : AnyTypeOf<[
     TypeScript_ConstArray, TypeScript_Array, TypeScript_String, TypeScript_AnyConstArrayValueRef, TypeScript_Ref
   ]>;
@@ -1235,7 +1247,7 @@ def TypeScript_TupleLike : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyStructRefLike : AnyTypeOf<[
-    TypeScript_AnyConstTupleRef, TypeScript_AnyTupleRef, TypeScript_Class, TypeScript_Object, TypeScript_AnyClassStorageRef
+    TypeScript_AnyConstTupleRef, TypeScript_AnyTupleRef, TypeScript_Class, TypeScript_Object, TypeScript_AnyClassStorageRef, TypeScript_AnyOptionalRef
   ]>;
 
 def TypeScript_AnyRefLike : AnyTypeOf<[

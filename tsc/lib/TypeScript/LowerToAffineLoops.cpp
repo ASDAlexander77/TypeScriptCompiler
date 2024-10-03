@@ -1642,8 +1642,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
         mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value(),
                                                                             rewriter.getBoolAttr(inHeapMemory));
 
-        auto index = 0;
-        for (auto val : captureOp.getCaptured())
+        for (auto [index, val] : enumerate(captureOp.getCaptured()))
         {
             auto thisStoreFieldType = captureStoreType.getType(index);
             auto thisStoreFieldTypeRef = mlir_ts::RefType::get(thisStoreFieldType);
@@ -1667,8 +1666,6 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
             assert(val.getType() == fieldRef.getType().cast<mlir_ts::RefType>().getElementType());
 
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
-
-            index++;
         }
 
         rewriter.replaceOp(captureOp, allocTempStorage);
@@ -1869,7 +1866,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp,
         mlir_ts::ValueOp, mlir_ts::ValueOrDefaultOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp,
         mlir_ts::PrintOp, mlir_ts::ConvertFOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
-        mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
+        mlir_ts::StringLengthOp, mlir_ts::SetStringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
         mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp,
         mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp,
         mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::AllocaOp,

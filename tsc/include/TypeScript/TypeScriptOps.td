@@ -1390,7 +1390,7 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"ArithmeticBinary"> {
     AnyType:$result
   );
 
-  let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
+  let assemblyFormat = "`(` $opCode `)` $operand1 `,` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
 }
 
 def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
@@ -1410,7 +1410,8 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
     TypeScript_Boolean:$result
   );
 
-  let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
+  let assemblyFormat = "`(` $opCode `)` $operand1 `,` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
+  let hasCanonicalizer = 1;
 }
 
 def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpInterface>, Pure]> {
@@ -1464,7 +1465,7 @@ def TypeScript_GetValueFromUnionOp : TypeScript_Op<"GetValueFromUnionOp", [Pure]
       %1 = ts.getvalue_from_union %v : ts.union to i32
   }];
   let arguments = (ins TypeScript_Union:$in);
-  let results = (outs AnyType:$res);
+  let results = (outs TypeScript_NonUnion:$res);
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
@@ -2142,6 +2143,11 @@ def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
 
 def TypeScript_SetLengthOfOp : TypeScript_Op<"SetLengthOf"> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, I32:$newLength);
+  let results = (outs );
+}
+
+def TypeScript_SetStringLengthOp : TypeScript_Op<"SetStringLength"> {
+  let arguments = (ins Arg<TypeScript_StringRef, "", [MemAlloc, MemWrite]>:$op,  I32:$size);
   let results = (outs );
 }
 

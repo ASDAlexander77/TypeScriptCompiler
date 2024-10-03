@@ -18,6 +18,8 @@
 #include "TypeScript/LowerToLLVM/AnyLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
 using namespace mlir;
@@ -92,14 +94,14 @@ class CastLogicHelper
             return castBoolToString(in);
         }
 
-        if (inType.isa<mlir::IndexType>() && isResString)
+        if (inType.isIndex() && isResString)
         {
-            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), false);
+            return castIntToString(in, tch.getIndexTypeBitwidth(), false);
         }
 
-        if (inLLVMType.isIntOrIndex() && inType.isa<mlir::IntegerType>() && isResString)
+        if (inType.isa<mlir::IntegerType>() && isResString)
         {
-            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.cast<mlir::IntegerType>().isSignedInteger());
+            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.isSignedInteger());
         }
 
         if ((inLLVMType.isF16() || inLLVMType.isF32() || inLLVMType.isF64() || inLLVMType.isF128()) && isResString)
@@ -120,7 +122,19 @@ class CastLogicHelper
             return castF64ToString(in);
         }
 
-        if (inType.isIntOrIndex() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
+        if (inType.isIndex())
+        {
+            if (resType.isSignedInteger())
+            {
+                return rewriter.create<mlir::index::CastSOp>(loc, resLLVMType, in);
+            }
+            else
+            {
+                return rewriter.create<mlir::index::CastUOp>(loc, resLLVMType, in);
+            }
+        }
+
+        if (inType.isSignedInteger() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
         {
             return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
         }        
@@ -709,11 +723,9 @@ class CastLogicHelper
 
         LLVM_DEBUG(llvm::dbgs() << "invalid cast operator type 1: '" << inLLVMType << "', type 2: '" << resLLVMType << "'\n";);
 
-        // emitError(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
-
-        // return mlir::Value();
-        emitWarning(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
-        return rewriter.create<LLVM::UndefOp>(loc, resLLVMType);
+        emitError(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
+        //return rewriter.create<LLVM::UndefOp>(loc, resLLVMType);
+        return mlir::Value();
     }
 
     mlir::Value castTupleToTuple(mlir::Value in, ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, mlir_ts::TupleType tupleTypeRes)
@@ -750,7 +762,6 @@ class CastLogicHelper
         };
 
         // map values
-        auto count = fields.size();
         auto dstIndex = -1;
         for (auto destField : tupleTypeRes.getFields())
         {
@@ -770,9 +781,8 @@ class CastLogicHelper
 
             auto found = false;
             auto anyFieldWithName = false;
-            for (auto index = 0; index < count; index++)
+            for (auto [index, srcField] : enumerate(fields))
             {
-                auto srcField = fields[index];
                 if (!srcField.id)
                 {
                     continue;

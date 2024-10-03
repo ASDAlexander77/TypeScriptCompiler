@@ -457,7 +457,6 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
     }
 };
 
-
 class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
 {
   public:
@@ -488,6 +487,43 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
         {
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, strlenFuncOp, transformed.getOp());
         }
+
+        return success();
+    }
+};
+
+class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SetStringLengthOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SetStringLengthOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(op, rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto loc = op->getLoc();
+
+        // TODO implement str concat
+        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrPtrTy = th.getI8PtrPtrType();
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
+        mlir::Value ptr = transformed.getOp();
+        mlir::Value size = transformed.getSize();
+
+        mlir::Value strPtr = rewriter.create<LLVM::LoadOp>(
+            loc, 
+            ptr.getType().cast<LLVM::LLVMPointerType>().getElementType(), 
+            ptr);
+
+        mlir::Value newStringValue = ch.MemoryReallocBitcast(i8PtrTy, strPtr, size);
+
+        rewriter.create<LLVM::StoreOp>(loc, newStringValue, ptr);
+        rewriter.eraseOp(op);
 
         return success();
     }
@@ -701,8 +737,10 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
         auto i8PtrTy = th.getI8PtrType();
 
         auto bufferSizeValue = clh.createI64ConstantOf(2);
-        // TODO: review it
-        auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        // TODO: review it, !! we can't allocate it in stack - otherwise when returned back from function, it will be poisned
+        // TODO: maybe you need to add mechanizm to convert stack values to heap when returned from function
+        //auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
 
         auto index0Value = clh.createI32ConstantOf(0);
         auto index1Value = clh.createI32ConstantOf(1);
@@ -1954,8 +1992,7 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
 
         // set values here
         mlir::Value zero = clh.createIndexConstantOf(llvmIndexType, 0);
-        auto index = 0;
-        for (auto itemPair : llvm::zip(transformed.getItems(), createTupleOp.getItems()))
+        for (auto [index, itemPair] : enumerate(llvm::zip(transformed.getItems(), createTupleOp.getItems())))
         {
             auto item = std::get<0>(itemPair);
             auto itemOrig = std::get<1>(itemPair);
@@ -1989,8 +2026,6 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
             }
 
             rewriter.create<LLVM::StoreOp>(loc, itemValue, offset);
-
-            index++;
         }
 
         auto loadedValue = rewriter.create<mlir_ts::LoadOp>(loc, tupleType, tupleVar);
@@ -2019,16 +2054,13 @@ struct DeconstructTupleOpLowering : public TsLlvmPattern<mlir_ts::DeconstructTup
         SmallVector<mlir::Value> results;
 
         // set values here
-        auto index = 0;
-        for (auto &item : tupleType.getBody())
+        for (auto [index, item] : enumerate(tupleType.getBody()))
         {
             auto llvmValueType = item;
             auto value =
                 rewriter.create<LLVM::ExtractValueOp>(loc, llvmValueType, tupleVar, MLIRHelper::getStructIndex(rewriter, index));
 
             results.push_back(value);
-
-            index++;
         }
 
         rewriter.replaceOp(deconstructTupleOp, ValueRange{results});
@@ -4928,7 +4960,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 
         {
             mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-            for (auto op : stateLabels)
+            for (auto [index, op] : enumerate(stateLabels))
             {
                 auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op);
                 rewriter.setInsertionPoint(stateLabelOp);
@@ -4938,7 +4970,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
                 rewriter.eraseOp(stateLabelOp);
 
                 // add switch
-                caseValues.push_back(index++);
+                caseValues.push_back(index);
                 caseDestinations.push_back(continuationBlock);
             }
         }
@@ -5011,10 +5043,9 @@ class SwitchStateInternalOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateI
         SmallVector<mlir::Block *> caseDestinations;
         SmallVector<ValueRange> caseOperands;
 
-        auto index = 0;
-        for (auto case1 : switchStateOp.getCases())
+        for (auto [index, case1] : enumerate(switchStateOp.getCases()))
         {
-            caseValues.push_back(index++);
+            caseValues.push_back(index);
             caseDestinations.push_back(case1);
             caseOperands.push_back(ValueRange());
         }
@@ -5077,8 +5108,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                     mlir::Value arrayInstance = rewriter.create<LLVM::UndefOp>(loc, arrayConstType);
 
 #ifndef ENABLE_MLIR_INIT
-                    auto index = 0;
-                    for (auto globalConstr : llvm::reverse(globalConstructs))
+                    for (auto [index, globalConstr] : enumerate(llvm::reverse(globalConstructs)))
                     {
                         mlir::Value instanceVal = rewriter.create<LLVM::UndefOp>(loc, elementType);
 
@@ -5094,7 +5124,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                         ch->setStructValue(loc, instanceVal, nullVal, 2);
 
                         // set array value
-                        ch->setStructValue(loc, arrayInstance, instanceVal, index++);
+                        ch->setStructValue(loc, arrayInstance, instanceVal, index);
                     }
 #else                
                     mlir::Value instanceVal = rewriter.create<LLVM::UndefOp>(loc, elementType);
@@ -5925,12 +5955,12 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, 
-        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, 
-        CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, 
-        ThrowCallOpLowering, VariableOpLowering, AllocaOpLowering, InvokeOpLowering, InvokeHybridOpLowering, VirtualSymbolRefOpLowering,
-        ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
-        LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
-        GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
+        InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
+        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
+        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
+        InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
+        NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
+        CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
         ReturnInternalOpLowering, NoOpLowering, /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,
