@@ -3814,7 +3814,7 @@ class MLIRGenImpl
                 {
                     // there is no initializer, var declration can be undefined
                     //type = getUnionType(type, getUndefinedType());
-                    if (!type.isa<mlir_ts::OptionalType>())
+                    if (!type.isa<mlir_ts::OptionalType>() && !hasModifier(parent, SyntaxKind::DeclareKeyword))
                     {
                         emitWarning(loc(item), "'let' does not have initializer, use undefined union type '<type> | undefined'.");
                     }
