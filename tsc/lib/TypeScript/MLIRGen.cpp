@@ -1377,6 +1377,10 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<BigIntLiteral>(), genContext);
         }
+        else if (kind == SyntaxKind::RegularExpressionLiteral)
+        {
+            return mlirGen(expressionAST.as<RegularExpressionLiteral>(), genContext);
+        }
         else if (kind == SyntaxKind::NullKeyword)
         {
             return mlirGen(expressionAST.as<NullLiteral>(), genContext);
@@ -12063,6 +12067,26 @@ class MLIRGenImpl
     {
         auto text = convertWideToUTF8(stringLiteral->text);
         return mlirGenStringValue(loc(stringLiteral), text);
+    }
+
+    ValueOrLogicalResult mlirGen(ts::RegularExpressionLiteral regularExpressionLiteral, const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto regName = nf.createIdentifier(S("RegExp"));
+
+        NodeArray<Expression> argumentsArray;
+        argumentsArray.push_back(
+            nf.createStringLiteral(
+                regularExpressionLiteral->text, 
+                false, 
+                regularExpressionLiteral->hasExtendedUnicodeEscape));
+
+        auto newRegExpr = nf.createNewExpression(regName, undefined, argumentsArray);
+
+        LLVM_DEBUG(printDebug(newRegExpr););
+
+        return mlirGen(newRegExpr, genContext);
     }
 
     ValueOrLogicalResult mlirGen(ts::NoSubstitutionTemplateLiteral noSubstitutionTemplateLiteral,
