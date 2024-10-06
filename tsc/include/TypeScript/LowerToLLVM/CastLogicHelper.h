@@ -724,6 +724,7 @@ class CastLogicHelper
         LLVM_DEBUG(llvm::dbgs() << "invalid cast operator type 1: '" << inLLVMType << "', type 2: '" << resLLVMType << "'\n";);
 
         // TODO: we return undef bacause if "conditional compiling" we can have non compilable code with "cast" to bypass it we need to retun precompiled value
+        emitWarning(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
         return rewriter.create<LLVM::UndefOp>(loc, resLLVMType);
         //emitError(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
         //return mlir::Value();
