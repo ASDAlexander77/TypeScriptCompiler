@@ -1020,6 +1020,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(
         NodeArray<Statement> statements, 
         std::function<bool(Statement)> filter,
+        int& processedStatements,
         const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -1060,6 +1061,7 @@ class MLIRGenImpl
                 else
                 {
                     statement->processed = true;
+                    processedStatements++;
                 }
             }
 
@@ -1157,6 +1159,9 @@ class MLIRGenImpl
                 continue;
             }
 
+            // TODO: we have issue, we can create IfStatement/ForStatment/WhileStatment (etc) which have blocks
+            // which will not be removed as it is partially process code
+            // so it will not be removed and cause "dirt" in the code which wil cause compile issue
             if (failed(mlirGen(statement, genContext)))
             {
                 // special case to show errors in case of discovery, generics & evaluates
@@ -1167,13 +1172,14 @@ class MLIRGenImpl
 
                 // now try to process all internal declarations
                 // process all declrations
-                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, genContext)))
+                auto processedDeclStatements = 0;
+                if (mlir::failed(mlirGen(blockAST->statements, processIfDeclaration, processedDeclStatements, genContext)))
                 {
                     return mlir::failure();
                 }
 
                 // try to process it again
-                if (failed(mlirGen(statement, genContext)))
+                if (processedDeclStatements == 0 || failed(mlirGen(statement, genContext)))
                 {
                     return mlir::failure();
                 }
@@ -6736,13 +6742,14 @@ class MLIRGenImpl
 
         // body in condition
         builder.setInsertionPointToStart(&doWhileOp.getBody().front());
-        mlirGen(doStatementAST->statement, genContext);
+        auto result2 = mlirGen(doStatementAST->statement, genContext);
+        EXIT_IF_FAILED(result2)
         // just simple return, as body in cond
         builder.create<mlir_ts::ResultOp>(location);
 
         builder.setInsertionPointToStart(&doWhileOp.getCond().front());
         auto result = mlirGen(doStatementAST->expression, genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        EXIT_IF_FAILED(result)
         auto conditionValue = V(result);
 
         if (conditionValue.getType() != getBooleanType())
@@ -6793,7 +6800,8 @@ class MLIRGenImpl
 
         // body
         builder.setInsertionPointToStart(&whileOp.getBody().front());
-        mlirGen(whileStatementAST->statement, genContext);
+        auto result2 = mlirGen(whileStatementAST->statement, genContext);
+        EXIT_IF_FAILED(result2)
         builder.create<mlir_ts::ResultOp>(location);
 
         builder.setInsertionPointAfter(whileOp);
@@ -6878,22 +6886,37 @@ class MLIRGenImpl
             if (forStatementAST->statement == SyntaxKind::Block)
             {
                 auto firstStatement = forStatementAST->statement.as<Block>()->statements.front();
-                mlirGen(firstStatement, genContext);
+                auto result = mlirGen(firstStatement, genContext);
+                EXIT_IF_FAILED(result)
             }
 
             // async body
+            auto isFailed = false;
             auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
                 location, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
                 [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                     GenContext execOpBodyGenContext(genContext);
                     if (forStatementAST->statement == SyntaxKind::Block)
                     {
-                        mlirGen(forStatementAST->statement.as<Block>(), execOpBodyGenContext, 1);
+                        if (mlir::failed(mlirGen(forStatementAST->statement.as<Block>(), execOpBodyGenContext, 1)))
+                        {
+                            isFailed = true;
+                        }
                     }
                     else
-                        mlirGen(forStatementAST->statement, execOpBodyGenContext);
+                    {
+                        if (mlir::failed(mlirGen(forStatementAST->statement, execOpBodyGenContext))) 
+                        {
+                            isFailed = true;
+                        }
+                    }
                     builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
-                });
+                });    
+
+            if (isFailed)
+            {
+                return mlir::failure();
+            }
 
             // add to group
             auto rankType = mlir::IndexType::get(builder.getContext());
@@ -7191,8 +7214,7 @@ class MLIRGenImpl
 
         if (noLabelOp)
         {
-            auto res = mlirGen(labeledStatementAST->statement, genContext);
-            return res;
+            return mlirGen(labeledStatementAST->statement, genContext);
         }
 
         auto labelOp = builder.create<mlir_ts::LabelOp>(location, builder.getStringAttr(label));
