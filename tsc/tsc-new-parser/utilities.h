@@ -25,7 +25,7 @@ static const string Json = S(".json");
 static const string TsBuildInfo = S(".tsbuildinfo");
 }; // namespace Extension
 
-inline auto positionIsSynthesized(number pos) -> boolean
+inline auto positionIsSynthesized(pos_type pos) -> boolean
 {
     // This is a fast way of testing the following conditions:
     //  pos === undefined || pos === null || isNaN(pos) || pos < 0;
@@ -248,7 +248,7 @@ inline auto fileExtensionIs(string path, string extension) -> boolean
     return path.length() > extension.length() && endsWith(path, extension);
 }
 
-template <typename T> inline auto setTextRangePos(T range, number pos) -> T
+template <typename T> inline auto setTextRangePos(T range, pos_type pos) -> T
 {
     range->pos = pos;
     return range;
@@ -260,12 +260,12 @@ template <typename T> inline auto setTextRangeEnd(T range, number end) -> T
     return range;
 }
 
-template <typename T> inline auto setTextRangePosEnd(T range, number pos, number end) -> T
+template <typename T> inline auto setTextRangePosEnd(T range, pos_type pos, number end) -> T
 {
     return setTextRangeEnd(setTextRangePos(range, pos), end);
 }
 
-template <typename T> inline auto setTextRangePosWidth(T range, number pos, number width) -> T
+template <typename T> inline auto setTextRangePosWidth(T range, pos_type pos, number width) -> T
 {
     return setTextRangePosEnd(range, pos, pos + width);
 }
