@@ -403,6 +403,9 @@ class MLIRGenImpl
             mlir::Location errorLocation = mlir::UnknownLoc::get(builder.getContext());
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
+
+            // clear previous errors
+            genContext.postponedMessages->clear();
             for (auto &statement : statements)
             {
                 if (statement->processed)
@@ -410,8 +413,6 @@ class MLIRGenImpl
                     continue;
                 }
 
-                // clear previous errors
-                genContext.postponedMessages->clear();
                 if (failed(mlirGen(statement, genContext)))
                 {
                     emitError(loc(statement), "failed statement");
