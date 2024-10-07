@@ -1565,14 +1565,14 @@ auto Scanner::scanShebangTrivia(string &text, number pos) -> number
     return pos;
 }
 
-auto Scanner::appendCommentRange(number pos, number end, SyntaxKind kind, boolean hasTrailingNewLine, number state,
+auto Scanner::appendCommentRange(pos_type pos, number end, SyntaxKind kind, boolean hasTrailingNewLine, number state,
                                  std::vector<CommentRange> comments) -> std::vector<CommentRange>
 {
     comments.push_back(data::CommentRange{pos, end, hasTrailingNewLine, kind});
     return comments;
 }
 
-auto Scanner::getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>
+auto Scanner::getLeadingCommentRanges(string &text, pos_type pos) -> std::vector<CommentRange>
 {
     return reduceEachLeadingCommentRange<number, std::vector<CommentRange>>(
         text, pos,
@@ -1581,7 +1581,7 @@ auto Scanner::getLeadingCommentRanges(string &text, number pos) -> std::vector<C
         0, std::vector<CommentRange>());
 }
 
-auto Scanner::getTrailingCommentRanges(string &text, number pos) -> std::vector<CommentRange>
+auto Scanner::getTrailingCommentRanges(string &text, pos_type pos) -> std::vector<CommentRange>
 {
     return reduceEachTrailingCommentRange<number, std::vector<CommentRange>>(
         text, pos,

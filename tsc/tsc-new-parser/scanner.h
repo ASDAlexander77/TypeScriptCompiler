@@ -540,12 +540,12 @@ class Scanner
         return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ true, cb, state, initial);
     }
 
-    auto appendCommentRange(number pos, number end, SyntaxKind kind, boolean hasTrailingNewLine, number state,
+    auto appendCommentRange(pos_type pos, number end, SyntaxKind kind, boolean hasTrailingNewLine, number state,
                             std::vector<CommentRange> comments) -> std::vector<CommentRange>;
 
-    auto getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>;
+    auto getLeadingCommentRanges(string &text, pos_type pos) -> std::vector<CommentRange>;
 
-    auto getTrailingCommentRanges(string &text, number pos) -> std::vector<CommentRange>;
+    auto getTrailingCommentRanges(string &text, pos_type pos) -> std::vector<CommentRange>;
 
     /** Optionally, get the shebang */
     auto getShebang(string &text) -> string;
