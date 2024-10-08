@@ -25,7 +25,7 @@ static const string Json = S(".json");
 static const string TsBuildInfo = S(".tsbuildinfo");
 }; // namespace Extension
 
-inline auto positionIsSynthesized(pos_type pos) -> boolean
+inline auto positionIsSynthesized(number pos) -> boolean
 {
     // This is a fast way of testing the following conditions:
     //  pos === undefined || pos === null || isNaN(pos) || pos < 0;

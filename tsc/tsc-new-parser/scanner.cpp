@@ -3186,7 +3186,7 @@ auto Scanner::reScanSlashToken() -> SyntaxKind
 }
 
 auto Scanner::appendIfCommentDirective(std::vector<CommentDirective> commentDirectives, string text, regex commentDirectiveRegEx,
-                                       number lineStart) -> std::vector<CommentDirective>
+                                       pos_type lineStart) -> std::vector<CommentDirective>
 {
     auto type = getDirectiveFromComment(text, commentDirectiveRegEx);
     if (type == CommentDirectiveType::Undefined)
