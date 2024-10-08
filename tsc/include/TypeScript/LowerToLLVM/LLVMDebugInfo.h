@@ -118,6 +118,8 @@ class LLVMDebugInfoHelper
     {
         LLVM::DITypeAttr diTypeAttr;
 
+        LLVM_DEBUG(llvm::dbgs() << "DI for llvmType:\t" << llvmType << "\n");
+
         mlir::TypeSwitch<mlir::Type>(llvmType)
             .Case<mlir::IntegerType>([&](auto intType) {  
                 auto typeCode = dwarf::DW_ATE_signed;
@@ -138,7 +140,7 @@ class LLVMDebugInfoHelper
                 {
                     // TODO: review it
                     //diTypeAttr = LLVM::DIVoidResultTypeAttr::get(context);
-                    return;
+                    //return;
                 }                
 
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), size, typeCode);

@@ -1927,13 +1927,16 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
                     unsigned arg = 0;
                     // TODO: finish the DI logic
                     unsigned alignInBits = 8;
-                    auto diType = di.getDIType(tch.convertType(value.getType()), value.getType(), file, line, file);
+                    auto diType = di.getDIType(tch.convertType(value.getType()), debugVarOp.getInitializer().getType(), file, line, file);
 
                     auto name = namedLoc.getName();
                     auto scope = scopeFusedLoc.getMetadata();
                     auto varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
-                    auto varMem = rewriter.create<LLVM::NullOp>(location, LLVM::LLVMPointerType::get(value.getType()));
-                    rewriter.create<LLVM::DbgDeclareOp>(location, varMem, varInfo);
+
+                    auto allocated = rewriter.create<LLVM::AllocaOp>(location, LLVM::LLVMPointerType::get(value.getType()), clh.createI32ConstantOf(1));
+                    rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
+
+                    rewriter.create<LLVM::StoreOp>(location, value, allocated);                    
                     rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
                 }
             }
