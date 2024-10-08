@@ -3375,6 +3375,13 @@ class MLIRGenImpl
             {
                 return mlir::failure();
             }
+
+            if (this->compileOptions.generateDebugInfo && variableDeclarationInfo.initial && !variableDeclarationInfo.storage)
+            {
+                // to show const values
+                auto namedLoc = mlir::NameLoc::get(builder.getStringAttr(variableDeclarationInfo.variableName), location);
+                builder.create<mlir_ts::DebugVariableOp>(namedLoc, variableDeclarationInfo.initial);
+            }
         }
         else if (variableDeclarationInfo.isFullName)
         {

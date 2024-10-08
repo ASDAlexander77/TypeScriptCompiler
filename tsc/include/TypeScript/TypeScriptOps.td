@@ -1069,6 +1069,30 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   let assemblyFormat = "`(` $initializer `)` `{` $captured `}` attr-dict `:` type($initializer) `->` type($reference)";
 }
 
+def TypeScript_DebugVariableOp : TypeScript_Op<"DebugVariable", []> {
+  let summary = [{
+    Placeholder to Generate DebugInfo for constant values.
+  }];
+
+  let description = [{
+
+    ```mlir
+    %0 = ts.constant ...
+
+    %1 = ts.debug_variable : f32
+    ```
+  }];
+
+  let arguments = (ins
+    AnyType:$initializer
+  );
+
+  let results = (outs
+  );
+
+  let assemblyFormat = "`(` $initializer `)` attr-dict `:` type($initializer)";
+}
+
 def TypeScript_AllocaOp : TypeScript_Op<"Alloca", []> {
   let summary = [{
     Allocate an object in stack memory.

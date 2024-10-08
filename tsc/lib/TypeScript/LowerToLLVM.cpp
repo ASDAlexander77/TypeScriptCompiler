@@ -1803,12 +1803,9 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                 // if inside function (not in global op)
                 mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
-                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
             }
-            else
-            {
-                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
-            }
+
+            allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
         }
         else
         {
@@ -1889,6 +1886,60 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         }
 
         rewriter.replaceOp(varOp, ValueRange{allocated});
+        return success();
+    }
+};
+
+struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
+{
+    using TsLlvmPattern<mlir_ts::DebugVariableOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::DebugVariableOp debugVarOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        
+
+        LLVMCodeHelper ch(debugVarOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        CodeLogicHelper clh(debugVarOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto location = debugVarOp.getLoc();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! debug variable: " << debugVarOp << "\n";);
+
+        //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
+        LocationHelper lh(rewriter.getContext());
+        auto [file, line] = lh.getLineAndFile(location);
+
+        LLVM::DIScopeAttr scope;
+        if (auto funcOp = debugVarOp->getParentOfType<LLVM::LLVMFuncOp>())
+        {
+            if (auto scopeFusedLoc = funcOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+            {
+                if (auto namedLoc = debugVarOp->getLoc().dyn_cast<mlir::NameLoc>())
+                {
+                    auto value = transformed.getInitializer();
+
+                    LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+                    LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
+
+                    // TODO: finish the DI logic
+                    unsigned arg = 0;
+                    // TODO: finish the DI logic
+                    unsigned alignInBits = 8;
+                    auto diType = di.getDIType(tch.convertType(value.getType()), value.getType(), file, line, file);
+
+                    auto name = namedLoc.getName();
+                    auto scope = scopeFusedLoc.getMetadata();
+                    auto varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
+                    auto varMem = rewriter.create<LLVM::NullOp>(location, LLVM::LLVMPointerType::get(value.getType()));
+                    rewriter.create<LLVM::DbgDeclareOp>(location, varMem, varInfo);
+                    rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
+                }
+            }
+        }
+
+        rewriter.eraseOp(debugVarOp);
         return success();
     }
 };
@@ -5957,7 +6008,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
         StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
-        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
+        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
         CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
