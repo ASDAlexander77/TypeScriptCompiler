@@ -31,9 +31,19 @@ class MLIRDebugInfoHelper
     {
     }
 
-    mlir::FusedLoc combine(mlir::Location location, mlir::LLVM::DIScopeAttr scope)
+    mlir::FusedLoc combineWithCurrentScope(mlir::Location location)
     {
-        return mlir::FusedLoc::get(builder.getContext(), {location}, scope);          
+        return combine(location, debugScope.lookup(DEBUG_SCOPE));          
+    }
+
+    mlir::NameLoc combineWithName(mlir::Location location, StringRef name)
+    {
+        return mlir::NameLoc::get(builder.getStringAttr(name), location);
+    }
+
+    mlir::FusedLoc combineWithCurrentScopeAndName(mlir::Location location, StringRef name)
+    {
+        return combineWithCurrentScope(combineWithName(location, name));
     }
 
     void setFile(StringRef fileName) {
@@ -44,6 +54,7 @@ class MLIRDebugInfoHelper
         auto file = mlir::LLVM::DIFileAttr::get(builder.getContext(), sys::path::filename(fileName), FullName);
 
         debugScope.insert(FILE_DEBUG_SCOPE, file);
+        debugScope.insert(DEBUG_SCOPE, file);
     }
 
     mlir::Location getCompileUnit(mlir::Location location, StringRef producerName, bool isOptimized) {
@@ -56,6 +67,7 @@ class MLIRDebugInfoHelper
         auto compileUnit = mlir::LLVM::DICompileUnitAttr::get(builder.getContext(), sourceLanguage, file, producer, isOptimized, emissionKind);        
        
         debugScope.insert(CU_DEBUG_SCOPE, compileUnit);
+        debugScope.insert(DEBUG_SCOPE, compileUnit);
 
         return combine(location, compileUnit);
     }
@@ -85,10 +97,16 @@ class MLIRDebugInfoHelper
             compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);      
 
         debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
+        debugScope.insert(DEBUG_SCOPE, subprogramAttr);
 
         return combine(functionLocation, subprogramAttr);
     }
 
+private:
+    mlir::FusedLoc combine(mlir::Location location, mlir::LLVM::DIScopeAttr scope)
+    {
+        return mlir::FusedLoc::get(builder.getContext(), {location}, scope);          
+    }
 };
 
 } // namespace typescript

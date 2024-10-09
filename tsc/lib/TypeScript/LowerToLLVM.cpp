@@ -1809,29 +1809,26 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             LocationHelper lh(rewriter.getContext());
             auto [file, line] = lh.getLineAndFile(location);
 
-            LLVM::DIScopeAttr scope;
-            if (auto funcOp = varOp->getParentOfType<LLVM::LLVMFuncOp>())
+            if (auto scopeFusedLoc = varOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
             {
-                if (auto scopeFusedLoc = funcOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+                if (auto namedLoc = varOp->getLoc().dyn_cast<mlir::NameLoc>())
                 {
-                    if (auto namedLoc = varOp->getLoc().dyn_cast<mlir::NameLoc>())
-                    {
-                        LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
-                        LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
+                    LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+                    LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
 
-                        // TODO: finish the DI logic
-                        unsigned arg = 0;
-                        // TODO: finish the DI logic
-                        unsigned alignInBits = 8;
-                        auto diType = di.getDIType(tch.convertType(storageType), storageType, file, line, file);
+                    // TODO: finish the DI logic
+                    unsigned arg = 0;
+                    // TODO: finish the DI logic
+                    unsigned alignInBits = 8;
+                    auto diType = di.getDIType(tch.convertType(storageType), storageType, file, line, file);
 
-                        auto name = namedLoc.getName();
-                        auto scope = scopeFusedLoc.getMetadata();
-                        varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
-                        rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
+                    auto name = namedLoc.getName();
+                    auto scope = scopeFusedLoc.getMetadata();
+                    varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
+                    rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
 
-                        allocated.getDefiningOp()->setLoc(mlir::FusedLoc::get(rewriter.getContext(), {allocated.getDefiningOp()->getLoc()}, varInfo));
-                    }
+                    // TODO: do I need it? does it have an effect?
+                    allocated.getDefiningOp()->setLoc(mlir::FusedLoc::get(rewriter.getContext(), {allocated.getDefiningOp()->getLoc()}, varInfo));
                 }
             }
         }
@@ -1875,36 +1872,32 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
         LocationHelper lh(rewriter.getContext());
         auto [file, line] = lh.getLineAndFile(location);
 
-        LLVM::DIScopeAttr scope;
-        if (auto funcOp = debugVarOp->getParentOfType<LLVM::LLVMFuncOp>())
+        if (auto scopeFusedLoc = debugVarOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
         {
-            if (auto scopeFusedLoc = funcOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+            if (auto namedLoc = debugVarOp->getLoc().dyn_cast<mlir::NameLoc>())
             {
-                if (auto namedLoc = debugVarOp->getLoc().dyn_cast<mlir::NameLoc>())
-                {
-                    auto value = transformed.getInitializer();
+                auto value = transformed.getInitializer();
 
-                    LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
-                    LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
+                LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+                LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
 
-                    // TODO: finish the DI logic
-                    unsigned arg = 0;
-                    // TODO: finish the DI logic
-                    unsigned alignInBits = 8;
-                    auto diType = di.getDIType(tch.convertType(value.getType()), debugVarOp.getInitializer().getType(), file, line, file);
+                // TODO: finish the DI logic
+                unsigned arg = 0;
+                // TODO: finish the DI logic
+                unsigned alignInBits = 8;
+                auto diType = di.getDIType(tch.convertType(value.getType()), debugVarOp.getInitializer().getType(), file, line, file);
 
-                    auto name = namedLoc.getName();
-                    auto scope = scopeFusedLoc.getMetadata();
-                    auto varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
+                auto name = namedLoc.getName();
+                auto scope = scopeFusedLoc.getMetadata();
+                auto varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
 
-                    auto allocated = rewriter.create<LLVM::AllocaOp>(location, LLVM::LLVMPointerType::get(value.getType()), clh.createI32ConstantOf(1));
-                    rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
+                auto allocated = rewriter.create<LLVM::AllocaOp>(location, LLVM::LLVMPointerType::get(value.getType()), clh.createI32ConstantOf(1));
+                rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
 
-                    rewriter.create<LLVM::StoreOp>(location, value, allocated);     
+                rewriter.create<LLVM::StoreOp>(location, value, allocated);     
 #ifdef DBG_INFO_ADD_VALUE_OP                                   
-                    rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
+                rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
 #endif
-                }
             }
         }
 

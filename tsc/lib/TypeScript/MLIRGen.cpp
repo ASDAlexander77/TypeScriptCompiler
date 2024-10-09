@@ -3369,7 +3369,8 @@ class MLIRGenImpl
             if (this->compileOptions.generateDebugInfo && variableDeclarationInfo.initial && !variableDeclarationInfo.storage)
             {
                 // to show const values
-                auto namedLoc = mlir::NameLoc::get(builder.getStringAttr(variableDeclarationInfo.variableName), location);
+                MLIRDebugInfoHelper mti(builder, debugScope);
+                auto namedLoc = mti.combineWithCurrentScopeAndName(location, variableDeclarationInfo.variableName);
                 builder.create<mlir_ts::DebugVariableOp>(namedLoc, variableDeclarationInfo.initial);
             }
         }
@@ -5178,6 +5179,21 @@ class MLIRGenImpl
         // register function to be able to call it if used in recursive call
         registerFunctionOp(funcProto, funcOp);
 
+        // Debug Info
+        DITableScopeT debugSourceFileScope(debugScope);
+        if (compileOptions.generateDebugInfo)
+        {
+            MLIRDebugInfoHelper mdi(builder, debugScope);
+            auto locWithDI = 
+                mdi.getSubprogram(
+                    location, 
+                    funcOp.getName(), 
+                    functionLikeDeclarationBaseAST->body 
+                        ? loc(functionLikeDeclarationBaseAST->body) 
+                        : location);
+            funcOp->setLoc(locWithDI);
+        }
+
         // generate body
         auto resultFromBody = mlir::failure();
         {
@@ -5228,20 +5244,6 @@ class MLIRGenImpl
         else
         {
             builder.setInsertionPointAfter(funcOp);
-        }
-
-        // Debug Info
-        if (compileOptions.generateDebugInfo)
-        {
-            MLIRDebugInfoHelper mdi(builder, debugScope);
-            auto locWithDI = 
-                mdi.getSubprogram(
-                    location, 
-                    funcOp.getName(), 
-                    functionLikeDeclarationBaseAST->body 
-                        ? loc(functionLikeDeclarationBaseAST->body) 
-                        : location);
-            funcOp->setLoc(locWithDI);
         }
 
         return {mlir::success(), funcOp, funcProto->getName().str(), false};
@@ -21947,7 +21949,8 @@ genContext);
         {
             if (auto defOp = value.getDefiningOp())
             {
-                defOp->setLoc(mlir::NameLoc::get(builder.getStringAttr(var->getName()), defOp->getLoc()));
+                MLIRDebugInfoHelper mti(builder, debugScope);
+                defOp->setLoc(mti.combineWithCurrentScopeAndName(defOp->getLoc(), var->getName()));
             }
         }
 
