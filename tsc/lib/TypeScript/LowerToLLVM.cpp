@@ -1807,6 +1807,8 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
                     auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
                     auto [line, column] = lineAndColumn;
+                    // clear column
+                    column = 0;
 
                     // TODO: finish the DI logic
                     unsigned arg = 0;
@@ -1873,6 +1875,8 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
 
                 auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
                 auto [line, column] = lineAndColumn;
+                // clear column
+                column = 0;
 
                 // TODO: finish the DI logic
                 unsigned arg = 0;

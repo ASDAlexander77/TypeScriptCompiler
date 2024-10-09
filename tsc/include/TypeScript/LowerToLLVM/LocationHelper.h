@@ -39,6 +39,10 @@ class LocationHelper
         {
             return getLineAndColumnAndFile(fileLineColLoc);
         }
+        else if (auto opaqueLoc = dyn_cast<mlir::OpaqueLoc>(location))
+        {
+            return getLineAndColumnAndFile(opaqueLoc.getFallbackLocation());
+        }
 
         return {LLVM::DIFileAttr(), {0, 0}};
     }    
@@ -61,6 +65,10 @@ class LocationHelper
         else if (auto fileLineColLoc = dyn_cast<mlir::FileLineColLoc>(location))
         {
             return getLineAndColumn(fileLineColLoc);
+        }
+        else if (auto opaqueLoc = dyn_cast<mlir::OpaqueLoc>(location))
+        {
+            return getLineAndColumn(opaqueLoc.getFallbackLocation());
         }
 
         return {0, 0};

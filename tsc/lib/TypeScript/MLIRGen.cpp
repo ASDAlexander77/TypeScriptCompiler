@@ -1099,7 +1099,7 @@ class MLIRGenImpl
         genContextUsing.parentBlockContext = &genContext;
 
         DITableScopeT debugBlockScope(debugScope);
-        if (compileOptions.generateDebugInfo)
+        if (compileOptions.generateDebugInfo && !blockAST->parent)
         {
             MLIRDebugInfoHelper mdi(builder, debugScope);
             mdi.setLexicalBlock(location);
@@ -5737,6 +5737,8 @@ class MLIRGenImpl
         auto discoverParamsOnly = genContext.allowPartialResolve && genContext.discoverParamsOnly;
         if (!discoverParamsOnly)
         {
+            // we need it to skip lexical block
+            functionLikeDeclarationBaseAST->body->parent = functionLikeDeclarationBaseAST->body;
             if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, genContext)))
             {
                 return mlir::failure();
