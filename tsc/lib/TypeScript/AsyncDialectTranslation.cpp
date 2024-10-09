@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "llvm"
-
 #include "TypeScript/AsyncDialectTranslation.h"
 
 #include "mlir/Dialect/Async/IR/Async.h"

@@ -22,6 +22,8 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
+#define DEBUG_TYPE "llvm"
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
@@ -1105,5 +1107,7 @@ mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op
 }
 
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_CASTLOGICHELPER_H_

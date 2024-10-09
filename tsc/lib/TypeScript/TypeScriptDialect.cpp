@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "mlir"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -14,6 +12,8 @@
 #include "llvm/ADT/SmallPtrSet.h"
 
 #include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "mlir"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;

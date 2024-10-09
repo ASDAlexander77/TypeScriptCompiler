@@ -17,6 +17,8 @@
 #include <sstream>
 #include <functional>
 
+#define DEBUG_TYPE "mlir"
+
 using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
@@ -680,5 +682,7 @@ class MLIRRTTIHelperVCWin32
     }
 };
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMRTTIHELPERVCWIN32_H_

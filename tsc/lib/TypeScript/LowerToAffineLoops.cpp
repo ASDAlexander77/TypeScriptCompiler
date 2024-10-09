@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "affine"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Passes.h"
@@ -33,7 +31,6 @@ namespace mlir_ts = mlir::typescript;
 
 #define ENABLE_SWITCH_STATE_PASS 1
 
-#undef DEBUG_TYPE
 #define DEBUG_TYPE "affine"
 
 namespace

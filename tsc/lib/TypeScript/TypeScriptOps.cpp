@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "mlir"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Defines.h"
@@ -20,6 +18,8 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "mlir"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;

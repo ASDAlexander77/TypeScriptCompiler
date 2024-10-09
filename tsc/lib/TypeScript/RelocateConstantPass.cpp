@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "pass"
-
 #include "mlir/Pass/Pass.h"
 
 #include "TypeScript/TypeScriptDialect.h"
@@ -14,6 +12,8 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+
+#define DEBUG_TYPE "pass"
 
 namespace mlir_ts = mlir::typescript;
 

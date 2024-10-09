@@ -5,6 +5,8 @@
 
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
 
+#define DEBUG_TYPE "llvm"
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
@@ -346,5 +348,7 @@ private:
 };
 
 }
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMDEBUGINFO_H_

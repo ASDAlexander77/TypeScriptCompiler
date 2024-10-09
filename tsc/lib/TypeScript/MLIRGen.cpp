@@ -1,7 +1,5 @@
 // TODO: it seems in Jit mode, LLVM Engine can resolve external references from loading DLLs
 
-#define DEBUG_TYPE "mlir"
-
 #ifdef GC_ENABLE
 #define ADD_GC_ATTRIBUTE true
 #endif
@@ -69,6 +67,8 @@
 #include <algorithm>
 #include <iterator>
 #include <numeric>
+
+#define DEBUG_TYPE "mlir"
 
 using namespace ::typescript;
 using namespace ts;
@@ -1098,7 +1098,7 @@ class MLIRGenImpl
         GenContext genContextUsing(genContext);
         genContextUsing.parentBlockContext = &genContext;
 
-        DITableScopeT debugSourceFileScope(debugScope);
+        DITableScopeT debugBlockScope(debugScope);
         if (compileOptions.generateDebugInfo)
         {
             MLIRDebugInfoHelper mdi(builder, debugScope);

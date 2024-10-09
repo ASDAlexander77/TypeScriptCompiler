@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "llvm"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Defines.h"
@@ -44,6 +42,8 @@
 
 #define DISABLE_SWITCH_STATE_PASS 1
 #define ENABLE_MLIR_INIT
+
+#define DEBUG_TYPE "llvm"
 
 using namespace mlir;
 using namespace ::typescript;
@@ -1758,16 +1758,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                 count = intAttr.getInt();
             }
 
-            // put all allocs at 'func' top
-            auto parentFuncOp = varOp->getParentOfType<LLVM::LLVMFuncOp>();
-            if (parentFuncOp)
-            {
-                // if inside function (not in global op)
-                mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
-            }
-
-            allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
+            allocated = ch.Alloca(llvmReferenceType, count);
         }
         else
         {
@@ -1840,7 +1831,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             rewriter.create<LLVM::StoreOp>(location, value, allocated);
 
 #ifdef DBG_INFO_ADD_VALUE_OP            
-            if (tsLlvmContext->debugEnabled && varInfo)
+            if (tsLlvmContext->compileOptions.generateDebugInfo && varInfo)
             {                
                 rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
             }
@@ -1893,7 +1884,8 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
                 auto scope = scopeFusedLoc.getMetadata();
                 auto varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
 
-                auto allocated = rewriter.create<LLVM::AllocaOp>(location, LLVM::LLVMPointerType::get(value.getType()), clh.createI32ConstantOf(1));
+                auto allocated = ch.Alloca(LLVM::LLVMPointerType::get(value.getType()), 1);
+
                 rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
 
                 rewriter.create<LLVM::StoreOp>(location, value, allocated);     
@@ -3161,7 +3153,7 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
 
         rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference());
 #ifdef DBG_INFO_ADD_VALUE_OP        
-        if (tsLlvmContext->debugEnabled)
+        if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
             if (auto varInfo = transformed.getReference().getDefiningOp()->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>())
             {

@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "test"
-
 #include "enums.h"
 #include "dump.h"
 
@@ -14,6 +12,8 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include "gmock/gmock.h"
+
+#define DEBUG_TYPE "test"
 
 namespace mlir_ts = mlir::typescript;
 

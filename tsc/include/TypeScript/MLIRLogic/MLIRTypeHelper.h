@@ -12,6 +12,8 @@
 
 #include <functional>
 
+#define DEBUG_TYPE "mlir"
+
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
@@ -3417,5 +3419,7 @@ protected:
 };
 
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_COMMONGENLOGIC_MLIRTYPEHELPER_H_

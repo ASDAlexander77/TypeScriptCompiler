@@ -6,6 +6,8 @@
 
 #include "llvm/Support/Debug.h"
 
+#define DEBUG_TYPE "mlir"
+
 using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
@@ -817,5 +819,7 @@ struct NamespaceInfo
 };
 
 } // namespace
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_MLIRGENSTORE_H_

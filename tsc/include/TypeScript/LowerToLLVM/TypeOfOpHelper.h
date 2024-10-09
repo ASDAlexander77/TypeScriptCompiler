@@ -1,14 +1,13 @@
 #ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_TYPEOFHELPER_H_
 #define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_TYPEOFHELPER_H_
 
-#undef DEBUG_TYPE
-#define DEBUG_TYPE "llvm"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
+
+#define DEBUG_TYPE "llvm"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -263,5 +262,7 @@ class TypeOfOpHelper
     }
 };
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_TYPEOFHELPER_H_

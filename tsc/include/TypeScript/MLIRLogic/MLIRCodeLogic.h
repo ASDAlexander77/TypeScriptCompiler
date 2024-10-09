@@ -16,6 +16,8 @@
 
 #include <numeric>
 
+#define DEBUG_TYPE "mlir"
+
 using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
@@ -1367,5 +1369,7 @@ class MLIRLogicHelper
     }
 };
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRCODELOGIC_H_
