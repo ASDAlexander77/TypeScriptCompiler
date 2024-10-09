@@ -74,25 +74,25 @@ class MLIRDebugInfoHelper
 
     mlir::Location getSubprogram(mlir::Location functionLocation, StringRef functionName, mlir::Location functionBlockLocation) {
 
-        auto fileAttr = dyn_cast<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE));
-        auto scopeAttr = dyn_cast<mlir::LLVM::DICompileUnitAttr>(debugScope.lookup(DEBUG_SCOPE));
+        auto compileUnitAttr = dyn_cast<mlir::LLVM::DICompileUnitAttr>(debugScope.lookup(CU_DEBUG_SCOPE));
+        auto scopeAttr = dyn_cast<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE));
 
         auto line = LocationHelper::getLine(functionLocation);
         auto scopeLine = LocationHelper::getLine(functionBlockLocation);
 
         auto subprogramFlags = mlir::LLVM::DISubprogramFlags::Definition;
-        // if (compileUnitAttr.getIsOptimized())
-        // {
-        //     subprogramFlags = subprogramFlags | mlir::LLVM::DISubprogramFlags::Optimized;
-        // }
+        if (compileUnitAttr.getIsOptimized())
+        {
+            subprogramFlags = subprogramFlags | mlir::LLVM::DISubprogramFlags::Optimized;
+        }
 
         auto type = mlir::LLVM::DISubroutineTypeAttr::get(builder.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
 
         auto funcNameAttr = builder.getStringAttr(functionName);
         auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-            builder.getContext(), scopeAttr, fileAttr, 
+            builder.getContext(), compileUnitAttr, scopeAttr, 
             funcNameAttr, funcNameAttr, 
-            fileAttr, line, scopeLine, subprogramFlags, type);      
+            compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);      
 
         debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
         debugScope.insert(DEBUG_SCOPE, subprogramAttr);
