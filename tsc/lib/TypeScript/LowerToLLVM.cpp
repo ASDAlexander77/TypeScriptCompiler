@@ -564,7 +564,7 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
 
         auto allocInStack = op.getAllocInStack().has_value() && op.getAllocInStack().value();
 
-        mlir::Value newStringValue = allocInStack ? rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, size, true)
+        mlir::Value newStringValue = allocInStack ? ch.Alloca(i8PtrTy, size, true)
                                                   : ch.MemoryAllocBitcast(i8PtrTy, size);
 
         // copy
@@ -738,7 +738,7 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
         auto bufferSizeValue = clh.createI64ConstantOf(2);
         // TODO: review it, !! we can't allocate it in stack - otherwise when returned back from function, it will be poisned
         // TODO: maybe you need to add mechanizm to convert stack values to heap when returned from function
-        //auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        //auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
         auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
 
         auto index0Value = clh.createI32ConstantOf(0);
@@ -1963,7 +1963,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         mlir::Value value;
         if (newOp.getStackAlloc().has_value() && newOp.getStackAlloc().value())
         {
-            value = rewriter.create<LLVM::AllocaOp>(loc, resultType, clh.createI32ConstantOf(1));
+            value = ch.Alloca(resultType, 1);
         }
         else
         {

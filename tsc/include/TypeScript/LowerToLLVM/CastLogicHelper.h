@@ -944,7 +944,7 @@ class CastLogicHelper
         {
             auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
             // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
-            // auto copyAllocated = rewriter.create<LLVM::AllocaOp>(loc, arrayPtrType, bytesSize);
+            // auto copyAllocated = ch.Alloca(arrayPtrType, bytesSize);
             auto copyAllocated = ch.MemoryAllocBitcast(arrayPtrType, bytesSize);
 
             auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
