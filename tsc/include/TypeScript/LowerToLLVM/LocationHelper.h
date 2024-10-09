@@ -83,6 +83,40 @@ class LocationHelper
         return line;
     }
 
+    static std::tuple<size_t, size_t> getLineAndColumn(mlir::FileLineColLoc location)
+    {
+        return {location.getLine(), location.getColumn()};
+    }
+
+    static std::tuple<size_t, size_t> getLineAndColumn(mlir::FusedLoc location)
+    {
+        std::tuple<size_t, size_t> lineAndColumn = {0, 0};
+
+        auto locs = location.getLocations();
+        if (locs.size() > 0)
+        {
+            if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
+            {
+                lineAndColumn = getLineAndColumn(fileLineColLoc);
+            }
+        }
+            
+        return lineAndColumn;
+    }
+
+    static std::tuple<size_t, size_t> getLineAndColumn(mlir::Location location)
+    {
+        std::tuple<size_t, size_t> lineAndColumn = {0, 0};
+
+        mlir::TypeSwitch<mlir::LocationAttr>(location)
+            .Case<mlir::FusedLoc>([&](auto locParam) {
+                lineAndColumn = getLineAndColumn(locParam);
+            }
+        );       
+            
+        return lineAndColumn;
+    }
+
   private:
     MLIRContext *context;    
 };

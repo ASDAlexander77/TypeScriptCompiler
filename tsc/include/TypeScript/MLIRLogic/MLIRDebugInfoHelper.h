@@ -67,40 +67,57 @@ class MLIRDebugInfoHelper
         auto compileUnit = mlir::LLVM::DICompileUnitAttr::get(builder.getContext(), sourceLanguage, file, producer, isOptimized, emissionKind);        
        
         debugScope.insert(CU_DEBUG_SCOPE, compileUnit);
-        debugScope.insert(DEBUG_SCOPE, compileUnit);
+        debugScope.insert(DEBUG_SCOPE, file);
 
         return combine(location, compileUnit);
     }
 
     mlir::Location getSubprogram(mlir::Location functionLocation, StringRef functionName, mlir::Location functionBlockLocation) {
 
-        auto compileUnitAttr = dyn_cast<mlir::LLVM::DICompileUnitAttr>(debugScope.lookup(CU_DEBUG_SCOPE));
+        auto fileAttr = dyn_cast<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE));
+        auto scopeAttr = dyn_cast<mlir::LLVM::DICompileUnitAttr>(debugScope.lookup(DEBUG_SCOPE));
 
         auto line = LocationHelper::getLine(functionLocation);
         auto scopeLine = LocationHelper::getLine(functionBlockLocation);
 
         auto subprogramFlags = mlir::LLVM::DISubprogramFlags::Definition;
-        if (compileUnitAttr.getIsOptimized())
-        {
-            subprogramFlags = subprogramFlags | mlir::LLVM::DISubprogramFlags::Optimized;
-        }
+        // if (compileUnitAttr.getIsOptimized())
+        // {
+        //     subprogramFlags = subprogramFlags | mlir::LLVM::DISubprogramFlags::Optimized;
+        // }
 
         auto type = mlir::LLVM::DISubroutineTypeAttr::get(builder.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
 
         auto funcNameAttr = builder.getStringAttr(functionName);
         auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-            builder.getContext(), 
-            compileUnitAttr, 
-            compileUnitAttr.getFile(), 
-            funcNameAttr, 
-            funcNameAttr, 
-            compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);      
+            builder.getContext(), scopeAttr, fileAttr, 
+            funcNameAttr, funcNameAttr, 
+            fileAttr, line, scopeLine, subprogramFlags, type);      
 
         debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
         debugScope.insert(DEBUG_SCOPE, subprogramAttr);
 
         return combine(functionLocation, subprogramAttr);
     }
+
+    void setLexicalBlock(mlir::Location blockLocation) {
+
+        auto fileAttr = dyn_cast<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE));
+        auto scopeAttr = dyn_cast<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE));
+
+        auto [scopeLine, scopeColumn] = LocationHelper::getLineAndColumn(blockLocation);
+
+        auto lexicalBlockAttr = 
+            mlir::LLVM::DILexicalBlockAttr::get(
+                builder.getContext(), 
+                scopeAttr, 
+                fileAttr, 
+                scopeLine, 
+                scopeColumn);      
+
+        debugScope.insert(BLOCK_DEBUG_SCOPE, lexicalBlockAttr);
+        debugScope.insert(DEBUG_SCOPE, lexicalBlockAttr);
+    }    
 
 private:
     mlir::FusedLoc combine(mlir::Location location, mlir::LLVM::DIScopeAttr scope)

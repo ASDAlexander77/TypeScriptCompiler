@@ -1098,6 +1098,13 @@ class MLIRGenImpl
         GenContext genContextUsing(genContext);
         genContextUsing.parentBlockContext = &genContext;
 
+        DITableScopeT debugSourceFileScope(debugScope);
+        if (compileOptions.generateDebugInfo)
+        {
+            MLIRDebugInfoHelper mdi(builder, debugScope);
+            mdi.setLexicalBlock(location);
+        }
+
         auto usingVars = std::make_unique<SmallVector<ts::VariableDeclarationDOM::TypePtr>>();
         genContextUsing.usingVars = usingVars.get();
 

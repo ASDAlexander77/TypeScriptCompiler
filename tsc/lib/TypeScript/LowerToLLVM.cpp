@@ -1811,7 +1811,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
             if (auto scopeFusedLoc = varOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
             {
-                if (auto namedLoc = varOp->getLoc().dyn_cast<mlir::NameLoc>())
+                if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
                 {
                     LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
                     LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
@@ -1874,7 +1874,7 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
 
         if (auto scopeFusedLoc = debugVarOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
         {
-            if (auto namedLoc = debugVarOp->getLoc().dyn_cast<mlir::NameLoc>())
+            if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
             {
                 auto value = transformed.getInitializer();
 
