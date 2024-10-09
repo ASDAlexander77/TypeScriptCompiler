@@ -57,10 +57,9 @@ namespace
 {
 struct TsLlvmContext
 {
-    TsLlvmContext(CompileOptions& compileOptions) : compileOptions(compileOptions), debugEnabled(false) {};
+    TsLlvmContext(CompileOptions& compileOptions) : compileOptions(compileOptions) {};
 
     CompileOptions& compileOptions;
-    bool debugEnabled;
 };
 
 template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
@@ -1804,7 +1803,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 #endif
 
         LLVM::DILocalVariableAttr varInfo;
-        if (tsLlvmContext->debugEnabled)
+        if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
             //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
             LocationHelper lh(rewriter.getContext());

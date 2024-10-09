@@ -5235,7 +5235,12 @@ class MLIRGenImpl
         {
             MLIRDebugInfoHelper mdi(builder, debugScope);
             auto locWithDI = 
-                mdi.getSubprogram(location, funcOp.getName(), functionLikeDeclarationBaseAST->body ? loc(functionLikeDeclarationBaseAST->body) : location);
+                mdi.getSubprogram(
+                    location, 
+                    funcOp.getName(), 
+                    functionLikeDeclarationBaseAST->body 
+                        ? loc(functionLikeDeclarationBaseAST->body) 
+                        : location);
             funcOp->setLoc(locWithDI);
         }
 
