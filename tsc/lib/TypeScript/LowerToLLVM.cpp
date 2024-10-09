@@ -1002,43 +1002,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             argDictAttrs.append(argAttrRange.begin(), argAttrRange.end());
         }
 
-        // debug info
-        tsLlvmContext->debugEnabled = false;
-        auto module = funcOp->getParentOfType<mlir::ModuleOp>();
-        if (auto fusedLocWith = module.getLoc().dyn_cast<mlir::FusedLoc>())
-        {
-            if (auto compileUnitAttr = fusedLocWith.getMetadata().dyn_cast_or_null<mlir::LLVM::DICompileUnitAttr>())
-            {
-                auto lineValue = LocationHelper::getLine(location);
-                unsigned line, scopeLine;
-                line = scopeLine = lineValue;
-
-                auto subprogramFlags = LLVM::DISubprogramFlags::Definition;
-                if (compileUnitAttr.getIsOptimized())
-                {
-                    subprogramFlags = subprogramFlags | LLVM::DISubprogramFlags::Optimized;
-                }
-
-                auto type = LLVM::DISubroutineTypeAttr::get(rewriter.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
-
-                auto subprogramAttr = LLVM::DISubprogramAttr::get(
-                    rewriter.getContext(), 
-                    compileUnitAttr, 
-                    compileUnitAttr.getFile(), 
-                    rewriter.getStringAttr(funcOp.getName()), 
-                    rewriter.getStringAttr(funcOp.getName()), 
-                    compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);
-
-                funcOp->setLoc(mlir::FusedLoc::get(rewriter.getContext(), {funcOp->getLoc()}, subprogramAttr));
-
-                auto fusedLocWithSubprogram = mlir::FusedLoc::get(
-                    rewriter.getContext(), {funcOp.getLoc()}, subprogramAttr);
-                location = fusedLocWithSubprogram;
-
-                tsLlvmContext->debugEnabled = true;
-            }
-        }
-
         auto convertedFuncType = rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes());
         auto newFuncOp = rewriter.create<mlir::func::FuncOp>(location, funcOp.getName(), convertedFuncType, ArrayRef<NamedAttribute>{}, argDictAttrs);
 

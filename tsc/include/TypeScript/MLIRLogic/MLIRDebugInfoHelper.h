@@ -2,8 +2,9 @@
 #define MLIR_TYPESCRIPT_DEBUGINFOHELPER_H_
 
 #include "TypeScript/TypeScriptOps.h"
+#include "TypeScript/LowerToLLVM/LocationHelper.h"
 
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -35,7 +36,7 @@ class MLIRDebugInfoHelper
         return mlir::FusedLoc::get(builder.getContext(), {location}, scope);          
     }
 
-    mlir::LLVM::DIFileAttr getFile(StringRef fileName) {
+    void setFile(StringRef fileName) {
         // TODO: in file location helper
         SmallString<256> FullName(fileName);
         sys::path::remove_filename(FullName);
@@ -43,11 +44,9 @@ class MLIRDebugInfoHelper
         auto file = mlir::LLVM::DIFileAttr::get(builder.getContext(), sys::path::filename(fileName), FullName);
 
         debugScope.insert(FILE_DEBUG_SCOPE, file);
-
-        return file;
     }
 
-    mlir::LLVM::DICompileUnitAttr getCompileUnit(StringRef producerName, bool isOptimized) {
+    mlir::Location getCompileUnit(mlir::Location location, StringRef producerName, bool isOptimized) {
 
         auto file = dyn_cast<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE));
 
@@ -58,7 +57,36 @@ class MLIRDebugInfoHelper
        
         debugScope.insert(CU_DEBUG_SCOPE, compileUnit);
 
-        return compileUnit;
+        return combine(location, compileUnit);
+    }
+
+    mlir::Location getSubprogram(mlir::Location functionLocation, StringRef functionName, mlir::Location functionBlockLocation) {
+
+        auto compileUnitAttr = dyn_cast<mlir::LLVM::DICompileUnitAttr>(debugScope.lookup(CU_DEBUG_SCOPE));
+
+        auto line = LocationHelper::getLine(functionLocation);
+        auto scopeLine = LocationHelper::getLine(functionBlockLocation);
+
+        auto subprogramFlags = mlir::LLVM::DISubprogramFlags::Definition;
+        if (compileUnitAttr.getIsOptimized())
+        {
+            subprogramFlags = subprogramFlags | mlir::LLVM::DISubprogramFlags::Optimized;
+        }
+
+        auto type = mlir::LLVM::DISubroutineTypeAttr::get(builder.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
+
+        auto funcNameAttr = builder.getStringAttr(functionName);
+        auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
+            builder.getContext(), 
+            compileUnitAttr, 
+            compileUnitAttr.getFile(), 
+            funcNameAttr, 
+            funcNameAttr, 
+            compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);      
+
+        debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
+
+        return combine(functionLocation, subprogramAttr);
     }
 
 };

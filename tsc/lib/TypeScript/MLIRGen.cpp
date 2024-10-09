@@ -54,7 +54,6 @@
 #endif
 
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -333,10 +332,8 @@ class MLIRGenImpl
             auto isOptimized = false;
 
             MLIRDebugInfoHelper mdi(builder, debugScope);
-
-            auto file = mdi.getFile(mainSourceFileName);
-            auto compileUnit = mdi.getCompileUnit("TypeScript Native Compiler", isOptimized);    
-            location = mdi.combine(location, compileUnit);
+            mdi.setFile(mainSourceFileName);
+            location = mdi.getCompileUnit(location, "TypeScript Native Compiler", isOptimized);
         }
 
         // We create an empty MLIR module and codegen functions one at a time and
@@ -922,7 +919,7 @@ class MLIRGenImpl
         auto kind = (SyntaxKind)body;
         if (kind == SyntaxKind::Block)
         {
-            return mlirGen(body.as<Block>(), genContext);
+            return mlirGen(body.as<ts::Block>(), genContext);
         }
 
         if (kind == SyntaxKind::ModuleBlock)
@@ -1093,7 +1090,7 @@ class MLIRGenImpl
         return false;
     }
 
-    mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext, int skipStatements = 0)
+    mlir::LogicalResult mlirGen(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0)
     {
         auto location = loc(blockAST);
 
@@ -1113,7 +1110,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(Block blockAST, const GenContext &genContext, int skipStatements = 0)
+    mlir::LogicalResult mlirGenNoScopeVarsAndDisposable(ts::Block blockAST, const GenContext &genContext, int skipStatements = 0)
     {
         auto location = loc(blockAST);
 
@@ -1295,7 +1292,7 @@ class MLIRGenImpl
         }
         else if (kind == SyntaxKind::Block)
         {
-            return mlirGen(statementAST.as<Block>(), genContext);
+            return mlirGen(statementAST.as<ts::Block>(), genContext);
         }
         else if (kind == SyntaxKind::EnumDeclaration)
         {
@@ -1968,7 +1965,7 @@ class MLIRGenImpl
             {
                 auto funcType = specFuncOp.getFunctionType();
                 // fix create bound if any
-                TypeSwitch<mlir::Type>(createBoundFunctionOp.getType())
+                mlir::TypeSwitch<mlir::Type>(createBoundFunctionOp.getType())
                     .template Case<mlir_ts::BoundFunctionType>([&](auto boundFunc) {
                         functionRefValue.setType(getBoundFunctionType(funcType));
                     })
@@ -3442,7 +3439,7 @@ class MLIRGenImpl
     {
         MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index));
         mlir::Value subInit =
-            TypeSwitch<mlir::Type, mlir::Value>(type)
+            mlir::TypeSwitch<mlir::Type, mlir::Value>(type)
                 .template Case<mlir_ts::ConstTupleType>(
                     [&](auto constTupleType) { return cl.Tuple(constTupleType, true); })
                 .template Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType, true); })
@@ -4894,7 +4891,7 @@ class MLIRGenImpl
         if (functionLikeDeclarationBaseAST->body == SyntaxKind::Block)
         {
             // process every statement
-            auto block = functionLikeDeclarationBaseAST->body.as<Block>();
+            auto block = functionLikeDeclarationBaseAST->body.as<ts::Block>();
             for (auto statement : block->statements)
             {
                 nextStatements.push_back(statement);
@@ -5231,6 +5228,15 @@ class MLIRGenImpl
         else
         {
             builder.setInsertionPointAfter(funcOp);
+        }
+
+        // Debug Info
+        if (compileOptions.generateDebugInfo)
+        {
+            MLIRDebugInfoHelper mdi(builder, debugScope);
+            auto locWithDI = 
+                mdi.getSubprogram(location, funcOp.getName(), functionLikeDeclarationBaseAST->body ? loc(functionLikeDeclarationBaseAST->body) : location);
+            funcOp->setLoc(locWithDI);
         }
 
         return {mlir::success(), funcOp, funcProto->getName().str(), false};
@@ -6886,7 +6892,7 @@ class MLIRGenImpl
         {
             if (forStatementAST->statement == SyntaxKind::Block)
             {
-                auto firstStatement = forStatementAST->statement.as<Block>()->statements.front();
+                auto firstStatement = forStatementAST->statement.as<ts::Block>()->statements.front();
                 auto result = mlirGen(firstStatement, genContext);
                 EXIT_IF_FAILED(result)
             }
@@ -6899,7 +6905,7 @@ class MLIRGenImpl
                     GenContext execOpBodyGenContext(genContext);
                     if (forStatementAST->statement == SyntaxKind::Block)
                     {
-                        if (mlir::failed(mlirGen(forStatementAST->statement.as<Block>(), execOpBodyGenContext, 1)))
+                        if (mlir::failed(mlirGen(forStatementAST->statement.as<ts::Block>(), execOpBodyGenContext, 1)))
                         {
                             isFailed = true;
                         }
@@ -7291,7 +7297,7 @@ class MLIRGenImpl
             auto firstStatement = statements.front();
             if ((SyntaxKind)firstStatement == SyntaxKind::Block)
             {
-                statements = statements.front().as<Block>()->statements;
+                statements = statements.front().as<ts::Block>()->statements;
             }
         }
 
@@ -8540,7 +8546,7 @@ class MLIRGenImpl
         if (auto loadOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LoadOp>())
         {
             mlir::Type destType =
-                TypeSwitch<mlir::Type, mlir::Type>(loadOp.getReference().getType())
+                mlir::TypeSwitch<mlir::Type, mlir::Type>(loadOp.getReference().getType())
                     .Case<mlir_ts::RefType>([&](auto refType) { return refType.getElementType(); })
                     .Case<mlir_ts::BoundRefType>([&](auto boundRefType) { return boundRefType.getElementType(); });
 
@@ -8712,7 +8718,7 @@ class MLIRGenImpl
         auto isTuple = false;
         mlir::Type elementType;
         mlir_ts::TupleType tupleType;
-        TypeSwitch<mlir::Type>(rightExpressionValue.getType())
+        mlir::TypeSwitch<mlir::Type>(rightExpressionValue.getType())
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { elementType = arrayType.getElementType(); })
             .Case<mlir_ts::ConstArrayType>([&](auto constArrayType) { elementType = constArrayType.getElementType(); })
             .Case<mlir_ts::TupleType>([&](auto tupleType_) { isTuple = true; tupleType = tupleType_; })
@@ -9327,7 +9333,7 @@ class MLIRGenImpl
         };
 
         mlir::Value value = 
-            TypeSwitch<mlir::Type, mlir::Value>(actualType)
+            mlir::TypeSwitch<mlir::Type, mlir::Value>(actualType)
                 .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
                 .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
                 .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
@@ -10783,7 +10789,7 @@ class MLIRGenImpl
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
         ValueOrLogicalResult value(mlir::failure());
-        TypeSwitch<mlir::Type>(funcRefValue.getType())
+        mlir::TypeSwitch<mlir::Type>(funcRefValue.getType())
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) {
                 value = mlirGenCallFunction(location, calledFuncType, funcRefValue, operands, genContext);
             })
@@ -11125,7 +11131,7 @@ class MLIRGenImpl
             {
                 // as tuple or const_tuple
                 ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
-                TypeSwitch<mlir::Type>(returnType)
+                mlir::TypeSwitch<mlir::Type>(returnType)
                     .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
                     .template Case<mlir_ts::ConstTupleType>(
                         [&](auto constTupleType) { fields = constTupleType.getFields(); })
@@ -12261,7 +12267,7 @@ class MLIRGenImpl
             MLIRTypeHelper mth(nullptr);
             type = mth.stripOptionalType(type);
 
-            TypeSwitch<mlir::Type>(type)
+            mlir::TypeSwitch<mlir::Type>(type)
                 .template Case<mlir_ts::ArrayType>([&](auto a) { isReceiverGenericType ? set(a, isReceiverGenericType) : setReceiverArray(a, isReceiverGenericType); })
                 .template Case<mlir_ts::TupleType>([&](auto t) { isReceiverGenericType ? set(t) : setReceiverTuple(t); })
                 .Default([&](auto type) {
@@ -12426,7 +12432,7 @@ class MLIRGenImpl
             {
                 // as tuple or const_tuple
                 ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
-                TypeSwitch<mlir::Type>(returnType)
+                mlir::TypeSwitch<mlir::Type>(returnType)
                     .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
                     .template Case<mlir_ts::ConstTupleType>(
                         [&](auto constTupleType) { fields = constTupleType.getFields(); })
@@ -13096,7 +13102,7 @@ class MLIRGenImpl
                     }
                 };
 
-                TypeSwitch<mlir::Type>(tupleValue.getType())
+                mlir::TypeSwitch<mlir::Type>(tupleValue.getType())
                     .template Case<mlir_ts::TupleType>([&](auto tupleType) { tupleFields(tupleType.getFields()); })
                     .template Case<mlir_ts::ConstTupleType>(
                         [&](auto constTupleType) { tupleFields(constTupleType.getFields()); })
@@ -14975,7 +14981,7 @@ class MLIRGenImpl
                 auto result = mlirGen(extendingType, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto baseType = V(result);
-                TypeSwitch<mlir::Type>(baseType.getType())
+                mlir::TypeSwitch<mlir::Type>(baseType.getType())
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
                         auto fieldId = MLIRHelper::TupleFieldName(baseName, builder.getContext());
@@ -15008,7 +15014,7 @@ class MLIRGenImpl
                 auto result = mlirGen(implementingType, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto ifaceType = V(result);
-                TypeSwitch<mlir::Type>(ifaceType.getType())
+                mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
                     .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                         assert(interfaceInfo);
@@ -15421,7 +15427,7 @@ class MLIRGenImpl
         // if we do not have constructor but have initializers we need to create empty dummy constructor
         NodeFactory nf(NodeFactoryFlags::None);
 
-        Block body;
+        ts::Block body;
         auto thisToken = nf.createToken(SyntaxKind::ThisKeyword);
 
         if (!newClassPtr->isDeclaration)
@@ -15860,7 +15866,7 @@ genContext);
 
             NodeFactory nf(NodeFactoryFlags::None);
 
-            Block body = undefined;
+            ts::Block body = undefined;
             if (!newClassPtr->isDeclaration)
             {
                 NodeArray<Statement> statements;
@@ -16376,7 +16382,7 @@ genContext);
             auto result = mlirGen(implementingType, genContext);
             auto ifaceType = V(result);
             auto success = false;
-            TypeSwitch<mlir::Type>(ifaceType.getType())
+            mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     assert(interfaceInfo);
@@ -17150,7 +17156,7 @@ genContext);
             EXIT_IF_FAILED(result);
             auto ifaceType = V(result);
             auto success = false;
-            TypeSwitch<mlir::Type>(ifaceType.getType())
+            mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     if (interfaceInfo)
@@ -18035,7 +18041,7 @@ genContext);
                 NodeFactory nf(NodeFactoryFlags::None);
                 Expression hint;
 
-                TypeSwitch<mlir::Type>(type)
+                mlir::TypeSwitch<mlir::Type>(type)
                     .template Case<mlir_ts::StringType>([&](auto) {
                         hint = nf.createStringLiteral(S("string"));
                     })
@@ -18154,7 +18160,7 @@ genContext);
                         mlirGenCreateInterfaceVTableForClass(location, classInfo, interfaceInfo, genContext))
                 {
                     LLVM_DEBUG(llvm::dbgs() << "\n!!"
-                                            << "@ created interface:" << createdInterfaceVTableForClass << "\n";);
+                                            << "@ created interface:" << V(createdInterfaceVTableForClass) << "\n";);
                     auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(
                         location, mlir::TypeRange{interfaceType}, value, createdInterfaceVTableForClass);
 
@@ -18636,7 +18642,7 @@ genContext);
         {
 
             LLVM_DEBUG(llvm::dbgs() << "\n!!"
-                                    << "@ created interface:" << createdInterfaceVTableForObject << "\n";);
+                                    << "@ created interface:" << V(createdInterfaceVTableForObject) << "\n";);
             auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceInfo->interfaceType},
                                                                         in, createdInterfaceVTableForObject);
 
