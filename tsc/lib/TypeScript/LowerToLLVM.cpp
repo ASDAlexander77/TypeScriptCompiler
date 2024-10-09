@@ -1878,11 +1878,13 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         if (value)
         {
             rewriter.create<LLVM::StoreOp>(location, value, allocated);
-            
+
+#ifdef DBG_INFO_ADD_VALUE_OP            
             if (tsLlvmContext->debugEnabled && varInfo)
-            {
+            {                
                 rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
             }
+#endif            
         }
 
         rewriter.replaceOp(varOp, ValueRange{allocated});
@@ -1936,8 +1938,10 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
                     auto allocated = rewriter.create<LLVM::AllocaOp>(location, LLVM::LLVMPointerType::get(value.getType()), clh.createI32ConstantOf(1));
                     rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
 
-                    rewriter.create<LLVM::StoreOp>(location, value, allocated);                    
+                    rewriter.create<LLVM::StoreOp>(location, value, allocated);     
+#ifdef DBG_INFO_ADD_VALUE_OP                                   
                     rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
+#endif
                 }
             }
         }
@@ -3199,6 +3203,7 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
         }
 
         rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference());
+#ifdef DBG_INFO_ADD_VALUE_OP        
         if (tsLlvmContext->debugEnabled)
         {
             if (auto varInfo = transformed.getReference().getDefiningOp()->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>())
@@ -3206,6 +3211,7 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
                 rewriter.create<LLVM::DbgValueOp>(storeOp->getLoc(), transformed.getValue(), varInfo.getMetadata());
             }
         }
+#endif        
 
         return success();
     }

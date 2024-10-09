@@ -18,6 +18,7 @@
 #include "TypeScript/MLIRLogic/MLIRLocationGuard.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIRValueGuard.h"
+#include "TypeScript/MLIRLogic/MLIRDebugInfoHelper.h"
 
 #include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 
@@ -46,7 +47,6 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/DLTI/DLTI.h"
 #include "mlir/IR/Diagnostics.h"
 #ifdef ENABLE_ASYNC
@@ -65,7 +65,6 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/WithColor.h"
-#include "llvm/BinaryFormat/Dwarf.h"
 //#include "llvm/IR/DebugInfoMetadata.h"
 
 #include <algorithm>
@@ -85,6 +84,8 @@ using llvm::ScopedHashTableScope;
 using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
+
+using DITableScopeT = llvm::ScopedHashTableScope<StringRef, mlir::LLVM::DIScopeAttr>;
 
 // TODO: optimize of amount of calls to detect return types and if it is was calculated before then do not run it all
 // the time
@@ -293,6 +294,7 @@ class MLIRGenImpl
             return nullptr;
         }        
 
+        DITableScopeT debugSourceFileScope(debugScope);
         if (mlir::failed(mlirGenCodeGenInit(module)))
         {
             return nullptr;
@@ -330,21 +332,11 @@ class MLIRGenImpl
         {
             auto isOptimized = false;
 
-            // TODO: in file location helper
-            SmallString<256> FullName(mainSourceFileName);
-            sys::path::remove_filename(FullName);
-            auto file = mlir::LLVM::DIFileAttr::get(builder.getContext(), sys::path::filename(mainSourceFileName), FullName);
+            MLIRDebugInfoHelper mdi(builder, debugScope);
 
-            // CU
-            unsigned sourceLanguage = llvm::dwarf::DW_LANG_C; 
-            auto producer = builder.getStringAttr("TypeScript Native Compiler");
-            auto emissionKind = mlir::LLVM::DIEmissionKind::Full;
-            auto compileUnit = mlir::LLVM::DICompileUnitAttr::get(builder.getContext(), sourceLanguage, file, producer, isOptimized, emissionKind);        
-
-            auto fusedLocWithCU = mlir::FusedLoc::get(
-                    builder.getContext(), {location}, compileUnit);                
-
-            location = fusedLocWithCU;
+            auto file = mdi.getFile(mainSourceFileName);
+            auto compileUnit = mdi.getCompileUnit("TypeScript Native Compiler", isOptimized);    
+            location = mdi.combine(location, compileUnit);
         }
 
         // We create an empty MLIR module and codegen functions one at a time and
@@ -358,6 +350,7 @@ class MLIRGenImpl
                 builder.getStringAttr(compileOptions.moduleTargetTriple));
 
             // DataLayout for IndexType
+            // TODO: seems u need to do it on LLVM level, as LLVMTypeHelper knows size of index
             auto indexSize = mlir::DataLayoutEntryAttr::get(builder.getIndexType(), builder.getI32IntegerAttr(compileOptions.sizeBits));
             theModule->setAttr("dlti.dl_spec", mlir::DataLayoutSpecAttr::get(builder.getContext(), {indexSize}));
         }
@@ -22561,6 +22554,8 @@ genContext);
     llvm::ScopedHashTable<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMap;
 
     llvm::ScopedHashTable<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMap;
+
+    llvm::ScopedHashTable<StringRef, mlir::LLVM::DIScopeAttr> debugScope;
 
     // helper to get line number
     Parser parser;
