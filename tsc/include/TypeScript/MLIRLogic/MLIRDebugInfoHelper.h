@@ -77,8 +77,8 @@ class MLIRDebugInfoHelper
         auto compileUnitAttr = dyn_cast<mlir::LLVM::DICompileUnitAttr>(debugScope.lookup(CU_DEBUG_SCOPE));
         auto scopeAttr = dyn_cast<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE));
 
-        auto line = LocationHelper::getLine(functionLocation);
-        auto scopeLine = LocationHelper::getLine(functionBlockLocation);
+        auto [line, column] = LocationHelper::getLineAndColumn(functionLocation);
+        auto [scopeLine, scopeColumn] = LocationHelper::getLineAndColumn(functionBlockLocation);
 
         auto subprogramFlags = mlir::LLVM::DISubprogramFlags::Definition;
         if (compileUnitAttr.getIsOptimized())

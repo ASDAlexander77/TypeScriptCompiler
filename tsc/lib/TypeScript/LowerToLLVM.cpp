@@ -1807,14 +1807,15 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         {
             //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
             LocationHelper lh(rewriter.getContext());
-            auto [file, line] = lh.getLineAndFile(location);
-
-            if (auto scopeFusedLoc = varOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+            if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
             {
                 if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
                 {
                     LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
                     LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
+
+                    auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
+                    auto [line, column] = lineAndColumn;
 
                     // TODO: finish the DI logic
                     unsigned arg = 0;
@@ -1870,9 +1871,7 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
 
         //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
         LocationHelper lh(rewriter.getContext());
-        auto [file, line] = lh.getLineAndFile(location);
-
-        if (auto scopeFusedLoc = debugVarOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+        if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
         {
             if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
             {
@@ -1880,6 +1879,9 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
 
                 LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
                 LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
+
+                auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
+                auto [line, column] = lineAndColumn;
 
                 // TODO: finish the DI logic
                 unsigned arg = 0;
