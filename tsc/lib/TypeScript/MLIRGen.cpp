@@ -312,10 +312,15 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
 
-        if (mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)) &&
-            mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
+        auto storeDebugInfo = compileOptions.generateDebugInfo;
+        compileOptions.generateDebugInfo = false;
+        if (mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)))
         {
-            return theModule;
+            compileOptions.generateDebugInfo = storeDebugInfo;
+            if (mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
+            {
+                return theModule;
+            }
         }
 
         return nullptr;
@@ -5952,7 +5957,8 @@ class MLIRGenImpl
         auto retObject = nf.createObjectLiteralExpression(retObjectProperties, stop);
         
         // copy location info, to fix issue with names of anonymous functions
-        auto [pos, _end] = getPos(location);
+        LocationHelper lh(builder.getContext());
+        auto [pos, _end] = lh.getLineAndColumn(location);
 
         assert(pos != _end && pos > 0);
 
@@ -10539,7 +10545,7 @@ class MLIRGenImpl
         auto arraySrc = operands[0];
         auto funcSrc = operands[1];
 
-        auto [pos, _end] = getPos(location);
+        auto [pos, _end] = LocationHelper::getLineAndColumn(location);
 
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
@@ -10620,7 +10626,7 @@ class MLIRGenImpl
         NodeArray<Expression> argumentsArray;
         argumentsArray.push_back(_v_ident);
 
-        auto [pos, _end] = getPos(location);
+        auto [pos, _end] = LocationHelper::getLineAndColumn(location);
 
         auto _yield_expr = nf.createYieldExpression(undefined, _v_ident);
         _yield_expr->pos.pos = pos;
@@ -22440,56 +22446,56 @@ genContext);
         return mdi.combineWithCurrentLexicalBlockScope(location);
     }
 
-    size_t getPos(mlir::FileLineColLoc location)
-    {
-        return location.getLine() * 256 + location.getColumn();
-    }
+    // size_t getPos(mlir::FileLineColLoc location)
+    // {
+    //     return location.getLine() * 256 + location.getColumn();
+    // }
 
-    std::pair<size_t, size_t> getPos(mlir::FusedLoc location)
-    {
-        auto pos = 0;
-        auto _end = 0;
+    // std::pair<size_t, size_t> getPos(mlir::FusedLoc location)
+    // {
+    //     auto pos = 0;
+    //     auto _end = 0;
 
-        auto locs = location.getLocations();
-        if (locs.size() > 0)
-        {
-            if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
-            {
-                pos = getPos(fileLineColLoc);
-            }
-        }
+    //     auto locs = location.getLocations();
+    //     if (locs.size() > 0)
+    //     {
+    //         if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
+    //         {
+    //             pos = getPos(fileLineColLoc);
+    //         }
+    //     }
         
-        if (locs.size() > 1)
-        {
-            if (auto fileLineColLoc = locs[1].dyn_cast<mlir::FileLineColLoc>())
-            {
-                _end = getPos(fileLineColLoc);
-            }
-        }
+    //     if (locs.size() > 1)
+    //     {
+    //         if (auto fileLineColLoc = locs[1].dyn_cast<mlir::FileLineColLoc>())
+    //         {
+    //             _end = getPos(fileLineColLoc);
+    //         }
+    //     }
 
-        if (auto fileLineColLoc = location.getMetadata().dyn_cast_or_null<mlir::FileLineColLoc>())
-        {
-            _end = getPos(fileLineColLoc);
-        }
+    //     if (auto fileLineColLoc = location.getMetadata().dyn_cast_or_null<mlir::FileLineColLoc>())
+    //     {
+    //         _end = getPos(fileLineColLoc);
+    //     }
             
-        return {pos, _end};
-    }
+    //     return {pos, _end};
+    // }
 
-    std::pair<size_t, size_t> getPos(mlir::Location location)
-    {
-        auto pos = 0;
-        auto _end = 0;
+    // std::pair<size_t, size_t> getPos(mlir::Location location)
+    // {
+    //     auto pos = 0;
+    //     auto _end = 0;
 
-        mlir::TypeSwitch<mlir::LocationAttr>(location)
-            .Case<mlir::FusedLoc>([&](auto locParam) {
-                auto [pos_, _end_] = getPos(locParam);
-                pos = pos_;
-                _end = _end_;
-            }
-        );       
+    //     mlir::TypeSwitch<mlir::LocationAttr>(location)
+    //         .Case<mlir::FusedLoc>([&](auto locParam) {
+    //             auto [pos_, _end_] = getPos(locParam);
+    //             pos = pos_;
+    //             _end = _end_;
+    //         }
+    //     );       
             
-        return {pos, _end};
-    }
+    //     return {pos, _end};
+    // }
 
     mlir::StringAttr getStringAttr(const std::string &text)
     {

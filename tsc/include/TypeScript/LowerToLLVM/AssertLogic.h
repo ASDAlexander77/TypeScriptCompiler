@@ -57,9 +57,8 @@ class AssertLogic
     {
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
-        LLVMLocationHelper lh;
-
-        auto [fileName, line] = lh.getLineAndFile(loc);
+        auto [fileName, lineAndColumn] = LLVMLocationHelper::getLineAndColumnAndFileName(loc);
+        auto [line, column] = lineAndColumn;
 
         // Insert the `_assert` declaration if necessary.
         auto i8PtrTy = th.getI8PtrType();
@@ -111,9 +110,8 @@ class AssertLogic
     {
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
-        LLVMLocationHelper lh;
-
-        auto [fileName, line] = lh.getLineAndFile(loc);
+        auto [fileName, lineAndColumn] = LLVMLocationHelper::getLineAndColumnAndFileName(loc);
+        auto [line, column] = lineAndColumn;
 
         // Insert the `_assert` declaration if necessary.
         auto i8PtrTy = th.getI8PtrType();
