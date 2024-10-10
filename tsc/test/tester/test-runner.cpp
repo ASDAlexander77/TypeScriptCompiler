@@ -81,7 +81,11 @@
 auto jitRun = false;
 auto sharedLibCompiler = false;
 auto sharedLibCompileTypeCompiler = false;
+#ifdef NDEBUG
 auto opt = true;
+#else
+auto opt = false;
+#endif
 
 void createJitBatchFile()
 {
@@ -191,13 +195,13 @@ void createBatchFile()
 void buildJitExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
     ss << RUN_CMD << "jit" << BAT_NAME << " " << fileNameNoExt << " " << file;
-    ss << " " << (opt ? "--opt" : "--opt_level=0");
+    ss << " " << (opt ? "--opt --opt_level=3" : "--di --opt_level=0");
 }
 
 void buildCompileExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
     ss << RUN_CMD << "compile" << BAT_NAME << " " << fileNameNoExt << " " << file;
-    ss << " " << (opt ? "--opt" : "--opt_level=0");
+    ss << " " << (opt ? "--opt --opt_level=3" : "--di --opt_level=0");
     if (sharedLibCompiler)
     {
         ss << SHARED_LIB_OPT;
@@ -309,7 +313,7 @@ void testFile(std::string file)
 
 void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vector<std::string> &files)
 {
-    auto tsc_opt = opt ? "--opt" : "--opt_level=0";
+    auto tsc_opt = opt ? "--opt --opt_level=3" : "--di --opt_level=0";
 
 #ifdef WIN32
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
@@ -372,7 +376,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 
 void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector<std::string> &files)
 {
-    auto tsc_opt = opt ? "--opt" : "--opt_level=0";
+    auto tsc_opt = opt ? "--opt --opt_level=3" : "--di --opt_level=0";
     auto linker_opt = SHARED_LIB_OPT;
 
 #ifdef WIN32

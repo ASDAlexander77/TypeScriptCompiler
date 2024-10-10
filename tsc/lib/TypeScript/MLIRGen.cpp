@@ -5186,21 +5186,6 @@ class MLIRGenImpl
         // register function to be able to call it if used in recursive call
         registerFunctionOp(funcProto, funcOp);
 
-        // Debug Info
-        DITableScopeT debugSourceFileScope(debugScope);
-        if (compileOptions.generateDebugInfo)
-        {
-            MLIRDebugInfoHelper mdi(builder, debugScope);
-            auto locWithDI = 
-                mdi.getSubprogram(
-                    location, 
-                    funcOp.getName(), 
-                    functionLikeDeclarationBaseAST->body 
-                        ? loc(functionLikeDeclarationBaseAST->body) 
-                        : location);
-            funcOp->setLoc(locWithDI);
-        }
-
         // generate body
         auto resultFromBody = mlir::failure();
         {
@@ -5692,6 +5677,21 @@ class MLIRGenImpl
 
         auto location = loc(functionLikeDeclarationBaseAST);
 
+        // Debug Info
+        DITableScopeT debugFuncScope(debugScope);
+        if (compileOptions.generateDebugInfo)
+        {
+            MLIRDebugInfoHelper mdi(builder, debugScope);
+            auto locWithDI = 
+                mdi.getSubprogram(
+                    location, 
+                    funcOp.getName(), 
+                    functionLikeDeclarationBaseAST->body 
+                        ? loc(functionLikeDeclarationBaseAST->body) 
+                        : location);
+            funcOp->setLoc(locWithDI);
+        }
+
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;
 
@@ -5776,6 +5776,19 @@ class MLIRGenImpl
         SymbolTableScopeT varScope(symbolTable);
 
         auto funcOp = mlir_ts::FuncOp::create(location, fullFuncName, funcType);
+
+        // Debug Info
+        DITableScopeT debugFuncScope(debugScope);
+        if (compileOptions.generateDebugInfo)
+        {
+            MLIRDebugInfoHelper mdi(builder, debugScope);
+            auto locWithDI = 
+                mdi.getSubprogram(
+                    location, 
+                    fullFuncName, 
+                    location);
+            funcOp->setLoc(locWithDI);
+        }
 
         GenContext funcGenContext(genContext);
         funcGenContext.funcOp = funcOp;
@@ -22370,7 +22383,7 @@ genContext);
         auto pos = loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos;
         //return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
         //return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
-        return loc2Fuse(sourceFile, mainSourceFileName.str(), pos, loc->_end - pos);
+        return locFuseWithScope(loc2Fuse(sourceFile, mainSourceFileName.str(), pos, loc->_end - pos));
     }
 
     mlir::Location loc1(ts::SourceFile sourceFile, std::string fileName, int start, int length)
@@ -22414,6 +22427,17 @@ genContext);
         auto end =
             mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
         return mlir::FusedLoc::get(builder.getContext(), {begin}, end);
+    }
+
+    mlir::Location locFuseWithScope(mlir::Location location)
+    {
+        if (!compileOptions.generateDebugInfo)
+        {
+            return location;
+        }
+
+        MLIRDebugInfoHelper mdi(builder, debugScope);
+        return mdi.combineWithCurrentLexicalBlockScope(location);
     }
 
     size_t getPos(mlir::FileLineColLoc location)

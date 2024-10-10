@@ -1852,8 +1852,6 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
     LogicalResult matchAndRewrite(mlir_ts::DebugVariableOp debugVarOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         LLVMCodeHelper ch(debugVarOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(debugVarOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());

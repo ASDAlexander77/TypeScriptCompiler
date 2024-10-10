@@ -33,7 +33,18 @@ class MLIRDebugInfoHelper
 
     mlir::FusedLoc combineWithCurrentScope(mlir::Location location)
     {
+        assert(debugScope.lookup(DEBUG_SCOPE).isa<mlir::LLVM::DILocalScopeAttr>());
         return combine(location, debugScope.lookup(DEBUG_SCOPE));          
+    }
+
+    mlir::Location combineWithCurrentLexicalBlockScope(mlir::Location location)
+    {
+        if (auto lexicalBlockScope = dyn_cast_or_null<mlir::LLVM::DILexicalBlockAttr>(debugScope.lookup(DEBUG_SCOPE)))
+        {
+            return combine(location, lexicalBlockScope);          
+        }
+
+        return location;
     }
 
     mlir::NameLoc combineWithName(mlir::Location location, StringRef name)
