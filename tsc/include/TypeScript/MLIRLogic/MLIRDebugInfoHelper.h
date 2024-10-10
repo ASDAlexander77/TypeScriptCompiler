@@ -31,10 +31,14 @@ class MLIRDebugInfoHelper
     {
     }
 
-    mlir::FusedLoc combineWithCurrentScope(mlir::Location location)
+    mlir::Location combineWithCurrentScope(mlir::Location location)
     {
-        assert(debugScope.lookup(DEBUG_SCOPE).isa<mlir::LLVM::DILocalScopeAttr>());
-        return combine(location, debugScope.lookup(DEBUG_SCOPE));          
+        if (auto localScope = dyn_cast_or_null<mlir::LLVM::DILocalScopeAttr>(debugScope.lookup(DEBUG_SCOPE)))
+        {
+            return combine(location, debugScope.lookup(DEBUG_SCOPE));          
+        }
+
+        return location;
     }
 
     mlir::Location combineWithCurrentLexicalBlockScope(mlir::Location location)
@@ -52,7 +56,7 @@ class MLIRDebugInfoHelper
         return mlir::NameLoc::get(builder.getStringAttr(name), location);
     }
 
-    mlir::FusedLoc combineWithCurrentScopeAndName(mlir::Location location, StringRef name)
+    mlir::Location combineWithCurrentScopeAndName(mlir::Location location, StringRef name)
     {
         return combineWithCurrentScope(combineWithName(location, name));
     }
