@@ -5528,7 +5528,10 @@ class MLIRGenImpl
             mlir::Value paramValue;
 
             // process init expression
-            auto location = param->getLoc();
+            // we need reset scope for location as location of funcProto was created before correct scope
+            auto location = locFuseWithScope(stripMetadata(param->getLoc()));
+
+            LLVM_DEBUG(llvm::dbgs() << "Location for Param: " << location << "\n");
 
             // alloc all args
             // process optional parameters
@@ -5694,8 +5697,14 @@ class MLIRGenImpl
                     functionLikeDeclarationBaseAST->body 
                         ? loc(functionLikeDeclarationBaseAST->body) 
                         : location);
+
+            LLVM_DEBUG(llvm::dbgs() << "Location of func: " << locWithDI << "\n");
+
             funcOp->setLoc(locWithDI);
         }
+
+        // new location withing FunctionScope
+        location = loc(functionLikeDeclarationBaseAST->body);
 
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;
@@ -22374,6 +22383,7 @@ genContext);
     }
 
   protected:
+
     mlir::Location loc(TextRange loc)
     {
         if (!overwriteLoc.isa<mlir::UnknownLoc>())
@@ -22443,59 +22453,15 @@ genContext);
         }
 
         MLIRDebugInfoHelper mdi(builder, debugScope);
-        return mdi.combineWithCurrentLexicalBlockScope(location);
+        //return mdi.combineWithCurrentLexicalBlockScope(location);
+        return mdi.combineWithCurrentScope(location);
     }
 
-    // size_t getPos(mlir::FileLineColLoc location)
-    // {
-    //     return location.getLine() * 256 + location.getColumn();
-    // }
-
-    // std::pair<size_t, size_t> getPos(mlir::FusedLoc location)
-    // {
-    //     auto pos = 0;
-    //     auto _end = 0;
-
-    //     auto locs = location.getLocations();
-    //     if (locs.size() > 0)
-    //     {
-    //         if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
-    //         {
-    //             pos = getPos(fileLineColLoc);
-    //         }
-    //     }
-        
-    //     if (locs.size() > 1)
-    //     {
-    //         if (auto fileLineColLoc = locs[1].dyn_cast<mlir::FileLineColLoc>())
-    //         {
-    //             _end = getPos(fileLineColLoc);
-    //         }
-    //     }
-
-    //     if (auto fileLineColLoc = location.getMetadata().dyn_cast_or_null<mlir::FileLineColLoc>())
-    //     {
-    //         _end = getPos(fileLineColLoc);
-    //     }
-            
-    //     return {pos, _end};
-    // }
-
-    // std::pair<size_t, size_t> getPos(mlir::Location location)
-    // {
-    //     auto pos = 0;
-    //     auto _end = 0;
-
-    //     mlir::TypeSwitch<mlir::LocationAttr>(location)
-    //         .Case<mlir::FusedLoc>([&](auto locParam) {
-    //             auto [pos_, _end_] = getPos(locParam);
-    //             pos = pos_;
-    //             _end = _end_;
-    //         }
-    //     );       
-            
-    //     return {pos, _end};
-    // }
+    mlir::Location stripMetadata(mlir::Location location)
+    {
+        MLIRDebugInfoHelper mdi(builder, debugScope);
+        return mdi.stripMetadata(location);
+    }    
 
     mlir::StringAttr getStringAttr(const std::string &text)
     {
