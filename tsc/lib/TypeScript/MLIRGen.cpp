@@ -741,7 +741,7 @@ class MLIRGenImpl
             auto funcType = getFunctionType({}, {}, false);
 
             if (mlir::failed(mlirGenFunctionBody(location, fullInitGlobalFuncName, funcType,
-                [&](const GenContext &genContext) {
+                [&](mlir::Location location, const GenContext &genContext) {
                     auto litValue = mlirGenStringValue(location, filePath.str());
                     auto strVal = cast(location, getStringType(), litValue, genContext);
                     builder.create<mlir_ts::LoadLibraryPermanentlyOp>(location, mth.getI32Type(), strVal);
@@ -3907,7 +3907,7 @@ class MLIRGenImpl
                 auto funcType = getFunctionType({}, {}, false);
 
                 if (mlir::failed(mlirGenFunctionBody(location, fullInitGlobalFuncName, funcType,
-                    [&](const GenContext &genContext) {
+                    [&](mlir::Location location, const GenContext &genContext) {
                         return processDeclaration(item, valClassItem, initFunc, genContext, true);
                     }, genContext)))
                 {
@@ -5776,7 +5776,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef fullFuncName,
-                                            mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult(const GenContext &genContext)> funcBody,                                            
+                                            mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult(mlir::Location, const GenContext &)> funcBody,                                            
                                             const GenContext &genContext,
                                             int firstParam = 0)
     {
@@ -5802,6 +5802,9 @@ class MLIRGenImpl
                     fullFuncName, 
                     location);
             funcOp->setLoc(locWithDI);
+
+            // new location withing FunctionScope
+            location = locFuseWithScope(stripMetadata(location));
         }
 
         GenContext funcGenContext(genContext);
@@ -5825,7 +5828,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        if (failed(funcBody(funcGenContext)))
+        if (failed(funcBody(location, funcGenContext)))
         {
             return mlir::failure();
         }
@@ -15778,7 +15781,7 @@ genContext);
 
         mlirGenFunctionBody(
             location, fullClassStaticFieldName, funcType,
-            [&](const GenContext &genContext) {
+            [&](mlir::Location location, const GenContext &genContext) {
                 auto bitmapValueType = mth.getTypeBitmapValueType();
 
                 auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
@@ -16321,7 +16324,7 @@ genContext);
 
             auto result = mlirGenFunctionBody(
                 location, fullClassStaticName, funcType,
-                [&](const GenContext &genContext) {
+                [&](mlir::Location location, const GenContext &genContext) {
                     NodeFactory nf(NodeFactoryFlags::None);
 
                     NodeArray<Expression> argumentsArray;
