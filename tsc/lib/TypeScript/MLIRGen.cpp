@@ -5970,7 +5970,7 @@ class MLIRGenImpl
         
         // copy location info, to fix issue with names of anonymous functions
         LocationHelper lh(builder.getContext());
-        auto [pos, _end] = lh.getLineAndColumn(location);
+        auto [pos, _end] = lh.getSpan(location);
 
         assert(pos != _end && pos > 0);
 
@@ -10557,7 +10557,7 @@ class MLIRGenImpl
         auto arraySrc = operands[0];
         auto funcSrc = operands[1];
 
-        auto [pos, _end] = LocationHelper::getLineAndColumn(location);
+        auto [pos, _end] = LocationHelper::getSpan(location);
 
         // register vals
         auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>(".src_array", arraySrc.getType(), location);
@@ -10638,7 +10638,7 @@ class MLIRGenImpl
         NodeArray<Expression> argumentsArray;
         argumentsArray.push_back(_v_ident);
 
-        auto [pos, _end] = LocationHelper::getLineAndColumn(location);
+        auto [pos, _end] = LocationHelper::getSpan(location);
 
         auto _yield_expr = nf.createYieldExpression(undefined, _v_ident);
         _yield_expr->pos.pos = pos;
