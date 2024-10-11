@@ -769,15 +769,17 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
 
-            MLIRLocationGuard vgLoc(overwriteLoc); 
-            overwriteLoc = location;
-
-            auto importData = convertUTF8toWide(dataPtr);
-            if (mlir::failed(parsePartialStatements(importData, genContext, false)))
             {
-                //assert(false);
-                return mlir::failure();
-            }            
+                MLIRLocationGuard vgLoc(overwriteLoc); 
+                overwriteLoc = location;
+
+                auto importData = convertUTF8toWide(dataPtr);
+                if (mlir::failed(parsePartialStatements(importData, genContext, false)))
+                {
+                    //assert(false);
+                    return mlir::failure();
+                }            
+            }
         }
         else
         {
@@ -10687,12 +10689,14 @@ class MLIRGenImpl
                 return r;   \
             }");
 
-            MLIRLocationGuard vgLoc(overwriteLoc); 
-            overwriteLoc = location;
-            if (mlir::failed(parsePartialStatements(src)))
             {
-                assert(false);
-                return mlir::failure();
+                MLIRLocationGuard vgLoc(overwriteLoc); 
+                overwriteLoc = location;
+                if (mlir::failed(parsePartialStatements(src)))
+                {
+                    assert(false);
+                    return mlir::failure();
+                }
             }
         }
 
@@ -18497,12 +18501,14 @@ genContext);
                 } \
                 ");
 
-            MLIRLocationGuard vgLoc(overwriteLoc); 
-            overwriteLoc = location;
-            if (mlir::failed(parsePartialStatements(src)))
             {
-                assert(false);
-                return mlir::failure();
+                MLIRLocationGuard vgLoc(overwriteLoc); 
+                overwriteLoc = location;
+                if (mlir::failed(parsePartialStatements(src)))
+                {
+                    assert(false);
+                    return mlir::failure();
+                }
             }
         }
 
@@ -18602,13 +18608,15 @@ genContext);
 
                 auto src = ss.str();
 
-                MLIRLocationGuard vgLoc(overwriteLoc); 
-                overwriteLoc = location;
-
-                if (mlir::failed(parsePartialStatements(src)))
                 {
-                    assert(false);
-                    return mlir::failure();
+                    MLIRLocationGuard vgLoc(overwriteLoc); 
+                    overwriteLoc = location;
+
+                    if (mlir::failed(parsePartialStatements(src)))
+                    {
+                        assert(false);
+                        return mlir::failure();
+                    }
                 }
 
                 auto funcResult = resolveIdentifier(location, funcName, genContext);
