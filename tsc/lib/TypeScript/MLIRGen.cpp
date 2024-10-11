@@ -10675,9 +10675,6 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenArrayReduce(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
                                             const GenContext &genContext)
     {
-        MLIRLocationGuard vgLoc(overwriteLoc); 
-        overwriteLoc = location;
-
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "___array_reduce";
 
@@ -10690,6 +10687,8 @@ class MLIRGenImpl
                 return r;   \
             }");
 
+            MLIRLocationGuard vgLoc(overwriteLoc); 
+            overwriteLoc = location;
             if (mlir::failed(parsePartialStatements(src)))
             {
                 assert(false);
@@ -18482,9 +18481,6 @@ genContext);
 
     ValueOrLogicalResult castFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
-        MLIRLocationGuard vgLoc(overwriteLoc); 
-        overwriteLoc = location;
-
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "___as";
 
@@ -18501,6 +18497,8 @@ genContext);
                 } \
                 ");
 
+            MLIRLocationGuard vgLoc(overwriteLoc); 
+            overwriteLoc = location;
             if (mlir::failed(parsePartialStatements(src)))
             {
                 assert(false);
