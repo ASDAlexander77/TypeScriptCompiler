@@ -22515,7 +22515,7 @@ genContext);
     void printDebug(ts::Node node)
     {
         // Printer<llvm::raw_ostream> printer(llvm::dbgs());
-        std::wcerr << "dump ===============================================" << std::endl;
+        std::wcerr << std::endl << "dump ===============================================" << std::endl;
         Printer<std::wostream> printer(std::wcerr);
         printer.printNode(node);
         std::wcerr << std::endl << "end of dump ========================================" << std::endl;
