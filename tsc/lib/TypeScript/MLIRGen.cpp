@@ -3378,7 +3378,10 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            if (this->compileOptions.generateDebugInfo && variableDeclarationInfo.initial && !variableDeclarationInfo.storage)
+            if (this->compileOptions.generateDebugInfo 
+                && variableDeclarationInfo.initial 
+                && !variableDeclarationInfo.storage 
+                && !mth.isGenericType(variableDeclarationInfo.initial.getType()))
             {
                 // to show const values
                 MLIRDebugInfoHelper mti(builder, debugScope);
