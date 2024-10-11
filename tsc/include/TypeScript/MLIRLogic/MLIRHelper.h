@@ -120,24 +120,55 @@ class MLIRHelper
     static void getAnonymousNameStep(std::stringstream &ssName, mlir::Location loc)
     {
         mlir::TypeSwitch<mlir::LocationAttr>(loc)
-        .Case<mlir::FileLineColLoc>([&](auto loc) {
-            // auto fileName = loc.getFilename();
-            auto line = loc.getLine();
-            auto column = loc.getColumn();
-            ssName << 'L' << line << 'C' << column;
-        })
-        .Case<mlir::NameLoc>([&](auto loc) {
-            getAnonymousNameStep(ssName, loc.getChildLoc());
-        })
-        .Case<mlir::CallSiteLoc>([&](auto loc) {
-            getAnonymousNameStep(ssName, loc.getCaller());
-        })        
-        .Case<mlir::FusedLoc>([&](auto loc) {
-            for (auto subLoc : loc.getLocations())
-            {
-                getAnonymousNameStep(ssName, subLoc);
-            }
-        });        
+            .Case<mlir::FileLineColLoc>([&](auto loc) {
+                // auto fileName = loc.getFilename();
+                auto line = loc.getLine();
+                auto column = loc.getColumn();
+                ssName << 'L' << line << 'C' << column;
+            })
+            .Case<mlir::NameLoc>([&](auto loc) {
+                getAnonymousNameStep(ssName, loc.getChildLoc());
+            })
+            .Case<mlir::OpaqueLoc>([&](auto loc) {
+                getAnonymousNameStep(ssName, loc.getFallbackLocation());
+            })
+            .Case<mlir::CallSiteLoc>([&](auto loc) {
+                getAnonymousNameStep(ssName, loc.getCaller());
+            })        
+            .Case<mlir::FusedLoc>([&](auto loc) {
+                for (auto subLoc : loc.getLocations())
+                {
+                    getAnonymousNameStep(ssName, subLoc);
+                }
+            });        
+    }
+
+    static mlir::Location unwrapFileLineColLocation(mlir::Location loc)
+    {
+        mlir::Location result = mlir::UnknownLoc::get(loc.getContext());
+        mlir::TypeSwitch<mlir::LocationAttr>(loc)
+            .Case<mlir::FileLineColLoc>([&](auto loc) {
+                result = loc;
+            })
+            .Case<mlir::NameLoc>([&](auto loc) {
+                result = unwrapFileLineColLocation(loc.getChildLoc());
+            })
+            .Case<mlir::OpaqueLoc>([&](auto loc) {
+                result = unwrapFileLineColLocation(loc.getFallbackLocation());
+            })
+            .Case<mlir::CallSiteLoc>([&](auto loc) {
+                result = unwrapFileLineColLocation(loc.getCaller());
+            })        
+            .Case<mlir::FusedLoc>([&](auto loc) {
+                for (auto subLoc : loc.getLocations())
+                {
+                    result = unwrapFileLineColLocation(subLoc);
+                    if (!result.isa<mlir::UnknownLoc>())
+                        break;
+                }
+            });        
+
+        return result;
     }
 
     static std::string getAnonymousName(mlir::Location loc, const char *prefix)
@@ -146,7 +177,7 @@ class MLIRHelper
         std::stringstream ssName;
         ssName << prefix;
         getAnonymousNameStep(ssName, loc);
-        ssName << 'H' << hash_value(loc);
+        ssName << 'H' << hash_value(unwrapFileLineColLocation(loc));
         return ssName.str();
     }
 

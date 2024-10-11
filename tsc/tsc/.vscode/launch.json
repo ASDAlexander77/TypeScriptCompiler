@@ -243,7 +243,7 @@
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
                 "-emit=exe",
-                "-di",
+                "--di",
                 "--verbose",
                 "-debug-only=mlir,mlir-affine,llvm,pass",
                 "-mlir-disable-threading",
