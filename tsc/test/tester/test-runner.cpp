@@ -156,6 +156,9 @@ void createCompileBatchFile()
     batFile << "del %FILENAME%.obj" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
     batFile << "echo on" << std::endl;
+    batFile << "del %FILENAME%.exe" << std::endl;
+    batFile << "del %FILENAME%.lib" << std::endl;
+    batFile << "del %FILENAME%.dll" << std::endl;        
     batFile.close();
 #else
     if (exists(COMPILE_NAME BAT_NAME))
@@ -342,6 +345,9 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 
     batFile << "del " << objs.str() << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "del %FILENAME%.exe" << std::endl;
+    batFile << "del %FILENAME%.lib" << std::endl;
+    batFile << "del %FILENAME%.dll" << std::endl;    
     batFile << "echo on" << std::endl;
     batFile.close();
 #else
@@ -368,6 +374,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     
     batFile << "rm " << objs.str() << std::endl;
     batFile << "rm $FILENAME" << std::endl;
+    batFile << "rm lib$FILENAME.so" << std::endl;    
     batFile.close();    
 #endif    
 }
@@ -520,7 +527,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
 
         batFile << "rm $FILENAME" << std::endl;
-        batFile << "rm $FILENAME.so" << std::endl;
+        batFile << "rm lib$FILENAME.so" << std::endl;
     }
 
     batFile.close();    
