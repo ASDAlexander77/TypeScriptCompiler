@@ -22479,6 +22479,7 @@ genContext);
 
     mlir::LogicalResult parsePartialStatements(string src)
     {
+        DITableScopeT debugPartialCodeScope(debugScope);
         GenContext emptyContext{};
         return parsePartialStatements(src, emptyContext);
     }
