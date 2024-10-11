@@ -22479,7 +22479,6 @@ genContext);
 
     mlir::LogicalResult parsePartialStatements(string src)
     {
-        DITableScopeT debugPartialCodeScope(debugScope);
         GenContext emptyContext{};
         return parsePartialStatements(src, emptyContext);
     }
@@ -22492,6 +22491,15 @@ genContext);
         MLIRNamespaceGuard nsGuard(currentNamespace);
         if (useRootNamesapce)
             currentNamespace = rootNamespace;
+
+        DITableScopeT debugPartialCodeScope(debugScope);
+        if (compileOptions.generateDebugInfo)
+        {
+            if (!overwriteLoc.isa<mlir::UnknownLoc>())
+            {
+                overwriteLoc = stripMetadata(overwriteLoc);
+            }
+        }
 
         for (auto statement : module->statements)
         {
