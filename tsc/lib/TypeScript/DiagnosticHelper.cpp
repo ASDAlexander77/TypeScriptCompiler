@@ -58,8 +58,8 @@ void printLocation(llvm::raw_ostream &os, mlir::Location location, llvm::StringR
             printLocation(os, callSiteLoc.getCaller(), path, suppressSeparator);
         })        
         .template Case<mlir::OpaqueLoc>([&](auto opaqueLoc) {
-            printLocation(os, opaqueLoc.getFallbackLocation());
-        }
+            printLocation(os, opaqueLoc.getFallbackLocation(), path, suppressSeparator);
+        })
         .template Case<mlir::FusedLoc>([&](auto fusedLoc) {
             auto notFirst = false;
 
