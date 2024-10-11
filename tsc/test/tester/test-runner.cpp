@@ -155,10 +155,10 @@ void createCompileBatchFile()
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
-    batFile << "echo on" << std::endl;
     batFile << "del %FILENAME%.exe" << std::endl;
     batFile << "del %FILENAME%.lib" << std::endl;
     batFile << "del %FILENAME%.dll" << std::endl;        
+    batFile << "echo on" << std::endl;
     batFile.close();
 #else
     if (exists(COMPILE_NAME BAT_NAME))
@@ -398,6 +398,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     auto first = true;
     std::stringstream shared_objs;
+    std::stringstream shared_libs;
+    std::stringstream shared_dlls;
     std::stringstream exec_objs;
     std::string shared_filenameNoExt;
     std::stringstream execBat;
@@ -430,6 +432,9 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
 
+    shared_libs << shared_filenameNoExt << ".lib ";
+    shared_dlls << shared_filenameNoExt << ".dll ";
+
     batFile << "del " << shared_objs.str() << std::endl;
     batFile << "echo on" << std::endl;
 
@@ -437,6 +442,9 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     {
         batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll " << *files.begin() << " 1> %FILENAME%.txt 2> %FILENAME%.err"
                 << std::endl;
+
+        batFile << "del " << shared_libs.str() << std::endl;
+        batFile << "del " << shared_dlls.str() << std::endl;
     }
     else
     {
@@ -455,6 +463,9 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << "del " << exec_objs.str() << std::endl;
 
         batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+
+        batFile << "del " << shared_libs.str() << std::endl;
+        batFile << "del " << shared_dlls.str() << std::endl;
 
         batFile << "del %FILENAME%.exe" << std::endl;
         batFile << "del %FILENAME%.lib" << std::endl;
@@ -508,6 +519,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     {
         batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so " << *files.begin() << " 1> $FILENAME.txt 2> $FILENAME.err"
                 << std::endl;
+        batFile << "rm lib$FILENAME.so" << std::endl;
     }
     else
     {
