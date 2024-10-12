@@ -111,60 +111,65 @@ class MLIRDebugInfoHelper
         auto [scopeLine, scopeColumn] = LocationHelper::getLineAndColumn(functionBlockLocation);
 
         auto compileUnitAttr = dyn_cast<mlir::LLVM::DICompileUnitAttr>(debugScope.lookup(CU_DEBUG_SCOPE));
-        auto scopeAttr = dyn_cast<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE));
-        // if (scopeAttr.isa<mlir::LLVM::DILexicalBlockAttr>())
-        // {
-        //     auto file = dyn_cast<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE));
-
-        //     // create new scope: DICompositeType
-        //     //unsigned tag, StringAttr name, DIFileAttr file, uint32_t line, DIScopeAttr scope, 
-        //     //DITypeAttr baseType, DIFlags flags, uint64_t sizeInBits, uint64_t alignInBits, ::llvm::ArrayRef<DINodeAttr> elements
-        //     auto compositeTypeAttr = mlir::LLVM::DICompositeTypeAttr::get(
-        //         builder.getContext(), llvm::dwarf::DW_TAG_class_type, builder.getStringAttr("nested_function"),
-        //         file, line, scopeAttr, mlir::LLVM::DITypeAttr(), mlir::LLVM::DIFlags::TypePassByValue | mlir::LLVM::DIFlags::NonTrivial, 0/*sizeInBits*/, 
-        //         8/*alignInBits*/, {/*Add elements here*/});
-
-        //     //debugScope.insert(DEBUG_SCOPE, compositeTypeAttr);
-        // }
-
-        auto subprogramFlags = mlir::LLVM::DISubprogramFlags::Definition;
-        if (compileUnitAttr.getIsOptimized())
+        if (auto scopeAttr = dyn_cast_or_null<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE)))
         {
-            subprogramFlags = subprogramFlags | mlir::LLVM::DISubprogramFlags::Optimized;
+            // if (scopeAttr.isa<mlir::LLVM::DILexicalBlockAttr>())
+            // {
+            //     auto file = dyn_cast<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE));
+
+            //     // create new scope: DICompositeType
+            //     //unsigned tag, StringAttr name, DIFileAttr file, uint32_t line, DIScopeAttr scope, 
+            //     //DITypeAttr baseType, DIFlags flags, uint64_t sizeInBits, uint64_t alignInBits, ::llvm::ArrayRef<DINodeAttr> elements
+            //     auto compositeTypeAttr = mlir::LLVM::DICompositeTypeAttr::get(
+            //         builder.getContext(), llvm::dwarf::DW_TAG_class_type, builder.getStringAttr("nested_function"),
+            //         file, line, scopeAttr, mlir::LLVM::DITypeAttr(), mlir::LLVM::DIFlags::TypePassByValue | mlir::LLVM::DIFlags::NonTrivial, 0/*sizeInBits*/, 
+            //         8/*alignInBits*/, {/*Add elements here*/});
+
+            //     //debugScope.insert(DEBUG_SCOPE, compositeTypeAttr);
+            // }
+
+            auto subprogramFlags = mlir::LLVM::DISubprogramFlags::Definition;
+            if (compileUnitAttr.getIsOptimized())
+            {
+                subprogramFlags = subprogramFlags | mlir::LLVM::DISubprogramFlags::Optimized;
+            }
+
+            // add return types
+            auto type = mlir::LLVM::DISubroutineTypeAttr::get(builder.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
+
+            auto funcNameAttr = builder.getStringAttr(functionName);
+            auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
+                builder.getContext(), compileUnitAttr, scopeAttr, 
+                funcNameAttr, funcNameAttr, 
+                compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);      
+
+            debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
+            debugScope.insert(DEBUG_SCOPE, subprogramAttr);
+
+            return combine(functionLocation, subprogramAttr);
         }
 
-        // add return types
-        auto type = mlir::LLVM::DISubroutineTypeAttr::get(builder.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
-
-        auto funcNameAttr = builder.getStringAttr(functionName);
-        auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-            builder.getContext(), compileUnitAttr, scopeAttr, 
-            funcNameAttr, funcNameAttr, 
-            compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);      
-
-        debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
-        debugScope.insert(DEBUG_SCOPE, subprogramAttr);
-
-        return combine(functionLocation, subprogramAttr);
+        return functionLocation;
     }
 
     void setLexicalBlock(mlir::Location blockLocation) {
 
         auto fileAttr = dyn_cast<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE));
-        auto scopeAttr = dyn_cast<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE));
+        if (auto scopeAttr = dyn_cast_or_null<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE)))
+        {
+            auto [scopeLine, scopeColumn] = LocationHelper::getLineAndColumn(blockLocation);
 
-        auto [scopeLine, scopeColumn] = LocationHelper::getLineAndColumn(blockLocation);
+            auto lexicalBlockAttr = 
+                mlir::LLVM::DILexicalBlockAttr::get(
+                    builder.getContext(), 
+                    scopeAttr, 
+                    fileAttr, 
+                    scopeLine, 
+                    scopeColumn);      
 
-        auto lexicalBlockAttr = 
-            mlir::LLVM::DILexicalBlockAttr::get(
-                builder.getContext(), 
-                scopeAttr, 
-                fileAttr, 
-                scopeLine, 
-                scopeColumn);      
-
-        debugScope.insert(BLOCK_DEBUG_SCOPE, lexicalBlockAttr);
-        debugScope.insert(DEBUG_SCOPE, lexicalBlockAttr);
+            debugScope.insert(BLOCK_DEBUG_SCOPE, lexicalBlockAttr);
+            debugScope.insert(DEBUG_SCOPE, lexicalBlockAttr);
+        }
     }    
 
 private:
