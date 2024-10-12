@@ -3121,6 +3121,15 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        if (mth.isGenericType(variableDeclarationInfo.type))
+        {
+            genContext.postponedMessages->clear();
+            emitError(location) << "variable '" 
+                << variableDeclarationInfo.variableName << "' is referencing generic type." 
+                << (mth.isAnyFunctionType(variableDeclarationInfo.type) ? " use 'const' instead of 'let'" : "");
+            return mlir::failure();
+        }
+
         // scope to restore inserting point
         {
             mlir::OpBuilder::InsertionGuard insertGuard(builder);
@@ -3419,8 +3428,8 @@ class MLIRGenImpl
         {
             if (variableDeclarationInfo.isConst)
                 variableDeclarationInfo.processConstRef(location, builder, genContext);
-            else
-                createLocalVariable(location, variableDeclarationInfo, genContext);
+            else if (mlir::failed(createLocalVariable(location, variableDeclarationInfo, genContext)))
+                return mlir::Type();
         }
         else
         {
