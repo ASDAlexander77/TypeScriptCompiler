@@ -3392,7 +3392,8 @@ class MLIRGenImpl
             if (this->compileOptions.generateDebugInfo 
                 && variableDeclarationInfo.initial 
                 && !variableDeclarationInfo.storage 
-                && !mth.isGenericType(variableDeclarationInfo.initial.getType()))
+                && !mth.isGenericType(variableDeclarationInfo.initial.getType())
+                && !mth.isAnyFunctionType(variableDeclarationInfo.initial.getType()))
             {
                 // to show const values
                 MLIRDebugInfoHelper mti(builder, debugScope);
@@ -6086,6 +6087,7 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(AwaitExpression awaitExpressionAST, const GenContext &genContext)
     {
 #ifdef ENABLE_ASYNC
+        // TODO: due to cloning code into next function, it is not fixing scope properly
         auto location = loc(awaitExpressionAST);
 
         auto resultType = evaluate(awaitExpressionAST->expression, genContext);
@@ -6094,12 +6096,9 @@ class MLIRGenImpl
         auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
             location, resultType ? mlir::TypeRange{resultType} : mlir::TypeRange(), mlir::ValueRange{},
             mlir::ValueRange{}, [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
-                SmallVector<mlir::Type, 0> types;
-                SmallVector<mlir::Value, 0> operands;
-                if (resultType)
-                {
-                    types.push_back(resultType);
-                }
+                DITableScopeT debugAsyncCodeScope(debugScope);
+                MLIRDebugInfoHelper mdi(builder, debugScope);
+                mdi.clearDebugScope();
 
                 result = mlirGen(awaitExpressionAST->expression, genContext);
                 if (result)

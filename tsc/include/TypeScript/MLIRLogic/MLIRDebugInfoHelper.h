@@ -74,6 +74,11 @@ class MLIRDebugInfoHelper
         return combineWithCurrentScope(combineWithName(location, name));
     }
 
+    void clearDebugScope() 
+    {
+        debugScope.insert(DEBUG_SCOPE, mlir::LLVM::DIScopeAttr());
+    }
+
     void setFile(StringRef fileName) {
         // TODO: in file location helper
         SmallString<256> FullName(fileName);
