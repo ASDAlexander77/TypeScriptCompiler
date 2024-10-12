@@ -94,11 +94,11 @@ class LLVMDebugInfoHelper
 
     LLVM::DITypeAttr getDIType(mlir::Type llvmType, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        // auto diType = getDITypeScriptType(type, file, line, scope);
-        // if (diType)
-        // {
-        //     return diType;
-        // }
+        auto diType = getDITypeScriptType(type, file, line, scope);
+        if (diType)
+        {
+            return diType;
+        }
 
         return getDILLVMType(llvmType, file, line, scope);
     }
