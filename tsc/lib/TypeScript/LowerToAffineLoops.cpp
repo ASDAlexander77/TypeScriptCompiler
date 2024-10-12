@@ -68,13 +68,13 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
         if (anyResult)
         {
             auto loadedValue = rewriter.create<mlir_ts::LoadOp>(
-                op.getLoc(), returnType.cast<mlir_ts::RefType>().getElementType(), allocValue);
-            rewriter.create<mlir_ts::ReturnInternalOp>(op.getLoc(), mlir::ValueRange{loadedValue});
+                location, returnType.cast<mlir_ts::RefType>().getElementType(), allocValue);
+            rewriter.create<mlir_ts::ReturnInternalOp>(location, mlir::ValueRange{loadedValue});
             rewriter.replaceOp(op, allocValue);
         }
         else
         {
-            rewriter.create<mlir_ts::ReturnInternalOp>(op.getLoc(), mlir::ValueRange{});
+            rewriter.create<mlir_ts::ReturnInternalOp>(location, mlir::ValueRange{});
             rewriter.eraseOp(op);
         }
 
