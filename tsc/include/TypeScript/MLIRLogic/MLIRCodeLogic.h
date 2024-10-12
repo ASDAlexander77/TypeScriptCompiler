@@ -57,7 +57,7 @@ class MLIRCodeLogic
         return mlir::Attribute();
     }
 
-    mlir::Value GetReferenceOfLoadOp(mlir::Value object)
+    mlir::Value GetReferenceOfLoadOp(mlir::Location location, mlir::Value object)
     {
         if (auto loadOp = object.getDefiningOp<mlir_ts::LoadOp>())
         {
@@ -67,10 +67,10 @@ class MLIRCodeLogic
 
         if (auto valueOp = object.getDefiningOp<mlir_ts::ValueOp>())
         {
-            if (auto nestedRef = GetReferenceOfLoadOp(valueOp.getIn()))
+            if (auto nestedRef = GetReferenceOfLoadOp(location, valueOp.getIn()))
             {
                 return builder.create<mlir_ts::PropertyRefOp>(
-                    object.getLoc(), 
+                    location, 
                     mlir_ts::RefType::get(valueOp.getType()), 
                     nestedRef, 
                     OPTIONAL_VALUE_INDEX);
@@ -79,10 +79,10 @@ class MLIRCodeLogic
 
         if (auto extractPropertyOp = object.getDefiningOp<mlir_ts::ExtractPropertyOp>())
         {
-            if (auto nestedRef = GetReferenceOfLoadOp(extractPropertyOp.getObject()))
+            if (auto nestedRef = GetReferenceOfLoadOp(location, extractPropertyOp.getObject()))
             {
                 return builder.create<mlir_ts::PropertyRefOp>(
-                    object.getLoc(), 
+                    location, 
                     mlir_ts::RefType::get(extractPropertyOp.getType()), 
                     nestedRef, 
                     extractPropertyOp.getPosition().front());
@@ -529,7 +529,7 @@ class MLIRCustomMethods
             }
         }
 
-        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(thisValue);
+        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(location, thisValue);
         if (!thisValueLoaded)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -550,7 +550,7 @@ class MLIRCustomMethods
     ValueOrLogicalResult mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder);
-        auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
+        auto thisValue = mcl.GetReferenceOfLoadOp(location, operands.front());
         if (!thisValue)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -582,7 +582,7 @@ class MLIRCustomMethods
             }
         }
 
-        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(thisValue);
+        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(location, thisValue);
         if (!thisValueLoaded)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -603,7 +603,7 @@ class MLIRCustomMethods
     ValueOrLogicalResult mlirGenArrayShift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder);
-        auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
+        auto thisValue = mcl.GetReferenceOfLoadOp(location, operands.front());
         if (!thisValue)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -645,7 +645,7 @@ class MLIRCustomMethods
             }
         }
 
-        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(thisValue);
+        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(location, thisValue);
         if (!thisValueLoaded)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -808,7 +808,7 @@ class MLIRCustomMethods
     ValueOrLogicalResult mlirGenReferenceOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder);
-        auto refValue = mcl.GetReferenceOfLoadOp(operands.front());        
+        auto refValue = mcl.GetReferenceOfLoadOp(location, operands.front());        
         return V(refValue);
     }    
 };
@@ -893,7 +893,7 @@ class MLIRPropertyAccessCodeLogic
         auto elementTypeForRef = pair.second;
         auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
-        auto refValue = getExprLoadRefValue();
+        auto refValue = getExprLoadRefValue(location);
         if (isBoundRef && !refValue)
         {
             // allocate in stack
@@ -934,7 +934,7 @@ class MLIRPropertyAccessCodeLogic
         auto elementTypeForRef = pair.second;
         auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
-        auto refValue = getExprLoadRefValue();
+        auto refValue = getExprLoadRefValue(location);
         if (isBoundRef && !refValue)
         {
             // allocate in stack
@@ -1282,10 +1282,10 @@ class MLIRPropertyAccessCodeLogic
         return mcl.ExtractAttr(expression);
     }
 
-    mlir::Value getExprLoadRefValue()
+    mlir::Value getExprLoadRefValue(mlir::Location location)
     {
         MLIRCodeLogic mcl(builder);
-        auto value = mcl.GetReferenceOfLoadOp(expression);
+        auto value = mcl.GetReferenceOfLoadOp(location, expression);
         return value;
     }
 };
