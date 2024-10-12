@@ -6088,7 +6088,7 @@ class MLIRGenImpl
     {
 #ifdef ENABLE_ASYNC
         // TODO: due to cloning code into next function, it is not fixing scope properly
-        auto location = loc(awaitExpressionAST);
+        auto location = stripMetadata(loc(awaitExpressionAST));
 
         auto resultType = evaluate(awaitExpressionAST->expression, genContext);
 
@@ -6957,12 +6957,19 @@ class MLIRGenImpl
                 EXIT_IF_FAILED(result)
             }
 
+            // TODO: we need to strip metadata to fix issue with debug info
             // async body
+            auto asyncLocation = stripMetadata(location);
             auto isFailed = false;
             auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
-                location, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
+                asyncLocation, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
                 [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                     GenContext execOpBodyGenContext(genContext);
+
+                    DITableScopeT debugAsyncCodeScope(debugScope);
+                    MLIRDebugInfoHelper mdi(builder, debugScope);
+                    mdi.clearDebugScope();
+
                     if (forStatementAST->statement == SyntaxKind::Block)
                     {
                         if (mlir::failed(mlirGen(forStatementAST->statement.as<ts::Block>(), execOpBodyGenContext, 1)))
@@ -6977,6 +6984,7 @@ class MLIRGenImpl
                             isFailed = true;
                         }
                     }
+
                     builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
                 });    
 
