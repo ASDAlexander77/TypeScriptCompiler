@@ -6959,10 +6959,9 @@ class MLIRGenImpl
 
             // TODO: we need to strip metadata to fix issue with debug info
             // async body
-            auto asyncLocation = stripMetadata(location);
             auto isFailed = false;
             auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
-                asyncLocation, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
+                stripMetadata(location), mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
                 [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                     GenContext execOpBodyGenContext(genContext);
 
