@@ -105,6 +105,11 @@ class LLVMDebugInfoHelper
 
     LLVM::DITypeAttr getDITypeScriptType(mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
+        if (!type)
+        {
+            return {};
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "DI for TS Type:\t" << type << "\n");
 
         if (auto basicType = getDITypeScriptBasicType(type, file, line, scope))
@@ -139,7 +144,7 @@ class LLVMDebugInfoHelper
             return getDIType(classType, file, line, scope);
         }
 
-        return LLVM::DITypeAttr();
+        return getDILLVMType(llvmtch.typeConverter.convertType(type), file, line, scope);
     }    
 
     LLVM::DITypeAttr getDITypeScriptBasicType(mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
