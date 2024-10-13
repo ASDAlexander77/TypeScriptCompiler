@@ -2839,7 +2839,7 @@ class MLIRGenImpl
         assert(thisVarValue);
 
         MLIRCodeLogic mcl(builder);
-        auto thisVarValueRef = mcl.GetReferenceOfLoadOp(location, thisVarValue);
+        auto thisVarValueRef = mcl.GetReferenceFromValue(location, thisVarValue);
 
         assert(thisVarValueRef);
 
@@ -2960,7 +2960,7 @@ class MLIRGenImpl
             if (varClass == VariableType::ConstRef)
             {
                 MLIRCodeLogic mcl(builder);
-                if (auto possibleInit = mcl.GetReferenceOfLoadOp(location, initial))
+                if (auto possibleInit = mcl.GetReferenceFromValue(location, initial))
                 {
                     setInitial(possibleInit);
                 }
@@ -7678,7 +7678,7 @@ class MLIRGenImpl
             {
                 MLIRCodeLogic mcl(builder);
                 auto varInfo = resolveIdentifier(location, varName, tryGenContext);
-                auto varRef = mcl.GetReferenceOfLoadOp(location, varInfo);
+                auto varRef = mcl.GetReferenceFromValue(location, varInfo);
                 builder.create<mlir_ts::CatchOp>(location, varRef);
 
                 if (!genContext.allowPartialResolve)
@@ -8642,7 +8642,7 @@ class MLIRGenImpl
             // access to conditional tuple
             // let's see if we can get reference to it
             MLIRCodeLogic mcl(builder);
-            auto propRef = mcl.GetReferenceOfLoadOp(location, leftExpressionValueBeforeCast);
+            auto propRef = mcl.GetReferenceFromValue(location, leftExpressionValueBeforeCast);
             if (!propRef)
             {
                 return mlir::failure();
@@ -8698,7 +8698,7 @@ class MLIRGenImpl
         else if (auto lengthOf = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LengthOfOp>())
         {
             MLIRCodeLogic mcl(builder);
-            auto arrayValueLoaded = mcl.GetReferenceOfLoadOp(location, lengthOf.getOp());
+            auto arrayValueLoaded = mcl.GetReferenceFromValue(location, lengthOf.getOp());
             if (!arrayValueLoaded)
             {
                 emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -8712,7 +8712,7 @@ class MLIRGenImpl
         else if (auto stringLength = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::StringLengthOp>())
         {
             MLIRCodeLogic mcl(builder);
-            auto stringValueLoaded = mcl.GetReferenceOfLoadOp(location, stringLength.getOp());
+            auto stringValueLoaded = mcl.GetReferenceFromValue(location, stringLength.getOp());
             if (!stringValueLoaded)
             {
                 emitError(location) << "Can't get reference of the string, ensure const string is not used";
@@ -9722,7 +9722,7 @@ class MLIRGenImpl
             if (isStorageType)
             {
                 MLIRCodeLogic mcl(builder);
-                thisValue = mcl.GetReferenceOfLoadOp(location, thisValue);
+                thisValue = mcl.GetReferenceFromValue(location, thisValue);
                 assert(thisValue);
             }
 
@@ -10894,7 +10894,7 @@ class MLIRGenImpl
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
                 MLIRCodeLogic mcl(builder);
-                auto refValue = mcl.GetReferenceOfLoadOp(location, funcRefValue);
+                auto refValue = mcl.GetReferenceFromValue(location, funcRefValue);
                 if (refValue)
                 {
                     // seems we are calling type constructor for super()
@@ -11475,7 +11475,7 @@ class MLIRGenImpl
         auto result = mlirGenPropertyAccessExpression(location, thisValue, VTABLE_NAME, genContext);
         auto vtableVal = V(result);
         MLIRCodeLogic mcl(builder);
-        auto vtableRefVal = mcl.GetReferenceOfLoadOp(location, vtableVal);
+        auto vtableRefVal = mcl.GetReferenceFromValue(location, vtableVal);
 
         // vtable symbol reference
         auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
@@ -13474,7 +13474,7 @@ class MLIRGenImpl
             auto varValue = V(result);
 
             // review capturing by ref.  it should match storage type
-            auto refValue = mcl.GetReferenceOfLoadOp(location, varValue);
+            auto refValue = mcl.GetReferenceFromValue(location, varValue);
             if (refValue)
             {
                 capturedValues.push_back(refValue);
@@ -15853,7 +15853,7 @@ genContext);
 
                     auto fieldValue = mlirGenPropertyAccessExpression(location, classNull, fieldInfo.id, genContext);
                     assert(fieldValue);
-                    auto fieldRef = mcl.GetReferenceOfLoadOp(location, fieldValue);
+                    auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
 
                     // cast to int64
                     CAST_A(fieldAddrAsInt, location, mth.getIndexType(), fieldRef, genContext);
@@ -16110,7 +16110,7 @@ genContext);
                             auto fieldValue = mlirGenPropertyAccessExpression(location, objectNull,
                                                                               methodOrField.fieldInfo.id, genContext);
                             assert(fieldValue);
-                            auto fieldRef = mcl.GetReferenceOfLoadOp(location, fieldValue);
+                            auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
 
                             LLVM_DEBUG(llvm::dbgs() << "\n!! vtable field: " << methodOrField.fieldInfo.id
                                                     << " type: " << methodOrField.fieldInfo.type
@@ -16269,7 +16269,7 @@ genContext);
                         auto classNull = cast(location, newClassPtr->classType, nullObj, genContext);
                         auto fieldValue = mlirGenPropertyAccessExpression(location, classNull,
                                                                           methodOrField.fieldInfo.id, genContext);
-                        auto fieldRef = mcl.GetReferenceOfLoadOp(location, fieldValue);
+                        auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
                         if (!fieldRef)
                         {
                             emitError(location) << "can't find reference for field: " << methodOrField.fieldInfo.id

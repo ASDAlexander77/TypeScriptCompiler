@@ -197,6 +197,8 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 };
 } // end anonymous namespace
 
+#undef DEBUG_TYPE
+
 /// Create pass.
 std::unique_ptr<mlir::Pass> mlir_ts::createGCPass(CompileOptions &compileOptions)
 {

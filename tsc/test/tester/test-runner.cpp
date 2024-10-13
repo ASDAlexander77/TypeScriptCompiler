@@ -346,8 +346,8 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     batFile << "del " << objs.str() << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
     batFile << "del %FILENAME%.exe" << std::endl;
-    batFile << "del %FILENAME%.lib" << std::endl;
-    batFile << "del %FILENAME%.dll" << std::endl;    
+    batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
+    batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;    
     batFile << "echo on" << std::endl;
     batFile.close();
 #else
@@ -464,12 +464,14 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
         batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
 
+        batFile << "echo off" << std::endl;
         batFile << "del " << shared_libs.str() << std::endl;
         batFile << "del " << shared_dlls.str() << std::endl;
 
         batFile << "del %FILENAME%.exe" << std::endl;
-        batFile << "del %FILENAME%.lib" << std::endl;
-        batFile << "del %FILENAME%.dll" << std::endl;
+        batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
+        batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;
+        batFile << "echo on" << std::endl;
     }
 
     batFile.close();
@@ -606,7 +608,7 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         }
         else
         {
-            std::string msg = "unknown param";
+            std::string msg = "unknown param or file does not exist: ";
             msg.append(argv[index]);
             throw msg.c_str();
         }

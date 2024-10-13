@@ -156,6 +156,8 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
 };
 } // end anonymous namespace
 
+#undef DEBUG_TYPE
+
 /// Create pass.
 std::unique_ptr<mlir::Pass> mlir_ts::createRelocateConstantPass()
 {

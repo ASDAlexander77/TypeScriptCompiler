@@ -8,7 +8,6 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
-#include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
@@ -1018,8 +1017,8 @@ class CastLogicHelper
 
     mlir::Value castToOpaqueType(mlir::Value in, mlir::Type inLLVMType)
     {
-        MLIRCodeLogic mcl(rewriter.getContext());
-        auto variableOp = mcl.GetReferenceOfLoadOp(loc, in);
+        MLIRTypeHelper mth(rewriter.getContext());
+        auto variableOp = mth.GetReferenceOfLoadOp(in);
         if (variableOp)
         {
             return clh.castToI8Ptr(variableOp);
