@@ -6097,6 +6097,11 @@ class MLIRGenImpl
             location, resultType ? mlir::TypeRange{resultType} : mlir::TypeRange(), mlir::ValueRange{},
             mlir::ValueRange{}, [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                 DITableScopeT debugAsyncCodeScope(debugScope);
+                MLIRDebugInfoHelper mdi(builder, debugScope);
+
+                // TODO: temp hack to break wrong chain on scopes because 'await' create extra function wrap
+                mdi.clearDebugScope();
+                mdi.setLexicalBlock(location);
 
                 result = mlirGen(awaitExpressionAST->expression, genContext);
                 if (result)
@@ -6963,6 +6968,11 @@ class MLIRGenImpl
                 [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                     GenContext execOpBodyGenContext(genContext);
                     DITableScopeT debugAsyncCodeScope(debugScope);
+                    MLIRDebugInfoHelper mdi(builder, debugScope);
+                    
+                    // TODO: temp hack to break wrong chain on scopes because 'await' create extra function wrap
+                    mdi.clearDebugScope();
+                    mdi.setLexicalBlock(location);
 
                     if (forStatementAST->statement == SyntaxKind::Block)
                     {
