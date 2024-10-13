@@ -230,9 +230,9 @@ void deleteFiles(std::string tempOutputFileNameNoExt)
 {
     std::stringstream mask;
 #if WIN32
-    mask << "del " << tempOutputFileNameNoExt << ".*";
+    mask << "del " << tempOutputFileNameNoExt << ".bat " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << ".exe " << tempOutputFileNameNoExt << ".obj";
 #else
-    mask << "rm " << tempOutputFileNameNoExt << ".*";
+    mask << "rm " << tempOutputFileNameNoExt << ".sh " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << " " << tempOutputFileNameNoExt << ".o";
 #endif
 
     auto delCmd = mask.str();
@@ -268,7 +268,7 @@ std::string getTempOutputFileNameNoExt(std::string file)
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 
     std::string fileNameNoExt = fs::path(file).stem().string();
-    auto fileNameNoExtWithMs = fileNameNoExt + std::to_string(ms.count());
+    auto fileNameNoExtWithMs = fileNameNoExt + "-" + std::to_string(ms.count()) + "-" + std::to_string(rand());
 
     std::cout << "Test file: " << fileNameNoExtWithMs << " path: " << file << std::endl;
 
