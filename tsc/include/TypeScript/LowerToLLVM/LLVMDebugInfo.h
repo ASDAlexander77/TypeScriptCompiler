@@ -118,7 +118,7 @@ class LLVMDebugInfoHelper
         }
 
         // special case
-        if (auto anyType = type.dyn_cast_or_null<mlir_ts::AnyType>())
+        if (auto anyType = type.dyn_cast<mlir_ts::AnyType>())
         {
             return getDIType(anyType, file, line, scope);
         }
@@ -130,13 +130,18 @@ class LLVMDebugInfoHelper
         }
 #endif        
 
-        if (auto unionType = type.dyn_cast_or_null<mlir_ts::UnionType>())
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
             MLIRTypeHelper mth(context);
             if (mth.isUnionTypeNeedsTag(unionType))
             {
                 return getDIType(unionType, file, line, scope);
             }
+        }
+
+        if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+        {
+            return getDIType(tupleType, file, line, scope);
         }
 
         if (auto classType = type.dyn_cast_or_null<mlir_ts::ClassType>())
@@ -288,6 +293,42 @@ class LLVMDebugInfoHelper
         auto diTypeAttrClassType = getDIPointerType(getDITypeScriptType(classType.getStorageType(), file, line, scope), file, line, scope);
         return diTypeAttrClassType;        
     } 
+
+    LLVM::DITypeAttr getDIType(mlir_ts::TupleType tupleType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        MLIRTypeHelper mth(context);
+        llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+        auto hasFields = mlir::succeeded(mth.getFields(tupleType, destTupleFields, true));
+
+        CompositeSizesTrack sizesTrack(llvmtch);
+
+        llvm::SmallVector<LLVM::DINodeAttr> elements;
+        for (auto [index, fieldInfo] : enumerate(destTupleFields))
+        {
+            auto elementType = fieldInfo.type;
+            auto llvmElementType = llvmtch.typeConverter.convertType(elementType);
+            sizesTrack.nextElementType(llvmElementType);
+
+            // name
+            StringAttr name = StringAttr::get(context, std::to_string(index));
+            if (hasFields)
+            {
+                auto fieldId = fieldInfo.id;
+                if (auto strFieldId = fieldId.dyn_cast_or_null<mlir::StringAttr>())
+                {
+                    name = strFieldId;
+                }
+            }
+
+            auto elementDiType = getDITypeScriptType(elementType, file, line, scope);
+            auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, 
+                sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits);
+            elements.push_back(wrapperDiType);
+        }
+
+        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, MLIRHelper::getAnonymousName(tupleType, "tuple")), 
+            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements);
+    }    
 
 private:
 
