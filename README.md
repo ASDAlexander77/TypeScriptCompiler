@@ -9,6 +9,11 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new 
+- improved ```generating debug information``` more info here: [Wiki:How-To](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/How-To#compile-and-debug-with-visual-studio-code)
+```cmd
+tsc --di --opt_level=0 --emit=exe example.ts
+```
+
 - cast from Union Types
 ```TypeScript
 let a: string | number = 5;

@@ -1604,8 +1604,8 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         auto in = transformed.getIn();
 
         auto i8PtrTy = th.getI8PtrType();
-        auto valueType = transformed.getIn().getType();
-        auto resType = tch.convertType(op.getType());
+        auto valueType = in.getType();
+        auto resType = tch.convertType(op.getRes().getType());
 
         mlir::SmallVector<mlir::Type> types;
         types.push_back(i8PtrTy);
