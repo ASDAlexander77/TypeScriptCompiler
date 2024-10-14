@@ -310,6 +310,25 @@ class LLVMDebugInfoHelper
 
     LLVM::DITypeAttr getDITypeWithFields(mlir::Type typeWithFields, std::string name, bool isNamePrefix, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
+        if (!isNamePrefix)
+        {
+            if (auto diType = namedTypes.lookup(name))
+            {
+                return diType;
+            }    
+
+            if (usedTypes.contains(typeWithFields)) {
+                // create forward declaration
+                auto fwdCompositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, 
+                    StringAttr::get(context, name), 
+                    file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::FwdDecl, 0, 0, {});
+
+                return fwdCompositeType;
+            }
+
+            usedTypes.insert(typeWithFields);            
+        }
+
         MLIRTypeHelper mth(context);
         llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
         auto hasFields = mlir::succeeded(mth.getFields(typeWithFields, destTupleFields, true));
@@ -340,9 +359,16 @@ class LLVMDebugInfoHelper
             elements.push_back(wrapperDiType);
         }
 
-        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, 
+        auto compositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, 
             StringAttr::get(context, isNamePrefix ? MLIRHelper::getAnonymousName(typeWithFields, name.c_str()) : name), 
             file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements);
+
+        if (!isNamePrefix)
+        {
+            namedTypes.insert_or_assign(name, compositeType);
+        }
+
+        return compositeType;          
     }    
 
 private:
