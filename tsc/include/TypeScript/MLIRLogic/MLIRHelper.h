@@ -138,7 +138,10 @@ class MLIRHelper
             .Case<mlir::FusedLoc>([&](auto loc) {
                 for (auto subLoc : loc.getLocations())
                 {
+                    if (subLoc.isa<mlir::UnknownLoc>())
+                        continue;                    
                     getAnonymousNameStep(ssName, subLoc);
+                    break;
                 }
             });        
     }
@@ -162,9 +165,10 @@ class MLIRHelper
             .Case<mlir::FusedLoc>([&](auto loc) {
                 for (auto subLoc : loc.getLocations())
                 {
+                    if (result.isa<mlir::UnknownLoc>())
+                        continue;
                     result = unwrapFileLineColLocation(subLoc);
-                    if (!result.isa<mlir::UnknownLoc>())
-                        break;
+                    break;
                 }
             });        
 
