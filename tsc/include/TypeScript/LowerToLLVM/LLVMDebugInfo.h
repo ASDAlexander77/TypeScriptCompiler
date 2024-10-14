@@ -122,6 +122,11 @@ class LLVMDebugInfoHelper
             return getDIType(stringType, file, line, scope);
         }
 
+        if (auto opaqueType = type.dyn_cast<mlir_ts::OpaqueType>())
+        {
+            return getDIType(opaqueType, file, line, scope);
+        }
+
         // special case
         if (auto anyType = type.dyn_cast<mlir_ts::AnyType>())
         {
@@ -261,6 +266,15 @@ class LLVMDebugInfoHelper
         StringRef typeName = "char";
         auto typeCode = dwarf::DW_ATE_signed_char;
         auto size = 8;
+        auto diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), size, typeCode);
+        return getDIPointerType(diTypeAttr, file, line, scope);
+    }     
+
+    LLVM::DITypeAttr getDIType(mlir_ts::OpaqueType opaqueType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        StringRef typeName = "address";
+        auto typeCode = dwarf::DW_ATE_address;
+        auto size = 0;
         auto diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), size, typeCode);
         return getDIPointerType(diTypeAttr, file, line, scope);
     }     
