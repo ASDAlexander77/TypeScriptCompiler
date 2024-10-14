@@ -141,7 +141,7 @@ class MLIRDebugInfoHelper
             auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                 builder.getContext(), compileUnitAttr, scopeAttr, 
                 funcNameAttr, funcNameAttr, 
-                compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);      
+                compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);   
 
             debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
             debugScope.insert(DEBUG_SCOPE, subprogramAttr);

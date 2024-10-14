@@ -37,6 +37,7 @@
 #include "TypeScript/TypeScriptPassContext.h"
 #include "TypeScript/LowerToLLVMLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMDebugInfo.h"
+#include "TypeScript/LowerToLLVM/LLVMDebugInfoFixer.h"
 
 #include "scanner_enums.h"
 
@@ -973,8 +974,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
     LogicalResult matchAndRewrite(mlir_ts::FuncOp funcOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto location = funcOp.getLoc();
 
         auto &typeConverter = *getTypeConverter();
@@ -1092,6 +1091,19 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         }
 
         rewriter.eraseOp(funcOp);
+
+        // debug info - adding return type
+        // if (tsLlvmContext->compileOptions.generateDebugInfo)
+        // {
+        //     if (newFuncOp.getResultTypes().size() > 0)
+        //     {
+        //         LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
+
+        //         LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
+        //         //ldif.fixFuncOp(newFuncOp);
+        //         //ldif.removeScope(newFuncOp);
+        //     }
+        // }
 
         return success();
     }
@@ -1797,11 +1809,11 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
             //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
-            LocationHelper lh(rewriter.getContext());
             if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
             {
                 if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
                 {
+                    LocationHelper lh(rewriter.getContext());
                     LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
                     LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
 

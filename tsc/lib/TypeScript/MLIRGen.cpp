@@ -22463,7 +22463,8 @@ genContext);
         auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
         auto end =
             mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
-        return mlir::FusedLoc::get(builder.getContext(), {begin}, end);
+        //return mlir::FusedLoc::get(builder.getContext(), {begin}, end);
+        return mlir::FusedLoc::get(builder.getContext(), {begin, end});
     }
 
     mlir::Location locFuseWithScope(mlir::Location location)

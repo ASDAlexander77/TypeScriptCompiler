@@ -141,12 +141,17 @@ class LLVMDebugInfoHelper
 
         if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
-            return getDIType(tupleType, file, line, scope);
+            return getDITypeWithFields(tupleType, "tuple", true, file, line, scope);
         }
 
         if (auto classType = type.dyn_cast_or_null<mlir_ts::ClassType>())
         {
             return getDIType(classType, file, line, scope);
+        }
+
+        if (auto classStorageType = type.dyn_cast<mlir_ts::ClassStorageType>())
+        {
+            return getDITypeWithFields(classStorageType, classStorageType.getName().getValue().str(), false, file, line, scope);
         }
 
         return getDILLVMType(llvmtch.typeConverter.convertType(type), file, line, scope);
@@ -294,11 +299,11 @@ class LLVMDebugInfoHelper
         return diTypeAttrClassType;        
     } 
 
-    LLVM::DITypeAttr getDIType(mlir_ts::TupleType tupleType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDITypeWithFields(mlir::Type typeWithFields, std::string name, bool isNamePrefix, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         MLIRTypeHelper mth(context);
         llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
-        auto hasFields = mlir::succeeded(mth.getFields(tupleType, destTupleFields, true));
+        auto hasFields = mlir::succeeded(mth.getFields(typeWithFields, destTupleFields, true));
 
         CompositeSizesTrack sizesTrack(llvmtch);
 
@@ -326,7 +331,8 @@ class LLVMDebugInfoHelper
             elements.push_back(wrapperDiType);
         }
 
-        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, MLIRHelper::getAnonymousName(tupleType, "tuple")), 
+        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, 
+            StringAttr::get(context, isNamePrefix ? MLIRHelper::getAnonymousName(typeWithFields, name.c_str()) : name), 
             file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements);
     }    
 
