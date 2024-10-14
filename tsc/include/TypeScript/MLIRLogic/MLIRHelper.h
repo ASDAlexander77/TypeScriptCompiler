@@ -135,7 +135,7 @@ class MLIRHelper
             .Case<mlir::CallSiteLoc>([&](auto loc) {
                 getAnonymousNameStep(ssName, loc.getCaller());
             })        
-            .Case<mlir::FusedLoc>([&](auto loc) {
+            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
                 for (auto subLoc : loc.getLocations())
                 {
                     if (subLoc.isa<mlir::UnknownLoc>())

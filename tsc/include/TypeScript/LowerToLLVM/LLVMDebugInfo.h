@@ -84,6 +84,8 @@ struct CompositeSizesTrack
 
 class LLVMDebugInfoHelper
 {
+    MLIRContext *context;
+    LLVMTypeConverterHelper llvmtch;
     llvm::StringMap<LLVM::DITypeAttr> namedTypes;
     mlir::SmallPtrSet<mlir::Type, 32> usedTypes;
 
@@ -530,9 +532,6 @@ private:
         return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_union_type, StringAttr::get(context, MLIRHelper::getAnonymousName(unionType, "union")), 
             file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizeInBits, sizesTrack.alignInBits, elements);
     }
-  private:
-    MLIRContext *context;
-    LLVMTypeConverterHelper llvmtch;
 };
 
 }
