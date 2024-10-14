@@ -66,9 +66,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set_Options()
 
-if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-message(STATUS ">>> Test-runner is DEBUG")
+if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
+message(STATUS ">>> Test-runner is Release")
 add_definitions(test-runner -DNDEBUG)
+else()
+message(STATUS ">>> Test-runner is Debug")
 endif()
 add_executable(test-runner test-runner.cpp)
 target_link_libraries(test-runner PRIVATE ${LIBS})
