@@ -1101,7 +1101,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         //         LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
         //         //ldif.fixFuncOp(newFuncOp);
-        //         //ldif.removeScope(newFuncOp);
+        //         ldif.removeScope(newFuncOp);
         //     }
         // }
 
