@@ -1063,7 +1063,7 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   );
 
   let results = (outs
-    Res<TypeScript_AnyRefLike, "", [MemAlloc]>:$reference
+    Res<TypeScript_Ref, "", [MemAlloc]>:$reference
   );
 
   let assemblyFormat = "`(` $initializer `)` `{` $captured `}` attr-dict `:` type($initializer) `->` type($reference)";
@@ -1103,7 +1103,7 @@ def TypeScript_AllocaOp : TypeScript_Op<"Alloca", []> {
   );
 
   let results = (outs
-    Res<TypeScript_AnyRefLike, "", [MemAlloc<AutomaticAllocationScopeResource>]>:$reference
+    Res<TypeScript_Ref, "", [MemAlloc<AutomaticAllocationScopeResource>]>:$reference
   );
 
   let assemblyFormat = "`(` $count `)` attr-dict `:` type($reference)";

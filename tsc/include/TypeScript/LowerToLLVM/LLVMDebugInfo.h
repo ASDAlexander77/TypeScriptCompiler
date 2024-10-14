@@ -117,6 +117,11 @@ class LLVMDebugInfoHelper
             return basicType;
         }
 
+        if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
+        {
+            return getDIType(stringType, file, line, scope);
+        }
+
         // special case
         if (auto anyType = type.dyn_cast<mlir_ts::AnyType>())
         {
@@ -251,6 +256,15 @@ class LLVMDebugInfoHelper
         return diTypeAttr;
     }    
 
+    LLVM::DITypeAttr getDIType(mlir_ts::StringType stringType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        StringRef typeName = "char";
+        auto typeCode = dwarf::DW_ATE_signed_char;
+        auto size = 8;
+        auto diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), size, typeCode);
+        return getDIPointerType(diTypeAttr, file, line, scope);
+    }     
+
     LLVM::DITypeAttr getDIType(mlir_ts::AnyType anyType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         auto diBodyType = getDIStructType("any", {
@@ -278,8 +292,7 @@ class LLVMDebugInfoHelper
     LLVM::DITypeAttr getDIType(mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         auto strType = mlir_ts::StringType::get(context);
-        auto llvmStrType = llvmtch.typeConverter.convertType(strType);
-        auto diStrType = getDIType(llvmStrType, strType, file, line, scope);
+        auto diStrType = getDITypeScriptType(strType, file, line, scope);
 
         auto diTypeAttrUnion = getDIUnionType(unionType, file, line, scope);
 
@@ -291,10 +304,6 @@ class LLVMDebugInfoHelper
 
     LLVM::DITypeAttr getDIType(mlir_ts::ClassType classType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        auto strType = mlir_ts::StringType::get(context);
-        auto llvmStrType = llvmtch.typeConverter.convertType(strType);
-        auto diStrType = getDIType(llvmStrType, strType, file, line, scope);
-
         auto diTypeAttrClassType = getDIPointerType(getDITypeScriptType(classType.getStorageType(), file, line, scope), file, line, scope);
         return diTypeAttrClassType;        
     } 
@@ -470,9 +479,9 @@ private:
             if (sizesTrack.elementSizeInBits > sizeInBits) sizeInBits = sizesTrack.elementSizeInBits;
 
             // name
-            StringAttr name = mth.getLabelName(elementType);
+            auto name = mth.getLabelName(elementType);
 
-            auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
+            auto elementDiType = getDITypeScriptType(elementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, 
                 elementDiType, sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, 0);
             elements.push_back(wrapperDiType);

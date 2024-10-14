@@ -1757,6 +1757,9 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         auto isCaptured = false;
 #endif
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! variable op: " << varOp
+                                << "\n";);
+
         LLVM_DEBUG(llvm::dbgs() << "\n!! variable allocation: " << storageType << " is captured: " << isCaptured
                                 << "\n";);
 
