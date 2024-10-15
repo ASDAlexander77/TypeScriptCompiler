@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "pass"
-
 #include "mlir/Pass/Pass.h"
 
 #include "TypeScript/TypeScriptDialect.h"
@@ -14,6 +12,8 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+
+#define DEBUG_TYPE "pass"
 
 namespace mlir_ts = mlir::typescript;
 
@@ -50,7 +50,7 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
 
     Operation *relocateConst(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
     {
-        // find fist non-constant op
+        // find first non-constant op
         auto firstNonConstOp = seekFirstNonConstOp(f);
         if (firstNonConstOp)
         {
@@ -155,6 +155,8 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
     }
 };
 } // end anonymous namespace
+
+#undef DEBUG_TYPE
 
 /// Create pass.
 std::unique_ptr<mlir::Pass> mlir_ts::createRelocateConstantPass()

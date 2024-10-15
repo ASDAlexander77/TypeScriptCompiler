@@ -6067,7 +6067,7 @@ struct Parser
     //     return expression;
     // }
 
-    auto parseCallExpressionRest(number pos, LeftHandSideExpression expression) -> LeftHandSideExpression {
+    auto parseCallExpressionRest(pos_type pos, LeftHandSideExpression expression) -> LeftHandSideExpression {
         while (true) {
             expression = parseMemberExpressionRest(pos, expression, /*allowOptionalChain*/ true);
             NodeArray<TypeNode> typeArguments;
@@ -7141,7 +7141,7 @@ struct Parser
         }        
     }
 
-    auto tryReuseAmbientDeclaration(number pos) -> Statement
+    auto tryReuseAmbientDeclaration(pos_type pos) -> Statement
     {
         // TODO(jakebailey): this is totally wrong; `parsingContext` is the result of ORing a bunch of `1 << ParsingContext.XYZ`.
         // The enum should really be a bunch of flags.        
@@ -7627,7 +7627,7 @@ struct Parser
         return false;
     }
 
-    auto parseClassStaticBlockDeclaration(number pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> ClassStaticBlockDeclaration {
+    auto parseClassStaticBlockDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<ModifierLike> modifiers) -> ClassStaticBlockDeclaration {
         parseExpectedToken(SyntaxKind::StaticKeyword);
         auto body = parseClassStaticBlockBody();
         auto node = withJSDoc(finishNode(factory.createClassStaticBlockDeclaration(body), pos), hasJSDoc);

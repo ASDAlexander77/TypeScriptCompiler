@@ -12,6 +12,8 @@
 
 #include <functional>
 
+#define DEBUG_TYPE "mlir"
+
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
@@ -1109,6 +1111,7 @@ class MLIRTypeHelper
         return {MatchResultType::Match, 0};
     }
 
+    // it has different code to MLIRCodeLogic - GetReferenceOfLoadOp
     mlir::Value GetReferenceOfLoadOp(mlir::Value value)
     {
         if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(value.getDefiningOp()))
@@ -1120,7 +1123,7 @@ class MLIRTypeHelper
 
         return mlir::Value();
     }
-
+    
     template <typename T1, typename T2> bool canCastFromToLogic(T1 type, T2 matchType)
     {
         if (type.getFields().size() != matchType.getFields().size())
@@ -3417,5 +3420,7 @@ protected:
 };
 
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_COMMONGENLOGIC_MLIRTYPEHELPER_H_

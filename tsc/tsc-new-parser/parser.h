@@ -17,9 +17,9 @@ namespace ts
 template <typename R = Node, typename T = Node> using FuncT = std::function<R(T)>;
 template <typename R = Node, typename T = Node> using FuncWithParentT = std::function<R(T, T)>;
 
-typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
+typedef std::function<Node(SyntaxKind, pos_type, number)> NodeCreateFunc;
 
-typedef std::function<void(number, number, DiagnosticMessage)> PragmaDiagnosticReporter;
+typedef std::function<void(pos_type, number, DiagnosticMessage)> PragmaDiagnosticReporter;
 
 typedef std::function<void(Node)> NodeCreateCallbackFunc;
 

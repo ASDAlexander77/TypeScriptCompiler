@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "llvm"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Defines.h"
@@ -39,11 +37,14 @@
 #include "TypeScript/TypeScriptPassContext.h"
 #include "TypeScript/LowerToLLVMLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMDebugInfo.h"
+#include "TypeScript/LowerToLLVM/LLVMDebugInfoFixer.h"
 
 #include "scanner_enums.h"
 
 #define DISABLE_SWITCH_STATE_PASS 1
 #define ENABLE_MLIR_INIT
+
+#define DEBUG_TYPE "llvm"
 
 using namespace mlir;
 using namespace ::typescript;
@@ -57,10 +58,9 @@ namespace
 {
 struct TsLlvmContext
 {
-    TsLlvmContext(CompileOptions& compileOptions) : compileOptions(compileOptions), debugEnabled(false) {};
+    TsLlvmContext(CompileOptions& compileOptions) : compileOptions(compileOptions) {};
 
     CompileOptions& compileOptions;
-    bool debugEnabled;
 };
 
 template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
@@ -565,7 +565,7 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
 
         auto allocInStack = op.getAllocInStack().has_value() && op.getAllocInStack().value();
 
-        mlir::Value newStringValue = allocInStack ? rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, size, true)
+        mlir::Value newStringValue = allocInStack ? ch.Alloca(i8PtrTy, size, true)
                                                   : ch.MemoryAllocBitcast(i8PtrTy, size);
 
         // copy
@@ -739,7 +739,7 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
         auto bufferSizeValue = clh.createI64ConstantOf(2);
         // TODO: review it, !! we can't allocate it in stack - otherwise when returned back from function, it will be poisned
         // TODO: maybe you need to add mechanizm to convert stack values to heap when returned from function
-        //auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        //auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
         auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
 
         auto index0Value = clh.createI32ConstantOf(0);
@@ -974,8 +974,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
     LogicalResult matchAndRewrite(mlir_ts::FuncOp funcOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto location = funcOp.getLoc();
 
         auto &typeConverter = *getTypeConverter();
@@ -1000,43 +998,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         {
             auto argAttrRange = argAttrs.template getAsRange<DictionaryAttr>();
             argDictAttrs.append(argAttrRange.begin(), argAttrRange.end());
-        }
-
-        // debug info
-        tsLlvmContext->debugEnabled = false;
-        auto module = funcOp->getParentOfType<mlir::ModuleOp>();
-        if (auto fusedLocWith = module.getLoc().dyn_cast<mlir::FusedLoc>())
-        {
-            if (auto compileUnitAttr = fusedLocWith.getMetadata().dyn_cast_or_null<mlir::LLVM::DICompileUnitAttr>())
-            {
-                auto lineValue = LocationHelper::getLine(location);
-                unsigned line, scopeLine;
-                line = scopeLine = lineValue;
-
-                auto subprogramFlags = LLVM::DISubprogramFlags::Definition;
-                if (compileUnitAttr.getIsOptimized())
-                {
-                    subprogramFlags = subprogramFlags | LLVM::DISubprogramFlags::Optimized;
-                }
-
-                auto type = LLVM::DISubroutineTypeAttr::get(rewriter.getContext(), llvm::dwarf::DW_CC_normal, {/*Add Types here*/});
-
-                auto subprogramAttr = LLVM::DISubprogramAttr::get(
-                    rewriter.getContext(), 
-                    compileUnitAttr, 
-                    compileUnitAttr.getFile(), 
-                    rewriter.getStringAttr(funcOp.getName()), 
-                    rewriter.getStringAttr(funcOp.getName()), 
-                    compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);
-
-                funcOp->setLoc(mlir::FusedLoc::get(rewriter.getContext(), {funcOp->getLoc()}, subprogramAttr));
-
-                auto fusedLocWithSubprogram = mlir::FusedLoc::get(
-                    rewriter.getContext(), {funcOp.getLoc()}, subprogramAttr);
-                location = fusedLocWithSubprogram;
-
-                tsLlvmContext->debugEnabled = true;
-            }
         }
 
         auto convertedFuncType = rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes());
@@ -1130,6 +1091,19 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         }
 
         rewriter.eraseOp(funcOp);
+
+        // debug info - adding return type
+        // if (tsLlvmContext->compileOptions.generateDebugInfo)
+        // {
+        //     if (newFuncOp.getResultTypes().size() > 0)
+        //     {
+        //         LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
+
+        //         LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
+        //         //ldif.fixFuncOp(newFuncOp);
+        //         ldif.removeScope(newFuncOp);
+        //     }
+        // }
 
         return success();
     }
@@ -1630,8 +1604,8 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         auto in = transformed.getIn();
 
         auto i8PtrTy = th.getI8PtrType();
-        auto valueType = transformed.getIn().getType();
-        auto resType = tch.convertType(op.getType());
+        auto valueType = in.getType();
+        auto resType = tch.convertType(op.getRes().getType());
 
         mlir::SmallVector<mlir::Type> types;
         types.push_back(i8PtrTy);
@@ -1783,6 +1757,9 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         auto isCaptured = false;
 #endif
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! variable op: " << varOp
+                                << "\n";);
+
         LLVM_DEBUG(llvm::dbgs() << "\n!! variable allocation: " << storageType << " is captured: " << isCaptured
                                 << "\n";);
 
@@ -1796,19 +1773,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                 count = intAttr.getInt();
             }
 
-            // put all allocs at 'func' top
-            auto parentFuncOp = varOp->getParentOfType<LLVM::LLVMFuncOp>();
-            if (parentFuncOp)
-            {
-                // if inside function (not in global op)
-                mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
-                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
-            }
-            else
-            {
-                allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count));
-            }
+            allocated = ch.Alloca(llvmReferenceType, count);
         }
         else
         {
@@ -1844,35 +1809,35 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 #endif
 
         LLVM::DILocalVariableAttr varInfo;
-        if (tsLlvmContext->debugEnabled)
+        if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
             //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
-            LocationHelper lh(rewriter.getContext());
-            auto [file, line] = lh.getLineAndFile(location);
-
-            LLVM::DIScopeAttr scope;
-            if (auto funcOp = varOp->getParentOfType<LLVM::LLVMFuncOp>())
+            if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
             {
-                if (auto scopeFusedLoc = funcOp->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+                if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
                 {
-                    if (auto namedLoc = varOp->getLoc().dyn_cast<mlir::NameLoc>())
-                    {
-                        LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
-                        LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
+                    LocationHelper lh(rewriter.getContext());
+                    LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+                    LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
 
-                        // TODO: finish the DI logic
-                        unsigned arg = 0;
-                        // TODO: finish the DI logic
-                        unsigned alignInBits = 8;
-                        auto diType = di.getDIType(tch.convertType(storageType), storageType, file, line, file);
+                    auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
+                    auto [line, column] = lineAndColumn;
+                    // clear column
+                    column = 0;
 
-                        auto name = namedLoc.getName();
-                        auto scope = scopeFusedLoc.getMetadata();
-                        varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
-                        rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
+                    // TODO: finish the DI logic
+                    unsigned arg = 0;
+                    // TODO: finish the DI logic
+                    unsigned alignInBits = 8;
+                    auto diType = di.getDIType(tch.convertType(storageType), storageType, file, line, file);
 
-                        allocated.getDefiningOp()->setLoc(mlir::FusedLoc::get(rewriter.getContext(), {allocated.getDefiningOp()->getLoc()}, varInfo));
-                    }
+                    auto name = namedLoc.getName();
+                    auto scope = scopeFusedLoc.getMetadata();
+                    varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
+                    rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
+
+                    // TODO: do I need it? does it have an effect?
+                    allocated.getDefiningOp()->setLoc(mlir::FusedLoc::get(rewriter.getContext(), {allocated.getDefiningOp()->getLoc()}, varInfo));
                 }
             }
         }
@@ -1881,14 +1846,73 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         if (value)
         {
             rewriter.create<LLVM::StoreOp>(location, value, allocated);
-            
-            if (tsLlvmContext->debugEnabled && varInfo)
-            {
+
+#ifdef DBG_INFO_ADD_VALUE_OP            
+            if (tsLlvmContext->compileOptions.generateDebugInfo && varInfo)
+            {                
                 rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
             }
+#endif            
         }
 
         rewriter.replaceOp(varOp, ValueRange{allocated});
+        return success();
+    }
+};
+
+struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
+{
+    using TsLlvmPattern<mlir_ts::DebugVariableOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::DebugVariableOp debugVarOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(debugVarOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        CodeLogicHelper clh(debugVarOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto location = debugVarOp.getLoc();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! debug variable: " << debugVarOp << "\n";);
+
+        //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
+        LocationHelper lh(rewriter.getContext());
+        if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+        {
+            if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
+            {
+                auto value = transformed.getInitializer();
+
+                LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+                LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
+
+                auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
+                auto [line, column] = lineAndColumn;
+                // clear column
+                column = 0;
+
+                // TODO: finish the DI logic
+                unsigned arg = 0;
+                // TODO: finish the DI logic
+                unsigned alignInBits = 8;
+                auto diType = di.getDIType(tch.convertType(value.getType()), debugVarOp.getInitializer().getType(), file, line, file);
+
+                auto name = namedLoc.getName();
+                auto scope = scopeFusedLoc.getMetadata();
+                auto varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
+
+                auto allocated = ch.Alloca(LLVM::LLVMPointerType::get(value.getType()), 1);
+
+                rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
+
+                rewriter.create<LLVM::StoreOp>(location, value, allocated);     
+#ifdef DBG_INFO_ADD_VALUE_OP                                   
+                rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
+#endif
+            }
+        }
+
+        rewriter.eraseOp(debugVarOp);
         return success();
     }
 };
@@ -1956,7 +1980,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         mlir::Value value;
         if (newOp.getStackAlloc().has_value() && newOp.getStackAlloc().value())
         {
-            value = rewriter.create<LLVM::AllocaOp>(loc, resultType, clh.createI32ConstantOf(1));
+            value = ch.Alloca(resultType, 1);
         }
         else
         {
@@ -3145,13 +3169,15 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
         }
 
         rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference());
-        if (tsLlvmContext->debugEnabled)
+#ifdef DBG_INFO_ADD_VALUE_OP        
+        if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
             if (auto varInfo = transformed.getReference().getDefiningOp()->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>())
             {
                 rewriter.create<LLVM::DbgValueOp>(storeOp->getLoc(), transformed.getValue(), varInfo.getMetadata());
             }
         }
+#endif        
 
         return success();
     }
@@ -5957,7 +5983,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
         StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
-        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
+        LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
         CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,

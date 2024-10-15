@@ -79,4 +79,10 @@
 #define DEFAULT_LIB_DIR "defaultlib"
 #define DEFAULT_LIB_NAME "TypeScriptDefaultLib"
 
+#define DEBUG_SCOPE "current"
+#define CU_DEBUG_SCOPE "compileUnit"
+#define FILE_DEBUG_SCOPE "file"
+#define SUBPROGRAM_DEBUG_SCOPE "function"
+#define BLOCK_DEBUG_SCOPE "block"
+
 #endif // DEFINES_H_

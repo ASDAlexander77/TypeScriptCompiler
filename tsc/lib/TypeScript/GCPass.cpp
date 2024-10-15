@@ -1,5 +1,3 @@
-//#define DEBUG_TYPE "pass"
-
 #include "mlir/Pass/Pass.h"
 
 #include "TypeScript/TypeScriptDialect.h"
@@ -15,6 +13,8 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "pass"
 
 using namespace ::typescript;
 namespace mlir_ts = mlir::typescript;
@@ -196,6 +196,8 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
     }
 };
 } // end anonymous namespace
+
+#undef DEBUG_TYPE
 
 /// Create pass.
 std::unique_ptr<mlir::Pass> mlir_ts::createGCPass(CompileOptions &compileOptions)

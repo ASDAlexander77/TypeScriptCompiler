@@ -1,14 +1,13 @@
 #ifndef MLIR_TYPESCRIPT_TYPEOFHELPER_H_
 #define MLIR_TYPESCRIPT_TYPEOFHELPER_H_
 
-#undef DEBUG_TYPE
-#define DEBUG_TYPE "mlir"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
+
+#define DEBUG_TYPE "mlir"
 
 using namespace ::typescript;
 using namespace ts;
