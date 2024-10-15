@@ -140,7 +140,7 @@ jobs:
         working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
         # Execute tests defined by the CMake configuration.  
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-        run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+        run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         shell: pwsh
 
       - name: Create Zip of Windows Asset
@@ -293,7 +293,7 @@ jobs:
         shell: sh
         # Execute tests defined by the CMake configuration.  
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-        run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+        run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
@@ -445,7 +445,7 @@ jobs:
         shell: sh
         # Execute tests defined by the CMake configuration.  
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-        run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+        run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
