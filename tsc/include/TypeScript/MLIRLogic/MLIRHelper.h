@@ -124,6 +124,9 @@ class MLIRHelper
                 // auto fileName = loc.getFilename();
                 auto line = loc.getLine();
                 auto column = loc.getColumn();
+
+                assert(line > 0 || column > 0);
+
                 ssName << 'L' << line << 'C' << column;
             })
             .Case<mlir::NameLoc>([&](auto loc) {
@@ -138,41 +141,9 @@ class MLIRHelper
             .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
                 for (auto subLoc : loc.getLocations())
                 {
-                    if (subLoc.isa<mlir::UnknownLoc>())
-                        continue;                    
                     getAnonymousNameStep(ssName, subLoc);
-                    break;
                 }
             });        
-    }
-
-    static mlir::Location unwrapFileLineColLocation(mlir::Location loc)
-    {
-        mlir::Location result = mlir::UnknownLoc::get(loc.getContext());
-        mlir::TypeSwitch<mlir::LocationAttr>(loc)
-            .Case<mlir::FileLineColLoc>([&](auto loc) {
-                result = loc;
-            })
-            .Case<mlir::NameLoc>([&](auto loc) {
-                result = unwrapFileLineColLocation(loc.getChildLoc());
-            })
-            .Case<mlir::OpaqueLoc>([&](auto loc) {
-                result = unwrapFileLineColLocation(loc.getFallbackLocation());
-            })
-            .Case<mlir::CallSiteLoc>([&](auto loc) {
-                result = unwrapFileLineColLocation(loc.getCaller());
-            })        
-            .Case<mlir::FusedLoc>([&](auto loc) {
-                for (auto subLoc : loc.getLocations())
-                {
-                    if (result.isa<mlir::UnknownLoc>())
-                        continue;
-                    result = unwrapFileLineColLocation(subLoc);
-                    break;
-                }
-            });        
-
-        return result;
     }
 
     static std::string getAnonymousName(mlir::Location loc, const char *prefix)
@@ -181,17 +152,17 @@ class MLIRHelper
         std::stringstream ssName;
         ssName << prefix;
         getAnonymousNameStep(ssName, loc);
-        ssName << 'H' << hash_value(unwrapFileLineColLocation(loc));
         return ssName.str();
     }
 
     static std::string getAnonymousName(mlir::Type type, const char *prefix)
     {
-        // auto calculate name
-        std::stringstream ssName;
-        ssName << prefix;
-        ssName << '_' << type.getAsOpaquePointer();
-        return ssName.str();
+        std::string ssName;
+        llvm::raw_string_ostream s(ssName);
+        s << prefix;
+        s << '_';
+        s << type;
+        return ssName;
     }
 
     static mlir::ArrayRef<int64_t> getStructIndex(mlir::OpBuilder &builder, int64_t index)

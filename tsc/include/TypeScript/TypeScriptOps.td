@@ -44,7 +44,7 @@ def ConstantOp : TypeScript_Op<"Constant",
 
   let hasFolder = 1;
 
-  let assemblyFormat = "attr-dict `:` type($constValue)";
+  
 }
 
 def SymbolRefOp : TypeScript_Op<"SymbolRef", 
@@ -56,7 +56,7 @@ def SymbolRefOp : TypeScript_Op<"SymbolRef",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "attr-dict `:` type($value)";
+  
 }
 
 def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef", 
@@ -68,7 +68,7 @@ def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "`(` $thisVal `)` attr-dict `:` type($thisVal) `->` type($value)";
+  
 }
 
 def VTableOffsetRefOp : TypeScript_Op<"VTableOffsetRef", 
@@ -78,7 +78,7 @@ def VTableOffsetRefOp : TypeScript_Op<"VTableOffsetRef",
   let arguments = (ins TypeScript_AnyRefLike:$vtable, I32Attr:$index);
   let results = (outs TypeScript_AnyRefLike:$value);
 
-  let assemblyFormat = "`(` $vtable `[` $index `]` `)` attr-dict `:` type($vtable) `->` type($value)";
+  
 }
 
 def VirtualSymbolRefOp : TypeScript_Op<"VirtualSymbolRef", 
@@ -90,7 +90,7 @@ def VirtualSymbolRefOp : TypeScript_Op<"VirtualSymbolRef",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "`(` $vtable `[` $index `]` `)` attr-dict `:`  `:`  type($vtable) `->` type($value)";
+  
 }
 
 def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef", 
@@ -102,7 +102,7 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "`(` $thisVal `,` $vtable `[` $index `]` `)` attr-dict `:`  `:` type($thisVal) `,` type($vtable) `->` type($value)";
+  
 }
 
 def AccessorOp : TypeScript_Op<"Accessor", 
@@ -114,7 +114,7 @@ def AccessorOp : TypeScript_Op<"Accessor",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "attr-dict `:` type($value)";
+  
 }
 
 def ThisAccessorOp : TypeScript_Op<"ThisAccessor", 
@@ -125,8 +125,6 @@ def ThisAccessorOp : TypeScript_Op<"ThisAccessor",
   let results = (outs AnyType:$value);
 
   let hasCanonicalizer = 1;
-
-  let assemblyFormat = "`(` $thisVal `)` $getAccessor $setAccessor attr-dict `:` type($thisVal) `->` type($value)";  
 }
 
 def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef", 
@@ -138,7 +136,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "`(` $interfaceVal `)` `[` $index `]` attr-dict `:` type($interfaceVal) `->` type($funcOrFieldReference)";
+  
 }
 
 def TypeRefOp : TypeScript_Op<"TypeRef", 
@@ -148,8 +146,6 @@ def TypeRefOp : TypeScript_Op<"TypeRef",
   let results = (outs AnyType:$value);
 
   let hasCanonicalizer = 1;
-
-  let assemblyFormat = "attr-dict `:` type($value)";   
 }
 
 def NamespaceRefOp : TypeScript_Op<"NamespaceRef", 
@@ -160,8 +156,6 @@ def NamespaceRefOp : TypeScript_Op<"NamespaceRef",
   let results = (outs AnyType:$value);
 
   let hasCanonicalizer = 1;
-
-  let assemblyFormat = "attr-dict `:` type($value)";     
 }
 
 def ClassRefOp : TypeScript_Op<"ClassRef", 
@@ -172,8 +166,6 @@ def ClassRefOp : TypeScript_Op<"ClassRef",
   let results = (outs TypeScript_Class:$value);
 
   let hasCanonicalizer = 1;
-
-  let assemblyFormat = "attr-dict `:` type($value)";    
 }
 
 def InterfaceRefOp : TypeScript_Op<"InterfaceRef", 
@@ -184,8 +176,6 @@ def InterfaceRefOp : TypeScript_Op<"InterfaceRef",
   let results = (outs TypeScript_Interface:$value);
 
   let hasCanonicalizer = 1;
-
-  let assemblyFormat = "attr-dict `:` type($value)";    
 }
 
 def TypeScript_FuncOp : TypeScript_Op<"Func", [
@@ -323,7 +313,7 @@ def TypeScript_NullOp : TypeScript_Op<"Null", [Pure]> {
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "attr-dict `:` type($result)";
+  
 }
 
 def TypeScript_UndefOp : TypeScript_Op<"Undef", [Pure]> {
@@ -351,7 +341,7 @@ def TypeScript_UndefOp : TypeScript_Op<"Undef", [Pure]> {
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "attr-dict `:` type($result)";
+  
 }
 
 def TypeScript_PrintOp : TypeScript_Op<"Print"> {
@@ -361,8 +351,6 @@ def TypeScript_PrintOp : TypeScript_Op<"Print"> {
   }];
 
   let arguments = (ins Variadic<TypeScript_String>:$inputs);
-
-  let assemblyFormat = "`(` $inputs `)` attr-dict `:` type($inputs) ";  
 }
 
 def TypeScript_ConvertFOp : TypeScript_Op<"ConvertF"> {
@@ -389,7 +377,7 @@ def TypeScript_AssertOp : TypeScript_Op<"Assert"> {
 
   let arguments = (ins TypeScript_Boolean:$arg, StrAttr:$msg);
 
-  let assemblyFormat = "$arg `,` $msg attr-dict";
+  
 
   let hasCanonicalizer = 1;
 }
@@ -481,7 +469,7 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
   let arguments = (ins OptionalAttr<BoolAttr>:$stackAlloc);
   let results = (outs Res<TypeScript_AnyClassOrValueRef, "", [MemAlloc]>:$instance);
 
-  let assemblyFormat = "`{` $stackAlloc `}` attr-dict `:` type($instance)";
+  
 }
 
 def TypeScript_NewInterfaceOp : TypeScript_Op<"NewInterface"> {
@@ -493,7 +481,7 @@ def TypeScript_NewInterfaceOp : TypeScript_Op<"NewInterface"> {
   let arguments = (ins TypeScript_AnyRefLike:$thisVal, TypeScript_AnyRefLike:$interfaceVTable);
   let results = (outs TypeScript_Interface:$instance);
 
-  let assemblyFormat = "`(` $thisVal `,` $interfaceVTable `)` attr-dict `:` type($thisVal) `,` type($interfaceVTable) `->` type($instance)";
+  
 }
 
 def ExtractInterfaceThisOp : TypeScript_Op<"ExtractInterfaceThis", 
@@ -503,7 +491,7 @@ def ExtractInterfaceThisOp : TypeScript_Op<"ExtractInterfaceThis",
   let arguments = (ins TypeScript_Interface:$interfaceVal);
   let results = (outs TypeScript_Opaque:$thisVal);
 
-  let assemblyFormat = "`(` $interfaceVal `)` attr-dict `:` type($interfaceVal) `->` type($thisVal)";
+  
 }
 
 def ExtractInterfaceVTableOp : TypeScript_Op<"ExtractInterfaceVTable", 
@@ -513,7 +501,7 @@ def ExtractInterfaceVTableOp : TypeScript_Op<"ExtractInterfaceVTable",
   let arguments = (ins TypeScript_Interface:$interfaceVal);
   let results = (outs TypeScript_Opaque:$vtableVal);
 
-  let assemblyFormat = "`(` $interfaceVal `)` attr-dict `:` type($interfaceVal) `->` type($vtableVal)";
+  
 }
 
 def TypeScript_CreateTupleOp : TypeScript_Op<"CreateTuple"> {
@@ -525,7 +513,7 @@ def TypeScript_CreateTupleOp : TypeScript_Op<"CreateTuple"> {
   let arguments = (ins Variadic<AnyType>:$items);
   let results = (outs TypeScript_Tuple:$instance);
 
-  let assemblyFormat = "`[` $items `]` attr-dict `:` type($items) `->` type($instance)";
+  
 }
 
 def TypeScript_DeconstructTupleOp : TypeScript_Op<"DeconstructTuple"> {
@@ -537,7 +525,7 @@ def TypeScript_DeconstructTupleOp : TypeScript_Op<"DeconstructTuple"> {
   let arguments = (ins TypeScript_TupleLike:$instance);
   let results = (outs Variadic<AnyType>:$results);
 
-  let assemblyFormat = "$instance attr-dict `:` type($instance) `->` `{` type($results) `}`";
+  
 }
 
 def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray", [
@@ -551,7 +539,7 @@ def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray", [
   let arguments = (ins Variadic<AnyType>:$items);
   let results = (outs Res<TypeScript_Array, "", [MemAlloc]>:$instance);
 
-  let assemblyFormat = "`[` $items `]` attr-dict `:` type($items) `->` type($instance)";
+  
 }
 
 def TypeScript_NewEmptyArrayOp : TypeScript_Op<"NewEmptyArray"> {
@@ -563,7 +551,7 @@ def TypeScript_NewEmptyArrayOp : TypeScript_Op<"NewEmptyArray"> {
   let arguments = (ins );
   let results = (outs Res<TypeScript_Array, "", [MemAlloc]>:$instance);
 
-  let assemblyFormat = "attr-dict `:` type($instance)";
+  
 }
 
 def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
@@ -575,7 +563,7 @@ def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
   let arguments = (ins I32:$count);
   let results = (outs Res<TypeScript_Array, "", [MemAlloc]>:$instance);
 
-  let assemblyFormat = "`[` $count `]` attr-dict `:` type($instance)";
+  
 }
 
 def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
@@ -587,7 +575,7 @@ def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
   let arguments = (ins Arg<TypeScript_AnyRefLike, "", [MemFree]>:$reference);
   let results = (outs );
 
-  let assemblyFormat = "`(` $reference `)` attr-dict `:` type($reference)";
+  
 }
 
 def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
@@ -642,10 +630,6 @@ def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfa
     CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
 
     void setCalleeFromCallable(CallInterfaceCallable callee) { (*this)->setAttr("callee", callee.get<SymbolRefAttr>()); }
-  }];
-
-  let assemblyFormat = [{
-    $callee `(` $callOperands `)` attr-dict `:` functional-type($callOperands, results)
   }];
 }
 
@@ -704,7 +688,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "$callee `[` type($callee) `]` `(` $callOperands `)` attr-dict `:` functional-type($callOperands, results)";
+  
 }
 
 def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [
@@ -792,10 +776,6 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
 
     void setCalleeFromCallable(CallInterfaceCallable callee) { (*this)->setAttr("callee", callee.get<SymbolRefAttr>()); }
   }];
-
-  let assemblyFormat = [{
-    $callee `(` $callOperands `)` attr-dict `:` functional-type($callOperands, results)
-  }];
 }
 
 def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
@@ -830,10 +810,6 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
     }    
-  }];
-
-  let assemblyFormat = [{
-      `(` $callOperands `)` attr-dict `:` functional-type($callOperands, results)
   }];
 }
 
@@ -870,10 +846,6 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
     }    
-  }];
-
-  let assemblyFormat = [{
-    $callee `(` $callOperands `)` attr-dict `:` type($callee) `+` functional-type($callOperands, results)
   }];
 }
 
@@ -972,7 +944,7 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [Pure, Return
 
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
 
-  let assemblyFormat = "$results attr-dict `:` type($results)";
+  
 }
 
 def TypeScript_OptionalOp : TypeScript_Op<"Optional", 
@@ -1066,7 +1038,7 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
     Res<TypeScript_Ref, "", [MemAlloc]>:$reference
   );
 
-  let assemblyFormat = "`(` $initializer `)` `{` $captured `}` attr-dict `:` type($initializer) `->` type($reference)";
+  
 }
 
 def TypeScript_DebugVariableOp : TypeScript_Op<"DebugVariable", []> {
@@ -1090,7 +1062,7 @@ def TypeScript_DebugVariableOp : TypeScript_Op<"DebugVariable", []> {
   let results = (outs
   );
 
-  let assemblyFormat = "`(` $initializer `)` attr-dict `:` type($initializer)";
+  
 }
 
 def TypeScript_AllocaOp : TypeScript_Op<"Alloca", []> {
@@ -1106,7 +1078,7 @@ def TypeScript_AllocaOp : TypeScript_Op<"Alloca", []> {
     Res<TypeScript_Ref, "", [MemAlloc<AutomaticAllocationScopeResource>]>:$reference
   );
 
-  let assemblyFormat = "`(` $count `)` attr-dict `:` type($reference)";
+  
 }
 
 // TODO: add verify logic to match types for BoundRef and BoundFunction
@@ -1117,7 +1089,7 @@ def TypeScript_StoreOp : TypeScript_Op<"Store", []> {
   }];
 
   let arguments = (ins AnyType:$value, Arg<TypeScript_RefOrBoundRefOrValueRef, "the reference to store to", [MemWrite]>:$reference);
-  let assemblyFormat = "$value `,` $reference attr-dict `:` type($value) `->` type($reference)";
+  
 }
 
 def TypeScript_LoadOp : TypeScript_Op<"Load", []> {
@@ -1128,7 +1100,7 @@ def TypeScript_LoadOp : TypeScript_Op<"Load", []> {
 
   let arguments = (ins Arg<TypeScript_RefOrBoundRefOrValueRef, "the reference to load from", [MemRead]>:$reference);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "`(` $reference `)` attr-dict `:` type($reference) `->` type($result)";
+  
 
   let hasCanonicalizer = 1;
 }
@@ -1149,7 +1121,7 @@ def TypeScript_ExtractPropertyOp : TypeScript_Op<"ExtractProperty", [Pure]> {
     AnyType:$result
   );
 
-  let assemblyFormat = "`(` $object `,` $position `)` attr-dict `:` type($object) `->` type($result)";
+  
 }
 
 def TypeScript_InsertPropertyOp : TypeScript_Op<"InsertProperty"> {
@@ -1186,7 +1158,7 @@ def TypeScript_ElementRefOp : TypeScript_Op<"ElementRef"> {
     TypeScript_Ref:$result
   );
 
-  let assemblyFormat = "$array `[` $index `]` attr-dict `:` type($array) `[` type($index) `]` `->` type($result)";
+  
 }
 
 def TypeScript_PropertyRefOp : TypeScript_Op<"PropertyRef"> {
@@ -1205,7 +1177,7 @@ def TypeScript_PropertyRefOp : TypeScript_Op<"PropertyRef"> {
     TypeScript_RefOrBoundRef:$result
   );
 
-  let assemblyFormat = "$objectRef `<` $position `>` attr-dict `:` type($objectRef) `->` type($result)";
+  
 }
 
 def TypeScript_PointerOffsetRefOp : TypeScript_Op<"PointerOffsetRef"> {
@@ -1224,7 +1196,7 @@ def TypeScript_PointerOffsetRefOp : TypeScript_Op<"PointerOffsetRef"> {
     TypeScript_Ref:$result
   );
 
-  let assemblyFormat = "$ref `[` $index `]` attr-dict `:` type($ref) `[` type($index) `]` `->` type($result)";
+  
 }
 
 def TypeScript_StoreBoundRefOp : TypeScript_Op<"StoreBoundRef", []> {
@@ -1234,7 +1206,7 @@ def TypeScript_StoreBoundRefOp : TypeScript_Op<"StoreBoundRef", []> {
   }];
 
   let arguments = (ins AnyType:$value, Arg<TypeScript_BoundRef, "the bound reference to store to", [MemWrite]>:$reference);
-  let assemblyFormat = "$value `,` $reference attr-dict `:` type($value) `->` type($reference)";
+  
 }
 
 def TypeScript_LoadBoundRefOp : TypeScript_Op<"LoadBoundRef", []> {
@@ -1245,7 +1217,7 @@ def TypeScript_LoadBoundRefOp : TypeScript_Op<"LoadBoundRef", []> {
 
   let arguments = (ins Arg<TypeScript_BoundRef, "the bound reference to load from", [MemRead]>:$reference);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "`(` $reference `)` attr-dict `:` type($reference) `->` type($result)";
+  
 }
 
 def TypeScript_CreateBoundRefOp : TypeScript_Op<"CreateBoundRef"> {
@@ -1263,7 +1235,7 @@ def TypeScript_CreateBoundRefOp : TypeScript_Op<"CreateBoundRef"> {
     TypeScript_BoundRef:$result
   );
 
-  let assemblyFormat = "$thisVal `:``:` $valueRef attr-dict `:` type($thisVal) `,` type($valueRef) `->` type($result)";
+  
 }
 
 def TypeScript_CreateExtensionFunctionOp : TypeScript_Op<"CreateExtensionFunction"> {
@@ -1281,7 +1253,7 @@ def TypeScript_CreateExtensionFunctionOp : TypeScript_Op<"CreateExtensionFunctio
     TypeScript_ExtensionFunction:$result
   );
 
-  let assemblyFormat = "$thisVal `,` $func `:` type($thisVal) `,` type($func) attr-dict `->` type($result)";
+  
 
   let hasCanonicalizer = 1;
 }
@@ -1301,7 +1273,7 @@ def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {
     TypeScript_BoundFunctionLike:$result
   );
 
-  let assemblyFormat = "$thisVal `,` $func `:` type($thisVal) `,` type($func) attr-dict `->` type($result)";
+  
 }
 
 def TypeScript_GetThisOp : TypeScript_Op<"GetThis"> {
@@ -1319,7 +1291,7 @@ def TypeScript_GetThisOp : TypeScript_Op<"GetThis"> {
     TypeScript_AnyRefLike:$result
   );
 
-  let assemblyFormat = "$boundFunc attr-dict `:` type($boundFunc) `->` type($result)";
+  
 }
 
 def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
@@ -1337,7 +1309,7 @@ def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
     TypeScript_Function:$result
   );
 
-  let assemblyFormat = "$boundFunc attr-dict `:` type($boundFunc) `->` type($result)";
+  
 }
 
 def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"ArithmeticUnary"> {
@@ -1356,7 +1328,7 @@ def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"ArithmeticUnary"> {
     AnyType:$result
   );
 
-  let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
+  
 }
 
 def TypeScript_PrefixUnaryOp : TypeScript_Op<"PrefixUnary"> {
@@ -1375,7 +1347,7 @@ def TypeScript_PrefixUnaryOp : TypeScript_Op<"PrefixUnary"> {
     AnyType:$result
   );
 
-  let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
+  
 }
 
 def TypeScript_PostfixUnaryOp : TypeScript_Op<"PostfixUnary"> {
@@ -1394,7 +1366,7 @@ def TypeScript_PostfixUnaryOp : TypeScript_Op<"PostfixUnary"> {
     AnyType:$result
   );
 
-  let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
+  
 }
 
 def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"ArithmeticBinary"> {
@@ -1414,7 +1386,7 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"ArithmeticBinary"> {
     AnyType:$result
   );
 
-  let assemblyFormat = "`(` $opCode `)` $operand1 `,` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
+  
 }
 
 def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
@@ -1434,7 +1406,7 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
     TypeScript_Boolean:$result
   );
 
-  let assemblyFormat = "`(` $opCode `)` $operand1 `,` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
+  
   let hasCanonicalizer = 1;
 }
 
@@ -1445,7 +1417,7 @@ def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpI
   }];
   let arguments = (ins AnyType:$in);
   let results = (outs AnyType:$res);
-  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+  
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -1459,7 +1431,7 @@ def TypeScript_BoxOp : TypeScript_Op<"Box", [Pure]> {
   }];
   let arguments = (ins AnyType:$in, TypeScript_String:$typeInfo);
   let results = (outs TypeScript_Any:$res);
-  let assemblyFormat = "$in `,` $typeInfo attr-dict `:` type($in) `,` type($typeInfo) `to` type($res)";
+  
 }
 
 def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [Pure]> {
@@ -1469,7 +1441,7 @@ def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [Pure]> {
   }];
   let arguments = (ins TypeScript_Any:$in);
   let results = (outs AnyType:$res);
-  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+  
 }
 
 def TypeScript_CreateUnionInstanceOp : TypeScript_Op<"CreateUnionInstance", [Pure]> {
@@ -1480,7 +1452,7 @@ def TypeScript_CreateUnionInstanceOp : TypeScript_Op<"CreateUnionInstance", [Pur
   }];
   let arguments = (ins AnyType:$in, TypeScript_String:$typeInfo);
   let results = (outs TypeScript_Union:$res);
-  let assemblyFormat = "$in `,` $typeInfo attr-dict `:` type($in) `,` type($typeInfo) `to` type($res)";
+  
 }
 
 def TypeScript_GetValueFromUnionOp : TypeScript_Op<"GetValueFromUnionOp", [Pure]> {
@@ -1490,7 +1462,7 @@ def TypeScript_GetValueFromUnionOp : TypeScript_Op<"GetValueFromUnionOp", [Pure]
   }];
   let arguments = (ins TypeScript_Union:$in);
   let results = (outs TypeScript_NonUnion:$res);
-  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+  
 }
 
 def TypeScript_GetTypeInfoFromUnionOp : TypeScript_Op<"GetTypeInfoFromUnionOp", [Pure]> {
@@ -1500,7 +1472,7 @@ def TypeScript_GetTypeInfoFromUnionOp : TypeScript_Op<"GetTypeInfoFromUnionOp", 
   }];
   let arguments = (ins TypeScript_Union:$in);
   let results = (outs TypeScript_String:$res);
-  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+  
 }
 
 def TypeScript_DialectCastOp : TypeScript_Op<"DialectCast", [DeclareOpInterfaceMethods<CastOpInterface>, Pure]> {
@@ -1510,7 +1482,7 @@ def TypeScript_DialectCastOp : TypeScript_Op<"DialectCast", [DeclareOpInterfaceM
   }];
   let arguments = (ins AnyType:$in);
   let results = (outs AnyType:$res);
-  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+  
 }
 
 def TypeScript_EntryOp : TypeScript_Op<"Entry"> {
@@ -1615,7 +1587,7 @@ def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [Pure, HasPare
     OpBuilder<(ins),
     [{ build($_builder, $_state, std::nullopt); }]>];
 
-  let assemblyFormat = "attr-dict ($retOperands^ `:` type($retOperands))?";
+  
 }
 
 def TypeScript_IfOp : TypeScript_Op<"If",
@@ -1902,7 +1874,7 @@ def TypeScript_TryOp : TypeScript_Op<"Try",
     OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
   }];
 
-  let assemblyFormat = "$body $cleanup $catches $finally attr-dict";
+  
 }
 
 def TypeScript_CatchOp : TypeScript_Op<"Catch",
