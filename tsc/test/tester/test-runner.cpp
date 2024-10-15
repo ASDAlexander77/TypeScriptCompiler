@@ -81,7 +81,7 @@
 auto jitRun = false;
 auto sharedLibCompiler = false;
 auto sharedLibCompileTypeCompiler = false;
-#ifdef COMPILE_DEBUG
+#ifndef COMPILE_DEBUG
 auto opt = true;
 auto tsc_opt = "--opt --opt_level=3";
 #define JIT_NAME "jit"
