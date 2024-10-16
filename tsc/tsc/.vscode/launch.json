@@ -249,6 +249,7 @@
                 "-mlir-disable-threading",
                 "-mtriple=x86_64-pc-windows-msvc",
                 "--no-default-lib",
+                "-nowarn",
                 "I:/Playground/1.ts",
             ],
             "stopAtEntry": false,

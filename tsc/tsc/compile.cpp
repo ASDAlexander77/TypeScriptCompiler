@@ -20,11 +20,6 @@ using namespace typescript;
 namespace cl = llvm::cl;
 
 extern cl::opt<std::string> inputFilename;
-extern cl::opt<bool> disableGC;
-extern cl::opt<bool> disableWarnings;
-extern cl::opt<bool> generateDebugInfo;
-extern cl::opt<bool> lldbDebugInfo;
-extern cl::opt<std::string> TargetTriple;
 
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::OwningOpRef<mlir::ModuleOp> &module, CompileOptions &compileOptions)
 {
