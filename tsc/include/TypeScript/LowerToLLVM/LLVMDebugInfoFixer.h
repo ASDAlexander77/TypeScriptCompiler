@@ -136,7 +136,7 @@ class LLVMDebugInfoHelperFixer
                     subprogScope.getCompileUnit(), 
                     newScope.cast<mlir::LLVM::DIScopeAttr>(), 
                     subprogScope.getName(), 
-                    mlir::StringAttr::get(subprogScope.getContext(), "---test---"), //subprogScope.getLinkageName(), 
+                    subprogScope.getLinkageName(), 
                     subprogScope.getFile(), 
                     subprogScope.getLine(), 
                     subprogScope.getScopeLine(), 
@@ -245,9 +245,17 @@ class LLVMDebugInfoHelperFixer
             }
 
             auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(rewriter.getContext(), llvm::dwarf::DW_CC_normal, resultTypes);
-            auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(rewriter.getContext(), oldMetadata.getCompileUnit(), oldMetadata.getScope(), 
-                oldMetadata.getName(), mlir::StringAttr::get(rewriter.getContext(), "*main ---test---") /*oldMetadata.getLinkageName()*/, oldMetadata.getFile(), oldMetadata.getLine(), oldMetadata.getScopeLine(), 
-                oldMetadata.getSubprogramFlags(), subroutineTypeAttr);
+            auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
+                rewriter.getContext(), 
+                oldMetadata.getCompileUnit(), 
+                oldMetadata.getScope(), 
+                oldMetadata.getName(), 
+                oldMetadata.getLinkageName(), 
+                oldMetadata.getFile(), 
+                oldMetadata.getLine(), 
+                oldMetadata.getScopeLine(), 
+                oldMetadata.getSubprogramFlags(), 
+                subroutineTypeAttr);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");
 
