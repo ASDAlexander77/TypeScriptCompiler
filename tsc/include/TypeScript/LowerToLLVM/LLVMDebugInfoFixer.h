@@ -136,7 +136,7 @@ class LLVMDebugInfoHelperFixer
                     subprogScope.getCompileUnit(), 
                     newScope.cast<mlir::LLVM::DIScopeAttr>(), 
                     subprogScope.getName(), 
-                    subprogScope.getLinkageName(), 
+                    mlir::StringAttr::get(subprogScope.getContext(), "---test---"), //subprogScope.getLinkageName(), 
                     subprogScope.getFile(), 
                     subprogScope.getLine(), 
                     subprogScope.getScopeLine(), 
@@ -246,14 +246,14 @@ class LLVMDebugInfoHelperFixer
 
             auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(rewriter.getContext(), llvm::dwarf::DW_CC_normal, resultTypes);
             auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(rewriter.getContext(), oldMetadata.getCompileUnit(), oldMetadata.getScope(), 
-                oldMetadata.getName(), oldMetadata.getLinkageName(), oldMetadata.getFile(), oldMetadata.getLine(), oldMetadata.getScopeLine(), 
+                oldMetadata.getName(), mlir::StringAttr::get(rewriter.getContext(), "*main ---test---") /*oldMetadata.getLinkageName()*/, oldMetadata.getFile(), oldMetadata.getLine(), oldMetadata.getScopeLine(), 
                 oldMetadata.getSubprogramFlags(), subroutineTypeAttr);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");
 
-            newFuncOp->setLoc(replaceScope(funcLocWithSubprog, subprogramAttr, oldMetadata));
-
             newFuncOp.walk([&, subprogramAttr](Operation *op) {
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! replacing for: " << *op << "\n");
 
                 op->setLoc(replaceScope(op->getLoc(), subprogramAttr, oldMetadata));
 
@@ -267,6 +267,7 @@ class LLVMDebugInfoHelperFixer
                 }                
             });
 
+            //debugPrint(newFuncOp);
         }
     }
 
@@ -284,6 +285,33 @@ class LLVMDebugInfoHelperFixer
             }
         });
     }    
+
+    void debugPrint(mlir::func::FuncOp newFuncOp) {
+
+        // debug
+        walkMetadata(newFuncOp->getLoc(), [&](mlir::Attribute metadata) {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! metadata: " << metadata << "\n");
+        });
+
+        newFuncOp.walk([&](Operation *op) {
+
+            walkMetadata(op->getLoc(), [&](mlir::Attribute metadata) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! metadata: " << metadata << "\n");
+            });
+
+            // Strip block arguments debug info.
+            for (auto &region : op->getRegions()) {
+                for (auto &block : region.getBlocks()) {
+                    for (auto &arg : block.getArguments()) {
+                        walkMetadata(arg.getLoc(), [&](mlir::Attribute metadata) {
+                            LLVM_DEBUG(llvm::dbgs() << "\n!! metadata: " << metadata << "\n");
+                        });
+                    }
+                }
+            }                
+        });
+
+    }
 };
 
 }
