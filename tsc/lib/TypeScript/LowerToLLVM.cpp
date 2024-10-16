@@ -1093,20 +1093,19 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         rewriter.eraseOp(funcOp);
 
         // debug info - adding return type
-        // if (tsLlvmContext->compileOptions.generateDebugInfo)
-        // {
-        //     LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
-        //     ldif.removeAllMetadata(newFuncOp);
+        if (tsLlvmContext->compileOptions.generateDebugInfo)
+        {
+            //LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
+            //ldif.removeAllMetadata(newFuncOp);
 
-        //     // if (newFuncOp.getResultTypes().size() > 0)
-        //     // {
-        //     //     LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
+            if (newFuncOp.getResultTypes().size() > 0)
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
 
-        //     //     LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
-        //     //     //ldif.fixFuncOp(newFuncOp);
-        //     //     ldif.removeScope(newFuncOp);
-        //     // }
-        // }
+                LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
+                ldif.fixFuncOp(newFuncOp);
+            }
+        }
 
         return success();
     }

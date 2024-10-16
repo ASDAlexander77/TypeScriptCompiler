@@ -12,6 +12,8 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/DebugInfo/DWARF/DWARFUnit.h"
 
+#include <functional>
+
 #define DEBUG_TYPE "llvm"
 
 using namespace mlir;
@@ -34,32 +36,42 @@ class LLVMDebugInfoHelperFixer
 
     static mlir::Location stripMetadata(mlir::Location loc)
     {
-        mlir::Location ret = UnknownLoc::get(loc.getContext());
+        mlir::Location ret = loc;
         mlir::TypeSwitch<mlir::Location>(loc)
             .Case<mlir::FileLineColLoc>([&](mlir::FileLineColLoc loc) {
                 // nothing todo
-                ret = loc;
             })
             .Case<mlir::NameLoc>([&](mlir::NameLoc loc) {
                 auto newChildLoc = stripMetadata(loc.getChildLoc());
-                ret = NameLoc::get(loc.getName(), newChildLoc);
+                if (newChildLoc != loc.getChildLoc()) {
+                    ret = NameLoc::get(loc.getName(), newChildLoc);
+                }
             })
             .Case<mlir::OpaqueLoc>([&](mlir::OpaqueLoc loc) {
                 auto newFallbackLoc = stripMetadata(loc.getFallbackLocation());
-                ret = OpaqueLoc::get(loc.getContext(), newFallbackLoc);
+                if (newFallbackLoc != loc.getFallbackLocation()) {
+                    ret = OpaqueLoc::get(loc.getContext(), newFallbackLoc);
+                }
             })
             .Case<mlir::CallSiteLoc>([&](mlir::CallSiteLoc loc) {
                 auto newCallerLoc = stripMetadata(loc.getCaller());
-                ret = mlir::CallSiteLoc::get(loc.getCallee(), newCallerLoc);
+                if (newCallerLoc != loc.getCaller()) {
+                    ret = mlir::CallSiteLoc::get(loc.getCallee(), newCallerLoc);
+                }
             })        
             .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
                 SmallVector<mlir::Location> newLocs;
+                auto newLoc = false;
                 for (auto subLoc : loc.getLocations())
                 {
-                    newLocs.push_back(stripMetadata(subLoc));
+                    auto newSubLoc = stripMetadata(subLoc);
+                    newLocs.push_back(newSubLoc);
+                    newLoc |= newSubLoc != subLoc;
                 }
 
-                ret = mlir::FusedLoc::get(loc.getContext(), newLocs);
+                if (loc.getMetadata() || newLoc) {
+                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs);
+                }
             })
             .Default([&](mlir::Location loc) { 
                 llvm_unreachable("not implemented");
@@ -67,6 +79,148 @@ class LLVMDebugInfoHelperFixer
 
         return ret;   
     }
+
+    static mlir::Location replaceMetadata(mlir::Location loc, mlir::Attribute newMetadata)
+    {
+        return replaceMetadata(loc, [&](mlir::Attribute currentMetadata) {
+            return newMetadata;
+        });   
+    }
+
+    static mlir::Location replaceMetadataIfEquals(mlir::Location loc, mlir::Attribute newMetadata, mlir::Attribute oldMetadata)
+    {
+        return replaceMetadata(loc, [&](mlir::Attribute currentMetadata) {
+            return (currentMetadata == oldMetadata) ? newMetadata : currentMetadata;
+        });
+    }    
+
+    static mlir::Location replaceScope(mlir::Location loc, mlir::Attribute newScope, mlir::Attribute oldScope)
+    {
+        return replaceMetadata(loc, [&](mlir::Attribute currentMetadata) -> mlir::Attribute {
+            if (currentMetadata == oldScope) 
+            {
+                return newScope;
+            }
+
+            if (auto lexicalBlockAttr = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILexicalBlockAttr>()) {
+                if (lexicalBlockAttr.getScope() == oldScope) {
+                    auto newLexicalBlockAttr = 
+                        mlir::LLVM::DILexicalBlockAttr::get(
+                            currentMetadata.getContext(), 
+                            newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                            lexicalBlockAttr.getFile(), 
+                            lexicalBlockAttr.getLine(), 
+                            lexicalBlockAttr.getColumn());   
+                    return newLexicalBlockAttr;
+                }
+            }
+
+            if (auto localVarScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILocalVariableAttr>()) {
+                if (localVarScope.getScope() == oldScope) {
+                    auto newLocalVar = mlir::LLVM::DILocalVariableAttr::get(
+                        localVarScope.getContext(), 
+                        newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                        localVarScope.getName(), 
+                        localVarScope.getFile(), 
+                        localVarScope.getLine(), 
+                        localVarScope.getArg(), 
+                        localVarScope.getAlignInBits(), 
+                        localVarScope.getType());
+                    return newLocalVar;
+                }
+            }
+
+            if (auto subprogScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DISubprogramAttr>()) {
+                auto newSubprogramAttr = mlir::LLVM::DISubprogramAttr::get(
+                    subprogScope.getContext(), 
+                    subprogScope.getCompileUnit(), 
+                    newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                    subprogScope.getName(), 
+                    subprogScope.getLinkageName(), 
+                    subprogScope.getFile(), 
+                    subprogScope.getLine(), 
+                    subprogScope.getScopeLine(), 
+                    subprogScope.getSubprogramFlags(), 
+                    subprogScope.getType());
+                return newSubprogramAttr;
+            }
+
+            // default case
+            return currentMetadata;
+        });
+    }        
+
+    static mlir::Location replaceMetadata(mlir::Location loc, std::function<mlir::Attribute(mlir::Attribute)> f)
+    {
+        mlir::Location ret = loc;        
+        mlir::TypeSwitch<mlir::Location>(loc)
+            .Case<mlir::FileLineColLoc>([&](mlir::FileLineColLoc loc) {
+                // nothing todo
+            })
+            .Case<mlir::NameLoc>([&](mlir::NameLoc loc) {
+                auto newChildLoc = replaceMetadata(loc.getChildLoc(), f);
+                if (newChildLoc != loc.getChildLoc()) {
+                    ret = NameLoc::get(loc.getName(), newChildLoc);
+                }
+            })
+            .Case<mlir::OpaqueLoc>([&](mlir::OpaqueLoc loc) {
+                auto newFallbackLoc = replaceMetadata(loc.getFallbackLocation(), f);
+                if (newFallbackLoc != loc.getFallbackLocation()) {
+                    ret = OpaqueLoc::get(loc.getContext(), newFallbackLoc);
+                }
+            })
+            .Case<mlir::CallSiteLoc>([&](mlir::CallSiteLoc loc) {
+                auto newCallerLoc = replaceMetadata(loc.getCaller(), f);
+                if (newCallerLoc != loc.getCallee()) {
+                    ret = mlir::CallSiteLoc::get(loc.getCallee(), newCallerLoc);
+                }
+            })        
+            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
+                auto newMetadata = f(loc.getMetadata());
+                if (loc.getMetadata() != newMetadata)
+                {
+                    SmallVector<mlir::Location> newLocs;
+                    for (auto subLoc : loc.getLocations())
+                    {
+                        newLocs.push_back(replaceMetadata(subLoc, f));
+                    }
+
+                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs, newMetadata);
+                }
+            })
+            .Default([&](mlir::Location loc) { 
+                llvm_unreachable("not implemented");
+            });     
+
+        return ret;   
+    }  
+  
+    static void walkMetadata(mlir::Location loc, std::function<void(mlir::Attribute)> f)
+    {
+        mlir::TypeSwitch<mlir::Location>(loc)
+            .Case<mlir::FileLineColLoc>([&](mlir::FileLineColLoc loc) {
+                // nothing todo
+            })
+            .Case<mlir::NameLoc>([&](mlir::NameLoc loc) {
+                walkMetadata(loc.getChildLoc(), f);
+            })
+            .Case<mlir::OpaqueLoc>([&](mlir::OpaqueLoc loc) {
+                walkMetadata(loc.getFallbackLocation(), f);
+            })
+            .Case<mlir::CallSiteLoc>([&](mlir::CallSiteLoc loc) {
+                walkMetadata(loc.getCaller(), f);
+            })        
+            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
+                f(loc.getMetadata());
+                for (auto subLoc : loc.getLocations())
+                {
+                    walkMetadata(subLoc, f);
+                }
+            })
+            .Default([&](mlir::Location loc) { 
+                llvm_unreachable("not implemented");
+            });     
+    }   
 
     void fixFuncOp(mlir::func::FuncOp newFuncOp) {
         auto location = newFuncOp->getLoc();
@@ -97,23 +251,20 @@ class LLVMDebugInfoHelperFixer
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");
 
-            auto newLocation = mlir::FusedLoc::get(rewriter.getContext(), funcLocWithSubprog.getLocations(), subprogramAttr);
-            newFuncOp->setLoc(newLocation);
+            newFuncOp->setLoc(replaceScope(funcLocWithSubprog, subprogramAttr, oldMetadata));
 
-            newFuncOp.walk([&, newLocation, subprogramAttr](Operation *op) {
-                auto opLocation = op->getLoc();
+            newFuncOp.walk([&, subprogramAttr](Operation *op) {
 
-                LLVM_DEBUG(llvm::dbgs() << "\n!! operator: " << *op << " location: " << opLocation << "\n");
+                op->setLoc(replaceScope(op->getLoc(), subprogramAttr, oldMetadata));
 
-                if (auto scopeFusedLoc = opLocation.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
-                {
-                    auto metadata = scopeFusedLoc.getMetadata();
-                    if (auto subprogramAttr = dyn_cast<mlir::LLVM::DISubprogramAttr>(metadata))
-                    {
-                        auto newOpLocation = mlir::FusedLoc::get(rewriter.getContext(), scopeFusedLoc.getLocations(), subprogramAttr);
-                        op->setLoc(newOpLocation);
+                // Strip block arguments debug info.
+                for (auto &region : op->getRegions()) {
+                    for (auto &block : region.getBlocks()) {
+                        for (auto &arg : block.getArguments()) {
+                            arg.setLoc(replaceScope(arg.getLoc(), subprogramAttr, oldMetadata));
+                        }
                     }
-                }
+                }                
             });
 
         }
@@ -124,13 +275,13 @@ class LLVMDebugInfoHelperFixer
             op->setLoc(stripMetadata(op->getLoc()));
 
             // Strip block arguments debug info.
-            // for (auto &region : op->getRegions()) {
-            //     for (auto &block : region.getBlocks()) {
-            //         for (auto &arg : block.getArguments()) {
-            //             arg.setLoc(stripMetadata(arg.getLoc()));
-            //         }
-            //     }
-            // }
+            for (auto &region : op->getRegions()) {
+                for (auto &block : region.getBlocks()) {
+                    for (auto &arg : block.getArguments()) {
+                        arg.setLoc(stripMetadata(arg.getLoc()));
+                    }
+                }
+            }
         });
     }    
 };
