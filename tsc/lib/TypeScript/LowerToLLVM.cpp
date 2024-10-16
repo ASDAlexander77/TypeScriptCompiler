@@ -1095,14 +1095,17 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         // debug info - adding return type
         // if (tsLlvmContext->compileOptions.generateDebugInfo)
         // {
-        //     if (newFuncOp.getResultTypes().size() > 0)
-        //     {
-        //         LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
+        //     LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
+        //     ldif.removeAllMetadata(newFuncOp);
 
-        //         LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
-        //         //ldif.fixFuncOp(newFuncOp);
-        //         ldif.removeScope(newFuncOp);
-        //     }
+        //     // if (newFuncOp.getResultTypes().size() > 0)
+        //     // {
+        //     //     LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
+
+        //     //     LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
+        //     //     //ldif.fixFuncOp(newFuncOp);
+        //     //     ldif.removeScope(newFuncOp);
+        //     // }
         // }
 
         return success();

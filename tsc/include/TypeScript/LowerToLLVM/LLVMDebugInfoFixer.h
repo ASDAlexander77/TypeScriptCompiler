@@ -32,6 +32,42 @@ class LLVMDebugInfoHelperFixer
     {
     }
 
+    static mlir::Location stripMetadata(mlir::Location loc)
+    {
+        mlir::Location ret = UnknownLoc::get(loc.getContext());
+        mlir::TypeSwitch<mlir::Location>(loc)
+            .Case<mlir::FileLineColLoc>([&](mlir::FileLineColLoc loc) {
+                // nothing todo
+                ret = loc;
+            })
+            .Case<mlir::NameLoc>([&](mlir::NameLoc loc) {
+                auto newChildLoc = stripMetadata(loc.getChildLoc());
+                ret = NameLoc::get(loc.getName(), newChildLoc);
+            })
+            .Case<mlir::OpaqueLoc>([&](mlir::OpaqueLoc loc) {
+                auto newFallbackLoc = stripMetadata(loc.getFallbackLocation());
+                ret = OpaqueLoc::get(loc.getContext(), newFallbackLoc);
+            })
+            .Case<mlir::CallSiteLoc>([&](mlir::CallSiteLoc loc) {
+                auto newCallerLoc = stripMetadata(loc.getCaller());
+                ret = mlir::CallSiteLoc::get(loc.getCallee(), newCallerLoc);
+            })        
+            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
+                SmallVector<mlir::Location> newLocs;
+                for (auto subLoc : loc.getLocations())
+                {
+                    newLocs.push_back(stripMetadata(subLoc));
+                }
+
+                ret = mlir::FusedLoc::get(loc.getContext(), newLocs);
+            })
+            .Default([&](mlir::Location loc) { 
+                llvm_unreachable("not implemented");
+            });     
+
+        return ret;   
+    }
+
     void fixFuncOp(mlir::func::FuncOp newFuncOp) {
         auto location = newFuncOp->getLoc();
         if (auto funcLocWithSubprog = dyn_cast<mlir::FusedLocWith<mlir::LLVM::DISubprogramAttr>>(location))
@@ -83,35 +119,20 @@ class LLVMDebugInfoHelperFixer
         }
     }
 
-    void removeScope(mlir::func::FuncOp newFuncOp) {
-        auto location = newFuncOp->getLoc();
-        if (auto funcLocWithSubprog = dyn_cast<mlir::FusedLocWith<mlir::LLVM::DISubprogramAttr>>(location))
-        {
-            auto newLocation = mlir::FusedLoc::get(rewriter.getContext(), funcLocWithSubprog.getLocations());
+    void removeAllMetadata(mlir::func::FuncOp newFuncOp) {
+        newFuncOp->walk([&](Operation *op) {
+            op->setLoc(stripMetadata(op->getLoc()));
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! new location: " << newLocation << "\n");
-
-            newFuncOp->setLoc(newLocation);
-
-            newFuncOp.walk([&](Operation *op) {
-                auto opLocation = op->getLoc();
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! operator: " << *op << " location: " << opLocation << "\n");
-
-                if (auto scopeFusedLoc = opLocation.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
-                {
-                    auto metadata = scopeFusedLoc.getMetadata();
-                    if (auto subprogramAttr = dyn_cast<mlir::LLVM::DISubprogramAttr>(metadata))
-                    {
-                        auto newOpLocation = mlir::FusedLoc::get(rewriter.getContext(), scopeFusedLoc.getLocations());
-                        //op->setLoc(newOpLocation);
-                    }
-                }
-            });
-
-        }
+            // Strip block arguments debug info.
+            // for (auto &region : op->getRegions()) {
+            //     for (auto &block : region.getBlocks()) {
+            //         for (auto &arg : block.getArguments()) {
+            //             arg.setLoc(stripMetadata(arg.getLoc()));
+            //         }
+            //     }
+            // }
+        });
     }    
-
 };
 
 }

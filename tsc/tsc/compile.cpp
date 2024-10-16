@@ -30,9 +30,14 @@ int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, llvm::SourceMgr &s
 {
     auto fileName = llvm::StringRef(inputFilename);
     
-    llvm::SmallString<128> initialFilePath(fileName);
     llvm::SmallString<128> absoluteFilePath("");
-    llvm::sys::fs::real_path(initialFilePath, absoluteFilePath);
+
+    if (fileName != "-") {
+        llvm::SmallString<128> initialFilePath(fileName);
+        llvm::sys::fs::real_path(initialFilePath, absoluteFilePath);
+    } else {
+        absoluteFilePath = fileName;
+    }
 
     // Handle '.ts' input to the compiler.
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(absoluteFilePath);
