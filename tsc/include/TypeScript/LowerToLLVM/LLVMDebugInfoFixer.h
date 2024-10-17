@@ -83,20 +83,6 @@ class LLVMDebugInfoHelperFixer
         return ret;   
     }
 
-    static mlir::Location replaceMetadata(mlir::Location loc, mlir::Attribute newMetadata)
-    {
-        return replaceMetadata(loc, [&](mlir::Attribute currentMetadata) {
-            return newMetadata;
-        });   
-    }
-
-    static mlir::Location replaceMetadataIfEquals(mlir::Location loc, mlir::Attribute newMetadata, mlir::Attribute oldMetadata)
-    {
-        return replaceMetadata(loc, [&](mlir::Attribute currentMetadata) {
-            return (currentMetadata == oldMetadata) ? newMetadata : currentMetadata;
-        });
-    }    
-
     static mlir::Location replaceScope(mlir::Location loc, mlir::Attribute newScope, mlir::Attribute oldScope)
     {
         return replaceMetadata(loc, [&](mlir::Attribute currentMetadata) -> mlir::Attribute {
@@ -173,9 +159,9 @@ class LLVMDebugInfoHelperFixer
                 }
 
                 auto newMetadata = f(loc.getMetadata());
-                if ((loc.getMetadata() && loc.getMetadata() != newMetadata) || anyNew)
+                if (loc.getMetadata() != newMetadata || anyNew)
                 {
-                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs, loc.getMetadata() ? newMetadata : loc.getMetadata());
+                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs, newMetadata);
                 }
             })
             .Case<mlir::UnknownLoc>([&](mlir::UnknownLoc loc) {
@@ -275,7 +261,7 @@ class LLVMDebugInfoHelperFixer
             LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");
 
             // we do not use replaceScope here as we are fixing metadata
-            newFuncOp->setLoc(replaceMetadataIfEquals(location, subprogramAttr, oldMetadata));
+            newFuncOp->setLoc(replaceScope(location, subprogramAttr, oldMetadata));
 
             newFuncOp.walk([&, subprogramAttr](Operation *op) {
 
