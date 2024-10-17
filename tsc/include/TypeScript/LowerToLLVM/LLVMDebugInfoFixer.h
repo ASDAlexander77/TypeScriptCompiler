@@ -271,6 +271,9 @@ class LLVMDebugInfoHelperFixer
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");
 
+            // we do not use replaceScope here as we are fixing metadata
+            newFuncOp->setLoc(replaceMetadata(location, subprogramAttr));
+
             newFuncOp.walk([&, subprogramAttr](Operation *op) {
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! replacing for: " << *op << "\n");
