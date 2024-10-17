@@ -134,18 +134,20 @@ class LLVMDebugInfoHelperFixer
             }
 
             if (auto subprogScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DISubprogramAttr>()) {
-                auto newSubprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-                    subprogScope.getContext(), 
-                    subprogScope.getCompileUnit(), 
-                    newScope.cast<mlir::LLVM::DIScopeAttr>(), 
-                    subprogScope.getName(), 
-                    subprogScope.getLinkageName(), 
-                    subprogScope.getFile(), 
-                    subprogScope.getLine(), 
-                    subprogScope.getScopeLine(), 
-                    subprogScope.getSubprogramFlags(), 
-                    subprogScope.getType());
-                return newSubprogramAttr;
+                if (subprogScope.getScope() == oldScope) {
+                    auto newSubprogramAttr = mlir::LLVM::DISubprogramAttr::get(
+                        subprogScope.getContext(), 
+                        subprogScope.getCompileUnit(), 
+                        newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                        subprogScope.getName(), 
+                        subprogScope.getLinkageName(), 
+                        subprogScope.getFile(), 
+                        subprogScope.getLine(), 
+                        subprogScope.getScopeLine(), 
+                        subprogScope.getSubprogramFlags(), 
+                        subprogScope.getType());
+                    return newSubprogramAttr;
+                }
             }
 
             // default case
