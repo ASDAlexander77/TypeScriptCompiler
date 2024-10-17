@@ -83,6 +83,91 @@ class LLVMDebugInfoHelperFixer
         return ret;   
     }
 
+    static mlir::LLVM::DILexicalBlockAttr recreateLexicalBlockForNewScope(mlir::LLVM::DILexicalBlockAttr lexicalBlockAttr, mlir::Attribute newScope, mlir::Attribute oldScope) {
+        if (lexicalBlockAttr.getScope() == oldScope) {
+            auto newLexicalBlockAttr = 
+                mlir::LLVM::DILexicalBlockAttr::get(
+                    lexicalBlockAttr.getContext(), 
+                    newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                    lexicalBlockAttr.getFile(), 
+                    lexicalBlockAttr.getLine(), 
+                    lexicalBlockAttr.getColumn());   
+            return newLexicalBlockAttr;
+        }
+
+        return lexicalBlockAttr;
+    }
+    
+    static mlir::LLVM::DILocalVariableAttr recreateLocalVariableForNewScope(mlir::LLVM::DILocalVariableAttr localVarScope, mlir::Attribute newScope, mlir::Attribute oldScope) {
+        if (localVarScope.getScope() == oldScope) {
+            auto newLocalVar = mlir::LLVM::DILocalVariableAttr::get(
+                localVarScope.getContext(), 
+                newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                localVarScope.getName(), 
+                localVarScope.getFile(), 
+                localVarScope.getLine(), 
+                localVarScope.getArg(), 
+                localVarScope.getAlignInBits(), 
+                localVarScope.getType());
+            return newLocalVar;
+        }
+
+        return localVarScope;
+    }
+
+    static mlir::LLVM::DISubprogramAttr recreateSubprogramForNewScope(mlir::LLVM::DISubprogramAttr subprogScope, mlir::Attribute newScope, mlir::Attribute oldScope) {
+        if (subprogScope.getScope() == oldScope) {
+            auto newSubprogramAttr = mlir::LLVM::DISubprogramAttr::get(
+                subprogScope.getContext(), 
+                subprogScope.getCompileUnit(), 
+                newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                subprogScope.getName(), 
+                subprogScope.getLinkageName(), 
+                subprogScope.getFile(), 
+                subprogScope.getLine(), 
+                subprogScope.getScopeLine(), 
+                subprogScope.getSubprogramFlags(), 
+                subprogScope.getType());
+            return newSubprogramAttr;
+        }
+
+        return subprogScope;
+    }
+
+    static mlir::LLVM::DILabelAttr recreateLabelForNewScope(mlir::LLVM::DILabelAttr labelScope, mlir::Attribute newScope, mlir::Attribute oldScope) {
+        if (labelScope.getScope() == oldScope) {
+            auto newLabel = mlir::LLVM::DILabelAttr::get(
+                labelScope.getContext(), 
+                newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                labelScope.getName(), 
+                labelScope.getFile(), 
+                labelScope.getLine());
+            return newLabel;
+        }
+
+        return labelScope;
+    }
+
+    static mlir::Attribute recreateMetadataForNewScope(mlir::Attribute currentMetadata, mlir::Attribute newScope, mlir::Attribute oldScope) {
+        if (auto lexicalBlockAttr = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILexicalBlockAttr>()) {
+            return recreateLexicalBlockForNewScope(lexicalBlockAttr, newScope, oldScope);
+        }
+
+        if (auto localVarScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILocalVariableAttr>()) {
+            return recreateLocalVariableForNewScope(localVarScope, newScope, oldScope);
+        }
+
+        if (auto subprogScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DISubprogramAttr>()) {
+            return recreateSubprogramForNewScope(subprogScope, newScope, oldScope);
+        }
+
+        if (auto labelScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILabelAttr>()) {
+            return recreateLabelForNewScope(labelScope, newScope, oldScope);
+        }
+
+        return currentMetadata;
+    }
+
     static mlir::Location replaceScope(mlir::Location loc, mlir::Attribute newScope, mlir::Attribute oldScope)
     {
         return replaceMetadata(loc, [&](mlir::Attribute currentMetadata) -> mlir::Attribute {
@@ -91,53 +176,7 @@ class LLVMDebugInfoHelperFixer
                 return newScope;
             }
 
-            if (auto lexicalBlockAttr = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILexicalBlockAttr>()) {
-                if (lexicalBlockAttr.getScope() == oldScope) {
-                    auto newLexicalBlockAttr = 
-                        mlir::LLVM::DILexicalBlockAttr::get(
-                            currentMetadata.getContext(), 
-                            newScope.cast<mlir::LLVM::DIScopeAttr>(), 
-                            lexicalBlockAttr.getFile(), 
-                            lexicalBlockAttr.getLine(), 
-                            lexicalBlockAttr.getColumn());   
-                    return newLexicalBlockAttr;
-                }
-            }
-
-            if (auto localVarScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILocalVariableAttr>()) {
-                if (localVarScope.getScope() == oldScope) {
-                    auto newLocalVar = mlir::LLVM::DILocalVariableAttr::get(
-                        localVarScope.getContext(), 
-                        newScope.cast<mlir::LLVM::DIScopeAttr>(), 
-                        localVarScope.getName(), 
-                        localVarScope.getFile(), 
-                        localVarScope.getLine(), 
-                        localVarScope.getArg(), 
-                        localVarScope.getAlignInBits(), 
-                        localVarScope.getType());
-                    return newLocalVar;
-                }
-            }
-
-            if (auto subprogScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DISubprogramAttr>()) {
-                if (subprogScope.getScope() == oldScope) {
-                    auto newSubprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-                        subprogScope.getContext(), 
-                        subprogScope.getCompileUnit(), 
-                        newScope.cast<mlir::LLVM::DIScopeAttr>(), 
-                        subprogScope.getName(), 
-                        subprogScope.getLinkageName(), 
-                        subprogScope.getFile(), 
-                        subprogScope.getLine(), 
-                        subprogScope.getScopeLine(), 
-                        subprogScope.getSubprogramFlags(), 
-                        subprogScope.getType());
-                    return newSubprogramAttr;
-                }
-            }
-
-            // default case
-            return currentMetadata;
+            return recreateMetadataForNewScope(currentMetadata, newScope, oldScope);
         });
     }        
 
@@ -275,6 +314,24 @@ class LLVMDebugInfoHelperFixer
                         for (auto &arg : block.getArguments()) {
                             arg.setLoc(replaceScope(arg.getLoc(), subprogramAttr, oldMetadata));
                         }
+                    }
+                }                
+
+                // fix metadata for llvm.dbg.declare & llvm.dbg.value
+                if (auto dbgDeclare = dyn_cast<mlir::LLVM::DbgDeclareOp>(op)) {
+                    auto newLocVar = recreateLocalVariableForNewScope(dbgDeclare.getVarInfo(), subprogramAttr, oldMetadata);
+                    if (newLocVar != dbgDeclare.getVarInfo()) {
+                        dbgDeclare.setVarInfoAttr(newLocVar);
+                    }
+                } else if (auto dbgValue = dyn_cast<mlir::LLVM::DbgValueOp>(op)) {
+                    auto newLocVar = recreateLocalVariableForNewScope(dbgValue.getVarInfo(), subprogramAttr, oldMetadata);
+                    if (newLocVar != dbgDeclare.getVarInfo()) {
+                        dbgValue.setVarInfoAttr(newLocVar);
+                    }
+                } else if (auto dbgLabel = dyn_cast<mlir::LLVM::DbgLabelOp>(op)) {
+                    auto newLabel = recreateLabelForNewScope(dbgLabel.getLabel(), subprogramAttr, oldMetadata);
+                    if (newLabel != dbgLabel.getLabel()) {
+                        dbgLabel.setLabelAttr(newLabel);
                     }
                 }                
             });
