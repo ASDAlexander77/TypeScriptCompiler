@@ -5824,6 +5824,26 @@ static void selectAllFuncOp(mlir::ModuleOp &module, SmallPtrSet<Operation *, 16>
 
 static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter)
 {
+    // fixes for FuncOps, and it should be first
+    SmallPtrSet<Operation *, 16> workSetFuncOps;
+
+    selectAllFuncOp(module, workSetFuncOps);
+
+    for (auto op : workSetFuncOps)
+    {
+        if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(op)) {
+            // debug info - adding return type
+            if (funcOp.getResultTypes().size() > 0 && !funcOp.getBody().empty())
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
+
+                LLVMDebugInfoHelperFixer ldif(funcOp.getContext(), llvmTypeConverter);
+                ldif.fixFuncOp(funcOp);
+            }
+        }
+    }
+
+    // adding localVarAttrs to ops (should be second)
     SmallPtrSet<Operation *, 16> workSet;
     selectAllVariablesAndDebugVariables(module, workSet);
 
@@ -5869,25 +5889,6 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
             }
         }
     }    
-
-    // fixes for 
-    SmallPtrSet<Operation *, 16> workSetFuncOps;
-
-    selectAllFuncOp(module, workSetFuncOps);
-
-    for (auto op : workSetFuncOps)
-    {
-        if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(op)) {
-            // debug info - adding return type
-            if (funcOp.getResultTypes().size() > 0 && !funcOp.getBody().empty())
-            {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
-
-                LLVMDebugInfoHelperFixer ldif(funcOp.getContext(), llvmTypeConverter);
-                ldif.fixFuncOp(funcOp);
-            }
-        }
-    }
 
     return success();
 }
