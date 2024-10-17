@@ -180,6 +180,17 @@ class MLIRDebugInfoHelper
         }
     }    
 
+    void setNamespace(mlir::Location namespaceLocation, StringRef namespaceName, bool exportSymbols) {
+        if (auto scopeAttr = dyn_cast_or_null<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE)))
+        {        
+            auto namespaceAttr = mlir::LLVM::DINamespaceAttr::get(
+                builder.getContext(), builder.getStringAttr(namespaceName), scopeAttr, exportSymbols);
+
+            debugScope.insert(NAMESPACE_DEBUG_SCOPE, namespaceAttr);
+            debugScope.insert(DEBUG_SCOPE, namespaceAttr);
+        }
+    }
+
 private:
     mlir::FusedLoc combine(mlir::Location location, mlir::LLVM::DIScopeAttr scope)
     {

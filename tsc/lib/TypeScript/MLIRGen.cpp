@@ -654,6 +654,13 @@ class MLIRGenImpl
         MLIRNamespaceGuard nsGuard(currentNamespace);
         registerNamespace(namePtr);
 
+        DITableScopeT debugNamespaceScope(debugScope);
+        if (compileOptions.generateDebugInfo)
+        {
+            MLIRDebugInfoHelper mdi(builder, debugScope);
+            mdi.setNamespace(location, namePtr, hasModifier(moduleDeclarationAST, SyntaxKind::ExportKeyword));
+        }
+
         return mlirGenBody(moduleDeclarationAST->body, genContext);
     }
 
@@ -4686,7 +4693,7 @@ class MLIRGenImpl
 
             registerNamespace(funcProto->getNameWithoutNamespace(), true);
 
-            if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto,
+            if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, name, dummyFuncOp, funcProto,
                                               genContextWithPassResult)))
             {
                 exitNamespace();
@@ -5215,7 +5222,8 @@ class MLIRGenImpl
             registerNamespace(funcProto->getNameWithoutNamespace(), true);
 
             SymbolTableScopeT varScope(symbolTable);
-            resultFromBody = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
+            resultFromBody = mlirGenFunctionBody(
+                functionLikeDeclarationBaseAST, funcProto->getNameWithoutNamespace(), funcOp, funcProto, funcGenContext);
         }
 
         funcGenContext.cleanState();
@@ -5686,7 +5694,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
-                                            mlir_ts::FuncOp funcOp, FunctionPrototypeDOM::TypePtr funcProto,
+                                            StringRef name, mlir_ts::FuncOp funcOp, FunctionPrototypeDOM::TypePtr funcProto,
                                             const GenContext &genContext)
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION: '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
@@ -5710,8 +5718,8 @@ class MLIRGenImpl
             auto locWithDI = 
                 mdi.getSubprogram(
                     location, 
+                    name,
                     funcOp.getName(), 
-                    funcOp.getSymNameAttr(),
                     functionLikeDeclarationBaseAST->body 
                         ? loc(functionLikeDeclarationBaseAST->body) 
                         : location);
