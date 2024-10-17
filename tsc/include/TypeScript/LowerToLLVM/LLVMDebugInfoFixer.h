@@ -24,13 +24,12 @@ namespace typescript
 
 class LLVMDebugInfoHelperFixer
 {
-    PatternRewriter &rewriter;
+    MLIRContext *context;
     LLVMTypeConverter &typeConverter;
-    CompileOptions &compileOptions;
 
   public:
-    LLVMDebugInfoHelperFixer(PatternRewriter &rewriter, LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
-        : rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
+    LLVMDebugInfoHelperFixer(MLIRContext *context, LLVMTypeConverter &typeConverter)
+        : context(context), typeConverter(typeConverter)
     {
     }
 
@@ -262,13 +261,13 @@ class LLVMDebugInfoHelperFixer
             });     
     }   
 
-    void fixFuncOp(mlir::func::FuncOp newFuncOp) {
+    void fixFuncOp(mlir_ts::FuncOp newFuncOp) {
         auto location = newFuncOp->getLoc();
         if (auto funcLocWithSubprog = dyn_cast<mlir::FusedLocWith<mlir::LLVM::DISubprogramAttr>>(location))
         {
-            LocationHelper lh(rewriter.getContext());
+            LocationHelper lh(context);
             LLVMTypeConverterHelper llvmtch(typeConverter);
-            LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);        
+            LLVMDebugInfoHelper di(context, llvmtch);        
 
             auto oldMetadata = funcLocWithSubprog.getMetadata();
             auto funcNameAttr = newFuncOp.getNameAttr();
@@ -284,9 +283,9 @@ class LLVMDebugInfoHelperFixer
                 resultTypes.push_back(diType);
             }
 
-            auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(rewriter.getContext(), llvm::dwarf::DW_CC_normal, resultTypes);
+            auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(context, llvm::dwarf::DW_CC_normal, resultTypes);
             auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-                rewriter.getContext(), 
+                context, 
                 oldMetadata.getCompileUnit(), 
                 oldMetadata.getScope(), 
                 oldMetadata.getName(), 

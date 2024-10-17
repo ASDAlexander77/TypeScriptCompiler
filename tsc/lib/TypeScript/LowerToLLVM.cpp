@@ -1092,21 +1092,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         rewriter.eraseOp(funcOp);
 
-        // debug info - adding return type
-        if (tsLlvmContext->compileOptions.generateDebugInfo)
-        {
-            //LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
-            //ldif.removeAllMetadata(newFuncOp);
-
-            if (newFuncOp.getResultTypes().size() > 0)
-            {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
-
-                LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
-                ldif.fixFuncOp(newFuncOp);
-            }
-        }
-
         return success();
     }
 
@@ -5825,21 +5810,25 @@ static void selectAllVariablesAndDebugVariables(mlir::ModuleOp &module, SmallPtr
     module.walk(visitorVariablesAndDebugVariablesOp);
 }
 
+static void selectAllFuncOp(mlir::ModuleOp &module, SmallPtrSet<Operation *, 16> &workSet)
+{
+    auto visitorFuncOp = [&](Operation *op) {
+        if (auto funcOp = dyn_cast_or_null<mlir_ts::FuncOp>(op))
+        {
+            workSet.insert(op);
+        }
+    };
+
+    module.walk(visitorFuncOp);
+}
+
 static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter)
 {
     SmallPtrSet<Operation *, 16> workSet;
-
     selectAllVariablesAndDebugVariables(module, workSet);
-
-    SmallPtrSet<Operation *, 16> removed;
 
     for (auto op : workSet)
     {
-        if (removed.find(op) != removed.end())
-        {
-            continue;
-        }
-
         auto location = op->getLoc();
         //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
         if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
@@ -5881,9 +5870,23 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
         }
     }    
 
-    for (auto removedOp : removed)
+    // fixes for 
+    SmallPtrSet<Operation *, 16> workSetFuncOps;
+
+    selectAllFuncOp(module, workSetFuncOps);
+
+    for (auto op : workSetFuncOps)
     {
-        removedOp->erase();
+        if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(op)) {
+            // debug info - adding return type
+            if (funcOp.getResultTypes().size() > 0 && !funcOp.getBody().empty())
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
+
+                LLVMDebugInfoHelperFixer ldif(funcOp.getContext(), llvmTypeConverter);
+                ldif.fixFuncOp(funcOp);
+            }
+        }
     }
 
     return success();
