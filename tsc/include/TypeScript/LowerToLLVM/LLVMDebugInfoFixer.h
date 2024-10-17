@@ -43,16 +43,16 @@ class LLVMDebugInfoHelperFixer
             })
             .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
                 SmallVector<mlir::Location> newLocs;
-                auto newLoc = false;
+                auto anyNewLoc = false;
                 for (auto subLoc : loc.getLocations())
                 {
                     auto newSubLoc = stripMetadata(subLoc);
                     newLocs.push_back(newSubLoc);
-                    newLoc |= newSubLoc != subLoc;
+                    anyNewLoc |= newSubLoc != subLoc;
                 }
 
-                if (loc.getMetadata() || newLoc) {
-                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs);
+                if (loc.getMetadata() || anyNewLoc) {
+                    ret = mlir::FusedLoc::get(loc.getContext(), anyNewLoc ? newLocs : loc.getLocations());
                 }
             })
             .Case<mlir::UnknownLoc>([&](mlir::UnknownLoc loc) {
@@ -161,7 +161,7 @@ class LLVMDebugInfoHelperFixer
                 auto newMetadata = f(loc.getMetadata());
                 if (loc.getMetadata() != newMetadata || anyNew)
                 {
-                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs, newMetadata);
+                    ret = mlir::FusedLoc::get(loc.getContext(), anyNew ? newLocs : loc.getLocations(), newMetadata);
                 }
             })
             .Case<mlir::UnknownLoc>([&](mlir::UnknownLoc loc) {
