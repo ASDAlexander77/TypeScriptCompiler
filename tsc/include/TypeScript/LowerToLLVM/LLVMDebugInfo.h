@@ -221,6 +221,11 @@ class LLVMDebugInfoHelper
 
         LLVM_DEBUG(llvm::dbgs() << "DI for llvmType:\t" << llvmType << "\n");
 
+        if (!llvmType)
+        {
+            return diTypeAttr;
+        }
+
         mlir::TypeSwitch<mlir::Type>(llvmType)
             .Case<mlir::IntegerType>([&](auto intType) {  
                 auto typeCode = intType.isSigned() ? dwarf::DW_ATE_signed : dwarf::DW_ATE_unsigned;
