@@ -162,17 +162,20 @@ class LLVMDebugInfoHelperFixer
             .Case<mlir::FileLineColLoc>([&](mlir::FileLineColLoc loc) {
                 // nothing todo
             })
-            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
-                auto newMetadata = f(loc.getMetadata());
-                if (loc.getMetadata() != newMetadata)
+            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {              
+                SmallVector<mlir::Location> newLocs;
+                auto anyNew = false;
+                for (auto subLoc : loc.getLocations())
                 {
-                    SmallVector<mlir::Location> newLocs;
-                    for (auto subLoc : loc.getLocations())
-                    {
-                        newLocs.push_back(replaceMetadata(subLoc, f));
-                    }
+                    auto newSubLoc = replaceMetadata(subLoc, f);
+                    newLocs.push_back(newSubLoc);
+                    anyNew |= newSubLoc != subLoc;
+                }
 
-                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs, newMetadata);
+                auto newMetadata = f(loc.getMetadata());
+                if ((loc.getMetadata() && loc.getMetadata() != newMetadata) || anyNew)
+                {
+                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs, loc.getMetadata() ? newMetadata : loc.getMetadata());
                 }
             })
             .Case<mlir::UnknownLoc>([&](mlir::UnknownLoc loc) {
@@ -272,7 +275,7 @@ class LLVMDebugInfoHelperFixer
             LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");
 
             // we do not use replaceScope here as we are fixing metadata
-            newFuncOp->setLoc(replaceMetadata(location, subprogramAttr));
+            newFuncOp->setLoc(replaceMetadataIfEquals(location, subprogramAttr, oldMetadata));
 
             newFuncOp.walk([&, subprogramAttr](Operation *op) {
 
