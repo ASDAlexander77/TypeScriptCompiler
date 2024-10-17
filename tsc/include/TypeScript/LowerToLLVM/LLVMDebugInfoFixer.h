@@ -24,14 +24,77 @@ namespace typescript
 
 class LLVMDebugInfoHelperFixer
 {
-    MLIRContext *context;
+    mlir_ts::FuncOp funcOp;
     LLVMTypeConverter &typeConverter;
+    MLIRContext *context;
 
-  public:
-    LLVMDebugInfoHelperFixer(MLIRContext *context, LLVMTypeConverter &typeConverter)
-        : context(context), typeConverter(typeConverter)
+public:
+    LLVMDebugInfoHelperFixer(mlir_ts::FuncOp funcOp, LLVMTypeConverter &typeConverter)
+        : funcOp(funcOp), typeConverter(typeConverter)
     {
+        context = funcOp.getContext();
     }
+
+    void fix() {
+        auto location = funcOp->getLoc();
+        if (auto funcLocWithSubprog = dyn_cast<mlir::FusedLocWith<mlir::LLVM::DISubprogramAttr>>(location))
+        {
+            LocationHelper lh(context);
+            LLVMTypeConverterHelper llvmtch(typeConverter);
+            LLVMDebugInfoHelper di(context, llvmtch);        
+
+            auto oldMetadata = funcLocWithSubprog.getMetadata();
+            auto funcNameAttr = funcOp.getNameAttr();
+
+            // return type
+            auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(location);
+            auto [line, column] = lineAndColumn;
+
+            SmallVector <mlir::LLVM::DITypeAttr> resultTypes;
+            for (auto resType : funcOp.getResultTypes())
+            {
+                auto diType = di.getDIType({}, resType, file, line, file);
+                resultTypes.push_back(diType);
+            }
+
+            auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(context, llvm::dwarf::DW_CC_normal, resultTypes);
+            auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
+                context, 
+                oldMetadata.getCompileUnit(), 
+                oldMetadata.getScope(), 
+                oldMetadata.getName(), 
+                oldMetadata.getLinkageName(), 
+                oldMetadata.getFile(), 
+                oldMetadata.getLine(), 
+                oldMetadata.getScopeLine(), 
+                oldMetadata.getSubprogramFlags(), 
+                subroutineTypeAttr);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");
+
+            // we do not use replaceScope here as we are fixing metadata
+            funcOp->setLoc(replaceScope(location, subprogramAttr, oldMetadata));
+
+            fixNestedOpScope(subprogramAttr, oldMetadata);
+            //debugPrint(funcOp);
+        }
+    }
+
+private:
+    static void removeAllMetadata(mlir::func::FuncOp newFuncOp) {
+        newFuncOp->walk([&](Operation *op) {
+            op->setLoc(stripMetadata(op->getLoc()));
+
+            // Strip block arguments debug info.
+            for (auto &region : op->getRegions()) {
+                for (auto &block : region.getBlocks()) {
+                    for (auto &arg : block.getArguments()) {
+                        arg.setLoc(stripMetadata(arg.getLoc()));
+                    }
+                }
+            }
+        });
+    }    
 
     static mlir::Location stripMetadata(mlir::Location loc)
     {
@@ -82,7 +145,7 @@ class LLVMDebugInfoHelperFixer
         return ret;   
     }
 
-    static mlir::LLVM::DILexicalBlockAttr recreateLexicalBlockForNewScope(mlir::LLVM::DILexicalBlockAttr lexicalBlockAttr, mlir::Attribute newScope, mlir::Attribute oldScope) {
+    mlir::LLVM::DILexicalBlockAttr recreateLexicalBlockForNewScope(mlir::LLVM::DILexicalBlockAttr lexicalBlockAttr, mlir::Attribute newScope, mlir::Attribute oldScope) {
         if (lexicalBlockAttr.getScope() == oldScope) {
             auto newLexicalBlockAttr = 
                 mlir::LLVM::DILexicalBlockAttr::get(
@@ -91,6 +154,10 @@ class LLVMDebugInfoHelperFixer
                     lexicalBlockAttr.getFile(), 
                     lexicalBlockAttr.getLine(), 
                     lexicalBlockAttr.getColumn());   
+
+            // we need to fix nested scope again
+            fixNestedOpScope(newLexicalBlockAttr, lexicalBlockAttr);
+            
             return newLexicalBlockAttr;
         }
 
@@ -114,7 +181,7 @@ class LLVMDebugInfoHelperFixer
         return localVarScope;
     }
 
-    static mlir::LLVM::DISubprogramAttr recreateSubprogramForNewScope(mlir::LLVM::DISubprogramAttr subprogScope, mlir::Attribute newScope, mlir::Attribute oldScope) {
+    mlir::LLVM::DISubprogramAttr recreateSubprogramForNewScope(mlir::LLVM::DISubprogramAttr subprogScope, mlir::Attribute newScope, mlir::Attribute oldScope) {
         if (subprogScope.getScope() == oldScope) {
             auto newSubprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                 subprogScope.getContext(), 
@@ -127,6 +194,10 @@ class LLVMDebugInfoHelperFixer
                 subprogScope.getScopeLine(), 
                 subprogScope.getSubprogramFlags(), 
                 subprogScope.getType());
+
+            // we need to fix nested scope again
+            fixNestedOpScope(newSubprogramAttr, subprogScope);
+
             return newSubprogramAttr;
         }
 
@@ -147,7 +218,7 @@ class LLVMDebugInfoHelperFixer
         return labelScope;
     }
 
-    static mlir::Attribute recreateMetadataForNewScope(mlir::Attribute currentMetadata, mlir::Attribute newScope, mlir::Attribute oldScope) {
+    mlir::Attribute recreateMetadataForNewScope(mlir::Attribute currentMetadata, mlir::Attribute newScope, mlir::Attribute oldScope) {
         if (auto lexicalBlockAttr = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILexicalBlockAttr>()) {
             return recreateLexicalBlockForNewScope(lexicalBlockAttr, newScope, oldScope);
         }
@@ -167,7 +238,7 @@ class LLVMDebugInfoHelperFixer
         return currentMetadata;
     }
 
-    static mlir::Location replaceScope(mlir::Location loc, mlir::Attribute newScope, mlir::Attribute oldScope)
+    mlir::Location replaceScope(mlir::Location loc, mlir::Attribute newScope, mlir::Attribute oldScope)
     {
         return replaceMetadata(loc, [&](mlir::Attribute currentMetadata) -> mlir::Attribute {
             if (currentMetadata == oldScope) 
@@ -261,98 +332,41 @@ class LLVMDebugInfoHelperFixer
             });     
     }   
 
-    void fixFuncOp(mlir_ts::FuncOp newFuncOp) {
-        auto location = newFuncOp->getLoc();
-        if (auto funcLocWithSubprog = dyn_cast<mlir::FusedLocWith<mlir::LLVM::DISubprogramAttr>>(location))
-        {
-            LocationHelper lh(context);
-            LLVMTypeConverterHelper llvmtch(typeConverter);
-            LLVMDebugInfoHelper di(context, llvmtch);        
+    void fixNestedOpScope(mlir::Attribute newMetadata, mlir::Attribute oldMetadata) {
+        funcOp.walk([&, newMetadata, oldMetadata](Operation *op) {
 
-            auto oldMetadata = funcLocWithSubprog.getMetadata();
-            auto funcNameAttr = newFuncOp.getNameAttr();
+            LLVM_DEBUG(llvm::dbgs() << "\n!! replacing for: " << *op << "\n");
 
-            // return type
-            auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(location);
-            auto [line, column] = lineAndColumn;
-
-            SmallVector <mlir::LLVM::DITypeAttr> resultTypes;
-            for (auto resType : newFuncOp.getResultTypes())
-            {
-                auto diType = di.getDIType({}, resType, file, line, file);
-                resultTypes.push_back(diType);
-            }
-
-            auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(context, llvm::dwarf::DW_CC_normal, resultTypes);
-            auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-                context, 
-                oldMetadata.getCompileUnit(), 
-                oldMetadata.getScope(), 
-                oldMetadata.getName(), 
-                oldMetadata.getLinkageName(), 
-                oldMetadata.getFile(), 
-                oldMetadata.getLine(), 
-                oldMetadata.getScopeLine(), 
-                oldMetadata.getSubprogramFlags(), 
-                subroutineTypeAttr);
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");
-
-            // we do not use replaceScope here as we are fixing metadata
-            newFuncOp->setLoc(replaceScope(location, subprogramAttr, oldMetadata));
-
-            newFuncOp.walk([&, subprogramAttr](Operation *op) {
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! replacing for: " << *op << "\n");
-
-                op->setLoc(replaceScope(op->getLoc(), subprogramAttr, oldMetadata));
-
-                // Strip block arguments debug info.
-                for (auto &region : op->getRegions()) {
-                    for (auto &block : region.getBlocks()) {
-                        for (auto &arg : block.getArguments()) {
-                            arg.setLoc(replaceScope(arg.getLoc(), subprogramAttr, oldMetadata));
-                        }
-                    }
-                }                
-
-                // fix metadata for llvm.dbg.declare & llvm.dbg.value
-                if (auto dbgDeclare = dyn_cast<mlir::LLVM::DbgDeclareOp>(op)) {
-                    auto newLocVar = recreateLocalVariableForNewScope(dbgDeclare.getVarInfo(), subprogramAttr, oldMetadata);
-                    if (newLocVar != dbgDeclare.getVarInfo()) {
-                        dbgDeclare.setVarInfoAttr(newLocVar);
-                    }
-                } else if (auto dbgValue = dyn_cast<mlir::LLVM::DbgValueOp>(op)) {
-                    auto newLocVar = recreateLocalVariableForNewScope(dbgValue.getVarInfo(), subprogramAttr, oldMetadata);
-                    if (newLocVar != dbgDeclare.getVarInfo()) {
-                        dbgValue.setVarInfoAttr(newLocVar);
-                    }
-                } else if (auto dbgLabel = dyn_cast<mlir::LLVM::DbgLabelOp>(op)) {
-                    auto newLabel = recreateLabelForNewScope(dbgLabel.getLabel(), subprogramAttr, oldMetadata);
-                    if (newLabel != dbgLabel.getLabel()) {
-                        dbgLabel.setLabelAttr(newLabel);
-                    }
-                }                
-            });
-
-            //debugPrint(newFuncOp);
-        }
-    }
-
-    void removeAllMetadata(mlir::func::FuncOp newFuncOp) {
-        newFuncOp->walk([&](Operation *op) {
-            op->setLoc(stripMetadata(op->getLoc()));
+            op->setLoc(replaceScope(op->getLoc(), newMetadata, oldMetadata));
 
             // Strip block arguments debug info.
             for (auto &region : op->getRegions()) {
                 for (auto &block : region.getBlocks()) {
                     for (auto &arg : block.getArguments()) {
-                        arg.setLoc(stripMetadata(arg.getLoc()));
+                        arg.setLoc(replaceScope(arg.getLoc(), newMetadata, oldMetadata));
                     }
                 }
-            }
+            }                
+
+            // fix metadata for llvm.dbg.declare & llvm.dbg.value
+            if (auto dbgDeclare = dyn_cast<mlir::LLVM::DbgDeclareOp>(op)) {
+                auto newLocVar = recreateLocalVariableForNewScope(dbgDeclare.getVarInfo(), newMetadata, oldMetadata);
+                if (newLocVar != dbgDeclare.getVarInfo()) {
+                    dbgDeclare.setVarInfoAttr(newLocVar);
+                }
+            } else if (auto dbgValue = dyn_cast<mlir::LLVM::DbgValueOp>(op)) {
+                auto newLocVar = recreateLocalVariableForNewScope(dbgValue.getVarInfo(), newMetadata, oldMetadata);
+                if (newLocVar != dbgDeclare.getVarInfo()) {
+                    dbgValue.setVarInfoAttr(newLocVar);
+                }
+            } else if (auto dbgLabel = dyn_cast<mlir::LLVM::DbgLabelOp>(op)) {
+                auto newLabel = recreateLabelForNewScope(dbgLabel.getLabel(), newMetadata, oldMetadata);
+                if (newLabel != dbgLabel.getLabel()) {
+                    dbgLabel.setLabelAttr(newLabel);
+                }
+            }                
         });
-    }    
+    }
 
     void debugPrint(mlir::func::FuncOp newFuncOp) {
 
