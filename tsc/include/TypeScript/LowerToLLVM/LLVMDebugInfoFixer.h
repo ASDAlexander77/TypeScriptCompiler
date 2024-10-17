@@ -41,6 +41,23 @@ class LLVMDebugInfoHelperFixer
             .Case<mlir::FileLineColLoc>([&](mlir::FileLineColLoc loc) {
                 // nothing todo
             })
+            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
+                SmallVector<mlir::Location> newLocs;
+                auto newLoc = false;
+                for (auto subLoc : loc.getLocations())
+                {
+                    auto newSubLoc = stripMetadata(subLoc);
+                    newLocs.push_back(newSubLoc);
+                    newLoc |= newSubLoc != subLoc;
+                }
+
+                if (loc.getMetadata() || newLoc) {
+                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs);
+                }
+            })
+            .Case<mlir::UnknownLoc>([&](mlir::UnknownLoc loc) {
+                // nothing todo
+            })            
             .Case<mlir::NameLoc>([&](mlir::NameLoc loc) {
                 auto newChildLoc = stripMetadata(loc.getChildLoc());
                 if (newChildLoc != loc.getChildLoc()) {
@@ -59,20 +76,6 @@ class LLVMDebugInfoHelperFixer
                     ret = mlir::CallSiteLoc::get(loc.getCallee(), newCallerLoc);
                 }
             })        
-            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
-                SmallVector<mlir::Location> newLocs;
-                auto newLoc = false;
-                for (auto subLoc : loc.getLocations())
-                {
-                    auto newSubLoc = stripMetadata(subLoc);
-                    newLocs.push_back(newSubLoc);
-                    newLoc |= newSubLoc != subLoc;
-                }
-
-                if (loc.getMetadata() || newLoc) {
-                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs);
-                }
-            })
             .Default([&](mlir::Location loc) { 
                 llvm_unreachable("not implemented");
             });     
@@ -157,6 +160,22 @@ class LLVMDebugInfoHelperFixer
             .Case<mlir::FileLineColLoc>([&](mlir::FileLineColLoc loc) {
                 // nothing todo
             })
+            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
+                auto newMetadata = f(loc.getMetadata());
+                if (loc.getMetadata() != newMetadata)
+                {
+                    SmallVector<mlir::Location> newLocs;
+                    for (auto subLoc : loc.getLocations())
+                    {
+                        newLocs.push_back(replaceMetadata(subLoc, f));
+                    }
+
+                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs, newMetadata);
+                }
+            })
+            .Case<mlir::UnknownLoc>([&](mlir::UnknownLoc loc) {
+                // nothing todo
+            })
             .Case<mlir::NameLoc>([&](mlir::NameLoc loc) {
                 auto newChildLoc = replaceMetadata(loc.getChildLoc(), f);
                 if (newChildLoc != loc.getChildLoc()) {
@@ -175,20 +194,8 @@ class LLVMDebugInfoHelperFixer
                     ret = mlir::CallSiteLoc::get(loc.getCallee(), newCallerLoc);
                 }
             })        
-            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
-                auto newMetadata = f(loc.getMetadata());
-                if (loc.getMetadata() != newMetadata)
-                {
-                    SmallVector<mlir::Location> newLocs;
-                    for (auto subLoc : loc.getLocations())
-                    {
-                        newLocs.push_back(replaceMetadata(subLoc, f));
-                    }
-
-                    ret = mlir::FusedLoc::get(loc.getContext(), newLocs, newMetadata);
-                }
-            })
             .Default([&](mlir::Location loc) { 
+                LLVM_DEBUG(llvm::dbgs() << "\n!! location: " << loc << "\n");
                 llvm_unreachable("not implemented");
             });     
 
@@ -201,6 +208,16 @@ class LLVMDebugInfoHelperFixer
             .Case<mlir::FileLineColLoc>([&](mlir::FileLineColLoc loc) {
                 // nothing todo
             })
+            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
+                f(loc.getMetadata());
+                for (auto subLoc : loc.getLocations())
+                {
+                    walkMetadata(subLoc, f);
+                }
+            })
+            .Case<mlir::UnknownLoc>([&](mlir::UnknownLoc loc) {
+                // nothing todo
+            })            
             .Case<mlir::NameLoc>([&](mlir::NameLoc loc) {
                 walkMetadata(loc.getChildLoc(), f);
             })
@@ -210,13 +227,6 @@ class LLVMDebugInfoHelperFixer
             .Case<mlir::CallSiteLoc>([&](mlir::CallSiteLoc loc) {
                 walkMetadata(loc.getCaller(), f);
             })        
-            .Case<mlir::FusedLoc>([&](mlir::FusedLoc loc) {
-                f(loc.getMetadata());
-                for (auto subLoc : loc.getLocations())
-                {
-                    walkMetadata(subLoc, f);
-                }
-            })
             .Default([&](mlir::Location loc) { 
                 llvm_unreachable("not implemented");
             });     
