@@ -5843,8 +5843,6 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
 
                 auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
                 auto [line, column] = lineAndColumn;
-                // clear column
-                column = 0;
 
                 mlir::Type dataType;
                 if (auto variableOp = dyn_cast<mlir_ts::VariableOp>(op))
