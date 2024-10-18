@@ -1946,8 +1946,6 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
     LogicalResult matchAndRewrite(mlir_ts::CreateTupleOp createTupleOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         LLVMCodeHelper ch(createTupleOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(createTupleOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
@@ -1958,8 +1956,8 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
         auto loc = createTupleOp.getLoc();
         auto tupleType = createTupleOp.getType().cast<mlir_ts::TupleType>();
 
-        auto tupleVar = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(tupleType), mlir::Value(),
-                                                             rewriter.getBoolAttr(false));
+        auto tupleVar = rewriter.create<mlir_ts::VariableOp>(
+            loc, mlir_ts::RefType::get(tupleType), mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
         // set values here
         mlir::Value zero = clh.createIndexConstantOf(llvmIndexType, 0);
@@ -5845,9 +5843,12 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 auto [line, column] = lineAndColumn;
 
                 mlir::Type dataType;
+                auto argIndex = 0;
                 if (auto variableOp = dyn_cast<mlir_ts::VariableOp>(op))
                 {
                     dataType = variableOp.getType().getElementType();
+                    auto argVal = variableOp.getDiArgNumber();
+                    argIndex = argVal.has_value() ? argVal.value().getLimitedValue() : 0;
                 }
                 else if (auto debugVariableOp = dyn_cast<mlir_ts::DebugVariableOp>(op))
                 {
@@ -5855,14 +5856,13 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 }
 
                 // TODO: finish the DI logic
-                unsigned arg = 0;
-                // TODO: finish the DI logic
                 unsigned alignInBits = 8;
                 auto diType = di.getDIType(mlir::Type(), dataType, file, line, file);
 
                 auto name = namedLoc.getName();
                 auto scope = scopeFusedLoc.getMetadata();
-                auto varInfo = LLVM::DILocalVariableAttr::get(location.getContext(), scope, name, file, line, arg, alignInBits, diType);
+                auto varInfo = LLVM::DILocalVariableAttr::get(
+                    location.getContext(), scope, name, file, line, argIndex, alignInBits, diType);
 
                 op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
             }

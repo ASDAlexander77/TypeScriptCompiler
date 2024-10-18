@@ -696,9 +696,10 @@ class CastLogicHelper
                     << inLLVMType << " size of #" << srcSize << ",\n " << resLLVMType << " size of #" << dstSize;
             }
 
-            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
-            auto dstAddr =
-                rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), mlir::Value(), rewriter.getBoolAttr(false));
+            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(
+                loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
+            auto dstAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), 
+                mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
             if (srcSize <= 8 && dstSize <= 8)
             {
                 rewriter.create<mlir_ts::LoadSaveOp>(loc, dstAddr, srcAddr);
@@ -718,7 +719,8 @@ class CastLogicHelper
             if (destPtr.getElementType() == inLLVMType)
             {
                 // alloc and return address
-                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
+                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
+                    loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
                 return valueAddr;
             }
         }
@@ -1024,7 +1026,8 @@ class CastLogicHelper
             return clh.castToI8Ptr(variableOp);
         }
 
-        auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false));
+        auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
+            loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
         mlir::Value valueAddrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(valueAddr.getType()), valueAddr);
 

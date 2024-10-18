@@ -3158,7 +3158,7 @@ class MLIRGenImpl
                 auto varOpValue = builder.create<mlir_ts::VariableOp>(
                     location, mlir_ts::RefType::get(variableDeclarationInfo.type),
                     variableDeclarationInfo.allocateOutsideOfOperation ? mlir::Value() : variableDeclarationInfo.initial,
-                    builder.getBoolAttr(false));
+                    builder.getBoolAttr(false), builder.getIndexAttr(0));
 
                 variableDeclarationInfo.setStorage(varOpValue);
             }
@@ -5513,10 +5513,10 @@ class MLIRGenImpl
         return V(optionalValueOrDefaultOp);
     } 
 
-    ValueOrLogicalResult processOptionalParam(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
+    ValueOrLogicalResult processOptionalParam(mlir::Location location, int index, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
     {
         auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
-            location, mlir_ts::RefType::get(dataType), value, builder.getBoolAttr(false));
+            location, mlir_ts::RefType::get(dataType), value, builder.getBoolAttr(false), builder.getIndexAttr(index + 1));
 
         /*auto *defValueBlock =*/builder.createBlock(&paramOptionalOp.getDefaultValueRegion());
 
@@ -5562,7 +5562,7 @@ class MLIRGenImpl
             // process optional parameters
             if (param->hasInitValue())
             {
-                auto result = processOptionalParam(location, param->getType(), arguments[index], param->getInitValue(), genContext);
+                auto result = processOptionalParam(location, index, param->getType(), arguments[index], param->getInitValue(), genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 paramValue = V(result);
             }
@@ -5571,12 +5571,12 @@ class MLIRGenImpl
                 auto optType = getOptionalType(param->getType());
                 param->setType(optType);
                 paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(optType),
-                                                              arguments[index], builder.getBoolAttr(false));
+                        arguments[index], builder.getBoolAttr(false), builder.getIndexAttr(index + 1));
             }
             else
             {
                 paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(param->getType()),
-                                                              arguments[index], builder.getBoolAttr(false));
+                        arguments[index], builder.getBoolAttr(false), builder.getIndexAttr(index + 1));
             }
 
             if (paramValue)
@@ -5597,15 +5597,7 @@ class MLIRGenImpl
             std::string paramName("p");
             paramName += std::to_string(index - firstIndex);
             
-            auto paramDecl = std::make_shared<VariableDeclarationDOM>(paramName, arguments[index].getType(), location);
-            
-            /*
-            mlir::Value paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(arguments[index].getType()),
-                                                              arguments[index], builder.getBoolAttr(false));
-            paramDecl->setReadWriteAccess();
-            
-            DECLARE(paramDecl, paramValue, genContext, true);
-            */
+            auto paramDecl = std::make_shared<VariableDeclarationDOM>(paramName, arguments[index].getType(), location);        
             DECLARE(paramDecl, arguments[index]);
         }
 
@@ -12774,7 +12766,7 @@ class MLIRGenImpl
         auto arrType = getArrayType(arrayInfo.arrayElementType);
         auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(location, arrType, emptyArrayValues);
         auto varArray = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(arrType),
-                                                            newArrayOp, builder.getBoolAttr(false));
+                newArrayOp, builder.getBoolAttr(false), builder.getIndexAttr(0));
 
         auto loadedVarArray = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
 
@@ -13383,7 +13375,7 @@ class MLIRGenImpl
     {
         // we need to cast it to tuple and set values
         auto tupleVar = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(tupleType), initValue,
-                                                            builder.getBoolAttr(false));
+                                                            builder.getBoolAttr(false), builder.getIndexAttr(0));
         for (auto fieldToSet : fieldsToSet)
         {
             VALIDATE(fieldToSet.first, location)
