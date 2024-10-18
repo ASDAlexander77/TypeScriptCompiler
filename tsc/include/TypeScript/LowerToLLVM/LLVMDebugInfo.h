@@ -265,6 +265,9 @@ class LLVMDebugInfoHelper
             .Case<LLVM::LLVMPointerType>([&](auto llvmPointerType) {  
                 diTypeAttr = getDIPointerType(getDILLVMType(llvmPointerType.getElementType(), file, line, scope), file, line);
             })
+            .Case<LLVM::LLVMFunctionType>([&](auto funcType) {
+                diTypeAttr = getDISubroutineType(funcType, file, line, scope);
+            })
             .Default([&](auto type) { 
                 // TODO: review it                
                 //diTypeAttr = LLVM::DIVoidResultTypeAttr::get(context);
@@ -426,7 +429,7 @@ class LLVMDebugInfoHelper
 
 private:
 
-    LLVM::DITypeAttr getDIPointerType(LLVM::DITypeAttr diElementType, LLVM::DIFileAttr file, uint32_t line)
+    LLVM::DIDerivedTypeAttr getDIPointerType(LLVM::DITypeAttr diElementType, LLVM::DIFileAttr file, uint32_t line)
     {
         auto sizeInBits = llvmtch.getPointerBitwidth(0);
         auto alignInBits = sizeInBits;
@@ -435,6 +438,23 @@ private:
         return LLVM::DIDerivedTypeAttr::get(
             context, dwarf::DW_TAG_pointer_type, StringAttr::get(context, "pointer"), diElementType, 
             sizeInBits, alignInBits, offsetInBits);
+    }
+
+    LLVM::DISubroutineTypeAttr getDISubroutineType(LLVM::LLVMFunctionType funcType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        llvm::SmallVector<LLVM::DITypeAttr> elements;
+        for (auto retType : funcType.getReturnTypes())
+        {
+            elements.push_back(getDITypeScriptType(retType, file, line, scope));  
+        }
+
+        for (auto paramType : funcType.getParams())
+        {
+            elements.push_back(getDITypeScriptType(paramType, file, line, scope));  
+        }
+
+        auto subroutineType = LLVM::DISubroutineTypeAttr::get(context, elements);
+        return subroutineType;
     }
 
     // Seems LLVM::DIFlags::FwdDecl is resolving issue for me
@@ -490,7 +510,7 @@ private:
         return compositeType;
     }
 
-    LLVM::DITypeAttr getDIStructType(StringRef name, ArrayRef<std::pair<StringRef, mlir::Type>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DICompositeTypeAttr getDIStructType(StringRef name, ArrayRef<std::pair<StringRef, mlir::Type>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         MLIRTypeHelper mth(context);
 
@@ -517,7 +537,7 @@ private:
             file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements);        
     }
 
-    LLVM::DITypeAttr getDIStructType(StringRef name, ArrayRef<std::pair<StringRef, LLVM::DITypeAttr>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DICompositeTypeAttr getDIStructType(StringRef name, ArrayRef<std::pair<StringRef, LLVM::DITypeAttr>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         MLIRTypeHelper mth(context);
 
@@ -542,7 +562,7 @@ private:
             file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements);        
     }    
 
-    LLVM::DITypeAttr getDIUnionType(mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DICompositeTypeAttr getDIUnionType(mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         auto sizeInBits = 0;
 
