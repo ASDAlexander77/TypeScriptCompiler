@@ -22476,8 +22476,11 @@ genContext);
         auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
         auto end =
             mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
+        //return mlir::FusedLoc::get(builder.getContext(), {begin, end});
         //return mlir::FusedLoc::get(builder.getContext(), {begin}, end);
-        return mlir::FusedLoc::get(builder.getContext(), {begin, end});
+        // TODO: why u did this way? because of loosing "column" info due to merging fused locations?
+        //return mlir::FusedLoc::get(builder.getContext(), {begin});
+        return begin;
     }
 
     mlir::Location locFuseWithScope(mlir::Location location)
