@@ -166,6 +166,11 @@ class LLVMDebugInfoHelper
             return getDITypeWithFields(classStorageType, classStorageType.getName().getValue().str(), false, file, line, scope);
         }
 
+        if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
+        {
+            return getDIType(enumType, file, line, scope);
+        }
+
         return getDILLVMType(llvmtch.typeConverter.convertType(type), file, line, scope);
     }    
 
@@ -317,9 +322,9 @@ class LLVMDebugInfoHelper
 
         auto diTypeAttrUnion = getDIUnionType(unionType, file, line, scope);
 
-        return getDIStructType(MLIRHelper::getAnonymousName(unionType, "struct"), {
+        return getDIStructType(MLIRHelper::getAnonymousName(unionType, "union"), {
             {"type", diStrType},
-            {"union", diTypeAttrUnion},
+            {"data", diTypeAttrUnion},
         }, file, line, scope);        
     }    
 
@@ -328,6 +333,33 @@ class LLVMDebugInfoHelper
         auto diTypeAttrClassType = getDIPointerType(getDITypeScriptType(classType.getStorageType(), file, line, scope), file, line);
         return diTypeAttrClassType;        
     } 
+
+    LLVM::DITypeAttr getDIType(mlir_ts::EnumType enumType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        auto diBaseType = getDITypeScriptType(enumType.getElementType(), file, line, scope);
+
+        //auto enumName = MLIRHelper::getAnonymousName(enumType, "enum");
+
+        // llvm::SmallVector<LLVM::DINodeAttr> elements;
+        // auto dictVal = enumType.getValues();
+        // for (auto [index, enumValue] : enumerate(dictVal))
+        // {
+        //     // name
+        //     auto name = enumValue.getName();
+
+        //     auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_enumeration_type, name, diBaseType, 
+        //         0, 0, 0);
+        //     elements.push_back(wrapperDiType);
+        // }
+
+        // auto compositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_enumeration_type, 
+        //     StringAttr::get(context, enumName), 
+        //     file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, 0, 0, {});
+
+        // return compositeType;
+
+        return diBaseType;
+    }
 
     LLVM::DITypeAttr getDITypeWithFields(mlir::Type typeWithFields, std::string name, bool isNamePrefix, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {

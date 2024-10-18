@@ -5790,7 +5790,6 @@ static LogicalResult verifyModule(mlir::ModuleOp &module)
     return success();
 }
 
-
 static void selectAllVariablesAndDebugVariables(mlir::ModuleOp &module, SmallPtrSet<Operation *, 16> &workSet)
 {
     auto visitorVariablesAndDebugVariablesOp = [&](Operation *op) {
@@ -5822,7 +5821,6 @@ static void selectAllFuncOp(mlir::ModuleOp &module, SmallPtrSet<Operation *, 16>
 
 static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter)
 {
-    // adding localVarAttrs to ops (should be second)
     SmallPtrSet<Operation *, 16> workSet;
     selectAllVariablesAndDebugVariables(module, workSet);
 
