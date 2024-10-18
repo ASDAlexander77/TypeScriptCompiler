@@ -5854,7 +5854,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 }
 
                 // TODO: finish the DI logic
-                unsigned alignInBits = 8;
+                unsigned alignInBits = llvmTypeConverter.getPointerBitwidth();
                 auto diType = di.getDIType(mlir::Type(), dataType, file, line, file);
 
                 auto name = namedLoc.getName();
