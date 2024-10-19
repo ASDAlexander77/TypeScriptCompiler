@@ -446,6 +446,12 @@ class LLVMDebugInfoHelper
             elements.push_back(getDITypeScriptType(retType, file, line, scope));  
         }
 
+        if (funcType.getParams().size() > 0 &&  funcType.getReturnTypes().size() == 0)
+        {
+            // return type is null
+            elements.push_back(mlir::LLVM::DINullTypeAttr());
+        }
+
         for (auto paramType : funcType.getParams())
         {
             elements.push_back(getDITypeScriptType(paramType, file, line, scope));  

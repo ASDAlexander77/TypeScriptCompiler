@@ -5857,6 +5857,11 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 unsigned alignInBits = llvmTypeConverter.getPointerBitwidth();
                 auto diType = di.getDIType(mlir::Type(), dataType, file, line, file);
 
+                // MLIRTypeHelper mth(module.getContext());
+                // if ((mth.isAnyFunctionType(dataType) || dataType.isa<mlir_ts::TupleType>()) && argIndex > 0) {
+                //     diType = di.getDIPointerType(diType, file, line);
+                // }
+
                 auto name = namedLoc.getName();
                 auto scope = scopeFusedLoc.getMetadata();
                 auto varInfo = LLVM::DILocalVariableAttr::get(
