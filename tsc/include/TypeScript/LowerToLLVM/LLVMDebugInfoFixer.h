@@ -57,6 +57,12 @@ public:
                 resultTypes.push_back(diType);
             }
 
+            if (funcOp.getArgumentTypes().size() > 0 &&  funcOp.getResultTypes().size() == 0)
+            {
+                // return type is null
+                resultTypes.push_back(mlir::LLVM::DINullTypeAttr());
+            }
+
             for (auto argType : funcOp.getArgumentTypes())
             {
                 auto diType = di.getDIType({}, argType, file, line, file);
