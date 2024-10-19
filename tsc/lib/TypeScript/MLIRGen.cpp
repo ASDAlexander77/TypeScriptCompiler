@@ -4934,7 +4934,7 @@ class MLIRGenImpl
                 nextStatements.push_back(statement);
             }
         }
-        else
+        else if (functionLikeDeclarationBaseAST->body)
         {
             nextStatements.push_back(functionLikeDeclarationBaseAST->body);
         }
@@ -5012,7 +5012,7 @@ class MLIRGenImpl
             // to ensure correct full name
             methodOp->parent = functionLikeDeclarationBaseAST->parent;
 
-            //LLVM_DEBUG(printDebug(methodOp););
+            LLVM_DEBUG(printDebug(methodOp););
 
             auto genMethodOp = mlirGenFunctionLikeDeclaration(methodOp, genContext);
             return genMethodOp;            
