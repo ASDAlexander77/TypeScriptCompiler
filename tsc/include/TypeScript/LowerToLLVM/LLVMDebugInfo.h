@@ -427,8 +427,6 @@ class LLVMDebugInfoHelper
         return compositeType;          
     }    
 
-private:
-
     LLVM::DIDerivedTypeAttr getDIPointerType(LLVM::DITypeAttr diElementType, LLVM::DIFileAttr file, uint32_t line)
     {
         auto sizeInBits = llvmtch.getPointerBitwidth(0);

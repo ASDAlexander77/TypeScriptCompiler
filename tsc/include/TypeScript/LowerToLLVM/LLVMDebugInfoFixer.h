@@ -57,6 +57,12 @@ public:
                 resultTypes.push_back(diType);
             }
 
+            for (auto argType : funcOp.getArgumentTypes())
+            {
+                auto diType = di.getDIType({}, argType, file, line, file);
+                resultTypes.push_back(diType);
+            }
+
             auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(context, llvm::dwarf::DW_CC_normal, resultTypes);
             auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                 context, 

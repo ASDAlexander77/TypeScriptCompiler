@@ -5881,7 +5881,7 @@ static LogicalResult setDIReturnTypesToFormOp(mlir::ModuleOp &module, LLVMTypeCo
     {
         if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(op)) {
             // debug info - adding return type
-            if (funcOp.getResultTypes().size() > 0 && !funcOp.getBody().empty())
+            if ((funcOp.getResultTypes().size() > 0 || funcOp.getArgumentTypes().size() > 0) && !funcOp.getBody().empty())
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
 
