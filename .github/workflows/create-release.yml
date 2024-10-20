@@ -295,7 +295,7 @@ jobs:
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         env:
-          LLVM_SYMBOLIZER_PATH: ${{github.workspace}}/3rdParty/llvm/release
+          LLVM_SYMBOLIZER_PATH: ${{github.workspace}}/3rdParty/llvm/release/bin
         
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
@@ -449,7 +449,7 @@ jobs:
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         env:
-          LLVM_SYMBOLIZER_PATH: ${{github.workspace}}/3rdParty/llvm/release
+          LLVM_SYMBOLIZER_PATH: ${{github.workspace}}/3rdParty/llvm/release/bin
         
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
