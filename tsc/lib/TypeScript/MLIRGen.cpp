@@ -21174,7 +21174,7 @@ genContext);
         return {arrayMode, mlir::success()};
     }
 
-    void getTupleFieldInfo(TypeLiteralNode typeLiteral, mlir::SmallVector<mlir_ts::FieldInfo> &types,
+    mlir::LogicalResult getTupleFieldInfo(TypeLiteralNode typeLiteral, mlir::SmallVector<mlir_ts::FieldInfo> &types,
                            const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
@@ -21186,6 +21186,11 @@ genContext);
                 auto propertySignature = typeItem.as<PropertySignature>();
 
                 auto originalType = getType(propertySignature->type, genContext);
+                if (!originalType)
+                {
+                    return mlir::failure();
+                }
+
                 auto type = mcl.getEffectiveFunctionTypeForTupleField(originalType);
 
                 assert(type);
@@ -21196,29 +21201,41 @@ genContext);
                 auto methodSignature = typeItem.as<MethodSignature>();
 
                 auto type = getType(typeItem, genContext);
+                if (!type)
+                {
+                    return mlir::failure();
+                }
 
-                assert(type);
                 types.push_back({TupleFieldName(methodSignature->name, genContext), type});
             }
             else if (kind == SyntaxKind::ConstructSignature)
             {
                 auto type = getType(typeItem, genContext);
+                if (!type)
+                {
+                    return mlir::failure();
+                }
 
-                assert(type);
                 types.push_back({MLIRHelper::TupleFieldName(NEW_CTOR_METHOD_NAME, builder.getContext()), type});
             }            
             else if (kind == SyntaxKind::IndexSignature)
             {
                 auto type = getType(typeItem, genContext);
+                if (!type)
+                {
+                    return mlir::failure();
+                }
 
-                assert(type);
                 types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, builder.getContext()), type});
             }
             else if (kind == SyntaxKind::CallSignature)
             {
                 auto type = getType(typeItem, genContext);
+                if (!type)
+                {
+                    return mlir::failure();
+                }
 
-                assert(type);
                 types.push_back({MLIRHelper::TupleFieldName(CALL_FIELD_NAME, builder.getContext()), type});
             }
             else
@@ -21228,10 +21245,15 @@ genContext);
         }
     }
 
-    mlir_ts::ConstTupleType getConstTupleType(TupleTypeNode tupleType, const GenContext &genContext)
+    mlir::Type getConstTupleType(TupleTypeNode tupleType, const GenContext &genContext)
     {
         mlir::SmallVector<mlir_ts::FieldInfo> types;
-        getTupleFieldInfo(tupleType, types, genContext);
+        auto [arrayMode, result] = getTupleFieldInfo(tupleType, types, genContext);
+        if (mlir::failed(result))
+        {
+            return mlir::Type();
+        }
+
         return getConstTupleType(types);
     }
 
@@ -21260,8 +21282,12 @@ genContext);
     mlir::Type getTupleType(TypeLiteralNode typeLiteral, const GenContext &genContext)
     {
         mlir::SmallVector<mlir_ts::FieldInfo> types;
-        getTupleFieldInfo(typeLiteral, types, genContext);
-
+        auto result = getTupleFieldInfo(typeLiteral, types, genContext);
+        if (mlir::failed(result))
+        {
+            return mlir::Type();
+        }
+        
         // TODO: remove the following hack
         // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
         if (types.size() == 1)
