@@ -32,7 +32,7 @@
         {
             "label": "CTest - All - Debug",
             "type": "shell",
-            "command": "ctest -C Debug -j16 --output-on-failure",
+            "command": "ctest -C Debug -j1 --output-on-failure",
             "problemMatcher": [],
             "detail": "CMake CTest - run all - Debug",
             "group": {
@@ -53,7 +53,7 @@
         {
             "label": "CTest - Failed - Debug",
             "type": "shell",
-            "command": "ctest -C Debug -j16 --rerun-failed --output-on-failure",
+            "command": "ctest -C Debug -j1 --rerun-failed --output-on-failure",
             "problemMatcher": [],
             "detail": "CMake CTest - rerun failed - Debug",
             "group": {
@@ -74,7 +74,7 @@
         {
             "label": "CTest - All - Release",
             "type": "shell",
-            "command": "ctest -C Release -j16 --output-on-failure",
+            "command": "ctest -C Release -j1 --output-on-failure",
             "problemMatcher": [],
             "detail": "CMake CTest - run all - Release",
             "group": {
@@ -95,7 +95,7 @@
         {
             "label": "CTest - Failed - Release",
             "type": "shell",
-            "command": "ctest -C Release -j16 --rerun-failed --output-on-failure",
+            "command": "ctest -C Release -j1 --rerun-failed --output-on-failure",
             "problemMatcher": [],
             "detail": "CMake CTest - rerun failed - Release",
             "group": {

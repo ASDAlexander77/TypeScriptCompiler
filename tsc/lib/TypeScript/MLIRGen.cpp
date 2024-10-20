@@ -8342,6 +8342,11 @@ class MLIRGenImpl
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
 
             auto resultRtti = mlirGenPropertyAccessExpression(location, classRefVal, RTTI_NAME, genContext);
+            if (!resultRtti)
+            {
+                return mlir::Value();
+            }
+
             auto rttiOfClassValue = V(resultRtti);
             if (classInfo->isDynamicImport)
             {
@@ -8363,6 +8368,7 @@ class MLIRGenImpl
 
             // TODO: check result
             auto result = cast(location, instanceOfFuncType, instanceOfPtr, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto funcPtr = V(result);
 
             // call methos, we need to send, this, and rtti info
