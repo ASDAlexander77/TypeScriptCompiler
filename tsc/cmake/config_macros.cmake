@@ -2,7 +2,7 @@ macro(set_Options)
 
 if(MSVC)
     # enable RTTI
-    SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc /GR")
+    SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc /GR /we4715")
 else()
     #SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-switch -Wno-unused-function -Wno-unused-result -Wno-unused-variable -Wno-unused-private-field -Wno-sign-compare -Wno-implicit-fallthrough -Wno-logical-op-parentheses -Wno-parentheses -Wno-unused-command-line-argument -frtti -lstdc++fs")
     if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
@@ -12,6 +12,7 @@ else()
     endif()
     # enable RTTI
     SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti -fexceptions")
+    SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic-errors")
 endif()
 
 endmacro()

@@ -21249,6 +21249,8 @@ genContext);
                 llvm_unreachable("not implemented");
             }
         }
+
+        return mlir::success();
     }
 
     mlir::Type getConstTupleType(TupleTypeNode tupleType, const GenContext &genContext)
