@@ -4908,6 +4908,10 @@ class MLIRGenImpl
         // create return object
         NodeArray<ObjectLiteralElementLike> generatorObjectProperties;
 
+        // add step field
+        auto stepProp = nf.createPropertyAssignment(stepIdent, nf.createNumericLiteral(S("0"), TokenFlags::None));
+        generatorObjectProperties.push_back(stepProp);
+
         // create body of next method
         NodeArray<Statement> nextStatements;
 
@@ -4966,10 +4970,6 @@ class MLIRGenImpl
         }
 
         generatorObjectProperties.push_back(nextMethodDecl);
-
-        // add step field
-        auto stepProp = nf.createPropertyAssignment(stepIdent, nf.createNumericLiteral(S("0"), TokenFlags::None));
-        generatorObjectProperties.push_back(stepProp);
 
         auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
 
@@ -21287,7 +21287,7 @@ genContext);
         {
             return mlir::Type();
         }
-        
+
         // TODO: remove the following hack
         // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
         if (types.size() == 1)
