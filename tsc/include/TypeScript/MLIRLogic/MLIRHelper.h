@@ -125,7 +125,7 @@ class MLIRHelper
                 auto line = loc.getLine();
                 auto column = loc.getColumn();
 
-                assert(line > 0 || column > 0);
+                assert(line != 1 || column != 1);
 
                 ssName << 'L' << line << 'C' << column;
             })

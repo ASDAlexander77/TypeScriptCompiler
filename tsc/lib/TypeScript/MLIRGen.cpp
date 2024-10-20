@@ -22456,7 +22456,7 @@ genContext);
             return mlir::UnknownLoc::get(builder.getContext());
         }
 
-        auto pos = loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos;
+        auto pos = loc->pos.textPos > 0 ? loc->pos.textPos : loc->pos.pos;
         //return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
         //return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
         return locFuseWithScope(loc2Fuse(sourceFile, mainSourceFileName.str(), pos, loc->_end - pos));
