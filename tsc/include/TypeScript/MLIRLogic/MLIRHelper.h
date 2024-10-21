@@ -121,13 +121,14 @@ class MLIRHelper
     {
         mlir::TypeSwitch<mlir::LocationAttr>(loc)
             .Case<mlir::FileLineColLoc>([&](auto loc) {
-                // auto fileName = loc.getFilename();
+                auto fileName = loc.getFilename();
                 auto line = loc.getLine();
                 auto column = loc.getColumn();
 
                 assert(line != 0 || column != 0);
 
-                ssName << 'L' << line << 'C' << column;
+                auto hashCode = hash_value(fileName);
+                ssName << 'L' << line << 'C' << column << 'FH' << hashCode;
             })
             .Case<mlir::NameLoc>([&](auto loc) {
                 getAnonymousNameStep(ssName, loc.getChildLoc());

@@ -22446,11 +22446,6 @@ genContext);
 
     mlir::Location loc(TextRange loc)
     {
-        if (!overwriteLoc.isa<mlir::UnknownLoc>())
-        {
-            return overwriteLoc;
-        }
-
         if (!loc)
         {
             return mlir::UnknownLoc::get(builder.getContext());
@@ -22459,15 +22454,18 @@ genContext);
         auto pos = loc->pos.textPos > 0 ? loc->pos.textPos : loc->pos.pos;
         //return loc1(sourceFile, fileName.str(), pos, loc->_end - pos);
         //return loc2(sourceFile, fileName.str(), pos, loc->_end - pos);
-        return locFuseWithScope(loc2Fuse(sourceFile, mainSourceFileName.str(), pos, loc->_end - pos));
+        return locFuseWithScope(
+                    combine(
+                        overwriteLoc,
+                        loc2Fuse(sourceFile, mainSourceFileName.str(), pos, loc->_end - pos)));
     }
 
     mlir::Location loc1(ts::SourceFile sourceFile, std::string fileName, int start, int length)
     {
         auto fileId = getStringAttr(fileName);
         auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start);
-        auto begin =
-            mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
+        auto begin = mlir::FileLineColLoc::get(builder.getContext(), 
+            fileId, posLineChar.line + 1, posLineChar.character + 1);
         return begin;
     }
 
@@ -22475,33 +22473,34 @@ genContext);
     {
         auto fileId = getStringAttr(fileName);
         auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start);
-        auto begin =
-            mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
+        auto begin = mlir::FileLineColLoc::get(builder.getContext(), fileId, 
+            posLineChar.line + 1, posLineChar.character + 1);
         if (length <= 1)
         {
             return begin;
         }
 
         auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
-        auto end =
-            mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
-        return mlir::FusedLoc::get(builder.getContext(), {begin, end});
+        auto end = mlir::FileLineColLoc::get(builder.getContext(), fileId, 
+            endLineChar.line + 1, endLineChar.character + 1);
+        //return mlir::FusedLoc::get(builder.getContext(), {begin, end});
+        return begin;
     }
 
     mlir::Location loc2Fuse(ts::SourceFile sourceFile, std::string fileName, int start, int length)
     {
         auto fileId = getStringAttr(fileName);
         auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start);
-        auto begin =
-            mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1, posLineChar.character + 1);
+        auto begin = mlir::FileLineColLoc::get(builder.getContext(), fileId, 
+            posLineChar.line + 1, posLineChar.character + 1);
         if (length <= 1)
         {
             return begin;
         }
 
         auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
-        auto end =
-            mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1, endLineChar.character + 1);
+        auto end = mlir::FileLineColLoc::get(builder.getContext(), 
+            fileId, endLineChar.line + 1, endLineChar.character + 1);
         //return mlir::FusedLoc::get(builder.getContext(), {begin, end});
         //return mlir::FusedLoc::get(builder.getContext(), {begin}, end);
         // TODO: why u did this way? because of loosing "column" info due to merging fused locations?
@@ -22519,6 +22518,16 @@ genContext);
         MLIRDebugInfoHelper mdi(builder, debugScope);
         //return mdi.combineWithCurrentLexicalBlockScope(location);
         return mdi.combineWithCurrentScope(location);
+    }
+
+    mlir::Location combine(mlir::Location parenLocation, mlir::Location location) 
+    {
+        if (parenLocation.isa<mlir::UnknownLoc>())
+        {
+            return location;
+        }
+
+        return mlir::FusedLoc::get(builder.getContext(), {parenLocation, location});  
     }
 
     mlir::Location stripMetadata(mlir::Location location)
@@ -22547,7 +22556,7 @@ genContext);
     mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true)
     {
         Parser parser;
-        auto module = parser.parseSourceFile(S("Temp"), src, ScriptTarget::Latest);
+        auto module = parser.parseSourceFile(S("virtual"), src, ScriptTarget::Latest);
 
         MLIRNamespaceGuard nsGuard(currentNamespace);
         if (useRootNamesapce)
