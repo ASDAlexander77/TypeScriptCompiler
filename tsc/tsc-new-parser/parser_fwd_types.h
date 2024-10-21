@@ -55,15 +55,15 @@ template <typename T> struct ptr
 {
     typedef T data;
 
-    ptr() : instance(nullptr){};
+    ptr() : instance(nullptr){}
 
-    ptr(undefined_t) : instance(nullptr){};
+    ptr(undefined_t) : instance(nullptr){}
 
-    ptr(const T &data) : instance(std::make_shared<T>(data)){};
+    ptr(const T &data) : instance(std::make_shared<T>(data)){}
 
-    template <typename U> ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)){};
+    template <typename U> ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)){}
 
-    template <typename U> ptr(REF_TYPE(U) & otherInstance) : instance(std::static_pointer_cast<T>(otherInstance)){};
+    template <typename U> ptr(REF_TYPE(U) & otherInstance) : instance(std::static_pointer_cast<T>(otherInstance)){}
 
     ~ptr() = default;
 

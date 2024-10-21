@@ -84,5 +84,6 @@
 #define FILE_DEBUG_SCOPE "file"
 #define SUBPROGRAM_DEBUG_SCOPE "function"
 #define BLOCK_DEBUG_SCOPE "block"
+#define NAMESPACE_DEBUG_SCOPE "block"
 
 #endif // DEFINES_H_
