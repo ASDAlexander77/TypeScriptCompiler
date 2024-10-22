@@ -18477,11 +18477,14 @@ genContext);
             }
 
             // test fun types
-            auto test = mth.TestFunctionTypesMatchWithObjectMethods(valueType, type).result == MatchResultType::Match;
-            if (!test)
+            if (!mth.isGenericType(valueType) && !mth.isGenericType(type))
             {
-                emitError(location) << valueType << " is not matching type " << type;
-                return mlir::failure();
+                auto test = mth.TestFunctionTypesMatchWithObjectMethods(valueType, type).result == MatchResultType::Match;
+                if (!test)
+                {
+                    emitError(location) << valueType << " is not matching type " << type;
+                    return mlir::failure();
+                }
             }            
         }
 
@@ -18701,20 +18704,20 @@ genContext);
 
         if (mlir::failed(mth.canCastTupleToInterface(location, tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
         {
-            // SmallVector<mlir_ts::FieldInfo> fields;
-            // if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
-            // {
-            //     return mlir::Value();
-            // }
+            SmallVector<mlir_ts::FieldInfo> fields;
+            if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
+            {
+                return mlir::Value();
+            }
 
-            // auto newInterfaceTupleType = getTupleType(fields);
-            // CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
-            // tupleType = newInterfaceTupleType;
+            auto newInterfaceTupleType = getTupleType(fields);
+            CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
+            tupleType = newInterfaceTupleType;
 
             // TODO: you can create new Tuple with set of data, as tuple can be object with 'this' and internal values which needed to run commands
             // by stipping important members of Tuple you break integrity of the code(program)
-            llvm_unreachable("can't be casted");
-            return mlir::Value();
+            //llvm_unreachable("can't be casted");
+            //return mlir::Value();
         }
 
         // TODO: finish it, what to finish it? maybe optimization not to create extra object?
