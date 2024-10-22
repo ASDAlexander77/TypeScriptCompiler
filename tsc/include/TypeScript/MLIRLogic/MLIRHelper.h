@@ -128,7 +128,7 @@ class MLIRHelper
                 assert(line != 0 || column != 0);
 
                 auto hashCode = hash_value(fileName);
-                ssName << 'L' << line << 'C' << column << 'FH' << hashCode;
+                ssName << 'L' << line << 'C' << column << "FH" << hashCode;
             })
             .Case<mlir::NameLoc>([&](auto loc) {
                 getAnonymousNameStep(ssName, loc.getChildLoc());

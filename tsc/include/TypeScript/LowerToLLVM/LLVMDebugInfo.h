@@ -94,18 +94,18 @@ class LLVMDebugInfoHelper
     {
     }
 
-    LLVM::DITypeAttr getDIType(mlir::Type llvmType, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDIType(mlir::Location location, mlir::Type llvmType, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        auto diType = getDITypeScriptType(type, file, line, scope);
+        auto diType = getDITypeScriptType(location, type, file, line, scope);
         if (diType)
         {
             return diType;
         }
 
-        return getDILLVMType(llvmType, file, line, scope);
+        return getDILLVMType(location, llvmType, file, line, scope);
     }
 
-    LLVM::DITypeAttr getDITypeScriptType(mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDITypeScriptType(mlir::Location location, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         if (!type)
         {
@@ -132,7 +132,7 @@ class LLVMDebugInfoHelper
         // special case
         if (auto anyType = type.dyn_cast<mlir_ts::AnyType>())
         {
-            return getDIType(anyType, file, line, scope);
+            return getDIType(location, anyType, file, line, scope);
         }
 
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
@@ -145,33 +145,33 @@ class LLVMDebugInfoHelper
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
             MLIRTypeHelper mth(context);
-            if (mth.isUnionTypeNeedsTag(unionType))
+            if (mth.isUnionTypeNeedsTag(location, unionType))
             {
-                return getDIType(unionType, file, line, scope);
+                return getDIType(location, unionType, file, line, scope);
             }
         }
 
         if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
-            return getDITypeWithFields(tupleType, "tuple", true, file, line, scope);
+            return getDITypeWithFields(location, tupleType, "tuple", true, file, line, scope);
         }
 
         if (auto classType = type.dyn_cast_or_null<mlir_ts::ClassType>())
         {
-            return getDIType(classType, file, line, scope);
+            return getDIType(location, classType, file, line, scope);
         }
 
         if (auto classStorageType = type.dyn_cast<mlir_ts::ClassStorageType>())
         {
-            return getDITypeWithFields(classStorageType, classStorageType.getName().getValue().str(), false, file, line, scope);
+            return getDITypeWithFields(location, classStorageType, classStorageType.getName().getValue().str(), false, file, line, scope);
         }
 
         if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
         {
-            return getDIType(enumType, file, line, scope);
+            return getDIType(location, enumType, file, line, scope);
         }
 
-        return getDILLVMType(llvmtch.typeConverter.convertType(type), file, line, scope);
+        return getDILLVMType(location, llvmtch.typeConverter.convertType(type), file, line, scope);
     }    
 
     LLVM::DITypeAttr getDITypeScriptBasicType(mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
@@ -220,7 +220,7 @@ class LLVMDebugInfoHelper
         return diTypeAttr;   
     }    
 
-    LLVM::DITypeAttr getDILLVMType(mlir::Type llvmType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDILLVMType(mlir::Location location, mlir::Type llvmType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         LLVM::DITypeAttr diTypeAttr;
 
@@ -260,13 +260,13 @@ class LLVMDebugInfoHelper
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), floatType.getIntOrFloatBitWidth(), dwarf::DW_ATE_float);
             })        
             .Case<LLVM::LLVMStructType>([&](auto structType) {  
-                diTypeAttr = getDIStructType(structType, file, line, scope);
+                diTypeAttr = getDIStructType(location, structType, file, line, scope);
             })
             .Case<LLVM::LLVMPointerType>([&](auto llvmPointerType) {  
-                diTypeAttr = getDIPointerType(getDILLVMType(llvmPointerType.getElementType(), file, line, scope), file, line);
+                diTypeAttr = getDIPointerType(getDILLVMType(location, llvmPointerType.getElementType(), file, line, scope), file, line);
             })
             .Case<LLVM::LLVMFunctionType>([&](auto funcType) {
-                diTypeAttr = getDISubroutineType(funcType, file, line, scope);
+                diTypeAttr = getDISubroutineType(location, funcType, file, line, scope);
             })
             .Default([&](auto type) { 
                 // TODO: review it                
@@ -294,9 +294,9 @@ class LLVMDebugInfoHelper
         return getDIPointerType(diTypeAttr, file, line);
     }     
 
-    LLVM::DITypeAttr getDIType(mlir_ts::AnyType anyType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDIType(mlir::Location location, mlir_ts::AnyType anyType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        auto diBodyType = getDIStructType("any", {
+        auto diBodyType = getDIStructType(location, "any", {
             {"size", mlir::IndexType::get(context)},
             {"type", mlir_ts::StringType::get(context)},
         }, file, line, scope);
@@ -318,12 +318,12 @@ class LLVMDebugInfoHelper
     } 
 #endif    
 
-    LLVM::DITypeAttr getDIType(mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDIType(mlir::Location location, mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         auto strType = mlir_ts::StringType::get(context);
-        auto diStrType = getDITypeScriptType(strType, file, line, scope);
+        auto diStrType = getDITypeScriptType(location, strType, file, line, scope);
 
-        auto diTypeAttrUnion = getDIUnionType(unionType, file, line, scope);
+        auto diTypeAttrUnion = getDIUnionType(location, unionType, file, line, scope);
 
         return getDIStructType(MLIRHelper::getAnonymousName(unionType, "union"), {
             {"type", diStrType},
@@ -331,15 +331,15 @@ class LLVMDebugInfoHelper
         }, file, line, scope);        
     }    
 
-    LLVM::DITypeAttr getDIType(mlir_ts::ClassType classType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDIType(mlir::Location location, mlir_ts::ClassType classType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        auto diTypeAttrClassType = getDIPointerType(getDITypeScriptType(classType.getStorageType(), file, line, scope), file, line);
+        auto diTypeAttrClassType = getDIPointerType(getDITypeScriptType(location, classType.getStorageType(), file, line, scope), file, line);
         return diTypeAttrClassType;        
     } 
 
-    LLVM::DITypeAttr getDIType(mlir_ts::EnumType enumType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDIType(mlir::Location location, mlir_ts::EnumType enumType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        auto diBaseType = getDITypeScriptType(enumType.getElementType(), file, line, scope);
+        auto diBaseType = getDITypeScriptType(location, enumType.getElementType(), file, line, scope);
 
         //auto enumName = MLIRHelper::getAnonymousName(enumType, "enum");
 
@@ -364,7 +364,7 @@ class LLVMDebugInfoHelper
         return diBaseType;
     }
 
-    LLVM::DITypeAttr getDITypeWithFields(mlir::Type typeWithFields, std::string name, bool isNamePrefix, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDITypeWithFields(mlir::Location location, mlir::Type typeWithFields, std::string name, bool isNamePrefix, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         if (!isNamePrefix)
         {
@@ -409,7 +409,7 @@ class LLVMDebugInfoHelper
                 }
             }
 
-            auto elementDiType = getDITypeScriptType(elementType, file, line, scope);
+            auto elementDiType = getDITypeScriptType(location, elementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, 
                 sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits);
             elements.push_back(wrapperDiType);
@@ -438,12 +438,12 @@ class LLVMDebugInfoHelper
             sizeInBits, alignInBits, offsetInBits);
     }
 
-    LLVM::DISubroutineTypeAttr getDISubroutineType(LLVM::LLVMFunctionType funcType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DISubroutineTypeAttr getDISubroutineType(mlir::Location location, LLVM::LLVMFunctionType funcType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         llvm::SmallVector<LLVM::DITypeAttr> elements;
         for (auto retType : funcType.getReturnTypes())
         {
-            elements.push_back(getDITypeScriptType(retType, file, line, scope));  
+            elements.push_back(getDITypeScriptType(location, retType, file, line, scope));  
         }
 
         if (funcType.getParams().size() > 0 &&  funcType.getReturnTypes().size() == 0)
@@ -454,7 +454,7 @@ class LLVMDebugInfoHelper
 
         for (auto paramType : funcType.getParams())
         {
-            elements.push_back(getDITypeScriptType(paramType, file, line, scope));  
+            elements.push_back(getDITypeScriptType(location, paramType, file, line, scope));  
         }
 
         auto subroutineType = LLVM::DISubroutineTypeAttr::get(context, elements);
@@ -462,7 +462,7 @@ class LLVMDebugInfoHelper
     }
 
     // Seems LLVM::DIFlags::FwdDecl is resolving issue for me
-    LLVM::DITypeAttr getDIStructType(LLVM::LLVMStructType structType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDIStructType(mlir::Location location, LLVM::LLVMStructType structType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         if (structType.isIdentified())
         {
@@ -494,7 +494,7 @@ class LLVMDebugInfoHelper
 
             StringAttr elementName = StringAttr::get(context, std::to_string(index));
 
-            auto elementDiType = getDILLVMType(llvmElementType, file, line, scope);
+            auto elementDiType = getDILLVMType(location, llvmElementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, 
                 elementName, elementDiType, sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits);
                 elements.push_back(wrapperDiType);  
@@ -514,7 +514,7 @@ class LLVMDebugInfoHelper
         return compositeType;
     }
 
-    LLVM::DICompositeTypeAttr getDIStructType(StringRef name, ArrayRef<std::pair<StringRef, mlir::Type>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DICompositeTypeAttr getDIStructType(mlir::Location location, StringRef name, ArrayRef<std::pair<StringRef, mlir::Type>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         MLIRTypeHelper mth(context);
 
@@ -531,7 +531,7 @@ class LLVMDebugInfoHelper
             
             sizesTrack.nextElementType(llvmElementType);
             
-            auto elementDiType = getDIType(llvmElementType, elementType, file, line, scope);
+            auto elementDiType = getDIType(location, llvmElementType, elementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, 
                 sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits);
             elements.push_back(wrapperDiType);
@@ -566,7 +566,7 @@ class LLVMDebugInfoHelper
             file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements);        
     }    
 
-    LLVM::DICompositeTypeAttr getDIUnionType(mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DICompositeTypeAttr getDIUnionType(mlir::Location location, mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         auto sizeInBits = 0;
 
@@ -584,7 +584,7 @@ class LLVMDebugInfoHelper
             // name
             auto name = mth.getLabelName(elementType);
 
-            auto elementDiType = getDITypeScriptType(elementType, file, line, scope);
+            auto elementDiType = getDITypeScriptType(location, elementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, 
                 elementDiType, sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, 0);
             elements.push_back(wrapperDiType);

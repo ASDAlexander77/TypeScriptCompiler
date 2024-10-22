@@ -556,7 +556,7 @@ LogicalResult mlir_ts::CastOp::verify()
     if (inUnionType || resUnionType)
     {
         ::typescript::MLIRTypeHelper mth(getContext());
-        auto cmpTypes = [&](mlir::Type t1, mlir::Type t2) { return mth.canCastFromTo(t1, t2); };
+        auto cmpTypes = [&](mlir::Type t1, mlir::Type t2) { return mth.canCastFromTo(getLoc(), t1, t2); };
 
         if (inUnionType && !resUnionType)
         {
@@ -568,7 +568,7 @@ LogicalResult mlir_ts::CastOp::verify()
             {
                 ::typescript::MLIRTypeHelper mth(getContext());
                 mlir::Type baseType;
-                if (!mth.isUnionTypeNeedsTag(inUnionType, baseType)/* && mth.canCastFromTo(baseType, resType)*/)
+                if (!mth.isUnionTypeNeedsTag(getLoc(), inUnionType, baseType)/* && mth.canCastFromTo(baseType, resType)*/)
                 {
                     // we need to ignore this case, for example if union<int, int, int> -> string, we need cast int to string
                     return success();
@@ -629,6 +629,8 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
     LogicalResult matchAndRewrite(mlir_ts::CastOp castOp, PatternRewriter &rewriter) const override
     {
+        auto location = castOp.getLoc();
+
         // TODO: finish it
         auto in = castOp.getIn();
         auto res = castOp.getRes();
@@ -681,7 +683,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         if (resUnionType && !inUnionType)
         {
             ::typescript::MLIRTypeHelper mth(rewriter.getContext());
-            if (mth.isUnionTypeNeedsTag(resUnionType))
+            if (mth.isUnionTypeNeedsTag(location, resUnionType))
             {
                 // TODO: boxing, finish it, need to send TypeOf
                 auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
@@ -696,7 +698,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         if (inUnionType && !resUnionType)
         {
             ::typescript::MLIRTypeHelper mth(rewriter.getContext());
-            if (mth.isUnionTypeNeedsTag(inUnionType))
+            if (mth.isUnionTypeNeedsTag(location, inUnionType))
             {
                 auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, res.getType(), in);
                 rewriter.replaceOp(castOp, ValueRange{value});

@@ -1598,7 +1598,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         types.push_back(i8PtrTy);
         types.push_back(valueType);
         auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, UNION_TYPE_PACKED);
-        if (!mth.isUnionTypeNeedsTag(op.getType().cast<mlir_ts::UnionType>()))
+        if (!mth.isUnionTypeNeedsTag(loc, op.getType().cast<mlir_ts::UnionType>()))
         {
             // this is union of tuples, no need to add Tag to it
             // create tagged union
@@ -1647,7 +1647,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
         CodeLogicHelper clh(op, rewriter);
         MLIRTypeHelper mth(rewriter.getContext());
 
-        bool needTag = mth.isUnionTypeNeedsTag(op.getIn().getType().cast<mlir_ts::UnionType>());
+        bool needTag = mth.isUnionTypeNeedsTag(loc, op.getIn().getType().cast<mlir_ts::UnionType>());
         if (needTag)
         {
             auto in = transformed.getIn();
@@ -1698,7 +1698,7 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
         auto loc = op->getLoc();
 
         mlir::Type baseType;
-        bool needTag = mth.isUnionTypeNeedsTag(op.getIn().getType().cast<mlir_ts::UnionType>(), baseType);
+        bool needTag = mth.isUnionTypeNeedsTag(loc, op.getIn().getType().cast<mlir_ts::UnionType>(), baseType);
         if (needTag)
         {
             auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.getIn(),
@@ -5582,7 +5582,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         MLIRTypeHelper mth(m.getContext());
 
         mlir::Type selectedType = ltch.findMaxSizeType(type);
-        bool needTag = mth.isUnionTypeNeedsTag(type);
+        bool needTag = mth.isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), type);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! max size type in union: " << selectedType
                                 << "\n size: " << ltch.getTypeSizeEstimateInBytes(selectedType) << "\n Tag: " << (needTag ? "yes" : "no")
@@ -5855,7 +5855,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
 
                 // TODO: finish the DI logic
                 unsigned alignInBits = llvmTypeConverter.getPointerBitwidth();
-                auto diType = di.getDIType(mlir::Type(), dataType, file, line, file);
+                auto diType = di.getDIType(location, mlir::Type(), dataType, file, line, file);
 
                 // MLIRTypeHelper mth(module.getContext());
                 // if ((mth.isAnyFunctionType(dataType) || dataType.isa<mlir_ts::TupleType>()) && argIndex > 0) {

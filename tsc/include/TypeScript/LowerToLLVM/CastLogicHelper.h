@@ -400,7 +400,7 @@ class CastLogicHelper
             {
                 MLIRTypeHelper mth(unionType.getContext());
                 mlir::Type baseType;
-                bool needTag = mth.isUnionTypeNeedsTag(unionType, baseType);
+                bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
                 if (!needTag)
                 {
                     auto llvmBoolType = tch.convertType(boolType);
@@ -512,7 +512,7 @@ class CastLogicHelper
             {
                 MLIRTypeHelper mth(resUnionType.getContext());
                 mlir::Type baseType;
-                bool needTag = mth.isUnionTypeNeedsTag(resUnionType, baseType);
+                bool needTag = mth.isUnionTypeNeedsTag(loc, resUnionType, baseType);
                 if (needTag)
                 {
                     auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
@@ -530,7 +530,7 @@ class CastLogicHelper
         {
             MLIRTypeHelper mth(inUnionType.getContext());
             mlir::Type baseType;
-            bool needTag = mth.isUnionTypeNeedsTag(inUnionType, baseType);
+            bool needTag = mth.isUnionTypeNeedsTag(loc, inUnionType, baseType);
             if (!needTag)
             {
                 return cast(in, baseType, tch.convertType(baseType), resType, resLLVMType);
@@ -983,7 +983,7 @@ class CastLogicHelper
         {
             MLIRTypeHelper mth(unionType.getContext());
             mlir::Type baseType;
-            bool needTag = mth.isUnionTypeNeedsTag(unionType, baseType);
+            bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
             if (needTag)
             {
                 typeOfValue = toh.typeOfLogic(loc, valueForBoxing, unionType);

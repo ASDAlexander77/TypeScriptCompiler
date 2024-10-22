@@ -53,7 +53,7 @@ public:
             SmallVector <mlir::LLVM::DITypeAttr> resultTypes;
             for (auto resType : funcOp.getResultTypes())
             {
-                auto diType = di.getDIType({}, resType, file, line, file);
+                auto diType = di.getDIType(location, {}, resType, file, line, file);
                 resultTypes.push_back(diType);
             }
 
@@ -65,7 +65,7 @@ public:
 
             for (auto argType : funcOp.getArgumentTypes())
             {
-                auto diType = di.getDIType({}, argType, file, line, file);
+                auto diType = di.getDIType(location, {}, argType, file, line, file);
                 resultTypes.push_back(diType);
             }
 

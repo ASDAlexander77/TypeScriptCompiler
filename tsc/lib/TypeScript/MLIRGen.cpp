@@ -1563,7 +1563,7 @@ class MLIRGenImpl
             if (existType)
             {
                 auto merged = false;
-                currentType = mth.mergeType(existType, currentType, merged);
+                currentType = mth.mergeType(location, existType, currentType, merged);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
                 results[name] = currentType;
@@ -2229,7 +2229,7 @@ class MLIRGenImpl
                         {
                             auto argOp = genericTypeGenContext.callOperands[varArgIndex];
 
-                            accumulateArrayItemType(argOp.getType(), arrayInfo);                            
+                            accumulateArrayItemType(location, argOp.getType(), arrayInfo);                            
                         }
 
                         mlir::Type arrayType = getArrayType(arrayInfo.accumulatedArrayElementType);
@@ -6139,7 +6139,7 @@ class MLIRGenImpl
 #endif
     }
 
-    mlir::LogicalResult processReturnType(mlir::Value expressionValue, const GenContext &genContext)
+    mlir::LogicalResult processReturnType(mlir::Location location, mlir::Value expressionValue, const GenContext &genContext)
     {
         // TODO: rewrite it using UnionType
 
@@ -6184,7 +6184,7 @@ class MLIRGenImpl
             // }
 
             auto merged = false;
-            auto resultReturnType = mth.mergeType(genContext.passResult->functionReturnType, type, merged);            
+            auto resultReturnType = mth.mergeType(location, genContext.passResult->functionReturnType, type, merged);            
 
             LLVM_DEBUG(dbgs() << "\n!! return type: " << resultReturnType << "");
 
@@ -6236,7 +6236,7 @@ class MLIRGenImpl
         }
 
         // record return type if not provided
-        processReturnType(expressionValue, genContext);
+        processReturnType(location, expressionValue, genContext);
 
         if (!expressionValue)
         {
@@ -8022,7 +8022,7 @@ class MLIRGenImpl
 
         if (resultTrue && resultFalse)
         {
-            auto defaultUnionType = getUnionType(resultTrue.getType(), resultFalse.getType());
+            auto defaultUnionType = getUnionType(location, resultTrue.getType(), resultFalse.getType());
             auto merged = false;
             auto resultType = mth.findBaseType(resultTrue.getType(), resultFalse.getType(), merged, defaultUnionType);
 
@@ -8133,7 +8133,7 @@ class MLIRGenImpl
             }
         }
 
-        auto resultType = getUnionType(resultTrue.getType(), resultFalse.getType());
+        auto resultType = getUnionType(location, resultTrue.getType(), resultFalse.getType());
 
         ifOp->getResult(0).setType(resultType);
 
@@ -8182,7 +8182,7 @@ class MLIRGenImpl
         auto leftExpressionValue = V(result);
 
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
-        auto defaultUnionType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
+        auto defaultUnionType = getUnionType(location, leftExpressionValue.getType(), resultWhenFalseType);
         auto merged = false;
         auto resultType = mth.findBaseType(resultWhenFalseType, leftExpressionValue.getType(), merged, defaultUnionType);
 
@@ -11812,7 +11812,7 @@ class MLIRGenImpl
             {
                 // TODO: review it, seems it should be resolved earlier
                 auto name = MLIRHelper::getName(typeExpression.as<Identifier>());
-                type = findEmbeddedType(name, newExpression->typeArguments, genContext);
+                type = findEmbeddedType(location, name, newExpression->typeArguments, genContext);
                 if (type)
                 {
                     result = V(builder.create<mlir_ts::TypeRefOp>(location, type));
@@ -11833,7 +11833,7 @@ class MLIRGenImpl
         {
             if (newExpression->typeArguments > 0 && classType.getName().getValue().starts_with("Array<"))
             {
-                auto arrayType = findEmbeddedType("Array", newExpression->typeArguments, genContext);
+                auto arrayType = findEmbeddedType(location, "Array", newExpression->typeArguments, genContext);
                 if (arrayType)
                 {
                     return NewArray(location, arrayType, newExpression->arguments, genContext);
@@ -12406,7 +12406,7 @@ class MLIRGenImpl
         bool isVariableSizeOfSpreadElement;
     };
 
-    mlir::LogicalResult accumulateArrayItemType(mlir::Type type, struct ArrayInfo &arrayInfo) 
+    mlir::LogicalResult accumulateArrayItemType(mlir::Location location, mlir::Type type, struct ArrayInfo &arrayInfo) 
     {
         auto elementType = arrayInfo.accumulatedArrayElementType;
 
@@ -12434,7 +12434,7 @@ class MLIRGenImpl
             }
             
             auto merged = false;
-            elementType = mth.mergeType(elementType, wideType, merged);
+            elementType = mth.mergeType(location, elementType, wideType, merged);
         }
 
         //LLVM_DEBUG(llvm::dbgs() << "\n!! result element type: " << elementType << "\n";);
@@ -12469,7 +12469,7 @@ class MLIRGenImpl
                 values.push_back({newConstVal, false, false});
             }
 
-            accumulateArrayItemType(constArray.getElementType(), arrayInfo);
+            accumulateArrayItemType(location, constArray.getElementType(), arrayInfo);
 
             return mlir::success();
         }
@@ -12480,7 +12480,7 @@ class MLIRGenImpl
             values.push_back({itemValue, true, true});
 
             auto arrayElementType = mth.wideStorageType(array.getElementType());
-            accumulateArrayItemType(arrayElementType, arrayInfo);
+            accumulateArrayItemType(location, arrayElementType, arrayInfo);
 
             return mlir::success();
         }
@@ -12490,7 +12490,7 @@ class MLIRGenImpl
             // TODO: implement method to concat array with const-length array in one operation without using 'push' for each element
             values.push_back({itemValue, true, true});
 
-            accumulateArrayItemType(getCharType(), arrayInfo);
+            accumulateArrayItemType(location, getCharType(), arrayInfo);
 
             return mlir::success();
         }        
@@ -12519,7 +12519,7 @@ class MLIRGenImpl
                     values.push_back({itemValue, true, true});
 
                     auto arrayElementType = mth.wideStorageType(fields.front().type);
-                    accumulateArrayItemType(arrayElementType, arrayInfo);
+                    accumulateArrayItemType(location, arrayElementType, arrayInfo);
                 }
                 else
                 {
@@ -12547,7 +12547,7 @@ class MLIRGenImpl
 
                     values.push_back({newConstVal, false, false});
 
-                    accumulateArrayItemType(constTuple.getFieldInfo(index).type, arrayInfo);
+                    accumulateArrayItemType(location, constTuple.getFieldInfo(index).type, arrayInfo);
                 }
             }
 
@@ -12559,7 +12559,7 @@ class MLIRGenImpl
             values.push_back({itemValue, true, false});
             for (auto tupleItem : tupleType)
             {
-                accumulateArrayItemType(tupleItem.type, arrayInfo);
+                accumulateArrayItemType(location, tupleItem.type, arrayInfo);
             }
 
             return mlir::success();
@@ -12622,7 +12622,7 @@ class MLIRGenImpl
             }                
 
             values.push_back({itemValue, false, false});
-            accumulateArrayItemType(type, arrayInfo);
+            accumulateArrayItemType(location, type, arrayInfo);
         }
 
         return mlir::success();
@@ -14351,7 +14351,8 @@ class MLIRGenImpl
             currentEnumValue++;
         }
 
-        auto storeType = mth.getUnionTypeWithMerge(enumLiteralTypes);
+        auto location = loc(enumDeclarationAST);
+        auto storeType = mth.getUnionTypeWithMerge(location, enumLiteralTypes);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " storage type: " << storeType << "\n");
 
@@ -18360,7 +18361,7 @@ genContext);
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
             mlir::Type baseType;
-            if (mth.isUnionTypeNeedsTag(unionType, baseType))
+            if (mth.isUnionTypeNeedsTag(location, unionType, baseType))
             {
                 auto types = unionType.getTypes();
                 if (std::find(types.begin(), types.end(), valueType) == types.end())
@@ -18368,7 +18369,7 @@ genContext);
                     // find which type we can cast to
                     for (auto subType : types)
                     {
-                        if (mth.canCastFromTo(valueType, subType))
+                        if (mth.canCastFromTo(location, valueType, subType))
                         {
                             CAST(value, location, subType, value, genContext);
                             return V(builder.create<mlir_ts::CastOp>(location, type, value));                    
@@ -18407,7 +18408,7 @@ genContext);
             // union -> any will be done later in CastLogic
             auto toAny = type.dyn_cast<mlir_ts::AnyType>();
             mlir::Type baseType;
-            if (!toAny && mth.isUnionTypeNeedsTag(unionType, baseType))
+            if (!toAny && mth.isUnionTypeNeedsTag(location, unionType, baseType))
             {
                 return castFromUnion(location, type, value, genContext);
             }
@@ -18441,22 +18442,6 @@ genContext);
             }
         }
 
-        // cast ext method to bound method
-        if (auto extFuncType = valueType.dyn_cast<mlir_ts::ExtensionFunctionType>())
-        {
-            if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
-            {
-                auto boundFunc = createBoundMethodFromExtensionMethod(location, value.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>());
-                return V(builder.create<mlir_ts::CastOp>(location, type, boundFunc));
-            }
-
-            if (auto boundFuncType = type.dyn_cast<mlir_ts::BoundFunctionType>())
-            {
-                auto boundFunc = createBoundMethodFromExtensionMethod(location, value.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>());
-                return V(builder.create<mlir_ts::CastOp>(location, type, boundFunc));
-            }            
-        }
-
         // opaque to hybrid func
         if (auto opaqueType = valueType.dyn_cast<mlir_ts::OpaqueType>())
         {
@@ -18475,11 +18460,45 @@ genContext);
             }
         }
 
-        if (mth.isAnyFunctionType(valueType) && mth.isAnyFunctionType(type) && mth.isGenericType(valueType)) {
-            // need to instantiate generic method
-            auto result = instantiateSpecializedFunction(location, value, type, genContext);
-            EXIT_IF_FAILED(result);
+        if (mth.isAnyFunctionType(valueType) && mth.isAnyFunctionType(type)) {
+
+            if (mth.isGenericType(valueType))
+            {
+                // need to instantiate generic method
+                auto result = instantiateSpecializedFunction(location, value, type, genContext);
+                EXIT_IF_FAILED(result);
+            }
+
             // fall through to finish cast operation
+            if (!mth.CanCastFunctionTypeToFunctionType(valueType, type))
+            {
+                emitError(location, "invalid cast from ") << valueType << " to " << type;
+                return mlir::failure();                
+            }
+
+            // test fun types
+            auto test = mth.TestFunctionTypesMatchWithObjectMethods(valueType, type).result == MatchResultType::Match;
+            if (!test)
+            {
+                emitError(location) << valueType << " is not matching type " << type;
+                return mlir::failure();
+            }            
+        }
+
+        // cast ext method to bound method
+        if (auto extFuncType = valueType.dyn_cast<mlir_ts::ExtensionFunctionType>())
+        {
+            if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
+            {
+                auto boundFunc = createBoundMethodFromExtensionMethod(location, value.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>());
+                return V(builder.create<mlir_ts::CastOp>(location, type, boundFunc));
+            }
+
+            if (auto boundFuncType = type.dyn_cast<mlir_ts::BoundFunctionType>())
+            {
+                auto boundFunc = createBoundMethodFromExtensionMethod(location, value.getDefiningOp<mlir_ts::CreateExtensionFunctionOp>());
+                return V(builder.create<mlir_ts::CastOp>(location, type, boundFunc));
+            }            
         }
 
         // wrong casts
@@ -18550,7 +18569,7 @@ genContext);
     {
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(value.getType()))
         {
-            if (auto normalizedUnion = dyn_cast<mlir_ts::UnionType>(mth.getUnionTypeWithMerge(unionType.getTypes())))
+            if (auto normalizedUnion = dyn_cast<mlir_ts::UnionType>(mth.getUnionTypeWithMerge(location, unionType.getTypes())))
             {
                 // info, we add "_" extra as scanner append "_" in front of "__";
                 auto funcName = "___cast";
@@ -18680,17 +18699,21 @@ genContext);
 
         auto inEffective = in;
 
-        if (mlir::failed(mth.canCastTupleToInterface(tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
+        if (mlir::failed(mth.canCastTupleToInterface(location, tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
         {
-            SmallVector<mlir_ts::FieldInfo> fields;
-            if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
-            {
-                return mlir::Value();
-            }
+            // SmallVector<mlir_ts::FieldInfo> fields;
+            // if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
+            // {
+            //     return mlir::Value();
+            // }
 
-            auto newInterfaceTupleType = getTupleType(fields);
-            CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
-            tupleType = newInterfaceTupleType;
+            // auto newInterfaceTupleType = getTupleType(fields);
+            // CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
+            // tupleType = newInterfaceTupleType;
+
+            // TODO: you can create new Tuple with set of data, as tuple can be object with 'this' and internal values which needed to run commands
+            // by stipping important members of Tuple you break integrity of the code(program)
+            return mlir::Value();
         }
 
         // TODO: finish it, what to finish it? maybe optimization not to create extra object?
@@ -18896,7 +18919,7 @@ genContext);
         }
         else if (kind == SyntaxKind::InferType)
         {
-            return getInferType(typeReferenceAST.as<InferTypeNode>(), genContext);
+            return getInferType(loc(typeReferenceAST), typeReferenceAST.as<InferTypeNode>(), genContext);
         }
         else if (kind == SyntaxKind::OptionalType)
         {
@@ -18915,7 +18938,7 @@ genContext);
         // return getAnyType();
     }
 
-    mlir::Type getInferType(InferTypeNode inferTypeNodeAST, const GenContext &genContext)
+    mlir::Type getInferType(mlir::Location location, InferTypeNode inferTypeNodeAST, const GenContext &genContext)
     {
         auto type = getType(inferTypeNodeAST->typeParameter, genContext);
         auto inferType = getInferType(type);
@@ -18924,7 +18947,7 @@ genContext);
 
         // TODO: review function 'extends' in MLIRTypeHelper with the same logic adding infer types to context
         auto &typeParamsWithArgs = const_cast<GenContext &>(genContext).typeParamsWithArgs;
-        mth.appendInferTypeToContext(type, inferType, typeParamsWithArgs);
+        mth.appendInferTypeToContext(location, type, inferType, typeParamsWithArgs);
 
         return inferType;
     }
@@ -19037,7 +19060,7 @@ genContext);
                 return {mlir::failure(), IsGeneric::False};
             }
 
-            auto extendsResult = mth.extendsType(type, constraintType, pairs);
+            auto extendsResult = mth.extendsType(location, type, constraintType, pairs);
             if (extendsResult != ExtendsResult::True)
             {
                 // special case when we work with generic type(which are not specialized yet)
@@ -19086,11 +19109,11 @@ genContext);
                     auto merged = false;
                     if (arrayMerge)
                     {
-                        type = mth.arrayMergeType(existType.second, type, merged);
+                        type = mth.arrayMergeType(location, existType.second, type, merged);
                     }
                     else
                     {
-                        type = mth.mergeType(existType.second, type, merged);
+                        type = mth.mergeType(location, existType.second, type, merged);
                     }
 
                     LLVM_DEBUG(llvm::dbgs() << "\n!! result (after merge) type: " << type << "\n";);
@@ -19391,7 +19414,7 @@ genContext);
                 return interfaceType;
             }
 
-            if (auto embedType = findEmbeddedType(name, typeReferenceAST->typeArguments, genContext))
+            if (auto embedType = findEmbeddedType(location, name, typeReferenceAST->typeArguments, genContext))
             {
                 return embedType;
             }
@@ -19402,7 +19425,7 @@ genContext);
             return type;
         }
 
-        if (auto embedType = findEmbeddedType(name, typeReferenceAST->typeArguments, genContext))
+        if (auto embedType = findEmbeddedType(location, name, typeReferenceAST->typeArguments, genContext))
         {
             return embedType;
         }
@@ -19410,7 +19433,7 @@ genContext);
         return mlir::Type();
     }
 
-    mlir::Type findEmbeddedType(std::string name, NodeArray<TypeNode> &typeArguments, const GenContext &genContext)
+    mlir::Type findEmbeddedType(mlir::Location location, std::string name, NodeArray<TypeNode> &typeArguments, const GenContext &genContext)
     {
         auto typeArgumentsSize = typeArguments->size();
         if (typeArgumentsSize == 0)
@@ -19431,7 +19454,7 @@ genContext);
 
         if (typeArgumentsSize > 1)
         {
-            if (auto type = getEmbeddedTypeWithManyParams(name, typeArguments, genContext))
+            if (auto type = getEmbeddedTypeWithManyParams(location, name, typeArguments, genContext))
             {
                 return type;
             }
@@ -19889,27 +19912,27 @@ genContext);
         return translate(typeArguments, genContext);
     }
 
-    mlir::Type getEmbeddedTypeWithManyParams(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
+    mlir::Type getEmbeddedTypeWithManyParams(mlir::Location location, mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
                                              const GenContext &genContext)
     {
         return compileOptions.enableBuiltins 
-            ? getEmbeddedTypeWithManyParamsBuiltins(name, typeArguments, genContext) 
+            ? getEmbeddedTypeWithManyParamsBuiltins(location, name, typeArguments, genContext) 
             : mlir::Type();
     }
 
-    mlir::Type getEmbeddedTypeWithManyParamsBuiltins(mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
+    mlir::Type getEmbeddedTypeWithManyParamsBuiltins(mlir::Location location, mlir::StringRef name, NodeArray<TypeNode> &typeArguments,
                                              const GenContext &genContext)
     {
         auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
             .Case("Exclude", [&] (auto typeArguments, auto genContext) {
                 auto firstType = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 auto secondType = getSecondTypeFromTypeArguments(typeArguments, genContext);
-                return ExcludeTypes(firstType, secondType);
+                return ExcludeTypes(location, firstType, secondType);
             })
             .Case("Extract", [&] (auto typeArguments, auto genContext) {
                 auto firstType = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 auto secondType = getSecondTypeFromTypeArguments(typeArguments, genContext);
-                return ExtractTypes(firstType, secondType);
+                return ExtractTypes(location, firstType, secondType);
             })
             .Case("Pick", [&] (auto typeArguments, auto genContext) {
                 auto sourceType = getFirstTypeFromTypeArguments(typeArguments, genContext);
@@ -19998,7 +20021,7 @@ genContext);
     }
 
     // TODO: remove using those types as there issue with generic types
-    mlir::Type ExcludeTypes(mlir::Type type, mlir::Type exclude)
+    mlir::Type ExcludeTypes(mlir::Location location, mlir::Type type, mlir::Type exclude)
     {
         if (mth.isGenericType(type) || mth.isGenericType(exclude))
         {
@@ -20016,7 +20039,9 @@ genContext);
         {
             // TODO: should I use TypeParamsWithArgs from genContext?
             llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> emptyTypeParamsWithArgs;
-            if (llvm::any_of(excludeTypes, [&](mlir::Type type) { return isTrue(mth.extendsType(item, type, emptyTypeParamsWithArgs)); }))
+            if (llvm::any_of(excludeTypes, [&](mlir::Type type) { 
+                return isTrue(mth.extendsType(location, item, type, emptyTypeParamsWithArgs)); 
+            }))
             {
                 continue;
             }
@@ -20027,7 +20052,7 @@ genContext);
         return getUnionType(resTypes);
     }
 
-    mlir::Type ExtractTypes(mlir::Type type, mlir::Type extract)
+    mlir::Type ExtractTypes(mlir::Location location, mlir::Type type, mlir::Type extract)
     {
         if (mth.isGenericType(type) || mth.isGenericType(extract))
         {
@@ -20045,7 +20070,9 @@ genContext);
         {
             // TODO: should I use TypeParamsWithArgs from genContext?
             llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> emptyTypeParamsWithArgs;
-            if (llvm::any_of(extractTypes, [&](mlir::Type type) { return isTrue(mth.extendsType(item, type, emptyTypeParamsWithArgs)); }))
+            if (llvm::any_of(extractTypes, [&](mlir::Type type) { 
+                return isTrue(mth.extendsType(location, item, type, emptyTypeParamsWithArgs)); 
+            }))
             {
                 resTypes.push_back(item);
             }
@@ -20255,7 +20282,7 @@ genContext);
         auto location = loc(conditionalTypeNode);
 
         mlir::Type resType;
-        auto extendsResult = mth.extendsType(checkType, extendsType, typeParamsWithArgs);
+        auto extendsResult = mth.extendsType(location, checkType, extendsType, typeParamsWithArgs);
         if (extendsResult == ExtendsResult::Never)
         {
             return getNeverType();
@@ -20298,7 +20325,7 @@ genContext);
         }
         else
         {
-            resType = getUnionType(resType, falseType);
+            resType = getUnionType(location, resType, falseType);
             LLVM_DEBUG(llvm::dbgs() << "\n!! condition type [TRUE | FALSE] = " << resType << "\n";);
         }
 
@@ -20386,7 +20413,7 @@ genContext);
         if (type.isa<mlir_ts::AnyType>())
         {
             // TODO: and all methods etc
-            return getUnionType(getStringType(), getNumberType());
+            return getUnionType(location, getStringType(), getNumberType());
         }
 
         if (type.isa<mlir_ts::UnknownType>())
@@ -21508,10 +21535,10 @@ genContext);
             return getAnyType();
         }
 
-        return mth.getUnionTypeMergeTypes(unionContext, false, false);
+        return mth.getUnionTypeMergeTypes(loc(unionTypeNode), unionContext, false, false);
     }
 
-    mlir::Type getUnionType(mlir::Type type1, mlir::Type type2)
+    mlir::Type getUnionType(mlir::Location location, mlir::Type type1, mlir::Type type2)
     {
         if (mth.isNoneType(type1) || mth.isNoneType(type2))
         {
@@ -21520,7 +21547,7 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! join: " << type1 << " | " << type2;);
 
-        auto resType = mth.getUnionType(type1, type2, false);
+        auto resType = mth.getUnionType(location, type1, type2, false);
 
         LLVM_DEBUG(llvm::dbgs() << " = " << resType << "\n";);
 
