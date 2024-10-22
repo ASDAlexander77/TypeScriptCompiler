@@ -1111,6 +1111,18 @@ class MLIRTypeHelper
             startParamRes + ShouldThisParamBeIgnored(resFuncType, inFuncType) ? 1 : 0);
     }
 
+    bool isAnyUnknownOrObjectOrGeneric(mlir::Type type) {
+        return type.isa<mlir_ts::ObjectType>() 
+            || type.isa<mlir_ts::UnknownType>() 
+            || type.isa<mlir_ts::AnyType>() 
+            || type.isa<mlir_ts::NamedGenericType>();
+    }
+
+    bool canMatch(mlir::Type left, mlir::Type right) {
+        if (left == right) return true;
+        return isAnyUnknownOrObjectOrGeneric(left) == isAnyUnknownOrObjectOrGeneric(right);
+    }
+
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType,
                                                         unsigned startParamIn = 0, unsigned startParamRes = 0)
     {
@@ -1146,16 +1158,9 @@ class MLIRTypeHelper
 
         for (unsigned i = 0, e = inFuncType.getInputs().size() - startParamIn; i != e; ++i)
         {
-            if (inFuncType.getInput(i + startParamIn) != resFuncType.getInput(i + startParamRes))
+            if (!canMatch(inFuncType.getInput(i + startParamIn), resFuncType.getInput(i + startParamRes)))
             {
-                /*
-                if (i == 0 && (inFuncType.getInput(i).isa<mlir_ts::OpaqueType>() || resFuncType.getInput(i).isa<mlir_ts::OpaqueType>()))
-                {
-                    // allow not to match opaque time at first position
-                    continue;
-                }
-                */
-
+                // allow certan unmatches such as object & unknown
                 return {MatchResultType::NotMatchArg, i};
             }
         }

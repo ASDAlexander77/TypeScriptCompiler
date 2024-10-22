@@ -18477,15 +18477,12 @@ genContext);
             }
 
             // test fun types
-            if (!mth.isGenericType(valueType) && !mth.isGenericType(type))
+            auto test = mth.TestFunctionTypesMatchWithObjectMethods(valueType, type).result == MatchResultType::Match;
+            if (!test)
             {
-                auto test = mth.TestFunctionTypesMatchWithObjectMethods(valueType, type).result == MatchResultType::Match;
-                if (!test)
-                {
-                    emitError(location) << valueType << " is not matching type " << type;
-                    return mlir::failure();
-                }
-            }            
+                emitError(location) << valueType << " is not matching type " << type;
+                return mlir::failure();
+            }
         }
 
         // cast ext method to bound method

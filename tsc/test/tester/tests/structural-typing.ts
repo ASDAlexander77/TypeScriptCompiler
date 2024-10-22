@@ -54,8 +54,9 @@ function main() {
         return { diameter: useInches ? diameter * 0.39 : diameter };
     };
 
-    createSphere = createBall;
-    createBall = createSphere;
+    // TODO: we do not allow it
+    //createSphere = createBall;
+    //createBall = createSphere;
 
     // TypeScript will allow (number) to equal (number, boolean)
     // in the parameters, but not (number, boolean) -> (number)
@@ -80,8 +81,9 @@ function main() {
 
     let createRedBall = (diameter: number) => ({ diameter, color: "red" });
 
-    createBall = createRedBall;
-    createRedBall = createBall;
+    // TODO: we do not allow it, return type is different
+    // createBall = createRedBall;
+    // createRedBall = createBall;
 
     // Where the first assignment works (they both have diameter)
     // but the second doesn't (the ball doesn't have a color).
