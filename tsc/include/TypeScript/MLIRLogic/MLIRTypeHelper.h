@@ -1333,10 +1333,10 @@ class MLIRTypeHelper
     }
 
     mlir::LogicalResult canCastTupleToInterface(mlir::Location location, mlir_ts::TupleType tupleStorageType,
-                                                InterfaceInfo::TypePtr newInterfacePtr)
+                                                InterfaceInfo::TypePtr newInterfacePtr, bool suppressErrors = false)
     {
         SmallVector<VirtualMethodOrFieldInfo> virtualTable;
-        return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, true);
+        return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, suppressErrors);
     }
 
     mlir::LogicalResult getInterfaceVirtualTableForObject(mlir::Location location, mlir_ts::TupleType tupleStorageType,
@@ -1358,7 +1358,7 @@ class MLIRTypeHelper
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
                     auto test = foundField.type.isa<mlir_ts::FunctionType>() && fieldType.isa<mlir_ts::FunctionType>()
                                     ? TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType).result == MatchResultType::Match
-                                    : fieldType == foundField.type;
+                                    : stripLiteralType(fieldType) == stripLiteralType(foundField.type);
                     if (!test)
                     {
                         LLVM_DEBUG(llvm::dbgs() << "field " << id << " not matching type: " << fieldType << " and "

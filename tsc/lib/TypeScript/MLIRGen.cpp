@@ -18702,22 +18702,31 @@ genContext);
 
         auto inEffective = in;
 
-        if (mlir::failed(mth.canCastTupleToInterface(location, tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
+        auto srcTuple = tupleType.cast<mlir_ts::TupleType>();
+        if (mlir::failed(mth.canCastTupleToInterface(location, srcTuple, interfaceInfo, true)))
         {
-            // SmallVector<mlir_ts::FieldInfo> fields;
-            // if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
-            // {
-            //     return mlir::Value();
-            // }
+            SmallVector<mlir_ts::FieldInfo> fields;
+            if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
+            {
+                return mlir::failure();
+            }
 
-            // auto newInterfaceTupleType = getTupleType(fields);
-            // CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
-            // tupleType = newInterfaceTupleType;
+            // append all fields from original tuple
+            for (auto origField : srcTuple.getFields()) {
+                if (std::find_if(
+                    fields.begin(), 
+                    fields.end(), 
+                    [&] (auto& item) { 
+                        return item.id == origField.id; 
+                    }) == fields.end())
+                {
+                    fields.push_back(origField);
+                }                
+            }
 
-            // TODO: you can create new Tuple with set of data, as tuple can be object with 'this' and internal values which needed to run commands
-            // by stipping important members of Tuple you break integrity of the code(program)
-            llvm_unreachable("can't be casted");
-            //return mlir::Value();
+            auto newInterfaceTupleType = getTupleType(fields);
+            CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
+            tupleType = newInterfaceTupleType;
         }
 
         // TODO: finish it, what to finish it? maybe optimization not to create extra object?
