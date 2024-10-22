@@ -1098,40 +1098,29 @@ class MLIRTypeHelper
 
     bool ShouldThisParamBeIgnored(mlir::Type inFuncType, mlir::Type resFuncType) {
         if (inFuncType == resFuncType) return false;
-        return inFuncType.isa<mlir_ts::BoundFunctionType>();
+        return inFuncType.isa<mlir_ts::BoundFunctionType>() || inFuncType.isa<mlir_ts::ExtensionFunctionType>();
     }
 
-    MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
+    MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Location location, mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
                                                         unsigned startParamRes = 0)
     {
         return TestFunctionTypesMatchWithObjectMethods(
+            location,
             GetFunctionType(inFuncType), 
             GetFunctionType(resFuncType), 
             startParamIn + ShouldThisParamBeIgnored(inFuncType, resFuncType) ? 1 : 0, 
             startParamRes + ShouldThisParamBeIgnored(resFuncType, inFuncType) ? 1 : 0);
     }
 
-    bool isBoolType(mlir::Type type) {
-        return type.isa<mlir_ts::BooleanType>() 
-            || type.isa<mlir_ts::TypePredicateType>();
-    }
-
-    bool isAnyUnknownOrObjectOrGeneric(mlir::Type type) {
-        return type.isa<mlir_ts::ObjectType>() 
-            || type.isa<mlir_ts::UnknownType>() 
-            || type.isa<mlir_ts::AnyType>() 
-            || type.isa<mlir_ts::NamedGenericType>();
-    }
-
     // TODO: add types such as opt, reference, array as they may have nested types Is which is not equal
     // TODO: add travel logic and match only simple types
-    bool canMatch(mlir::Type left, mlir::Type right) {
+    bool canMatch(mlir::Location location, mlir::Type left, mlir::Type right) {
         if (left == right) return true;
-        if (isBoolType(left) == isBoolType(right)) return true;
-        return isAnyUnknownOrObjectOrGeneric(left) == isAnyUnknownOrObjectOrGeneric(right);
+        llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> typeParamsWithArgs{};
+        return extendsType(location, left, right, typeParamsWithArgs) == ExtendsResult::True;
     }
 
-    MatchResult TestFunctionTypesMatchWithObjectMethods(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType,
+    MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Location location, mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType,
                                                         unsigned startParamIn = 0, unsigned startParamRes = 0)
     {
         // 1 we need to skip opaque and objects
@@ -1166,7 +1155,7 @@ class MLIRTypeHelper
 
         for (unsigned i = 0, e = inFuncType.getInputs().size() - startParamIn; i != e; ++i)
         {
-            if (!canMatch(inFuncType.getInput(i + startParamIn), resFuncType.getInput(i + startParamRes)))
+            if (!canMatch(location, inFuncType.getInput(i + startParamIn), resFuncType.getInput(i + startParamRes)))
             {
                 // allow certan unmatches such as object & unknown
                 return {MatchResultType::NotMatchArg, i};
@@ -1209,7 +1198,7 @@ class MLIRTypeHelper
 
             auto isInVoid = !inRetType || inRetType == noneType || inRetType == voidType;
             auto isResVoid = !resRetType || resRetType == noneType || resRetType == voidType;
-            if (!isInVoid && !isResVoid && !canMatch(inRetType, resRetType))
+            if (!isInVoid && !isResVoid && !canMatch(location, inRetType, resRetType))
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! return types do not match [" << inRetType << "] and [" << resRetType << "]\n";);
 
@@ -1313,8 +1302,7 @@ class MLIRTypeHelper
                 {
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
                     auto test = foundField.type.isa<mlir_ts::FunctionType>() && fieldType.isa<mlir_ts::FunctionType>()
-                                    ? TestFunctionTypesMatchWithObjectMethods(foundField.type, fieldType).result ==
-                                          MatchResultType::Match
+                                    ? TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType).result == MatchResultType::Match
                                     : fieldType == foundField.type;
                     if (!test)
                     {
@@ -2655,6 +2643,13 @@ class MLIRTypeHelper
                 return (srcType.isa<mlir_ts::TupleType>() || srcType.isa<mlir_ts::ConstTupleType>() || srcType.isa<mlir_ts::ObjectType>()) 
                     ? ExtendsResult::True : ExtendsResult::False;
             }
+        }        
+
+        // TODO: do we need to check types inside?
+        if ((srcType.isa<mlir_ts::TypePredicateType>() || srcType.isa<mlir_ts::BooleanType>())
+            && (extendType.isa<mlir_ts::TypePredicateType>() || extendType.isa<mlir_ts::BooleanType>()))
+        {
+            return ExtendsResult::True;
         }        
 
         // TODO: finish Function Types, etc

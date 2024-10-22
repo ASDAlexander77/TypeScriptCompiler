@@ -18476,12 +18476,15 @@ genContext);
                 return mlir::failure();                
             }
 
-            // test fun types
-            auto test = mth.TestFunctionTypesMatchWithObjectMethods(valueType, type).result == MatchResultType::Match;
-            if (!test)
+            if (!mth.isGenericType(type) && !mth.isGenericType(valueType))
             {
-                emitError(location) << valueType << " is not matching type " << type;
-                return mlir::failure();
+                // test fun types
+                auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type).result == MatchResultType::Match;
+                if (!test)
+                {
+                    emitError(location) << valueType << " is not matching type " << type;
+                    return mlir::failure();
+                }
             }
         }
 
@@ -18690,7 +18693,7 @@ genContext);
         return mlir::failure();
     }    
 
-    mlir::Value castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,
+    ValueOrLogicalResult castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn,
                                      mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
     {
 
@@ -18727,29 +18730,25 @@ genContext);
         return castObjectToInterface(location, inCasted, objType, interfaceInfo, genContext);
     }
 
-    mlir::Value castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
+    ValueOrLogicalResult castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
                                     mlir_ts::InterfaceType interfaceType, const GenContext &genContext)
     {
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
         return castObjectToInterface(location, in, objType, interfaceInfo, genContext);
     }
 
-    mlir::Value castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
+    ValueOrLogicalResult castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
                                     InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext)
     {
-        if (auto createdInterfaceVTableForObject =
-                mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext))
-        {
+        auto result = mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(result)
+        auto createdInterfaceVTableForObject = V(result);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!!"
-                                    << "@ created interface:" << V(createdInterfaceVTableForObject) << "\n";);
-            auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceInfo->interfaceType},
-                                                                        in, createdInterfaceVTableForObject);
-
-            return newInterface;
-        }    
-
-        return mlir::Value();    
+        LLVM_DEBUG(llvm::dbgs() << "\n!!"
+                                << "@ created interface:" << createdInterfaceVTableForObject << "\n";);
+                                
+        return V(builder.create<mlir_ts::NewInterfaceOp>(location, 
+            mlir::TypeRange{interfaceInfo->interfaceType}, in, createdInterfaceVTableForObject));
     }    
 
     mlir_ts::CreateBoundFunctionOp createBoundMethodFromExtensionMethod(mlir::Location location, mlir_ts::CreateExtensionFunctionOp createExtentionFunction)

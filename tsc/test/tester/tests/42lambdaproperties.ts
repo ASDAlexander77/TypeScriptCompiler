@@ -11,7 +11,7 @@ namespace LambdaProperty {
 
         let x: IFoo = {
             y: 3, z: 4, bar: () => {
-                return 0
+                return 0.0
             }, baz: (i: number) => i + 1
         }
 
