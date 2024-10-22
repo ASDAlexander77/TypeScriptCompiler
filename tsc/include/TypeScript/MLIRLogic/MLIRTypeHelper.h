@@ -1075,7 +1075,9 @@ class MLIRTypeHelper
     bool CanCastFunctionTypeToFunctionType(mlir_ts::BoundFunctionType inFuncType, mlir::Type resFuncType) {
         bool result = false;
         mlir::TypeSwitch<mlir::Type>(resFuncType)
-            .Case<mlir_ts::FunctionType>([&](auto functionType) { result = false; })
+            .Case<mlir_ts::FunctionType>([&](auto functionType) { 
+                result = true; // yes, it is allowable. to be able to create objects with functionsi
+            })
             .Case<mlir_ts::HybridFunctionType>([&](auto hybridFunctionType) { result = true; })
             .Case<mlir_ts::BoundFunctionType>([&](auto boundFunctionType) { result = true; }) 
             .Case<mlir_ts::ExtensionFunctionType>([&](auto extensionFunctionType) { result = true; });
@@ -1094,14 +1096,19 @@ class MLIRTypeHelper
         return result;
     }          
 
+    bool ShouldThisParamBeIgnored(mlir::Type inFuncType, mlir::Type resFuncType) {
+        return (inFuncType.isa<mlir_ts::BoundFunctionType>() || inFuncType.isa<mlir_ts::ExtensionFunctionType>())
+                && resFuncType.isa<mlir_ts::HybridFunctionType>();
+    }
+
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
                                                         unsigned startParamRes = 0)
     {
         return TestFunctionTypesMatchWithObjectMethods(
             GetFunctionType(inFuncType), 
             GetFunctionType(resFuncType), 
-            startParamIn, 
-            startParamRes);
+            startParamIn + ShouldThisParamBeIgnored(inFuncType, resFuncType) ? 1 : 0, 
+            startParamRes + ShouldThisParamBeIgnored(resFuncType, inFuncType) ? 1 : 0);
     }
 
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType,
