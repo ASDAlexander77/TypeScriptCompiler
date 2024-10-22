@@ -18704,19 +18704,19 @@ genContext);
 
         if (mlir::failed(mth.canCastTupleToInterface(location, tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
         {
-            SmallVector<mlir_ts::FieldInfo> fields;
-            if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
-            {
-                return mlir::Value();
-            }
+            // SmallVector<mlir_ts::FieldInfo> fields;
+            // if (mlir::failed(interfaceInfo->getTupleTypeFields(fields, builder.getContext())))
+            // {
+            //     return mlir::Value();
+            // }
 
-            auto newInterfaceTupleType = getTupleType(fields);
-            CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
-            tupleType = newInterfaceTupleType;
+            // auto newInterfaceTupleType = getTupleType(fields);
+            // CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
+            // tupleType = newInterfaceTupleType;
 
             // TODO: you can create new Tuple with set of data, as tuple can be object with 'this' and internal values which needed to run commands
             // by stipping important members of Tuple you break integrity of the code(program)
-            //llvm_unreachable("can't be casted");
+            llvm_unreachable("can't be casted");
             //return mlir::Value();
         }
 
@@ -18746,7 +18746,7 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!!"
                                 << "@ created interface:" << createdInterfaceVTableForObject << "\n";);
-                                
+
         return V(builder.create<mlir_ts::NewInterfaceOp>(location, 
             mlir::TypeRange{interfaceInfo->interfaceType}, in, createdInterfaceVTableForObject));
     }    

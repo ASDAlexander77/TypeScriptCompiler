@@ -1112,12 +1112,67 @@ class MLIRTypeHelper
             startParamRes + ShouldThisParamBeIgnored(resFuncType, inFuncType) ? 1 : 0);
     }
 
+    bool isBoolType(mlir::Type type) {
+        if (type.isa<mlir_ts::BooleanType>() || type.isa<mlir_ts::TypePredicateType>()) return true;
+        return type.isa<mlir::IntegerType>() && type.getIntOrFloatBitWidth() == 1;
+    }
+
+    bool isAnyOrUnknownOrObjectType(mlir::Type type) {
+        return type.isa<mlir_ts::AnyType>() || type.isa<mlir_ts::UnknownType>() || type.isa<mlir_ts::ObjectType>();
+    }
+
     // TODO: add types such as opt, reference, array as they may have nested types Is which is not equal
     // TODO: add travel logic and match only simple types
     bool canMatch(mlir::Location location, mlir::Type left, mlir::Type right) {
         if (left == right) return true;
-        llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> typeParamsWithArgs{};
-        return extendsType(location, left, right, typeParamsWithArgs) == ExtendsResult::True;
+
+        left = stripLiteralType(left);
+        right = stripLiteralType(right);
+
+        if (left == right) return true;
+
+        if (isBoolType(left) && isBoolType(right)) return true;
+
+        if (isAnyOrUnknownOrObjectType(left) && isAnyOrUnknownOrObjectType(right)) return true;
+
+        // opts
+        auto leftOpt = left.dyn_cast<mlir_ts::OptionalType>();
+        auto rightOpt = right.dyn_cast<mlir_ts::OptionalType>();
+        if (leftOpt && rightOpt)
+        {
+            return canMatch(location, leftOpt.getElementType(), rightOpt.getElementType());
+        }
+
+        // array 
+        auto leftArray = left.dyn_cast<mlir_ts::ArrayType>();
+        auto rightArray = right.dyn_cast<mlir_ts::ArrayType>();
+        if (leftArray && rightArray)
+        {
+            return canMatch(location, leftArray.getElementType(), rightArray.getElementType());
+        }
+
+        // funcs
+        if (isAnyFunctionType(left) && isAnyFunctionType(right)) {        
+            return TestFunctionTypesMatchWithObjectMethods(location, left, right).result == MatchResultType::Match;
+        }
+
+        auto leftClass = left.dyn_cast<mlir_ts::ClassType>();
+        auto rightClass = right.dyn_cast<mlir_ts::ClassType>();
+        if (leftClass && rightClass)
+        {
+            llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> typeParamsWithArgs;
+            return extendsType(location, rightClass, leftClass, typeParamsWithArgs) == ExtendsResult::True;
+        }
+
+        auto leftInteface = left.dyn_cast<mlir_ts::InterfaceType>();
+        auto rightInteface = right.dyn_cast<mlir_ts::InterfaceType>();
+        if (leftInteface && rightInteface)
+        {
+            llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> typeParamsWithArgs;
+            return extendsType(location, leftInteface, rightInteface, typeParamsWithArgs) == ExtendsResult::True;
+        }        
+
+        return false;
     }
 
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Location location, mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType,
