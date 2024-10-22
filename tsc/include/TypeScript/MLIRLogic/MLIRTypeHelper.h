@@ -1097,8 +1097,8 @@ class MLIRTypeHelper
     }          
 
     bool ShouldThisParamBeIgnored(mlir::Type inFuncType, mlir::Type resFuncType) {
-        return (inFuncType.isa<mlir_ts::BoundFunctionType>() || inFuncType.isa<mlir_ts::ExtensionFunctionType>())
-                && resFuncType.isa<mlir_ts::HybridFunctionType>();
+        if (inFuncType == resFuncType) return false;
+        return inFuncType.isa<mlir_ts::BoundFunctionType>();
     }
 
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
@@ -1111,6 +1111,11 @@ class MLIRTypeHelper
             startParamRes + ShouldThisParamBeIgnored(resFuncType, inFuncType) ? 1 : 0);
     }
 
+    bool isBoolType(mlir::Type type) {
+        return type.isa<mlir_ts::BooleanType>() 
+            || type.isa<mlir_ts::TypePredicateType>();
+    }
+
     bool isAnyUnknownOrObjectOrGeneric(mlir::Type type) {
         return type.isa<mlir_ts::ObjectType>() 
             || type.isa<mlir_ts::UnknownType>() 
@@ -1118,8 +1123,11 @@ class MLIRTypeHelper
             || type.isa<mlir_ts::NamedGenericType>();
     }
 
+    // TODO: add types such as opt, reference, array as they may have nested types Is which is not equal
+    // TODO: add travel logic and match only simple types
     bool canMatch(mlir::Type left, mlir::Type right) {
         if (left == right) return true;
+        if (isBoolType(left) == isBoolType(right)) return true;
         return isAnyUnknownOrObjectOrGeneric(left) == isAnyUnknownOrObjectOrGeneric(right);
     }
 
@@ -1201,8 +1209,10 @@ class MLIRTypeHelper
 
             auto isInVoid = !inRetType || inRetType == noneType || inRetType == voidType;
             auto isResVoid = !resRetType || resRetType == noneType || resRetType == voidType;
-            if (!isInVoid && !isResVoid && inRetType != resRetType)
+            if (!isInVoid && !isResVoid && !canMatch(inRetType, resRetType))
             {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! return types do not match [" << inRetType << "] and [" << resRetType << "]\n";);
+
                 return {MatchResultType::NotMatchResult, i};
             }
         }
