@@ -1023,6 +1023,8 @@ class MLIRTypeHelper
     }
 
     mlir_ts::FunctionType GetFunctionType(mlir::Type inFuncType) {
+        inFuncType = stripOptionalType(inFuncType);    
+        
         mlir_ts::FunctionType funcType;
         mlir::TypeSwitch<mlir::Type>(inFuncType)
             .Case<mlir_ts::FunctionType>([&](auto functionType) { funcType = functionType; })
@@ -1035,6 +1037,9 @@ class MLIRTypeHelper
     }
 
     bool CanCastFunctionTypeToFunctionType(mlir::Type inFuncType, mlir::Type resFuncType) {
+        inFuncType = stripOptionalType(inFuncType);    
+        resFuncType = stripOptionalType(resFuncType);    
+
         bool result = false;
         mlir::TypeSwitch<mlir::Type>(inFuncType)
             .Case<mlir_ts::FunctionType>([&](auto functionType) { result = CanCastFunctionTypeToFunctionType(functionType, resFuncType); })
@@ -1092,7 +1097,11 @@ class MLIRTypeHelper
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
                                                         unsigned startParamRes = 0)
     {
-        return TestFunctionTypesMatchWithObjectMethods(GetFunctionType(inFuncType), GetFunctionType(resFuncType), startParamIn, startParamRes);
+        return TestFunctionTypesMatchWithObjectMethods(
+            GetFunctionType(inFuncType), 
+            GetFunctionType(resFuncType), 
+            startParamIn, 
+            startParamRes);
     }
 
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType,

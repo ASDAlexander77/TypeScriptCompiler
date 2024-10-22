@@ -18713,6 +18713,7 @@ genContext);
 
             // TODO: you can create new Tuple with set of data, as tuple can be object with 'this' and internal values which needed to run commands
             // by stipping important members of Tuple you break integrity of the code(program)
+            llvm_unreachable("can't be casted");
             return mlir::Value();
         }
 
