@@ -3615,7 +3615,7 @@ auto Scanner::setInJSDocType(boolean inType) -> void
 auto Scanner::codePointAt(safe_string &str, number i) -> CharacterCodes
 {
     return str[i];
-};
+}
 
 /* @internal */
 auto Scanner::charSize(CharacterCodes ch) -> number
