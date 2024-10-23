@@ -5637,7 +5637,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
             //return inputs[0];
         });
     */
-};
+}
 
 } // end anonymous namespace
 
@@ -5670,7 +5670,7 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
     }
 
     void runOnOperation() final;
-};
+}
 
 } // end anonymous namespace
 
