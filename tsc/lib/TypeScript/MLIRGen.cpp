@@ -11146,7 +11146,6 @@ class MLIRGenImpl
             auto receiverType = getReceiverType();
             if (isOptionalUnwrap) 
             {
-                MLIRTypeHelper mth(nullptr);
                 receiverType = mth.stripOptionalType(receiverType);
             }
 
@@ -12932,8 +12931,9 @@ class MLIRGenImpl
         auto receiverType = genContext.receiverType;
         if (receiverType)
         {
-            MLIRTypeHelper mth(nullptr);
             receiverType = mth.stripOptionalType(receiverType);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Recevier type: " << receiverType << "\n";);
 
             if ((receiverType.isa<mlir_ts::TupleType>() || receiverType.isa<mlir_ts::ConstTupleType>() || receiverType.isa<mlir_ts::InterfaceType>())
                  && objectLiteral->properties.size() == 0)
@@ -13113,6 +13113,8 @@ class MLIRGenImpl
                 // in case of Union type
                 if (receiverType && !receiverElementType)
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! Detecting dest. union type with first field: " << fieldId << "\n";);
+
                     if (auto unionType = receiverType.dyn_cast<mlir_ts::UnionType>())
                     {
                         for (auto subType : unionType.getTypes())
@@ -18286,13 +18288,13 @@ genContext);
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
             {
                 fields = tupleType.getFields();
+                return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
             }
             else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
             {
                 fields = constTupleType.getFields();
+                return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
             }
-
-            return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext, true);
         }
 
         // tuple to tuple
