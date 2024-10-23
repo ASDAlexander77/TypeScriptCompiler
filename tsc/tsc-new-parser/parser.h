@@ -36,8 +36,8 @@ auto fixupParentReferences(Node rootNode) -> void;
 
 namespace Impl
 {
-struct Parser;
-};
+    struct Parser;
+}
 
 class Parser
 {

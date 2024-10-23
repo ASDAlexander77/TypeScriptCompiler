@@ -23,7 +23,7 @@ static const string Js = S(".js");
 static const string Jsx = S(".jsx");
 static const string Json = S(".json");
 static const string TsBuildInfo = S(".tsbuildinfo");
-}; // namespace Extension
+} // namespace Extension
 
 inline auto positionIsSynthesized(number pos) -> boolean
 {
