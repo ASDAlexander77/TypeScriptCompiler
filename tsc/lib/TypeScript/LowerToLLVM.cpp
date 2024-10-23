@@ -5670,7 +5670,7 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
     }
 
     void runOnOperation() final;
-}
+};
 
 } // end anonymous namespace
 
