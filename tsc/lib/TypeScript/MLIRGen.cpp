@@ -11144,9 +11144,10 @@ class MLIRGenImpl
         mlir::Type isCastNeeded(mlir::Type type, bool isOptionalUnwrap = false)
         {
             auto receiverType = getReceiverType();
-            if (isOptionalUnwrap) if (auto optReceiverType = receiverType.dyn_cast<mlir_ts::OptionalType>())
+            if (isOptionalUnwrap) 
             {
-                receiverType = optReceiverType.getElementType();
+                MLIRTypeHelper mth(nullptr);
+                receiverType = mth.stripOptionalType(receiverType);
             }
 
             return receiverType && type != receiverType 
@@ -12917,6 +12918,8 @@ class MLIRGenImpl
 
     ValueOrLogicalResult mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
     {
+        auto location = loc(objectLiteral);
+
         MLIRCodeLogic mcl(builder);
 
         // first value
@@ -12926,20 +12929,22 @@ class MLIRGenImpl
         SmallVector<std::pair<std::string, size_t>> methodInfosWithCaptures;
         SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldsToSet;
 
-        mlir::Type receiverType = genContext.receiverType;
-
-        auto location = loc(objectLiteral);
-
-        if (receiverType 
-            && (receiverType.isa<mlir_ts::TupleType>() || receiverType.isa<mlir_ts::ConstTupleType>() || receiverType.isa<mlir_ts::InterfaceType>())
-            && objectLiteral->properties.size() == 0)
+        auto receiverType = genContext.receiverType;
+        if (receiverType)
         {
-            // return undef tuple
-            llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
-            if (mlir::succeeded(mth.getFields(receiverType, destTupleFields)))
+            MLIRTypeHelper mth(nullptr);
+            receiverType = mth.stripOptionalType(receiverType);
+
+            if ((receiverType.isa<mlir_ts::TupleType>() || receiverType.isa<mlir_ts::ConstTupleType>() || receiverType.isa<mlir_ts::InterfaceType>())
+                 && objectLiteral->properties.size() == 0)
             {
-                auto tupleType = getTupleType(destTupleFields);
-                return V(builder.create<mlir_ts::UndefOp>(location, tupleType));
+                // return undef tuple
+                llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
+                if (mlir::succeeded(mth.getFields(receiverType, destTupleFields)))
+                {
+                    auto tupleType = getTupleType(destTupleFields);
+                    return V(builder.create<mlir_ts::UndefOp>(location, tupleType));
+                }
             }
         }
 
@@ -18728,7 +18733,7 @@ genContext);
             CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
             tupleType = newInterfaceTupleType;
 
-            emitWarning(location, "") << "Cloned object is used";
+            emitWarning(location, "") << "Cloned object is used. Ensure all types are matching to interface: " << interfaceInfo->fullName;
         }
 
         // TODO: finish it, what to finish it? maybe optimization not to create extra object?
