@@ -18727,6 +18727,8 @@ genContext);
             auto newInterfaceTupleType = getTupleType(fields);
             CAST(inEffective, location, newInterfaceTupleType, inEffective, genContext);
             tupleType = newInterfaceTupleType;
+
+            emitWarning(location, "") << "Cloned object is used";
         }
 
         // TODO: finish it, what to finish it? maybe optimization not to create extra object?
