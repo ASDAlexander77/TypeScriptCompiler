@@ -1378,12 +1378,12 @@ class MLIRTypeHelper
                     return foundField;
                 }
 
-                LLVM_DEBUG(llvm::dbgs() << "field can't be found " << id << " for interface '"
+                LLVM_DEBUG(llvm::dbgs() << id << " field can't be found for interface '"
                                     << newInterfacePtr->fullName << "' in object '" << tupleStorageType << "'";);
 
-                if (!isConditional)
+                if (!isConditional && !suppressErrors)
                 {
-                    emitError(location) << "field can't be found " << id << " for interface '"
+                    emitError(location)  << id << " field can't be found for interface '"
                                         << newInterfacePtr->fullName << "' in object '" << tupleStorageType << "'";
                 }
 

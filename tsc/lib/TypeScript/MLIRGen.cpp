@@ -17733,7 +17733,7 @@ genContext);
     }    
 
     ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
-        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext)
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
     {
         SmallVector<mlir::Value> values;
         
@@ -17770,6 +17770,17 @@ genContext);
                         continue;
                     }
 
+                    if (errorAsWarning)
+                    {
+                        emitWarning(location)
+                            << "field " << fieldInfo.id << " can't be found in tuple '" << srcTupleType << "'";
+
+                        // add undefined value
+                        auto undefVal = builder.create<mlir_ts::UndefOp>(location, fieldInfo.type);
+                        values.push_back(undefVal);
+                        continue;
+                    }
+                    
                     emitError(location)
                         << "field " << fieldInfo.id << " can't be found in tuple '" << srcTupleType << "'";
                     return mlir::failure();
@@ -18275,13 +18286,13 @@ genContext);
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
             {
                 fields = tupleType.getFields();
-                return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
             }
             else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
             {
                 fields = constTupleType.getFields();
-                return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
             }
+
+            return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext, true);
         }
 
         // tuple to tuple
