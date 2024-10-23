@@ -84,15 +84,16 @@ class LocationHelper
         }
         else if (auto namedLoc = dyn_cast<mlir::NameLoc>(location))
         {
-            return getLineAndColumn(namedLoc.getChildLoc());
+            return getSpan(namedLoc.getChildLoc());
         }
         else if (auto fileLineColLoc = dyn_cast<mlir::FileLineColLoc>(location))
         {
-            return getLineAndColumn(fileLineColLoc);
+            auto [l1, c1] = getLineAndColumn(fileLineColLoc);
+            return {l1 + c1 * 255, l1 + c1 * 255 + 1};
         }
         else if (auto opaqueLoc = dyn_cast<mlir::OpaqueLoc>(location))
         {
-            return getLineAndColumn(opaqueLoc.getFallbackLocation());
+            return getSpan(opaqueLoc.getFallbackLocation());
         }
 
         return {0, 0};

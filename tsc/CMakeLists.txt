@@ -118,12 +118,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
-
-if (WIN32)
-else()
-	# linux
-	add_definitions(-D_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
-endif()
+add_definitions(-D_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
 
 # enabling testing
 enable_testing()

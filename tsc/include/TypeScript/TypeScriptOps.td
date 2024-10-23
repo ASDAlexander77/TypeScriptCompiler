@@ -869,42 +869,12 @@ def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
   }];
 
   let arguments = (ins
-    AnyType:$argValue, OptionalAttr<BoolAttr>:$captured
+    AnyType:$argValue, OptionalAttr<BoolAttr>:$captured, OptionalAttr<IndexAttr>:$diArgNumber
   );
 
   let results = (outs
     Res<TypeScript_AnyRefLike, "", [MemAlloc]>:$reference
   );
-}
-
-def TypeScript_OptionalValueOrDefaultOp : TypeScript_Op<"OptValueOrDefault", [SingleBlockImplicitTerminator<"typescript::ResultOp">]> {
-  let summary = [{
-  }];
-
-  let description = [{
-
-    ```mlir
-    %0 = ts.opt_value_or_default : !ts.optional<f32>
-    ```
-  }];
-
-  let arguments = (ins
-    TypeScript_AnyOptional:$argValue
-  );
-
-  let results = (outs
-    AnyType:$value
-  );
-
-  let regions = (region AnyRegion:$defaultValueRegion);
-
-  let extraClassDeclaration = [{
-    OpBuilder getDefaultValueBuilder(OpBuilder::Listener *listener = nullptr) {
-      Block* body = getBody(0);
-      return OpBuilder::atBlockEnd(body, listener);
-    }
-  }];
-
 }
 
 def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitTerminator<"typescript::ParamDefaultValueOp">]> {
@@ -920,7 +890,7 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitT
   }];
 
   let arguments = (ins
-    TypeScript_AnyOptional:$argValue, OptionalAttr<BoolAttr>:$captured
+    TypeScript_AnyOptional:$argValue, OptionalAttr<BoolAttr>:$captured, OptionalAttr<IndexAttr>:$diArgNumber
   );
 
   let results = (outs
@@ -942,9 +912,7 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [Pure, Return
                                ParentOneOf<["ParamOptionalOp"]>]> {
   let arguments = (ins Variadic<AnyType>:$results);
 
-  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
-
-  
+  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>]; 
 }
 
 def TypeScript_OptionalOp : TypeScript_Op<"Optional", 
@@ -957,6 +925,54 @@ def TypeScript_OptionalOp : TypeScript_Op<"Optional",
   }];
   let arguments = (ins AnyType:$in, TypeScript_Boolean:$flag);
   let results = (outs TypeScript_AnyOptional:$res);
+}
+
+def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
+  let summary = [{
+    Allocate an object in stack or heap memory.
+  }];
+
+  let description = [{
+
+    ```mlir
+    %0 = ts.constant ...
+
+    %1 = ts.variable : f32
+    %2 = ts.variable init(%0): f32
+    ```
+  }];
+
+  let arguments = (ins
+    Optional<AnyType>:$initializer, OptionalAttr<BoolAttr>:$captured, OptionalAttr<IndexAttr>:$diArgNumber
+  );
+
+  let results = (outs
+    Res<TypeScript_Ref, "", [MemAlloc]>:$reference
+  );
+
+  
+}
+
+def TypeScript_DebugVariableOp : TypeScript_Op<"DebugVariable", []> {
+  let summary = [{
+    Placeholder to Generate DebugInfo for constant values.
+  }];
+
+  let description = [{
+
+    ```mlir
+    %0 = ts.constant ...
+
+    %1 = ts.debug_variable : f32
+    ```
+  }];
+
+  let arguments = (ins
+    AnyType:$initializer
+  );
+
+  let results = (outs
+  ); 
 }
 
 def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue", 
@@ -1015,54 +1031,34 @@ def TypeScript_ValueOrDefaultOp : TypeScript_Op<"ValueOrDefault",
   let results = (outs AnyType:$res);
 }
 
-def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
+def TypeScript_OptionalValueOrDefaultOp : TypeScript_Op<"OptValueOrDefault", [SingleBlockImplicitTerminator<"typescript::ResultOp">]> {
   let summary = [{
-    Allocate an object in stack or heap memory.
   }];
 
   let description = [{
 
     ```mlir
-    %0 = ts.constant ...
-
-    %1 = ts.variable : f32
-    %2 = ts.variable init(%0): f32
+    %0 = ts.opt_value_or_default : !ts.optional<f32>
     ```
   }];
 
   let arguments = (ins
-    Optional<AnyType>:$initializer, OptionalAttr<BoolAttr>:$captured
+    TypeScript_AnyOptional:$argValue
   );
 
   let results = (outs
-    Res<TypeScript_Ref, "", [MemAlloc]>:$reference
+    AnyType:$value
   );
 
-  
-}
+  let regions = (region AnyRegion:$defaultValueRegion);
 
-def TypeScript_DebugVariableOp : TypeScript_Op<"DebugVariable", []> {
-  let summary = [{
-    Placeholder to Generate DebugInfo for constant values.
+  let extraClassDeclaration = [{
+    OpBuilder getDefaultValueBuilder(OpBuilder::Listener *listener = nullptr) {
+      Block* body = getBody(0);
+      return OpBuilder::atBlockEnd(body, listener);
+    }
   }];
 
-  let description = [{
-
-    ```mlir
-    %0 = ts.constant ...
-
-    %1 = ts.debug_variable : f32
-    ```
-  }];
-
-  let arguments = (ins
-    AnyType:$initializer
-  );
-
-  let results = (outs
-  );
-
-  
 }
 
 def TypeScript_AllocaOp : TypeScript_Op<"Alloca", []> {

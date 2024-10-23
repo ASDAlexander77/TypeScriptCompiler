@@ -1092,19 +1092,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         rewriter.eraseOp(funcOp);
 
-        // debug info - adding return type
-        // if (tsLlvmContext->compileOptions.generateDebugInfo)
-        // {
-        //     if (newFuncOp.getResultTypes().size() > 0)
-        //     {
-        //         LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
-
-        //         LLVMDebugInfoHelperFixer ldif(rewriter, *(LLVMTypeConverter *)getTypeConverter(), tsLlvmContext->compileOptions);
-        //         //ldif.fixFuncOp(newFuncOp);
-        //         ldif.removeScope(newFuncOp);
-        //     }
-        // }
-
         return success();
     }
 
@@ -1611,7 +1598,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         types.push_back(i8PtrTy);
         types.push_back(valueType);
         auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, UNION_TYPE_PACKED);
-        if (!mth.isUnionTypeNeedsTag(op.getType().cast<mlir_ts::UnionType>()))
+        if (!mth.isUnionTypeNeedsTag(loc, op.getType().cast<mlir_ts::UnionType>()))
         {
             // this is union of tuples, no need to add Tag to it
             // create tagged union
@@ -1660,7 +1647,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
         CodeLogicHelper clh(op, rewriter);
         MLIRTypeHelper mth(rewriter.getContext());
 
-        bool needTag = mth.isUnionTypeNeedsTag(op.getIn().getType().cast<mlir_ts::UnionType>());
+        bool needTag = mth.isUnionTypeNeedsTag(loc, op.getIn().getType().cast<mlir_ts::UnionType>());
         if (needTag)
         {
             auto in = transformed.getIn();
@@ -1711,7 +1698,7 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
         auto loc = op->getLoc();
 
         mlir::Type baseType;
-        bool needTag = mth.isUnionTypeNeedsTag(op.getIn().getType().cast<mlir_ts::UnionType>(), baseType);
+        bool needTag = mth.isUnionTypeNeedsTag(loc, op.getIn().getType().cast<mlir_ts::UnionType>(), baseType);
         if (needTag)
         {
             auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.getIn(),
@@ -1745,7 +1732,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
         auto location = varOp.getLoc();
 
-        auto referenceType = varOp.getReference().getType().cast<mlir_ts::RefType>();
+        auto referenceType = varOp.getType();
         auto storageType = referenceType.getElementType();
         auto llvmReferenceType = tch.convertType(referenceType);
 
@@ -1811,35 +1798,14 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         LLVM::DILocalVariableAttr varInfo;
         if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
-            //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
-            if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+            if (auto localVarAttrFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>())
             {
-                if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
-                {
-                    LocationHelper lh(rewriter.getContext());
-                    LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
-                    LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
+                varInfo = localVarAttrFusedLoc.getMetadata();
+                rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
 
-                    auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
-                    auto [line, column] = lineAndColumn;
-                    // clear column
-                    column = 0;
-
-                    // TODO: finish the DI logic
-                    unsigned arg = 0;
-                    // TODO: finish the DI logic
-                    unsigned alignInBits = 8;
-                    auto diType = di.getDIType(tch.convertType(storageType), storageType, file, line, file);
-
-                    auto name = namedLoc.getName();
-                    auto scope = scopeFusedLoc.getMetadata();
-                    varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
-                    rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
-
-                    // TODO: do I need it? does it have an effect?
-                    allocated.getDefiningOp()->setLoc(mlir::FusedLoc::get(rewriter.getContext(), {allocated.getDefiningOp()->getLoc()}, varInfo));
-                }
-            }
+                // TODO: do I need it? does it have an effect?
+                allocated.getDefiningOp()->setLoc(mlir::FusedLoc::get(rewriter.getContext(), {allocated.getDefiningOp()->getLoc()}, varInfo));
+            }            
         }
 
         auto value = transformed.getInitializer();
@@ -1877,39 +1843,20 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
 
         //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
         LocationHelper lh(rewriter.getContext());
-        if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+        if (auto localVarAttrFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>())
         {
-            if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
-            {
-                auto value = transformed.getInitializer();
+            auto value = transformed.getInitializer();
 
-                LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
-                LLVMDebugInfoHelper di(rewriter.getContext(), llvmtch);
+            auto varInfo = localVarAttrFusedLoc.getMetadata();
 
-                auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
-                auto [line, column] = lineAndColumn;
-                // clear column
-                column = 0;
+            auto allocated = ch.Alloca(LLVM::LLVMPointerType::get(value.getType()), 1);
 
-                // TODO: finish the DI logic
-                unsigned arg = 0;
-                // TODO: finish the DI logic
-                unsigned alignInBits = 8;
-                auto diType = di.getDIType(tch.convertType(value.getType()), debugVarOp.getInitializer().getType(), file, line, file);
+            rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
 
-                auto name = namedLoc.getName();
-                auto scope = scopeFusedLoc.getMetadata();
-                auto varInfo = LLVM::DILocalVariableAttr::get(rewriter.getContext(), scope, name, file, line, arg, alignInBits, diType);
-
-                auto allocated = ch.Alloca(LLVM::LLVMPointerType::get(value.getType()), 1);
-
-                rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
-
-                rewriter.create<LLVM::StoreOp>(location, value, allocated);     
+            rewriter.create<LLVM::StoreOp>(location, value, allocated);     
 #ifdef DBG_INFO_ADD_VALUE_OP                                   
-                rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
+            rewriter.create<LLVM::DbgValueOp>(location, value, varInfo);
 #endif
-            }
         }
 
         rewriter.eraseOp(debugVarOp);
@@ -1999,8 +1946,6 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
     LogicalResult matchAndRewrite(mlir_ts::CreateTupleOp createTupleOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         LLVMCodeHelper ch(createTupleOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(createTupleOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
@@ -2011,8 +1956,8 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
         auto loc = createTupleOp.getLoc();
         auto tupleType = createTupleOp.getType().cast<mlir_ts::TupleType>();
 
-        auto tupleVar = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(tupleType), mlir::Value(),
-                                                             rewriter.getBoolAttr(false));
+        auto tupleVar = rewriter.create<mlir_ts::VariableOp>(
+            loc, mlir_ts::RefType::get(tupleType), mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
         // set values here
         mlir::Value zero = clh.createIndexConstantOf(llvmIndexType, 0);
@@ -5637,7 +5582,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         MLIRTypeHelper mth(m.getContext());
 
         mlir::Type selectedType = ltch.findMaxSizeType(type);
-        bool needTag = mth.isUnionTypeNeedsTag(type);
+        bool needTag = mth.isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), type);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! max size type in union: " << selectedType
                                 << "\n size: " << ltch.getTypeSizeEstimateInBytes(selectedType) << "\n Tag: " << (needTag ? "yes" : "no")
@@ -5845,6 +5790,115 @@ static LogicalResult verifyModule(mlir::ModuleOp &module)
     return success();
 }
 
+static void selectAllVariablesAndDebugVariables(mlir::ModuleOp &module, SmallPtrSet<Operation *, 16> &workSet)
+{
+    auto visitorVariablesAndDebugVariablesOp = [&](Operation *op) {
+        if (auto variableOp = dyn_cast_or_null<VariableOp>(op))
+        {
+            workSet.insert(variableOp);
+        }
+
+        if (auto debugVariableOp = dyn_cast_or_null<DebugVariableOp>(op))
+        {
+            workSet.insert(debugVariableOp);
+        }        
+    };
+
+    module.walk(visitorVariablesAndDebugVariablesOp);
+}
+
+static void selectAllFuncOp(mlir::ModuleOp &module, SmallPtrSet<Operation *, 16> &workSet)
+{
+    auto visitorFuncOp = [&](Operation *op) {
+        if (auto funcOp = dyn_cast_or_null<mlir_ts::FuncOp>(op))
+        {
+            workSet.insert(op);
+        }
+    };
+
+    module.walk(visitorFuncOp);
+}
+
+static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter)
+{
+    SmallPtrSet<Operation *, 16> workSet;
+    selectAllVariablesAndDebugVariables(module, workSet);
+
+    for (auto op : workSet)
+    {
+        auto location = op->getLoc();
+        //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
+        if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+        {
+            if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
+            {
+                LocationHelper lh(location.getContext());
+                // we don't need TypeConverter here
+                LLVMTypeConverterHelper llvmtch(llvmTypeConverter);
+                LLVMDebugInfoHelper di(location.getContext(), llvmtch);
+
+                auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
+                auto [line, column] = lineAndColumn;
+
+                mlir::Type dataType;
+                auto argIndex = 0;
+                if (auto variableOp = dyn_cast<mlir_ts::VariableOp>(op))
+                {
+                    dataType = variableOp.getType().getElementType();
+                    auto argVal = variableOp.getDiArgNumber();
+                    argIndex = argVal.has_value() ? argVal.value().getLimitedValue() : 0;
+                }
+                else if (auto debugVariableOp = dyn_cast<mlir_ts::DebugVariableOp>(op))
+                {
+                    dataType = debugVariableOp.getInitializer().getType();
+                }
+
+                // TODO: finish the DI logic
+                unsigned alignInBits = llvmTypeConverter.getPointerBitwidth();
+                auto diType = di.getDIType(location, mlir::Type(), dataType, file, line, file);
+
+                // MLIRTypeHelper mth(module.getContext());
+                // if ((mth.isAnyFunctionType(dataType) || dataType.isa<mlir_ts::TupleType>()) && argIndex > 0) {
+                //     diType = di.getDIPointerType(diType, file, line);
+                // }
+
+                auto name = namedLoc.getName();
+                auto scope = scopeFusedLoc.getMetadata();
+                auto varInfo = LLVM::DILocalVariableAttr::get(
+                    location.getContext(), scope, name, file, line, argIndex, alignInBits, diType);
+
+                op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
+            }
+        }
+    }    
+
+    return success();
+}
+
+static LogicalResult setDIReturnTypesToFormOp(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter)
+{
+    // fixes for FuncOps, and it should be first
+    SmallPtrSet<Operation *, 16> workSetFuncOps;
+
+    selectAllFuncOp(module, workSetFuncOps);
+
+    for (auto op : workSetFuncOps)
+    {
+        if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(op)) {
+            // debug info - adding return type
+            if ((funcOp.getResultTypes().size() > 0 || funcOp.getArgumentTypes().size() > 0) && !funcOp.getBody().empty())
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
+
+                LLVMDebugInfoHelperFixer ldif(funcOp, llvmTypeConverter);
+                ldif.fix();
+            }
+        }
+    }
+
+    return success();
+}
+
 static void selectAllUnrealizedConversionCast(mlir::ModuleOp &module, SmallPtrSet<Operation *, 16> &workSet)
 {
     auto visitorUnrealizedConversionCast = [&](Operation *op) {
@@ -6025,6 +6079,14 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     mlir::SmallPtrSet<mlir::Type, 32> usedTypes;
     populateTypeScriptConversionPatterns(typeConverter, m, usedTypes);
+
+    // in processing ops types will be changed by LLVM versions overtime, we need to have actual information about types 
+    // when generate Debug Info
+    if (tsLlvmContext.compileOptions.generateDebugInfo)
+    {
+        preserveTypesForDebugInfo(m, typeConverter);
+        setDIReturnTypesToFormOp(m, typeConverter);
+    }
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << m << "\n";);
 

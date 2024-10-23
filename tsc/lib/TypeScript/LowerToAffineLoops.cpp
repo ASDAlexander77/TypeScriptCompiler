@@ -55,8 +55,8 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
         {
             auto result = op.getResult(0);
             returnType = result.getType();
-            allocValue =
-                rewriter.create<mlir_ts::VariableOp>(location, returnType, mlir::Value(), rewriter.getBoolAttr(false));
+            allocValue = rewriter.create<mlir_ts::VariableOp>(
+                location, returnType, mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
         }
 
         // create return block
@@ -186,7 +186,62 @@ struct ParamOpLowering : public TsPattern<mlir_ts::ParamOp>
     LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
     {
         rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.getArgValue(),
-                                                         paramOp.getCapturedAttr());
+                                                         paramOp.getCapturedAttr(), paramOp.getDiArgNumberAttr());
+        return success();
+    }
+};
+
+struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
+{
+    using TsPattern<mlir_ts::ParamOptionalOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+
+        auto location = paramOp.getLoc();
+
+        auto dataTypeIn = paramOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto storeType = paramOp.getType().cast<mlir_ts::RefType>().getElementType();
+
+        // ts.if
+        auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.getArgValue());
+        auto ifOp = rewriter.create<mlir_ts::IfOp>(location, storeType, hasValue, true);
+
+        // then block
+        auto &thenRegion = ifOp.getThenRegion();
+
+        rewriter.setInsertionPointToStart(&thenRegion.back());
+
+        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, storeType, paramOp.getArgValue());
+        rewriter.create<mlir_ts::ResultOp>(location, value);
+
+        // else block
+        auto &elseRegion = ifOp.getElseRegion();
+
+        rewriter.setInsertionPointToStart(&elseRegion.back());
+
+        rewriter.inlineRegionBefore(paramOp.getDefaultValueRegion(), &ifOp.getElseRegion().back());
+        // TODO: do I need next line?
+        rewriter.eraseBlock(&ifOp.getElseRegion().back());
+
+        rewriter.setInsertionPointAfter(ifOp);
+
+        auto variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.getResults().front(),
+                                                             paramOp.getCapturedAttr(), paramOp.getDiArgNumberAttr());
+        rewriter.replaceOp(paramOp, mlir::Value(variable));
+
+        return success();
+    }
+};
+
+struct ParamDefaultValueOpLowering : public TsPattern<mlir_ts::ParamDefaultValueOp>
+{
+    using TsPattern<mlir_ts::ParamDefaultValueOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<mlir_ts::ResultOp>(op, op.getResults());
         return success();
     }
 };
@@ -229,61 +284,6 @@ struct OptionalValueOrDefaultOpLowering : public TsPattern<mlir_ts::OptionalValu
 
         rewriter.replaceOp(optionalValueOrDefaultOp, ifOp.getResults().front());
 
-        return success();
-    }
-};
-
-struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
-{
-    using TsPattern<mlir_ts::ParamOptionalOp>::TsPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
-    {
-        TypeHelper th(rewriter);
-
-        auto location = paramOp.getLoc();
-
-        auto dataTypeIn = paramOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
-        auto storeType = paramOp.getType().cast<mlir_ts::RefType>().getElementType();
-
-        // ts.if
-        auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.getArgValue());
-        auto ifOp = rewriter.create<mlir_ts::IfOp>(location, storeType, hasValue, true);
-
-        // then block
-        auto &thenRegion = ifOp.getThenRegion();
-
-        rewriter.setInsertionPointToStart(&thenRegion.back());
-
-        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, storeType, paramOp.getArgValue());
-        rewriter.create<mlir_ts::ResultOp>(location, value);
-
-        // else block
-        auto &elseRegion = ifOp.getElseRegion();
-
-        rewriter.setInsertionPointToStart(&elseRegion.back());
-
-        rewriter.inlineRegionBefore(paramOp.getDefaultValueRegion(), &ifOp.getElseRegion().back());
-        // TODO: do I need next line?
-        rewriter.eraseBlock(&ifOp.getElseRegion().back());
-
-        rewriter.setInsertionPointAfter(ifOp);
-
-        auto variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.getResults().front(),
-                                                                    paramOp.getCapturedAttr());
-        rewriter.replaceOp(paramOp, mlir::Value(variable));
-
-        return success();
-    }
-};
-
-struct ParamDefaultValueOpLowering : public TsPattern<mlir_ts::ParamDefaultValueOp>
-{
-    using TsPattern<mlir_ts::ParamDefaultValueOp>::TsPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
-    {
-        rewriter.replaceOpWithNewOp<mlir_ts::ResultOp>(op, op.getResults());
         return success();
     }
 };
@@ -1636,8 +1636,8 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
 #else
         auto inHeapMemory = false;
 #endif
-        mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value(),
-                                                                            rewriter.getBoolAttr(inHeapMemory));
+        mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(
+            location, captureRefType, mlir::Value(), rewriter.getBoolAttr(inHeapMemory), rewriter.getIndexAttr(0));
 
         for (auto [index, val] : enumerate(captureOp.getCaptured()))
         {

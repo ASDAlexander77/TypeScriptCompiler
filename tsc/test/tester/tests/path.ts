@@ -22,7 +22,7 @@ export function addPath(
  */
 export function pathToArray(
     path: Maybe<Readonly<Path>>,
-): Array<string | number> {
+): (string | number)[] {
     let curr = path;
     let flattened = <typeof curr.key[]>[];
     while (curr) {
@@ -40,13 +40,7 @@ function main() {
         typename: undefined,
     });
     for (let x of pathArray) {
-        if (typeof x == "string") {
-            assert(x == "path");
-            print(x);
-        }
-
-        // TODO: finish cast union type to single type
-        //print(x);
+        print(x);
     }
 
     print("done.");

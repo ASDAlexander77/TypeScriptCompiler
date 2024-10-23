@@ -400,7 +400,7 @@ class CastLogicHelper
             {
                 MLIRTypeHelper mth(unionType.getContext());
                 mlir::Type baseType;
-                bool needTag = mth.isUnionTypeNeedsTag(unionType, baseType);
+                bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
                 if (!needTag)
                 {
                     auto llvmBoolType = tch.convertType(boolType);
@@ -512,7 +512,7 @@ class CastLogicHelper
             {
                 MLIRTypeHelper mth(resUnionType.getContext());
                 mlir::Type baseType;
-                bool needTag = mth.isUnionTypeNeedsTag(resUnionType, baseType);
+                bool needTag = mth.isUnionTypeNeedsTag(loc, resUnionType, baseType);
                 if (needTag)
                 {
                     auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
@@ -530,7 +530,7 @@ class CastLogicHelper
         {
             MLIRTypeHelper mth(inUnionType.getContext());
             mlir::Type baseType;
-            bool needTag = mth.isUnionTypeNeedsTag(inUnionType, baseType);
+            bool needTag = mth.isUnionTypeNeedsTag(loc, inUnionType, baseType);
             if (!needTag)
             {
                 return cast(in, baseType, tch.convertType(baseType), resType, resLLVMType);
@@ -696,9 +696,10 @@ class CastLogicHelper
                     << inLLVMType << " size of #" << srcSize << ",\n " << resLLVMType << " size of #" << dstSize;
             }
 
-            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
-            auto dstAddr =
-                rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), mlir::Value(), rewriter.getBoolAttr(false));
+            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(
+                loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
+            auto dstAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), 
+                mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
             if (srcSize <= 8 && dstSize <= 8)
             {
                 rewriter.create<mlir_ts::LoadSaveOp>(loc, dstAddr, srcAddr);
@@ -718,7 +719,8 @@ class CastLogicHelper
             if (destPtr.getElementType() == inLLVMType)
             {
                 // alloc and return address
-                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
+                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
+                    loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
                 return valueAddr;
             }
         }
@@ -981,7 +983,7 @@ class CastLogicHelper
         {
             MLIRTypeHelper mth(unionType.getContext());
             mlir::Type baseType;
-            bool needTag = mth.isUnionTypeNeedsTag(unionType, baseType);
+            bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
             if (needTag)
             {
                 typeOfValue = toh.typeOfLogic(loc, valueForBoxing, unionType);
@@ -1024,7 +1026,8 @@ class CastLogicHelper
             return clh.castToI8Ptr(variableOp);
         }
 
-        auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false));
+        auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
+            loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
         mlir::Value valueAddrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(valueAddr.getType()), valueAddr);
 

@@ -31,7 +31,8 @@ function main() {
     });
 
     call_func(user.sayHi, user);
-    call_func2(user.sayHi, user);
+    // We do not allow it
+    //call_func2(user.sayHi, user);
 
     print("done.");
 }
