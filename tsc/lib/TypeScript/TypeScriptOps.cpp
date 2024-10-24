@@ -1327,10 +1327,8 @@ void mlir_ts::IfOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImpl
 // WhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::WhileOp::getSuccessorEntryOperands(std::optional<unsigned int> index)
+OperandRange mlir_ts::WhileOp::getEntrySuccessorOperands(RegionBranchPoint point)
 {
-    assert((!index || *index == 0) && "WhileOp is expected to branch only to the first region");
-
     return getInits();
 }
 
@@ -1358,11 +1356,8 @@ void mlir_ts::WhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorI
 // DoWhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(std::optional<unsigned int> index)
+OperandRange mlir_ts::DoWhileOp::getEntrySuccessorOperands(RegionBranchPoint point)
 {
-    // TODO: review it
-    assert((!index || *index == 1) && "DoWhileOp is expected to branch only to the first region");
-
     return getInits();
 }
 
@@ -1694,10 +1689,8 @@ void mlir_ts::LabelOp::addMergeBlock()
 // BodyInternalOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::BodyInternalOp::getSuccessorEntryOperands(std::optional<unsigned int> index)
+OperandRange mlir_ts::BodyInternalOp::getEntrySuccessorOperands(RegionBranchPoint point)
 {
-    assert((!index || *index == 0) && "BodyInternalOp is expected to branch only to the first region");
-
     return getODSOperands(0);
 }
 

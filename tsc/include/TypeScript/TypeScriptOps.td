@@ -1640,7 +1640,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
     [
         LoopLikeOpInterface,
         ConditionallySpeculatable,
-        DeclareOpInterfaceMethods<RegionBranchOpInterface>
+        DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands"]>
     ]> {
   let summary = "a generic 'while' loop";
   let description = [{
@@ -1669,7 +1669,6 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
   let regions = (region SizedRegion<1>:$cond, AnyRegion:$body);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
     mlir::Region &getLoopBody() { return getBody(); }    
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) 
@@ -1686,7 +1685,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
     [
         LoopLikeOpInterface,
         ConditionallySpeculatable,
-        DeclareOpInterfaceMethods<RegionBranchOpInterface>
+        DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands"]>
     ]> {
   let summary = "a generic 'do-while' loop";
   let description = [{
@@ -1698,7 +1697,6 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
   let regions = (region AnyRegion:$body, SizedRegion<1>:$cond);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
     mlir::Region &getLoopBody() { return getBody(); }
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) 
@@ -2058,7 +2056,7 @@ def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
 }
 
 def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, SingleBlockImplicitTerminator<"typescript::BodyResultInternalOp">]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands"]>, SingleBlockImplicitTerminator<"typescript::BodyResultInternalOp">]> {
   let summary = "a generic 'body'";
 
   let arguments = (ins );
@@ -2069,8 +2067,6 @@ def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",
       [{ attr-dict `->` type($results) `:` $body }];
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
-
     Region &getBodyRegion() {
       return getOperation()->getRegion(0);
     }
