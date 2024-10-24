@@ -27,11 +27,11 @@ class LLVMCodeHelperBase
   protected:
     mlir::Operation *op;
     PatternRewriter &rewriter;
-    TypeConverter *typeConverter;
+    const TypeConverter *typeConverter;
     CompileOptions &compileOptions;
 
   public:
-    LLVMCodeHelperBase(mlir::Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter, CompileOptions &compileOptions)
+    LLVMCodeHelperBase(mlir::Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
     {
     }

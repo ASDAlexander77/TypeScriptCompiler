@@ -227,7 +227,7 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
             parseIntFuncOp = ch.getOrInsertFunction(
                 "strtol",
                 th.getFunctionType(rewriter.getI32Type(), {i8PtrTy, th.getPtrType(), rewriter.getI32Type()}));
-            auto nullOp = rewriter.create<LLVM::NullOp>(op->getLoc(), th.getPtrType());
+            auto nullOp = rewriter.create<LLVM::ConstantOp>(op->getLoc(), th.getPtrType(), 0);
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp,
                                                       ValueRange{transformed.getArg(), nullOp, transformed.getBase()});
         }

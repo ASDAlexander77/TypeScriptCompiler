@@ -72,6 +72,7 @@ public:
             auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(context, llvm::dwarf::DW_CC_normal, resultTypes);
             auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                 context, 
+                DistinctAttr::create(mlir::UnitAttr::get(context)),
                 oldMetadata.getCompileUnit(), 
                 oldMetadata.getScope(), 
                 oldMetadata.getName(), 
@@ -197,6 +198,7 @@ private:
         if (subprogScope.getScope() == oldScope) {
             auto newSubprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                 subprogScope.getContext(), 
+                DistinctAttr::create(mlir::UnitAttr::get(subprogScope.getContext())),
                 subprogScope.getCompileUnit(), 
                 newScope.cast<mlir::LLVM::DIScopeAttr>(), 
                 subprogScope.getName(), 

@@ -33,7 +33,7 @@ namespace typescript
 class LLVMCodeHelper : public LLVMCodeHelperBase
 {
   public:
-    LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter, CompileOptions &compileOptions) 
+    LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter, CompileOptions &compileOptions) 
         : LLVMCodeHelperBase(op, rewriter, typeConverter, compileOptions)
     {
     }

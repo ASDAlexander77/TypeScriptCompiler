@@ -44,7 +44,7 @@ class CastLogicHelper
 
   public:
     CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(op->getLoc()),
+        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(op->getLoc()),
           compileOptions(compileOptions), external(false)
     {
     }

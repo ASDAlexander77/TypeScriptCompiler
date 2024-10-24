@@ -18,9 +18,9 @@ namespace typescript
 class TypeConverterHelper
 {
   public:
-    TypeConverter &typeConverter;
+    const TypeConverter *typeConverter;
 
-    TypeConverterHelper(TypeConverter *typeConverter) : typeConverter(*typeConverter)
+    TypeConverterHelper(const TypeConverter *typeConverter) : typeConverter(typeConverter)
     {
         assert(typeConverter);
     }
@@ -29,7 +29,7 @@ class TypeConverterHelper
     {
         if (type)
         {
-            if (auto convertedType = typeConverter.convertType(type))
+            if (auto convertedType = typeConverter->convertType(type))
             {
                 return convertedType;
             }
@@ -40,7 +40,7 @@ class TypeConverterHelper
 
     int getIndexTypeBitwidth()
     {
-        return (*(mlir::LLVMTypeConverter *)&typeConverter).getIndexTypeBitwidth();
+        return ((mlir::LLVMTypeConverter *)typeConverter)->getIndexTypeBitwidth();
     }
 };
 } // namespace typescript

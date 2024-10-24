@@ -28,14 +28,14 @@ class ThrowLogic
     LLVMCodeHelper ch;
     CodeLogicHelper clh;
     Location loc;
-    mlir::TypeConverter &typeConverter;
+    const mlir::TypeConverter *typeConverter;
     CompileOptions &compileOptions;
     bool isWasm;
     bool isWindows;
 
   public:
     ThrowLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
           typeConverter(tch.typeConverter), compileOptions(compileOptions), isWasm(compileOptions.isWasm), isWindows(compileOptions.isWindows)
     {
     }
@@ -81,7 +81,7 @@ class ThrowLogic
                     loc, mlir_ts::RefType::get(exceptionType), mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
             // to resolve unrealized_conversion_cast
-            value = rewriter.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(value.getType()), value);
+            value = rewriter.create<mlir_ts::DialectCastOp>(loc, typeConverter->convertType(value.getType()), value);
         }
 
         rewriter.create<mlir_ts::StoreOp>(loc, exceptionValue, value);
