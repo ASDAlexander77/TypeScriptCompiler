@@ -75,14 +75,14 @@ class AnyLogic
         auto one = clh.createI32ConstantOf(1);
         auto two = clh.createI32ConstantOf(2);
 
-        auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, ptrTy, memValue, ValueRange{zero, zero});
+        auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, memValue, ValueRange{zero, zero});
         rewriter.create<LLVM::StoreOp>(loc, size, ptrSize);
 
-        auto typeOfStr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, memValue, ValueRange{zero, one});
+        auto typeOfStr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, memValue, ValueRange{zero, one});
         rewriter.create<LLVM::StoreOp>(loc, typeOfValue, typeOfStr);
 
         // set actual value
-        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, memValue, ValueRange{zero, two});
+        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, memValue, ValueRange{zero, two});
         rewriter.create<LLVM::StoreOp>(loc, in, ptrValue);
 
         return clh.castToI8Ptr(memValue);
@@ -104,7 +104,7 @@ class AnyLogic
 
         // set actual value
         auto ptrValue =
-            rewriter.create<LLVM::GEPOp>(loc, ptrTy, inDataWithSizeTypedValue, ValueRange{zero, two});
+            rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue, ValueRange{zero, two});
         return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
     }
 
@@ -124,7 +124,7 @@ class AnyLogic
         // auto two = clh.createI32ConstantOf(2);
 
         // set actual value
-        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, inDataWithSizeTypedValue,
+        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue,
                                                      ValueRange{zero, one});
         return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
     }

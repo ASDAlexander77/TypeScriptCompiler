@@ -161,7 +161,7 @@ class LLVMCodeHelperBase
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
         mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), global.getType(), globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
     }
 
   public:
@@ -248,7 +248,7 @@ class LLVMCodeHelperBase
         return _MemoryFree<int>(ptrValue);
     }
 
-    mlir::Value Alloca(mlir::Type llvmReferenceType, int count, bool inalloca = false)
+    mlir::Value Alloca(mlir::Type llvmReferenceType, mlir::Type elementType, int count, bool inalloca = false)
     {
         auto location = op->getLoc();
 
@@ -263,15 +263,15 @@ class LLVMCodeHelperBase
         }
 
         CodeLogicHelper clh(op, rewriter);
-        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count), inalloca);
+        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, elementType, clh.createI32ConstantOf(count), inalloca);
         return allocated;
     }
 
-    mlir::Value Alloca(mlir::Type llvmReferenceType, mlir::Value count, bool inalloca = false)
+    mlir::Value Alloca(mlir::Type llvmReferenceType, mlir::Type elementType, mlir::Value count, bool inalloca = false)
     {
         auto location = op->getLoc();
         CodeLogicHelper clh(op, rewriter);
-        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, count, inalloca);
+        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, elementType, count, inalloca);
         return allocated;
     }
 
