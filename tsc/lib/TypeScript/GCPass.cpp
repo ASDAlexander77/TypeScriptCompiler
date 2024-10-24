@@ -156,7 +156,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 
     void injectAtomicDeclaration(LLVM::CallOp memSetCallOp)
     {
-        ConversionPatternRewriter rewriter(memSetCallOp.getContext());
+        PatternRewriter rewriter(memSetCallOp.getContext());
 
         TypeHelper th(memSetCallOp.getContext());
         LLVMCodeHelper ch(memSetCallOp, rewriter, nullptr, tsContext.compileOptions);
@@ -166,7 +166,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 
     void injectInit(LLVM::LLVMFuncOp funcOp)
     {
-        ConversionPatternRewriter rewriter(funcOp.getContext());
+        PatternRewriter rewriter(funcOp.getContext());
 
         TypeHelper th(rewriter.getContext());
         LLVMCodeHelper ch(funcOp, rewriter, nullptr, tsContext.compileOptions);
@@ -189,7 +189,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
             auto name = probMemAllocCall.getCallee().value();
             if (name == "GC_malloc")
             {
-                ConversionPatternRewriter rewriter(memSetCallOp.getContext());
+                PatternRewriter rewriter(memSetCallOp.getContext());
                 rewriter.replaceOp(memSetCallOp, ValueRange{probMemAllocCall.getResult()});
             }
         }

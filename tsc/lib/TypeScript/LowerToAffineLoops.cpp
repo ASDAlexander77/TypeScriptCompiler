@@ -1795,7 +1795,7 @@ void finishSwitchState(mlir_ts::FuncOp f, TSFunctionContext &tsFuncContext)
         return;
     }
 
-    ConversionPatternRewriter rewriter(f.getContext());
+    PatternRewriter rewriter(f.getContext());
     CodeLogicHelper clh(f, rewriter);
     auto switchStateOp = clh.FindOp<mlir_ts::SwitchStateOp>(f);
     assert(switchStateOp);
@@ -1831,7 +1831,7 @@ void cleanupEmptyBlocksWithoutPredecessors(mlir_ts::FuncOp f)
             }
         }
 
-        ConversionPatternRewriter rewriter(f.getContext());
+        PatternRewriter rewriter(f.getContext());
         for (auto blockPtr : workSet)
         {
             blockPtr->dropAllDefinedValueUses();
