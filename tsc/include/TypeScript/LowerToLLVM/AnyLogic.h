@@ -105,7 +105,7 @@ class AnyLogic
         // set actual value
         auto ptrValue =
             rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue, ValueRange{zero, two});
-        return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
+        return rewriter.create<LLVM::LoadOp>(loc, resLLVMType, ptrValue);
     }
 
     mlir::Value getTypeOfAny(mlir::Value in)
@@ -126,7 +126,7 @@ class AnyLogic
         // set actual value
         auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue,
                                                      ValueRange{zero, one});
-        return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
+        return rewriter.create<LLVM::LoadOp>(loc, valuePtrType, ptrValue);
     }
 };
 } // namespace typescript

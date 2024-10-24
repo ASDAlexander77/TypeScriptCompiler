@@ -252,7 +252,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, type, name);
         mlir::Value cstIdx = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, index));
-        return rewriter.create<LLVM::GEPOp>(loc, globalPtr.getType(), globalPtr, ArrayRef<mlir::Value>({cstIdx}));
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), type, globalPtr, ArrayRef<mlir::Value>({cstIdx}));
     }
 
     StringAttr getStringAttrWith0(std::string value)
@@ -442,7 +442,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
         mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
+        return rewriter.create<LLVM::GEPOp>(loc, pointerType, global.getType(), globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
     }
 
     mlir::LogicalResult setStructWritingPoint(LLVM::GlobalOp globalOp)
@@ -625,7 +625,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
         mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0}));
+        return rewriter.create<LLVM::GEPOp>(loc, pointerType, global.getType(), globalPtr, ArrayRef<mlir::Value>({cst0}));
     }
 
     mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleMlirTSType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
@@ -648,7 +648,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                                                             MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
         }
 
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), ptrType, dataPtr, ValueRange{index});
         return addr;
     }
 
@@ -685,7 +685,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto fieldIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(index));
         indexes.push_back(fieldIndex);
 
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, globalPtr, indexes);
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, elementType, globalPtr, indexes);
 
         return addr;
     }
@@ -704,7 +704,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto dataPtr = refValue;
 
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), ptrType, dataPtr, ValueRange{index});
         return addr;
     }
 
