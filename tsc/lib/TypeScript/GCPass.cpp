@@ -160,8 +160,8 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 
         TypeHelper th(memSetCallOp.getContext());
         LLVMCodeHelper ch(memSetCallOp, rewriter, nullptr, tsContext.compileOptions);
-        auto i8PtrTy = th.getI8PtrType();
-        auto gcInitFuncOp = ch.getOrInsertFunction("GC_malloc_atomic", th.getFunctionType(th.getI8PtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
+        auto i8PtrTy = th.getPtrType();
+        auto gcInitFuncOp = ch.getOrInsertFunction("GC_malloc_atomic", th.getFunctionType(th.getPtrType(), mlir::ArrayRef<mlir::Type>{th.getI64Type()}));
     }
 
     void injectInit(LLVM::LLVMFuncOp funcOp)
@@ -170,7 +170,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
 
         TypeHelper th(rewriter.getContext());
         LLVMCodeHelper ch(funcOp, rewriter, nullptr, tsContext.compileOptions);
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
         rewriter.create<LLVM::CallOp>(funcOp->getLoc(), gcInitFuncOp, ValueRange{});
     }

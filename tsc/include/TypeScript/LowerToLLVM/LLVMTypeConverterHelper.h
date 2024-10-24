@@ -119,12 +119,6 @@ class LLVMTypeConverterHelper
             }
         }
 
-        if (selectedType.isa<LLVM::LLVMPointerType>())
-        {
-            auto *context = &typeConverter.getContext();
-            return LLVM::LLVMPointerType::get(mlir::IntegerType::get(context, 8));
-        }
-
         return selectedType;
     }
 

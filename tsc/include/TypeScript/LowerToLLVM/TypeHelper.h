@@ -96,24 +96,9 @@ class TypeHelper
         return LLVM::LLVMVoidType::get(context);
     }
 
-    LLVM::LLVMPointerType getI8PtrType()
-    {
-        return LLVM::LLVMPointerType::get(getI8Type());
-    }
-
     LLVM::LLVMPointerType getPtrType()
     {
         return LLVM::LLVMPointerType::get(context);
-    }
-
-    LLVM::LLVMPointerType getI8PtrPtrType()
-    {
-        return LLVM::LLVMPointerType::get(LLVM::LLVMPointerType::get(getI8Type()));
-    }
-
-    LLVM::LLVMPointerType getI8PtrPtrPtrType()
-    {
-        return LLVM::LLVMPointerType::get(LLVM::LLVMPointerType::get(LLVM::LLVMPointerType::get(getI8Type())));
     }
 
     LLVM::LLVMArrayType getI8Array(unsigned size)
@@ -126,9 +111,9 @@ class TypeHelper
         return LLVM::LLVMArrayType::get(getI32Type(), size);
     }
 
-    LLVM::LLVMPointerType getPointerType(mlir::Type elementType)
+    LLVM::LLVMPointerType getPointerType()
     {
-        return LLVM::LLVMPointerType::get(elementType);
+        return LLVM::LLVMPointerType::get(context);
     }
 
     LLVM::LLVMArrayType getArrayType(mlir::Type elementType, size_t size)

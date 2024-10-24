@@ -207,7 +207,7 @@ class LLVMRTTIHelperVCWin32
             return failure();
         }
 
-        rewriter.create<LLVM::GlobalOp>(loc, th.getI8PtrType(), true, LLVM::Linkage::External, name, mlir::Attribute{});
+        rewriter.create<LLVM::GlobalOp>(loc, th.getPtrType(), true, LLVM::Linkage::External, name, mlir::Attribute{});
         return success();
     }
 
@@ -243,10 +243,10 @@ class LLVMRTTIHelperVCWin32
             mlir::Value structVal = rewriter.create<LLVM::UndefOp>(loc, rttiTypeDescriptor2Ty);
 
             auto itemValue1 =
-                rewriter.create<LLVM::AddressOfOp>(loc, th.getI8PtrPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoExtRef));
+                rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoExtRef));
             ch.setStructValue(loc, structVal, itemValue1, 0);
 
-            auto itemValue2 = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+            auto itemValue2 = rewriter.create<LLVM::NullOp>(loc, th.getPtrType());
             ch.setStructValue(loc, structVal, itemValue2, 1);
 
             auto itemValue3 = rewriter.create<LLVM::ConstantOp>(loc, th.getI8Array(StringRef(typeName).size() + 1),
@@ -316,7 +316,7 @@ class LLVMRTTIHelperVCWin32
             auto rttiTypeDescriptor2IntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiTypeDescriptor2PtrValue);
 
             auto imageBasePtrValue =
-                rewriter.create<LLVM::AddressOfOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+                rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
             auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
             // sub
@@ -359,7 +359,7 @@ class LLVMRTTIHelperVCWin32
         auto rttiCatchableTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableTypePtrValue);
 
         auto imageBasePtrValue =
-            rewriter.create<LLVM::AddressOfOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+            rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
         auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
         // sub
@@ -449,7 +449,7 @@ class LLVMRTTIHelperVCWin32
         auto rttiCatchableArrayTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableArrayTypePtrValue);
 
         auto imageBasePtrValue =
-            rewriter.create<LLVM::AddressOfOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
+            rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
         auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
         // sub
@@ -500,7 +500,7 @@ class LLVMRTTIHelperVCWin32
     LLVM::LLVMStructType getRttiTypeDescriptor2Ty(int nameSize)
     {
         return LLVM::LLVMStructType::getLiteral(rewriter.getContext(),
-                                                {th.getI8PtrPtrType(), th.getI8PtrType(), th.getI8Array(nameSize + 1)}, false);
+                                                {th.getPtrType(), th.getPtrType(), th.getI8Array(nameSize + 1)}, false);
     }
 
     LLVM::LLVMPointerType getRttiTypeDescriptor2PtrTy(int nameSize)

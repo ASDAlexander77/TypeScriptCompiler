@@ -41,7 +41,7 @@ class AnyLogic
     {
         indexType = th.getIndexType();
         llvmIndexType = tch.convertType(indexType);
-        valuePtrType = th.getI8PtrType();
+        valuePtrType = th.getPtrType();
     }
 
     LLVM::LLVMStructType getStorageType(mlir::Type llvmStorageType)
@@ -61,11 +61,11 @@ class AnyLogic
     mlir::Value castToAny(mlir::Value in, mlir::Value typeOfValue, mlir::Type inLLVMType)
     {
         // TODO: add type id to track data type
+        auto ptrTy = th.getPtrType();
         auto llvmStorageType = inLLVMType;
         auto dataWithSizeType = getStorageType(llvmStorageType);
-        auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
 
-        auto memValue = ch.MemoryAllocBitcast(dataWithSizeTypePtr, dataWithSizeType);
+        auto memValue = ch.MemoryAllocBitcast(ptrTy, dataWithSizeType);
 
         // set value size
         auto sizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, indexType, llvmStorageType);
@@ -75,14 +75,14 @@ class AnyLogic
         auto one = clh.createI32ConstantOf(1);
         auto two = clh.createI32ConstantOf(2);
 
-        auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmIndexType), memValue, ValueRange{zero, zero});
+        auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, ptrTy, memValue, ValueRange{zero, zero});
         rewriter.create<LLVM::StoreOp>(loc, size, ptrSize);
 
-        auto typeOfStr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(valuePtrType), memValue, ValueRange{zero, one});
+        auto typeOfStr = rewriter.create<LLVM::GEPOp>(loc, ptrTy, memValue, ValueRange{zero, one});
         rewriter.create<LLVM::StoreOp>(loc, typeOfValue, typeOfStr);
 
         // set actual value
-        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), memValue, ValueRange{zero, two});
+        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, memValue, ValueRange{zero, two});
         rewriter.create<LLVM::StoreOp>(loc, in, ptrValue);
 
         return clh.castToI8Ptr(memValue);
@@ -92,11 +92,11 @@ class AnyLogic
     {
         // TODO: add type id to track data type
         // TODO: add data size check
+        auto ptrTy = th.getPtrType();
         auto llvmStorageType = resLLVMType;
         auto dataWithSizeType = getStorageType(llvmStorageType);
-        auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
 
-        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, dataWithSizeTypePtr, in);
+        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
 
         auto zero = clh.createI32ConstantOf(0);
         // auto one = clh.createI32ConstantOf(1);
@@ -104,7 +104,7 @@ class AnyLogic
 
         // set actual value
         auto ptrValue =
-            rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), inDataWithSizeTypedValue, ValueRange{zero, two});
+            rewriter.create<LLVM::GEPOp>(loc, ptrTy, inDataWithSizeTypedValue, ValueRange{zero, two});
         return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
     }
 
@@ -113,18 +113,18 @@ class AnyLogic
         // TODO: add type id to track data type
         // TODO: add data size check
         // any random type
+        auto ptrTy = th.getPtrType();
         auto llvmStorageType = th.getI8Type();
         auto dataWithSizeType = getStorageType(llvmStorageType);
-        auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
 
-        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, dataWithSizeTypePtr, in);
+        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
 
         auto zero = clh.createI32ConstantOf(0);
         auto one = clh.createI32ConstantOf(1);
         // auto two = clh.createI32ConstantOf(2);
 
         // set actual value
-        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(th.getI8PtrType()), inDataWithSizeTypedValue,
+        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, inDataWithSizeTypedValue,
                                                      ValueRange{zero, one});
         return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
     }

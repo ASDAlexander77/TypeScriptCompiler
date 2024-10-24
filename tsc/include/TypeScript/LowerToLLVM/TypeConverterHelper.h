@@ -38,16 +38,6 @@ class TypeConverterHelper
         return type;
     }
 
-    mlir::Type makePtrToValue(mlir::Type type)
-    {
-        if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
-        {
-            return LLVM::LLVMPointerType::get(LLVM::LLVMArrayType::get(convertType(constArray.getElementType()), constArray.getSize()));
-        }
-
-        llvm_unreachable("not implemented");
-    }
-
     int getIndexTypeBitwidth()
     {
         return (*(mlir::LLVMTypeConverter *)&typeConverter).getIndexTypeBitwidth();

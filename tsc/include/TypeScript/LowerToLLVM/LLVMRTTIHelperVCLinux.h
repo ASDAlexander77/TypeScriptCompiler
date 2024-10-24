@@ -165,16 +165,16 @@ class LLVMRTTIHelperVCLinux
         if (classType)
         {
             SmallVector<mlir::Type> tiTypes;
-            tiTypes.push_back(th.getI8PtrType());
-            tiTypes.push_back(th.getI8PtrType());
+            tiTypes.push_back(th.getPtrType());
+            tiTypes.push_back(th.getPtrType());
             tiTypes.push_back(th.getI32Type());
-            tiTypes.push_back(th.getI8PtrType());
+            tiTypes.push_back(th.getPtrType());
 
             tiType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), tiTypes, false);
         }
         else
         {
-            tiType = th.getI8PtrType();
+            tiType = th.getPtrType();
         }
 
         mlir::Value throwInfoPtr =

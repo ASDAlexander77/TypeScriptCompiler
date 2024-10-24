@@ -204,7 +204,7 @@ class CastLogicHelper
                 auto ptrOfElementValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPointerType(tch.convertType(arrayType.getElementType())), in,
                     MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));                
 
-                return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrType(), ptrOfElementValue);
+                return rewriter.create<LLVM::BitcastOp>(loc, th.getPtrType(), ptrOfElementValue);
             }            
         }
 

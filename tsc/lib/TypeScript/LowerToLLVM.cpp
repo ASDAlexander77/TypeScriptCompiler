@@ -93,16 +93,16 @@ class ConvertFOpLowering : public TsLlvmPattern<mlir_ts::ConvertFOp>
 
         auto loc = op->getLoc();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto llvmI32Type = tch.convertType(th.getI32Type());
         auto llvmIndexType = tch.convertType(rewriter.getIndexType());
 
 #ifdef WIN32
         auto sprintfFuncOp = ch.getOrInsertFunction(
-            "sprintf_s", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), llvmIndexType, th.getI8PtrType()}, true));
+            "sprintf_s", th.getFunctionType(rewriter.getI32Type(), {th.getPtrType(), llvmIndexType, th.getPtrType()}, true));
 #else
         auto sprintfFuncOp = ch.getOrInsertFunction(
-            "snprintf", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), llvmIndexType, th.getI8PtrType()}, true));
+            "snprintf", th.getFunctionType(rewriter.getI32Type(), {th.getPtrType(), llvmIndexType, th.getPtrType()}, true));
 #endif
 
         auto bufferSizeValue = transformed.getBufferSize();
@@ -155,7 +155,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 
         auto loc = op->getLoc();
 
-        auto i8PtrType = th.getI8PtrType();
+        auto i8PtrType = th.getPtrType();
         auto ptrType = th.getPtrType();
 
         // Get a symbol reference to the printf function, inserting it if necessary.
@@ -220,14 +220,14 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         // Insert the `atoi` declaration if necessary.
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         LLVM::LLVMFuncOp parseIntFuncOp;
         if (transformed.getBase())
         {
             parseIntFuncOp = ch.getOrInsertFunction(
                 "strtol",
-                th.getFunctionType(rewriter.getI32Type(), {i8PtrTy, th.getI8PtrPtrType(), rewriter.getI32Type()}));
-            auto nullOp = rewriter.create<LLVM::NullOp>(op->getLoc(), th.getI8PtrPtrType());
+                th.getFunctionType(rewriter.getI32Type(), {i8PtrTy, th.getPtrType(), rewriter.getI32Type()}));
+            auto nullOp = rewriter.create<LLVM::NullOp>(op->getLoc(), th.getPtrType());
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp,
                                                       ValueRange{transformed.getArg(), nullOp, transformed.getBase()});
         }
@@ -257,7 +257,7 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
         auto loc = op->getLoc();
 
         // Insert the `atof` declaration if necessary.
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto parseFloatFuncOp = ch.getOrInsertFunction("atof", th.getFunctionType(rewriter.getF64Type(), {i8PtrTy}));
 
 #ifdef NUMBER_F64
@@ -284,7 +284,7 @@ class LoadLibraryPermanentlyOpLowering : public TsLlvmPattern<mlir_ts::LoadLibra
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto loadLibraryPermanentlyFuncOp = ch.getOrInsertFunction("LLVMLoadLibraryPermanently", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, loadLibraryPermanentlyFuncOp, ValueRange{transformed.getFilename()});
@@ -306,7 +306,7 @@ class SearchForAddressOfSymbolOpLowering : public TsLlvmPattern<mlir_ts::SearchF
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto searchForAddressOfSymbolFuncOp = ch.getOrInsertFunction("LLVMSearchForAddressOfSymbol", th.getFunctionType(i8PtrTy, {i8PtrTy}));
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, searchForAddressOfSymbolFuncOp, ValueRange{transformed.getSymbolName()});
@@ -472,7 +472,7 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
         TypeConverterHelper tch(getTypeConverter());
 
         auto loc = op->getLoc();
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(llvmIndexType, {i8PtrTy}));
@@ -508,8 +508,8 @@ class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthO
         auto loc = op->getLoc();
 
         // TODO implement str concat
-        auto i8PtrTy = th.getI8PtrType();
-        auto i8PtrPtrTy = th.getI8PtrPtrType();
+        auto i8PtrTy = th.getPtrType();
+        auto i8PtrPtrTy = th.getPtrType();
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         mlir::Value ptr = transformed.getOp();
@@ -547,8 +547,8 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
         auto loc = op->getLoc();
 
         // TODO implement str concat
-        auto i8PtrTy = th.getI8PtrType();
-        auto i8PtrPtrTy = th.getI8PtrPtrType();
+        auto i8PtrTy = th.getPtrType();
+        auto i8PtrPtrTy = th.getPtrType();
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(llvmIndexType, {i8PtrTy}));
@@ -610,7 +610,7 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
 
         auto loc = op->getLoc();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         // compare bodies
         auto strcmpFuncOp = ch.getOrInsertFunction("strcmp", th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy}));
@@ -734,7 +734,7 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
 
         auto charType = mlir_ts::CharType::get(rewriter.getContext());
         auto charRefType = mlir_ts::RefType::get(charType);
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto bufferSizeValue = clh.createI64ConstantOf(2);
         // TODO: review it, !! we can't allocate it in stack - otherwise when returned back from function, it will be poisned
@@ -1590,7 +1590,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
 
         auto in = transformed.getIn();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto valueType = in.getType();
         auto resType = tch.convertType(op.getRes().getType());
 
@@ -1652,7 +1652,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
         {
             auto in = transformed.getIn();
 
-            auto i8PtrTy = th.getI8PtrType();
+            auto i8PtrTy = th.getPtrType();
             auto valueType = tch.convertType(op.getType());
 
             mlir::SmallVector<mlir::Type> types;
@@ -1782,8 +1782,8 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                     {
                         TypeHelper th(rewriter);
 
-                        auto i8PtrPtrTy = th.getI8PtrPtrType();
-                        auto i8PtrTy = th.getI8PtrType();
+                        auto i8PtrPtrTy = th.getPtrType();
+                        auto i8PtrTy = th.getPtrType();
                         auto gcRootOp = ch.getOrInsertFunction(
                             "llvm.gcroot", th.getFunctionType(th.getVoidType(), {i8PtrPtrTy, i8PtrTy}));
                         auto nullPtr = rewriter.create<LLVM::NullOp>(location, i8PtrTy);
@@ -3441,9 +3441,9 @@ struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfC
 
         auto loc = addressOfConstStringOp->getLoc();
         auto globalPtr =
-            rewriter.create<LLVM::AddressOfOp>(loc, th.getI8PtrType(), addressOfConstStringOp.getGlobalName());
+            rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), addressOfConstStringOp.getGlobalName());
         auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getI8PtrType(), globalPtr,
+        rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getPtrType(), globalPtr,
                                                  ArrayRef<mlir::Value>({cst0, cst0}));
 
         return success();
@@ -3711,7 +3711,7 @@ struct CopyStructOpLowering : public TsLlvmPattern<mlir_ts::CopyStructOp>
             llvmIndexType.getIntOrFloatBitWidth() == 32 
                 ? "llvm.memcpy.p0.p0.i32" 
                 : "llvm.memcpy.p0.p0.i64", 
-            th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(), llvmIndexType, th.getLLVMBoolType()}));
+            th.getFunctionType(th.getVoidType(), {th.getPtrType(), th.getPtrType(), llvmIndexType, th.getLLVMBoolType()}));
 
         mlir::SmallVector<mlir::Value, 4> values;
         values.push_back(clh.castToI8Ptr(transformed.getDst()));
@@ -3763,7 +3763,7 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
             llvmIndexType.getIntOrFloatBitWidth() == 32 
                 ? "llvm.memcpy.p0.p0.i32" 
                 : "llvm.memcpy.p0.p0.i64", 
-            th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(), llvmIndexType, th.getLLVMBoolType()}));
+            th.getFunctionType(th.getVoidType(), {th.getPtrType(), th.getPtrType(), llvmIndexType, th.getLLVMBoolType()}));
 
         mlir::SmallVector<mlir::Value, 4> values;
         values.push_back(clh.castToI8Ptr(transformed.getDst()));
@@ -3816,7 +3816,7 @@ struct MemoryMoveOpLowering : public TsLlvmPattern<mlir_ts::MemoryMoveOp>
             llvmIndexType.getIntOrFloatBitWidth() == 32 
                 ? "llvm.memmove.p0.p0.i32" 
                 : "llvm.memmove.p0.p0.i64", 
-            th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(), llvmIndexType, th.getLLVMBoolType()}));
+            th.getFunctionType(th.getVoidType(), {th.getPtrType(), th.getPtrType(), llvmIndexType, th.getLLVMBoolType()}));
 
         mlir::SmallVector<mlir::Value, 4> values;
         values.push_back(clh.castToI8Ptr(transformed.getDst()));
@@ -3974,10 +3974,10 @@ struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
         LLVMCodeHelper ch(beginCatchOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(beginCatchOp, rewriter);
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         // catches:extract
-        auto loadedI8PtrValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getLandingPad(),
+        auto loadedI8PtrValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getLandingPad(),
                                                                       MLIRHelper::getStructIndex(rewriter, 0));
 
         auto beginCatchFuncName = "__cxa_begin_catch";
@@ -4003,7 +4003,7 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(saveCatchVarOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        auto ptr = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrType(), transformed.getVarStore());
+        auto ptr = rewriter.create<mlir_ts::CastOp>(loc, th.getPtrType(), transformed.getVarStore());
 
         auto saveCatchFuncName = "ts.internal.save_catch_var";
         auto saveCatchFunc = ch.getOrInsertFunction(
@@ -4145,7 +4145,7 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
         LLVMCodeHelper ch(compareCatchTypeOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(compareCatchTypeOp, rewriter);
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto loadedI32Value = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), transformed.getLandingPad(),
                                                                     MLIRHelper::getStructIndex(rewriter, 1));
@@ -4180,10 +4180,10 @@ struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
         LLVMCodeHelper ch(beginCatchOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(beginCatchOp, rewriter);
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         // catches:extract
-        auto loadedI8PtrValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getLandingPad(),
+        auto loadedI8PtrValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getLandingPad(),
                                                                       MLIRHelper::getStructIndex(rewriter, 0));
 
         auto beginCatchFuncName = "__cxa_begin_catch";
@@ -4310,11 +4310,11 @@ struct VTableOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::VTableOffsetRef
         TypeHelper th(rewriter);
         CodeLogicHelper clh(vtableOffsetRefOp, rewriter);
 
-        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrType(), transformed.getVtable());
+        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getPtrType(), transformed.getVtable());
 
         auto index = clh.createI32ConstantOf(vtableOffsetRefOp.getIndex());
         auto methodOrInterfacePtrPtr =
-            rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrPtrType(), ptrToArrOfPtrs, ValueRange{index});
+            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), ptrToArrOfPtrs, ValueRange{index});
         auto methodOrInterfacePtr = rewriter.create<LLVM::LoadOp>(loc, methodOrInterfacePtrPtr);
 
         rewriter.replaceOp(vtableOffsetRefOp, ValueRange{methodOrInterfacePtr});
@@ -4339,7 +4339,7 @@ struct VirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::VirtualSymbolR
         TypeHelper th(rewriter);
 
         auto methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(
-            loc, th.getI8PtrType(), transformed.getVtable(), virtualSymbolRefOp.getIndex());
+            loc, th.getPtrType(), transformed.getVtable(), virtualSymbolRefOp.getIndex());
 
         if (auto funcType = virtualSymbolRefOp.getType().dyn_cast<mlir_ts::FunctionType>())
         {
@@ -4375,7 +4375,7 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
 
         TypeHelper th(rewriter);
 
-        auto methodPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), transformed.getVtable(),
+        auto methodPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getPtrType(), transformed.getVtable(),
                                                                      thisVirtualSymbolRefOp.getIndex());
         // auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, thisVirtualSymbolRefOp.getType(), methodPtr);
 
@@ -4421,13 +4421,13 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 
         auto isOptional = interfaceSymbolRefOp.getOptional().has_value() && interfaceSymbolRefOp.getOptional().value();
 
-        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getInterfaceVal(),
+        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getInterfaceVal(),
                                                             MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
-        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getInterfaceVal(),
+        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getInterfaceVal(),
                                                              MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         auto methodOrFieldPtr =
-            rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), vtable, interfaceSymbolRefOp.getIndex());
+            rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getPtrType(), vtable, interfaceSymbolRefOp.getIndex());
 
         if (auto boundFunc = interfaceSymbolRefOp.getType().dyn_cast<mlir_ts::BoundFunctionType>())
         {
@@ -4536,7 +4536,7 @@ struct ExtractInterfaceThisOpLowering : public TsLlvmPattern<mlir_ts::ExtractInt
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! ExtractInterfaceThis from: " << extractInterfaceThisOp.getInterfaceVal() << "\n");
 
-        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getInterfaceVal(),
+        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getInterfaceVal(),
                                                             MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         rewriter.replaceOp(extractInterfaceThisOp, ValueRange{vtable});
@@ -4564,7 +4564,7 @@ struct ExtractInterfaceVTableOpLowering : public TsLlvmPattern<mlir_ts::ExtractI
         LLVM_DEBUG(llvm::dbgs() << "\n!! ExtractInterfaceVTable from: " << transformed.getInterfaceVal()
                                 << "\n");
 
-        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getInterfaceVal(),
+        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getInterfaceVal(),
                                                             MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
 
         rewriter.replaceOp(extractInterfaceVTableOp, ValueRange{vtable});
@@ -4593,7 +4593,7 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
         auto llvmType = tch.convertType(boundRefType.getElementType());
         auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
 
-        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getReference(),
+        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getReference(),
                                                              MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
         auto valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, transformed.getReference(),
                                                                  MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
@@ -4732,7 +4732,7 @@ struct GetThisOpLowering : public TsLlvmPattern<mlir_ts::GetThisOp>
 
         auto llvmThisType = tch.convertType(getThisOp.getType());
 
-        mlir::Value thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.getBoundFunc(),
+        mlir::Value thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getBoundFunc(),
                                                                     MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         auto thisValCasted = rewriter.create<LLVM::BitcastOp>(loc, llvmThisType, thisVal);
@@ -5063,7 +5063,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             mlir::SmallVector<mlir::Type, 4> llvmTypes;
             llvmTypes.push_back(th.getI32Type());
             llvmTypes.push_back(funcType);
-            llvmTypes.push_back(th.getI8PtrType());
+            llvmTypes.push_back(th.getPtrType());
             auto elementType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), llvmTypes, false);
 
 #ifndef ENABLE_MLIR_INIT
@@ -5091,7 +5091,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
                         ch->setStructValue(loc, instanceVal, addrVal, 1);
 
-                        auto nullVal = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+                        auto nullVal = rewriter.create<LLVM::NullOp>(loc, th.getPtrType());
                         ch->setStructValue(loc, instanceVal, nullVal, 2);
 
                         // set array value
@@ -5108,7 +5108,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
                     ch->setStructValue(loc, instanceVal, addrVal, 1);
 
-                    auto nullVal = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+                    auto nullVal = rewriter.create<LLVM::NullOp>(loc, th.getPtrType());
                     ch->setStructValue(loc, instanceVal, nullVal, 2);
 
                     // set array value
@@ -5249,7 +5249,7 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
         auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto gcMallocExplicitlyTypedFunc = ch.getOrInsertFunction("GC_malloc_explicitly_typed", th.getFunctionType(i8PtrTy, {rewriter.getI64Type(), rewriter.getI64Type()}));
         auto value = rewriter.create<LLVM::CallOp>(loc, gcMallocExplicitlyTypedFunc, ValueRange{sizeOfTypeValue, transformed.getTypeDescr()});
@@ -5556,9 +5556,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
         SmallVector<mlir::Type> rtInterfaceType;
         // vtable
-        rtInterfaceType.push_back(th.getI8PtrType());
+        rtInterfaceType.push_back(th.getPtrType());
         // this
-        rtInterfaceType.push_back(th.getI8PtrType());
+        rtInterfaceType.push_back(th.getPtrType());
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), rtInterfaceType, false);
     });
@@ -5591,7 +5591,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         SmallVector<mlir::Type> convertedTypes;
         if (needTag)
         {
-            convertedTypes.push_back(th.getI8PtrType());
+            convertedTypes.push_back(th.getPtrType());
         }
 
         convertedTypes.push_back(selectedType);

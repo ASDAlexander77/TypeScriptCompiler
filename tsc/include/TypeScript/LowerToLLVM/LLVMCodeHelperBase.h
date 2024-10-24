@@ -161,7 +161,7 @@ class LLVMCodeHelperBase
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
         mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        return rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrType(), globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
     }
 
   public:
@@ -285,7 +285,7 @@ class LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto mallocFuncOp = getOrInsertFunction(
             compileOptions.isWasm ? "ts_malloc" : "malloc", 
             th.getFunctionType(i8PtrTy, {llvmIndexType}));
@@ -330,7 +330,7 @@ class LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto effectivePtrValue = ptrValue;
         if (ptrValue.getType() != i8PtrTy)
@@ -364,7 +364,7 @@ class LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto freeFuncOp = getOrInsertFunction(
             compileOptions.isWasm ? "ts_free" : "free", 

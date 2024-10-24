@@ -37,11 +37,11 @@ class ConvertLogic
 
     mlir::Value itoa(mlir::Value value)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto _itoaFuncOp = ch.getOrInsertFunction(
-            "_itoa", th.getFunctionType(th.getI8PtrType(),
-                                        ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
+            "_itoa", th.getFunctionType(th.getPtrType(),
+                                        ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getPtrType(), rewriter.getI32Type()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
@@ -53,11 +53,11 @@ class ConvertLogic
 
     mlir::Value i64toa(mlir::Value value)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto _i64toaFuncOp = ch.getOrInsertFunction(
-            "_i64toa", th.getFunctionType(th.getI8PtrType(),
-                                          ArrayRef<mlir::Type>{rewriter.getI64Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
+            "_i64toa", th.getFunctionType(th.getPtrType(),
+                                          ArrayRef<mlir::Type>{rewriter.getI64Type(), th.getPtrType(), rewriter.getI32Type()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
@@ -69,11 +69,11 @@ class ConvertLogic
 
     mlir::Value gcvt(mlir::Value in)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto _gcvtFuncOp = ch.getOrInsertFunction(
-            "_gcvt", th.getFunctionType(th.getI8PtrType(),
-                                        ArrayRef<mlir::Type>{rewriter.getF64Type(), rewriter.getI32Type(), th.getI8PtrType()}, true));
+            "_gcvt", th.getFunctionType(th.getPtrType(),
+                                        ArrayRef<mlir::Type>{rewriter.getF64Type(), rewriter.getI32Type(), th.getPtrType()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
@@ -86,7 +86,7 @@ class ConvertLogic
 
     mlir::Value sprintf(int buffSize, std::string format, mlir::Value value)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto llvmIndexType = tch.convertType(th.getIndexType());
         auto bufferSizeValue = clh.createIndexConstantOf(llvmIndexType, buffSize);

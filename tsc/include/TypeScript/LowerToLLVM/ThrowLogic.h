@@ -63,7 +63,7 @@ class ThrowLogic
 
         auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         // variable
         mlir::Value value;
@@ -142,7 +142,7 @@ class ThrowLogic
     {
         mlir::Type exceptionType = origType;
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto allocExceptFuncName = "__cxa_allocate_exception";
 
@@ -202,7 +202,7 @@ class ThrowLogic
 
     mlir::LogicalResult logicUnixRethrow(mlir::Value exceptionValue, mlir::Block *unwind)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto rethrowFuncName = "__cxa_rethrow";
 

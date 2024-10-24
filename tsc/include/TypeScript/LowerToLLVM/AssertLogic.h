@@ -41,7 +41,7 @@ class AssertLogic
         : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
     {
         sizeType = th.getIndexType();
-        typeOfValueType = th.getI8PtrType();
+        typeOfValueType = th.getPtrType();
     }
 
     mlir::LogicalResult logic(mlir::Value condValue, std::string msg)
@@ -61,7 +61,7 @@ class AssertLogic
         auto [line, column] = lineAndColumn;
 
         // Insert the `_assert` declaration if necessary.
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto assertFuncOp =
             ch.getOrInsertFunction("_assert", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type()}));
 
@@ -114,7 +114,7 @@ class AssertLogic
         auto [line, column] = lineAndColumn;
 
         // Insert the `_assert` declaration if necessary.
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto assertFuncOp = ch.getOrInsertFunction(
             "__assert_fail", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type(), i8PtrTy}));
 
