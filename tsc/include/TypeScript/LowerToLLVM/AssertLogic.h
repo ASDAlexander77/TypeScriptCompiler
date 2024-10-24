@@ -147,7 +147,7 @@ class AssertLogic
         // auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
 
         mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
-        mlir::Value funcName = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+        mlir::Value funcName = rewriter.create<LLVM::ConstantOp>(loc, i8PtrTy, 0);
 
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes, funcName});
         // rewriter.create<LLVM::UnreachableOp>(loc);

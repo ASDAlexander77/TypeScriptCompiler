@@ -61,7 +61,7 @@ class ThrowLogic
         LLVMRTTIHelperVCWin32 rttih(op, rewriter, typeConverter, compileOptions);
         rttih.setType(exceptionType);
 
-        auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
+        auto throwInfoPtrTy = th.getPtrType();
 
         auto i8PtrTy = th.getPtrType();
 
@@ -178,7 +178,7 @@ class ThrowLogic
 
             auto *continuationBlock = endOfBlock ? nullptr : clh.CutBlockAndSetInsertPointToEndOfBlock();
 
-            auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+            auto nullValue = rewriter.create<LLVM::ConstantOp>(loc, i8PtrTy, 0);
             rewriter.create<LLVM::InvokeOp>(loc, TypeRange{th.getVoidType()},
                                             mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
                                             ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue}, unreachable,
@@ -191,7 +191,7 @@ class ThrowLogic
         }
         else
         {
-            auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+            auto nullValue = rewriter.create<LLVM::ConstantOp>(loc, i8PtrTy, 0);
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException,
                                           ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue});
             rewriter.create<mlir_ts::UnreachableOp>(loc);
