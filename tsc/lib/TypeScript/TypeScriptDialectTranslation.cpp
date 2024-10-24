@@ -76,7 +76,8 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
     using LLVMTranslationDialectInterface::LLVMTranslationDialectInterface;
 
     /// Attaches module-level metadata for functions marked as kernels.
-    LogicalResult amendOperation(Operation *op, NamedAttribute attribute, LLVM::ModuleTranslation &moduleTranslation) const final
+    virtual LogicalResult 
+    amendOperation(Operation *op, NamedAttribute attribute, LLVM::ModuleTranslation &moduleTranslation) const final
     {
         LLVM_DEBUG(llvm::dbgs() << "\n === amendOperation === \n");
         LLVM_DEBUG(llvm::dbgs() << "attribute: " << attribute.getName() << " val: " << attribute.getValue() << "\n");

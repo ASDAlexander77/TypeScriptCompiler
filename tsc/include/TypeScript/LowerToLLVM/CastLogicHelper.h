@@ -201,7 +201,7 @@ class CastLogicHelper
 
             if (auto opaqueType = resType.dyn_cast<mlir_ts::OpaqueType>())
             {
-                auto ptrOfElementValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPointerType(tch.convertType(arrayType.getElementType())), in,
+                auto ptrOfElementValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), in,
                     MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));                
 
                 return rewriter.create<LLVM::BitcastOp>(loc, th.getPtrType(), ptrOfElementValue);
@@ -716,13 +716,14 @@ class CastLogicHelper
         // value to ref of value
         if (auto destPtr = resLLVMType.dyn_cast<LLVM::LLVMPointerType>())
         {
-            if (destPtr.getElementType() == inLLVMType)
-            {
-                // alloc and return address
-                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
-                    loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
-                return valueAddr;
-            }
+            llvm_unreachable("review usage");
+            // if (destPtr.getElementType() == inLLVMType)
+            // {
+            //     // alloc and return address
+            //     auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
+            //         loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
+            //     return valueAddr;
+            // }
         }
 
         LLVM_DEBUG(llvm::dbgs() << "invalid cast operator type 1: '" << inLLVMType << "', type 2: '" << resLLVMType << "'\n";);
@@ -905,18 +906,20 @@ class CastLogicHelper
         }
         else if (auto ptrValue = type.dyn_cast<LLVM::LLVMPointerType>())
         {
-            auto elementType = ptrValue.getElementType();
-            if (auto arrayType = elementType.dyn_cast<LLVM::LLVMArrayType>())
-            {
-                size = arrayType.getNumElements();
-                llvmSrcElementType = tch.convertType(arrayType.getElementType());
-            }
-            else
-            {
-                LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " as type: " << type
-                                        << " to type: " << elementType << "\n";);
-                llvm_unreachable("not implemented");
-            }
+            llvm_unreachable("review usage");
+
+            // auto elementType = ptrValue.getElementType();
+            // if (auto arrayType = elementType.dyn_cast<LLVM::LLVMArrayType>())
+            // {
+            //     size = arrayType.getNumElements();
+            //     llvmSrcElementType = tch.convertType(arrayType.getElementType());
+            // }
+            // else
+            // {
+            //     LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " as type: " << type
+            //                             << " to type: " << elementType << "\n";);
+            //     llvm_unreachable("not implemented");
+            // }
         }        
         else
         {
@@ -925,11 +928,11 @@ class CastLogicHelper
             llvm_unreachable("not implemented");
         }
 
+        auto ptrType = th.getPtrType();
         auto sizeValue = clh.createI32ConstantOf(size);
         auto llvmRtArrayStructType = tch.convertType(arrayType);
         auto destArrayElement = arrayType.cast<mlir_ts::ArrayType>().getElementType();
         auto llvmDestArrayElement = tch.convertType(destArrayElement);
-        auto llvmDestArray = LLVM::LLVMPointerType::get(llvmDestArrayElement);
 
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         if (isUndef)
@@ -937,9 +940,7 @@ class CastLogicHelper
             return structValue;
         }
         
-        auto arrayPtrType = LLVM::LLVMPointerType::get(llvmSrcElementType);
         auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSrcElementType, size);
-        auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
 
         mlir::Value arrayPtr;
         if (byValue)
@@ -947,19 +948,19 @@ class CastLogicHelper
             auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
             // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
             // auto copyAllocated = ch.Alloca(arrayPtrType, bytesSize);
-            auto copyAllocated = ch.MemoryAllocBitcast(arrayPtrType, bytesSize);
+            auto copyAllocated = ch.MemoryAllocBitcast(ptrType, bytesSize);
 
-            auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
-            auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
+            auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrType, in);
+            auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrType, copyAllocated);
             rewriter.create<mlir_ts::CopyStructOp>(loc, ptrToArrayDst, ptrToArraySrc);
 
-            arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, llvmDestArray, copyAllocated);
+            arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, copyAllocated);
         }
         else
         {
             // copy ptr only (const ptr -> ptr)
             // TODO: here we need to clone body to make it writable (and remove logic from VariableOp)
-            arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, arrayPtrType, in);
+            arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, in);
         }
 
         auto structValue2 =
@@ -1076,12 +1077,12 @@ class CastLogicHelper
     {
         auto llvmType = tch.convertType(boundRefTypeIn.getElementType());
         auto expectingLlvmType = tch.convertType(refTypeOut);
-        auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
+        auto ptrType = th.getPtrType();
 
         mlir::Value inAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(in.getType()), in);
 
-        mlir::Value valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, inAsLLVMType, MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
-        if (expectingLlvmType != llvmRefType)
+        mlir::Value valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, inAsLLVMType, MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
+        if (expectingLlvmType != ptrType)
         {
             valueRefVal = rewriter.create<LLVM::BitcastOp>(loc, expectingLlvmType, valueRefVal);
         }
@@ -1092,11 +1093,11 @@ class CastLogicHelper
     mlir::Value extractArrayPtr(mlir::Value in, mlir_ts::ArrayType arrayType)
     {
         auto llvmType = tch.convertType(arrayType.getElementType());
-        auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
+        auto ptrType = th.getPtrType();
 
         mlir::Value inAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(in.getType()), in);
 
-        mlir::Value ptrVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, inAsLLVMType, MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
+        mlir::Value ptrVal = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, inAsLLVMType, MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
         return ptrVal;
     }
 

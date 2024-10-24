@@ -97,7 +97,9 @@ class MLIRDebugInfoHelper
             unsigned sourceLanguage = llvm::dwarf::DW_LANG_C; 
             auto producer = builder.getStringAttr(producerName);
             auto emissionKind = mlir::LLVM::DIEmissionKind::Full;
-            auto compileUnit = mlir::LLVM::DICompileUnitAttr::get(builder.getContext(), sourceLanguage, file, producer, isOptimized, emissionKind);        
+            auto namedTable = mlir::LLVM::DINameTableKind::Default;
+            auto compileUnit = mlir::LLVM::DICompileUnitAttr::get(
+                builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), sourceLanguage, file, producer, isOptimized, emissionKind, namedTable);        
         
             debugScope.insert(CU_DEBUG_SCOPE, compileUnit);
             debugScope.insert(DEBUG_SCOPE, file);
@@ -144,7 +146,7 @@ class MLIRDebugInfoHelper
                 auto funcNameAttr = builder.getStringAttr(functionName);
                 auto linkageNameAttr = builder.getStringAttr(linkageName);
                 auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-                    builder.getContext(), compileUnitAttr, scopeAttr, 
+                    builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), compileUnitAttr, scopeAttr, 
                     funcNameAttr, linkageNameAttr, 
                     compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);   
 

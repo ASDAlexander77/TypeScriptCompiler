@@ -260,21 +260,19 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.getStringAttr(StringRef(value.data(), value.length() + 1));
     }
 
-    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, mlir::Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
+    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, unsigned size, ArrayAttr arrayAttr)
     {
         std::stringstream ss;
         ss << "a_" << size;
-        auto vecVarName = calc_hash_value(arrayAttr, llvmElementType, ss.str().c_str());
-        return getOrCreateGlobalArray(originalElementType, vecVarName, llvmElementType, size, arrayAttr);
+        auto vecVarName = calc_hash_value(arrayAttr, originalElementType, ss.str().c_str());
+        return getOrCreateGlobalArray(originalElementType, vecVarName, size, arrayAttr);
     }
 
     mlir::Value getReadOnlyRTArray(mlir::Location loc, mlir_ts::ArrayType originalArrayType, LLVM::LLVMStructType llvmArrayType,
                                    ArrayAttr arrayValue)
     {
-        auto llvmSubElementType = llvmArrayType.getBody()[0].cast<LLVM::LLVMPointerType>().getElementType();
-
         auto size = arrayValue.size();
-        auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), llvmSubElementType, size, arrayValue);
+        auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), size, arrayValue);
 
         // create ReadOnlyRuntimeArrayType
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
@@ -374,7 +372,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         llvm_unreachable("array literal is not implemented(1)");
     }
 
-    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, mlir::Type llvmElementType, unsigned size,
+    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, unsigned size,
                                        ArrayAttr arrayAttr)
     {
         auto loc = op->getLoc();
@@ -382,8 +380,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         TypeHelper th(rewriter);
         auto llvmIndexType = typeConverter->convertType(th.getIndexType());
+        auto llvmElementType = typeConverter->convertType(originalElementType);
 
-        auto pointerType = LLVM::LLVMPointerType::get(llvmElementType);
+        auto pointerType = th.getPtrType();
         auto arrayType = th.getArrayType(llvmElementType, size);
 
         // Create the global at the entry of the module.
@@ -604,7 +603,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         TypeHelper th(rewriter);
         auto llvmIndexType = typeConverter->convertType(th.getIndexType());
 
-        auto pointerType = LLVM::LLVMPointerType::get(llvmStructType);
+        auto pointerType = th.getPtrType();
 
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
@@ -676,7 +675,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             return mlir::Value();
         }
 
-        auto ptrType = LLVM::LLVMPointerType::get(tch.convertType(elementType));
+        auto ptrType = th.getPtrType();
 
         SmallVector<mlir::Value> indexes;
         // add first index which 64 bit (struct field MUST BE 32 bit index)

@@ -111,11 +111,6 @@ class TypeHelper
         return LLVM::LLVMArrayType::get(getI32Type(), size);
     }
 
-    LLVM::LLVMPointerType getPointerType()
-    {
-        return LLVM::LLVMPointerType::get(context);
-    }
-
     LLVM::LLVMArrayType getArrayType(mlir::Type elementType, size_t size)
     {
         return LLVM::LLVMArrayType::get(elementType, size);
