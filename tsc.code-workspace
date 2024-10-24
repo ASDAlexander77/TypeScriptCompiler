@@ -153,7 +153,8 @@
             "__threading_support": "cpp",
             "__verbose_abort": "cpp",
             "print": "cpp",
-            "__tree": "cpp"
+            "__tree": "cpp",
+            "any": "cpp"
         },
         "cmake.sourceDirectory": "${workspaceFolder}/..",
         "cmake.useCMakePresets": "always",

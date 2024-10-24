@@ -4,18 +4,18 @@
 include "TypeScriptDialect.td"
 include "TypeScriptTypes.td"
 include "TypeScriptInterfaces.td"
-include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
+include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "mlir/IR/RegionKindInterface.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/CopyOpInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
-include "mlir/IR/BuiltinAttributeInterfaces.td"
-include "mlir/IR/RegionKindInterface.td"
 
 //===----------------------------------------------------------------------===//
 // TypeScript op definitions
@@ -1715,7 +1715,7 @@ def TypeScript_ForOp : TypeScript_Op<"For",
     [
         LoopLikeOpInterface,
         ConditionallySpeculatable,
-        DeclareOpInterfaceMethods<RegionBranchOpInterface>
+        DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands"]>
     ]> {
   let summary = "a generic 'for' loop";
 
@@ -1724,8 +1724,6 @@ def TypeScript_ForOp : TypeScript_Op<"For",
   let regions = (region SizedRegion<1>:$cond, AnyRegion:$body, SizedRegion<1>:$incr);
 
   let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
-    mlir::Region &getLoopBody() { return getBody(); }
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) || isEmpty(getCond()) 
             ? Speculation::Speculatable
@@ -1856,7 +1854,7 @@ def TypeScript_MergeOp : TypeScript_Op<"Merge", [Pure, HasParent<"SwitchOp, Labe
 }
 
 def TypeScript_TryOp : TypeScript_Op<"Try",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface, ["getEntrySuccessorOperands"]>]> {
   let summary = "a generic 'try' clause";
   let description = [{
     This operation represents a generic "try" clause.
@@ -1865,12 +1863,6 @@ def TypeScript_TryOp : TypeScript_Op<"Try",
   let arguments = (ins );
   let results = (outs );
   let regions = (region AnyRegion:$body, AnyRegion:$cleanup, AnyRegion:$catches, AnyRegion:$finally);
-
-  let extraClassDeclaration = [{
-    OperandRange getSuccessorEntryOperands(std::optional<unsigned int> index);
-  }];
-
-  
 }
 
 def TypeScript_CatchOp : TypeScript_Op<"Catch",

@@ -1868,7 +1868,7 @@ class MLIRTypeHelper
         if (existType.second)
         {
             auto namedType = existType.second.dyn_cast<mlir_ts::NamedGenericType>();
-            if (namedType && namedType.getName().getValue().equals(name))
+            if (namedType && namedType.getName().getValue().compare(name) == 0)
             {
                 // replace generic type
                 typeParamsWithArgs[name].second = currentType;
