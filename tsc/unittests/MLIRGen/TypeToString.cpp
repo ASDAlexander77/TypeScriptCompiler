@@ -7,7 +7,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+#include "TypeScript/MLIRLogic/MLIRPrinter.h"
 
 #include "mlir/IR/MLIRContext.h"
 
@@ -28,8 +28,8 @@ public:
     std::string getTypeString(mlir::Type type)
     {
         std::stringstream exports;
-        MLIRTypeHelper mth(&context);
-        mth.printType<std::ostream>(exports, type);
+        MLIRPrinter mp{};
+        mp.printType<std::ostream>(exports, type);
         return exports.str();
     }
 
