@@ -1340,7 +1340,7 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
         }
         else
         {
-            rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, transformed.getOperands(),
+            rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, mlir::FlatSymbolRefAttr(), transformed.getOperands(),
                 op.getNormalDest(), transformed.getNormalDestOperands(), op.getUnwindDest(),
                 transformed.getUnwindDestOperands());
         }
@@ -1414,9 +1414,9 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
 
                     auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
-                    auto callRes = rewriter.create<LLVM::InvokeOp>(loc, llvmTypes, ops, continuationBlock,
-                                                                   transformed.getNormalDestOperands(), op.getUnwindDest(),
-                                                                   transformed.getUnwindDestOperands());
+                    auto callRes = rewriter.create<LLVM::InvokeOp>(loc, TypeRange(llvmTypes), mlir::FlatSymbolRefAttr(), ops, continuationBlock,
+                                                                   transformed.getNormalDestOperands(), 
+                                                                   op.getUnwindDest(), transformed.getUnwindDestOperands());
 
                     rewriter.setInsertionPointToStart(continuationBlock);
 
@@ -1436,7 +1436,7 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
 
                     auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
-                    auto callRes = rewriter.create<LLVM::InvokeOp>(loc, llvmTypes, ops, continuationBlock,
+                    auto callRes = rewriter.create<LLVM::InvokeOp>(loc, TypeRange(llvmTypes), mlir::FlatSymbolRefAttr(), ops, continuationBlock,
                                                                    transformed.getNormalDestOperands(), op.getUnwindDest(),
                                                                    transformed.getUnwindDestOperands());
 
