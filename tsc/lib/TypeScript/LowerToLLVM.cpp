@@ -4760,7 +4760,7 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
         else if (auto structType = origType.dyn_cast<LLVM::LLVMStructType>())
         {
             auto ptrType = structType.getBody().front().cast<LLVM::LLVMPointerType>();
-            assert(ptrType.getElementType().isa<LLVM::LLVMFunctionType>());
+            //assert(ptrType.getElementType().isa<LLVM::LLVMFunctionType>());
             llvmMethodType = ptrType;
         }
         else
@@ -5041,7 +5041,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
             globalConstructorOp->getParentOp()->walk(visitorAllGlobalConstructs);
 
-            auto funcType = th.getPointerType(th.getFunctionType(ArrayRef<mlir::Type>{}));
+            auto funcType = th.getPtrType();
 
             mlir::SmallVector<mlir::Type, 4> llvmTypes;
             llvmTypes.push_back(th.getI32Type());
@@ -5091,7 +5091,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
                     ch->setStructValue(loc, instanceVal, addrVal, 1);
 
-                    auto nullVal = rewriter.create<LLVM::NullOp>(loc, th.getPtrType());
+                    auto nullVal = rewriter.create<LLVM::ConstantOp>(loc, th.getPtrType(), 0);
                     ch->setStructValue(loc, instanceVal, nullVal, 2);
 
                     // set array value
@@ -5107,8 +5107,10 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
                 // create __mlir_runner_init for JIT
                 rewriter.setInsertionPointToEnd(parentModule.getBody());
-                auto llvmFnType = LLVM::LLVMFunctionType::get(th.getVoidType(), {}, /*isVarArg=*/false);
-                auto initFunc = rewriter.create<LLVM::LLVMFuncOp>(loc, "__mlir_gctors", llvmFnType, LLVM::Linkage::Internal);
+                auto llvmFnType = mlir::FunctionType::get(rewriter.getContext(), {th.getVoidType()}, {});
+                auto initFunc = rewriter.create<func::FuncOp>(loc, "__mlir_gctors", llvmFnType);
+                auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::Internal);
+                initFunc->setAttr("llvm.linkage", linkage);
                 auto &entryBlock = *initFunc.addEntryBlock();
                 rewriter.setInsertionPointToEnd(&entryBlock);
 
@@ -5199,7 +5201,7 @@ class GCMakeDescriptorOpLowering : public TsLlvmPattern<mlir_ts::GCMakeDescripto
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        auto i64PtrTy = th.getPointerType(th.getI64Type());
+        auto i64PtrTy = th.getPtrType();
 
         auto gcMakeDescriptorFunc = ch.getOrInsertFunction("GC_make_descriptor", th.getFunctionType(rewriter.getI64Type(), {i64PtrTy, rewriter.getI64Type()}));
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, gcMakeDescriptorFunc, ValueRange{transformed.getTypeBitmap(), transformed.getSizeOfBitmapInElements()});
@@ -5275,14 +5277,12 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
                                                  mlir::SmallPtrSet<mlir::Type, 32> &usedTypes)
 {
     converter.addConversion(
-        [&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)); });
+        [&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(m.getContext()); });
 
     converter.addConversion(
-        [&](mlir_ts::NullType type) { return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)); });
+        [&](mlir_ts::NullType type) { return LLVM::LLVMPointerType::get(m.getContext()); });
 
-    converter.addConversion([&](mlir_ts::OpaqueType type) {
-        return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8));
-    });
+    converter.addConversion([&](mlir_ts::OpaqueType type) { return LLVM::LLVMPointerType::get(m.getContext()); });
 
     converter.addConversion([&](mlir_ts::VoidType type) { return LLVM::LLVMVoidType::get(m.getContext()); });
 
@@ -5317,13 +5317,13 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     });
 
     converter.addConversion([&](mlir_ts::StringType type) {
-        return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8));
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::EnumType type) { return converter.convertType(type.getElementType()); });
 
     converter.addConversion([&](mlir_ts::ConstArrayType type) {
-        return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::ConstArrayValueType type) {
@@ -5335,7 +5335,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
         SmallVector<mlir::Type> rtArrayType;
         // pointer to data type
-        rtArrayType.push_back(LLVM::LLVMPointerType::get(converter.convertType(type.getElementType())));
+        rtArrayType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         // field which store length of array
         rtArrayType.push_back(th.getI32Type());
 
@@ -5343,11 +5343,11 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     });
 
     converter.addConversion([&](mlir_ts::RefType type) {
-        return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::ValueRefType type) {
-        return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::ConstTupleType type) {
@@ -5373,111 +5373,36 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion([&](mlir_ts::BoundRefType type) {
         SmallVector<mlir::Type> llvmStructType;
         llvmStructType.push_back(converter.convertType(mlir_ts::RefType::get(type.getElementType())));
-        llvmStructType.push_back(LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)));
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
 
     converter.addConversion([&](mlir_ts::FunctionType type) {
-        SmallVector<mlir::Type> convertedInputs;
-        for (auto subType : type.getInputs())
-        {
-            convertedInputs.push_back(converter.convertType(subType));
-        }
-
-        SmallVector<mlir::Type> convertedResults;
-        for (auto subType : type.getResults())
-        {
-            convertedResults.push_back(converter.convertType(subType));
-        }
-
-        auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
-
-        LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
-        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, false, result);
-        auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
+        auto llvmPtrType = LLVM::LLVMPointerType::get(m.getContext());
         return llvmPtrType;
     });
 
     converter.addConversion([&](mlir_ts::ConstructFunctionType type) {
-        SmallVector<mlir::Type> convertedInputs;
-        for (auto subType : type.getInputs())
-        {
-            convertedInputs.push_back(converter.convertType(subType));
-        }
-
-        SmallVector<mlir::Type> convertedResults;
-        for (auto subType : type.getResults())
-        {
-            convertedResults.push_back(converter.convertType(subType));
-        }
-
-        auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
-
-        LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
-        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, false, result);
-        auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
+        auto llvmPtrType = LLVM::LLVMPointerType::get(m.getContext());
         return llvmPtrType;
     });
 
     converter.addConversion([&](mlir_ts::BoundFunctionType type) {
-        SmallVector<mlir::Type> convertedInputs;
-        for (auto subType : type.getInputs())
-        {
-            convertedInputs.push_back(converter.convertType(subType));
-        }
-
-        SmallVector<mlir::Type> convertedResults;
-        for (auto subType : type.getResults())
-        {
-            convertedResults.push_back(converter.convertType(subType));
-        }
-
-        auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
-
-        LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
-        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, false, result);
-        auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
-        // return llvmPtrType;
-
         SmallVector<mlir::Type> llvmStructType;
-        llvmStructType.push_back(llvmPtrType);
-        llvmStructType.push_back(LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)));
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
 
     converter.addConversion([&](mlir_ts::HybridFunctionType type) {
-        SmallVector<mlir::Type> convertedInputs;
-        for (auto subType : type.getInputs())
-        {
-            convertedInputs.push_back(converter.convertType(subType));
-        }
-
-        SmallVector<mlir::Type> convertedResults;
-        for (auto subType : type.getResults())
-        {
-            convertedResults.push_back(converter.convertType(subType));
-        }
-
-        auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
-
-        LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
-        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, false, result);
-        auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
-        // return llvmPtrType;
-
         SmallVector<mlir::Type> llvmStructType;
-        llvmStructType.push_back(llvmPtrType);
-        llvmStructType.push_back(LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8)));
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
 
     converter.addConversion([&](mlir_ts::ObjectType type) {
-        if (type.getStorageType() == mlir_ts::AnyType::get(type.getContext()))
-        {
-            return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8));
-        }
-
-        return LLVM::LLVMPointerType::get(converter.convertType(type.getStorageType()));
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::ObjectStorageType type) {
@@ -5498,7 +5423,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     });    
 
     converter.addConversion([&](mlir_ts::UnknownType type) {
-        return LLVM::LLVMPointerType::get(mlir::IntegerType::get(m.getContext(), 8));
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::SymbolType type) { 
@@ -5531,7 +5456,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     });
 
     converter.addConversion([&](mlir_ts::ClassType type) {
-        return LLVM::LLVMPointerType::get(converter.convertType(type.getStorageType()));
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::InterfaceType type) {
