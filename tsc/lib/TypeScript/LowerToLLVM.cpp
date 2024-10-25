@@ -4298,7 +4298,7 @@ struct VTableOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::VTableOffsetRef
         auto index = clh.createI32ConstantOf(vtableOffsetRefOp.getIndex());
         auto methodOrInterfacePtrPtr =
             rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getPtrType(), ptrToArrOfPtrs, ValueRange{index});
-        auto methodOrInterfacePtr = rewriter.create<LLVM::LoadOp>(loc, methodOrInterfacePtrPtr);
+        auto methodOrInterfacePtr = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), methodOrInterfacePtrPtr);
 
         rewriter.replaceOp(vtableOffsetRefOp, ValueRange{methodOrInterfacePtr});
 
@@ -4581,7 +4581,7 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
         auto valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, transformed.getReference(),
                                                                  MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
 
-        mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, valueRefVal);
+        mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, llvmType, valueRefVal);
 
         if (auto funcType = boundRefType.getElementType().dyn_cast<mlir_ts::FunctionType>())
         {
