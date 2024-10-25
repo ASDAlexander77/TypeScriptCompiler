@@ -793,7 +793,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         LLVM_DEBUG(llvm::dbgs() << "constArrayType: arrayAttr: "; arrayAttr.dump(); llvm::dbgs() << "\n";);
 
         auto arrayFirstElementAddrCst =
-            ch.getOrCreateGlobalArray(elementType, llvmElementType, arrayAttr.size(), arrayAttr);
+            ch.getOrCreateGlobalArray(elementType, arrayAttr.size(), arrayAttr);
 
         rewriter.replaceOp(constantOp, arrayFirstElementAddrCst);
     }

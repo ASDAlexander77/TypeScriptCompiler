@@ -263,7 +263,12 @@ class LLVMDebugInfoHelper
                 diTypeAttr = getDIStructType(location, structType, file, line, scope);
             })
             .Case<LLVM::LLVMPointerType>([&](auto llvmPointerType) {  
-                diTypeAttr = getDIPointerType(getDILLVMType(location, llvmPointerType.getElementType(), file, line, scope), file, line);
+                //diTypeAttr = getDIPointerType(getDILLVMType(location, llvmPointerType.getElementType(), file, line, scope), file, line);
+                StringRef typeName = "address";
+                auto typeCode = dwarf::DW_ATE_address;
+                auto size = 0;
+                auto diTypeElemAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), size, typeCode);
+                diTypeAttr = getDIPointerType(diTypeElemAttr, file, line);
             })
             .Case<LLVM::LLVMFunctionType>([&](auto funcType) {
                 diTypeAttr = getDISubroutineType(location, funcType, file, line, scope);
