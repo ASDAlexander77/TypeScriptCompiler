@@ -65,7 +65,7 @@ int dumpLLVMIR(mlir::ModuleOp module, CompileOptions &compileOptions)
         if (llvm::ConstantInt *Behavior = llvm::mdconst::dyn_extract_or_null<llvm::ConstantInt>(MD)) {
             uint64_t Val = Behavior->getLimitedValue();
             if (Val == 1) {
-                llvmModule->setModuleFlag(llvm::Module::Warning, "CodeView", 0);
+                llvmModule->setModuleFlag(llvm::Module::Warning, "CodeView", static_cast<uint32_t>(0));
             }
         }
     } 

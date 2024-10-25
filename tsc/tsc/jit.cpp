@@ -9,6 +9,7 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/WithColor.h"
+#include "llvm/Support/ManagedStatic.h"
 
 #include "TypeScript/Defines.h"
 

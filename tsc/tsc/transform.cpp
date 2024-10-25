@@ -36,6 +36,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #ifdef GC_ENABLE
 #include "llvm/IR/GCStrategy.h"
