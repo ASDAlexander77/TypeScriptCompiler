@@ -623,6 +623,10 @@ def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfa
       return {arg_operand_begin(), arg_operand_end()};
     }
 
+    MutableOperandRange getArgOperandsMutable() {
+      return getCallOperandsMutable();
+    }
+
     operand_iterator arg_operand_begin() { return operand_begin(); }
     operand_iterator arg_operand_end() { return operand_end(); }
 
@@ -673,6 +677,10 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     /// Get the argument operands to the called function.
     operand_range getArgOperands() {
       return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    MutableOperandRange getArgOperandsMutable() {
+      return getCallOperandsMutable();
     }
 
     operand_iterator arg_operand_begin() { return ++operand_begin(); }
@@ -768,6 +776,10 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
       return {arg_operand_begin(), arg_operand_end()};
     }
 
+    MutableOperandRange getArgOperandsMutable() {
+      return getCallOperandsMutable();
+    }
+
     operand_iterator arg_operand_begin() { return operand_begin(); }
     operand_iterator arg_operand_end() { return operand_end(); }
 
@@ -801,6 +813,10 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
       return {arg_operand_begin(), arg_operand_end()};
     }
 
+    MutableOperandRange getArgOperandsMutable() {
+      return getCallOperandsMutable();
+    }
+    
     operand_iterator arg_operand_begin() { return operand_begin(); }
     operand_iterator arg_operand_end() { return operand_end(); }
 
@@ -835,6 +851,10 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
     operand_range getArgOperands() 
     {
       return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    MutableOperandRange getArgOperandsMutable() {
+      return getCallOperandsMutable();
     }
 
     operand_iterator arg_operand_begin() { return operand_begin(); }
@@ -1669,7 +1689,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
   let regions = (region SizedRegion<1>:$cond, AnyRegion:$body);
 
   let extraClassDeclaration = [{
-    mlir::Region &getLoopBody() { return getBody(); }    
+    llvm::SmallVector<mlir::Region *> getLoopRegions() { return {&getCond(), &getBody()}; }    
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) 
             ? Speculation::Speculatable
@@ -1697,7 +1717,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
   let regions = (region AnyRegion:$body, SizedRegion<1>:$cond);
 
   let extraClassDeclaration = [{
-    mlir::Region &getLoopBody() { return getBody(); }
+    llvm::SmallVector<mlir::Region *> getLoopRegions() { return {&getBody(), &getCond()}; }
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) 
             ? Speculation::Speculatable
@@ -1722,7 +1742,7 @@ def TypeScript_ForOp : TypeScript_Op<"For",
   let regions = (region SizedRegion<1>:$cond, AnyRegion:$body, SizedRegion<1>:$incr);
 
   let extraClassDeclaration = [{
-    mlir::Region &getLoopBody() { return getBody(); }
+    llvm::SmallVector<mlir::Region *> getLoopRegions() { return {&getCond(), &getBody(), &getIncr()}; }
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) || isEmpty(getCond()) 
             ? Speculation::Speculatable
