@@ -211,15 +211,6 @@ class LLVMCodeHelperBase
         return MemoryAlloc(sizeOfTypeValue, zero);
     }
 
-    mlir::Value MemoryAllocBitcast(mlir::Type res, mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
-    {
-        auto loc = op->getLoc();
-
-        auto alloc = MemoryAlloc(storageType, zero);
-        auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
-        return val;
-    }
-
     mlir::Value MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
     {
         return _MemoryRealloc<int>(ptrValue, sizeOfAlloc);

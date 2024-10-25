@@ -1731,8 +1731,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         auto location = varOp.getLoc();
 
         auto referenceType = varOp.getType();
-        auto storageType = referenceType.getElementType();
-        auto llvmReferenceType = tch.convertType(referenceType);
+        auto storageType = tch.convertType(referenceType.getElementType());
 
 #ifdef ALLOC_ALL_VARS_IN_HEAP
         auto isCaptured = true;
@@ -1763,32 +1762,24 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         else
         {
 
-            allocated = ch.MemoryAllocBitcast(llvmReferenceType, storageType);
+            allocated = ch.MemoryAlloc(storageType);
         }
 
 #ifdef GC_ENABLE
         // register root which is in stack, if you call Malloc - it is not in stack anymore
         if (!isCaptured)
         {
-            if (storageType.isa<mlir_ts::ClassType>() || storageType.isa<mlir_ts::StringType>() ||
-                storageType.isa<mlir_ts::ArrayType>() || storageType.isa<mlir_ts::ObjectType>() ||
-                storageType.isa<mlir_ts::AnyType>())
+            auto  tsStorageType = referenceType.getElementType();
+            if (tsStorageType.isa<mlir_ts::ClassType>() || tsStorageType.isa<mlir_ts::StringType>() ||
+                tsStorageType.isa<mlir_ts::ArrayType>() || tsStorageType.isa<mlir_ts::ObjectType>() ||
+                tsStorageType.isa<mlir_ts::AnyType>())
             {
-                if (auto ptrType = llvmReferenceType.dyn_cast<LLVM::LLVMPointerType>())
-                {
-                    if (ptrType.getElementType().isa<LLVM::LLVMPointerType>())
-                    {
-                        TypeHelper th(rewriter);
+                TypeHelper th(rewriter);
 
-                        auto i8PtrPtrTy = th.getPtrType();
-                        auto i8PtrTy = th.getPtrType();
-                        auto gcRootOp = ch.getOrInsertFunction(
-                            "llvm.gcroot", th.getFunctionType(th.getVoidType(), {i8PtrPtrTy, i8PtrTy}));
-                        auto nullPtr = rewriter.create<LLVM::NullOp>(location, i8PtrTy);
-                        rewriter.create<LLVM::CallOp>(location, gcRootOp,
-                                                      ValueRange{clh.castToI8PtrPtr(allocated), nullPtr});
-                    }
-                }
+                auto gcRootOp = ch.getOrInsertFunction(
+                    "llvm.gcroot", th.getFunctionType(th.getVoidType(), {th.getPtrType(), th.getPtrType()}));
+                auto nullPtr = rewriter.create<LLVM::ConstantOp>(location, th.getPtrType(), 0);
+                rewriter.create<LLVM::CallOp>(location, gcRootOp, ValueRange{allocated, nullPtr});
             }
         }
 #endif

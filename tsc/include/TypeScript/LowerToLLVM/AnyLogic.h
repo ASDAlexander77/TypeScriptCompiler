@@ -65,7 +65,7 @@ class AnyLogic
         auto llvmStorageType = inLLVMType;
         auto dataWithSizeType = getStorageType(llvmStorageType);
 
-        auto memValue = ch.MemoryAllocBitcast(ptrTy, dataWithSizeType);
+        auto memValue = ch.MemoryAlloc(dataWithSizeType);
 
         // set value size
         auto sizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, indexType, llvmStorageType);
