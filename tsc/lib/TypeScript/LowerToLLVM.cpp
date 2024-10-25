@@ -3670,7 +3670,7 @@ struct LoadSaveValueLowering : public TsLlvmPattern<mlir_ts::LoadSaveOp>
 
         auto loc = loadSaveOp->getLoc();
 
-        auto value = rewriter.create<LLVM::LoadOp>(loc, transformed.getSrc());
+        auto value = rewriter.create<LLVM::LoadOp>(loc, transformed.getSrc().getType(), transformed.getSrc());
         rewriter.create<LLVM::StoreOp>(loc, value, transformed.getDst());
 
         rewriter.eraseOp(loadSaveOp);
@@ -4297,7 +4297,7 @@ struct VTableOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::VTableOffsetRef
 
         auto index = clh.createI32ConstantOf(vtableOffsetRefOp.getIndex());
         auto methodOrInterfacePtrPtr =
-            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), ptrToArrOfPtrs, ValueRange{index});
+            rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getPtrType(), ptrToArrOfPtrs, ValueRange{index});
         auto methodOrInterfacePtr = rewriter.create<LLVM::LoadOp>(loc, methodOrInterfacePtrPtr);
 
         rewriter.replaceOp(vtableOffsetRefOp, ValueRange{methodOrInterfacePtr});
