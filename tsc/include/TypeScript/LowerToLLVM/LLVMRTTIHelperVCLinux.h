@@ -179,11 +179,6 @@ class LLVMRTTIHelperVCLinux
 
         mlir::Value throwInfoPtr =
             rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
-        if (classType)
-        {
-            throwInfoPtr = clh.castToI8Ptr(throwInfoPtr);
-        }
-
         return throwInfoPtr;
     }
 };

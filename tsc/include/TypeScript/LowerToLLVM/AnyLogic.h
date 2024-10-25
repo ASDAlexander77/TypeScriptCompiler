@@ -85,7 +85,7 @@ class AnyLogic
         auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, memValue, ValueRange{zero, two});
         rewriter.create<LLVM::StoreOp>(loc, in, ptrValue);
 
-        return clh.castToI8Ptr(memValue);
+        return memValue;
     }
 
     mlir::Value UnboxAny(mlir::Value in, mlir::Type resLLVMType)

@@ -3692,8 +3692,8 @@ struct CopyStructOpLowering : public TsLlvmPattern<mlir_ts::CopyStructOp>
             th.getFunctionType(th.getVoidType(), {th.getPtrType(), th.getPtrType(), llvmIndexType, th.getLLVMBoolType()}));
 
         mlir::SmallVector<mlir::Value, 4> values;
-        values.push_back(clh.castToI8Ptr(transformed.getDst()));
-        values.push_back(clh.castToI8Ptr(transformed.getSrc()));
+        values.push_back(transformed.getDst());
+        values.push_back(transformed.getSrc());
 
         auto llvmSrcType = tch.convertType(memoryCopyOp.getSrc().getType());
         auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), transformed.getSrc().getType());
@@ -3742,8 +3742,8 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
             th.getFunctionType(th.getVoidType(), {th.getPtrType(), th.getPtrType(), llvmIndexType, th.getLLVMBoolType()}));
 
         mlir::SmallVector<mlir::Value, 4> values;
-        values.push_back(clh.castToI8Ptr(transformed.getDst()));
-        values.push_back(clh.castToI8Ptr(transformed.getSrc()));
+        values.push_back(transformed.getDst());
+        values.push_back(transformed.getSrc());
 
         auto countAsI32Type = memoryCopyOp.getCount();
 
@@ -3794,8 +3794,8 @@ struct MemoryMoveOpLowering : public TsLlvmPattern<mlir_ts::MemoryMoveOp>
             th.getFunctionType(th.getVoidType(), {th.getPtrType(), th.getPtrType(), llvmIndexType, th.getLLVMBoolType()}));
 
         mlir::SmallVector<mlir::Value, 4> values;
-        values.push_back(clh.castToI8Ptr(transformed.getDst()));
-        values.push_back(clh.castToI8Ptr(transformed.getSrc()));
+        values.push_back(transformed.getDst());
+        values.push_back(transformed.getSrc());
 
         auto countAsI32Type = memoryMoveOp.getCount();
 
@@ -4128,7 +4128,7 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
         auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
 
         auto callInfo =
-            rewriter.create<LLVM::CallOp>(loc, typeIdFunc, ValueRange{clh.castToI8Ptr(transformed.getThrowTypeInfo())});
+            rewriter.create<LLVM::CallOp>(loc, typeIdFunc, ValueRange{transformed.getThrowTypeInfo()});
         auto typeIdValue = callInfo.getResult();
 
         // icmp
@@ -4482,8 +4482,8 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
 
         auto structVal = rewriter.create<LLVM::UndefOp>(loc, llvmInterfaceType);
         auto structVal2 = rewriter.create<LLVM::InsertValueOp>(
-            loc, structVal, clh.castToI8Ptr(transformed.getInterfaceVTable()), MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
-        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(transformed.getThisVal()),
+            loc, structVal, transformed.getInterfaceVTable(), MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
+        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.getThisVal(),
                                                                MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
@@ -4641,7 +4641,7 @@ struct CreateBoundRefOpLowering : public TsLlvmPattern<mlir_ts::CreateBoundRefOp
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundRefType);
         auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, transformed.getValueRef(),
                                                                MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
-        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(transformed.getThisVal()),
+        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, transformed.getThisVal(),
                                                                MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
 
         rewriter.replaceOp(createBoundRefOp, ValueRange{structVal3});

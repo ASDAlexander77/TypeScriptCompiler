@@ -1024,15 +1024,14 @@ class CastLogicHelper
         auto variableOp = mth.GetReferenceOfLoadOp(in);
         if (variableOp)
         {
-            return clh.castToI8Ptr(variableOp);
+            return variableOp;
         }
 
         auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
             loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
-        mlir::Value valueAddrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(valueAddr.getType()), valueAddr);
-
-        return clh.castToI8Ptr(valueAddrAsLLVMType);
+        auto valueAddrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(valueAddr.getType()), valueAddr);
+        return valueAddrAsLLVMType;
     }
 
     template <typename TupleTy> mlir::Value castTupleToString(mlir::Value in, mlir::Type inType, TupleTy tupleTypeIn)

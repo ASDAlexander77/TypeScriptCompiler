@@ -106,7 +106,7 @@ class ThrowLogic
 
                 rewriter.create<LLVM::InvokeOp>(
                     loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
-                    ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, unreachable, ValueRange{}, unwind, ValueRange{});
+                    ValueRange{value, throwInfoPtr}, unreachable, ValueRange{}, unwind, ValueRange{});
 
                 if (continuationBlock)
                 {
@@ -115,7 +115,7 @@ class ThrowLogic
             }
             else
             {
-                rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{clh.castToI8Ptr(value), throwInfoPtr});
+                rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{value, throwInfoPtr});
                 rewriter.create<mlir_ts::UnreachableOp>(loc);
             }
         }
@@ -181,7 +181,7 @@ class ThrowLogic
             auto nullValue = rewriter.create<LLVM::ConstantOp>(loc, i8PtrTy, 0);
             rewriter.create<LLVM::InvokeOp>(loc, TypeRange{th.getVoidType()},
                                             mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
-                                            ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue}, unreachable,
+                                            ValueRange{value, rttih.throwInfoPtrValue(loc), nullValue}, unreachable,
                                             ValueRange{}, unwind, ValueRange{});
 
             if (continuationBlock)
@@ -193,7 +193,7 @@ class ThrowLogic
         {
             auto nullValue = rewriter.create<LLVM::ConstantOp>(loc, i8PtrTy, 0);
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException,
-                                          ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue});
+                                          ValueRange{value, rttih.throwInfoPtrValue(loc), nullValue});
             rewriter.create<mlir_ts::UnreachableOp>(loc);
         }
 
