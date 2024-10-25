@@ -45,7 +45,7 @@ class ConvertLogic
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
+        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
         auto base = clh.createI32ConstantOf(10);
 
         return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{value, newStringValue, base}).getResult();
@@ -61,7 +61,7 @@ class ConvertLogic
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
+        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
         auto base = clh.createI32ConstantOf(10);
 
         return rewriter.create<LLVM::CallOp>(loc, _i64toaFuncOp, ValueRange{value, newStringValue, base}).getResult();
@@ -77,7 +77,7 @@ class ConvertLogic
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
+        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
         auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), in);
         auto precision = clh.createI32ConstantOf(16);
 

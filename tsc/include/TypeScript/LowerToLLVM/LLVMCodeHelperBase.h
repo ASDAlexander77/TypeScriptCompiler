@@ -220,27 +220,9 @@ class LLVMCodeHelperBase
         return val;
     }
 
-    mlir::Value MemoryAllocBitcast(mlir::Type res, mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
-    {
-        auto loc = op->getLoc();
-
-        auto alloc = MemoryAlloc(sizeOfAlloc, zero);
-        auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
-        return val;
-    }
-
     mlir::Value MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
     {
         return _MemoryRealloc<int>(ptrValue, sizeOfAlloc);
-    }
-
-    mlir::Value MemoryReallocBitcast(mlir::Type res, mlir::Value ptrValue, mlir::Value sizeOfAlloc)
-    {
-        auto loc = op->getLoc();
-
-        auto alloc = MemoryRealloc(ptrValue, sizeOfAlloc);
-        auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
-        return val;
     }
 
     LogicalResult MemoryFree(mlir::Value ptrValue)
@@ -248,7 +230,7 @@ class LLVMCodeHelperBase
         return _MemoryFree<int>(ptrValue);
     }
 
-    mlir::Value Alloca(mlir::Type llvmReferenceType, mlir::Type elementType, int count, bool inalloca = false)
+    mlir::Value Alloca(mlir::Type elementType, int count, bool inalloca = false)
     {
         auto location = op->getLoc();
 
@@ -263,15 +245,17 @@ class LLVMCodeHelperBase
         }
 
         CodeLogicHelper clh(op, rewriter);
-        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, elementType, clh.createI32ConstantOf(count), inalloca);
+        TypeHelper th(rewriter);
+        auto allocated = rewriter.create<LLVM::AllocaOp>(location, th.getPtrType(), elementType, clh.createI32ConstantOf(count), inalloca);
         return allocated;
     }
 
-    mlir::Value Alloca(mlir::Type llvmReferenceType, mlir::Type elementType, mlir::Value count, bool inalloca = false)
+    mlir::Value Alloca(mlir::Type elementType, mlir::Value count, bool inalloca = false)
     {
         auto location = op->getLoc();
         CodeLogicHelper clh(op, rewriter);
-        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, elementType, count, inalloca);
+        TypeHelper th(rewriter);
+        auto allocated = rewriter.create<LLVM::AllocaOp>(location, th.getPtrType(), elementType, count, inalloca);
         return allocated;
     }
 

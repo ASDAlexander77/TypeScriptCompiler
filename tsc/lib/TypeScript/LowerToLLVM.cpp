@@ -106,7 +106,7 @@ class ConvertFOpLowering : public TsLlvmPattern<mlir_ts::ConvertFOp>
 #endif
 
         auto bufferSizeValue = transformed.getBufferSize();
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
+        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
 
         auto formatSpecifierValue = transformed.getFormat();
 
@@ -439,7 +439,7 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        auto allocated = ch.MemoryReallocBitcast(th.getPtrType(), currentPtr, multSizeOfTypeValue);
+        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
@@ -518,7 +518,7 @@ class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthO
             i8PtrTy, 
             ptr);
 
-        mlir::Value newStringValue = ch.MemoryReallocBitcast(i8PtrTy, strPtr, size);
+        mlir::Value newStringValue = ch.MemoryRealloc(strPtr, size);
 
         rewriter.create<LLVM::StoreOp>(loc, newStringValue, ptr);
         rewriter.eraseOp(op);
@@ -563,8 +563,8 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
 
         auto allocInStack = op.getAllocInStack().has_value() && op.getAllocInStack().value();
 
-        mlir::Value newStringValue = allocInStack ? ch.Alloca(i8PtrTy, i8PtrTy, size, true)
-                                                  : ch.MemoryAllocBitcast(i8PtrTy, size);
+        mlir::Value newStringValue = allocInStack ? ch.Alloca(i8PtrTy, size, true)
+                                                  : ch.MemoryAlloc(size);
 
         // copy
         auto concat = false;
@@ -738,7 +738,7 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
         // TODO: review it, !! we can't allocate it in stack - otherwise when returned back from function, it will be poisned
         // TODO: maybe you need to add mechanizm to convert stack values to heap when returned from function
         //auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
+        auto newStringValue = ch.MemoryAlloc(bufferSizeValue);
 
         auto index0Value = clh.createI32ConstantOf(0);
         auto index1Value = clh.createI32ConstantOf(1);
@@ -1758,7 +1758,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                 count = intAttr.getInt();
             }
 
-            allocated = ch.Alloca(llvmReferenceType, storageType, count);
+            allocated = ch.Alloca(storageType, count);
         }
         else
         {
@@ -1847,7 +1847,7 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
 
             auto varInfo = localVarAttrFusedLoc.getMetadata();
 
-            auto allocated = ch.Alloca(LLVM::LLVMPointerType::get(rewriter.getContext()), value.getType(), 1);
+            auto allocated = ch.Alloca(value.getType(), 1);
 
             rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
 
@@ -1925,11 +1925,11 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         mlir::Value value;
         if (newOp.getStackAlloc().has_value() && newOp.getStackAlloc().value())
         {
-            value = ch.Alloca(LLVM::LLVMPointerType::get(rewriter.getContext()), resultType, 1);
+            value = ch.Alloca(resultType, 1);
         }
         else
         {
-            value = ch.MemoryAllocBitcast(resultType, storageType, MemoryAllocSet::Zero);
+            value = ch.MemoryAlloc(storageType, MemoryAllocSet::Zero);
         }
 
         rewriter.replaceOp(newOp, ValueRange{value});
@@ -2070,7 +2070,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        auto allocated = ch.MemoryAllocBitcast(th.getPtrType(), multSizeOfTypeValue);
+        auto allocated = ch.MemoryAlloc(multSizeOfTypeValue);
 
         mlir::Value index = clh.createIndexConstantOf(llvmIndexType, 0);
         auto next = false;
@@ -2197,7 +2197,7 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, countAsIndexType});
 
-        auto allocated = ch.MemoryAllocBitcast(th.getPtrType(), multSizeOfTypeValue);
+        auto allocated = ch.MemoryAlloc(multSizeOfTypeValue);
 
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);
@@ -2257,7 +2257,7 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        auto allocated = ch.MemoryReallocBitcast(th.getPtrType(), currentPtr, multSizeOfTypeValue);
+        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
         mlir::Value index = countAsIndexType;
         auto next = false;
@@ -2361,7 +2361,7 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        auto allocated = ch.MemoryReallocBitcast(th.getPtrType(), currentPtr, multSizeOfTypeValue);
+        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
@@ -2421,7 +2421,7 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        auto allocated = ch.MemoryReallocBitcast(th.getPtrType(), currentPtr, multSizeOfTypeValue);
+        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
         // realloc
         auto offset0 = allocated;
@@ -2533,7 +2533,7 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
 
         rewriter.create<mlir_ts::MemoryMoveOp>(loc, offset0, offset1, newCountAsIndexType);
 
-        auto allocated = ch.MemoryReallocBitcast(th.getPtrType(), currentPtr, multSizeOfTypeValue);
+        auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
@@ -2614,7 +2614,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
         auto increaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
-            auto allocated = ch.MemoryReallocBitcast(th.getPtrType(), currentPtr, multSizeOfTypeValue);
+            auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
             auto moveCountAsI32Type =
                 rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{countAsI32Type, startIndexAsI32Type});
@@ -2651,7 +2651,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
             auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{incSizeAsI32Type});
             rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexType);
 
-            auto allocated = ch.MemoryReallocBitcast(th.getPtrType(), currentPtr, multSizeOfTypeValue);
+            auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
             return allocated;
         };
 

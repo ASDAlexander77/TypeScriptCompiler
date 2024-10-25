@@ -948,10 +948,10 @@ class CastLogicHelper
             auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
             // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
             // auto copyAllocated = ch.Alloca(arrayPtrType, bytesSize);
-            auto copyAllocated = ch.MemoryAllocBitcast(ptrType, bytesSize);
+            auto copyAllocated = ch.MemoryAlloc(bytesSize);
 
-            auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrType, in);
-            auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrType, copyAllocated);
+            auto ptrToArraySrc = in;
+            auto ptrToArrayDst = copyAllocated;
             rewriter.create<mlir_ts::CopyStructOp>(loc, ptrToArrayDst, ptrToArraySrc);
 
             arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, copyAllocated);
@@ -960,7 +960,7 @@ class CastLogicHelper
         {
             // copy ptr only (const ptr -> ptr)
             // TODO: here we need to clone body to make it writable (and remove logic from VariableOp)
-            arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, in);
+            arrayPtr = in;
         }
 
         auto structValue2 =
