@@ -1722,6 +1722,7 @@ def TypeScript_ForOp : TypeScript_Op<"For",
   let regions = (region SizedRegion<1>:$cond, AnyRegion:$body, SizedRegion<1>:$incr);
 
   let extraClassDeclaration = [{
+    mlir::Region &getLoopBody() { return getBody(); }
     Speculation::Speculatability getSpeculatability() {  
         return isTrue(getCond()) || isEmpty(getCond()) 
             ? Speculation::Speculatable
