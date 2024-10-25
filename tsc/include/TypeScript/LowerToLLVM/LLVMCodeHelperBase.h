@@ -189,7 +189,7 @@ class LLVMCodeHelperBase
 
     LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
     {
-        return getOrInsertFunction(op->getLoc(), op->getParentOfType<ModuleOp>(), name, llvmFnType);
+        return getOrInsertFunction(mlir::UnknownLoc::get(op->getContext()) /*op->getLoc()*/, op->getParentOfType<ModuleOp>(), name, llvmFnType);
     }
 
     mlir::Value MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)

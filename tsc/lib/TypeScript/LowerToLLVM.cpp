@@ -5783,7 +5783,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
     return success();
 }
 
-static LogicalResult setDIReturnTypesToFormOp(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter)
+static LogicalResult setDISubProgramTypesToFormOp(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter)
 {
     // fixes for FuncOps, and it should be first
     SmallPtrSet<Operation *, 16> workSetFuncOps;
@@ -5993,7 +5993,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     if (tsLlvmContext.compileOptions.generateDebugInfo)
     {
         preserveTypesForDebugInfo(m, typeConverter);
-        setDIReturnTypesToFormOp(m, typeConverter);
+        setDISubProgramTypesToFormOp(m, typeConverter);
     }
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << m << "\n";);

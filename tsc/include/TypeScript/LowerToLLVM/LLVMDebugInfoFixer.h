@@ -22,6 +22,89 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
+class LLVMDebugInfoHelperCreator
+{
+    LLVM::LLVMFuncOp llvmFuncOp;
+    LLVMTypeConverter &typeConverter;
+    MLIRContext *context;
+
+public:
+    LLVMDebugInfoHelperCreator(LLVM::LLVMFuncOp llvmFuncOp, LLVMTypeConverter &typeConverter)
+        : llvmFuncOp(llvmFuncOp), typeConverter(typeConverter)
+    {
+        context = llvmFuncOp.getContext();
+    }
+
+    auto createSubProgramAttr() -> void
+    {
+        auto location = llvmFuncOp->getLoc();
+        if (auto funcLocWithSubprog = dyn_cast<mlir::FusedLocWith<mlir::LLVM::DISubprogramAttr>>(location))
+        {
+            return;
+        }
+
+        auto moduleOp = llvmFuncOp->getParentOp();
+        auto moduleLocation = moduleOp->getLoc();
+        if (auto funcLocWithCompileUnit = dyn_cast<mlir::FusedLocWith<mlir::LLVM::DICompileUnitAttr>>(moduleLocation))
+        {
+            auto compileUnit = funcLocWithCompileUnit.getMetadata();
+
+            LocationHelper lh(context);
+            LLVMTypeConverterHelper llvmtch(typeConverter);
+            LLVMDebugInfoHelper di(context, llvmtch);        
+
+            auto funcNameAttr = llvmFuncOp.getNameAttr();
+
+            // return type
+            auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(location);
+            auto [line, column] = lineAndColumn;
+
+            SmallVector <mlir::LLVM::DITypeAttr> resultTypes;
+            for (auto resType : llvmFuncOp.getResultTypes())
+            {
+                auto diType = di.getDIType(location, {}, resType, file, line, file);
+                resultTypes.push_back(diType);
+            }
+
+            if (llvmFuncOp.getArgumentTypes().size() > 0 &&  llvmFuncOp.getResultTypes().size() == 0)
+            {
+                // return type is null
+                resultTypes.push_back(mlir::LLVM::DINullTypeAttr());
+            }
+
+            for (auto argType : llvmFuncOp.getArgumentTypes())
+            {
+                auto diType = di.getDIType(location, {}, argType, file, line, file);
+                resultTypes.push_back(diType);
+            }
+
+            auto subroutineTypeAttr = mlir::LLVM::DISubroutineTypeAttr::get(context, llvm::dwarf::DW_CC_normal, resultTypes);
+            auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
+                context, 
+                DistinctAttr::create(mlir::UnitAttr::get(context)),
+                compileUnit, 
+                compileUnit, 
+                funcNameAttr, 
+                funcNameAttr, 
+                compileUnit.getFile(), 
+                line, 
+                line, 
+                LLVM::DISubprogramFlags::Pure, 
+                subroutineTypeAttr);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! new prog attr: " << subprogramAttr << "\n");        
+
+            // we do not use replaceScope here as we are fixing metadata
+            auto newLoc = mlir::FusedLoc::get(location.getContext(), {location}, subprogramAttr);
+            llvmFuncOp->setLoc(newLoc);            
+        }        
+    }
+
+    void clear() {
+        llvmFuncOp->setLoc(mlir::UnknownLoc::get(llvmFuncOp.getContext()));
+    }
+};
+
 class LLVMDebugInfoHelperFixer
 {
     mlir_ts::FuncOp funcOp;
