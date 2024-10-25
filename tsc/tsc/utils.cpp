@@ -110,9 +110,9 @@ std::string getDefaultOutputFileName(enum Action emitAction)
 
     // If InputFilename ends in .bc or .ll, remove it.
     llvm::StringRef IFN = inputFilename;
-    if (IFN.endswith(".ts"))
+    if (IFN.ends_with(".ts"))
         fileNameResult = std::string(IFN.drop_back(3));
-    else if (IFN.endswith(".mlir"))
+    else if (IFN.ends_with(".mlir"))
         fileNameResult = std::string(IFN.drop_back(5));
     else
         fileNameResult = std::string(IFN);
