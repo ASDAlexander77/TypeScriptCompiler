@@ -1938,8 +1938,6 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
 
-        auto llvmIndexType = tch.convertType(th.getIndexType());
-
         auto loc = createTupleOp.getLoc();
         auto tupleType = createTupleOp.getType().cast<mlir_ts::TupleType>();
 
@@ -1947,18 +1945,19 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
             loc, mlir_ts::RefType::get(tupleType), mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
         // set values here
-        mlir::Value zero = clh.createIndexConstantOf(llvmIndexType, 0);
+        auto tupleVarLLVMType = tch.convertType(tupleType);
         for (auto [index, itemPair] : enumerate(llvm::zip(transformed.getItems(), createTupleOp.getItems())))
         {
             auto item = std::get<0>(itemPair);
             auto itemOrig = std::get<1>(itemPair);
 
-            mlir::Value fieldIndex = clh.createStructIndexConstantOf(index);
             auto llvmValueType = tch.convertType(itemOrig.getType());
 
-            mlir::Value tupleVarAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(tupleVar.getType()), tupleVar);
+            mlir::Value tupleVarAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tupleVarLLVMType, tupleVar);
 
-            auto offset = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmValueType, tupleVarAsLLVMType, ValueRange{zero, fieldIndex});
+            LLVM_DEBUG(llvm::dbgs() << "\n!! CreateTuple: type - " << tupleType << " llvm: " << tupleVarLLVMType << "\n";);
+
+            auto offset = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), tupleVarLLVMType, tupleVarAsLLVMType, ArrayRef<LLVM::GEPArg>{0, index});
 
             // cast item if needed
             auto destItemType = tupleType.getFields()[index].type;
@@ -3193,7 +3192,7 @@ struct PropertyRefOpLowering : public TsLlvmPattern<mlir_ts::PropertyRefOp>
         LLVMCodeHelper ch(propertyRefOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto addr =
-            ch.GetAddressOfStructElement(propertyRefOp.getType(), transformed.getObjectRef(), propertyRefOp.getPosition());
+            ch.GetAddressOfStructElement(propertyRefOp.getObjectRef().getType(), transformed.getObjectRef(), propertyRefOp.getPosition());
 
         if (auto boundRefType = propertyRefOp.getType().dyn_cast<mlir_ts::BoundRefType>())
         {

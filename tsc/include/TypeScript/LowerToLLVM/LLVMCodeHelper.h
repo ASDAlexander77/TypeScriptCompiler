@@ -652,7 +652,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return addr;
     }
 
-    mlir::Value GetAddressOfStructElement(mlir::Type elementRefType, mlir::Value arrayOrStringOrTuple, int32_t index)
+    mlir::Value GetAddressOfStructElement(mlir::Type objectRefType, mlir::Value arrayOrStringOrTuple, int32_t index)
     {
         // index of struct MUST BE 32 bit
         TypeHelper th(rewriter);
@@ -661,13 +661,13 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto loc = op->getLoc();
         auto globalPtr = arrayOrStringOrTuple;
 
-        auto isRefType = elementRefType.isa<mlir_ts::RefType>();
-        auto isBoundRefType = elementRefType.isa<mlir_ts::BoundRefType>();
+        auto isRefType = objectRefType.isa<mlir_ts::RefType>();
+        auto isBoundRefType = objectRefType.isa<mlir_ts::BoundRefType>();
 
         assert(isRefType || isBoundRefType);
 
-        auto elementType = isRefType ? elementRefType.cast<mlir_ts::RefType>().getElementType()
-                         : isBoundRefType ? elementRefType.cast<mlir_ts::BoundRefType>().getElementType()
+        auto elementType = isRefType ? objectRefType.cast<mlir_ts::RefType>().getElementType()
+                         : isBoundRefType ? objectRefType.cast<mlir_ts::BoundRefType>().getElementType()
                          : mlir::Type();
 
         if (!elementType)
@@ -675,18 +675,12 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             return mlir::Value();
         }
 
-        auto ptrType = th.getPtrType();
 
-        SmallVector<mlir::Value> indexes;
-        // add first index which 64 bit (struct field MUST BE 32 bit index)
-        // auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
-        auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0));
-        indexes.push_back(firstIndex);
-        auto fieldIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(index));
-        indexes.push_back(fieldIndex);
+        auto llvmElementType = tch.convertType(elementType);
 
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, elementType, globalPtr, indexes);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! GetAddressOfStructElement: type - " << elementType << " llvm: " << llvmElementType << "\n";);
 
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, globalPtr, ArrayRef<LLVM::GEPArg>{0, index});
         return addr;
     }
 
