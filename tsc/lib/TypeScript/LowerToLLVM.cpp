@@ -921,10 +921,8 @@ struct NullOpLowering : public TsLlvmPattern<mlir_ts::NullOp>
     LogicalResult matchAndRewrite(mlir_ts::NullOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeConverterHelper tch(getTypeConverter());
-        rewriter.replaceOpWithNewOp<LLVM::ConstantOp>(op, tch.convertType(op.getType()), 0);
+        rewriter.replaceOpWithNewOp<LLVM::ZeroOp>(op, tch.convertType(op.getType()));
         return success();
     }
 };

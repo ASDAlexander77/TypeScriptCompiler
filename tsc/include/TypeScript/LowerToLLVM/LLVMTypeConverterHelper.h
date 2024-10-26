@@ -96,7 +96,13 @@ class LLVMTypeConverterHelper
 
         LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(getGlobalContext());
         auto type = typeToLLVMIRTranslator.translateType(llvmType);
-        uint64_t typeSize = typeConverter.getDataLayout().getTypeAllocSize(type);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! checking type size - LLVM: " << llvmType << " and IR: " << *type << "\n";);
+
+        auto &dl = typeConverter.getDataLayout();
+        auto typeSize = llvmType.isa<LLVM::LLVMPointerType>() 
+            ? dl.getPointerTypeSize(type)
+            : dl.getTypeAllocSize(type);
         
         LLVM_DEBUG(llvm::dbgs() << "\n!! src type: " << llvmType
                         << "\n size: " << typeSize << "\n";);
