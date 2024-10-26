@@ -686,7 +686,7 @@ class CastLogicHelper
         // struct to struct. TODO: add validation
         if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
         {
-            LLVMTypeConverterHelper llvmtch((LLVMTypeConverter &)tch.typeConverter);
+            LLVMTypeConverterHelper llvmtch((LLVMTypeConverter &)*tch.typeConverter);
             auto srcSize = llvmtch.getTypeSizeEstimateInBytes(inLLVMType);
             auto dstSize = llvmtch.getTypeSizeEstimateInBytes(resLLVMType);
 

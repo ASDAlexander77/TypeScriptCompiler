@@ -5324,7 +5324,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
         SmallVector<mlir::Type> rtArrayType;
         // pointer to data type
-        rtArrayType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
+        rtArrayType.push_back(th.getPtrType());
         // field which store length of array
         rtArrayType.push_back(th.getI32Type());
 
@@ -5361,7 +5361,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion([&](mlir_ts::BoundRefType type) {
         SmallVector<mlir::Type> llvmStructType;
-        llvmStructType.push_back(converter.convertType(mlir_ts::RefType::get(type.getElementType())));
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
@@ -5422,6 +5422,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion([&](mlir_ts::UndefinedType type) { 
         auto identStruct = LLVM::LLVMStructType::getIdentified(type.getContext(), UNDEFINED_NAME);
         SmallVector<mlir::Type> undefBodyTypes;
+        // TODO: review size of int here, should it be 8?
         undefBodyTypes.push_back(mlir::IntegerType::get(m.getContext(), 1));
         identStruct.setBody(undefBodyTypes, false);
         return identStruct;

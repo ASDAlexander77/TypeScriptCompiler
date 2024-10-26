@@ -99,10 +99,7 @@ class LLVMTypeConverterHelper
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! checking type size - LLVM: " << llvmType << " and IR: " << *type << "\n";);
 
-        auto &dl = typeConverter.getDataLayout();
-        auto typeSize = llvmType.isa<LLVM::LLVMPointerType>() 
-            ? dl.getPointerTypeSize(type)
-            : dl.getTypeAllocSize(type);
+        auto typeSize = typeConverter.getDataLayout().getTypeAllocSize(type);
         
         LLVM_DEBUG(llvm::dbgs() << "\n!! src type: " << llvmType
                         << "\n size: " << typeSize << "\n";);
