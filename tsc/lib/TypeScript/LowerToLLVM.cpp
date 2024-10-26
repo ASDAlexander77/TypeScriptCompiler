@@ -227,7 +227,7 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
             parseIntFuncOp = ch.getOrInsertFunction(
                 "strtol",
                 th.getFunctionType(rewriter.getI32Type(), {i8PtrTy, th.getPtrType(), rewriter.getI32Type()}));
-            auto nullOp = rewriter.create<LLVM::ConstantOp>(op->getLoc(), th.getPtrType(), 0);
+            auto nullOp = rewriter.create<LLVM::ZeroOp>(op->getLoc(), th.getPtrType());
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp,
                                                       ValueRange{transformed.getArg(), nullOp, transformed.getBase()});
         }
@@ -364,7 +364,7 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
             llvmStorageTypePtr = llvmStorageType;
         }
 
-        auto nullPtrToTypeValue = rewriter.create<LLVM::ConstantOp>(loc, llvmStorageTypePtr, 0);
+        auto nullPtrToTypeValue = rewriter.create<LLVM::ZeroOp>(loc, llvmStorageTypePtr);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! size of - storage type: [" << storageType << "] llvm storage type: ["
                                 << llvmStorageType << "] llvm ptr: [" << llvmStorageTypePtr << "]\n";);
@@ -1776,7 +1776,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
                 auto gcRootOp = ch.getOrInsertFunction(
                     "llvm.gcroot", th.getFunctionType(th.getVoidType(), {th.getPtrType(), th.getPtrType()}));
-                auto nullPtr = rewriter.create<LLVM::ConstantOp>(location, th.getPtrType(), 0);
+                auto nullPtr = rewriter.create<LLVM::ZeroOp>(location, th.getPtrType());
                 rewriter.create<LLVM::CallOp>(location, gcRootOp, ValueRange{allocated, nullPtr});
             }
         }
@@ -2132,7 +2132,7 @@ struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
 
         auto llvmElementType = tch.convertType(elementType);
 
-        auto allocated = rewriter.create<LLVM::ConstantOp>(loc, th.getPtrType(), 0);
+        auto allocated = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
 
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);
@@ -4430,7 +4430,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
             if (isOptional)
             {
                 auto nullAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
-                    auto typedPtr = rewriter.create<LLVM::ConstantOp>(loc, fieldLLVMTypeRef, 0);
+                    auto typedPtr = rewriter.create<LLVM::ZeroOp>(loc, fieldLLVMTypeRef);
                     return typedPtr;
                 };
 
@@ -5080,7 +5080,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
                     ch->setStructValue(loc, instanceVal, addrVal, 1);
 
-                    auto nullVal = rewriter.create<LLVM::ConstantOp>(loc, th.getPtrType(), 0);
+                    auto nullVal = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
                     ch->setStructValue(loc, instanceVal, nullVal, 2);
 
                     // set array value

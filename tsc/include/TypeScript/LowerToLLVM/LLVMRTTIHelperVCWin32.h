@@ -246,7 +246,7 @@ class LLVMRTTIHelperVCWin32
                 rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoExtRef));
             ch.setStructValue(loc, structVal, itemValue1, 0);
 
-            auto itemValue2 = rewriter.create<LLVM::ConstantOp>(loc, th.getPtrType(), 0);
+            auto itemValue2 = rewriter.create<LLVM::ZeroOp>(loc, th.getPtrType());
             ch.setStructValue(loc, structVal, itemValue2, 1);
 
             auto itemValue3 = rewriter.create<LLVM::ConstantOp>(loc, th.getI8Array(StringRef(typeName).size() + 1),

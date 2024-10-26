@@ -178,7 +178,7 @@ class ThrowLogic
 
             auto *continuationBlock = endOfBlock ? nullptr : clh.CutBlockAndSetInsertPointToEndOfBlock();
 
-            auto nullValue = rewriter.create<LLVM::ConstantOp>(loc, i8PtrTy, 0);
+            auto nullValue = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
             rewriter.create<LLVM::InvokeOp>(loc, TypeRange{th.getVoidType()},
                                             mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
                                             ValueRange{value, rttih.throwInfoPtrValue(loc), nullValue}, unreachable,
@@ -191,7 +191,7 @@ class ThrowLogic
         }
         else
         {
-            auto nullValue = rewriter.create<LLVM::ConstantOp>(loc, i8PtrTy, 0);
+            auto nullValue = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException,
                                           ValueRange{value, rttih.throwInfoPtrValue(loc), nullValue});
             rewriter.create<mlir_ts::UnreachableOp>(loc);

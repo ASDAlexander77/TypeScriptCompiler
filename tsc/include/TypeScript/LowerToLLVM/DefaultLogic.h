@@ -57,7 +57,7 @@ class DefaultLogic
 
         if (dataType.isa<LLVM::LLVMPointerType>())
         {
-            defaultValue = rewriter.create<LLVM::ConstantOp>(loc, dataType, 0);
+            defaultValue = rewriter.create<LLVM::ZeroOp>(loc, dataType);
         }
         else if (dataType.isa<mlir::IntegerType>())
         {
