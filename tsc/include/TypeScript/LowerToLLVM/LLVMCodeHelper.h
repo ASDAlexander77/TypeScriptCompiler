@@ -628,7 +628,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.create<LLVM::GEPOp>(loc, pointerType, global.getType(), globalPtr, ArrayRef<mlir::Value>({cst0}));
     }
 
-    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleMlirTSType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
+    mlir::Value GetAddressOfArrayElement(mlir::Type elementType, mlir::Type arrayOrStringOrTupleMlirTSType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -636,9 +636,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        assert(elementRefType.isa<mlir_ts::RefType>());
-
-        auto ptrType = tch.convertType(elementRefType);
+        auto ptrType = th.getPtrType();
+        auto llvmElementType = tch.convertType(elementType);
 
         auto dataPtr = arrayOrStringOrTuple;
         if (arrayOrStringOrTupleMlirTSType.isa<mlir_ts::ArrayType>())
@@ -648,7 +647,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                                                             MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
         }
 
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), ptrType, dataPtr, ValueRange{index});
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, dataPtr, ValueRange{index});
         return addr;
     }
 
@@ -693,21 +692,14 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return addr;
     }
 
-    mlir::Value GetAddressOfPointerOffset(mlir::Type elementRefType, mlir::Value refValue, mlir::Value index)
+    mlir::Value GetAddressOfPointerOffset(mlir::Type llvmElementType, mlir::Value refValue, mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
         CodeLogicHelper clh(op, rewriter);
 
         auto loc = op->getLoc();
-
-        auto ptrType = tch.convertType(elementRefType);
-
-        assert(ptrType.isa<LLVM::LLVMPointerType>());
-
-        auto dataPtr = refValue;
-
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), ptrType, dataPtr, ValueRange{index});
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, refValue, ValueRange{index});
         return addr;
     }
 

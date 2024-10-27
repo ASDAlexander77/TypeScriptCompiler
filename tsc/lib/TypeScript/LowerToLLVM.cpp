@@ -731,7 +731,7 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
         auto loc = op->getLoc();
 
         auto charType = mlir_ts::CharType::get(rewriter.getContext());
-        auto charRefType = mlir_ts::RefType::get(charType);
+
         auto i8PtrTy = th.getPtrType();
 
         auto bufferSizeValue = clh.createI64ConstantOf(2);
@@ -743,9 +743,9 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
         auto index0Value = clh.createI32ConstantOf(0);
         auto index1Value = clh.createI32ConstantOf(1);
         auto nullCharValue = clh.createI8ConstantOf(0);
-        auto addr0 = ch.GetAddressOfArrayElement(charRefType, newStringValue.getType(), newStringValue, index0Value);
+        auto addr0 = ch.GetAddressOfArrayElement(charType, newStringValue.getType(), newStringValue, index0Value);
         rewriter.create<LLVM::StoreOp>(loc, transformed.getOp(), addr0);
-        auto addr1 = ch.GetAddressOfArrayElement(charRefType, newStringValue.getType(), newStringValue, index1Value);
+        auto addr1 = ch.GetAddressOfArrayElement(charType, newStringValue.getType(), newStringValue, index1Value);
         rewriter.create<LLVM::StoreOp>(loc, nullCharValue, addr1);
 
         rewriter.replaceOp(op, ValueRange{newStringValue});
@@ -3110,11 +3110,9 @@ struct ElementRefOpLowering : public TsLlvmPattern<mlir_ts::ElementRefOp>
     LogicalResult matchAndRewrite(mlir_ts::ElementRefOp elementOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        auto addr = ch.GetAddressOfArrayElement(elementOp.getResult().getType(), elementOp.getArray().getType(),
+        auto addr = ch.GetAddressOfArrayElement(elementOp.getArray().getType().cast<mlir_ts::ArrayType>().getElementType(), elementOp.getArray().getType(),
                                                 transformed.getArray(), transformed.getIndex());
         rewriter.replaceOp(elementOp, addr);
         return success();
