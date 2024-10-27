@@ -952,9 +952,9 @@ class CastLogicHelper
 
             auto ptrToArraySrc = in;
             auto ptrToArrayDst = copyAllocated;
-            rewriter.create<mlir_ts::CopyStructOp>(loc, ptrToArrayDst, ptrToArraySrc);
+            rewriter.create<mlir_ts::MemoryCopyOp>(loc, ptrToArrayDst, ptrToArraySrc, bytesSize);
 
-            arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, ptrType, copyAllocated);
+            arrayPtr = copyAllocated;
         }
         else
         {

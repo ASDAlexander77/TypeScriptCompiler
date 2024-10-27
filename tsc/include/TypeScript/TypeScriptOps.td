@@ -2193,7 +2193,7 @@ def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [CopyOpInterface, AllT
 }
 
 def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
-  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, I32:$count);
+  let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
 
   let extraClassDeclaration = [{

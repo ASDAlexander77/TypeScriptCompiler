@@ -3690,12 +3690,13 @@ struct CopyStructOpLowering : public TsLlvmPattern<mlir_ts::CopyStructOp>
         values.push_back(transformed.getDst());
         values.push_back(transformed.getSrc());
 
-        auto llvmSrcType = tch.convertType(memoryCopyOp.getSrc().getType());
-        auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), transformed.getSrc().getType());
+        LLVM_DEBUG(llvm::dbgs() << "[CopyStructOp(1)] from type: " << memoryCopyOp.getSrc().getType() << " to type: " << memoryCopyOp.getDst().getType()
+                                << "\n";);        
+
+        auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), memoryCopyOp.getSrc().getType());
         auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
 
-        auto llvmDstType = tch.convertType(memoryCopyOp.getDst().getType());
-        auto dstSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), transformed.getDst().getType());
+        auto dstSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), memoryCopyOp.getDst().getType());
         auto dstSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, dstSizeMLIR);
 
         auto cmpVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, srcSize, dstSize);
@@ -3740,20 +3741,9 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
         values.push_back(transformed.getDst());
         values.push_back(transformed.getSrc());
 
-        auto countAsI32Type = memoryCopyOp.getCount();
+        auto countIndexType = transformed.getCount();
 
-        auto newCountAsIndexType = 
-            llvmIndexType != countAsI32Type.getType()
-            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type)
-            : (mlir::Value) countAsI32Type;
-
-        auto llvmSrcType = tch.convertType(memoryCopyOp.getSrc().getType());
-        auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), transformed.getSrc().getType());
-        auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
-        auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{srcSize, newCountAsIndexType});
-
-        values.push_back(multSizeOfTypeValue);
+        values.push_back(countIndexType);
 
         auto immarg = clh.createI1ConstantOf(false);
         values.push_back(immarg);
