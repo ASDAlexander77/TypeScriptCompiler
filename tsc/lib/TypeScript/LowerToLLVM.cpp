@@ -2218,19 +2218,20 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
 
         auto loc = pushOp.getLoc();
 
+        auto ptrType = th.getPtrType();
         auto arrayType = pushOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
+
+        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        auto ind0 = clh.createI32ConstantOf(ARRAY_DATA_INDEX);
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getPtrType(), transformed.getOp(),
-                                                          ValueRange{ind0, ind0});
+        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, currentPtrPtr);
 
-        auto ind1 = clh.createI32ConstantOf(ARRAY_SIZE_INDEX);
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getI32Type(), transformed.getOp(),
-                                                              ValueRange{ind0, ind1});
+        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+                                                              ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
 
         auto countAsIndexType = 
@@ -2314,8 +2315,11 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
 
         auto loc = popOp.getLoc();
 
+        auto ptrType = th.getPtrType();
         auto arrayType = popOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
+
+        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
@@ -2325,14 +2329,12 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
             .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
             .Default([&](auto type) { storageType = type; });
 
-        auto ind0 = clh.createI32ConstantOf(ARRAY_DATA_INDEX);
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getPtrType(), transformed.getOp(),
-                                                          ValueRange{ind0, ind0});
+        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), currentPtrPtr);
 
-        auto ind1 = clh.createI32ConstantOf(ARRAY_SIZE_INDEX);
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getI32Type(), transformed.getOp(),
-                                                              ValueRange{ind0, ind1});
+        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+                                                              ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
 
         auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
@@ -2382,8 +2384,11 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
 
         auto loc = unshiftOp.getLoc();
 
+        auto ptrType = th.getPtrType();
         auto arrayType = unshiftOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
+
+        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
@@ -2481,8 +2486,11 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
 
         auto loc = shiftOp.getLoc();
 
+        auto ptrType = th.getPtrType();
         auto arrayType = shiftOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
+
+        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
@@ -2554,11 +2562,14 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
 
         auto loc = spliceOp.getLoc();
 
+        auto ptrType = th.getPtrType();
         auto arrayType = spliceOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
+
+        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
-        auto llvmI32Type = tch.convertType(th.getI32Type());
+        auto llvmI32Type = th.getI32Type();
 
         auto ind0 = clh.createI32ConstantOf(ARRAY_DATA_INDEX);
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getPtrType(), transformed.getOp(),
@@ -2713,8 +2724,11 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
 
         auto loc = arrayViewOp.getLoc();
 
-        auto arrayType = arrayViewOp.getOp().getType().cast<mlir_ts::ArrayType>();
+        auto ptrType = th.getPtrType();
+        auto arrayType = spliceOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
+
+        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
