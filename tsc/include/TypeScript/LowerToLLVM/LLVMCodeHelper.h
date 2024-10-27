@@ -647,7 +647,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                                                             MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
         }
 
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, dataPtr, ValueRange{index});
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, dataPtr, ArrayRef<LLVM::GEPArg>{index});
         return addr;
     }
 
