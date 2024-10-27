@@ -1945,7 +1945,8 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
             loc, mlir_ts::RefType::get(tupleType), mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
         // set values here
-        auto tupleVarLLVMType = tch.convertType(tupleType);
+        auto ptrType = th.getPtrType();
+        auto llvmTupleType = tch.convertType(tupleType);
         for (auto [index, itemPair] : enumerate(llvm::zip(transformed.getItems(), createTupleOp.getItems())))
         {
             auto item = std::get<0>(itemPair);
@@ -1953,11 +1954,13 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
 
             auto llvmValueType = tch.convertType(itemOrig.getType());
 
-            mlir::Value tupleVarAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tupleVarLLVMType, tupleVar);
+            mlir::Value tupleVarAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, ptrType, tupleVar);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! CreateTuple: type - " << tupleType << " llvm: " << tupleVarLLVMType << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! CreateTuple: type - " << tupleType << " llvm: " << llvmTupleType << "\n";);
 
-            auto offset = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), tupleVarLLVMType, tupleVarAsLLVMType, ArrayRef<LLVM::GEPArg>{0, index});
+            auto offset = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmTupleType, tupleVarAsLLVMType, ArrayRef<LLVM::GEPArg>{0, index});
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! CreateTuple: op " << offset << "\n";);
 
             // cast item if needed
             auto destItemType = tupleType.getFields()[index].type;
@@ -4562,11 +4565,11 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
         auto boundRefType = loadBoundRefOp.getReference().getType().cast<mlir_ts::BoundRefType>();
 
         auto llvmType = tch.convertType(boundRefType.getElementType());
-        auto llvmRefType = th.getPtrType();
+        auto ptrType = th.getPtrType();
 
-        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), transformed.getReference(),
+        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, transformed.getReference(),
                                                              MLIRHelper::getStructIndex(rewriter, THIS_VALUE_INDEX));
-        auto valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, transformed.getReference(),
+        auto valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, transformed.getReference(),
                                                                  MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
 
         mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, llvmType, valueRefVal);
