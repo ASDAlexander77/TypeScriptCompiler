@@ -661,20 +661,29 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto loc = op->getLoc();
         auto globalPtr = arrayOrStringOrTuple;
 
-        auto isRefType = objectRefType.isa<mlir_ts::RefType>();
-        auto isBoundRefType = objectRefType.isa<mlir_ts::BoundRefType>();
-
-        assert(isRefType || isBoundRefType);
-
-        auto elementType = isRefType ? objectRefType.cast<mlir_ts::RefType>().getElementType()
-                         : isBoundRefType ? objectRefType.cast<mlir_ts::BoundRefType>().getElementType()
-                         : mlir::Type();
+        mlir::Type elementType;
+        if (auto refType = objectRefType.dyn_cast<mlir_ts::RefType>())
+        {
+            elementType = refType.getElementType();
+        }
+        else if (auto boundRefType = objectRefType.dyn_cast<mlir_ts::BoundRefType>())
+        {
+            elementType = boundRefType.getElementType();
+        }
+        else if (auto objType = objectRefType.dyn_cast<mlir_ts::ObjectType>())
+        {
+            elementType = objType.getStorageType();
+        }
+        else 
+        {
+            assert(false);
+            llvm_unreachable("Needs reference type");
+        }
 
         if (!elementType)
         {
             return mlir::Value();
         }
-
 
         auto llvmElementType = tch.convertType(elementType);
 
