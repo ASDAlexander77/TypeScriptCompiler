@@ -346,6 +346,43 @@ class MLIRHelper
 
         return result;
     }
+
+    static mlir::Type getElementTypeOrSelf(mlir::Type type)
+    {
+        if (type)
+        {
+            if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
+            {
+                return arrayType.getElementType();
+            }
+            else if (type.isa<mlir_ts::StringType>())
+            {
+                return mlir_ts::CharType::get(type.getContext());
+            }
+            else if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
+            {
+                return classType.getStorageType();
+            }
+            else if (auto objType = type.dyn_cast<mlir_ts::ObjectType>())
+            {
+                return objType.getStorageType();
+            }
+            else if (auto refType = type.dyn_cast<mlir_ts::RefType>())
+            {
+                return refType.getElementType();
+            }
+            else if (auto boundRefType = type.dyn_cast<mlir_ts::BoundRefType>())
+            {
+                return boundRefType.getElementType();
+            }
+            else if (auto valueRefType = type.dyn_cast<mlir_ts::ValueRefType>())
+            {
+                return valueRefType.getElementType();
+            }
+        }
+
+        return type;
+    }    
 };
 
 } // namespace typescript

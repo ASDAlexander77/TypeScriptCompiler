@@ -2044,13 +2044,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
 
         mlir::Type storageType = elementType;
         // TODO: why do I need it?, do I store clones of objects?
-        // mlir::TypeSwitch<mlir::Type>(elementType)
-        //     .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-        //     .Case<mlir_ts::ObjectType>([&](auto objType) { storageType = objType.getStorageType(); })
-        //     .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-        //     .Case<mlir_ts::RefType>([&](auto refType) { storageType = refType.getElementType(); })
-        //     .Case<mlir_ts::BoundRefType>([&](auto boundRefType) { storageType = boundRefType.getElementType(); })
-        //     .Default([&](auto type) { storageType = type; });
+        // storageType = MLIRHelper::getStorageTypeFrom(elementType);
 
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
@@ -2128,11 +2122,9 @@ struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
         auto arrayType = newEmptyArrOp.getType();
         auto elementType = arrayType.getElementType();
 
-        mlir::Type storageType;
-        mlir::TypeSwitch<mlir::Type>(elementType)
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
+        mlir::Type storageType = elementType;
+        // TODO: find out if the following is correct
+        // storageType = MLIRHelper::getStorageTypeFrom(elementType);
 
         auto llvmElementType = tch.convertType(elementType);
 
@@ -2173,11 +2165,9 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         auto elementType = arrayType.getElementType();
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        mlir::Type storageType;
-        mlir::TypeSwitch<mlir::Type>(elementType)
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
+        mlir::Type storageType = elementType;
+        // TODO: find out if the following is correct
+        // storageType = MLIRHelper::getStorageTypeFrom(elementType);
 
         auto llvmElementType = tch.convertType(elementType);
 
@@ -2320,11 +2310,8 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        mlir::Type storageType;
-        mlir::TypeSwitch<mlir::Type>(popOp.getOp().getType())
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
+        mlir::Type storageType = elementType;
+        // storageType = MLIRHelper::getStorageTypeFrom(elementType);
 
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
@@ -2486,11 +2473,8 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        mlir::Type storageType;
-        mlir::TypeSwitch<mlir::Type>(shiftOp.getOp().getType())
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
+        mlir::Type storageType = elementType;
+        // storageType = MLIRHelper::getStorageTypeFrom(elementType);
 
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});

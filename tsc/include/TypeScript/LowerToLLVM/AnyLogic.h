@@ -44,7 +44,7 @@ class AnyLogic
         valuePtrType = th.getPtrType();
     }
 
-    LLVM::LLVMStructType getStorageType(mlir::Type llvmStorageType)
+    LLVM::LLVMStructType getStorageAnyType(mlir::Type llvmStorageType)
     {
         return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, valuePtrType, llvmStorageType}, false);
     }
@@ -63,7 +63,7 @@ class AnyLogic
         // TODO: add type id to track data type
         auto ptrTy = th.getPtrType();
         auto llvmStorageType = inLLVMType;
-        auto dataWithSizeType = getStorageType(llvmStorageType);
+        auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
         auto memValue = ch.MemoryAlloc(dataWithSizeType);
 
@@ -94,7 +94,7 @@ class AnyLogic
         // TODO: add data size check
         auto ptrTy = th.getPtrType();
         auto llvmStorageType = resLLVMType;
-        auto dataWithSizeType = getStorageType(llvmStorageType);
+        auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
         auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
 
@@ -115,7 +115,7 @@ class AnyLogic
         // any random type
         auto ptrTy = th.getPtrType();
         auto llvmStorageType = th.getI8Type();
-        auto dataWithSizeType = getStorageType(llvmStorageType);
+        auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
         auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
 

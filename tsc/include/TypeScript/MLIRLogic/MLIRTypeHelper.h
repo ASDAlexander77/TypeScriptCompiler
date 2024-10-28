@@ -253,31 +253,9 @@ class MLIRTypeHelper
         return false;
     }
 
-    mlir::Type getElementType(mlir::Type type)
+    mlir::Type getElementTypeOrSelf(mlir::Type type)
     {
-        // TODO: get type of pointer element
-        mlir::Type elementType;
-        if (type)
-        {
-            if (type.isa<mlir_ts::StringType>())
-            {
-                elementType = mlir_ts::CharType::get(context);
-            }
-            else if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
-            {
-                elementType = classType.getStorageType();
-            }
-            else if (auto refType = type.dyn_cast<mlir_ts::RefType>())
-            {
-                elementType = refType.getElementType();
-            }
-            else if (auto valueRefType = type.dyn_cast<mlir_ts::ValueRefType>())
-            {
-                elementType = valueRefType.getElementType();
-            }
-        }
-
-        return elementType;
+        return MLIRHelper::getElementTypeOrSelf(type);
     }
 
     mlir::StringAttr getLabelName(mlir::Type typeIn)

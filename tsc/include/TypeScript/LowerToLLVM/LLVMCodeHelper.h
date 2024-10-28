@@ -657,29 +657,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto loc = op->getLoc();
         auto globalPtr = arrayOrStringOrTuple;
 
-        mlir::Type elementType;
-        if (auto refType = objectRefType.dyn_cast<mlir_ts::RefType>())
-        {
-            elementType = refType.getElementType();
-        }
-        else if (auto boundRefType = objectRefType.dyn_cast<mlir_ts::BoundRefType>())
-        {
-            elementType = boundRefType.getElementType();
-        }
-        else if (auto objType = objectRefType.dyn_cast<mlir_ts::ObjectType>())
-        {
-            elementType = objType.getStorageType();
-        }
-        else if (auto classType = objectRefType.dyn_cast<mlir_ts::ClassType>())
-        {
-            elementType = classType.getStorageType();
-        }        
-        else 
-        {
-            assert(false);
-            llvm_unreachable("Needs reference type");
-        }
-
+        auto elementType = MLIRHelper::getElementTypeOrSelf(objectRefType);
         if (!elementType)
         {
             return mlir::Value();
@@ -708,7 +686,6 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, refValue, ValueRange{index});
         return addr;
     }
-
 };
 
 } // namespace typescript
