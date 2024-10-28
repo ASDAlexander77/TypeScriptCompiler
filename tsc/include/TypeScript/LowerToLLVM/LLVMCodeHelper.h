@@ -683,7 +683,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto llvmElementType = tch.convertType(elementType);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! GetAddressOfStructElement: type - " << elementType << " llvm: " << llvmElementType << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! GetAddressOfStructElement: index #" << index << " type - " << elementType << " llvm: " << llvmElementType << "\n";);
 
         auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, globalPtr, ArrayRef<LLVM::GEPArg>{0, index});
         return addr;
