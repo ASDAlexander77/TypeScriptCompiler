@@ -355,6 +355,10 @@ class MLIRHelper
             {
                 return arrayType.getElementType();
             }
+            else if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
+            {
+                return constArrayType.getElementType();
+            }
             else if (type.isa<mlir_ts::StringType>())
             {
                 return mlir_ts::CharType::get(type.getContext());
