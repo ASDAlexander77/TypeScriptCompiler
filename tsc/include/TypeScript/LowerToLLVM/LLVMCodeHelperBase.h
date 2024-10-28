@@ -300,17 +300,12 @@ class LLVMCodeHelperBase
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
 
-        auto llvmIndexType = tch.convertType(th.getIndexType());
-
         auto loc = op->getLoc();
 
         auto i8PtrTy = th.getPtrType();
+        assert (ptrValue.getType() == i8PtrTy);
 
-        auto effectivePtrValue = ptrValue;
-        if (ptrValue.getType() != i8PtrTy)
-        {
-            effectivePtrValue = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
-        }
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto mallocFuncOp = getOrInsertFunction(
             compileOptions.isWasm ? "ts_realloc" : "realloc", 
@@ -327,7 +322,7 @@ class LLVMCodeHelperBase
             effectiveSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, effectiveSize);
         }
 
-        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectivePtrValue, effectiveSize});
+        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{ptrValue, effectiveSize});
         return callResults.getResult();
     }
 

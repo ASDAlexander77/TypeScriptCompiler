@@ -2225,7 +2225,7 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
 
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
-        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, currentPtrPtr);
+        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
         auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
@@ -2323,7 +2323,7 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
 
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
-        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), currentPtrPtr);
+        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
         auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
@@ -2386,7 +2386,7 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
 
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
-        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), currentPtrPtr);
+        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
         auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
@@ -2489,7 +2489,7 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
 
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
-        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), currentPtrPtr);
+        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
         auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
@@ -2558,7 +2558,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
 
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
-        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, th.getPtrType(), currentPtrPtr);
+        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
         auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
