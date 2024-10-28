@@ -738,7 +738,7 @@ class MLIRGenImpl
         }
 
         // load library
-        auto name = MLIRHelper::getAnonymousName(location, ".ll");
+        auto name = MLIRHelper::getAnonymousName(location, ".ll", "");
         auto fullInitGlobalFuncName = getFullNamespaceName(name);
 
         {
@@ -3918,7 +3918,7 @@ class MLIRGenImpl
 
         if (!genContext.funcOp && (item->name == SyntaxKind::ObjectBindingPattern || item->name == SyntaxKind::ArrayBindingPattern))
         {
-            auto name = MLIRHelper::getAnonymousName(location, ".gc");
+            auto name = MLIRHelper::getAnonymousName(location, ".gc", "");
             auto fullInitGlobalFuncName = getFullNamespaceName(name);
 
             {
@@ -4011,7 +4011,7 @@ class MLIRGenImpl
         auto fieldId = getFieldNameFromBindingElement(objectBindingElement);
         if (!fieldId)
         {
-            auto genName = MLIRHelper::getAnonymousName(loc_check(objectBindingElement), ".be");
+            auto genName = MLIRHelper::getAnonymousName(loc_check(objectBindingElement), ".be", "");
             fieldId = MLIRHelper::TupleFieldName(genName, builder.getContext());
         }
 
@@ -4343,7 +4343,7 @@ class MLIRGenImpl
             }
             else
             {
-                name = MLIRHelper::getAnonymousName(loc_check(signatureDeclarationBaseAST), ".md");
+                name = MLIRHelper::getAnonymousName(loc_check(signatureDeclarationBaseAST), ".md", "");
             }
         }
         // TODO: for new () interfaces
@@ -6520,7 +6520,7 @@ class MLIRGenImpl
                             if (literalType.getValue() == valueAttr)
                             {
                                 // enable safe cast found
-                                auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_");
+                                auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_", getNamespaceName());
                                 auto typeAliasName = convertUTF8toWide(typeAliasNameUTF8);
                                 const_cast<GenContext &>(genContext)
                                     .typeAliasMap.insert({typeAliasNameUTF8, tupleType});
@@ -6543,7 +6543,7 @@ class MLIRGenImpl
                                 if (literalType.getValue() == valueAttr)
                                 {
                                     // enable safe cast found
-                                    auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_");
+                                    auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_", getNamespaceName());
                                     auto typeAliasName = convertUTF8toWide(typeAliasNameUTF8);
                                     const_cast<GenContext &>(genContext)
                                         .typeAliasMap.insert({typeAliasNameUTF8, interfaceType});
@@ -10615,7 +10615,7 @@ class MLIRGenImpl
                                     nf.createExpressionStatement(_yield_expr));
 
         // iterator
-        auto iterName = MLIRHelper::getAnonymousName(location, ".iter");
+        auto iterName = MLIRHelper::getAnonymousName(location, ".iter", getFullNamespaceName());
 
         NodeArray<Statement> statements;
         statements.push_back(forOfStat);
@@ -10676,7 +10676,7 @@ class MLIRGenImpl
                                  undefined));
 
         // iterator
-        auto iterName = MLIRHelper::getAnonymousName(location, ".iter");
+        auto iterName = MLIRHelper::getAnonymousName(location, ".iter", getFullNamespaceName());
 
         NodeArray<Statement> statements;
         statements.push_back(forOfStat);
@@ -12948,7 +12948,7 @@ class MLIRGenImpl
         }
 
         // Object This Type
-        auto name = MLIRHelper::getAnonymousName(loc_check(objectLiteral), ".obj");
+        auto name = MLIRHelper::getAnonymousName(loc_check(objectLiteral), ".obj", getFullNamespaceName());
         auto objectNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), name);
         auto objectStorageType = getObjectStorageType(objectNameSymbol);
         auto objThis = getObjectType(objectStorageType);
@@ -17118,16 +17118,16 @@ genContext);
                 }
                 else
                 {
-                    name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".af");
+                    name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".af", "");
                 }
             }
             else if (declarationAST == SyntaxKind::FunctionExpression)
             {
-                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".fe");
+                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".fe", "");
             }
             else if (declarationAST == SyntaxKind::ClassExpression)
             {
-                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".ce");
+                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".ce", "");
             }
             else if (declarationAST == SyntaxKind::Constructor)
             {
@@ -17139,7 +17139,7 @@ genContext);
             }
             else
             {
-                name = MLIRHelper::getAnonymousName(loc_check(declarationAST));
+                name = MLIRHelper::getAnonymousName(loc_check(declarationAST), ".unk", "");
             }
         }
 
@@ -21942,7 +21942,7 @@ genContext);
     InterfaceInfo::TypePtr newInterfaceType(IntersectionTypeNode intersectionTypeNode, bool &declareInterface,
                                             const GenContext &genContext)
     {
-        auto newName = MLIRHelper::getAnonymousName(loc_check(intersectionTypeNode), "ifce");
+        auto newName = MLIRHelper::getAnonymousName(loc_check(intersectionTypeNode), "ifce", "");
 
         // clone into new interface
         auto interfaceInfo = mlirGenInterfaceInfo(newName, declareInterface, genContext);
@@ -22163,7 +22163,12 @@ genContext);
         addDeclarationToExport(classDeclatation, "@dllimport\n");
     }
 
-    auto getNamespace() -> StringRef
+    auto getNamespaceName() -> StringRef
+    {
+        return currentNamespace->name;
+    }
+
+    auto getFullNamespaceName() -> StringRef
     {
         return currentNamespace->fullName;
     }

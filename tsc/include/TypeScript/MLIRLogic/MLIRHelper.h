@@ -100,11 +100,6 @@ class MLIRHelper
         return mlir::StringRef(nameValue).copy(stringAllocator);
     }
 
-    static std::string getAnonymousName(mlir::Location loc)
-    {
-        return getAnonymousName(loc, ".unk");
-    }
-
     static mlir::Location getCallSiteLocation(mlir::Location callee, mlir::Location caller, bool enable = true)
     {
         if (enable)
@@ -147,10 +142,12 @@ class MLIRHelper
             });        
     }
 
-    static std::string getAnonymousName(mlir::Location loc, const char *prefix)
+    static std::string getAnonymousName(mlir::Location loc, const char *prefix, StringRef fullNamesapceName)
     {
         // auto calculate name
         std::stringstream ssName;
+        if (!fullNamesapceName.empty())
+            ssName << fullNamesapceName.str() << ".";
         ssName << prefix;
         getAnonymousNameStep(ssName, loc);
         return ssName.str();
