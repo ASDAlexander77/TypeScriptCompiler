@@ -3109,7 +3109,20 @@ struct ElementRefOpLowering : public TsLlvmPattern<mlir_ts::ElementRefOp>
     {
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        auto addr = ch.GetAddressOfArrayElement(elementOp.getArray().getType().cast<mlir_ts::ArrayType>().getElementType(), elementOp.getArray().getType(),
+        mlir::Type elementType;
+        if (auto arrayType = elementOp.getArray().getType().dyn_cast<mlir_ts::ArrayType>()) {
+            elementType = arrayType.getElementType();
+        } 
+        else if (auto constArrayType = elementOp.getArray().getType().dyn_cast<mlir_ts::ConstArrayType>())
+        {
+            elementType = constArrayType.getElementType();
+        }
+        else
+        {
+            return mlir::failure();
+        }
+
+        auto addr = ch.GetAddressOfArrayElement(elementType, elementOp.getArray().getType(),
                                                 transformed.getArray(), transformed.getIndex());
         rewriter.replaceOp(elementOp, addr);
         return success();
