@@ -1860,14 +1860,15 @@ struct AllocaOpLowering : public TsLlvmPattern<mlir_ts::AllocaOp>
         LLVMCodeHelper ch(varOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(varOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
 
         auto location = varOp.getLoc();
 
         auto referenceType = varOp.getReference().getType().cast<mlir_ts::RefType>();
         auto storageType = referenceType.getElementType();
-        auto llvmReferenceType = tch.convertType(referenceType);
+        auto llvmStorageType = tch.convertType(storageType);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! alloca: " << storageType << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! alloca: " << storageType << " llvm: " << llvmStorageType << "\n";);
 
         mlir::Value count;
         if (transformed.getCount())
@@ -1879,7 +1880,7 @@ struct AllocaOpLowering : public TsLlvmPattern<mlir_ts::AllocaOp>
             count = clh.createI32ConstantOf(1);
         }
 
-        mlir::Value allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, count);
+        mlir::Value allocated = rewriter.create<LLVM::AllocaOp>(location, th.getPtrType(), llvmStorageType, count);
 
         // TODO: call MemSet
 

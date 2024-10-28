@@ -696,8 +696,6 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     mlir::Value GetAddressOfPointerOffset(mlir::Type llvmElementType, mlir::Value refValue, mlir::Value index)
     {
         TypeHelper th(rewriter);
-        TypeConverterHelper tch(typeConverter);
-        CodeLogicHelper clh(op, rewriter);
 
         auto loc = op->getLoc();
         auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, refValue, ValueRange{index});
