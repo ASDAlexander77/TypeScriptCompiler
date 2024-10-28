@@ -3137,8 +3137,6 @@ struct PointerOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::PointerOffsetR
     LogicalResult matchAndRewrite(mlir_ts::PointerOffsetRefOp elementOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
         auto addr = ch.GetAddressOfPointerOffset(elementOp.getResult().getType(), 
