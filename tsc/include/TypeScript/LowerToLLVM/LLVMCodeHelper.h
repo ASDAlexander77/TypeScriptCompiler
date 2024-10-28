@@ -670,6 +670,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         {
             elementType = objType.getStorageType();
         }
+        else if (auto classType = objectRefType.dyn_cast<mlir_ts::ClassType>())
+        {
+            elementType = classType.getStorageType();
+        }        
         else 
         {
             assert(false);
