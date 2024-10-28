@@ -130,8 +130,12 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
             right = builder.create<mlir_ts::CastOp>(loc, left.getType(), right);
         }
 
-        auto value = builder.create<mlir_ts::StringCompareOp>(loc, mlir_ts::BooleanType::get(builder.getContext()), left, right,
+        auto boolType = mlir_ts::BooleanType::get(builder.getContext());
+        auto llvmBoolType = typeConverter.convertType(boolType);
+        mlir::Value value = builder.create<mlir_ts::StringCompareOp>(loc, boolType, left, right,
                                                               builder.getI32IntegerAttr((int)op));
+
+        value = builder.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, value);
 
         return value;
     }

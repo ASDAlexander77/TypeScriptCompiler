@@ -92,6 +92,8 @@ class OptionalLogicHelper
         TypeHelper th(rewriter);
         CodeLogicHelper clh(binOp, rewriter);
 
+        auto llvmBoolType = typeConverter.convertType(th.getBooleanType());
+
         auto left = binOp->getOperand(0);
         auto right = binOp->getOperand(1);
         auto leftType = left.getType();
@@ -149,7 +151,7 @@ class OptionalLogicHelper
         auto bothHasResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, andOpResult, const0);
 
         auto result = clh.conditionalExpressionLowering(
-            loc, th.getBooleanType(), bothHasResult,
+            loc, llvmBoolType, bothHasResult,
             [&](OpBuilder &builder, Location loc) {
                 auto leftSubType = leftOptType.getElementType();
                 auto rightSubType = rightOptType.getElementType();
