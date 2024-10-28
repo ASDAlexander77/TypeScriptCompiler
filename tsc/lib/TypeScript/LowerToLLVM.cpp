@@ -601,7 +601,7 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
         TypeHelper th(rewriter);
         CodeLogicHelper clh(op, rewriter);
         LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
-        LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+        LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
 
         auto loc = op->getLoc();
 
@@ -3029,7 +3029,7 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
                 return valAsLLVMType;
             };
 
-            LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+            LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
 
             auto intPtrType = llvmtch.getIntPtrType(0);
 
@@ -4421,7 +4421,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                     return typedPtr;
                 };
 
-                LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+                LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
 
                 auto negative1 = tsLlvmContext->compileOptions.sizeBits == 32 
                     ? clh.createI32ConstantOf(-1) 
@@ -5463,7 +5463,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion([&](mlir_ts::UnionType type) {
         TypeHelper th(m.getContext());
-        LLVMTypeConverterHelper ltch(converter);
+        LLVMTypeConverterHelper ltch(&converter);
         MLIRTypeHelper mth(m.getContext());
 
         mlir::Type selectedType = ltch.findMaxSizeType(type);
@@ -5719,7 +5719,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
             {
                 LocationHelper lh(location.getContext());
                 // we don't need TypeConverter here
-                LLVMTypeConverterHelper llvmtch(llvmTypeConverter);
+                LLVMTypeConverterHelper llvmtch(&llvmTypeConverter);
                 LLVMDebugInfoHelper di(location.getContext(), llvmtch);
 
                 auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
@@ -5775,7 +5775,7 @@ static LogicalResult setDISubProgramTypesToFormOp(mlir::ModuleOp &module, LLVMTy
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
 
-                LLVMDebugInfoHelperFixer ldif(funcOp, llvmTypeConverter);
+                LLVMDebugInfoHelperFixer ldif(funcOp, &llvmTypeConverter);
                 ldif.fix();
             }
         }

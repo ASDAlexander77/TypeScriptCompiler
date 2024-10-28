@@ -686,7 +686,7 @@ class CastLogicHelper
         // struct to struct. TODO: add validation
         if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
         {
-            LLVMTypeConverterHelper llvmtch((LLVMTypeConverter &)*tch.typeConverter);
+            LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
             auto srcSize = llvmtch.getTypeSizeEstimateInBytes(inLLVMType);
             auto dstSize = llvmtch.getTypeSizeEstimateInBytes(resLLVMType);
 
@@ -989,7 +989,7 @@ class CastLogicHelper
             {
                 typeOfValue = toh.typeOfLogic(loc, valueForBoxing, unionType);
 
-                LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)&tch.typeConverter);
+                LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
                 // so we need to get biggest value from Union
                 auto maxUnionType = llvmtch.findMaxSizeType(unionType);
                 LLVM_DEBUG(llvm::dbgs() << "\n!! max size union type: " << maxUnionType << "\n";);

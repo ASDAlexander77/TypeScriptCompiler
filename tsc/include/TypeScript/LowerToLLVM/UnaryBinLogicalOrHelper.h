@@ -86,7 +86,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 {
     auto loc = binOp->getLoc();
 
-    LLVMTypeConverterHelper llvmtch(typeConverter);
+    LLVMTypeConverterHelper llvmtch(&typeConverter);
 
     if (leftType.isa<mlir_ts::OptionalType>() || rightType.isa<mlir_ts::OptionalType>())
     {

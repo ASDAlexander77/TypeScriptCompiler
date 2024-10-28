@@ -171,7 +171,7 @@ class LLVMDebugInfoHelper
             return getDIType(location, enumType, file, line, scope);
         }
 
-        return getDILLVMType(location, llvmtch.typeConverter.convertType(type), file, line, scope);
+        return getDILLVMType(location, llvmtch.typeConverter->convertType(type), file, line, scope);
     }    
 
     LLVM::DITypeAttr getDITypeScriptBasicType(mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
@@ -401,7 +401,7 @@ class LLVMDebugInfoHelper
         for (auto [index, fieldInfo] : enumerate(destTupleFields))
         {
             auto elementType = fieldInfo.type;
-            auto llvmElementType = llvmtch.typeConverter.convertType(elementType);
+            auto llvmElementType = llvmtch.typeConverter->convertType(elementType);
             sizesTrack.nextElementType(llvmElementType);
 
             // name
@@ -536,7 +536,7 @@ class LLVMDebugInfoHelper
             StringAttr name = StringAttr::get(context, std::get<0>(field));
 
             mlir::Type elementType = std::get<1>(field);
-            auto llvmElementType = llvmtch.typeConverter.convertType(elementType);
+            auto llvmElementType = llvmtch.typeConverter->convertType(elementType);
             
             sizesTrack.nextElementType(llvmElementType);
             
@@ -589,7 +589,7 @@ class LLVMDebugInfoHelper
         llvm::SmallVector<LLVM::DINodeAttr> elements;
         for (auto elementType : unionType.getTypes())
         {
-            auto llvmElementType = llvmtch.typeConverter.convertType(elementType);
+            auto llvmElementType = llvmtch.typeConverter->convertType(elementType);
             sizesTrack.nextElementType(llvmElementType);
             if (sizesTrack.elementSizeInBits > sizeInBits) sizeInBits = sizesTrack.elementSizeInBits;
 

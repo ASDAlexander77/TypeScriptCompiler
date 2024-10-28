@@ -25,11 +25,11 @@ namespace typescript
 class LLVMDebugInfoHelperCreator
 {
     LLVM::LLVMFuncOp llvmFuncOp;
-    LLVMTypeConverter &typeConverter;
+    const LLVMTypeConverter *typeConverter;
     MLIRContext *context;
 
 public:
-    LLVMDebugInfoHelperCreator(LLVM::LLVMFuncOp llvmFuncOp, LLVMTypeConverter &typeConverter)
+    LLVMDebugInfoHelperCreator(LLVM::LLVMFuncOp llvmFuncOp, const LLVMTypeConverter *typeConverter)
         : llvmFuncOp(llvmFuncOp), typeConverter(typeConverter)
     {
         context = llvmFuncOp.getContext();
@@ -108,11 +108,11 @@ public:
 class LLVMDebugInfoHelperFixer
 {
     mlir_ts::FuncOp funcOp;
-    LLVMTypeConverter &typeConverter;
+    const LLVMTypeConverter *typeConverter;
     MLIRContext *context;
 
 public:
-    LLVMDebugInfoHelperFixer(mlir_ts::FuncOp funcOp, LLVMTypeConverter &typeConverter)
+    LLVMDebugInfoHelperFixer(mlir_ts::FuncOp funcOp, const LLVMTypeConverter *typeConverter)
         : funcOp(funcOp), typeConverter(typeConverter)
     {
         context = funcOp.getContext();
