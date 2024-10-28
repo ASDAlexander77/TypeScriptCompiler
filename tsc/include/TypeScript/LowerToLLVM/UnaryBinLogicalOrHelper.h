@@ -11,6 +11,8 @@
 
 #include "scanner_enums.h"
 
+#define DEBUG_TYPE "llvm"
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
@@ -152,11 +154,11 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     {
         // TODO, extract interface VTable to compare
         auto leftVtableValue =
-            left.getDefiningOp<mlir_ts::NullOp>() || matchPattern(left, m_Zero())
+            left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::ZeroOp>() || matchPattern(left, m_Zero())
                 ? left
                 : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(leftType.getContext()), left);
         auto rightVtableValue =
-            right.getDefiningOp<mlir_ts::NullOp>() || matchPattern(right, m_Zero())
+            right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero())
                 ? right
                 : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rightType.getContext()), right);
 
@@ -181,12 +183,14 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         CastLogicHelper castLogic(binOp, builder, tch, compileOptions);
 
+        LLVM_DEBUG(llvm::dbgs() << "\n\t LogicOp: left: " << left << " right: " << right << "\n";);
+
         auto leftArrayPtrValue =
-            left.getDefiningOp<mlir_ts::NullOp>() || matchPattern(left, m_Zero())
+            left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::ZeroOp>() || matchPattern(left, m_Zero())
                 ? left
                 : castLogic.extractArrayPtr(left, leftArrayType);
         auto rightArrayPtrValue =
-            right.getDefiningOp<mlir_ts::NullOp>() || matchPattern(right, m_Zero())
+            right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero())
                 ? right
                 : castLogic.extractArrayPtr(right, rightType.dyn_cast<mlir_ts::ArrayType>());
 
@@ -213,5 +217,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     return clh.createI1ConstantOf(false);            
 }
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LOGICALORHELPER_H_
