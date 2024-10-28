@@ -2042,11 +2042,15 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         auto arrayType = createArrayOp.getType();
         auto elementType = arrayType.getElementType();
 
-        mlir::Type storageType;
-        mlir::TypeSwitch<mlir::Type>(elementType)
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
+        mlir::Type storageType = elementType;
+        // TODO: why do I need it?, do I store clones of objects?
+        // mlir::TypeSwitch<mlir::Type>(elementType)
+        //     .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
+        //     .Case<mlir_ts::ObjectType>([&](auto objType) { storageType = objType.getStorageType(); })
+        //     .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
+        //     .Case<mlir_ts::RefType>([&](auto refType) { storageType = refType.getElementType(); })
+        //     .Case<mlir_ts::BoundRefType>([&](auto boundRefType) { storageType = boundRefType.getElementType(); })
+        //     .Default([&](auto type) { storageType = type; });
 
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
