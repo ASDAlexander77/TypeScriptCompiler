@@ -41,6 +41,11 @@ class TypeHelper
         return mlir_ts::StringType::get(context);
     }
 
+    mlir::Type getCharType()
+    {
+        return mlir_ts::CharType::get(context);
+    }
+
     mlir::Type getUndefinedType()
     {
         return mlir_ts::UndefinedType::get(context);

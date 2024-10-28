@@ -369,9 +369,8 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
         LLVM_DEBUG(llvm::dbgs() << "\n!! size of - storage type: [" << storageType << "] llvm storage type: ["
                                 << llvmStorageType << "] llvm ptr: [" << llvmStorageTypePtr << "]\n";);
 
-        auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 1));
         auto sizeOfSetAddr =
-            rewriter.create<LLVM::GEPOp>(loc, llvmStorageTypePtr, llvmStorageType, nullPtrToTypeValue, ArrayRef<mlir::Value>({cst1}));
+            rewriter.create<LLVM::GEPOp>(loc, llvmStorageTypePtr, llvmStorageType, nullPtrToTypeValue, ArrayRef<LLVM::GEPArg>{1});
 
         rewriter.replaceOpWithNewOp<LLVM::PtrToIntOp>(op, llvmIndexType, sizeOfSetAddr);
 
@@ -418,14 +417,12 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
-        auto ind0 = clh.createI32ConstantOf(ARRAY_DATA_INDEX);
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, transformed.getOp(),
-                                                          ValueRange{ind0, ind0});
+                                                          ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, currentPtrPtr);
 
-        auto ind1 = clh.createI32ConstantOf(ARRAY_SIZE_INDEX);
         auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getI32Type(), transformed.getOp(),
-                                                              ValueRange{ind0, ind1});
+                                                              ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
         auto newLengthAsI32Type = op.getNewLength();
 
         auto newCountAsIndexType = 
@@ -3410,14 +3407,13 @@ struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfC
         
 
         TypeHelper th(rewriter);
-        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
+        auto llvmCharType = typeConverter->convertType(th.getCharType());
 
         auto loc = addressOfConstStringOp->getLoc();
         auto globalPtr =
             rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), addressOfConstStringOp.getGlobalName());
-        auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getPtrType(), th.getPtrType(), globalPtr,
-                                                 ArrayRef<mlir::Value>({cst0, cst0}));
+        rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getPtrType(), llvmCharType, globalPtr,
+                                                 ArrayRef<LLVM::GEPArg>{0, 0});
 
         return success();
     }

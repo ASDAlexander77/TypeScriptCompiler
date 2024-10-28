@@ -160,8 +160,7 @@ class LLVMCodeHelperBase
 
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), global.getType(), globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 0});
     }
 
   public:
