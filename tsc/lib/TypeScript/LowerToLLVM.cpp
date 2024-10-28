@@ -5083,7 +5083,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
                 // create __mlir_runner_init for JIT
                 rewriter.setInsertionPointToEnd(parentModule.getBody());
-                auto llvmFnType = mlir::FunctionType::get(rewriter.getContext(), {th.getVoidType()}, {});
+                auto llvmFnType = mlir::FunctionType::get(rewriter.getContext(), {}, {});
                 auto initFunc = rewriter.create<func::FuncOp>(loc, "__mlir_gctors", llvmFnType);
                 auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::Internal);
                 initFunc->setAttr("llvm.linkage", linkage);
@@ -5983,8 +5983,11 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LLVMConversionTarget target2(getContext());
     target2.addLegalOp<ModuleOp>();
 
+    // TODO: do u remember why u process GlobalConstructors as last patterns
     RewritePatternSet patterns2(&getContext());
     patterns2.insert<GlobalConstructorOpLowering, DialectCastOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+    // as GlobalConsturtors are using FuncOp we need patterns for it as well
+    populateFuncToLLVMConversionPatterns(typeConverter, patterns2);
 
     if (failed(applyFullConversion(m, target2, std::move(patterns2))))
     {
