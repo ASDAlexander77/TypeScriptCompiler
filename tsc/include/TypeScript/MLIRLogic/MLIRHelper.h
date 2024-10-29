@@ -347,6 +347,7 @@ class MLIRHelper
         return result;
     }
 
+    // TODO: review usage of it in SizeOf, in ArrayPush, etc to return correct sizes
     static mlir::Type getElementTypeOrSelf(mlir::Type type)
     {
         if (type)

@@ -349,20 +349,18 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
         auto loc = op->getLoc();
 
         auto storageType = op.getType();
-
-        auto stripPtr = false;
-        mlir::TypeSwitch<mlir::Type>(storageType)
-            .Case<mlir_ts::ClassType>([&](auto classType_) { stripPtr = true; })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { stripPtr = true; })
-            .Default([&](auto type) { });
+        if (auto classType = storageType.dyn_cast<mlir_ts::ClassType>())
+        {
+            storageType = classType.getStorageType();
+        }
+        else if (auto objectType = storageType.dyn_cast<mlir_ts::ObjectType>())
+        {
+            storageType = objectType.getStorageType();
+        }
 
         auto llvmStorageType = tch.convertType(storageType);
         mlir::Type llvmStorageTypePtr = th.getPtrType();
         auto llvmIndexType = tch.convertType(th.getIndexType());
-        if (stripPtr)
-        {
-            llvmStorageTypePtr = llvmStorageType;
-        }
 
         auto nullPtrToTypeValue = rewriter.create<LLVM::ZeroOp>(loc, llvmStorageTypePtr);
 
@@ -1896,8 +1894,6 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
     LogicalResult matchAndRewrite(mlir_ts::NewOp newOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         LLVMCodeHelper ch(newOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         CodeLogicHelper clh(newOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
@@ -1905,7 +1901,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
 
         auto loc = newOp.getLoc();
 
-        mlir::Type storageType = newOp.getType();
+        mlir::Type storageType = newOp.getInstance().getType().cast<mlir_ts::ClassType>().getStorageType();
 
         auto resultType = tch.convertType(newOp.getType());
 
@@ -5184,7 +5180,7 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
 
         auto loc = op.getLoc();
 
-        mlir::Type storageType = op.getInstance().getType();
+        mlir::Type storageType = op.getInstance().getType().cast<mlir_ts::ClassType>().getStorageType();
 
         auto resultType = tch.convertType(op.getType());
 
