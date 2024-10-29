@@ -3396,6 +3396,30 @@ struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfC
     }
 };
 
+struct DefaultOpLowering : public TsLlvmPattern<mlir_ts::DefaultOp>
+{
+    using TsLlvmPattern<mlir_ts::DefaultOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::DefaultOp defaultOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = defaultOp->getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        DefaultLogic dl(defaultOp, rewriter, tch, loc, tsLlvmContext->compileOptions);
+
+        auto valueType = defaultOp.getRes().getType();
+        auto llvmValueType = tch.convertType(valueType);
+
+        mlir::Value defaultValue = dl.getDefaultValueForOrUndef(llvmValueType);
+
+        rewriter.replaceOp(defaultOp, {defaultValue});
+
+        return success();
+    }
+};
+
 struct OptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalOp>
 {
     using TsLlvmPattern<mlir_ts::OptionalOp>::TsLlvmPattern;
@@ -3666,12 +3690,12 @@ struct CopyStructOpLowering : public TsLlvmPattern<mlir_ts::CopyStructOp>
         LLVM_DEBUG(llvm::dbgs() << "[CopyStructOp(1)] from type: " << memoryCopyOp.getSrc().getType() << " to type: " << memoryCopyOp.getDst().getType()
                                 << "\n";);        
 
-        assert(transformed.getSrc().isa<LLVM::LLVMPointerType>());
+        assert(transformed.getSrc().getType().isa<LLVM::LLVMPointerType>());
         auto srcStorageType = MLIRHelper::getElementTypeOrSelf(memoryCopyOp.getSrc().getType());
         auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), srcStorageType);
         auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
 
-        assert(transformed.getDst().isa<LLVM::LLVMPointerType>());
+        assert(transformed.getDst().getType().isa<LLVM::LLVMPointerType>());
         auto dstStorageType = MLIRHelper::getElementTypeOrSelf(memoryCopyOp.getDst().getType());
         auto dstSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), dstStorageType);
         auto dstSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, dstSizeMLIR);
@@ -5902,8 +5926,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     TsLlvmContext tsLlvmContext{tsContext.compileOptions};
     patterns.insert<
         AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-        AssertOpLowering, CastOpLowering, ConstantOpLowering, OptionalOpLowering, ValueOptionalOpLowering, UndefOptionalOpLowering,
-        HasValueOpLowering, ValueOpLowering, ValueOrDefaultOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,
+        AssertOpLowering, CastOpLowering, ConstantOpLowering, DefaultOpLowering, 
+        OptionalOpLowering, ValueOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering, 
+        ValueOrDefaultOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,
         FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
         PointerOffsetRefOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, ArrayPushOpLowering,

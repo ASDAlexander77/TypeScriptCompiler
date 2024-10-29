@@ -995,6 +995,15 @@ def TypeScript_DebugVariableOp : TypeScript_Op<"DebugVariable", []> {
   ); 
 }
 
+def TypeScript_DefaultOp : TypeScript_Op<"Default"> {
+  let description = [{
+    Example:
+      ts.default : i32
+  }];
+  let arguments = (ins );
+  let results = (outs AnyType:$res);
+}
+
 def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue", 
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",

@@ -3213,7 +3213,8 @@ class MLIRGenImpl
 
         if (!variableDeclarationInfo.initial)
         {
-            variableDeclarationInfo.initial = builder.create<mlir_ts::UndefOp>(location, variableDeclarationInfo.type);
+            //variableDeclarationInfo.initial = builder.create<mlir_ts::UndefOp>(location, variableDeclarationInfo.type);
+            variableDeclarationInfo.initial = builder.create<mlir_ts::DefaultOp>(location, variableDeclarationInfo.type);
         }
 
         builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{variableDeclarationInfo.initial});
