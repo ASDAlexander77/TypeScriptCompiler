@@ -349,14 +349,19 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
         auto loc = op->getLoc();
 
         auto storageType = op.getType();
-        if (auto classType = storageType.dyn_cast<mlir_ts::ClassType>())
-        {
-            storageType = classType.getStorageType();
-        }
-        else if (auto objectType = storageType.dyn_cast<mlir_ts::ObjectType>())
-        {
-            storageType = objectType.getStorageType();
-        }
+        // TODO: review usage SizeOf as for example when we allocate Array<Class1>  we use size of element but element is Pointer
+        // if (auto classType = storageType.dyn_cast<mlir_ts::ClassType>())
+        // {
+        //     storageType = classType.getStorageType();
+        // }
+        // else if (auto valueRefType = storageType.dyn_cast<mlir_ts::ValueRefType>())
+        // {
+        //     storageType = valueRefType.getElementType();
+        // }        
+        // else if (auto objectType = storageType.dyn_cast<mlir_ts::ObjectType>())
+        // {
+        //     storageType = objectType.getStorageType();
+        // }
 
         auto llvmStorageType = tch.convertType(storageType);
         mlir::Type llvmStorageTypePtr = th.getPtrType();
@@ -1901,7 +1906,15 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
 
         auto loc = newOp.getLoc();
 
-        mlir::Type storageType = newOp.getInstance().getType().cast<mlir_ts::ClassType>().getStorageType();
+        mlir::Type storageType = newOp.getInstance().getType();
+        if (auto classType = storageType.dyn_cast_or_null<mlir_ts::ClassType>())
+        {
+            storageType = classType.getStorageType();
+        }
+        else if (auto valueRef = storageType.dyn_cast<mlir_ts::ValueRefType>())
+        {
+            storageType = valueRef.getElementType();
+        }
 
         auto resultType = tch.convertType(newOp.getType());
 
@@ -5180,7 +5193,15 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
 
         auto loc = op.getLoc();
 
-        mlir::Type storageType = op.getInstance().getType().cast<mlir_ts::ClassType>().getStorageType();
+        mlir::Type storageType = op.getInstance().getType();
+        if (auto classType = storageType.dyn_cast_or_null<mlir_ts::ClassType>())
+        {
+            storageType = classType.getStorageType();
+        }
+        else if (auto valueRef = storageType.dyn_cast<mlir_ts::ValueRefType>())
+        {
+            storageType = valueRef.getElementType();
+        }
 
         auto resultType = tch.convertType(op.getType());
 
