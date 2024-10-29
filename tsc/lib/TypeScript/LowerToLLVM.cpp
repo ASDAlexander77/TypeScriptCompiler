@@ -4990,6 +4990,8 @@ class SwitchStateInternalOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateI
     }
 };
 
+// OLD
+/*
 struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstructorOp>
 {
     using TsLlvmPattern<mlir_ts::GlobalConstructorOp>::TsLlvmPattern;
@@ -5102,6 +5104,22 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
         }
 
         rewriter.eraseOp(globalConstructorOp);
+        return success();
+    }
+};
+*/
+
+struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstructorOp>
+{
+    using TsLlvmPattern<mlir_ts::GlobalConstructorOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GlobalConstructorOp globalConstructorOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<LLVM::GlobalCtorsOp>(
+            globalConstructorOp, 
+            rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }), 
+            rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(0) }));
         return success();
     }
 };
