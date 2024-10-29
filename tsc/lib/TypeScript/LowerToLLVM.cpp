@@ -2050,17 +2050,12 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
 
         auto arrayType = createArrayOp.getType();
         auto elementType = arrayType.getElementType();
-
-        mlir::Type storageType = elementType;
-        // TODO: why do I need it?, do I store clones of objects?
-        // storageType = MLIRHelper::getStorageTypeFrom(elementType);
-
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto newCountAsIndexType = clh.createIndexConstantOf(llvmIndexType, createArrayOp.getItems().size());
 
-        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
 
         auto multSizeOfTypeValue =
@@ -2173,14 +2168,9 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         auto arrayType = newArrOp.getType();
         auto elementType = arrayType.getElementType();
         auto llvmIndexType = tch.convertType(th.getIndexType());
-
-        mlir::Type storageType = elementType;
-        // TODO: find out if the following is correct
-        // storageType = MLIRHelper::getStorageTypeFrom(elementType);
-
         auto llvmElementType = tch.convertType(elementType);
 
-        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
 
         auto countAsIndexTypeMLIR = rewriter.create<mlir_ts::CastOp>(loc, th.getIndexType(), transformed.getCount());
@@ -2314,13 +2304,10 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
         auto ptrType = th.getPtrType();
         auto arrayType = popOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
-
+        
         auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
-
-        mlir::Type storageType = elementType;
-        // storageType = MLIRHelper::getStorageTypeFrom(elementType);
 
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
@@ -2341,7 +2328,7 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
             rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr, ValueRange{newCountAsIndexType});
         auto loadedElement = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, offset);
 
-        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
 
         auto multSizeOfTypeValue =
@@ -3679,13 +3666,13 @@ struct CopyStructOpLowering : public TsLlvmPattern<mlir_ts::CopyStructOp>
         LLVM_DEBUG(llvm::dbgs() << "[CopyStructOp(1)] from type: " << memoryCopyOp.getSrc().getType() << " to type: " << memoryCopyOp.getDst().getType()
                                 << "\n";);        
 
+        assert(transformed.getSrc().isa<LLVM::LLVMPointerType>());
         auto srcStorageType = MLIRHelper::getElementTypeOrSelf(memoryCopyOp.getSrc().getType());
-        assert(!srcStorageType.isa<LLVM::LLVMPointerType>());
         auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), srcStorageType);
         auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
 
+        assert(transformed.getDst().isa<LLVM::LLVMPointerType>());
         auto dstStorageType = MLIRHelper::getElementTypeOrSelf(memoryCopyOp.getDst().getType());
-        assert(!dstStorageType.isa<LLVM::LLVMPointerType>());
         auto dstSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), dstStorageType);
         auto dstSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, dstSizeMLIR);
 

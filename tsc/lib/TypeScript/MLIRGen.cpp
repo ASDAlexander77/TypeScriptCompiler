@@ -15832,7 +15832,7 @@ genContext);
 
                 // calc bitmap size
                 auto sizeOfType =
-                    builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
+                    builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType.getStorageType());
 
                 // calc count of store elements of type size
                 auto sizeOfTypeInBitmapTypes = builder.create<mlir_ts::ArithmeticBinaryOp>(
