@@ -4997,10 +4997,46 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
     LogicalResult matchAndRewrite(mlir_ts::GlobalConstructorOp globalConstructorOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<LLVM::GlobalCtorsOp>(
-            globalConstructorOp, 
-            rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }), 
-            rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(0) }));
+        if (tsLlvmContext->compileOptions.isJit)
+        {
+            auto loc = globalConstructorOp->getLoc();
+
+            auto parentModule = globalConstructorOp->getParentOfType<ModuleOp>();
+            auto mlirGCtors = parentModule.lookupSymbol<func::FuncOp>("__mlir_gctors");
+            if (!mlirGCtors)
+            {
+                OpBuilder::InsertionGuard insertGuard(rewriter);
+
+                // create dummy __mlir_runner_init for JIT
+                rewriter.setInsertionPointToEnd(parentModule.getBody());
+                auto llvmFnType = mlir::FunctionType::get(rewriter.getContext(), {}, {});
+                auto initFunc = rewriter.create<func::FuncOp>(loc, "__mlir_gctors", llvmFnType);
+                auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::Internal);
+                initFunc->setAttr("llvm.linkage", linkage);
+                auto &entryBlock = *initFunc.addEntryBlock();
+                rewriter.setInsertionPointToEnd(&entryBlock);
+
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
+
+                mlirGCtors = initFunc;
+            }
+
+            {
+                OpBuilder::InsertionGuard insertGuard(rewriter);
+                rewriter.setInsertionPointToStart(&mlirGCtors.getBody().front());
+                rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
+            }
+
+            rewriter.eraseOp(globalConstructorOp);
+        }
+        else
+        {
+            rewriter.replaceOpWithNewOp<LLVM::GlobalCtorsOp>(
+                globalConstructorOp, 
+                rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }), 
+                rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(0) }));
+        }
+
         return success();
     }
 };
