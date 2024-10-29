@@ -41,10 +41,16 @@ class TypeConverterHelper
     LLVM::LLVMFunctionType convertFunctionSignature(mlir::MLIRContext *context, TypeRange results, TypeRange args, bool isVariadic)
     {
         mlir::TypeConverter::SignatureConversion convResult(results.size());
-        typeConverter->convertSignatureArgs(results, convResult, 0);
+        if (mlir::failed(typeConverter->convertSignatureArgs(results, convResult, 0)))
+        {
+            return {};
+        }
 
         mlir::TypeConverter::SignatureConversion convArgs(args.size());
-        typeConverter->convertSignatureArgs(args, convArgs, 0);
+        if (mlir::failed(typeConverter->convertSignatureArgs(args, convArgs, 0)))
+        {
+            return {};
+        }
 
         auto ret = convResult.getConvertedTypes().size() > 0 ?  convResult.getConvertedTypes().front() : LLVM::LLVMVoidType::get(context);
 
