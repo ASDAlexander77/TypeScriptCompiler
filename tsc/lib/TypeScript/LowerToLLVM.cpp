@@ -5769,12 +5769,16 @@ static LogicalResult setDISubProgramTypesToFormOp(mlir::ModuleOp &module, LLVMTy
     {
         if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(op)) {
             // debug info - adding return type
-            if ((funcOp.getResultTypes().size() > 0 || funcOp.getArgumentTypes().size() > 0) && !funcOp.getBody().empty())
+            auto hasBody = !funcOp.getBody().empty();
+            if ((funcOp.getResultTypes().size() > 0 || funcOp.getArgumentTypes().size() > 0) && hasBody)
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
 
                 LLVMDebugInfoHelperFixer ldif(funcOp, &llvmTypeConverter);
                 ldif.fix();
+            } else if (!hasBody) {
+                // func declaration, we do not need Debug info for it
+                funcOp->setLoc(mlir::UnknownLoc::get(funcOp->getContext()));
             }
         }
     }
