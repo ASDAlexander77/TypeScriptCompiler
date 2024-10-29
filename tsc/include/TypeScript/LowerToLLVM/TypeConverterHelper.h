@@ -38,6 +38,19 @@ class TypeConverterHelper
         return type;
     }
 
+    LLVM::LLVMFunctionType convertFunctionSignature(mlir::MLIRContext *context, TypeRange results, TypeRange args, bool isVariadic)
+    {
+        mlir::TypeConverter::SignatureConversion convResult(results.size());
+        typeConverter->convertSignatureArgs(results, convResult, 0);
+
+        mlir::TypeConverter::SignatureConversion convArgs(args.size());
+        typeConverter->convertSignatureArgs(args, convArgs, 0);
+
+        auto ret = convResult.getConvertedTypes().size() > 0 ?  convResult.getConvertedTypes().front() : LLVM::LLVMVoidType::get(context);
+
+        return LLVM::LLVMFunctionType::get(context, ret, convArgs.getConvertedTypes(), isVariadic);
+    }
+
     int getIndexTypeBitwidth()
     {
         return ((mlir::LLVMTypeConverter *)typeConverter)->getIndexTypeBitwidth();

@@ -1135,11 +1135,13 @@ struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallIn
         }
         else if (auto mlirFuncOp = dyn_cast_or_null<func::FuncOp>(funcOp))
         {
-            llvmFuncType = tch.convertType(mlirFuncOp.getFunctionType()).cast<LLVM::LLVMFunctionType>();
+            auto funcType = mlirFuncOp.getFunctionType();
+            llvmFuncType = tch.convertFunctionSignature(op.getContext(), funcType.getResults(), funcType.getInputs(), false);
         }
         else if (auto tsFuncOp = dyn_cast_or_null<mlir_ts::FuncOp>(funcOp))
         {
-            llvmFuncType = tch.convertType(tsFuncOp.getFunctionType()).cast<LLVM::LLVMFunctionType>();
+            auto tsFuncType = tsFuncOp.getFunctionType();
+            llvmFuncType = tch.convertFunctionSignature(op.getContext(), tsFuncType.getResults(), tsFuncType.getInputs(), tsFuncType.isVarArg());
         }
 
         assert(llvmFuncType);
@@ -5203,25 +5205,6 @@ struct UnrealizedConversionCastOpLowering : public ConvertOpToLLVMPattern<Unreal
     }
 };
 
-static LLVM::LLVMFunctionType getFuncType(LLVMTypeConverter &converter, mlir::ModuleOp &m, llvm::ArrayRef<mlir::Type> results, llvm::ArrayRef<mlir::Type> inputs, bool isVarArg) {
-    SmallVector<mlir::Type> convertedResultTypes;
-    for (auto subType : results)
-    {
-        convertedResultTypes.push_back(converter.convertType(subType));
-    }
-
-    SmallVector<mlir::Type> convertedArgsTypes;
-    for (auto subType : inputs)
-    {
-        convertedArgsTypes.push_back(converter.convertType(subType));
-    }
-
-    return LLVM::LLVMFunctionType::get(
-        m.getContext(), 
-        convertedResultTypes.size() > 0 ? convertedResultTypes.front() : LLVM::LLVMVoidType::get(m.getContext()), 
-        convertedArgsTypes, 
-        isVarArg);
-};
 
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m,
                                                  mlir::SmallPtrSet<mlir::Type, 32> &usedTypes)
@@ -5328,29 +5311,23 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     });
 
     converter.addConversion([&](mlir_ts::FunctionType type) {
-        return getFuncType(converter, m, type.getResults(), type.getInputs(), type.isVarArg());
+        return LLVM::LLVMPointerType::get(m.getContext());
     });
 
     converter.addConversion([&](mlir_ts::ConstructFunctionType type) {
-        return getFuncType(converter, m, type.getResults(), type.getInputs(), type.isVarArg());      
+        return LLVM::LLVMPointerType::get(m.getContext());    
     });
 
     converter.addConversion([&](mlir_ts::BoundFunctionType type) {
-
-        auto funcType = getFuncType(converter, m, type.getResults(), type.getInputs(), type.isVarArg());
-
         SmallVector<mlir::Type> llvmStructType;
-        llvmStructType.push_back(funcType);
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
 
     converter.addConversion([&](mlir_ts::HybridFunctionType type) {
-
-        auto funcType = getFuncType(converter, m, type.getResults(), type.getInputs(), type.isVarArg());
-
         SmallVector<mlir::Type> llvmStructType;
-        llvmStructType.push_back(funcType);
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         llvmStructType.push_back(LLVM::LLVMPointerType::get(m.getContext()));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
