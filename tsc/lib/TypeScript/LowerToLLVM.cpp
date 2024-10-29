@@ -5002,7 +5002,8 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             auto loc = globalConstructorOp->getLoc();
 
             auto parentModule = globalConstructorOp->getParentOfType<ModuleOp>();
-            auto mlirGCtors = parentModule.lookupSymbol<func::FuncOp>("__mlir_gctors");
+            //auto mlirGCtors = parentModule.lookupSymbol<func::FuncOp>(MLIR_GCTORS);
+            auto mlirGCtors = parentModule.lookupSymbol<LLVM::LLVMFuncOp>(MLIR_GCTORS);
             if (!mlirGCtors)
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
@@ -5010,17 +5011,16 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                 // create dummy __mlir_runner_init for JIT
                 rewriter.setInsertionPointToEnd(parentModule.getBody());
                 auto llvmFnType = mlir::FunctionType::get(rewriter.getContext(), {}, {});
-                auto initFunc = rewriter.create<func::FuncOp>(loc, "__mlir_gctors", llvmFnType);
+                auto initFunc = rewriter.create<func::FuncOp>(loc, MLIR_GCTORS, llvmFnType);
                 auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::Internal);
                 initFunc->setAttr("llvm.linkage", linkage);
                 auto &entryBlock = *initFunc.addEntryBlock();
                 rewriter.setInsertionPointToEnd(&entryBlock);
 
+                rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
-
-                mlirGCtors = initFunc;
             }
-
+            else 
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPointToStart(&mlirGCtors.getBody().front());

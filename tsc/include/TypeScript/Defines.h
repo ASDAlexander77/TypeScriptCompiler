@@ -41,6 +41,8 @@
 #define GENERATOR_SWITCHSTATE ".switchstate"
 #define GENERATOR_STATELABELPREFIX ".state"
 
+#define MLIR_GCTORS "__mlir_gctors"
+
 #define TO_STRING "toString"
 #define SYMBOL_TO_STRING_TAG "toStringTag"
 #define SYMBOL_ITERATOR "iterator"
