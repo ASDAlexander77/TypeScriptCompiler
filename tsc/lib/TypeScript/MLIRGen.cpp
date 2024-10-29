@@ -15655,8 +15655,9 @@ genContext);
                     //     return std::make_tuple(staticFieldType, mlir::Value(), TypeProvided::Yes);
                     // }
 
+                    // TODO: review usage of SizeOf in code, as size of class pointer is not size of data struct
                     auto sizeOfType =
-                        builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType);
+                        builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), newClassPtr->classType.getStorageType());
 
                     mlir::Value init = sizeOfType;
                     return std::make_tuple(staticFieldType, init, TypeProvided::Yes);
