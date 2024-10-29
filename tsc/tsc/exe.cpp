@@ -378,7 +378,8 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     // system
     if (win)
     {
-        args.push_back("-luser32");    
+        //args.push_back("-luser32");    
+        args.push_back("-lntdll");
         if (shared || !disableGC)
         {
             // needed to resolve DLL ref
