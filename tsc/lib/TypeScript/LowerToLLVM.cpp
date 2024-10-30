@@ -5035,19 +5035,19 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             else if (auto llvmGCtors = dyn_cast_or_null<LLVM::LLVMFuncOp>(mlirGCtors))
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPointToStart(&llvmGCtors.getBody().front());
+                rewriter.setInsertionPoint(llvmGCtors.getBody().back().getTerminator());
                 rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
             }
             else if (auto tsFuncGCtors = dyn_cast_or_null<mlir_ts::FuncOp>(mlirGCtors))
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPointToStart(&tsFuncGCtors.getBody().front());
+                rewriter.setInsertionPoint(tsFuncGCtors.getBody().back().getTerminator());
                 rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
             }
             else if (auto funcGCtors = dyn_cast_or_null<func::FuncOp>(mlirGCtors))
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPointToStart(&funcGCtors.getBody().front());
+                rewriter.setInsertionPoint(funcGCtors.getBody().back().getTerminator());
                 rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
             }            
             else 
