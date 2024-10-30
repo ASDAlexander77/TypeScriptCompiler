@@ -5015,7 +5015,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
             auto parentModule = globalConstructorOp->getParentOfType<ModuleOp>();
             //auto mlirGCtors = parentModule.lookupSymbol<func::FuncOp>(MLIR_GCTORS);
-            auto mlirGCtors = parentModule.lookupSymbol<LLVM::LLVMFuncOp>(MLIR_GCTORS);
+            auto mlirGCtors = parentModule.lookupSymbol(MLIR_GCTORS);
             if (!mlirGCtors)
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
@@ -5032,11 +5032,27 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                 rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
             }
-            else 
+            else if (auto llvmGCtors = dyn_cast_or_null<LLVM::LLVMFuncOp>(mlirGCtors))
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPointToStart(&mlirGCtors.getBody().front());
+                rewriter.setInsertionPointToStart(&llvmGCtors.getBody().front());
                 rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
+            }
+            else if (auto tsFuncGCtors = dyn_cast_or_null<mlir_ts::FuncOp>(mlirGCtors))
+            {
+                OpBuilder::InsertionGuard insertGuard(rewriter);
+                rewriter.setInsertionPointToStart(&tsFuncGCtors.getBody().front());
+                rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
+            }
+            else if (auto funcGCtors = dyn_cast_or_null<func::FuncOp>(mlirGCtors))
+            {
+                OpBuilder::InsertionGuard insertGuard(rewriter);
+                rewriter.setInsertionPointToStart(&funcGCtors.getBody().front());
+                rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
+            }            
+            else 
+            {
+                assert(false);
             }
 
             rewriter.eraseOp(globalConstructorOp);
@@ -5826,7 +5842,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // the LLVM dialect.
     LLVMConversionTarget target(getContext());
     target.addLegalOp<ModuleOp>();
-    target.addLegalOp<mlir_ts::GlobalConstructorOp>();
 
     // During this lowering, we will also be lowering the MemRef types, that are
     // currently being operated on, to a representation in LLVM. To perform this
@@ -5887,7 +5902,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
         CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
-        ReturnInternalOpLowering, NoOpLowering, /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, 
+        ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,
         GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering, BodyInternalOpLowering, BodyResultInternalOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
@@ -5936,20 +5951,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << m << "\n";);
 
     if (failed(applyFullConversion(m, target, std::move(patterns))))
-    {
-        signalPassFailure();
-    }
-
-    LLVMConversionTarget target2(getContext());
-    target2.addLegalOp<ModuleOp>();
-
-    // TODO: do u remember why u process GlobalConstructors as last patterns
-    RewritePatternSet patterns2(&getContext());
-    patterns2.insert<GlobalConstructorOpLowering, DialectCastOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
-    // as GlobalConsturtors are using FuncOp we need patterns for it as well
-    populateFuncToLLVMConversionPatterns(typeConverter, patterns2);
-
-    if (failed(applyFullConversion(m, target2, std::move(patterns2))))
     {
         signalPassFailure();
     }
