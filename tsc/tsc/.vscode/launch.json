@@ -345,14 +345,18 @@
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
             "args": [
-                "-emit=exe",
+                "-emit=dll",
                 "-opt",
-                "-o=c:/temp/1.dll",
-                "C:/temp/1.ts"
+                "-o=I:/Playground/decl_enum.dll",
+                "I:/Playground/decl_enum.ts"
             ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
+            "cwd": "I:/Playground",
+            "environment": [
+                { "name": "GC_LIB_PATH", "value": "${workspaceFolder}/../../__build/gc/msbuild/x64/debug/Debug" },
+                { "name": "LLVM_LIB_PATH", "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib" },
+                { "name": "TSC_LIB_PATH", "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/lib" },                
+            ],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },      
