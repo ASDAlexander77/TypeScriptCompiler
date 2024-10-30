@@ -36,7 +36,8 @@ class LLVMCodeHelperBase
     {
     }
 
-    template <typename T> void seekLast(mlir::Block *block)
+    template <typename T> 
+    void seekLast(mlir::Block *block)
     {
         // find last string
         auto lastUse = [&](Operation *op) {

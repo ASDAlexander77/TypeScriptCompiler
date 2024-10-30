@@ -3238,14 +3238,25 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         if (createAsGlobalConstructor)
         {
             // we can't have constant here as we need to initialize it in global construct
-            llvmGlobalOp = lch.createUndefGlobalVarIfNew(globalOp.getSymName(), getTypeConverter()->convertType(globalOp.getType()),
-                                          globalOp.getValueAttr(), false /*globalOp.getConstant()*/, linkage);
+            llvmGlobalOp = lch.createUndefGlobalVarIfNew(
+                globalOp.getSymName(), getTypeConverter()->convertType(globalOp.getType()),
+                globalOp.getValueAttr(), false /*globalOp.getConstant()*/, linkage);
 
             auto name = globalOp.getSymName().str();
             name.append("__cctor");
             lch.createFunctionFromRegion(loc, name, globalOp.getInitializerRegion(), globalOp.getSymName());
-            rewriter.create<mlir_ts::GlobalConstructorOp>(loc, 
-                FlatSymbolRefAttr::get(rewriter.getContext(), StringRef(name)), rewriter.getIndexAttr(1000));
+
+            {
+                OpBuilder::InsertionGuard insertGuard(rewriter);
+                
+                auto parentModule = globalOp->getParentOfType<ModuleOp>();
+                rewriter.setInsertionPointToStart(parentModule.getBody());
+
+                lch.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());
+
+                rewriter.create<mlir_ts::GlobalConstructorOp>(loc, 
+                    FlatSymbolRefAttr::get(rewriter.getContext(), StringRef(name)), rewriter.getIndexAttr(1000));
+            }
         }
         else
         {
@@ -5014,6 +5025,8 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
         {
             auto loc = globalConstructorOp->getLoc();
 
+            auto priority = globalConstructorOp.getPriority().getLimitedValue();
+
             auto parentModule = globalConstructorOp->getParentOfType<ModuleOp>();
             //auto mlirGCtors = parentModule.lookupSymbol<func::FuncOp>(MLIR_GCTORS);
             auto mlirGCtors = parentModule.lookupSymbol(MLIR_GCTORS);
@@ -5036,19 +5049,43 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             else if (auto llvmGCtors = dyn_cast_or_null<LLVM::LLVMFuncOp>(mlirGCtors))
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPoint(llvmGCtors.getBody().back().getTerminator());
+                if (priority <= 1000)
+                {
+                    rewriter.setInsertionPointToStart(&llvmGCtors.getBody().front());
+                }
+                else
+                {
+                    rewriter.setInsertionPoint(llvmGCtors.getBody().back().getTerminator());
+                }
+
                 rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
             }
             else if (auto tsFuncGCtors = dyn_cast_or_null<mlir_ts::FuncOp>(mlirGCtors))
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPoint(tsFuncGCtors.getBody().back().getTerminator());
+                if (priority <= 1000)
+                {
+                    rewriter.setInsertionPointToStart(&tsFuncGCtors.getBody().front());
+                }
+                else
+                {
+                    rewriter.setInsertionPoint(tsFuncGCtors.getBody().back().getTerminator());
+                }
+
                 rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
             }
             else if (auto funcGCtors = dyn_cast_or_null<func::FuncOp>(mlirGCtors))
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
-                rewriter.setInsertionPoint(funcGCtors.getBody().back().getTerminator());
+                if (priority <= 1000)
+                {
+                    rewriter.setInsertionPointToStart(&funcGCtors.getBody().front());
+                }
+                else
+                {
+                    rewriter.setInsertionPoint(funcGCtors.getBody().back().getTerminator());
+                }
+
                 rewriter.create<LLVM::CallOp>(loc, TypeRange{}, globalConstructorOp.getGlobalNameAttr(), ValueRange{});
             }            
             else 

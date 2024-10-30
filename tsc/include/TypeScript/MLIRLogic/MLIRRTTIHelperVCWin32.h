@@ -242,17 +242,23 @@ class MLIRRTTIHelperVCWin32
         return true;
     }
 
-    void seekLast(mlir::Block *block)
+    template <typename T>
+    void seekLastOp(mlir::Block *block)
     {
         // find last string
         auto lastUse = [&](mlir::Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<mlir_ts::GlobalOp>(op))
+            if (auto globalOp = dyn_cast_or_null<T>(op))
             {
                 rewriter.setInsertionPointAfter(globalOp);
             }
         };
 
         block->walk(lastUse);
+    }    
+
+    void seekLast(mlir::Block *block)
+    {
+        seekLastOp<mlir_ts::GlobalOp>(block);
     }
 
     bool setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)

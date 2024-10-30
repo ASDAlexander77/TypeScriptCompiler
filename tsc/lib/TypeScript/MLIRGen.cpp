@@ -757,11 +757,17 @@ class MLIRGenImpl
             {
                 return mlir::failure();
             }
-        }
 
-        // priority is lowest to load as first dependencies
-        builder.create<mlir_ts::GlobalConstructorOp>(
-            location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(100));
+            auto parentModule = theModule;
+            MLIRCodeLogicHelper mclh(builder, location);
+
+            builder.setInsertionPointToStart(parentModule.getBody());
+            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
+
+            // priority is lowest to load as first dependencies
+            builder.create<mlir_ts::GlobalConstructorOp>(
+                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(100));
+        }
 
         // TODO: for now, we have code in TS to load methods from DLL/Shared libs
         if (auto addrOfDeclText = dynLib.getAddressOfSymbol(SHARED_LIB_DECLARATIONS))
@@ -3939,10 +3945,16 @@ class MLIRGenImpl
                 {
                     return mlir::failure();
                 }
-            }
 
-            builder.create<mlir_ts::GlobalConstructorOp>(
-                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(1000));
+                auto parentModule = theModule;
+                MLIRCodeLogicHelper mclh(builder, location);
+
+                builder.setInsertionPointToStart(parentModule.getBody());
+                mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());                    
+
+                builder.create<mlir_ts::GlobalConstructorOp>(
+                    location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(1000));
+            }
         }
         else if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
         {
@@ -16918,16 +16930,19 @@ genContext);
         auto location = loc(classMember);
 
         auto parentModule = theModule;
-
         MLIRCodeLogicHelper mclh(builder, location);
-
-        builder.setInsertionPointToStart(parentModule.getBody());
-        mclh.seekLast(parentModule.getBody());
 
         auto funcName = getNameOfFunction(classMember, genContext);
 
-        builder.create<mlir_ts::GlobalConstructorOp>(location, 
-            FlatSymbolRefAttr::get(builder.getContext(), StringRef(std::get<0>(funcName))), builder.getIndexAttr(1000));
+        {
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+
+            builder.setInsertionPointToStart(parentModule.getBody());
+            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());
+
+            builder.create<mlir_ts::GlobalConstructorOp>(location, 
+                FlatSymbolRefAttr::get(builder.getContext(), StringRef(std::get<0>(funcName))), builder.getIndexAttr(1000));
+        }
 
         return mlir::success();
     }

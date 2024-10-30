@@ -435,7 +435,7 @@
                 "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
+            "cwd": "I:/Playground",
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"

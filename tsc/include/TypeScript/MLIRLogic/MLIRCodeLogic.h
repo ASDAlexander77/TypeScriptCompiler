@@ -202,17 +202,23 @@ class MLIRCodeLogicHelper
         return ifOp.getResults().front();
     }
 
-    void seekLast(mlir::Block *block)
+    template <typename T>
+    void seekLastOp(mlir::Block *block)
     {
         // find last string
         auto lastUse = [&](mlir::Operation *op) {
-            if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
+            if (auto globalOp = dyn_cast<T>(op))
             {
                 builder.setInsertionPointAfter(globalOp);
             }
         };
 
         block->walk(lastUse);
+    }    
+
+    void seekLast(mlir::Block *block)
+    {
+        seekLastOp<mlir_ts::GlobalOp>(block);
     }
 };
 
