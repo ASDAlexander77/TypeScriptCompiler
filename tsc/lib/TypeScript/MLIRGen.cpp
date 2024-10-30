@@ -10415,7 +10415,7 @@ class MLIRGenImpl
 
         auto funcType = funcResult.getType();
         if (!mth.isAnyFunctionType(funcType) 
-            && !mth.isVirtualFunctionType(funcResult)
+            && !mth.isBuiltinFunctionType(funcResult)
             // TODO: do I need to use ConstructFunction instead?
             // to support constructor calls
             && !funcType.isa<mlir_ts::ClassType>()
@@ -10760,7 +10760,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        if (mth.isVirtualFunctionType(actualFuncRefValue))
+        if (mth.isBuiltinFunctionType(actualFuncRefValue))
         {
             // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
             auto calleeName = actualFuncRefValue.getDefiningOp()->getAttrOfType<mlir::FlatSymbolRefAttr>(StringRef(IDENTIFIER_ATTR_NAME));
@@ -13982,7 +13982,7 @@ class MLIRGenImpl
         {
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                 location, builder.getNoneType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
-            symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            symbOp->setAttr(BUILTIN_FUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
             return V(symbOp);
         }
 

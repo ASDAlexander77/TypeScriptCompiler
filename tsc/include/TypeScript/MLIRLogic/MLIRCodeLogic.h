@@ -1097,7 +1097,7 @@ class MLIRPropertyAccessCodeLogic
                 auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, builder.getNoneType(), expression,
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), name.c_str()));
-                symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+                symbOp->setAttr(BUILTIN_FUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return symbOp;
             }
 
@@ -1153,7 +1153,7 @@ class MLIRPropertyAccessCodeLogic
                     location, funcType, expression,
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), 
                     getArrayCustomMethodName(propName)));
-                symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+                symbOp->setAttr(BUILTIN_FUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return symbOp;
             }
 

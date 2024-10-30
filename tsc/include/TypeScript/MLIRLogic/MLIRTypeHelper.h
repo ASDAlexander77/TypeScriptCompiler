@@ -634,10 +634,10 @@ class MLIRTypeHelper
         return false;
     }
 
-    bool isVirtualFunctionType(mlir::Value actualFuncRefValue) 
+    bool isBuiltinFunctionType(mlir::Value actualFuncRefValue) 
     {
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
-        auto virtAttrName = StringRef(VIRTUALFUNC_ATTR_NAME);
+        auto virtAttrName = StringRef(BUILTIN_FUNC_ATTR_NAME);
         auto definingOp = actualFuncRefValue.getDefiningOp();
         return (isNoneType(actualFuncRefValue.getType()) || definingOp->hasAttrOfType<mlir::BoolAttr>(virtAttrName)) 
             && definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
