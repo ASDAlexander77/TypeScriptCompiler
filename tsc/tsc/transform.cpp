@@ -140,7 +140,11 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         pm.addPass(mlir::createConvertAsyncToLLVMPass());
 #endif
         pm.addPass(mlir::typescript::createLowerToLLVMPass(compileOptions));
-        pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
+        if (compileOptions.generateDebugInfo)
+        {
+            pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
+        }
+
         if (!disableGC)
         {
             pm.addPass(mlir::typescript::createGCPass(compileOptions));
