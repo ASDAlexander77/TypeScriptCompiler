@@ -394,7 +394,7 @@ def TypeScript_ParseIntOp : TypeScript_Op<"parseInt"> {
     ```
   }];
 
-  let arguments = (ins AnyType:$arg, Optional<I32>:$base);
+  let arguments = (ins TypeScript_String:$arg, Optional<I32>:$base);
   let results = (outs AnyInteger:$res);
 }
 
@@ -410,7 +410,7 @@ def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
     ```
   }];
 
-  let arguments = (ins AnyType:$arg);
+  let arguments = (ins TypeScript_String:$arg);
   let results = (outs TypeScript_Number:$res);
 }
 
@@ -426,7 +426,7 @@ def TypeScript_IsNaNOp : TypeScript_Op<"isNaN"> {
     ```
   }];
 
-  let arguments = (ins AnyType:$arg);
+  let arguments = (ins TypeScript_Number:$arg);
   let results = (outs TypeScript_Boolean:$res);
 }
 
@@ -2068,13 +2068,13 @@ def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [Pure, ReturnLike,
 }
 
 def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
-  let arguments = (ins FlatSymbolRefAttr:$global_name);
+  let arguments = (ins FlatSymbolRefAttr:$global_name, IndexAttr:$priority);
   let results = (outs );
 
   let builders = [
-    OpBuilder<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
+    OpBuilder<(ins "FuncOp":$func, "IntegerAttr":$priority, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
     [{
-      build($_builder, $_state, RefType::get(func.getFunctionType()), func.getName());
+      build($_builder, $_state, RefType::get(func.getFunctionType()), FlatSymbolRefAttr::get(func.getNameAttr()), priority);
       $_state.addAttributes(attrs);
     }]>
   ];

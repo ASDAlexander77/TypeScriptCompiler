@@ -759,7 +759,9 @@ class MLIRGenImpl
             }
         }
 
-        builder.create<mlir_ts::GlobalConstructorOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName));
+        // priority is lowest to load as first dependencies
+        builder.create<mlir_ts::GlobalConstructorOp>(
+            location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(100));
 
         // TODO: for now, we have code in TS to load methods from DLL/Shared libs
         if (auto addrOfDeclText = dynLib.getAddressOfSymbol(SHARED_LIB_DECLARATIONS))
@@ -3939,7 +3941,8 @@ class MLIRGenImpl
                 }
             }
 
-            builder.create<mlir_ts::GlobalConstructorOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName));
+            builder.create<mlir_ts::GlobalConstructorOp>(
+                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(1000));
         }
         else if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
         {
@@ -16923,7 +16926,8 @@ genContext);
 
         auto funcName = getNameOfFunction(classMember, genContext);
 
-        builder.create<mlir_ts::GlobalConstructorOp>(location, StringRef(std::get<0>(funcName)));
+        builder.create<mlir_ts::GlobalConstructorOp>(location, 
+            FlatSymbolRefAttr::get(builder.getContext(), StringRef(std::get<0>(funcName))), builder.getIndexAttr(1000));
 
         return mlir::success();
     }

@@ -3244,7 +3244,8 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             auto name = globalOp.getSymName().str();
             name.append("__cctor");
             lch.createFunctionFromRegion(loc, name, globalOp.getInitializerRegion(), globalOp.getSymName());
-            rewriter.create<mlir_ts::GlobalConstructorOp>(loc, name);
+            rewriter.create<mlir_ts::GlobalConstructorOp>(loc, 
+                FlatSymbolRefAttr::get(rewriter.getContext(), StringRef(name)), rewriter.getIndexAttr(1000));
         }
         else
         {
@@ -5053,6 +5054,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             else 
             {
                 assert(false);
+                return mlir::failure();
             }
 
             rewriter.eraseOp(globalConstructorOp);
@@ -5062,7 +5064,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             rewriter.replaceOpWithNewOp<LLVM::GlobalCtorsOp>(
                 globalConstructorOp, 
                 rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }), 
-                rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(0) }));
+                rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(globalConstructorOp.getPriority().getLimitedValue()) }));
         }
 
         return success();
