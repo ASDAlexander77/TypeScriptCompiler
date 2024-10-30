@@ -3121,6 +3121,14 @@ class MLIRGenImpl
 
         variableDeclarationInfo.setType(actualType);
 
+        if (variableDeclarationInfo.initial && actualType != type)
+        {
+            // cast
+            auto result = cast(location, actualType, variableDeclarationInfo.initial, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+            variableDeclarationInfo.initial = V(result);
+        }
+
         return mlir::success();
     }    
    
