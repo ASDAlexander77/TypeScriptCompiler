@@ -194,7 +194,7 @@ class MLIRHelper
             return;
         }
 
-        if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
+        if (auto sourceUnionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             for (auto item : sourceUnionType.getTypes())
             {
@@ -214,7 +214,7 @@ class MLIRHelper
             return;
         }
 
-        if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
+        if (auto sourceUnionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             for (auto item : sourceUnionType.getTypes())
             {
@@ -229,7 +229,7 @@ class MLIRHelper
 
     static mlir::Type stripLiteralType(mlir::Type type)
     {
-        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
         {
             return literalType.getElementType();
         }
@@ -352,11 +352,11 @@ class MLIRHelper
     {
         if (type)
         {
-            if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
             {
                 return arrayType.getElementType();
             }
-            else if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
+            else if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(type))
             {
                 return constArrayType.getElementType();
             }
@@ -364,23 +364,23 @@ class MLIRHelper
             {
                 return mlir_ts::CharType::get(type.getContext());
             }
-            else if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
+            else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
             {
                 return classType.getStorageType();
             }
-            else if (auto objType = type.dyn_cast<mlir_ts::ObjectType>())
+            else if (auto objType = dyn_cast<mlir_ts::ObjectType>(type))
             {
                 return objType.getStorageType();
             }
-            else if (auto refType = type.dyn_cast<mlir_ts::RefType>())
+            else if (auto refType = dyn_cast<mlir_ts::RefType>(type))
             {
                 return refType.getElementType();
             }
-            else if (auto boundRefType = type.dyn_cast<mlir_ts::BoundRefType>())
+            else if (auto boundRefType = dyn_cast<mlir_ts::BoundRefType>(type))
             {
                 return boundRefType.getElementType();
             }
-            else if (auto valueRefType = type.dyn_cast<mlir_ts::ValueRefType>())
+            else if (auto valueRefType = dyn_cast<mlir_ts::ValueRefType>(type))
             {
                 return valueRefType.getElementType();
             }

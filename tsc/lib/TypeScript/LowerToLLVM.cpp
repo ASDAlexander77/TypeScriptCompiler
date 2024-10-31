@@ -350,15 +350,15 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 
         auto storageType = op.getType();
         // TODO: review usage SizeOf as for example when we allocate Array<Class1>  we use size of element but element is Pointer
-        // if (auto classType = storageType.dyn_cast<mlir_ts::ClassType>())
+        // if (auto classType = dyn_cast<mlir_ts::ClassType>(storageType))
         // {
         //     storageType = classType.getStorageType();
         // }
-        // else if (auto valueRefType = storageType.dyn_cast<mlir_ts::ValueRefType>())
+        // else if (auto valueRefType = dyn_cast<mlir_ts::ValueRefType>(storageType))
         // {
         //     storageType = valueRefType.getElementType();
         // }        
-        // else if (auto objectType = storageType.dyn_cast<mlir_ts::ObjectType>())
+        // else if (auto objectType = dyn_cast<mlir_ts::ObjectType>(storageType))
         // {
         //     storageType = objectType.getStorageType();
         // }
@@ -818,7 +818,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         auto loadedValue = rewriter.create<LLVM::LoadOp>(constantOp->getLoc(), tupleConstPtr);
         */
 
-        auto tupleVal = ch.getTupleFromArrayAttr(location, type.dyn_cast<mlir_ts::ConstTupleType>(),
+        auto tupleVal = ch.getTupleFromArrayAttr(location, dyn_cast<mlir_ts::ConstTupleType>(type),
                                                  convertedTupleType.cast<LLVM::LLVMStructType>(), arrayAttr);
 
         // rewriter.replaceOp(constantOp, ValueRange{loadedValue});
@@ -830,7 +830,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
     {
         // load address of const string
         auto type = constantOp.getType();
-        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
         {
             type = literalType.getElementType();
         }
@@ -848,7 +848,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         }
 
         TypeConverterHelper tch(getTypeConverter());
-        if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
+        if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(type))
         {
             LLVM_DEBUG(llvm::dbgs() << "constArrayType: type: "; type.dump(); llvm::dbgs() << "\n";);
 
@@ -856,7 +856,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
             return success();
         }
 
-        if (auto constArrayValueType = type.dyn_cast<mlir_ts::ConstArrayValueType>())
+        if (auto constArrayValueType = dyn_cast<mlir_ts::ConstArrayValueType>(type))
         {
             if (auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>())
             {
@@ -865,31 +865,31 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
             }
         }
 
-        if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
+        if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
         {
             getOrCreateGlobalArray(constantOp, arrayType, rewriter);
             return success();
         }
 
-        if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
         {
             getOrCreateGlobalTuple(constantOp, constTupleType, rewriter);
             return success();
         }
 
-        if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
         {
             getOrCreateGlobalTuple(constantOp, tupleType, rewriter);
             return success();
         }
 
-        if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
+        if (auto enumType = dyn_cast<mlir_ts::EnumType>(type))
         {
             rewriter.eraseOp(constantOp);
             return success();
         }
 
-        if (auto valAttr = constantOp.getValue().dyn_cast<mlir::FlatSymbolRefAttr>())
+        if (auto valAttr = dyn_cast<mlir::FlatSymbolRefAttr>(constantOp.getValue()))
         {
             rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(constantOp, tch.convertType(type), valAttr);
             return success();
@@ -1008,7 +1008,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
             if (namedAttr.getName() == SymbolTable::getSymbolAttrName())
             {
-                //name = namedAttr.getValue().dyn_cast<mlir::StringAttr>().getValue().str();
+                //name = dyn_cast<mlir::StringAttr>(namedAttr.getValue()).getValue().str();
                 continue;
             }
 
@@ -1188,7 +1188,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
 
         // special case for HybridFunctionType
         LLVM_DEBUG(llvm::dbgs() << "\n!! CallInternalOp - arg #0:" << op.getOperand(0) << "\n");
-        if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
+        if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(op.getOperand(0).getType()))
         {
             rewriter.replaceOpWithNewOp<mlir_ts::CallHybridInternalOp>(
                 op, hybridFuncType.getResults(), op.getOperand(0),
@@ -1324,7 +1324,7 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
         {
             // special case for HybridFunctionType
             LLVM_DEBUG(llvm::dbgs() << "\n!! InvokeOp - arg #0:" << op.getOperand(0) << "\n");
-            if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
+            if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(op.getOperand(0).getType()))
             {
                 rewriter.replaceOpWithNewOp<mlir_ts::InvokeHybridOp>(
                     op, hybridFuncType.getResults(), op.getOperand(0),
@@ -1923,7 +1923,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         {
             storageType = classType.getStorageType();
         }
-        else if (auto valueRef = storageType.dyn_cast<mlir_ts::ValueRefType>())
+        else if (auto valueRef = dyn_cast<mlir_ts::ValueRefType>(storageType))
         {
             storageType = valueRef.getElementType();
         }
@@ -2988,19 +2988,19 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
         auto elementRefType = loadOp.getReference().getType();
         auto resultType = loadOp.getType();
 
-        if (auto refType = elementRefType.dyn_cast<mlir_ts::RefType>())
+        if (auto refType = dyn_cast<mlir_ts::RefType>(elementRefType))
         {
             elementType = refType.getElementType();
             elementTypeConverted = tch.convertType(elementType);
         }
-        else if (auto valueRefType = elementRefType.dyn_cast<mlir_ts::ValueRefType>())
+        else if (auto valueRefType = dyn_cast<mlir_ts::ValueRefType>(elementRefType))
         {
             elementType = valueRefType.getElementType();
             elementTypeConverted = tch.convertType(elementType);
         }
 
         auto isOptional = false;
-        if (auto optType = resultType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(resultType))
         {
             isOptional = optType.getElementType() == elementType;
         }
@@ -3012,7 +3012,7 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             {
                 loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.getReference());
             }
-            else if (auto boundRefType = elementRefType.dyn_cast<mlir_ts::BoundRefType>())
+            else if (auto boundRefType = dyn_cast<mlir_ts::BoundRefType>(elementRefType))
             {
                 loadedValue = rewriter.create<mlir_ts::LoadBoundRefOp>(loc, resultType, loadOp.getReference());
             }
@@ -3076,7 +3076,7 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
     LogicalResult matchAndRewrite(mlir_ts::StoreOp storeOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (auto boundRefType = storeOp.getReference().getType().dyn_cast<mlir_ts::BoundRefType>())
+        if (auto boundRefType = dyn_cast<mlir_ts::BoundRefType>(storeOp.getReference().getType()))
         {
             rewriter.replaceOpWithNewOp<mlir_ts::StoreBoundRefOp>(storeOp, storeOp.getValue(), storeOp.getReference());
             return success();
@@ -3178,7 +3178,7 @@ struct PropertyRefOpLowering : public TsLlvmPattern<mlir_ts::PropertyRefOp>
         auto addr =
             ch.GetAddressOfStructElement(propertyRefOp.getObjectRef().getType(), transformed.getObjectRef(), propertyRefOp.getPosition());
 
-        if (auto boundRefType = propertyRefOp.getType().dyn_cast<mlir_ts::BoundRefType>())
+        if (auto boundRefType = dyn_cast<mlir_ts::BoundRefType>(propertyRefOp.getType()))
         {
             auto boundRef = rewriter.create<mlir_ts::CreateBoundRefOp>(propertyRefOp->getLoc(), boundRefType,
                                                                        propertyRefOp.getObjectRef(), addr);
@@ -4326,12 +4326,12 @@ struct VirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::VirtualSymbolR
         auto methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(
             loc, th.getPtrType(), transformed.getVtable(), virtualSymbolRefOp.getIndex());
 
-        if (auto funcType = virtualSymbolRefOp.getType().dyn_cast<mlir_ts::FunctionType>())
+        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(virtualSymbolRefOp.getType()))
         {
             auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, funcType, methodOrFieldPtr);
             rewriter.replaceOp(virtualSymbolRefOp, ValueRange{methodTyped});
         }
-        else if (auto fieldType = virtualSymbolRefOp.getType().dyn_cast<mlir_ts::RefType>())
+        else if (auto fieldType = dyn_cast<mlir_ts::RefType>(virtualSymbolRefOp.getType()))
         {
             auto fieldTyped = rewriter.create<mlir_ts::CastOp>(loc, fieldType, methodOrFieldPtr);
             rewriter.replaceOp(virtualSymbolRefOp, ValueRange{fieldTyped});
@@ -4364,7 +4364,7 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
                                                                      thisVirtualSymbolRefOp.getIndex());
         // auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, thisVirtualSymbolRefOp.getType(), methodPtr);
 
-        if (auto boundFunc = thisVirtualSymbolRefOp.getType().dyn_cast<mlir_ts::BoundFunctionType>())
+        if (auto boundFunc = dyn_cast<mlir_ts::BoundFunctionType>(thisVirtualSymbolRefOp.getType()))
         {
             auto thisOpaque = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()),
                                                                transformed.getThisVal());
@@ -4414,7 +4414,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         auto methodOrFieldPtr =
             rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getPtrType(), vtable, interfaceSymbolRefOp.getIndex());
 
-        if (auto boundFunc = interfaceSymbolRefOp.getType().dyn_cast<mlir_ts::BoundFunctionType>())
+        if (auto boundFunc = dyn_cast<mlir_ts::BoundFunctionType>(interfaceSymbolRefOp.getType()))
         {
             auto thisOpaque =
                 rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), thisVal);
@@ -4585,7 +4585,7 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
 
         mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, llvmType, valueRefVal);
 
-        if (auto funcType = boundRefType.getElementType().dyn_cast<mlir_ts::FunctionType>())
+        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(boundRefType.getElementType()))
         {
             mlir::Value boundMethodValue =
                 rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadBoundRefOp.getType(), thisVal, loadedValue);
@@ -4748,18 +4748,18 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
 
         mlir_ts::FunctionType funcType;
         mlir::Type llvmMethodType;
-        if (auto boundType = origType.dyn_cast<mlir_ts::BoundFunctionType>())
+        if (auto boundType = dyn_cast<mlir_ts::BoundFunctionType>(origType))
         {
             funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundType.getInputs(), boundType.getResults());
             llvmMethodType = tch.convertType(funcType);
         }
-        else if (auto hybridType = origType.dyn_cast<mlir_ts::HybridFunctionType>())
+        else if (auto hybridType = dyn_cast<mlir_ts::HybridFunctionType>(origType))
         {
             funcType =
                 mlir_ts::FunctionType::get(rewriter.getContext(), hybridType.getInputs(), hybridType.getResults());
             llvmMethodType = tch.convertType(funcType);
         }
-        else if (auto structType = origType.dyn_cast<LLVM::LLVMStructType>())
+        else if (auto structType = dyn_cast<LLVM::LLVMStructType>(origType))
         {
             auto ptrType = structType.getBody().front().cast<LLVM::LLVMPointerType>();
             //assert(ptrType.getElementType().isa<LLVM::LLVMFunctionType>());
@@ -5212,7 +5212,7 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
         {
             storageType = classType.getStorageType();
         }
-        else if (auto valueRef = storageType.dyn_cast<mlir_ts::ValueRefType>())
+        else if (auto valueRef = dyn_cast<mlir_ts::ValueRefType>(storageType))
         {
             storageType = valueRef.getElementType();
         }

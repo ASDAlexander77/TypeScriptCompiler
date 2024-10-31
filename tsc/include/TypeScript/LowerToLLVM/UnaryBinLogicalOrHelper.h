@@ -96,7 +96,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     {
         return UndefTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
-    else if (leftType.isIntOrIndex() || leftType.dyn_cast<mlir_ts::BooleanType>() || leftType.dyn_cast<mlir_ts::CharType>())
+    else if (leftType.isIntOrIndex() || leftType.isa<mlir_ts::BooleanType>() || leftType.isa<mlir_ts::CharType>())
     {
         auto value = builder.create<StdIOpTy>(loc, v1, left, right);
         return value;
@@ -106,7 +106,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdFOpTy>(loc, v2, left, right);
         return value;
     }
-    else if (leftType.dyn_cast<mlir_ts::NumberType>())
+    else if (leftType.isa<mlir_ts::NumberType>())
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftType, left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, leftType, right);
@@ -114,7 +114,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         return value;
     }
     /*
-    else if (auto leftEnumType = leftType.dyn_cast<mlir_ts::EnumType>())
+    else if (auto leftEnumType = dyn_cast<mlir_ts::EnumType>(leftType))
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), right);
@@ -123,7 +123,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         return value;
     }
     */
-    else if (leftType.dyn_cast<mlir_ts::StringType>())
+    else if (leftType.isa<mlir_ts::StringType>())
     {
         if (left.getType() != right.getType())
         {
@@ -139,8 +139,8 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         return value;
     }
-    else if (leftType.dyn_cast<mlir_ts::AnyType>() || leftType.dyn_cast<mlir_ts::ClassType>() ||
-             leftType.dyn_cast<mlir_ts::OpaqueType>() || leftType.dyn_cast<mlir_ts::NullType>())
+    else if (leftType.isa<mlir_ts::AnyType>() || leftType.isa<mlir_ts::ClassType>() ||
+             leftType.isa<mlir_ts::OpaqueType>() || leftType.isa<mlir_ts::NullType>())
     {
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
@@ -154,7 +154,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }
-    else if (leftType.dyn_cast<mlir_ts::InterfaceType>())
+    else if (leftType.isa<mlir_ts::InterfaceType>())
     {
         // TODO, extract interface VTable to compare
         auto leftVtableValue =
@@ -178,7 +178,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }
-    else if (auto leftArrayType = leftType.dyn_cast<mlir_ts::ArrayType>())
+    else if (auto leftArrayType = dyn_cast<mlir_ts::ArrayType>(leftType))
     {
         // TODO, extract array pointer to compare
         TypeHelper th(builder);
@@ -196,7 +196,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto rightArrayPtrValue =
             right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero())
                 ? right
-                : castLogic.extractArrayPtr(right, rightType.dyn_cast<mlir_ts::ArrayType>());
+                : castLogic.extractArrayPtr(right, dyn_cast<mlir_ts::ArrayType>(rightType));
 
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
@@ -210,7 +210,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }    
-    else if (auto leftTupleType = leftType.dyn_cast<mlir_ts::TupleType>())
+    else if (auto leftTupleType = dyn_cast<mlir_ts::TupleType>(leftType))
     {        
         // TODO: finish comparing 2 the same tuples
     }

@@ -48,7 +48,7 @@ bool mlir_ts::isTrue(mlir::Region &condtion)
 
         if (auto constOp = condVal.getDefiningOp<mlir_ts::ConstantOp>())
         {
-            if (auto boolAttr = constOp.getValueAttr().dyn_cast<mlir::BoolAttr>())
+            if (auto boolAttr = dyn_cast<mlir::BoolAttr>(constOp.getValueAttr()))
             {
                 return boolAttr.getValue();
             }
@@ -511,8 +511,8 @@ LogicalResult mlir_ts::CastOp::verify()
     auto resType = getRes().getType();
 
     // funcType -> funcType
-    auto inFuncType = inType.dyn_cast<mlir_ts::FunctionType>();
-    auto resFuncType = resType.dyn_cast<mlir_ts::FunctionType>();
+    auto inFuncType = dyn_cast<mlir_ts::FunctionType>(inType);
+    auto resFuncType = dyn_cast<mlir_ts::FunctionType>(resType);
     if (inFuncType && resFuncType)
     {
         ::typescript::MLIRTypeHelper mth(getContext());
@@ -528,7 +528,7 @@ LogicalResult mlir_ts::CastOp::verify()
     }
 
     // optional<T> -> <T>
-    if (auto inOptType = inType.dyn_cast<mlir_ts::OptionalType>())
+    if (auto inOptType = dyn_cast<mlir_ts::OptionalType>(inType))
     {
         if (inOptType.getElementType() == resType)
         {
@@ -536,7 +536,7 @@ LogicalResult mlir_ts::CastOp::verify()
         }
     }
 
-    if (auto resOptType = resType.dyn_cast<mlir_ts::OptionalType>())
+    if (auto resOptType = dyn_cast<mlir_ts::OptionalType>(resType))
     {
         if (resOptType.getElementType() == inType)
         {
@@ -550,8 +550,8 @@ LogicalResult mlir_ts::CastOp::verify()
     }
 
     // check if we can cast type to union type
-    auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>();
-    auto resUnionType = resType.dyn_cast<mlir_ts::UnionType>();
+    auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType);
+    auto resUnionType = dyn_cast<mlir_ts::UnionType>(resType);
     if (inUnionType || resUnionType)
     {
         ::typescript::MLIRTypeHelper mth(getContext());
@@ -677,8 +677,8 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
-        auto resUnionType = res.getType().dyn_cast<mlir_ts::UnionType>();
-        auto inUnionType = in.getType().dyn_cast<mlir_ts::UnionType>();
+        auto resUnionType = dyn_cast<mlir_ts::UnionType>(res.getType());
+        auto inUnionType = dyn_cast<mlir_ts::UnionType>(in.getType());
         if (resUnionType && !inUnionType)
         {
             ::typescript::MLIRTypeHelper mth(rewriter.getContext());
@@ -1039,12 +1039,12 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
     mlir::ArrayRef<mlir::Type> results;
 
     // Verify that the operand and result types match the callee.
-    if (auto funcType = getCallee().getType().dyn_cast<mlir_ts::FunctionType>())
+    if (auto funcType = dyn_cast<mlir_ts::FunctionType>(getCallee().getType()))
     {
         input = funcType.getInputs();
         results = funcType.getResults();
     }
-    else if (auto hybridFuncType = getCallee().getType().dyn_cast<mlir_ts::HybridFunctionType>())
+    else if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(getCallee().getType()))
     {
         input = hybridFuncType.getInputs();
         results = hybridFuncType.getResults();
@@ -1560,8 +1560,8 @@ struct SimplifyStaticExpression : public OpRewritePattern<mlir_ts::LogicalBinary
     // TODO: complete it
     std::optional<bool> logicalOpResultOfConstants(unsigned int opCode, mlir::Attribute op1, mlir::Attribute op2) const {
 
-        auto op1Typed = op1.dyn_cast<mlir::TypedAttr>();
-        auto op2Typed = op2.dyn_cast<mlir::TypedAttr>();
+        auto op1Typed = dyn_cast<mlir::TypedAttr>(op1);
+        auto op2Typed = dyn_cast<mlir::TypedAttr>(op2);
         if (!op1Typed || !op2Typed)
         {
             return {};

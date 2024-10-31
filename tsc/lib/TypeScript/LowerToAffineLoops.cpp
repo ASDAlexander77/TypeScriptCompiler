@@ -311,7 +311,7 @@ struct PrefixUnaryOpLowering : public TsPattern<mlir_ts::PrefixUnaryOp>
         auto value = op.getOperand1();
         auto effectiveType = op.getType();
         bool castBack = false;
-        if (auto optType = effectiveType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(effectiveType))
         {
             castBack = true;
             effectiveType = optType.getElementType();
@@ -362,7 +362,7 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
         auto value = op.getOperand1();
         auto effectiveType = op.getType();
         bool castBack = false;
-        if (auto optType = effectiveType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(effectiveType))
         {
             castBack = true;
             effectiveType = optType.getElementType();
@@ -1651,7 +1651,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
 
             // dereference value in case of sending value by ref but stored as value
             // TODO: review capture logic
-            if (auto valRefType = val.getType().dyn_cast<mlir_ts::RefType>())
+            if (auto valRefType = dyn_cast<mlir_ts::RefType>(val.getType()))
             {
                 if (!thisStoreFieldType.isa<mlir_ts::RefType>() && thisStoreFieldType == valRefType.getElementType())
                 {

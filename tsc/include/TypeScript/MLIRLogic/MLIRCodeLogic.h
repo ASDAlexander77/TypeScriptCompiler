@@ -95,7 +95,7 @@ class MLIRCodeLogic
     mlir::Type getEffectiveFunctionTypeForTupleField(mlir::Type elementType)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
-        if (auto boundFuncType = elementType.dyn_cast<mlir_ts::BoundFunctionType>())
+        if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(elementType))
         {
             return mlir_ts::FunctionType::get(context, boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
         }
@@ -125,7 +125,7 @@ class MLIRCodeLogic
         if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
         {
             // try to resolve index
-            auto intAttr = fieldId.dyn_cast<mlir::IntegerAttr>();
+            auto intAttr = dyn_cast<mlir::IntegerAttr>(fieldId);
             if (intAttr)
             {
                 fieldIndex = intAttr.getInt();
@@ -421,7 +421,7 @@ class MLIRCustomMethods
                 if (constantOp)
                 {
                     auto type = constantOp.getType();
-                    if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+                    if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
                     {
                         type = literalType.getElementType();
                     }
@@ -839,7 +839,7 @@ class MLIRPropertyAccessCodeLogic
                                 mlir::Attribute fieldId)
         : builder(builder), location(location), expression(expression), fieldId(fieldId)
     {
-        if (auto strAttr = fieldId.dyn_cast<mlir::StringAttr>())
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId))
         {
             name = strAttr.getValue();
         }
@@ -1106,8 +1106,8 @@ class MLIRPropertyAccessCodeLogic
 
         if (isArrayCustomMethod(propName))
         {
-            auto arrayType = expression.getType().dyn_cast<mlir_ts::ArrayType>();
-            auto constArrayType = expression.getType().dyn_cast<mlir_ts::ConstArrayType>();
+            auto arrayType = dyn_cast<mlir_ts::ArrayType>(expression.getType());
+            auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(expression.getType());
             if (arrayType || constArrayType)
             {
                 mlir::Type elementType;

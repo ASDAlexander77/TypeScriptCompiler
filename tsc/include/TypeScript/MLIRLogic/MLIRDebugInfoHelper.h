@@ -33,7 +33,7 @@ class MLIRDebugInfoHelper
 
     mlir::Location stripMetadata(mlir::Location location) 
     {
-        if (auto fusedLoc = location.dyn_cast<mlir::FusedLoc>())
+        if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(location))
         {
             if (fusedLoc.getMetadata()) 
             {

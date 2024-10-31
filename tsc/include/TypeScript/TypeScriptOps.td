@@ -659,11 +659,11 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
       $_state.operands.push_back(callee);
       $_state.addOperands(callOperands);
-      if (auto funcType = callee.getType().dyn_cast<FunctionType>())
+      if (auto funcType = dyn_cast<FunctionType>(callee.getType()))
       {
         $_state.addTypes(funcType.getResults());
       }
-      else if (auto hybridFuncType = callee.getType().dyn_cast<mlir::typescript::HybridFunctionType>())
+      else if (auto hybridFuncType = dyn_cast<mlir::typescript::HybridFunctionType>(callee.getType()))
       {
         $_state.addTypes(hybridFuncType.getResults());
       }

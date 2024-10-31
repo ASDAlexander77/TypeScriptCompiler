@@ -89,7 +89,7 @@ class LLVMTypeConverterHelper
             return 0;
         }
 
-        if (auto structData = llvmType.dyn_cast<LLVM::LLVMStructType>())
+        if (auto structData = dyn_cast<LLVM::LLVMStructType>(llvmType))
         {
             return getStructTypeSizeNonAligned(structData);
         }        

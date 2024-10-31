@@ -138,7 +138,7 @@ class MLIRRTTIHelperVCWin32
         }
 
         auto normalizedType = mth.stripLiteralType(type);
-        if (auto enumType = normalizedType.dyn_cast<mlir_ts::EnumType>())
+        if (auto enumType = dyn_cast<mlir_ts::EnumType>(normalizedType))
         {
             normalizedType = enumType.getElementType();
         }

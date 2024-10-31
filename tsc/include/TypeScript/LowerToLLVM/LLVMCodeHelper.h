@@ -303,7 +303,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // dense value
         auto value = arrayAttr.getValue();
-        if (value.size() == 0/*|| originalElementType.dyn_cast<mlir_ts::AnyType>()*/)
+        if (value.size() == 0/*|| dyn_cast<mlir_ts::AnyType>(originalElementType)*/)
         {
             for (auto item : arrayAttr.getValue())
             {
@@ -317,7 +317,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         {
             llvm_unreachable("it should be process in constant with denseattr value");
         }
-        else if (originalElementType.dyn_cast<mlir_ts::StringType>())
+        else if (originalElementType.isa<mlir_ts::StringType>())
         {
             auto position = 0;
             for (auto item : arrayAttr.getValue())
@@ -330,7 +330,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             return arrayVal;
         }
-        else if (auto originalArrayType = originalElementType.dyn_cast<mlir_ts::ArrayType>())
+        else if (auto originalArrayType = dyn_cast<mlir_ts::ArrayType>(originalElementType))
         {
             // TODO: implement ReadOnlyRTArray; as RTArray may contains ConstArray data (so using not editable memory)
             auto position = 0;
@@ -344,24 +344,24 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             return arrayVal;
         }
-        else if (originalElementType.dyn_cast<mlir_ts::ConstArrayType>())
+        else if (originalElementType.isa<mlir_ts::ConstArrayType>())
         {
             llvm_unreachable("ConstArrayType must not be used in array, use normal ArrayType (the same way as StringType)");
         }
-        else if (auto tupleType = originalElementType.dyn_cast<mlir_ts::TupleType>())
+        else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(originalElementType))
         {
             MLIRTypeHelper mth(rewriter.getContext());
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
                 auto tupleVal = getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(tupleType).cast<mlir_ts::ConstTupleType>(), llvmElementType.cast<LLVM::LLVMStructType>(),
-                                                        item.dyn_cast<ArrayAttr>());
+                                                        dyn_cast<ArrayAttr>(item));
                 arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
 
             return arrayVal;
         }
-        else if (originalElementType.dyn_cast<mlir_ts::ConstTupleType>())
+        else if (originalElementType.isa<mlir_ts::ConstTupleType>())
         {
             llvm_unreachable("ConstTupleType must not be used in array, use normal TupleType (the same way as StringType)");
         }            
@@ -502,14 +502,14 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             auto type = originalType.getType(position);
 
             auto llvmType = typesRange[position];
-            if (auto unitAttr = item.dyn_cast<UnitAttr>())
+            if (auto unitAttr = dyn_cast<UnitAttr>(item))
             {
                 LLVM_DEBUG(llvm::dbgs() << "!! Unit Attr is type of '" << llvmType << "'\n");
 
                 auto itemValue = rewriter.create<mlir_ts::UndefOp>(loc, llvmType);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto stringAttr = item.dyn_cast<StringAttr>())
+            else if (auto stringAttr = dyn_cast<StringAttr>(item))
             {
                 OpBuilder::InsertionGuard guard(rewriter);
 
@@ -518,11 +518,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
+            else if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(type))
             {
                 llvm_unreachable("not used.");
                 /*
-                auto subArrayAttr = item.dyn_cast<ArrayAttr>();
+                auto subArrayAttr = dyn_cast<ArrayAttr>(item);
 
                 MLIRTypeHelper mth(rewriter.getContext());
                 auto arrayType = mth.convertConstArrayTypeToArrayType(constArrayType);
@@ -536,18 +536,18 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
                 */
             }
-            else if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
+            else if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
             {
-                auto subArrayAttr = item.dyn_cast<ArrayAttr>();
+                auto subArrayAttr = dyn_cast<ArrayAttr>(item);
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
                 auto itemVal = getReadOnlyRTArray(loc, arrayType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
+            else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
             {
-                auto subArrayAttr = item.dyn_cast<ArrayAttr>();
+                auto subArrayAttr = dyn_cast<ArrayAttr>(item);
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
@@ -555,9 +555,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto constTupleType = type.dyn_cast<mlir_ts::TupleType>())
+            else if (auto constTupleType = dyn_cast<mlir_ts::TupleType>(type))
             {
-                auto subArrayAttr = item.dyn_cast<ArrayAttr>();
+                auto subArrayAttr = dyn_cast<ArrayAttr>(item);
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
@@ -569,7 +569,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto flatSymbRef = item.dyn_cast<mlir::FlatSymbolRefAttr>())
+            else if (auto flatSymbRef = dyn_cast<mlir::FlatSymbolRefAttr>(item))
             {
                 auto itemValue = rewriter.create<LLVM::AddressOfOp>(loc, llvmType, flatSymbRef);                
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));

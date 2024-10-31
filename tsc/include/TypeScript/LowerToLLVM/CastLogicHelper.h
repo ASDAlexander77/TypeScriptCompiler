@@ -79,7 +79,7 @@ class CastLogicHelper
             return in;
         }
 
-        if (auto literalType = inType.dyn_cast<mlir_ts::LiteralType>())
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(inType))
         {
             return cast(in, literalType.getElementType(), tch.convertType(literalType.getElementType()), resType, resLLVMType);
         }
@@ -153,15 +153,15 @@ class CastLogicHelper
             return castFromAny(in, resType);
         }
 
-        if (auto numberType = resType.dyn_cast<mlir_ts::NumberType>())
+        if (auto numberType = dyn_cast<mlir_ts::NumberType>(resType))
         {
-            if (auto boolType = inType.dyn_cast<mlir_ts::BooleanType>())
+            if (auto boolType = dyn_cast<mlir_ts::BooleanType>(inType))
             {
                 return castBoolToNumber(in);
             }
         }
 
-        if (auto obj = resType.dyn_cast<mlir_ts::ObjectType>())
+        if (auto obj = dyn_cast<mlir_ts::ObjectType>(resType))
         {
             if (obj.getStorageType().isa<mlir_ts::AnyType>())
             {
@@ -169,12 +169,12 @@ class CastLogicHelper
             }
         }
 
-        if (auto obj = resType.dyn_cast<mlir_ts::UnknownType>())
+        if (auto obj = dyn_cast<mlir_ts::UnknownType>(resType))
         {
             return castToOpaqueType(in, inLLVMType);
         }
 
-        auto isInString = inType.dyn_cast<mlir_ts::StringType>();
+        auto isInString = dyn_cast<mlir_ts::StringType>(inType);
         if (isInString && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
         {
             auto castIntOp = rewriter.create<mlir_ts::ParseIntOp>(loc, resType, in);
@@ -188,9 +188,9 @@ class CastLogicHelper
         }
 
         // array to ref of element
-        if (auto arrayType = inType.dyn_cast<mlir_ts::ArrayType>())
+        if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(inType))
         {
-            if (auto refType = resType.dyn_cast<mlir_ts::RefType>())
+            if (auto refType = dyn_cast<mlir_ts::RefType>(resType))
             {
                 if (arrayType.getElementType() == refType.getElementType())
                 {
@@ -199,7 +199,7 @@ class CastLogicHelper
                 }
             }
 
-            if (auto opaqueType = resType.dyn_cast<mlir_ts::OpaqueType>())
+            if (auto opaqueType = dyn_cast<mlir_ts::OpaqueType>(resType))
             {
                 auto ptrOfElementValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), in,
                     MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));                
@@ -208,9 +208,9 @@ class CastLogicHelper
             }            
         }
 
-        if (auto resFuncType = resType.dyn_cast<mlir_ts::FunctionType>())
+        if (auto resFuncType = dyn_cast<mlir_ts::FunctionType>(resType))
         {
-            if (auto inBoundFunc = inType.dyn_cast<mlir_ts::BoundFunctionType>())
+            if (auto inBoundFunc = dyn_cast<mlir_ts::BoundFunctionType>(inType))
             {
                 // somehow llvm.trampoline accepts only direct method symbol
                 /*
@@ -237,9 +237,9 @@ class CastLogicHelper
             }
         }
 
-        if (auto resHybridFunc = resType.dyn_cast<mlir_ts::HybridFunctionType>())
+        if (auto resHybridFunc = dyn_cast<mlir_ts::HybridFunctionType>(resType))
         {
-            if (auto inFuncType = inType.dyn_cast<mlir_ts::FunctionType>())
+            if (auto inFuncType = dyn_cast<mlir_ts::FunctionType>(inType))
             {
                 // BoundFunction is the same as HybridFunction
                 // null this
@@ -249,35 +249,35 @@ class CastLogicHelper
             }
         }
 
-        if (auto resRefType = resType.dyn_cast<mlir_ts::RefType>())
+        if (auto resRefType = dyn_cast<mlir_ts::RefType>(resType))
         {
-            if (auto inBoundRef = inType.dyn_cast<mlir_ts::BoundRefType>())
+            if (auto inBoundRef = dyn_cast<mlir_ts::BoundRefType>(inType))
             {
                 return castBoundRefToRef(in, inBoundRef, resRefType);
             }
         }
 
-        if (auto tupleTypeRes = resType.dyn_cast<mlir_ts::TupleType>())
+        if (auto tupleTypeRes = dyn_cast<mlir_ts::TupleType>(resType))
         {
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::ConstTupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 return castTupleToTuple(in, tupleTypeIn.getFields(), tupleTypeRes);
             }
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::TupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 return castTupleToTuple(in, tupleTypeIn.getFields(), tupleTypeRes);
             }
         }
 
-        if (auto nullType = inType.dyn_cast<mlir_ts::NullType>())
+        if (auto nullType = dyn_cast<mlir_ts::NullType>(inType))
         {
-            if (auto ifaceType = resType.dyn_cast<mlir_ts::InterfaceType>())
+            if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(resType))
             {
                 // create null interface
                 return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, in, in);
             }
 
-            if (auto resHybridFunc = resType.dyn_cast<mlir_ts::HybridFunctionType>())
+            if (auto resHybridFunc = dyn_cast<mlir_ts::HybridFunctionType>(resType))
             {
                 // null this
                 auto thisNullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
@@ -288,55 +288,55 @@ class CastLogicHelper
             }
         }
 
-        if (auto stringTypeRes = resType.dyn_cast<mlir_ts::StringType>())
+        if (auto stringTypeRes = dyn_cast<mlir_ts::StringType>(resType))
         {
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::ConstTupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 return castTupleToString<mlir_ts::ConstTupleType>(in, inType, tupleTypeIn);
             }
 
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::TupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 return castTupleToString<mlir_ts::TupleType>(in, inType, tupleTypeIn);
             }
         }
 
-        if (auto interfaceTypeRes = resType.dyn_cast<mlir_ts::InterfaceType>())
+        if (auto interfaceTypeRes = dyn_cast<mlir_ts::InterfaceType>(resType))
         {
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::ConstTupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
             }
 
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::TupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
             }
         }
 
-        if (auto undefType = inType.dyn_cast<mlir_ts::UndefinedType>())
+        if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(inType))
         {
-            if (auto stringTypeRes = resType.dyn_cast<mlir_ts::StringType>())
+            if (auto stringTypeRes = dyn_cast<mlir_ts::StringType>(resType))
             {
                 return rewriter.create<mlir_ts::ConstantOp>(loc, stringTypeRes, rewriter.getStringAttr(UNDEFINED_NAME));
             }
         }
 
-        if (auto boolType = resType.dyn_cast<mlir_ts::BooleanType>())
+        if (auto boolType = dyn_cast<mlir_ts::BooleanType>(resType))
         {
-            if (auto tupleType = inType.dyn_cast<mlir_ts::TupleType>())
+            if (auto tupleType = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 auto llvmBoolType = tch.convertType(boolType);
                 return rewriter.create<mlir_ts::ConstantOp>(loc, llvmBoolType, rewriter.getBoolAttr(true));
             }
 
-            if (auto constTupleType = inType.dyn_cast<mlir_ts::ConstTupleType>())
+            if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 auto llvmBoolType = tch.convertType(boolType);
                 return rewriter.create<mlir_ts::ConstantOp>(loc, llvmBoolType, rewriter.getBoolAttr(true));
             }
 
-            if (auto ifaceType = inType.dyn_cast<mlir_ts::InterfaceType>())
+            if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(inType))
             {
                 auto ptrValue =
                     rewriter.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
@@ -345,7 +345,7 @@ class CastLogicHelper
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
             }
 
-            if (auto hybridFuncType = inType.dyn_cast<mlir_ts::HybridFunctionType>())
+            if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(inType))
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
@@ -354,7 +354,7 @@ class CastLogicHelper
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
             }
 
-            if (auto boundFuncType = inType.dyn_cast<mlir_ts::BoundFunctionType>())
+            if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(inType))
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
@@ -363,13 +363,13 @@ class CastLogicHelper
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
             }
 
-            if (auto funcType = inType.dyn_cast<mlir_ts::FunctionType>())
+            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(inType))
             {
                 auto llvmBoolType = tch.convertType(boolType);
                 return castLLVMTypes(in, inLLVMType, boolType, llvmBoolType);
             }
 
-            if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(inType))
             {
                 // TODO: use cond switch
                 auto hasValue = rewriter.create<mlir_ts::HasValueOp>(loc, boolType, in);
@@ -388,7 +388,7 @@ class CastLogicHelper
                 }
             }
 
-            if (auto arrayType = inType.dyn_cast<mlir_ts::ArrayType>())
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(inType))
             {
                 auto ptrValue = extractArrayPtr(in, arrayType);
                 auto inLLVMType = tch.convertType(ptrValue.getType());
@@ -396,7 +396,7 @@ class CastLogicHelper
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
             }            
 
-            if (auto unionType = inType.dyn_cast<mlir_ts::UnionType>())
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(inType))
             {
                 MLIRTypeHelper mth(unionType.getContext());
                 mlir::Type baseType;
@@ -416,7 +416,7 @@ class CastLogicHelper
         }
 
         // cast value value to optional value
-        if (auto optType = resType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(resType))
         {
             if (inType.isa<mlir_ts::UndefinedType>())
             {
@@ -427,7 +427,7 @@ class CastLogicHelper
             return rewriter.create<mlir_ts::OptionalValueOp>(loc, resType, valCasted);
         }
 
-        if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(inType))
         {
             auto val = rewriter.create<mlir_ts::ValueOrDefaultOp>(loc, optType.getElementType(), in);
             return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
@@ -435,14 +435,14 @@ class CastLogicHelper
 
         if (inType.isa<mlir_ts::UndefinedType>())
         {
-            if (auto ifaceType = resType.dyn_cast<mlir_ts::InterfaceType>())
+            if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(resType))
             {
                 // create null interface
                 auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(ifaceType.getContext()));
                 return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, nullVal, nullVal);
             }
 
-            if (auto classType = resType.dyn_cast<mlir_ts::ClassType>())
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(resType))
             {
                 // create null class
                 auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(classType.getContext()));
@@ -450,20 +450,20 @@ class CastLogicHelper
             }
         }
 
-        if (auto arrType = resType.dyn_cast<mlir_ts::ArrayType>())
+        if (auto arrType = dyn_cast<mlir_ts::ArrayType>(resType))
         {
             return castToArrayType(in, inType, resType);
         }
 
-        if (auto opaqueType = resType.dyn_cast<mlir_ts::OpaqueType>())
+        if (auto opaqueType = dyn_cast<mlir_ts::OpaqueType>(resType))
         {
-            if (auto ifaceType = inType.dyn_cast<mlir_ts::InterfaceType>())
+            if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(inType))
             {
                 auto ptrValue = rewriter.create<mlir_ts::ExtractInterfaceThisOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
                 return ptrValue;
             }
 
-            if (auto hybridFuncType = inType.dyn_cast<mlir_ts::HybridFunctionType>())
+            if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(inType))
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
@@ -473,7 +473,7 @@ class CastLogicHelper
                 return bitcast;
             }
 
-            if (auto boundFuncType = inType.dyn_cast<mlir_ts::BoundFunctionType>())
+            if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(inType))
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
@@ -486,9 +486,9 @@ class CastLogicHelper
 
         /*
         // TODO: we do not need as struct can cast to struct
-        if (auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>())
+        if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
-            if (auto resUnionType = resType.dyn_cast<mlir_ts::UnionType>())
+            if (auto resUnionType = dyn_cast<mlir_ts::UnionType>(resType))
             {
                 LLVMTypeConverterHelper ltch((LLVMTypeConverter &)tch.typeConverter);
                 auto maxStoreType = ltch.findMaxSizeType(inUnionType);
@@ -501,10 +501,10 @@ class CastLogicHelper
         }
         */
 
-        if (auto resUnionType = resType.dyn_cast<mlir_ts::UnionType>())
+        if (auto resUnionType = dyn_cast<mlir_ts::UnionType>(resType))
         {
             // TODO: do I need to test income types?
-            if (auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>())
+            if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
             {
                 // nothing to do
             }
@@ -526,7 +526,7 @@ class CastLogicHelper
             }
         }
 
-        if (auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>())
+        if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
             MLIRTypeHelper mth(inUnionType.getContext());
             mlir::Type baseType;
@@ -539,7 +539,7 @@ class CastLogicHelper
             // skip to next steps
         }       
 
-        if (auto undefType = inType.dyn_cast<mlir_ts::UndefinedType>())
+        if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(inType))
         {
             in.getDefiningOp()->emitWarning("using casting to undefined value");
             return rewriter.create<mlir_ts::UndefOp>(loc, resType);
@@ -714,7 +714,7 @@ class CastLogicHelper
         }
 
         // value to ref of value
-        if (auto destPtr = resLLVMType.dyn_cast<LLVM::LLVMPointerType>())
+        if (auto destPtr = dyn_cast<LLVM::LLVMPointerType>(resLLVMType))
         {
             llvm_unreachable("review usage");
             // if (destPtr.getElementType() == inLLVMType)
@@ -875,7 +875,7 @@ class CastLogicHelper
         auto size = 0;
         bool byValue = true;
         bool isUndef = false;
-        if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
+        if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(type))
         {
             size = constArrayType.getSize();
             srcElementType = constArrayType.getElementType();
@@ -890,26 +890,26 @@ class CastLogicHelper
                 return mlir::Value();
             }
         }
-        else if (auto nullType = type.dyn_cast<mlir_ts::NullType>())
+        else if (auto nullType = dyn_cast<mlir_ts::NullType>(type))
         {
             size = 0;
             srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
             llvmSrcElementType = tch.convertType(srcElementType);         
             byValue = false;               
         }   
-        else if (auto undefType = type.dyn_cast<mlir_ts::UndefinedType>())
+        else if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(type))
         {
             size = 0;
             srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
             llvmSrcElementType = tch.convertType(srcElementType);                  
             isUndef = true;      
         }
-        else if (auto ptrValue = type.dyn_cast<LLVM::LLVMPointerType>())
+        else if (auto ptrValue = dyn_cast<LLVM::LLVMPointerType>(type))
         {
             llvm_unreachable("review usage");
 
             // auto elementType = ptrValue.getElementType();
-            // if (auto arrayType = elementType.dyn_cast<LLVM::LLVMArrayType>())
+            // if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(elementType))
             // {
             //     size = arrayType.getNumElements();
             //     llvmSrcElementType = tch.convertType(arrayType.getElementType());
@@ -980,7 +980,7 @@ class CastLogicHelper
         mlir::Value typeOfValue;
         auto valueForBoxing = in;
 
-        if (auto unionType = inType.dyn_cast<mlir_ts::UnionType>())
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
             MLIRTypeHelper mth(unionType.getContext());
             mlir::Type baseType;

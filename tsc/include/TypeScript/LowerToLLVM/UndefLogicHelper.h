@@ -47,8 +47,8 @@ class UndefLogicHelper
         auto right = binOp->getOperand(1);
         auto leftType = left.getType();
         auto rightType = right.getType();
-        auto leftUndefType = leftType.dyn_cast<mlir_ts::UndefinedType>();
-        auto rightUndefType = rightType.dyn_cast<mlir_ts::UndefinedType>();
+        auto leftUndefType = dyn_cast<mlir_ts::UndefinedType>(leftType);
+        auto rightUndefType = dyn_cast<mlir_ts::UndefinedType>(rightType);
 
         assert(leftUndefType || rightUndefType);
 

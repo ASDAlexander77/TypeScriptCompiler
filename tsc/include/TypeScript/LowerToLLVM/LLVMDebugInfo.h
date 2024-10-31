@@ -36,16 +36,16 @@ struct CompositeSizesTrack
     void nextElementType(LLVM::DITypeAttr diTypeAttr)
     {
         shiftOffset();
-        if (auto basicDiTypeAttr = diTypeAttr.dyn_cast<LLVM::DIBasicTypeAttr>())
+        if (auto basicDiTypeAttr = dyn_cast<LLVM::DIBasicTypeAttr>(diTypeAttr))
         {
             elementSizeInBits = elementAlignInBits = basicDiTypeAttr.getSizeInBits();
         }
-        else if (auto compDiTypeAttr = diTypeAttr.dyn_cast<LLVM::DICompositeTypeAttr>())
+        else if (auto compDiTypeAttr = dyn_cast<LLVM::DICompositeTypeAttr>(diTypeAttr))
         {
             elementSizeInBits = compDiTypeAttr.getSizeInBits();
             elementAlignInBits = compDiTypeAttr.getAlignInBits();
         }
-        else if (auto derivedDiTypeAttr = diTypeAttr.dyn_cast<LLVM::DIDerivedTypeAttr>())
+        else if (auto derivedDiTypeAttr = dyn_cast<LLVM::DIDerivedTypeAttr>(diTypeAttr))
         {
             elementSizeInBits = derivedDiTypeAttr.getSizeInBits();
             elementAlignInBits = derivedDiTypeAttr.getAlignInBits();
@@ -119,18 +119,18 @@ class LLVMDebugInfoHelper
             return basicType;
         }
 
-        if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
+        if (auto stringType = dyn_cast<mlir_ts::StringType>(type))
         {
             return getDIType(stringType, file, line);
         }
 
-        if (auto opaqueType = type.dyn_cast<mlir_ts::OpaqueType>())
+        if (auto opaqueType = dyn_cast<mlir_ts::OpaqueType>(type))
         {
             return getDIType(opaqueType, file, line);
         }
 
         // special case
-        if (auto anyType = type.dyn_cast<mlir_ts::AnyType>())
+        if (auto anyType = dyn_cast<mlir_ts::AnyType>(type))
         {
             return getDIType(location, anyType, file, line, scope);
         }
@@ -142,7 +142,7 @@ class LLVMDebugInfoHelper
         }
 #endif        
 
-        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             MLIRTypeHelper mth(context);
             if (mth.isUnionTypeNeedsTag(location, unionType))
@@ -151,7 +151,7 @@ class LLVMDebugInfoHelper
             }
         }
 
-        if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
         {
             return getDITypeWithFields(location, tupleType, "tuple", true, file, line, scope);
         }
@@ -161,12 +161,12 @@ class LLVMDebugInfoHelper
             return getDIType(location, classType, file, line, scope);
         }
 
-        if (auto classStorageType = type.dyn_cast<mlir_ts::ClassStorageType>())
+        if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(type))
         {
             return getDITypeWithFields(location, classStorageType, classStorageType.getName().getValue().str(), false, file, line, scope);
         }
 
-        if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
+        if (auto enumType = dyn_cast<mlir_ts::EnumType>(type))
         {
             return getDIType(location, enumType, file, line, scope);
         }

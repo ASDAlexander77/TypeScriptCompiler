@@ -83,7 +83,7 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
         LLVM_DEBUG(llvm::dbgs() << "attribute: " << attribute.getName() << " val: " << attribute.getValue() << "\n");
 
         auto isNestAttr = attribute.getName() == TS_NEST_ATTRIBUTE;
-        auto isGcAttr = attribute.getValue().dyn_cast<StringAttr>().str() == TS_GC_ATTRIBUTE;
+        auto isGcAttr = dyn_cast<StringAttr>(attribute.getValue()).str() == TS_GC_ATTRIBUTE;
 
         // TODO:
         if (isNestAttr || isGcAttr)

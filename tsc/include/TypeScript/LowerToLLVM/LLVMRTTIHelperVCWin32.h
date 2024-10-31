@@ -125,7 +125,7 @@ class LLVMRTTIHelperVCWin32
     void setType(mlir::Type type)
     {
         auto normalizedType = MLIRHelper::stripLiteralType(type);
-        if (auto enumType = normalizedType.dyn_cast<mlir_ts::EnumType>())
+        if (auto enumType = dyn_cast<mlir_ts::EnumType>(normalizedType))
         {
             normalizedType = enumType.getElementType();
         }
