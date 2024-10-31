@@ -11301,7 +11301,7 @@ class MLIRGenImpl
             }
 
             auto valueFactory =
-            (elementType.isa<mlir_ts::AnyType>())
+            (isa<mlir_ts::AnyType>(elementType))
                 ? std::bind(&MLIRGenImpl::anyOrUndefined, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4)
                 : std::bind(&MLIRGenImpl::optionalValueOrUndefined, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
 
