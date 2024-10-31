@@ -88,15 +88,15 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
     LLVMTypeConverterHelper llvmtch(&typeConverter);
 
-    if (leftType.isa<mlir_ts::OptionalType>() || rightType.isa<mlir_ts::OptionalType>())
+    if (leftType.isa<mlir_ts::OptionalType>() || isa<mlir_ts::OptionalType>(rightType))
     {
         return OptionalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
-    else if (leftType.isa<mlir_ts::UndefinedType>() || rightType.isa<mlir_ts::UndefinedType>())
+    else if (leftType.isa<mlir_ts::UndefinedType>() || isa<mlir_ts::UndefinedType>(rightType))
     {
         return UndefTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
-    else if (leftType.isIntOrIndex() || leftType.isa<mlir_ts::BooleanType>() || leftType.isa<mlir_ts::CharType>())
+    else if (leftType.isIntOrIndex() || isa<mlir_ts::BooleanType>(leftType) || isa<mlir_ts::CharType>(leftType))
     {
         auto value = builder.create<StdIOpTy>(loc, v1, left, right);
         return value;
@@ -139,8 +139,8 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         return value;
     }
-    else if (leftType.isa<mlir_ts::AnyType>() || leftType.isa<mlir_ts::ClassType>() ||
-             leftType.isa<mlir_ts::OpaqueType>() || leftType.isa<mlir_ts::NullType>())
+    else if (leftType.isa<mlir_ts::AnyType>() || isa<mlir_ts::ClassType>(leftType) ||
+ isa<mlir_ts::OpaqueType>(leftType) || isa<mlir_ts::NullType>(leftType))
     {
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);

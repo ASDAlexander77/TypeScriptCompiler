@@ -84,13 +84,13 @@ class CastLogicHelper
             return cast(in, literalType.getElementType(), tch.convertType(literalType.getElementType()), resType, resLLVMType);
         }
 
-        if (inType.isa<mlir_ts::CharType>() && resType.isa<mlir_ts::StringType>())
+        if (inType.isa<mlir_ts::CharType>() && isa<mlir_ts::StringType>(resType))
         {
             // types are equals
             return rewriter.create<mlir_ts::CharToStringOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
         }
 
-        auto isResString = resType.isa<mlir_ts::StringType>();
+        auto isResString = isa<mlir_ts::StringType>(resType);
         if (inLLVMType.isInteger(1) && isResString)
         {
             return castBoolToString(in);
@@ -141,13 +141,13 @@ class CastLogicHelper
             return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
         }        
 
-        auto isResAny = resType.isa<mlir_ts::AnyType>();
+        auto isResAny = isa<mlir_ts::AnyType>(resType);
         if (isResAny)
         {
             return castToAny(in, inType, inLLVMType);
         }
 
-        auto isInAny = inType.isa<mlir_ts::AnyType>();
+        auto isInAny = isa<mlir_ts::AnyType>(inType);
         if (isInAny)
         {
             return castFromAny(in, resType);
@@ -633,7 +633,7 @@ class CastLogicHelper
             return rewriter.create<mlir::arith::SIToFPOp>(loc, resLLVMType, intVal);
         }
 
-        if (isInt(inLLVMType) && resLLVMType.isa<LLVM::LLVMPointerType>())
+        if (isInt(inLLVMType) && isa<LLVM::LLVMPointerType>(resLLVMType))
         {
             return rewriter.create<LLVM::IntToPtrOp>(loc, resLLVMType, in);
         }
@@ -659,7 +659,7 @@ class CastLogicHelper
         }
 
         // ptrs cast
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && resLLVMType.isa<LLVM::LLVMPointerType>())
+        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isa<LLVM::LLVMPointerType>(resLLVMType))
         {
             return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
         }
@@ -684,7 +684,7 @@ class CastLogicHelper
 
         // review usage of ts.Type here
         // struct to struct. TODO: add validation
-        if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
+        if (inLLVMType.isa<LLVM::LLVMStructType>() && isa<LLVM::LLVMStructType>(resLLVMType))
         {
             LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
             auto srcSize = llvmtch.getTypeSizeEstimateInBytes(inLLVMType);

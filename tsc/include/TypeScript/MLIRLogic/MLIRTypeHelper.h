@@ -201,13 +201,13 @@ class MLIRTypeHelper
     bool isValueType(mlir::Type typeIn)
     {
         auto type = getBaseType(typeIn);
-        return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::NumberType>() || type.isa<mlir_ts::BooleanType>() ||
-                        type.isa<mlir_ts::TupleType>() || type.isa<mlir_ts::ConstTupleType>() || type.isa<mlir_ts::ConstArrayType>());
+        return type && (type.isIntOrIndexOrFloat() || isa<mlir_ts::NumberType>(type) || isa<mlir_ts::BooleanType>(type) ||
+ isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type) || isa<mlir_ts::ConstArrayType>(type));
     }
 
     bool isNumericType(mlir::Type type)
     {
-        return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::NumberType>());
+        return type && (type.isIntOrIndexOrFloat() || isa<mlir_ts::NumberType>(type));
     }
 
     mlir::Type isBoundReference(mlir::Type elementType, bool &isBound)
@@ -231,16 +231,16 @@ class MLIRTypeHelper
     bool isNullableOrOptionalType(mlir::Type typeIn)
     {
         if (typeIn.isa<mlir_ts::NullType>() 
-            || typeIn.isa<mlir_ts::UndefinedType>() 
-            || typeIn.isa<mlir_ts::StringType>() 
-            || typeIn.isa<mlir_ts::ObjectType>() 
-            || typeIn.isa<mlir_ts::ClassType>() 
-            || typeIn.isa<mlir_ts::InterfaceType>()
-            || typeIn.isa<mlir_ts::OptionalType>()
-            || typeIn.isa<mlir_ts::AnyType>()
-            || typeIn.isa<mlir_ts::UnknownType>()
-            || typeIn.isa<mlir_ts::RefType>()
-            || typeIn.isa<mlir_ts::ValueRefType>())
+            || isa<mlir_ts::UndefinedType>(typeIn) 
+            || isa<mlir_ts::StringType>(typeIn) 
+            || isa<mlir_ts::ObjectType>(typeIn) 
+            || isa<mlir_ts::ClassType>(typeIn) 
+            || isa<mlir_ts::InterfaceType>(typeIn)
+            || isa<mlir_ts::OptionalType>(typeIn)
+            || isa<mlir_ts::AnyType>(typeIn)
+            || isa<mlir_ts::UnknownType>(typeIn)
+            || isa<mlir_ts::RefType>(typeIn)
+            || isa<mlir_ts::ValueRefType>(typeIn))
         {
             return true;            
         }
@@ -616,7 +616,7 @@ class MLIRTypeHelper
     // TODO: review virtual calls
     bool isNoneType(mlir::Type type)
     {
-        return !type || type.isa<mlir::NoneType>();
+        return !type || isa<mlir::NoneType>(type);
     }
 
     bool isEmptyTuple(mlir::Type type)
@@ -871,7 +871,7 @@ class MLIRTypeHelper
     {
         mlir::Type paramsType;
 
-        auto isOptType = funcType.isa<mlir_ts::OptionalType>();
+        auto isOptType = isa<mlir_ts::OptionalType>(funcType);
 
         funcType = stripOptionalType(funcType);    
 
@@ -1076,7 +1076,7 @@ class MLIRTypeHelper
 
     bool ShouldThisParamBeIgnored(mlir::Type inFuncType, mlir::Type resFuncType) {
         if (inFuncType == resFuncType) return false;
-        return inFuncType.isa<mlir_ts::BoundFunctionType>() || inFuncType.isa<mlir_ts::ExtensionFunctionType>();
+        return isa<mlir_ts::BoundFunctionType>(inFuncType) || isa<mlir_ts::ExtensionFunctionType>(inFuncType);
     }
 
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Location location, mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
@@ -1091,12 +1091,12 @@ class MLIRTypeHelper
     }
 
     bool isBoolType(mlir::Type type) {
-        if (type.isa<mlir_ts::BooleanType>() || type.isa<mlir_ts::TypePredicateType>()) return true;
-        return type.isa<mlir::IntegerType>() && type.getIntOrFloatBitWidth() == 1;
+        if (type.isa<mlir_ts::BooleanType>() || isa<mlir_ts::TypePredicateType>(type)) return true;
+        return isa<mlir::IntegerType>(type) && type.getIntOrFloatBitWidth() == 1;
     }
 
     bool isAnyOrUnknownOrObjectType(mlir::Type type) {
-        return type.isa<mlir_ts::AnyType>() || type.isa<mlir_ts::UnknownType>() || type.isa<mlir_ts::ObjectType>();
+        return isa<mlir_ts::AnyType>(type) || isa<mlir_ts::UnknownType>(type) || isa<mlir_ts::ObjectType>(type);
     }
 
     // TODO: add types such as opt, reference, array as they may have nested types Is which is not equal
@@ -1334,7 +1334,7 @@ class MLIRTypeHelper
                 if (foundIndex >= 0)
                 {
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
-                    auto test = foundField.type.isa<mlir_ts::FunctionType>() && fieldType.isa<mlir_ts::FunctionType>()
+                    auto test = foundField.type.isa<mlir_ts::FunctionType>() && isa<mlir_ts::FunctionType>(fieldType)
                                     ? TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType).result == MatchResultType::Match
                                     : stripLiteralType(fieldType) == stripLiteralType(foundField.type);
                     if (!test)
@@ -1485,7 +1485,7 @@ class MLIRTypeHelper
         {
             auto srcTypeUnwrapped = stripOptionalType(srcType);
             auto destTypeUnwrapped = stripOptionalType(destType);
-            if (!srcTypeUnwrapped.isa<mlir_ts::FunctionType>() && destTypeUnwrapped.isa<mlir_ts::FunctionType>())
+            if (!srcTypeUnwrapped.isa<mlir_ts::FunctionType>() && isa<mlir_ts::FunctionType>(destTypeUnwrapped))
             {
                 // because of data loss we need to return false;
                 return false;
@@ -1834,7 +1834,7 @@ class MLIRTypeHelper
     {
         auto storeType = getUnionTypeWithMerge(location, unionType.getTypes(), true);
         baseType = storeType;
-        return storeType.isa<mlir_ts::UnionType>();
+        return isa<mlir_ts::UnionType>(storeType);
     }
 
     ExtendsResult appendInferTypeToContext(mlir::Location location, mlir::Type srcType, mlir_ts::InferType inferType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleType = false)
@@ -2040,7 +2040,7 @@ class MLIRTypeHelper
             
             return mlir::success();            
         }
-        else if (srcType.isa<mlir_ts::ArrayType>() || srcType.isa<mlir_ts::ConstArrayType>() || srcType.isa<mlir_ts::StringType>())
+        else if (srcType.isa<mlir_ts::ArrayType>() || isa<mlir_ts::ConstArrayType>(srcType) || isa<mlir_ts::StringType>(srcType))
         {
             // TODO: do not break the order as it is used in Debug info
             destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context), false });
@@ -2673,14 +2673,14 @@ class MLIRTypeHelper
         {
             if (isa<mlir_ts::AnyType>(objType.getStorageType()))
             {
-                return (srcType.isa<mlir_ts::TupleType>() || srcType.isa<mlir_ts::ConstTupleType>() || srcType.isa<mlir_ts::ObjectType>()) 
+                return (srcType.isa<mlir_ts::TupleType>() || isa<mlir_ts::ConstTupleType>(srcType) || isa<mlir_ts::ObjectType>(srcType)) 
                     ? ExtendsResult::True : ExtendsResult::False;
             }
         }        
 
         // TODO: do we need to check types inside?
-        if ((srcType.isa<mlir_ts::TypePredicateType>() || srcType.isa<mlir_ts::BooleanType>())
-            && (extendType.isa<mlir_ts::TypePredicateType>() || extendType.isa<mlir_ts::BooleanType>()))
+        if ((srcType.isa<mlir_ts::TypePredicateType>() || isa<mlir_ts::BooleanType>(srcType))
+            && (extendType.isa<mlir_ts::TypePredicateType>() || isa<mlir_ts::BooleanType>(extendType)))
         {
             return ExtendsResult::True;
         }        
@@ -2837,7 +2837,7 @@ class MLIRTypeHelper
         {
             typesAll.push_back(type);
             isAllValueTypes &= isValueType(type);
-            isAllLiteralTypes &= type.isa<mlir_ts::LiteralType>();
+            isAllLiteralTypes &= isa<mlir_ts::LiteralType>(type);
         }
 
         if ((isAllValueTypes || isAllLiteralTypes) && unionContext.isNullable)
@@ -2887,7 +2887,7 @@ class MLIRTypeHelper
         // check if type is nullable or undefinable
         for (auto type : types)
         {
-            if (type.isa<mlir_ts::UndefinedType>() || type.isa<mlir_ts::OptionalType>())
+            if (type.isa<mlir_ts::UndefinedType>() || isa<mlir_ts::OptionalType>(type))
             {
                 unionContext.isUndefined = true;
                 continue;
@@ -3031,7 +3031,7 @@ class MLIRTypeHelper
             getClassInfoByFullName, getGenericClassInfoByFullName, 
             getInterfaceInfoByFullName, getGenericInterfaceInfoByFullName
         );
-        return iter.some(type, [](mlir::Type type) { return type && type.isa<mlir_ts::NamedGenericType>(); });
+        return iter.some(type, [](mlir::Type type) { return type && isa<mlir_ts::NamedGenericType>(type); });
     }
 
     bool hasInferType(mlir::Type type)
@@ -3040,7 +3040,7 @@ class MLIRTypeHelper
             getClassInfoByFullName, getGenericClassInfoByFullName, 
             getInterfaceInfoByFullName, getGenericInterfaceInfoByFullName
         );
-        return iter.some(type, [](mlir::Type type) { return type && type.isa<mlir_ts::InferType>(); });
+        return iter.some(type, [](mlir::Type type) { return type && isa<mlir_ts::InferType>(type); });
     }    
 
     bool getAllInferTypes(mlir::Type type, SmallVector<mlir_ts::InferType> &inferTypes)

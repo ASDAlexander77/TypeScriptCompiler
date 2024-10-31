@@ -1780,9 +1780,9 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         if (!isCaptured)
         {
             auto  tsStorageType = referenceType.getElementType();
-            if (tsStorageType.isa<mlir_ts::ClassType>() || tsStorageType.isa<mlir_ts::StringType>() ||
-                tsStorageType.isa<mlir_ts::ArrayType>() || tsStorageType.isa<mlir_ts::ObjectType>() ||
-                tsStorageType.isa<mlir_ts::AnyType>())
+            if (tsStorageType.isa<mlir_ts::ClassType>() || isa<mlir_ts::StringType>(tsStorageType) ||
+ isa<mlir_ts::ArrayType>(tsStorageType) || isa<mlir_ts::ObjectType>(tsStorageType) ||
+ isa<mlir_ts::AnyType>(tsStorageType))
             {
                 TypeHelper th(rewriter);
 
@@ -3217,7 +3217,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             else if (auto castOp = dyn_cast<mlir_ts::CastOp>(op))
             {
                 auto castType = castOp.getRes().getType();
-                if (castType.isa<mlir_ts::ArrayType>() || castType.isa<mlir_ts::TupleType>()) 
+                if (castType.isa<mlir_ts::ArrayType>() || isa<mlir_ts::TupleType>(castType)) 
                 {
                    createAsGlobalConstructor = true; 
                 }
@@ -5754,7 +5754,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 auto diType = di.getDIType(location, mlir::Type(), dataType, file, line, file);
 
                 // MLIRTypeHelper mth(module.getContext());
-                // if ((mth.isAnyFunctionType(dataType) || dataType.isa<mlir_ts::TupleType>()) && argIndex > 0) {
+                // if ((mth.isAnyFunctionType(dataType) || isa<mlir_ts::TupleType>(dataType)) && argIndex > 0) {
                 //     diType = di.getDIPointerType(diType, file, line);
                 // }
 

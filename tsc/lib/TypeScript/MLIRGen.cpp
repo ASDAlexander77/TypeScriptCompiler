@@ -2194,7 +2194,7 @@ class MLIRGenImpl
                     if (callOpsCount <= paramIndex)
                     {
                         // there is no more ops
-                        if (paramInfo->getIsOptional() || paramType.isa<mlir_ts::OptionalType>())
+                        if (paramInfo->getIsOptional() || isa<mlir_ts::OptionalType>(paramType))
                         {
                             processed++;
                             continue;
@@ -3582,7 +3582,7 @@ class MLIRGenImpl
         mlir::Location location, BindingElement objectBindingElement, mlir::Type type, mlir::Value init, const GenContext &genContext)
     {
         auto fieldName = getFieldNameFromBindingElement(objectBindingElement);
-        auto isNumericAccess = fieldName.isa<mlir::IntegerAttr>();
+        auto isNumericAccess = isa<mlir::IntegerAttr>(fieldName);
 
         LLVM_DEBUG(llvm::dbgs() << "ObjectBindingPattern:\n\t" << init << "\n\tprop: " << fieldName << "\n");
 
@@ -10442,7 +10442,7 @@ class MLIRGenImpl
             && callExpression->typeArguments.size() == 0;
 
         SmallVector<mlir::Value, 4> operands;
-        auto offsetArgs = funcType.isa<mlir_ts::BoundFunctionType>() || funcType.isa<mlir_ts::ExtensionFunctionType>() ? 1 : 0;
+        auto offsetArgs = isa<mlir_ts::BoundFunctionType>(funcType) || isa<mlir_ts::ExtensionFunctionType>(funcType) ? 1 : 0;
         if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext, offsetArgs, noReceiverTypesForGenericCall)))
         {
             return mlir::failure();
@@ -11093,7 +11093,7 @@ class MLIRGenImpl
         void detectVarArgTypeInfo(mlir::Type funcType, bool disableSpreadParam)
         {
             auto tupleParamsType = mth.getParamsTupleTypeFromFuncRef(funcType);
-            if (!tupleParamsType || tupleParamsType.isa<mlir::NoneType>())
+            if (!tupleParamsType || isa<mlir::NoneType>(tupleParamsType))
             {
                 return;
             }
@@ -12165,7 +12165,7 @@ class MLIRGenImpl
     {
         auto attrVal = getNumericLiteralAttribute(numericLiteral);
         auto attrType = attrVal.cast<mlir::TypedAttr>().getType();
-        auto valueType = attrType.isa<mlir::FloatType>() ? getNumberType() : attrType;
+        auto valueType = isa<mlir::FloatType>(attrType) ? getNumberType() : attrType;
         auto literalType = mlir_ts::LiteralType::get(attrVal, valueType);
         return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
     }
@@ -12958,7 +12958,7 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Recevier type: " << receiverType << "\n";);
 
-            if ((receiverType.isa<mlir_ts::TupleType>() || receiverType.isa<mlir_ts::ConstTupleType>() || receiverType.isa<mlir_ts::InterfaceType>())
+            if ((receiverType.isa<mlir_ts::TupleType>() || isa<mlir_ts::ConstTupleType>(receiverType) || isa<mlir_ts::InterfaceType>(receiverType))
                  && objectLiteral->properties.size() == 0)
             {
                 // return undef tuple
@@ -18142,18 +18142,18 @@ genContext);
 
         // toPrimitive
         if ((type.isa<mlir_ts::StringType>() 
-            || type.isa<mlir_ts::NumberType>() 
-            || type.isa<mlir_ts::BigIntType>() 
-            || type.isa<mlir_ts::BooleanType>() 
-            || type.isa<mlir_ts::UndefinedType>() 
-            || type.isa<mlir_ts::SymbolType>() 
-            || type.isa<mlir_ts::NullType>())
+            || isa<mlir_ts::NumberType>(type) 
+            || isa<mlir_ts::BigIntType>(type) 
+            || isa<mlir_ts::BooleanType>(type) 
+            || isa<mlir_ts::UndefinedType>(type) 
+            || isa<mlir_ts::SymbolType>(type) 
+            || isa<mlir_ts::NullType>(type))
             && (valueType.isa<mlir_ts::ClassType>()
-                || valueType.isa<mlir_ts::ClassStorageType>()
-                || valueType.isa<mlir_ts::ObjectType>()
-                || valueType.isa<mlir_ts::InterfaceType>()
-                || valueType.isa<mlir_ts::TupleType>()
-                || valueType.isa<mlir_ts::ConstTupleType>()))
+                || isa<mlir_ts::ClassStorageType>(valueType)
+                || isa<mlir_ts::ObjectType>(valueType)
+                || isa<mlir_ts::InterfaceType>(valueType)
+                || isa<mlir_ts::TupleType>(valueType)
+                || isa<mlir_ts::ConstTupleType>(valueType)))
         {
             // check if we need to call toPrimitive
             if (auto toPrimitiveType = evaluateProperty(location, value, SYMBOL_TO_PRIMITIVE, genContext))
@@ -18477,12 +18477,12 @@ genContext);
         if (auto anyType = dyn_cast<mlir_ts::AnyType>(valueType))
         {
             if (type.isa<mlir_ts::NumberType>() 
-                || type.isa<mlir_ts::BooleanType>()
-                || type.isa<mlir_ts::StringType>()
-                || type.isa<mlir::IntegerType>()
-                || type.isa<mlir::Float32Type>()
-                || type.isa<mlir::Float64Type>()
-                || type.isa<mlir_ts::ClassType>())
+                || isa<mlir_ts::BooleanType>(type)
+                || isa<mlir_ts::StringType>(type)
+                || isa<mlir::IntegerType>(type)
+                || isa<mlir::Float32Type>(type)
+                || isa<mlir::Float64Type>(type)
+                || isa<mlir_ts::ClassType>(type))
             {
                 return castFromAny(location, type, value, genContext);
             }
@@ -18561,8 +18561,8 @@ genContext);
             return mlir::failure();
         }        
 
-        if (type.isa<mlir_ts::ArrayType>() && valueType.isa<mlir_ts::TupleType>() 
-            || type.isa<mlir_ts::TupleType>() && valueType.isa<mlir_ts::ArrayType>())
+        if (type.isa<mlir_ts::ArrayType>() && isa<mlir_ts::TupleType>(valueType) 
+            || isa<mlir_ts::TupleType>(type) && isa<mlir_ts::ArrayType>(valueType))
         {
             emitError(location, "invalid cast from ") << valueType << " to " << type;
             return mlir::failure();
@@ -20400,7 +20400,7 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! condition type check: " << checkType << ", extends: " << extendsType << "\n";);
 
-        if (checkType.isa<mlir_ts::NamedGenericType>() || extendsType.isa<mlir_ts::NamedGenericType>())
+        if (checkType.isa<mlir_ts::NamedGenericType>() || isa<mlir_ts::NamedGenericType>(extendsType))
         {
             // we do not need to resolve it, it is generic
             auto trueType = getType(conditionalTypeNode->trueType, genContext);
@@ -20863,7 +20863,7 @@ genContext);
                                     << " \n\t\tconstraint item: " << typeParamItem << ", \n\t\tname: " << nameType
                                     << "] \n\ttype: " << type << "\n";);
 
-            if (mth.isNoneType(nameType) || nameType.isa<mlir_ts::NeverType>() || mth.isEmptyTuple(nameType))
+            if (mth.isNoneType(nameType) || isa<mlir_ts::NeverType>(nameType) || mth.isEmptyTuple(nameType))
             {
                 // filterting out
                 LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... filtered.\n";);
@@ -21934,12 +21934,12 @@ genContext);
             return left;
         }
 
-        if (left.isa<mlir_ts::AnyType>() || left.isa<mlir_ts::UnknownType>())
+        if (left.isa<mlir_ts::AnyType>() || isa<mlir_ts::UnknownType>(left))
         {
             return right;
         }
 
-        if (right.isa<mlir_ts::AnyType>() || right.isa<mlir_ts::UnknownType>())
+        if (right.isa<mlir_ts::AnyType>() || isa<mlir_ts::UnknownType>(right))
         {
             return left;
         }

@@ -183,7 +183,7 @@ class LLVMDebugInfoHelper
                 auto typeCode = dwarf::DW_ATE_signed;
                 StringRef typeName = "int";
                 auto size = intType.getIntOrFloatBitWidth(); 
-                if (type && type.isa<mlir_ts::CharType>())
+                if (type && isa<mlir_ts::CharType>(type))
                 {
                     typeName = "char";
                     typeCode = dwarf::DW_ATE_signed_char;
