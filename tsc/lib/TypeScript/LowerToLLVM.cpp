@@ -3208,7 +3208,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op) ||
                 isa<mlir_ts::SymbolCallInternalOp>(op) || isa<mlir_ts::CallInternalOp>(op) ||
                 isa<mlir_ts::CallHybridInternalOp>(op) || isa<mlir_ts::VariableOp>(op) || isa<mlir_ts::AllocaOp>(op) ||
-                isa<mlir_ts::CreateArrayOp>(op) || isa<mlir_ts::NewEmptyArrayOp>(op) || 
+                isa<mlir_ts::CreateArrayOp>(op) || isa<mlir_ts::NewEmptyArrayOp>(op) || isa<mlir_ts::CreateTupleOp>(op) ||
                 isa<mlir_ts::LoadOp>(op) || isa<mlir_ts::StoreOp>(op) || 
                 isa<mlir_ts::LoadLibraryPermanentlyOp>(op) || isa<mlir_ts::SearchForAddressOfSymbolOp>(op))
             {
