@@ -3216,7 +3216,8 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             }
             else if (auto castOp = dyn_cast<mlir_ts::CastOp>(op))
             {
-                if (castOp.getRes().getType().isa<mlir_ts::ArrayType>()) 
+                auto castType = castOp.getRes().getType();
+                if (castType.isa<mlir_ts::ArrayType>() || castType.isa<mlir_ts::TupleType>()) 
                 {
                    createAsGlobalConstructor = true; 
                 }
