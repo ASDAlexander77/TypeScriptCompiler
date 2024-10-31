@@ -360,7 +360,7 @@ class MLIRHelper
             {
                 return constArrayType.getElementType();
             }
-            else if (type.isa<mlir_ts::StringType>())
+            else if (isa<mlir_ts::StringType>(type))
             {
                 return mlir_ts::CharType::get(type.getContext());
             }

@@ -272,63 +272,63 @@ class MLIRTypeHelper
         {
             return mlir::StringAttr::get(context, std::string("f") + std::to_string(typeIn.getIntOrFloatBitWidth()));
         }
-        else if (typeIn.isa<mlir_ts::NullType>())
+        else if (isa<mlir_ts::NullType>(typeIn))
         {
             return mlir::StringAttr::get(context, "null");
         }
-        else if (typeIn.isa<mlir_ts::UndefinedType>()) 
+        else if (isa<mlir_ts::UndefinedType>(typeIn)) 
         {
             return mlir::StringAttr::get(context, "undefined");
         }
-        else if (typeIn.isa<mlir_ts::NumberType>())
+        else if (isa<mlir_ts::NumberType>(typeIn))
         {
             return mlir::StringAttr::get(context, "number");
         }
-        else if (typeIn.isa<mlir_ts::TupleType>())
+        else if (isa<mlir_ts::TupleType>(typeIn))
         {
             return mlir::StringAttr::get(context, "tuple");
         }
-        else if (typeIn.isa<mlir_ts::ObjectType>())
+        else if (isa<mlir_ts::ObjectType>(typeIn))
         {
             return mlir::StringAttr::get(context, "object");
         }
-        else if (typeIn.isa<mlir_ts::StringType>()) 
+        else if (isa<mlir_ts::StringType>(typeIn)) 
         {
             return mlir::StringAttr::get(context, "string");
         }
-        else if (typeIn.isa<mlir_ts::ObjectType>())
+        else if (isa<mlir_ts::ObjectType>(typeIn))
         {
             return mlir::StringAttr::get(context, "object");
         }
-        else if (typeIn.isa<mlir_ts::ClassType>()) 
+        else if (isa<mlir_ts::ClassType>(typeIn)) 
         {
             return mlir::StringAttr::get(context, "class");
         }
-        else if (typeIn.isa<mlir_ts::InterfaceType>())
+        else if (isa<mlir_ts::InterfaceType>(typeIn))
         {
             return mlir::StringAttr::get(context, "interface");
         }
-        else if (typeIn.isa<mlir_ts::OptionalType>())
+        else if (isa<mlir_ts::OptionalType>(typeIn))
         {
             return mlir::StringAttr::get(context, "optional");
         }
-        else if (typeIn.isa<mlir_ts::AnyType>())
+        else if (isa<mlir_ts::AnyType>(typeIn))
         {
             return mlir::StringAttr::get(context, "any");
         }
-        else if (typeIn.isa<mlir_ts::UnknownType>())
+        else if (isa<mlir_ts::UnknownType>(typeIn))
         {
             return mlir::StringAttr::get(context, "unknown");
         }
-        else if (typeIn.isa<mlir_ts::RefType>())
+        else if (isa<mlir_ts::RefType>(typeIn))
         {
             return mlir::StringAttr::get(context, "ref");
         }
-        else if (typeIn.isa<mlir_ts::ValueRefType>())
+        else if (isa<mlir_ts::ValueRefType>(typeIn))
         {
             return mlir::StringAttr::get(context, "valueRef");
         }
-        else if (typeIn.isa<mlir_ts::UnionType>())
+        else if (isa<mlir_ts::UnionType>(typeIn))
         {
             return mlir::StringAttr::get(context, "union");
         }                
@@ -394,7 +394,7 @@ class MLIRTypeHelper
             return attr;
         }
 
-        if (destType.isa<mlir_ts::NumberType>())
+        if (isa<mlir_ts::NumberType>(destType))
         {
 #ifdef NUMBER_F64
             return convertFromFloatAttrIntoType(attr, builder.getF64Type(), builder);
@@ -587,7 +587,7 @@ class MLIRTypeHelper
         mlir::SmallVector<mlir::Type> funcArgTypes(funcType.getInputs().begin(), funcType.getInputs().end());
         for (auto &type : funcArgTypes)
         {
-            if (type.isa<mlir_ts::OpaqueType>())
+            if (isa<mlir_ts::OpaqueType>(type))
             {
                 type = opaqueReplacementType;
                 break;
@@ -603,7 +603,7 @@ class MLIRTypeHelper
         mlir::SmallVector<mlir::Type> funcArgTypes(funcType.getInputs().begin(), funcType.getInputs().end());
         for (auto &type : funcArgTypes)
         {
-            if (type.isa<mlir_ts::OpaqueType>())
+            if (isa<mlir_ts::OpaqueType>(type))
             {
                 type = opaqueReplacementType;
                 break;
@@ -1642,32 +1642,32 @@ class MLIRTypeHelper
             return true;
         }
 
-        if (srcType.isa<mlir::IntegerType>())
+        if (isa<mlir::IntegerType>(srcType))
         {
-            if (dstType.isa<mlir_ts::NumberType>())
+            if (isa<mlir_ts::NumberType>(dstType))
             {
                 return true;
             }
         }
 
         // we should not treat boolean as integer
-        // if (srcType.isa<mlir_ts::BooleanType>())
+        // if (isa<mlir_ts::BooleanType>(srcType))
         // {
         //     if (dstType.isa<mlir::IntegerType>() && dstType.getIntOrFloatBitWidth() > 0)
         //     {
         //         return true;
         //     }
 
-        //     if (dstType.isa<mlir_ts::NumberType>())
+        //     if (isa<mlir_ts::NumberType>(dstType))
         //     {
         //         return true;
         //     }
         // }
 
         // but we can't cast TypePredicate to boolean as we will lose the information about type
-        if (srcType.isa<mlir_ts::BooleanType>())
+        if (isa<mlir_ts::BooleanType>(srcType))
         {
-            if (dstType.isa<mlir_ts::TypePredicateType>())
+            if (isa<mlir_ts::TypePredicateType>(dstType))
             {
                 return true;
             }
@@ -1907,17 +1907,17 @@ class MLIRTypeHelper
             return mlir_ts::UnknownType::get(context);
         }
 
-        if (attr.isa<mlir::StringAttr>())
+        if (isa<mlir::StringAttr>(attr))
         {
             return mlir_ts::StringType::get(context);
         }
 
-        if (attr.isa<mlir::FloatAttr>())
+        if (isa<mlir::FloatAttr>(attr))
         {
             return mlir_ts::NumberType::get(context);
         }
 
-        if (attr.isa<mlir::IntegerAttr>())
+        if (isa<mlir::IntegerAttr>(attr))
         {
             return mlir_ts::NumberType::get(context);
         }
@@ -2671,7 +2671,7 @@ class MLIRTypeHelper
 
         if (auto objType = dyn_cast<mlir_ts::ObjectType>(extendType))
         {
-            if (objType.getStorageType().isa<mlir_ts::AnyType>())
+            if (isa<mlir_ts::AnyType>(objType.getStorageType()))
             {
                 return (srcType.isa<mlir_ts::TupleType>() || srcType.isa<mlir_ts::ConstTupleType>() || srcType.isa<mlir_ts::ObjectType>()) 
                     ? ExtendsResult::True : ExtendsResult::False;
@@ -2694,7 +2694,7 @@ class MLIRTypeHelper
     {
         for (auto itemType : unionType.getTypes())
         {
-            if (itemType.isa<mlir_ts::NullType>())
+            if (isa<mlir_ts::NullType>(itemType))
             {
                 continue;
             }
@@ -2719,25 +2719,25 @@ class MLIRTypeHelper
 
     mlir::LogicalResult processUnionTypeItem(mlir::Type type, UnionTypeProcessContext &unionContext)
     {
-        if (type.isa<mlir_ts::UndefinedType>())
+        if (isa<mlir_ts::UndefinedType>(type))
         {
             unionContext.isUndefined = true;
             return mlir::success();
         }
 
-        if (type.isa<mlir_ts::NullType>())
+        if (isa<mlir_ts::NullType>(type))
         {
             unionContext.isNullable = true;
             return mlir::success();
         }            
 
-        if (type.isa<mlir_ts::AnyType>())
+        if (isa<mlir_ts::AnyType>(type))
         {
             unionContext.isAny = true;
             return mlir::success();
         }
 
-        if (type.isa<mlir_ts::NeverType>())
+        if (isa<mlir_ts::NeverType>(type))
         {
             return mlir::success();
         }
@@ -2893,19 +2893,19 @@ class MLIRTypeHelper
                 continue;
             }
 
-            if (type.isa<mlir_ts::NullType>())
+            if (isa<mlir_ts::NullType>(type))
             {
                 unionContext.isNullable = true;
                 continue;
             }            
 
-            if (type.isa<mlir_ts::AnyType>())
+            if (isa<mlir_ts::AnyType>(type))
             {
                 unionContext.isAny = true;
                 continue;
             }
 
-            if (type.isa<mlir_ts::NeverType>())
+            if (isa<mlir_ts::NeverType>(type))
             {
                 continue;
             }
@@ -2965,7 +2965,7 @@ class MLIRTypeHelper
         auto isUndefined = false;
         for (auto type : types)
         {
-            if (type.isa<mlir_ts::UndefinedType>())
+            if (isa<mlir_ts::UndefinedType>(type))
             {
                 isUndefined = true; 
                 continue;
@@ -3211,7 +3211,7 @@ class MLIRTypeHelper
             types.push_back(existType);
             types.push_back(currentType);
 
-            if (existType.isa<mlir_ts::UnionType>())
+            if (isa<mlir_ts::UnionType>(existType))
             {
                 defaultUnionType = getUnionTypeWithMerge(location, types);
             }

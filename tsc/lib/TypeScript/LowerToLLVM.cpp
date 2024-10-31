@@ -835,7 +835,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
             type = literalType.getElementType();
         }
 
-        if (type.isa<mlir_ts::StringType>())
+        if (isa<mlir_ts::StringType>(type))
         {
             LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
@@ -937,7 +937,7 @@ class UndefOpLowering : public TsLlvmPattern<mlir_ts::UndefOp>
     {
         
 
-        if (op.getType().isa<mlir_ts::OptionalType>())
+        if (isa<mlir_ts::OptionalType>(op.getType()))
         {
             rewriter.replaceOpWithNewOp<mlir_ts::OptionalUndefOp>(op, op.getType());
             return success();
@@ -1178,7 +1178,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         SmallVector<mlir::Type> llvmTypes;
         for (auto type : op.getResultTypes())
         {
-            if (type.isa<mlir_ts::VoidType>())
+            if (isa<mlir_ts::VoidType>(type))
             {
                 continue;
             }
@@ -1230,7 +1230,7 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
         SmallVector<mlir::Type> llvmTypes;
         for (auto type : op.getResultTypes())
         {
-            if (type.isa<mlir_ts::VoidType>())
+            if (isa<mlir_ts::VoidType>(type))
             {
                 continue;
             }
@@ -1252,7 +1252,7 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
             SmallVector<mlir::Type, 4> results;
             for (auto &resultType : hybridFuncType.getResults())
             {
-                if (resultType.isa<mlir_ts::VoidType>())
+                if (isa<mlir_ts::VoidType>(resultType))
                 {
                     continue;
                 }
@@ -1393,7 +1393,7 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
             SmallVector<mlir::Type, 4> results;
             for (auto &resultType : hybridFuncType.getResults())
             {
-                if (resultType.isa<mlir_ts::VoidType>())
+                if (isa<mlir_ts::VoidType>(resultType))
                 {
                     continue;
                 }
@@ -2843,7 +2843,7 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
         switch (opCode)
         {
         case SyntaxKind::PlusToken:
-            if (arithmeticBinaryOp.getOperand1().getType().isa<mlir_ts::StringType>())
+            if (isa<mlir_ts::StringType>(arithmeticBinaryOp.getOperand1().getType()))
             {
                 rewriter.replaceOpWithNewOp<mlir_ts::StringConcatOp>(
                     arithmeticBinaryOp, mlir_ts::StringType::get(rewriter.getContext()),
@@ -3365,7 +3365,7 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
         TypeConverterHelper tch(getTypeConverter());
 
         auto actualType = addressOfOp.getType();
-        if (actualType.isa<mlir_ts::OpaqueType>())
+        if (isa<mlir_ts::OpaqueType>(actualType))
         {
             // load type from symbol
             auto module = addressOfOp->getParentOfType<mlir::ModuleOp>();

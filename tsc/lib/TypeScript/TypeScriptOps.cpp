@@ -544,7 +544,7 @@ LogicalResult mlir_ts::CastOp::verify()
         }
     }
 
-    if (resType.isa<mlir_ts::AnyType>())
+    if (isa<mlir_ts::AnyType>(resType))
     {
         return success();
     }
@@ -672,7 +672,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
         // union support
         // TODO: review this code, should it be in "cast" logic?
-        if (res.getType().isa<mlir_ts::AnyType>())
+        if (isa<mlir_ts::AnyType>(res.getType()))
         {
             return success();
         }
@@ -1573,7 +1573,7 @@ struct SimplifyStaticExpression : public OpRewritePattern<mlir_ts::LogicalBinary
         }
 
         // strings
-        if (op1Typed.isa<mlir::StringAttr>())
+        if (isa<mlir::StringAttr>(op1Typed))
         {
             switch ((SyntaxKind)opCode)
             {

@@ -126,12 +126,12 @@ class UndefLogicHelper
             };
 
             // when 1 of them is optional
-            if (leftType.isa<mlir_ts::UndefinedType>())
+            if (isa<mlir_ts::UndefinedType>(leftType))
             {
                 return processUndefVale(rewriter, loc, leftType, left, rightType, right);
             }
 
-            if (rightType.isa<mlir_ts::UndefinedType>())
+            if (isa<mlir_ts::UndefinedType>(rightType))
             {
                 return processUndefVale(rewriter, loc, rightType, right, leftType, left);
             }

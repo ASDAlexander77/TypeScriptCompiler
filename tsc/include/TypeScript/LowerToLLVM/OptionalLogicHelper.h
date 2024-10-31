@@ -55,13 +55,13 @@ class OptionalLogicHelper
             return WhenBothOptValues<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(opCmpCode);
         }
 
-        if (rightType.isa<mlir_ts::UndefinedType>())
+        if (isa<mlir_ts::UndefinedType>(rightType))
         {
             // when we have undef in 1 of values we do not condition to test actual values
             return whenOneValueIsUndef(opCmpCode, left, right);
         }
 
-        if (leftType.isa<mlir_ts::UndefinedType>())
+        if (isa<mlir_ts::UndefinedType>(leftType))
         {
             // when we have undef in 1 of values we do not condition to test actual values
             return whenOneValueIsUndef(opCmpCode, right, left);

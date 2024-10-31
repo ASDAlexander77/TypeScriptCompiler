@@ -426,7 +426,7 @@ class MLIRCustomMethods
                         type = literalType.getElementType();
                     }
 
-                    if (type.isa<mlir_ts::StringType>())
+                    if (isa<mlir_ts::StringType>(type))
                     {
                         msg = constantOp.getValue().cast<mlir::StringAttr>().getValue();
                     }
@@ -788,7 +788,7 @@ class MLIRCustomMethods
         mlir::Value refValue;
         for (auto &oper : operands)
         {
-            if (oper.getType().isa<mlir_ts::OpaqueType>())
+            if (isa<mlir_ts::OpaqueType>(oper.getType()))
             {
                 auto opaqueCast =
                     builder.create<mlir_ts::CastOp>(location, mlir_ts::RefType::get(builder.getContext(), oper.getType()), oper);
@@ -1072,13 +1072,13 @@ class MLIRPropertyAccessCodeLogic
         auto propName = getName();
         if (propName == LENGTH_FIELD_NAME)
         {
-            if (expression.getType().isa<mlir_ts::ConstArrayType>())
+            if (isa<mlir_ts::ConstArrayType>(expression.getType()))
             {
                 auto size = getExprConstAttr().cast<mlir::ArrayAttr>().size();
                 return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
                                                            builder.getI32IntegerAttr(size));
             }
-            else if (expression.getType().isa<mlir_ts::ArrayType>())
+            else if (isa<mlir_ts::ArrayType>(expression.getType()))
             {
                 auto sizeValue = builder.create<mlir_ts::LengthOfOp>(location, builder.getI32Type(), expression);
                 return sizeValue;
@@ -1089,7 +1089,7 @@ class MLIRPropertyAccessCodeLogic
         
         if (propName == "push" || propName == "pop" || propName == "unshift" || propName == "shift" || propName == "splice" || propName == "view")
         {
-            if (expression.getType().isa<mlir_ts::ArrayType>())
+            if (isa<mlir_ts::ArrayType>(expression.getType()))
             {
                 std::string name = "__array_";
                 name += propName;

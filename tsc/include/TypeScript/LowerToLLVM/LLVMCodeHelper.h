@@ -317,7 +317,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         {
             llvm_unreachable("it should be process in constant with denseattr value");
         }
-        else if (originalElementType.isa<mlir_ts::StringType>())
+        else if (isa<mlir_ts::StringType>(originalElementType))
         {
             auto position = 0;
             for (auto item : arrayAttr.getValue())
@@ -344,7 +344,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             return arrayVal;
         }
-        else if (originalElementType.isa<mlir_ts::ConstArrayType>())
+        else if (isa<mlir_ts::ConstArrayType>(originalElementType))
         {
             llvm_unreachable("ConstArrayType must not be used in array, use normal ArrayType (the same way as StringType)");
         }
@@ -361,7 +361,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             return arrayVal;
         }
-        else if (originalElementType.isa<mlir_ts::ConstTupleType>())
+        else if (isa<mlir_ts::ConstTupleType>(originalElementType))
         {
             llvm_unreachable("ConstTupleType must not be used in array, use normal TupleType (the same way as StringType)");
         }            
@@ -637,7 +637,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto llvmElementType = tch.convertType(elementType);
 
         auto dataPtr = arrayOrStringOrTuple;
-        if (arrayOrStringOrTupleMlirTSType.isa<mlir_ts::ArrayType>())
+        if (isa<mlir_ts::ArrayType>(arrayOrStringOrTupleMlirTSType))
         {
             // extract pointer from struct
             dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTuple,

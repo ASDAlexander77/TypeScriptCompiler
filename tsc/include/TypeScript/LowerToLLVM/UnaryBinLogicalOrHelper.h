@@ -106,7 +106,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdFOpTy>(loc, v2, left, right);
         return value;
     }
-    else if (leftType.isa<mlir_ts::NumberType>())
+    else if (isa<mlir_ts::NumberType>(leftType))
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftType, left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, leftType, right);
@@ -123,7 +123,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         return value;
     }
     */
-    else if (leftType.isa<mlir_ts::StringType>())
+    else if (isa<mlir_ts::StringType>(leftType))
     {
         if (left.getType() != right.getType())
         {
@@ -154,7 +154,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }
-    else if (leftType.isa<mlir_ts::InterfaceType>())
+    else if (isa<mlir_ts::InterfaceType>(leftType))
     {
         // TODO, extract interface VTable to compare
         auto leftVtableValue =

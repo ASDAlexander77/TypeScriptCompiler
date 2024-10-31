@@ -163,7 +163,7 @@ class CastLogicHelper
 
         if (auto obj = dyn_cast<mlir_ts::ObjectType>(resType))
         {
-            if (obj.getStorageType().isa<mlir_ts::AnyType>())
+            if (isa<mlir_ts::AnyType>(obj.getStorageType()))
             {
                 return castToOpaqueType(in, inLLVMType);
             }
@@ -418,7 +418,7 @@ class CastLogicHelper
         // cast value value to optional value
         if (auto optType = dyn_cast<mlir_ts::OptionalType>(resType))
         {
-            if (inType.isa<mlir_ts::UndefinedType>())
+            if (isa<mlir_ts::UndefinedType>(inType))
             {
                 return rewriter.create<mlir_ts::OptionalUndefOp>(loc, resType);
             }
@@ -433,7 +433,7 @@ class CastLogicHelper
             return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
         }
 
-        if (inType.isa<mlir_ts::UndefinedType>())
+        if (isa<mlir_ts::UndefinedType>(inType))
         {
             if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(resType))
             {

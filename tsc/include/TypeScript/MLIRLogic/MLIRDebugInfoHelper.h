@@ -119,7 +119,7 @@ class MLIRDebugInfoHelper
                 auto [line, column] = LocationHelper::getLineAndColumn(functionLocation);
                 auto [scopeLine, scopeColumn] = LocationHelper::getLineAndColumn(functionBlockLocation);
 
-                // if (scopeAttr.isa<mlir::LLVM::DILexicalBlockAttr>())
+                // if (isa<mlir::LLVM::DILexicalBlockAttr>(scopeAttr))
                 // {
                 //     auto file = dyn_cast<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE));
 
