@@ -584,7 +584,7 @@ LogicalResult mlir_ts::CastOp::verify()
             // TODO: review using "undefined", use proper union type
             auto effectiveInType = mth.stripOptionalType(inType);
 
-            if (!effectiveInType.isa<mlir_ts::UndefinedType>())
+            if (!isa<mlir_ts::UndefinedType>(effectiveInType))
             {
                 auto pred = [&](auto &item) { 
                     return cmpTypes(effectiveInType, item); 

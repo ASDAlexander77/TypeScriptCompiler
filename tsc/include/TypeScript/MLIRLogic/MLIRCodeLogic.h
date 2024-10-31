@@ -355,7 +355,7 @@ class MLIRCustomMethods
         SmallVector<mlir::Value> vals;
         for (auto &oper : operands)
         {
-            if (!oper.getType().isa<mlir_ts::StringType>())
+            if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
                 vals.push_back(strCast);
@@ -381,14 +381,14 @@ class MLIRCustomMethods
         }
 
         bufferSize = operands[0];
-        if (!bufferSize.getType().isa<mlir::IndexType>())
+        if (!isa<mlir::IndexType>(bufferSize.getType()))
         {
             bufferSize = castFn(location, mlir::IndexType::get(builder.getContext()), bufferSize, genContext);
         }
 
         auto stringType = mlir_ts::StringType::get(builder.getContext());
         format = operands[1];
-        if (!format.getType().isa<mlir_ts::StringType>())
+        if (!isa<mlir_ts::StringType>(format.getType()))
         {
             format = castFn(location, stringType, format, genContext);
         }
@@ -437,7 +437,7 @@ class MLIRCustomMethods
         }
 
         auto op = operands.front();
-        if (!op.getType().isa<mlir_ts::BooleanType>())
+        if (!isa<mlir_ts::BooleanType>(op.getType()))
         {
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::BooleanType::get(builder.getContext()), op);
         }
@@ -454,7 +454,7 @@ class MLIRCustomMethods
         auto op = operands.front();
         mlir::Value op2;
 
-        if (!op.getType().isa<mlir_ts::StringType>())
+        if (!isa<mlir_ts::StringType>(op.getType()))
         {
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
         }
@@ -462,7 +462,7 @@ class MLIRCustomMethods
         if (hasTwoOps)
         {
             op2 = operands[1];
-            if (!op2.getType().isa<mlir::IntegerType>())
+            if (!isa<mlir::IntegerType>(op2.getType()))
             {
                 op2 = builder.create<mlir_ts::CastOp>(location, mlir::IntegerType::get(builder.getContext(), 32), op2);
             }
@@ -477,7 +477,7 @@ class MLIRCustomMethods
     mlir::Value mlirGenParseFloat(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         auto op = operands.front();
-        if (!op.getType().isa<mlir_ts::StringType>())
+        if (!isa<mlir_ts::StringType>(op.getType()))
         {
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
         }
@@ -491,7 +491,7 @@ class MLIRCustomMethods
     mlir::Value mlirGenIsNaN(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         auto op = operands.front();
-        if (!op.getType().isa<mlir_ts::NumberType>())
+        if (!isa<mlir_ts::NumberType>(op.getType()))
         {
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::NumberType::get(builder.getContext()), op);
         }
@@ -626,12 +626,12 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
 
-        if (!startValue.getType().isa<mlir::IndexType>())
+        if (!isa<mlir::IndexType>(startValue.getType()))
         {
             startValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), startValue);
         }
 
-        if (!deleteCountValue.getType().isa<mlir::IndexType>())
+        if (!isa<mlir::IndexType>(deleteCountValue.getType()))
         {
             deleteCountValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), deleteCountValue);
         }
@@ -732,7 +732,7 @@ class MLIRCustomMethods
         mlir::Value fileNameValue;
         for (auto &oper : operands)
         {
-            if (!oper.getType().isa<mlir_ts::StringType>())
+            if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast =
                     builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
@@ -759,7 +759,7 @@ class MLIRCustomMethods
         mlir::Value symbolNameValue;
         for (auto &oper : operands)
         {
-            if (!oper.getType().isa<mlir_ts::StringType>())
+            if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast =
                     builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);

@@ -4198,7 +4198,7 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         auto llvmCatchType = getTypeConverter()->convertType(catchType);
 
         mlir::Value catchVal;
-        if (!llvmCatchType.isa<LLVM::LLVMPointerType>())
+        if (!isa<LLVM::LLVMPointerType>(llvmCatchType))
         {
             auto ptrVal =
                 rewriter.create<LLVM::BitcastOp>(loc, th.getPtrType(), transformed.getExceptionInfo());

@@ -9640,7 +9640,7 @@ class MLIRGenImpl
 
         if (auto symbolOp = funcRef.getDefiningOp<mlir_ts::SymbolRefOp>())
         {
-            // if (!symbolOp.getType().isa<mlir_ts::GenericType>())
+            // if (!isa<mlir_ts::GenericType>(symbolOp.getType()))
             if (!symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
             {
                 auto funcType = funcRef.getType().cast<mlir_ts::FunctionType>();
@@ -12667,7 +12667,7 @@ class MLIRGenImpl
         for (auto i = processedValues; i < arrayInfo.recevierContext.receiverTupleType.getFields().size(); i++)
         {
             recevierContext.nextTupleField();
-            if (!recevierContext.receiverElementType.isa<mlir_ts::OptionalType>())
+            if (!isa<mlir_ts::OptionalType>(recevierContext.receiverElementType))
             {
                 emitError(location, "value is not provided for non-optional type");
                 return mlir::failure();
@@ -22654,7 +22654,7 @@ genContext);
         DITableScopeT debugPartialCodeScope(debugScope);
         if (compileOptions.generateDebugInfo)
         {
-            if (!overwriteLoc.isa<mlir::UnknownLoc>())
+            if (!isa<mlir::UnknownLoc>(overwriteLoc))
             {
                 overwriteLoc = stripMetadata(overwriteLoc);
             }
