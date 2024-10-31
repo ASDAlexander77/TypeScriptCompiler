@@ -3078,7 +3078,7 @@ class MLIRGenImpl
         auto type = variableDeclarationInfo.type;
 
         // if it is Optional type, we need to set to undefined                
-        if (type.isa<mlir_ts::OptionalType>() && !variableDeclarationInfo.initial)
+        if (isa<mlir_ts::OptionalType>(type) && !variableDeclarationInfo.initial)
         {                    
             CAST_A(castedValue, location, type, getUndefined(location), genContext);
             variableDeclarationInfo.setInitial(castedValue);
@@ -18148,7 +18148,7 @@ genContext);
             || isa<mlir_ts::UndefinedType>(type) 
             || isa<mlir_ts::SymbolType>(type) 
             || isa<mlir_ts::NullType>(type))
-            && (valueType.isa<mlir_ts::ClassType>()
+            && (isa<mlir_ts::ClassType>(valueType)
                 || isa<mlir_ts::ClassStorageType>(valueType)
                 || isa<mlir_ts::ObjectType>(valueType)
                 || isa<mlir_ts::InterfaceType>(valueType)
@@ -18476,7 +18476,7 @@ genContext);
         // unboxing
         if (auto anyType = dyn_cast<mlir_ts::AnyType>(valueType))
         {
-            if (type.isa<mlir_ts::NumberType>() 
+            if (isa<mlir_ts::NumberType>(type) 
                 || isa<mlir_ts::BooleanType>(type)
                 || isa<mlir_ts::StringType>(type)
                 || isa<mlir::IntegerType>(type)
@@ -18561,7 +18561,7 @@ genContext);
             return mlir::failure();
         }        
 
-        if (type.isa<mlir_ts::ArrayType>() && isa<mlir_ts::TupleType>(valueType) 
+        if (isa<mlir_ts::ArrayType>(type) && isa<mlir_ts::TupleType>(valueType) 
             || isa<mlir_ts::TupleType>(type) && isa<mlir_ts::ArrayType>(valueType))
         {
             emitError(location, "invalid cast from ") << valueType << " to " << type;
@@ -20066,7 +20066,7 @@ genContext);
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
         {
-            if (item.isa<mlir_ts::NullType>() || item == getUndefinedType())
+            if (isa<mlir_ts::NullType>(item) || item == getUndefinedType())
             {
                 continue;
             }
@@ -20400,7 +20400,7 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! condition type check: " << checkType << ", extends: " << extendsType << "\n";);
 
-        if (checkType.isa<mlir_ts::NamedGenericType>() || isa<mlir_ts::NamedGenericType>(extendsType))
+        if (isa<mlir_ts::NamedGenericType>(checkType) || isa<mlir_ts::NamedGenericType>(extendsType))
         {
             // we do not need to resolve it, it is generic
             auto trueType = getType(conditionalTypeNode->trueType, genContext);
@@ -20597,7 +20597,7 @@ genContext);
             effectiveIndexType = litIndexType.getElementType();
         }
 
-        if (effectiveIndexType.isa<mlir_ts::NumberType>() || effectiveIndexType.isIntOrIndexOrFloat())
+        if (isa<mlir_ts::NumberType>(effectiveIndexType) || effectiveIndexType.isIntOrIndexOrFloat())
         {
             return getIndexedAccessTypeForArrayElement(type);
         }
@@ -21934,12 +21934,12 @@ genContext);
             return left;
         }
 
-        if (left.isa<mlir_ts::AnyType>() || isa<mlir_ts::UnknownType>(left))
+        if (isa<mlir_ts::AnyType>(left) || isa<mlir_ts::UnknownType>(left))
         {
             return right;
         }
 
-        if (right.isa<mlir_ts::AnyType>() || isa<mlir_ts::UnknownType>(right))
+        if (isa<mlir_ts::AnyType>(right) || isa<mlir_ts::UnknownType>(right))
         {
             return left;
         }

@@ -84,7 +84,7 @@ class CastLogicHelper
             return cast(in, literalType.getElementType(), tch.convertType(literalType.getElementType()), resType, resLLVMType);
         }
 
-        if (inType.isa<mlir_ts::CharType>() && isa<mlir_ts::StringType>(resType))
+        if (isa<mlir_ts::CharType>(inType) && isa<mlir_ts::StringType>(resType))
         {
             // types are equals
             return rewriter.create<mlir_ts::CharToStringOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
@@ -101,7 +101,7 @@ class CastLogicHelper
             return castIntToString(in, tch.getIndexTypeBitwidth(), false);
         }
 
-        if (inType.isa<mlir::IntegerType>() && isResString)
+        if (isa<mlir::IntegerType>(inType) && isResString)
         {
             return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.isSignedInteger());
         }
@@ -616,18 +616,18 @@ class CastLogicHelper
             return rewriter.create<mlir::arith::CmpFOp>(loc, arith::CmpFPredicate::ONE, in, clh.createFConstantOf(inLLVMType.getIntOrFloatBitWidth(), 0.0));
         }
 
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isBool(resLLVMType))
+        if (isa<LLVM::LLVMPointerType>(inLLVMType) && isBool(resLLVMType))
         {            
             auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
             return rewriter.create<mlir::arith::CmpIOp>(loc, arith::CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
         }
 
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isInt(resLLVMType))
+        if (isa<LLVM::LLVMPointerType>(inLLVMType) && isInt(resLLVMType))
         {
             return rewriter.create<LLVM::PtrToIntOp>(loc, resLLVMType, in);
         }
 
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isFloat(resLLVMType))
+        if (isa<LLVM::LLVMPointerType>(inLLVMType) && isFloat(resLLVMType))
         {
             auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
             return rewriter.create<mlir::arith::SIToFPOp>(loc, resLLVMType, intVal);
@@ -659,7 +659,7 @@ class CastLogicHelper
         }
 
         // ptrs cast
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isa<LLVM::LLVMPointerType>(resLLVMType))
+        if (isa<LLVM::LLVMPointerType>(inLLVMType) && isa<LLVM::LLVMPointerType>(resLLVMType))
         {
             return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
         }
@@ -684,7 +684,7 @@ class CastLogicHelper
 
         // review usage of ts.Type here
         // struct to struct. TODO: add validation
-        if (inLLVMType.isa<LLVM::LLVMStructType>() && isa<LLVM::LLVMStructType>(resLLVMType))
+        if (isa<LLVM::LLVMStructType>(inLLVMType) && isa<LLVM::LLVMStructType>(resLLVMType))
         {
             LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
             auto srcSize = llvmtch.getTypeSizeEstimateInBytes(inLLVMType);

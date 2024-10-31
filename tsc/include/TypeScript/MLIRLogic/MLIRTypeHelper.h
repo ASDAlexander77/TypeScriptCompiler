@@ -230,7 +230,7 @@ class MLIRTypeHelper
 
     bool isNullableOrOptionalType(mlir::Type typeIn)
     {
-        if (typeIn.isa<mlir_ts::NullType>() 
+        if (isa<mlir_ts::NullType>(typeIn) 
             || isa<mlir_ts::UndefinedType>(typeIn) 
             || isa<mlir_ts::StringType>(typeIn) 
             || isa<mlir_ts::ObjectType>(typeIn) 
@@ -1091,7 +1091,7 @@ class MLIRTypeHelper
     }
 
     bool isBoolType(mlir::Type type) {
-        if (type.isa<mlir_ts::BooleanType>() || isa<mlir_ts::TypePredicateType>(type)) return true;
+        if (isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::TypePredicateType>(type)) return true;
         return isa<mlir::IntegerType>(type) && type.getIntOrFloatBitWidth() == 1;
     }
 
@@ -1653,7 +1653,7 @@ class MLIRTypeHelper
         // we should not treat boolean as integer
         // if (isa<mlir_ts::BooleanType>(srcType))
         // {
-        //     if (dstType.isa<mlir::IntegerType>() && dstType.getIntOrFloatBitWidth() > 0)
+        //     if (isa<mlir::IntegerType>(dstType) && dstType.getIntOrFloatBitWidth() > 0)
         //     {
         //         return true;
         //     }
@@ -2040,7 +2040,7 @@ class MLIRTypeHelper
             
             return mlir::success();            
         }
-        else if (srcType.isa<mlir_ts::ArrayType>() || isa<mlir_ts::ConstArrayType>(srcType) || isa<mlir_ts::StringType>(srcType))
+        else if (isa<mlir_ts::ArrayType>(srcType) || isa<mlir_ts::ConstArrayType>(srcType) || isa<mlir_ts::StringType>(srcType))
         {
             // TODO: do not break the order as it is used in Debug info
             destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context), false });
@@ -2673,14 +2673,14 @@ class MLIRTypeHelper
         {
             if (isa<mlir_ts::AnyType>(objType.getStorageType()))
             {
-                return (srcType.isa<mlir_ts::TupleType>() || isa<mlir_ts::ConstTupleType>(srcType) || isa<mlir_ts::ObjectType>(srcType)) 
+                return (isa<mlir_ts::TupleType>(srcType) || isa<mlir_ts::ConstTupleType>(srcType) || isa<mlir_ts::ObjectType>(srcType)) 
                     ? ExtendsResult::True : ExtendsResult::False;
             }
         }        
 
         // TODO: do we need to check types inside?
         if ((srcType.isa<mlir_ts::TypePredicateType>() || isa<mlir_ts::BooleanType>(srcType))
-            && (extendType.isa<mlir_ts::TypePredicateType>() || isa<mlir_ts::BooleanType>(extendType)))
+            && (isa<mlir_ts::TypePredicateType>(extendType) || isa<mlir_ts::BooleanType>(extendType)))
         {
             return ExtendsResult::True;
         }        
@@ -2887,7 +2887,7 @@ class MLIRTypeHelper
         // check if type is nullable or undefinable
         for (auto type : types)
         {
-            if (type.isa<mlir_ts::UndefinedType>() || isa<mlir_ts::OptionalType>(type))
+            if (isa<mlir_ts::UndefinedType>(type) || isa<mlir_ts::OptionalType>(type))
             {
                 unionContext.isUndefined = true;
                 continue;

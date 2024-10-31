@@ -112,7 +112,7 @@ class UndefLogicHelper
 
             auto processUndefVale = [&](OpBuilder &builder, Location loc, mlir::Type t1, mlir::Value val1, mlir::Type t2,
                                         mlir::Value val2) {
-                if (t2.isa<mlir_ts::InterfaceType>() || isa<mlir_ts::ClassType>(t2))
+                if (isa<mlir_ts::InterfaceType>(t2) || isa<mlir_ts::ClassType>(t2))
                 {
                     auto casted = rewriter.create<mlir_ts::CastOp>(loc, t2, val1);
                     return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, val2.getType(), casted, casted.getType(),

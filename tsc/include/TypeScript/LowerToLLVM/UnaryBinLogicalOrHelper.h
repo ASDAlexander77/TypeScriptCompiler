@@ -88,11 +88,11 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
     LLVMTypeConverterHelper llvmtch(&typeConverter);
 
-    if (leftType.isa<mlir_ts::OptionalType>() || isa<mlir_ts::OptionalType>(rightType))
+    if (isa<mlir_ts::OptionalType>(leftType) || isa<mlir_ts::OptionalType>(rightType))
     {
         return OptionalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
-    else if (leftType.isa<mlir_ts::UndefinedType>() || isa<mlir_ts::UndefinedType>(rightType))
+    else if (isa<mlir_ts::UndefinedType>(leftType) || isa<mlir_ts::UndefinedType>(rightType))
     {
         return UndefTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
@@ -139,7 +139,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         return value;
     }
-    else if (leftType.isa<mlir_ts::AnyType>() || isa<mlir_ts::ClassType>(leftType) ||
+    else if (isa<mlir_ts::AnyType>(leftType) || isa<mlir_ts::ClassType>(leftType) ||
  isa<mlir_ts::OpaqueType>(leftType) || isa<mlir_ts::NullType>(leftType))
     {
         // excluded string
