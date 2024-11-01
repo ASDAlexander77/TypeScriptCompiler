@@ -2868,7 +2868,7 @@ class MLIRGenImpl
             return false;
         }
 
-        if (init.getType().isa<mlir_ts::ConstArrayType>() || init.getType().isa<mlir_ts::ConstTupleType>())
+        if (isa<mlir_ts::ConstArrayType>(init.getType()) || init.getType().isa<mlir_ts::ConstTupleType>())
         {
             return true;
         }
@@ -6328,7 +6328,7 @@ class MLIRGenImpl
             if (inverse) return mlir::failure();
             castedValue = builder.create<mlir_ts::UnboxOp>(location, safeType, exprValue);
         }
-        else if (exprValue.getType().isa<mlir_ts::OptionalType>() 
+        else if (isa<mlir_ts::OptionalType>(exprValue.getType()) 
                  && exprValue.getType().cast<mlir_ts::OptionalType>().getElementType() == safeType)
         {
             if (inverse) 
@@ -9110,7 +9110,7 @@ class MLIRGenImpl
         case SyntaxKind::LessThanToken:
         case SyntaxKind::LessThanEqualsToken:
 
-            if (leftExpressionValue.getType().isa<mlir_ts::UndefinedType>() || rightExpressionValue.getType().isa<mlir_ts::UndefinedType>())
+            if (isa<mlir_ts::UndefinedType>(leftExpressionValue.getType()) || rightExpressionValue.getType().isa<mlir_ts::UndefinedType>())
             {
                 break;
             }

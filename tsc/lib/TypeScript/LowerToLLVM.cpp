@@ -1521,7 +1521,7 @@ struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
 
         CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
         // in case of Union we need mlir_ts::UnionType value
-        auto result = castLogic.cast(op.getIn().getType().isa<mlir_ts::UnionType>() ? op.getIn() : in, op.getIn().getType(), resType);
+        auto result = castLogic.cast(isa<mlir_ts::UnionType>(op.getIn().getType()) ? op.getIn() : in, op.getIn().getType(), resType);
         if (!result)
         {
             return failure();
@@ -4677,7 +4677,7 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         TypeConverterHelper tch(getTypeConverter());
 
         assert(createBoundFunctionOp.getType());
-        assert(createBoundFunctionOp.getType().isa<mlir_ts::BoundFunctionType>() ||
+        assert(isa<mlir_ts::BoundFunctionType>(createBoundFunctionOp.getType()) ||
                createBoundFunctionOp.getType().isa<mlir_ts::HybridFunctionType>());
 
         auto llvmBoundFunctionType = tch.convertType(createBoundFunctionOp.getType());
