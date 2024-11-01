@@ -4136,7 +4136,7 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
         auto loadedI32Value = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), transformed.getLandingPad(),
                                                                     MLIRHelper::getStructIndex(rewriter, 1));
 
-        auto typeIdFuncName = "llvm.eh.typeid.for";
+        auto typeIdFuncName = "llvm.eh.typeid.for.p0";
         auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
 
         auto callInfo =
