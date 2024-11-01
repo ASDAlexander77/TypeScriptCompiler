@@ -1579,10 +1579,10 @@ struct SimplifyStaticExpression : public OpRewritePattern<mlir_ts::LogicalBinary
             {
             case SyntaxKind::EqualsEqualsToken:
             case SyntaxKind::EqualsEqualsEqualsToken:
-                return mlir::cast<mlir::StringAttr>(op1Typed).getValue().compare(op2Typed.cast<mlir::StringAttr>().getValue()) == 0;
+                return mlir::cast<mlir::StringAttr>(op1Typed).getValue().compare(cast<mlir::StringAttr>(op2Typed).getValue()) == 0;
             case SyntaxKind::ExclamationEqualsToken:
             case SyntaxKind::ExclamationEqualsEqualsToken:
-                return !op1Typed.cast<mlir::StringAttr>().getValue().compare(op2Typed.cast<mlir::StringAttr>().getValue()) == 0;
+                return !cast<mlir::StringAttr>(op1Typed).getValue().compare(cast<mlir::StringAttr>(op2Typed).getValue()) == 0;
             }
         }
 
