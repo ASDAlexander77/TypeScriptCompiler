@@ -10092,7 +10092,7 @@ class MLIRGenImpl
     bool classHasField(ClassInfo::TypePtr classInfo, mlir::StringRef name, SmallVector<ClassInfo::TypePtr> &fieldPath)
     {
         auto fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
-        auto classStorageType = classInfo->classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+        auto classStorageType = mlir::cast<mlir_ts::ClassStorageType>(classInfo->classType.getStorageType());
         auto fieldIndex = classStorageType.getIndex(fieldId);
         auto missingField = fieldIndex < 0 || fieldIndex >= classStorageType.size();
         if (!missingField)
@@ -14853,7 +14853,7 @@ class MLIRGenImpl
     {
         if (newClassPtr)
         {
-            newClassPtr->classType.getStorageType().cast<mlir_ts::ClassStorageType>().setFields(fieldInfos);
+            mlir::cast<mlir_ts::ClassStorageType>(newClassPtr->classType.getStorageType()).setFields(fieldInfos);
             return mlir::success();
         }
 
@@ -16229,7 +16229,7 @@ genContext);
         MethodInfo emptyMethod;
         mlir_ts::FieldInfo emptyFieldInfo;
         // TODO: ...
-        auto classStorageType = newClassPtr->classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+        auto classStorageType = mlir::cast<mlir_ts::ClassStorageType>(newClassPtr->classType.getStorageType());
 
         llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
         auto result = newInterfacePtr->getVirtualTable(
@@ -16275,7 +16275,7 @@ genContext);
                     }
                 }
 
-                auto foundMethodFunctionType = foundMethodPtr->funcOp.getFunctionType().cast<mlir_ts::FunctionType>();
+                auto foundMethodFunctionType = mlir::cast<mlir_ts::FunctionType>(foundMethodPtr->funcOp.getFunctionType());
 
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
@@ -20785,7 +20785,7 @@ genContext);
         std::stringstream ss;
         ss << head;
 
-        auto typeText = mlir::cast<mlir_ts::LiteralType>(type).getValue().cast<mlir::StringAttr>().getValue();
+        auto typeText = mlir::cast<mlir::StringAttr>(mlir::cast<mlir_ts::LiteralType>(type).getValue()).getValue();
         ss << typeText.str();
 
         auto spanText = convertWideToUTF8(span->literal->rawText);
