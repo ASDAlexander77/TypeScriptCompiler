@@ -1127,7 +1127,7 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                     if (hasThis)
                     {
                         auto neededThisForCall = 
-                            createBoundFunctionOp.getType().cast<mlir_ts::BoundFunctionType>().getInput(0) == thisValStripedCast.getType() 
+                            cast<mlir_ts::BoundFunctionType>(createBoundFunctionOp.getType()).getInput(0) == thisValStripedCast.getType() 
                                 ? thisValStripedCast 
                                 : thisVal;
 
@@ -1506,7 +1506,7 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
             return failure();
         }
 
-        if (constant.getValue().cast<BoolAttr>().getValue())
+        if (cast<BoolAttr>(constant.getValue()).getValue())
         {
             replaceOpWithRegion(rewriter, op, op.getThenRegion());
         }
