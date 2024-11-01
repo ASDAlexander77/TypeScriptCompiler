@@ -13,9 +13,9 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v7
-  LLVM_VERSION: 17
-  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/ux7mfco64i5fvsev50ali/llvm_17_release.zip?rlkey=ijghbwhpsuoome38pc4fmzt3a&dl=1"
+  CACHE_VERSION: v8
+  LLVM_VERSION: 19
+  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/xdcj15hlzpod06x4wpls1/llvm_19_1_3_release.zip?rlkey=x38yiyfw3y6bv15z5j3oi84lb&st=bz3u5xkv&dl=1"
   
 jobs:
   build:
