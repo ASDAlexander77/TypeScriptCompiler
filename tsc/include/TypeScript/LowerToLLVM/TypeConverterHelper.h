@@ -59,7 +59,7 @@ class TypeConverterHelper
 
     int getIndexTypeBitwidth()
     {
-        return ((mlir::LLVMTypeConverter *)typeConverter)->getIndexTypeBitwidth();
+        return ((const mlir::LLVMTypeConverter *)typeConverter)->getIndexTypeBitwidth();
     }
 };
 } // namespace typescript
