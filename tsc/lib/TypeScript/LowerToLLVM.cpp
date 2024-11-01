@@ -415,7 +415,7 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         auto loc = op.getLoc();
 
-        auto arrayType = op.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::RefType>(op.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
@@ -839,7 +839,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         {
             LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-            auto strValue = constantOp.getValue().cast<StringAttr>().getValue().str();
+            auto strValue = cast<StringAttr>(constantOp.getValue()).getValue().str();
             auto txtCst = ch.getOrCreateGlobalString(strValue);
 
             rewriter.replaceOp(constantOp, txtCst);
@@ -1225,7 +1225,7 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
 
         TypeConverterHelper tch(getTypeConverter());
 
-        auto hybridFuncType = op.getCallee().getType().cast<mlir_ts::HybridFunctionType>();
+        auto hybridFuncType = cast<mlir_ts::HybridFunctionType>(op.getCallee().getType());
 
         SmallVector<mlir::Type> llvmTypes;
         for (auto type : op.getResultTypes())
@@ -1371,7 +1371,7 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
 
         TypeConverterHelper tch(getTypeConverter());
 
-        auto hybridFuncType = op.getCallee().getType().cast<mlir_ts::HybridFunctionType>();
+        auto hybridFuncType = cast<mlir_ts::HybridFunctionType>(op.getCallee().getType());
 
         SmallVector<mlir::Type> llvmTypes;
         for (auto type : op.getResultTypes())
@@ -1706,7 +1706,7 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
         auto loc = op->getLoc();
 
         mlir::Type baseType;
-        bool needTag = mth.isUnionTypeNeedsTag(loc, op.getIn().getType().cast<mlir_ts::UnionType>(), baseType);
+        bool needTag = mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getIn().getType()), baseType);
         if (needTag)
         {
             auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.getIn(),
@@ -1879,7 +1879,7 @@ struct AllocaOpLowering : public TsLlvmPattern<mlir_ts::AllocaOp>
 
         auto location = varOp.getLoc();
 
-        auto referenceType = varOp.getReference().getType().cast<mlir_ts::RefType>();
+        auto referenceType = cast<mlir_ts::RefType>(varOp.getReference().getType());
         auto storageType = referenceType.getElementType();
         auto llvmStorageType = tch.convertType(storageType);
 
@@ -1958,7 +1958,7 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
         TypeHelper th(rewriter);
 
         auto loc = createTupleOp.getLoc();
-        auto tupleType = createTupleOp.getType().cast<mlir_ts::TupleType>();
+        auto tupleType = cast<mlir_ts::TupleType>(createTupleOp.getType());
 
         auto tupleVar = rewriter.create<mlir_ts::VariableOp>(
             loc, mlir_ts::RefType::get(tupleType), mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
@@ -2024,7 +2024,7 @@ struct DeconstructTupleOpLowering : public TsLlvmPattern<mlir_ts::DeconstructTup
 
         auto loc = deconstructTupleOp.getLoc();
         auto tupleVar = transformed.getInstance();
-        auto tupleType = tupleVar.getType().cast<LLVM::LLVMStructType>();
+        auto tupleType = cast<LLVM::LLVMStructType>(tupleVar.getType());
 
         // values
         SmallVector<mlir::Value> results;
@@ -2222,7 +2222,7 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
         auto loc = pushOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = pushOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::RefType>(pushOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2314,7 +2314,7 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
         auto loc = popOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = popOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::RefType>(popOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
         
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2377,7 +2377,7 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
         auto loc = unshiftOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = unshiftOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::RefType>(unshiftOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2474,7 +2474,7 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
         auto loc = shiftOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = shiftOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::RefType>(shiftOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2545,7 +2545,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto loc = spliceOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = spliceOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::RefType>(spliceOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2702,7 +2702,7 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto loc = arrayViewOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = arrayViewOp.getOp().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::RefType>(arrayViewOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -3296,7 +3296,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                     llvmGlobalOp.setSection(DLL_IMPORT);
                 }
 
-                if (attr.getName() == "Linkage" && attr.getValue().cast<mlir::StringAttr>().getValue() == "LinkonceODR") 
+                if (attr.getName() == "Linkage" && cast<mlir::StringAttr>(attr.getValue()).getValue() == "LinkonceODR") 
                 {
                     toAddComdat = true;
                 }
@@ -3460,7 +3460,7 @@ struct OptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalOp>
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(optionalOp, rewriter);
 
-        auto boxedType = optionalOp.getRes().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto boxedType = cast<mlir_ts::OptionalType>(optionalOp.getRes().getType()).getElementType();
         auto llvmBoxedType = tch.convertType(boxedType);
         auto llvmOptType = tch.convertType(optionalOp.getRes().getType());
 
@@ -3515,7 +3515,7 @@ struct ValueOptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalValueOp>
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(createOptionalOp, rewriter);
 
-        auto boxedType = createOptionalOp.getRes().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto boxedType = cast<mlir_ts::OptionalType>(createOptionalOp.getRes().getType()).getElementType();
         auto llvmBoxedType = tch.convertType(boxedType);
         auto llvmOptType = tch.convertType(createOptionalOp.getRes().getType());
 
@@ -3572,7 +3572,7 @@ struct UndefOptionalOpLowering : public TsLlvmPattern<mlir_ts::OptionalUndefOp>
         CodeLogicHelper clh(undefOptionalOp, rewriter);
         DefaultLogic dl(undefOptionalOp, rewriter, tch, loc, tsLlvmContext->compileOptions);
 
-        auto boxedType = undefOptionalOp.getRes().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto boxedType = cast<mlir_ts::OptionalType>(undefOptionalOp.getRes().getType()).getElementType();
         auto llvmBoxedType = tch.convertType(boxedType);
         auto llvmOptType = tch.convertType(undefOptionalOp.getRes().getType());
 
@@ -4193,7 +4193,7 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
 
         TypeHelper th(rewriter);
 
-        auto catchRefType = saveCatchVarOp.getVarStore().getType().cast<mlir_ts::RefType>();
+        auto catchRefType = cast<mlir_ts::RefType>(saveCatchVarOp.getVarStore().getType());
         auto catchType = catchRefType.getElementType();
         auto llvmCatchType = getTypeConverter()->convertType(catchType);
 
@@ -4573,7 +4573,7 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
         CodeLogicHelper clh(loadBoundRefOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
 
-        auto boundRefType = loadBoundRefOp.getReference().getType().cast<mlir_ts::BoundRefType>();
+        auto boundRefType = cast<mlir_ts::BoundRefType>(loadBoundRefOp.getReference().getType());
 
         auto llvmType = tch.convertType(boundRefType.getElementType());
         auto ptrType = th.getPtrType();
@@ -4619,7 +4619,7 @@ struct StoreBoundRefOpLowering : public TsLlvmPattern<mlir_ts::StoreBoundRefOp>
         CodeLogicHelper clh(storeBoundRefOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
 
-        auto boundRefType = storeBoundRefOp.getReference().getType().cast<mlir_ts::BoundRefType>();
+        auto boundRefType = cast<mlir_ts::BoundRefType>(storeBoundRefOp.getReference().getType());
 
         auto llvmType = tch.convertType(boundRefType.getElementType());
         auto llvmRefType = th.getPtrType();
@@ -4761,7 +4761,7 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
         }
         else if (auto structType = dyn_cast<LLVM::LLVMStructType>(origType))
         {
-            auto ptrType = structType.getBody().front().cast<LLVM::LLVMPointerType>();
+            auto ptrType = cast<LLVM::LLVMPointerType>(structType.getBody().front());
             //assert(isa<LLVM::LLVMFunctionType>(ptrType.getElementType()));
             llvmMethodType = ptrType;
         }
