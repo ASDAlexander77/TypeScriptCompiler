@@ -1797,7 +1797,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         LLVM::DILocalVariableAttr varInfo;
         if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
-            if (auto localVarAttrFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>())
+            if (auto localVarAttrFusedLoc = dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>(location))
             {
                 varInfo = localVarAttrFusedLoc.getMetadata();
                 rewriter.create<LLVM::DbgDeclareOp>(location, allocated, varInfo);
@@ -1842,7 +1842,7 @@ struct DebugVariableOpLowering : public TsLlvmPattern<mlir_ts::DebugVariableOp>
 
         //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
         LocationHelper lh(rewriter.getContext());
-        if (auto localVarAttrFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>())
+        if (auto localVarAttrFusedLoc = dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>(location))
         {
             auto value = transformed.getInitializer();
 
@@ -3086,7 +3086,7 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
 #ifdef DBG_INFO_ADD_VALUE_OP        
         if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
-            if (auto varInfo = transformed.getReference().getDefiningOp()->getLoc().dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>())
+            if (auto varInfo = dyn_cast<mlir::FusedLocWith<LLVM::DILocalVariableAttr>>(transformed.getReference().getDefiningOp()->getLoc()))
             {
                 rewriter.create<LLVM::DbgValueOp>(storeOp->getLoc(), transformed.getValue(), varInfo.getMetadata());
             }
@@ -5724,7 +5724,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
     {
         auto location = op->getLoc();
         //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
-        if (auto scopeFusedLoc = location.dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>())
+        if (auto scopeFusedLoc = dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>(location))
         {
             if (auto namedLoc = dyn_cast_or_null<mlir::NameLoc>(scopeFusedLoc.getLocations().front()))
             {
