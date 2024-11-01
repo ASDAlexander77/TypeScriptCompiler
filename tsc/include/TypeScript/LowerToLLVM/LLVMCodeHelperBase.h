@@ -43,7 +43,7 @@ class LLVMCodeHelperBase
         auto lastUse = [&](Operation *op) {
             if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
             {
-                if (globalOp.getValueAttr() && globalOp.getValueAttr().isa<T>())
+                if (globalOp.getValueAttr() && isa<T>(globalOp.getValueAttr()))
                 {
                     rewriter.setInsertionPointAfter(globalOp);
                 }

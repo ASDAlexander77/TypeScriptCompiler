@@ -2868,7 +2868,7 @@ class MLIRGenImpl
             return false;
         }
 
-        if (isa<mlir_ts::ConstArrayType>(init.getType()) || init.getType().isa<mlir_ts::ConstTupleType>())
+        if (isa<mlir_ts::ConstArrayType>(init.getType()) || isa<mlir_ts::ConstTupleType>(init.getType()))
         {
             return true;
         }
@@ -5589,7 +5589,7 @@ class MLIRGenImpl
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 paramValue = V(result);
             }
-            else if (param->getIsOptional() && !param->getType().isa<mlir_ts::OptionalType>())
+            else if (param->getIsOptional() && !isa<mlir_ts::OptionalType>(param->getType()))
             {
                 auto optType = getOptionalType(param->getType());
                 param->setType(optType);
@@ -9110,7 +9110,7 @@ class MLIRGenImpl
         case SyntaxKind::LessThanToken:
         case SyntaxKind::LessThanEqualsToken:
 
-            if (isa<mlir_ts::UndefinedType>(leftExpressionValue.getType()) || rightExpressionValue.getType().isa<mlir_ts::UndefinedType>())
+            if (isa<mlir_ts::UndefinedType>(leftExpressionValue.getType()) || isa<mlir_ts::UndefinedType>(rightExpressionValue.getType()))
             {
                 break;
             }
@@ -11894,8 +11894,8 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expr = V(result);
 
-        if (!expr.getType().isa<mlir_ts::RefType>() && !expr.getType().isa<mlir_ts::ValueRefType>() &&
-            !expr.getType().isa<mlir_ts::ClassType>())
+        if (!isa<mlir_ts::RefType>(expr.getType()) && !isa<mlir_ts::ValueRefType>(expr.getType()) &&
+            !isa<mlir_ts::ClassType>(expr.getType()))
         {
             if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(expr.getType()))
             {
@@ -13858,7 +13858,7 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        if (!value->getReadWriteAccess() && value->getType().isa<mlir_ts::StringType>())
+        if (!value->getReadWriteAccess() && isa<mlir_ts::StringType>(value->getType()))
         {
             // load address of const object in global
             return builder.create<mlir_ts::AddressOfConstStringOp>(location, value->getType(), value->getName());

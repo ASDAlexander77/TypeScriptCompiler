@@ -3715,12 +3715,12 @@ struct CopyStructOpLowering : public TsLlvmPattern<mlir_ts::CopyStructOp>
         LLVM_DEBUG(llvm::dbgs() << "[CopyStructOp(1)] from type: " << memoryCopyOp.getSrc().getType() << " to type: " << memoryCopyOp.getDst().getType()
                                 << "\n";);        
 
-        assert(transformed.getSrc().getType().isa<LLVM::LLVMPointerType>());
+        assert(isa<LLVM::LLVMPointerType>(transformed.getSrc().getType()));
         auto srcStorageType = MLIRHelper::getElementTypeOrSelf(memoryCopyOp.getSrc().getType());
         auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), srcStorageType);
         auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
 
-        assert(transformed.getDst().getType().isa<LLVM::LLVMPointerType>());
+        assert(isa<LLVM::LLVMPointerType>(transformed.getDst().getType()));
         auto dstStorageType = MLIRHelper::getElementTypeOrSelf(memoryCopyOp.getDst().getType());
         auto dstSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), dstStorageType);
         auto dstSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, dstSizeMLIR);
@@ -4678,7 +4678,7 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 
         assert(createBoundFunctionOp.getType());
         assert(isa<mlir_ts::BoundFunctionType>(createBoundFunctionOp.getType()) ||
-               createBoundFunctionOp.getType().isa<mlir_ts::HybridFunctionType>());
+               isa<mlir_ts::HybridFunctionType>(createBoundFunctionOp.getType()));
 
         auto llvmBoundFunctionType = tch.convertType(createBoundFunctionOp.getType());
 
@@ -4762,7 +4762,7 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
         else if (auto structType = dyn_cast<LLVM::LLVMStructType>(origType))
         {
             auto ptrType = structType.getBody().front().cast<LLVM::LLVMPointerType>();
-            //assert(ptrType.getElementType().isa<LLVM::LLVMFunctionType>());
+            //assert(isa<LLVM::LLVMFunctionType>(ptrType.getElementType()));
             llvmMethodType = ptrType;
         }
         else

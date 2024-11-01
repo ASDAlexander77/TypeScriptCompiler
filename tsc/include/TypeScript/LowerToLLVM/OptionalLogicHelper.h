@@ -172,7 +172,7 @@ class OptionalLogicHelper
         TypeHelper th(rewriter);
         CodeLogicHelper clh(binOp, rewriter);
 
-        assert(right.getType().isa<mlir_ts::UndefinedType>());
+        assert(isa<mlir_ts::UndefinedType>(right.getType()));
 
         auto leftUndefFlagValueBool = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), left);
 

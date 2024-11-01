@@ -216,7 +216,7 @@ class MLIRTypeHelper
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(elementType))
         {
             if (funcType.getNumInputs() > 0 &&
-                (isa<mlir_ts::OpaqueType>(funcType.getInput(0)) || funcType.getInput(0).isa<mlir_ts::ObjectType>()))
+                (isa<mlir_ts::OpaqueType>(funcType.getInput(0)) || isa<mlir_ts::ObjectType>(funcType.getInput(0))))
             {
                 isBound = true;
                 return mlir_ts::BoundFunctionType::get(context, funcType);
@@ -920,7 +920,7 @@ class MLIRTypeHelper
             if (inInputs[i] != resInputs[i])
             {
                 /*
-                if (i == 0 && (inFuncType.getInput(i).isa<mlir_ts::OpaqueType>() || resFuncType.getInput(i).isa<mlir_ts::OpaqueType>()))
+                if (i == 0 && (isa<mlir_ts::OpaqueType>(inFuncType.getInput(i)) || isa<mlir_ts::OpaqueType>(resFuncType.getInput(i))))
                 {
                     // allow not to match opaque time at first position
                     continue;
@@ -1158,25 +1158,25 @@ class MLIRTypeHelper
     {
         // 1 we need to skip opaque and objects
         if (startParamIn <= 0 && inFuncType.getNumInputs() > 0 &&
-            (isa<mlir_ts::OpaqueType>(inFuncType.getInput(0)) || inFuncType.getInput(0).isa<mlir_ts::ObjectType>()))
+            (isa<mlir_ts::OpaqueType>(inFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(inFuncType.getInput(0))))
         {
             startParamIn = 1;
         }
 
         if (startParamIn <= 1 && inFuncType.getNumInputs() > 1 &&
-            (isa<mlir_ts::OpaqueType>(inFuncType.getInput(1)) || inFuncType.getInput(1).isa<mlir_ts::ObjectType>()))
+            (isa<mlir_ts::OpaqueType>(inFuncType.getInput(1)) || isa<mlir_ts::ObjectType>(inFuncType.getInput(1))))
         {
             startParamIn = 2;
         }
 
         if (startParamRes <= 0 && resFuncType.getNumInputs() > 0 &&
-            (isa<mlir_ts::OpaqueType>(resFuncType.getInput(0)) || resFuncType.getInput(0).isa<mlir_ts::ObjectType>()))
+            (isa<mlir_ts::OpaqueType>(resFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(resFuncType.getInput(0))))
         {
             startParamRes = 1;
         }
 
         if (startParamRes <= 1 && resFuncType.getNumInputs() > 1 &&
-            (isa<mlir_ts::OpaqueType>(resFuncType.getInput(1)) || resFuncType.getInput(1).isa<mlir_ts::ObjectType>()))
+            (isa<mlir_ts::OpaqueType>(resFuncType.getInput(1)) || isa<mlir_ts::ObjectType>(resFuncType.getInput(1))))
         {
             startParamRes = 2;
         }
