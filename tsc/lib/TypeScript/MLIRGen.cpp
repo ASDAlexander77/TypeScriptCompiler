@@ -5441,7 +5441,7 @@ class MLIRGenImpl
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto value = V(result);
                 auto optValue = 
-                    value.getType().isa<mlir_ts::OptionalType>()
+                    isa<mlir_ts::OptionalType>(value.getType())
                         ? value
                         : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
                 return ValueOrLogicalResult(optValue); 
@@ -7274,8 +7274,8 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto exprValue = V(result);
 
-        auto skip = exprValue.getType().isa<mlir_ts::ArrayType>() 
-                 || exprValue.getType().isa<mlir_ts::StringType>();
+        auto skip = isa<mlir_ts::ArrayType>(exprValue.getType()) 
+                 || isa<mlir_ts::StringType>(exprValue.getType());
         // we need to ignore SYMBOL_ITERATOR for array to use simplier method and do not cause the stackoverflow
         if (!skip)
         {
@@ -9373,7 +9373,7 @@ class MLIRGenImpl
             }
 
             auto optValue =
-                value.getType().isa<mlir_ts::OptionalType>()
+                isa<mlir_ts::OptionalType>(value.getType())
                     ? value 
                     : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
@@ -9756,7 +9756,7 @@ class MLIRGenImpl
             //                     << "', this type: " << thisValue.getType() << " value:" << thisValue << "";);
 
             // get reference in case of classStorage
-            auto isStorageType = thisValue.getType().isa<mlir_ts::ClassStorageType>();
+            auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
             if (isStorageType)
             {
                 MLIRCodeLogic mcl(builder);
@@ -9900,7 +9900,7 @@ class MLIRGenImpl
                 auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
 
                 // TODO: check if you can split calls such as "this.method" and "super.method" ...
-                auto isStorageType = thisValue.getType().isa<mlir_ts::ClassStorageType>();
+                auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
                 if (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType)
                 {
                     LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "' in context func. '"
@@ -10169,7 +10169,7 @@ class MLIRGenImpl
             }
             else
             {
-                auto actualType = fieldRefType.getElementType().isa<mlir_ts::OptionalType>()
+                auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
                                       ? fieldRefType.getElementType()
                                       : mlir_ts::OptionalType::get(fieldRefType.getElementType());
                 value = builder.create<mlir_ts::LoadOp>(location, actualType, interfaceSymbolRefValue.getResult());
@@ -10263,7 +10263,7 @@ class MLIRGenImpl
                 auto value = V(result3);
 
                 auto optValue = 
-                    value.getType().isa<mlir_ts::OptionalType>()
+                    isa<mlir_ts::OptionalType>(value.getType())
                         ? value
                         : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
                 return ValueOrLogicalResult(optValue); 
@@ -12637,7 +12637,7 @@ class MLIRGenImpl
             if (!itemValue.getDefiningOp<mlir_ts::ConstantOp>() || 
             // TODO: in case of [{ a: '', b: 0, c: '' }, { a: "", b: 3, c: 0 }]
                 ((arrayInfo.dataType == TypeData::Array || arrayInfo.dataType == TypeData::NotSet)
-                    && itemValue.getType().isa<mlir_ts::ConstTupleType>()                 
+                    && isa<mlir_ts::ConstTupleType>(itemValue.getType())                 
                     && arrayInfo.accumulatedArrayElementType 
                     && mth.removeConstType(itemValue.getType()) != arrayInfo.accumulatedArrayElementType))
             {
