@@ -642,7 +642,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       DeclareOpInterfaceMethods<SymbolUserOpInterface>,
       TypesMatchWith<"callee result types match result types",
                      "callee", "results",
-                     "($_self.isa<HybridFunctionType>() ? $_self.cast<HybridFunctionType>().getResults() : $_self.cast<FunctionType>().getResults())">
+                     "(isa<HybridFunctionType>($_self) ? $_self.cast<HybridFunctionType>().getResults() : $_self.cast<FunctionType>().getResults())">
     ]> {
   let summary = "indirect call operation";
   let description = [{
