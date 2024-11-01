@@ -11009,7 +11009,7 @@ class MLIRGenImpl
                     operands.pop_back_n(toIndex - fromIndex);
 
                     // create array
-                    auto array = varArgOperands.empty() && !varArgsType.template isa<mlir_ts::ArrayType>()
+                    auto array = varArgOperands.empty() && !isa<mlir_ts::ArrayType>(varArgsType)
                         ? V(builder.create<mlir_ts::UndefOp>(location, varArgsType))
                         : V(builder.create<mlir_ts::CreateArrayOp>(location, varArgsType, varArgOperands));
                     operands.push_back(array);

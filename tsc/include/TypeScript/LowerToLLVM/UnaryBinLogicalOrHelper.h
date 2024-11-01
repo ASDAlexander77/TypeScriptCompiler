@@ -20,10 +20,10 @@ namespace typescript
 {
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value OptionalTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, LLVMTypeConverter &, CompileOptions&);
+mlir::Value OptionalTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, const LLVMTypeConverter &, CompileOptions&);
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value UndefTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, LLVMTypeConverter &, CompileOptions&);
+mlir::Value UndefTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, const LLVMTypeConverter &, CompileOptions&);
 
 template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
 void UnaryOp(UnaryOpTy &unaryOp, mlir::Value oper, PatternRewriter &builder)
@@ -82,7 +82,7 @@ LogicalResult BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, Pattern
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
 mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Type leftType, mlir::Value right, mlir::Type rightType,
-                    PatternRewriter &builder, LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
+                    PatternRewriter &builder, const LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
 {
     auto loc = binOp->getLoc();
 

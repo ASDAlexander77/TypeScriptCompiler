@@ -26,11 +26,11 @@ class OptionalLogicHelper
 {
     Operation *binOp;
     PatternRewriter &rewriter;
-    LLVMTypeConverter &typeConverter;
+    const LLVMTypeConverter &typeConverter;
     CompileOptions &compileOptions;
 
   public:
-    OptionalLogicHelper(Operation *binOp, PatternRewriter &rewriter, LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
+    OptionalLogicHelper(Operation *binOp, PatternRewriter &rewriter, const LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
         : binOp(binOp), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
     {
     }
@@ -218,7 +218,7 @@ class OptionalLogicHelper
 };
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value OptionalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
+mlir::Value OptionalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, const LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
 {
     OptionalLogicHelper olh(binOp, builder, typeConverter, compileOptions);
     auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(opCmpCode);
