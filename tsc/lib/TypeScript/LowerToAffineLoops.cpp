@@ -68,7 +68,7 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
         if (anyResult)
         {
             auto loadedValue = rewriter.create<mlir_ts::LoadOp>(
-                location, returnType.cast<mlir_ts::RefType>().getElementType(), allocValue);
+                location, mlir::cast<mlir_ts::RefType>(returnType).getElementType(), allocValue);
             rewriter.create<mlir_ts::ReturnInternalOp>(location, mlir::ValueRange{loadedValue});
             rewriter.replaceOp(op, allocValue);
         }
@@ -201,8 +201,8 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
 
         auto location = paramOp.getLoc();
 
-        auto dataTypeIn = paramOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
-        auto storeType = paramOp.getType().cast<mlir_ts::RefType>().getElementType();
+        auto dataTypeIn = cast<mlir_ts::OptionalType>(paramOp.getArgValue().getType()).getElementType();
+        auto storeType = cast<mlir_ts::RefType>(paramOp.getType()).getElementType();
 
         // ts.if
         auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.getArgValue());
@@ -256,7 +256,7 @@ struct OptionalValueOrDefaultOpLowering : public TsPattern<mlir_ts::OptionalValu
 
         auto location = optionalValueOrDefaultOp.getLoc();
 
-        auto dataTypeIn = optionalValueOrDefaultOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto dataTypeIn = cast<mlir_ts::OptionalType>(optionalValueOrDefaultOp.getArgValue().getType()).getElementType();
         auto resultType = optionalValueOrDefaultOp.getType();
 
         // ts.if
@@ -311,7 +311,7 @@ struct PrefixUnaryOpLowering : public TsPattern<mlir_ts::PrefixUnaryOp>
         auto value = op.getOperand1();
         auto effectiveType = op.getType();
         bool castBack = false;
-        if (auto optType = effectiveType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(effectiveType))
         {
             castBack = true;
             effectiveType = optType.getElementType();
@@ -362,7 +362,7 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
         auto value = op.getOperand1();
         auto effectiveType = op.getType();
         bool castBack = false;
-        if (auto optType = effectiveType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(effectiveType))
         {
             castBack = true;
             effectiveType = optType.getElementType();
@@ -932,7 +932,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto visitorCatchContinue = [&](Operation *op) {
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
             {
-                rttih.setType(catchOp.getCatchArg().getType().cast<mlir_ts::RefType>().getElementType());
+                rttih.setType(cast<mlir_ts::RefType>(catchOp.getCatchArg().getType()).getElementType());
                 assert(!catchOpPtr);
                 catchOpPtr = op;
             }
@@ -1625,8 +1625,8 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture result type: " << captureRefType << "\n\n";);
 
-        assert(captureRefType.isa<mlir_ts::RefType>());
-        auto captureStoreType = captureRefType.cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::TupleType>();
+        assert(isa<mlir_ts::RefType>(captureRefType));
+        auto captureStoreType = cast<mlir_ts::TupleType>(cast<mlir_ts::RefType>(captureRefType).getElementType());
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture store type: " << captureStoreType << "\n\n";);
 
@@ -1651,16 +1651,16 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
 
             // dereference value in case of sending value by ref but stored as value
             // TODO: review capture logic
-            if (auto valRefType = val.getType().dyn_cast<mlir_ts::RefType>())
+            if (auto valRefType = dyn_cast<mlir_ts::RefType>(val.getType()))
             {
-                if (!thisStoreFieldType.isa<mlir_ts::RefType>() && thisStoreFieldType == valRefType.getElementType())
+                if (!isa<mlir_ts::RefType>(thisStoreFieldType) && thisStoreFieldType == valRefType.getElementType())
                 {
                     // load value to dereference
                     val = rewriter.create<mlir_ts::LoadOp>(location, valRefType.getElementType(), val);
                 }
             }
 
-            assert(val.getType() == fieldRef.getType().cast<mlir_ts::RefType>().getElementType());
+            assert(val.getType() == cast<mlir_ts::RefType>(fieldRef.getType()).getElementType());
 
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
         }
@@ -1795,7 +1795,7 @@ void finishSwitchState(mlir_ts::FuncOp f, TSFunctionContext &tsFuncContext)
         return;
     }
 
-    ConversionPatternRewriter rewriter(f.getContext());
+    PatternRewriter rewriter(f.getContext());
     CodeLogicHelper clh(f, rewriter);
     auto switchStateOp = clh.FindOp<mlir_ts::SwitchStateOp>(f);
     assert(switchStateOp);
@@ -1831,7 +1831,7 @@ void cleanupEmptyBlocksWithoutPredecessors(mlir_ts::FuncOp f)
             }
         }
 
-        ConversionPatternRewriter rewriter(f.getContext());
+        PatternRewriter rewriter(f.getContext());
         for (auto blockPtr : workSet)
         {
             blockPtr->dropAllDefinedValueUses();
@@ -1860,7 +1860,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
     target.addLegalOp<
         mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
         mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp,
-        mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp,
+        mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::DefaultOp, mlir_ts::HasValueOp,
         mlir_ts::ValueOp, mlir_ts::ValueOrDefaultOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp,
         mlir_ts::PrintOp, mlir_ts::ConvertFOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
         mlir_ts::StringLengthOp, mlir_ts::SetStringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,

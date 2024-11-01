@@ -35,7 +35,6 @@ using llvm::cast;
 using llvm::dyn_cast;
 using llvm::dyn_cast_or_null;
 using llvm::isa;
-using llvm::makeArrayRef;
 using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;

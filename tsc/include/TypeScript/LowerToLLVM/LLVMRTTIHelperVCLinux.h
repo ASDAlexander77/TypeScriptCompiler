@@ -38,8 +38,8 @@ class LLVMRTTIHelperVCLinux
     SmallVector<std::string> types;
 
   public:
-    LLVMRTTIHelperVCLinux(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter, compileOptions),
+    LLVMRTTIHelperVCLinux(Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter, CompileOptions &compileOptions)
+        : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, typeConverter, compileOptions),
           clh(op, rewriter), classType(false), rethrow(false)
     {
     }
@@ -97,7 +97,7 @@ class LLVMRTTIHelperVCLinux
     void setType(mlir::Type type)
     {
         auto normalizedType = MLIRHelper::stripLiteralType(type);
-        if (auto enumType = normalizedType.dyn_cast<mlir_ts::EnumType>())
+        if (auto enumType = dyn_cast<mlir_ts::EnumType>(normalizedType))
         {
             normalizedType = enumType.getElementType();
         }
@@ -165,25 +165,20 @@ class LLVMRTTIHelperVCLinux
         if (classType)
         {
             SmallVector<mlir::Type> tiTypes;
-            tiTypes.push_back(th.getI8PtrType());
-            tiTypes.push_back(th.getI8PtrType());
+            tiTypes.push_back(th.getPtrType());
+            tiTypes.push_back(th.getPtrType());
             tiTypes.push_back(th.getI32Type());
-            tiTypes.push_back(th.getI8PtrType());
+            tiTypes.push_back(th.getPtrType());
 
             tiType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), tiTypes, false);
         }
         else
         {
-            tiType = th.getI8PtrType();
+            tiType = th.getPtrType();
         }
 
         mlir::Value throwInfoPtr =
-            rewriter.create<LLVM::AddressOfOp>(loc, th.getPointerType(tiType), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
-        if (classType)
-        {
-            throwInfoPtr = clh.castToI8Ptr(throwInfoPtr);
-        }
-
+            rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
         return throwInfoPtr;
     }
 };

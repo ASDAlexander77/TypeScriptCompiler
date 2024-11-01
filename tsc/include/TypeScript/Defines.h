@@ -2,7 +2,7 @@
 #define DEFINES_H_
 
 #define IDENTIFIER_ATTR_NAME "identifier"
-#define VIRTUALFUNC_ATTR_NAME "__virt"
+#define BUILTIN_FUNC_ATTR_NAME "__builtin"
 #define GENERIC_ATTR_NAME "__generic"
 #define INSTANCES_COUNT_ATTR_NAME "InstancesCount"
 #define RETURN_VARIABLE_NAME ".return"
@@ -40,6 +40,8 @@
 #define GENERATOR_STEP ".step"
 #define GENERATOR_SWITCHSTATE ".switchstate"
 #define GENERATOR_STATELABELPREFIX ".state"
+
+#define MLIR_GCTORS "__mlir_gctors"
 
 #define TO_STRING "toString"
 #define SYMBOL_TO_STRING_TAG "toStringTag"

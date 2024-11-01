@@ -27,22 +27,23 @@ class LLVMCodeHelperBase
   protected:
     mlir::Operation *op;
     PatternRewriter &rewriter;
-    TypeConverter *typeConverter;
+    const TypeConverter *typeConverter;
     CompileOptions &compileOptions;
 
   public:
-    LLVMCodeHelperBase(mlir::Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter, CompileOptions &compileOptions)
+    LLVMCodeHelperBase(mlir::Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
     {
     }
 
-    template <typename T> void seekLast(mlir::Block *block)
+    template <typename T> 
+    void seekLast(mlir::Block *block)
     {
         // find last string
         auto lastUse = [&](Operation *op) {
             if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
             {
-                if (globalOp.getValueAttr() && globalOp.getValueAttr().isa<T>())
+                if (globalOp.getValueAttr() && isa<T>(globalOp.getValueAttr()))
                 {
                     rewriter.setInsertionPointAfter(globalOp);
                 }
@@ -160,8 +161,7 @@ class LLVMCodeHelperBase
 
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        return rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrType(), globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 0});
     }
 
   public:
@@ -189,7 +189,7 @@ class LLVMCodeHelperBase
 
     LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
     {
-        return getOrInsertFunction(op->getLoc(), op->getParentOfType<ModuleOp>(), name, llvmFnType);
+        return getOrInsertFunction(mlir::UnknownLoc::get(op->getContext()) /*op->getLoc()*/, op->getParentOfType<ModuleOp>(), name, llvmFnType);
     }
 
     mlir::Value MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
@@ -211,36 +211,9 @@ class LLVMCodeHelperBase
         return MemoryAlloc(sizeOfTypeValue, zero);
     }
 
-    mlir::Value MemoryAllocBitcast(mlir::Type res, mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
-    {
-        auto loc = op->getLoc();
-
-        auto alloc = MemoryAlloc(storageType, zero);
-        auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
-        return val;
-    }
-
-    mlir::Value MemoryAllocBitcast(mlir::Type res, mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
-    {
-        auto loc = op->getLoc();
-
-        auto alloc = MemoryAlloc(sizeOfAlloc, zero);
-        auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
-        return val;
-    }
-
     mlir::Value MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
     {
         return _MemoryRealloc<int>(ptrValue, sizeOfAlloc);
-    }
-
-    mlir::Value MemoryReallocBitcast(mlir::Type res, mlir::Value ptrValue, mlir::Value sizeOfAlloc)
-    {
-        auto loc = op->getLoc();
-
-        auto alloc = MemoryRealloc(ptrValue, sizeOfAlloc);
-        auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
-        return val;
     }
 
     LogicalResult MemoryFree(mlir::Value ptrValue)
@@ -248,7 +221,7 @@ class LLVMCodeHelperBase
         return _MemoryFree<int>(ptrValue);
     }
 
-    mlir::Value Alloca(mlir::Type llvmReferenceType, int count, bool inalloca = false)
+    mlir::Value Alloca(mlir::Type elementType, int count, bool inalloca = false)
     {
         auto location = op->getLoc();
 
@@ -263,15 +236,17 @@ class LLVMCodeHelperBase
         }
 
         CodeLogicHelper clh(op, rewriter);
-        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count), inalloca);
+        TypeHelper th(rewriter);
+        auto allocated = rewriter.create<LLVM::AllocaOp>(location, th.getPtrType(), elementType, clh.createI32ConstantOf(count), inalloca);
         return allocated;
     }
 
-    mlir::Value Alloca(mlir::Type llvmReferenceType, mlir::Value count, bool inalloca = false)
+    mlir::Value Alloca(mlir::Type elementType, mlir::Value count, bool inalloca = false)
     {
         auto location = op->getLoc();
         CodeLogicHelper clh(op, rewriter);
-        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, count, inalloca);
+        TypeHelper th(rewriter);
+        auto allocated = rewriter.create<LLVM::AllocaOp>(location, th.getPtrType(), elementType, count, inalloca);
         return allocated;
     }
 
@@ -285,7 +260,7 @@ class LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto mallocFuncOp = getOrInsertFunction(
             compileOptions.isWasm ? "ts_malloc" : "malloc", 
             th.getFunctionType(i8PtrTy, {llvmIndexType}));
@@ -326,17 +301,12 @@ class LLVMCodeHelperBase
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
 
-        auto llvmIndexType = tch.convertType(th.getIndexType());
-
         auto loc = op->getLoc();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
+        assert (ptrValue.getType() == i8PtrTy);
 
-        auto effectivePtrValue = ptrValue;
-        if (ptrValue.getType() != i8PtrTy)
-        {
-            effectivePtrValue = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
-        }
+        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         auto mallocFuncOp = getOrInsertFunction(
             compileOptions.isWasm ? "ts_realloc" : "realloc", 
@@ -353,7 +323,7 @@ class LLVMCodeHelperBase
             effectiveSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, effectiveSize);
         }
 
-        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectivePtrValue, effectiveSize});
+        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{ptrValue, effectiveSize});
         return callResults.getResult();
     }
 
@@ -364,7 +334,7 @@ class LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto freeFuncOp = getOrInsertFunction(
             compileOptions.isWasm ? "ts_free" : "free", 

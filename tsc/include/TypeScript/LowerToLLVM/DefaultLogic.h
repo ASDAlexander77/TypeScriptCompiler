@@ -33,44 +33,14 @@ class DefaultLogic
 
   public:
     DefaultLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
     {
     }
 
     mlir::Value getDefaultValueForOrUndef(mlir::Type dataType)
     {
-        mlir::Value defValue = getDefaultValueFor(dataType);
-        if (!defValue)
-        {
-            defValue = rewriter.create<LLVM::UndefOp>(loc, dataType);
-        }
-
+        auto defValue = rewriter.create<LLVM::ZeroOp>(loc, dataType);
         return defValue;
-    }
-
-    mlir::Value getDefaultValueFor(mlir::Type dataType)
-    {
-        // default value
-        mlir::Value defaultValue;
-
-        // TODO: finish for all types
-
-        if (dataType.isa<LLVM::LLVMPointerType>())
-        {
-            defaultValue = rewriter.create<LLVM::NullOp>(loc, dataType);
-        }
-        else if (dataType.isa<mlir::IntegerType>())
-        {
-            dataType.cast<mlir::IntegerType>().getWidth();
-            defaultValue = clh.createIConstantOf(dataType.cast<mlir::IntegerType>().getWidth(), 0);
-        }
-        else if (dataType.isa<mlir::FloatType>())
-        {
-            dataType.cast<mlir::FloatType>().getWidth();
-            defaultValue = clh.createFConstantOf(dataType.cast<mlir::FloatType>().getWidth(), 0.0);
-        }
-
-        return defaultValue;
     }
 };
 } // namespace typescript

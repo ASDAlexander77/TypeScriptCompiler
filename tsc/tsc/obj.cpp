@@ -220,7 +220,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     auto CPUStr = llvm::codegen::getCPUStr(), 
          FeaturesStr = llvm::codegen::getFeaturesStr();
 
-    llvm::CodeGenOpt::Level OLvl;
+    llvm::CodeGenOptLevel OLvl;
     // TODO: finish it, optimization
     if (auto Level = llvm::CodeGenOpt::parseLevel(enableOpt ? mapToLevel(optLevel) : '0')) 
     {
@@ -331,8 +331,8 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
         return -1;        
     }
 
-    auto fileFormat = emitAction == DumpObj ? llvm::CGFT_ObjectFile : emitAction == DumpAssembly ? llvm::CGFT_AssemblyFile : llvm::CGFT_Null;
-    if (llvm::mc::getExplicitRelaxAll() && /*llvm::codegen::getFileType()*/ fileFormat != llvm::CGFT_ObjectFile)
+    auto fileFormat = emitAction == DumpObj ? llvm::CodeGenFileType::ObjectFile : emitAction == DumpAssembly ? llvm::CodeGenFileType::AssemblyFile : llvm::CodeGenFileType::Null;
+    if (llvm::mc::getExplicitRelaxAll() && /*llvm::codegen::getFileType()*/ fileFormat != llvm::CodeGenFileType::ObjectFile)
     {
         llvm::WithColor::warning(llvm::errs(), "tsc") << ": warning: ignoring -mc-relax-all because filetype != obj";
     }
@@ -344,7 +344,7 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
         // so we can memcmp the contents in CompileTwice mode
         llvm::SmallVector<char, 0> Buffer;
         std::unique_ptr<llvm::raw_svector_ostream> BOS;
-        if ((/*llvm::codegen::getFileType()*/ fileFormat != llvm::CGFT_AssemblyFile &&
+        if ((/*llvm::codegen::getFileType()*/ fileFormat != llvm::CodeGenFileType::AssemblyFile &&
             !FDOut->os().supportsSeeking())) 
         {
             BOS = std::make_unique<llvm::raw_svector_ostream>(Buffer);

@@ -95,7 +95,7 @@ class MLIRCodeLogic
     mlir::Type getEffectiveFunctionTypeForTupleField(mlir::Type elementType)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
-        if (auto boundFuncType = elementType.dyn_cast<mlir_ts::BoundFunctionType>())
+        if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(elementType))
         {
             return mlir_ts::FunctionType::get(context, boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
         }
@@ -125,7 +125,7 @@ class MLIRCodeLogic
         if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
         {
             // try to resolve index
-            auto intAttr = fieldId.dyn_cast<mlir::IntegerAttr>();
+            auto intAttr = dyn_cast<mlir::IntegerAttr>(fieldId);
             if (intAttr)
             {
                 fieldIndex = intAttr.getInt();
@@ -202,17 +202,23 @@ class MLIRCodeLogicHelper
         return ifOp.getResults().front();
     }
 
-    void seekLast(mlir::Block *block)
+    template <typename T>
+    void seekLastOp(mlir::Block *block)
     {
         // find last string
         auto lastUse = [&](mlir::Operation *op) {
-            if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
+            if (auto globalOp = dyn_cast<T>(op))
             {
                 builder.setInsertionPointAfter(globalOp);
             }
         };
 
         block->walk(lastUse);
+    }    
+
+    void seekLast(mlir::Block *block)
+    {
+        seekLastOp<mlir_ts::GlobalOp>(block);
     }
 };
 
@@ -349,7 +355,7 @@ class MLIRCustomMethods
         SmallVector<mlir::Value> vals;
         for (auto &oper : operands)
         {
-            if (!oper.getType().isa<mlir_ts::StringType>())
+            if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
                 vals.push_back(strCast);
@@ -375,14 +381,14 @@ class MLIRCustomMethods
         }
 
         bufferSize = operands[0];
-        if (!bufferSize.getType().isa<mlir::IndexType>())
+        if (!isa<mlir::IndexType>(bufferSize.getType()))
         {
             bufferSize = castFn(location, mlir::IndexType::get(builder.getContext()), bufferSize, genContext);
         }
 
         auto stringType = mlir_ts::StringType::get(builder.getContext());
         format = operands[1];
-        if (!format.getType().isa<mlir_ts::StringType>())
+        if (!isa<mlir_ts::StringType>(format.getType()))
         {
             format = castFn(location, stringType, format, genContext);
         }
@@ -415,14 +421,14 @@ class MLIRCustomMethods
                 if (constantOp)
                 {
                     auto type = constantOp.getType();
-                    if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+                    if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
                     {
                         type = literalType.getElementType();
                     }
 
-                    if (type.isa<mlir_ts::StringType>())
+                    if (isa<mlir_ts::StringType>(type))
                     {
-                        msg = constantOp.getValue().cast<mlir::StringAttr>().getValue();
+                        msg = cast<mlir::StringAttr>(constantOp.getValue()).getValue();
                     }
                 }
 
@@ -431,7 +437,7 @@ class MLIRCustomMethods
         }
 
         auto op = operands.front();
-        if (!op.getType().isa<mlir_ts::BooleanType>())
+        if (!isa<mlir_ts::BooleanType>(op.getType()))
         {
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::BooleanType::get(builder.getContext()), op);
         }
@@ -448,7 +454,7 @@ class MLIRCustomMethods
         auto op = operands.front();
         mlir::Value op2;
 
-        if (!op.getType().isa<mlir_ts::StringType>())
+        if (!isa<mlir_ts::StringType>(op.getType()))
         {
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
         }
@@ -456,7 +462,7 @@ class MLIRCustomMethods
         if (hasTwoOps)
         {
             op2 = operands[1];
-            if (!op2.getType().isa<mlir::IntegerType>())
+            if (!isa<mlir::IntegerType>(op2.getType()))
             {
                 op2 = builder.create<mlir_ts::CastOp>(location, mlir::IntegerType::get(builder.getContext(), 32), op2);
             }
@@ -471,7 +477,7 @@ class MLIRCustomMethods
     mlir::Value mlirGenParseFloat(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         auto op = operands.front();
-        if (!op.getType().isa<mlir_ts::StringType>())
+        if (!isa<mlir_ts::StringType>(op.getType()))
         {
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
         }
@@ -485,7 +491,7 @@ class MLIRCustomMethods
     mlir::Value mlirGenIsNaN(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         auto op = operands.front();
-        if (!op.getType().isa<mlir_ts::NumberType>())
+        if (!isa<mlir_ts::NumberType>(op.getType()))
         {
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::NumberType::get(builder.getContext()), op);
         }
@@ -514,7 +520,7 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
 
-        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+        auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
         SmallVector<mlir::Value> castedValues;
         for (auto value : values)
@@ -558,7 +564,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value value = builder.create<mlir_ts::ArrayPopOp>(
-            location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
+            location, cast<mlir_ts::ArrayType>(operands.front().getType()).getElementType(), thisValue);
 
         return value;
     }
@@ -567,7 +573,7 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
 
-        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+        auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
         SmallVector<mlir::Value> castedValues;
         for (auto value : values)
@@ -611,7 +617,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value value = builder.create<mlir_ts::ArrayShiftOp>(
-            location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
+            location, cast<mlir_ts::ArrayType>(operands.front().getType()).getElementType(), thisValue);
 
         return value;
     }    
@@ -620,17 +626,17 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
 
-        if (!startValue.getType().isa<mlir::IndexType>())
+        if (!isa<mlir::IndexType>(startValue.getType()))
         {
             startValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), startValue);
         }
 
-        if (!deleteCountValue.getType().isa<mlir::IndexType>())
+        if (!isa<mlir::IndexType>(deleteCountValue.getType()))
         {
             deleteCountValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), deleteCountValue);
         }
 
-        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+        auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
         SmallVector<mlir::Value> castedValues;
         for (auto value : values)
@@ -685,7 +691,7 @@ class MLIRCustomMethods
         mlir::Value arrayViewValue =
             builder.create<mlir_ts::ArrayViewOp>(
                 location, 
-                thisValue.getType().cast<mlir_ts::ArrayType>(), 
+                cast<mlir_ts::ArrayType>(thisValue.getType()), 
                 thisValue, 
                 castedValues[0], 
                 castedValues[1]);
@@ -726,7 +732,7 @@ class MLIRCustomMethods
         mlir::Value fileNameValue;
         for (auto &oper : operands)
         {
-            if (!oper.getType().isa<mlir_ts::StringType>())
+            if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast =
                     builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
@@ -753,7 +759,7 @@ class MLIRCustomMethods
         mlir::Value symbolNameValue;
         for (auto &oper : operands)
         {
-            if (!oper.getType().isa<mlir_ts::StringType>())
+            if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast =
                     builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
@@ -782,7 +788,7 @@ class MLIRCustomMethods
         mlir::Value refValue;
         for (auto &oper : operands)
         {
-            if (oper.getType().isa<mlir_ts::OpaqueType>())
+            if (isa<mlir_ts::OpaqueType>(oper.getType()))
             {
                 auto opaqueCast =
                     builder.create<mlir_ts::CastOp>(location, mlir_ts::RefType::get(builder.getContext(), oper.getType()), oper);
@@ -801,7 +807,7 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
-        auto loadedValue = builder.create<mlir_ts::LoadOp>(location, refValue.getType().cast<mlir_ts::RefType>().getElementType(), refValue);
+        auto loadedValue = builder.create<mlir_ts::LoadOp>(location, cast<mlir_ts::RefType>(refValue.getType()).getElementType(), refValue);
         return V(loadedValue);
     }
 
@@ -833,7 +839,7 @@ class MLIRPropertyAccessCodeLogic
                                 mlir::Attribute fieldId)
         : builder(builder), location(location), expression(expression), fieldId(fieldId)
     {
-        if (auto strAttr = fieldId.dyn_cast<mlir::StringAttr>())
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId))
         {
             name = strAttr.getValue();
         }
@@ -848,7 +854,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
 
-        auto dictionaryAttr = attrVal.cast<mlir::DictionaryAttr>();
+        auto dictionaryAttr = mlir::cast<mlir::DictionaryAttr>(attrVal);
         auto valueAttr = dictionaryAttr.get(propName);
         if (!valueAttr)
         {
@@ -1019,7 +1025,7 @@ class MLIRPropertyAccessCodeLogic
 
             if (auto constOp = effectiveVal.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                auto length = constOp.getValueAttr().cast<mlir::StringAttr>().getValue().size();
+                auto length = cast<mlir::StringAttr>(constOp.getValueAttr()).getValue().size();
                 return V(builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(length)));
             }
 
@@ -1066,13 +1072,13 @@ class MLIRPropertyAccessCodeLogic
         auto propName = getName();
         if (propName == LENGTH_FIELD_NAME)
         {
-            if (expression.getType().isa<mlir_ts::ConstArrayType>())
+            if (isa<mlir_ts::ConstArrayType>(expression.getType()))
             {
-                auto size = getExprConstAttr().cast<mlir::ArrayAttr>().size();
+                auto size = cast<mlir::ArrayAttr>(getExprConstAttr()).size();
                 return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
                                                            builder.getI32IntegerAttr(size));
             }
-            else if (expression.getType().isa<mlir_ts::ArrayType>())
+            else if (isa<mlir_ts::ArrayType>(expression.getType()))
             {
                 auto sizeValue = builder.create<mlir_ts::LengthOfOp>(location, builder.getI32Type(), expression);
                 return sizeValue;
@@ -1083,7 +1089,7 @@ class MLIRPropertyAccessCodeLogic
         
         if (propName == "push" || propName == "pop" || propName == "unshift" || propName == "shift" || propName == "splice" || propName == "view")
         {
-            if (expression.getType().isa<mlir_ts::ArrayType>())
+            if (isa<mlir_ts::ArrayType>(expression.getType()))
             {
                 std::string name = "__array_";
                 name += propName;
@@ -1091,7 +1097,7 @@ class MLIRPropertyAccessCodeLogic
                 auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, builder.getNoneType(), expression,
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), name.c_str()));
-                symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+                symbOp->setAttr(BUILTIN_FUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return symbOp;
             }
 
@@ -1100,8 +1106,8 @@ class MLIRPropertyAccessCodeLogic
 
         if (isArrayCustomMethod(propName))
         {
-            auto arrayType = expression.getType().dyn_cast<mlir_ts::ArrayType>();
-            auto constArrayType = expression.getType().dyn_cast<mlir_ts::ConstArrayType>();
+            auto arrayType = dyn_cast<mlir_ts::ArrayType>(expression.getType());
+            auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(expression.getType());
             if (arrayType || constArrayType)
             {
                 mlir::Type elementType;
@@ -1147,7 +1153,7 @@ class MLIRPropertyAccessCodeLogic
                     location, funcType, expression,
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), 
                     getArrayCustomMethodName(propName)));
-                symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+                symbOp->setAttr(BUILTIN_FUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return symbOp;
             }
 
@@ -1159,11 +1165,11 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value Ref(T refType)
     {
-        if (auto constTupleType = refType.getElementType().template dyn_cast<mlir_ts::ConstTupleType>())
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(refType.getElementType()))
         {
             return RefLogic(constTupleType);
         }
-        else if (auto tupleType = refType.getElementType().template dyn_cast<mlir_ts::TupleType>())
+        else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(refType.getElementType()))
         {
             return RefLogic(tupleType);
         }
@@ -1175,15 +1181,15 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value Object(mlir_ts::ObjectType objectType)
     {
-        if (auto constTupleType = objectType.getStorageType().template dyn_cast<mlir_ts::ConstTupleType>())
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(objectType.getStorageType()))
         {
             return RefLogic(constTupleType);
         }
-        else if (auto tupleType = objectType.getStorageType().template dyn_cast<mlir_ts::TupleType>())
+        else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(objectType.getStorageType()))
         {
             return RefLogic(tupleType);
         }
-        else if (auto objectStorageType = objectType.getStorageType().template dyn_cast<mlir_ts::ObjectStorageType>())
+        else if (auto objectStorageType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
         {
             return RefLogic(objectStorageType);
         }        
@@ -1220,7 +1226,7 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value Class(mlir_ts::ClassType classType)
     {
-        if (auto classStorageType = classType.getStorageType().template dyn_cast<mlir_ts::ClassStorageType>())
+        if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType()))
         {
             return Class(classStorageType);
         }

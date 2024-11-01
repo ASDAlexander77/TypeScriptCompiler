@@ -33,7 +33,7 @@ namespace typescript
 class LLVMCodeHelper : public LLVMCodeHelperBase
 {
   public:
-    LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter, CompileOptions &compileOptions) 
+    LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter, CompileOptions &compileOptions) 
         : LLVMCodeHelperBase(op, rewriter, typeConverter, compileOptions)
     {
     }
@@ -247,12 +247,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto parentModule = op->getParentOfType<ModuleOp>();
 
         TypeHelper th(rewriter);
-        auto llvmIndexType = typeConverter->convertType(th.getIndexType());
 
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, type, name);
-        mlir::Value cstIdx = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, index));
-        return rewriter.create<LLVM::GEPOp>(loc, globalPtr.getType(), globalPtr, ArrayRef<mlir::Value>({cstIdx}));
+        return rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), type, globalPtr, ArrayRef<LLVM::GEPArg>{index});
     }
 
     StringAttr getStringAttrWith0(std::string value)
@@ -260,21 +258,19 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.getStringAttr(StringRef(value.data(), value.length() + 1));
     }
 
-    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, mlir::Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
+    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, unsigned size, ArrayAttr arrayAttr)
     {
         std::stringstream ss;
         ss << "a_" << size;
-        auto vecVarName = calc_hash_value(arrayAttr, llvmElementType, ss.str().c_str());
-        return getOrCreateGlobalArray(originalElementType, vecVarName, llvmElementType, size, arrayAttr);
+        auto vecVarName = calc_hash_value(arrayAttr, originalElementType, ss.str().c_str());
+        return getOrCreateGlobalArray(originalElementType, vecVarName, size, arrayAttr);
     }
 
     mlir::Value getReadOnlyRTArray(mlir::Location loc, mlir_ts::ArrayType originalArrayType, LLVM::LLVMStructType llvmArrayType,
                                    ArrayAttr arrayValue)
     {
-        auto llvmSubElementType = llvmArrayType.getBody()[0].cast<LLVM::LLVMPointerType>().getElementType();
-
         auto size = arrayValue.size();
-        auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), llvmSubElementType, size, arrayValue);
+        auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), size, arrayValue);
 
         // create ReadOnlyRuntimeArrayType
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
@@ -307,7 +303,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // dense value
         auto value = arrayAttr.getValue();
-        if (value.size() == 0/*|| originalElementType.dyn_cast<mlir_ts::AnyType>()*/)
+        if (value.size() == 0/*|| dyn_cast<mlir_ts::AnyType>(originalElementType)*/)
         {
             for (auto item : arrayAttr.getValue())
             {
@@ -321,12 +317,12 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         {
             llvm_unreachable("it should be process in constant with denseattr value");
         }
-        else if (originalElementType.dyn_cast<mlir_ts::StringType>())
+        else if (isa<mlir_ts::StringType>(originalElementType))
         {
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
-                auto strValue = item.cast<StringAttr>().getValue().str();
+                auto strValue = mlir::cast<StringAttr>(item).getValue().str();
                 auto itemVal = getOrCreateGlobalString(strValue);
 
                 arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
@@ -334,38 +330,38 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             return arrayVal;
         }
-        else if (auto originalArrayType = originalElementType.dyn_cast<mlir_ts::ArrayType>())
+        else if (auto originalArrayType = dyn_cast<mlir_ts::ArrayType>(originalElementType))
         {
             // TODO: implement ReadOnlyRTArray; as RTArray may contains ConstArray data (so using not editable memory)
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
-                auto arrayValue = item.cast<ArrayAttr>();
-                auto itemVal = getReadOnlyRTArray(loc, originalArrayType, llvmElementType.cast<LLVM::LLVMStructType>(), arrayValue);
+                auto arrayValue = mlir::cast<ArrayAttr>(item);
+                auto itemVal = getReadOnlyRTArray(loc, originalArrayType, mlir::cast<LLVM::LLVMStructType>(llvmElementType), arrayValue);
 
                 arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
 
             return arrayVal;
         }
-        else if (originalElementType.dyn_cast<mlir_ts::ConstArrayType>())
+        else if (isa<mlir_ts::ConstArrayType>(originalElementType))
         {
             llvm_unreachable("ConstArrayType must not be used in array, use normal ArrayType (the same way as StringType)");
         }
-        else if (auto tupleType = originalElementType.dyn_cast<mlir_ts::TupleType>())
+        else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(originalElementType))
         {
             MLIRTypeHelper mth(rewriter.getContext());
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
-                auto tupleVal = getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(tupleType).cast<mlir_ts::ConstTupleType>(), llvmElementType.cast<LLVM::LLVMStructType>(),
-                                                        item.dyn_cast<ArrayAttr>());
+                auto tupleVal = getTupleFromArrayAttr(loc, cast<mlir_ts::ConstTupleType>(mth.convertTupleTypeToConstTupleType(tupleType)), mlir::cast<LLVM::LLVMStructType>(llvmElementType),
+                                                        dyn_cast<ArrayAttr>(item));
                 arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
 
             return arrayVal;
         }
-        else if (originalElementType.dyn_cast<mlir_ts::ConstTupleType>())
+        else if (isa<mlir_ts::ConstTupleType>(originalElementType))
         {
             llvm_unreachable("ConstTupleType must not be used in array, use normal TupleType (the same way as StringType)");
         }            
@@ -374,7 +370,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         llvm_unreachable("array literal is not implemented(1)");
     }
 
-    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, mlir::Type llvmElementType, unsigned size,
+    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, unsigned size,
                                        ArrayAttr arrayAttr)
     {
         auto loc = op->getLoc();
@@ -382,8 +378,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         TypeHelper th(rewriter);
         auto llvmIndexType = typeConverter->convertType(th.getIndexType());
+        auto llvmElementType = typeConverter->convertType(originalElementType);
 
-        auto pointerType = LLVM::LLVMPointerType::get(llvmElementType);
+        auto ptrType = th.getPtrType();
         auto arrayType = th.getArrayType(llvmElementType, size);
 
         // Create the global at the entry of the module.
@@ -407,7 +404,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 {
                     SmallVector<APInt> values;
                     std::for_each(std::begin(value), std::end(value), [&] (auto &value_) {
-                        values.push_back(value_.template cast<mlir::IntegerAttr>().getValue());
+                        values.push_back(cast<mlir::IntegerAttr>(value_).getValue());
                     });
 
                     attr = DenseElementsAttr::get(dataType, values);
@@ -416,7 +413,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 {
                     SmallVector<APFloat> values;
                     std::for_each(std::begin(value), std::end(value), [&] (auto &value_) {
-                        values.push_back(value_.template cast<mlir::FloatAttr>().getValue());
+                        values.push_back(cast<mlir::FloatAttr>(value_).getValue());
                     });
 
                     attr = DenseElementsAttr::get(dataType, values);
@@ -442,8 +439,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
+        return rewriter.create<LLVM::GEPOp>(loc, ptrType, global.getType(), globalPtr, ArrayRef<LLVM::GEPArg>{0, 0});
     }
 
     mlir::LogicalResult setStructWritingPoint(LLVM::GlobalOp globalOp)
@@ -506,14 +502,14 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             auto type = originalType.getType(position);
 
             auto llvmType = typesRange[position];
-            if (auto unitAttr = item.dyn_cast<UnitAttr>())
+            if (auto unitAttr = dyn_cast<UnitAttr>(item))
             {
                 LLVM_DEBUG(llvm::dbgs() << "!! Unit Attr is type of '" << llvmType << "'\n");
 
                 auto itemValue = rewriter.create<mlir_ts::UndefOp>(loc, llvmType);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto stringAttr = item.dyn_cast<StringAttr>())
+            else if (auto stringAttr = dyn_cast<StringAttr>(item))
             {
                 OpBuilder::InsertionGuard guard(rewriter);
 
@@ -522,11 +518,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
+            else if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(type))
             {
                 llvm_unreachable("not used.");
                 /*
-                auto subArrayAttr = item.dyn_cast<ArrayAttr>();
+                auto subArrayAttr = dyn_cast<ArrayAttr>(item);
 
                 MLIRTypeHelper mth(rewriter.getContext());
                 auto arrayType = mth.convertConstArrayTypeToArrayType(constArrayType);
@@ -536,44 +532,44 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 OpBuilder::InsertionGuard guard(rewriter);
 
                 auto itemVal =
-                    getReadOnlyRTArray(loc, arrayType.cast<mlir_ts::ArrayType>(), llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                    getReadOnlyRTArray(loc, mlir::cast<mlir_ts::ArrayType>(arrayType), mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
                 */
             }
-            else if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
+            else if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
             {
-                auto subArrayAttr = item.dyn_cast<ArrayAttr>();
+                auto subArrayAttr = dyn_cast<ArrayAttr>(item);
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                auto itemVal = getReadOnlyRTArray(loc, arrayType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                auto itemVal = getReadOnlyRTArray(loc, arrayType, mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
+            else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
             {
-                auto subArrayAttr = item.dyn_cast<ArrayAttr>();
+                auto subArrayAttr = dyn_cast<ArrayAttr>(item);
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                auto subTupleVal = getTupleFromArrayAttr(loc, constTupleType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                auto subTupleVal = getTupleFromArrayAttr(loc, constTupleType, mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto constTupleType = type.dyn_cast<mlir_ts::TupleType>())
+            else if (auto constTupleType = dyn_cast<mlir_ts::TupleType>(type))
             {
-                auto subArrayAttr = item.dyn_cast<ArrayAttr>();
+                auto subArrayAttr = dyn_cast<ArrayAttr>(item);
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
                 ::typescript::MLIRTypeHelper mth(rewriter.getContext());
 
                 auto subTupleVal =
-                    getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(constTupleType).cast<mlir_ts::ConstTupleType>(),
-                                          llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                    getTupleFromArrayAttr(loc, cast<mlir_ts::ConstTupleType>(mth.convertTupleTypeToConstTupleType(constTupleType)),
+                                          mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
-            else if (auto flatSymbRef = item.dyn_cast<mlir::FlatSymbolRefAttr>())
+            else if (auto flatSymbRef = dyn_cast<mlir::FlatSymbolRefAttr>(item))
             {
                 auto itemValue = rewriter.create<LLVM::AddressOfOp>(loc, llvmType, flatSymbRef);                
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, MLIRHelper::getStructIndex(rewriter, position++));
@@ -604,7 +600,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         TypeHelper th(rewriter);
         auto llvmIndexType = typeConverter->convertType(th.getIndexType());
 
-        auto pointerType = LLVM::LLVMPointerType::get(llvmStructType);
+        auto pointerType = th.getPtrType();
 
         // Create the global at the entry of the module.
         LLVM::GlobalOp global;
@@ -626,10 +622,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         // Get the pointer to the first character in the global string.
         mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
         mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, llvmIndexType, th.getIndexAttrValue(llvmIndexType, 0));
-        return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0}));
+        return rewriter.create<LLVM::GEPOp>(loc, pointerType, global.getType(), globalPtr, ArrayRef<mlir::Value>({cst0}));
     }
 
-    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleMlirTSType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
+    mlir::Value GetAddressOfArrayElement(mlir::Type elementType, mlir::Type arrayOrStringOrTupleMlirTSType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -637,23 +633,22 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto loc = op->getLoc();
 
-        assert(elementRefType.isa<mlir_ts::RefType>());
-
-        auto ptrType = tch.convertType(elementRefType);
+        auto ptrType = th.getPtrType();
+        auto llvmElementType = tch.convertType(elementType);
 
         auto dataPtr = arrayOrStringOrTuple;
-        if (arrayOrStringOrTupleMlirTSType.isa<mlir_ts::ArrayType>())
+        if (isa<mlir_ts::ArrayType>(arrayOrStringOrTupleMlirTSType))
         {
             // extract pointer from struct
             dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTuple,
                                                             MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
         }
 
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmElementType, dataPtr, ArrayRef<LLVM::GEPArg>{index});
         return addr;
     }
 
-    mlir::Value GetAddressOfStructElement(mlir::Type elementRefType, mlir::Value arrayOrStringOrTuple, int32_t index)
+    mlir::Value GetAddressOfStructElement(mlir::Type objectRefType, mlir::Value arrayOrStringOrTuple, int32_t index)
     {
         // index of struct MUST BE 32 bit
         TypeHelper th(rewriter);
@@ -662,53 +657,35 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto loc = op->getLoc();
         auto globalPtr = arrayOrStringOrTuple;
 
-        auto isRefType = elementRefType.isa<mlir_ts::RefType>();
-        auto isBoundRefType = elementRefType.isa<mlir_ts::BoundRefType>();
-
-        assert(isRefType || isBoundRefType);
-
-        auto elementType = isRefType ? elementRefType.cast<mlir_ts::RefType>().getElementType()
-                         : isBoundRefType ? elementRefType.cast<mlir_ts::BoundRefType>().getElementType()
-                         : mlir::Type();
-
+        auto elementType = MLIRHelper::getElementTypeOrSelf(objectRefType);
         if (!elementType)
         {
             return mlir::Value();
         }
 
-        auto ptrType = LLVM::LLVMPointerType::get(tch.convertType(elementType));
+        auto llvmElementType = tch.convertType(elementType);
 
-        SmallVector<mlir::Value> indexes;
-        // add first index which 64 bit (struct field MUST BE 32 bit index)
-        // auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
-        auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0));
-        indexes.push_back(firstIndex);
-        auto fieldIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(index));
-        indexes.push_back(fieldIndex);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! GetAddressOfStructElement: index #" << index << " type - " << elementType << " llvm: " << llvmElementType << "\n";);
 
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, globalPtr, indexes);
-
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, globalPtr, ArrayRef<LLVM::GEPArg>{0, index});
         return addr;
     }
 
-    mlir::Value GetAddressOfPointerOffset(mlir::Type elementRefType, mlir::Value refValue, mlir::Value index)
+    mlir::Value GetAddressOfPointerOffset(mlir::Type elementType, mlir::Value refValue, mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
-        CodeLogicHelper clh(op, rewriter);
+
+        auto llvmElementType = tch.convertType(elementType);
+
+        assert(isa<LLVM::LLVMPointerType>(llvmElementType));
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! GetAddressOfPointerOffset: index #" << index << " type - " << elementType << " llvm: " << llvmElementType << "\n";);
 
         auto loc = op->getLoc();
-
-        auto ptrType = tch.convertType(elementRefType);
-
-        assert(ptrType.isa<LLVM::LLVMPointerType>());
-
-        auto dataPtr = refValue;
-
-        auto addr = rewriter.create<LLVM::GEPOp>(loc, ptrType, dataPtr, ValueRange{index});
+        auto addr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, refValue, ValueRange{index});
         return addr;
     }
-
 };
 
 } // namespace typescript

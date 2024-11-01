@@ -9,6 +9,7 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/WithColor.h"
+#include "llvm/Support/ManagedStatic.h"
 
 #include "TypeScript/Defines.h"
 
@@ -243,9 +244,9 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return 0;
     }
 
-    if (module.lookupSymbol("__mlir_gctors"))
+    if (module.lookupSymbol(MLIR_GCTORS))
     {
-        auto gctorsResult = engine->invokePacked("__mlir_gctors");
+        auto gctorsResult = engine->invokePacked(MLIR_GCTORS);
         if (gctorsResult)
         {
             llvm::WithColor::error(llvm::errs(), "tsc") << "JIT calling global constructors failed, error: " << gctorsResult << "\n";

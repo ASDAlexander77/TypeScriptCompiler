@@ -26,11 +26,11 @@ class OptionalLogicHelper
 {
     Operation *binOp;
     PatternRewriter &rewriter;
-    LLVMTypeConverter &typeConverter;
+    const LLVMTypeConverter &typeConverter;
     CompileOptions &compileOptions;
 
   public:
-    OptionalLogicHelper(Operation *binOp, PatternRewriter &rewriter, LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
+    OptionalLogicHelper(Operation *binOp, PatternRewriter &rewriter, const LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
         : binOp(binOp), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
     {
     }
@@ -44,8 +44,8 @@ class OptionalLogicHelper
         auto right = binOp->getOperand(1);
         auto leftType = left.getType();
         auto rightType = right.getType();
-        auto leftOptType = leftType.dyn_cast<mlir_ts::OptionalType>();
-        auto rightOptType = rightType.dyn_cast<mlir_ts::OptionalType>();
+        auto leftOptType = dyn_cast<mlir_ts::OptionalType>(leftType);
+        auto rightOptType = dyn_cast<mlir_ts::OptionalType>(rightType);
 
         assert(leftOptType || rightOptType);
 
@@ -55,13 +55,13 @@ class OptionalLogicHelper
             return WhenBothOptValues<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(opCmpCode);
         }
 
-        if (rightType.isa<mlir_ts::UndefinedType>())
+        if (isa<mlir_ts::UndefinedType>(rightType))
         {
             // when we have undef in 1 of values we do not condition to test actual values
             return whenOneValueIsUndef(opCmpCode, left, right);
         }
 
-        if (leftType.isa<mlir_ts::UndefinedType>())
+        if (isa<mlir_ts::UndefinedType>(leftType))
         {
             // when we have undef in 1 of values we do not condition to test actual values
             return whenOneValueIsUndef(opCmpCode, right, left);
@@ -92,12 +92,14 @@ class OptionalLogicHelper
         TypeHelper th(rewriter);
         CodeLogicHelper clh(binOp, rewriter);
 
+        auto llvmBoolType = typeConverter.convertType(th.getBooleanType());
+
         auto left = binOp->getOperand(0);
         auto right = binOp->getOperand(1);
         auto leftType = left.getType();
         auto rightType = right.getType();
-        auto leftOptType = leftType.dyn_cast<mlir_ts::OptionalType>();
-        auto rightOptType = rightType.dyn_cast<mlir_ts::OptionalType>();        
+        auto leftOptType = dyn_cast<mlir_ts::OptionalType>(leftType);
+        auto rightOptType = dyn_cast<mlir_ts::OptionalType>(rightType);        
 
         // both are optional types
         // compare hasvalue first
@@ -149,7 +151,7 @@ class OptionalLogicHelper
         auto bothHasResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, andOpResult, const0);
 
         auto result = clh.conditionalExpressionLowering(
-            loc, th.getBooleanType(), bothHasResult,
+            loc, llvmBoolType, bothHasResult,
             [&](OpBuilder &builder, Location loc) {
                 auto leftSubType = leftOptType.getElementType();
                 auto rightSubType = rightOptType.getElementType();
@@ -170,7 +172,7 @@ class OptionalLogicHelper
         TypeHelper th(rewriter);
         CodeLogicHelper clh(binOp, rewriter);
 
-        assert(right.getType().isa<mlir_ts::UndefinedType>());
+        assert(isa<mlir_ts::UndefinedType>(right.getType()));
 
         auto leftUndefFlagValueBool = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), left);
 
@@ -216,7 +218,7 @@ class OptionalLogicHelper
 };
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value OptionalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
+mlir::Value OptionalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, const LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
 {
     OptionalLogicHelper olh(binOp, builder, typeConverter, compileOptions);
     auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(opCmpCode);

@@ -18,9 +18,9 @@ namespace typescript
 class TypeConverterHelper
 {
   public:
-    TypeConverter &typeConverter;
+    const TypeConverter *typeConverter;
 
-    TypeConverterHelper(TypeConverter *typeConverter) : typeConverter(*typeConverter)
+    TypeConverterHelper(const TypeConverter *typeConverter) : typeConverter(typeConverter)
     {
         assert(typeConverter);
     }
@@ -29,7 +29,7 @@ class TypeConverterHelper
     {
         if (type)
         {
-            if (auto convertedType = typeConverter.convertType(type))
+            if (auto convertedType = typeConverter->convertType(type))
             {
                 return convertedType;
             }
@@ -38,19 +38,28 @@ class TypeConverterHelper
         return type;
     }
 
-    mlir::Type makePtrToValue(mlir::Type type)
+    LLVM::LLVMFunctionType convertFunctionSignature(mlir::MLIRContext *context, TypeRange results, TypeRange args, bool isVariadic)
     {
-        if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
+        mlir::TypeConverter::SignatureConversion convResult(results.size());
+        if (mlir::failed(typeConverter->convertSignatureArgs(results, convResult, 0)))
         {
-            return LLVM::LLVMPointerType::get(LLVM::LLVMArrayType::get(convertType(constArray.getElementType()), constArray.getSize()));
+            return {};
         }
 
-        llvm_unreachable("not implemented");
+        mlir::TypeConverter::SignatureConversion convArgs(args.size());
+        if (mlir::failed(typeConverter->convertSignatureArgs(args, convArgs, 0)))
+        {
+            return {};
+        }
+
+        auto ret = convResult.getConvertedTypes().size() > 0 ?  convResult.getConvertedTypes().front() : LLVM::LLVMVoidType::get(context);
+
+        return LLVM::LLVMFunctionType::get(context, ret, convArgs.getConvertedTypes(), isVariadic);
     }
 
     int getIndexTypeBitwidth()
     {
-        return (*(mlir::LLVMTypeConverter *)&typeConverter).getIndexTypeBitwidth();
+        return ((const mlir::LLVMTypeConverter *)typeConverter)->getIndexTypeBitwidth();
     }
 };
 } // namespace typescript

@@ -233,7 +233,7 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
                                  { return a != nullptr; });
     if (firstArg != args.end())
     {
-        if (llvm::StringRef(args[1]).startswith("-cc1"))
+        if (llvm::StringRef(args[1]).starts_with("-cc1"))
         {
             llvm::errs() << "error: unknown integrated tool '" << args[1] << "'. "
                          << "Valid tools include '-tsc'.\n";
@@ -379,6 +379,16 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     if (win)
     {
         args.push_back("-luser32");    
+        if (enableOpt)
+        {
+            args.push_back("-lucrt");    
+        }
+        else
+        {
+            args.push_back("-lucrtd");    
+        }
+
+        args.push_back("-lntdll");
         if (shared || !disableGC)
         {
             // needed to resolve DLL ref

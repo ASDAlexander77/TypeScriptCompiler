@@ -28,14 +28,14 @@ class ThrowLogic
     LLVMCodeHelper ch;
     CodeLogicHelper clh;
     Location loc;
-    mlir::TypeConverter &typeConverter;
+    const mlir::TypeConverter *typeConverter;
     CompileOptions &compileOptions;
     bool isWasm;
     bool isWindows;
 
   public:
     ThrowLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc),
           typeConverter(tch.typeConverter), compileOptions(compileOptions), isWasm(compileOptions.isWasm), isWindows(compileOptions.isWindows)
     {
     }
@@ -61,9 +61,9 @@ class ThrowLogic
         LLVMRTTIHelperVCWin32 rttih(op, rewriter, typeConverter, compileOptions);
         rttih.setType(exceptionType);
 
-        auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
+        auto throwInfoPtrTy = th.getPtrType();
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         // variable
         mlir::Value value;
@@ -81,7 +81,7 @@ class ThrowLogic
                     loc, mlir_ts::RefType::get(exceptionType), mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
             // to resolve unrealized_conversion_cast
-            value = rewriter.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(value.getType()), value);
+            value = rewriter.create<mlir_ts::DialectCastOp>(loc, typeConverter->convertType(value.getType()), value);
         }
 
         rewriter.create<mlir_ts::StoreOp>(loc, exceptionValue, value);
@@ -106,7 +106,7 @@ class ThrowLogic
 
                 rewriter.create<LLVM::InvokeOp>(
                     loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
-                    ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, unreachable, ValueRange{}, unwind, ValueRange{});
+                    ValueRange{value, throwInfoPtr}, unreachable, ValueRange{}, unwind, ValueRange{});
 
                 if (continuationBlock)
                 {
@@ -115,7 +115,7 @@ class ThrowLogic
             }
             else
             {
-                rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{clh.castToI8Ptr(value), throwInfoPtr});
+                rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{value, throwInfoPtr});
                 rewriter.create<mlir_ts::UnreachableOp>(loc);
             }
         }
@@ -142,7 +142,7 @@ class ThrowLogic
     {
         mlir::Type exceptionType = origType;
 
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto allocExceptFuncName = "__cxa_allocate_exception";
 
@@ -178,10 +178,10 @@ class ThrowLogic
 
             auto *continuationBlock = endOfBlock ? nullptr : clh.CutBlockAndSetInsertPointToEndOfBlock();
 
-            auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+            auto nullValue = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
             rewriter.create<LLVM::InvokeOp>(loc, TypeRange{th.getVoidType()},
                                             mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
-                                            ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue}, unreachable,
+                                            ValueRange{value, rttih.throwInfoPtrValue(loc), nullValue}, unreachable,
                                             ValueRange{}, unwind, ValueRange{});
 
             if (continuationBlock)
@@ -191,9 +191,9 @@ class ThrowLogic
         }
         else
         {
-            auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+            auto nullValue = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException,
-                                          ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue});
+                                          ValueRange{value, rttih.throwInfoPtrValue(loc), nullValue});
             rewriter.create<mlir_ts::UnreachableOp>(loc);
         }
 
@@ -202,7 +202,7 @@ class ThrowLogic
 
     mlir::LogicalResult logicUnixRethrow(mlir::Value exceptionValue, mlir::Block *unwind)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto rethrowFuncName = "__cxa_rethrow";
 

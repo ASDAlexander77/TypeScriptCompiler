@@ -100,11 +100,6 @@ class MLIRHelper
         return mlir::StringRef(nameValue).copy(stringAllocator);
     }
 
-    static std::string getAnonymousName(mlir::Location loc)
-    {
-        return getAnonymousName(loc, ".unk");
-    }
-
     static mlir::Location getCallSiteLocation(mlir::Location callee, mlir::Location caller, bool enable = true)
     {
         if (enable)
@@ -147,10 +142,12 @@ class MLIRHelper
             });        
     }
 
-    static std::string getAnonymousName(mlir::Location loc, const char *prefix)
+    static std::string getAnonymousName(mlir::Location loc, const char *prefix, StringRef fullNamesapceName)
     {
         // auto calculate name
         std::stringstream ssName;
+        if (!fullNamesapceName.empty())
+            ssName << fullNamesapceName.str() << ".";
         ssName << prefix;
         getAnonymousNameStep(ssName, loc);
         return ssName.str();
@@ -197,7 +194,7 @@ class MLIRHelper
             return;
         }
 
-        if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
+        if (auto sourceUnionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             for (auto item : sourceUnionType.getTypes())
             {
@@ -217,7 +214,7 @@ class MLIRHelper
             return;
         }
 
-        if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
+        if (auto sourceUnionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             for (auto item : sourceUnionType.getTypes())
             {
@@ -232,7 +229,7 @@ class MLIRHelper
 
     static mlir::Type stripLiteralType(mlir::Type type)
     {
-        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
         {
             return literalType.getElementType();
         }
@@ -349,6 +346,48 @@ class MLIRHelper
 
         return result;
     }
+
+    // TODO: review usage of it in SizeOf, in ArrayPush, etc to return correct sizes
+    static mlir::Type getElementTypeOrSelf(mlir::Type type)
+    {
+        if (type)
+        {
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
+            {
+                return arrayType.getElementType();
+            }
+            else if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(type))
+            {
+                return constArrayType.getElementType();
+            }
+            else if (isa<mlir_ts::StringType>(type))
+            {
+                return mlir_ts::CharType::get(type.getContext());
+            }
+            else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                return classType.getStorageType();
+            }
+            else if (auto objType = dyn_cast<mlir_ts::ObjectType>(type))
+            {
+                return objType.getStorageType();
+            }
+            else if (auto refType = dyn_cast<mlir_ts::RefType>(type))
+            {
+                return refType.getElementType();
+            }
+            else if (auto boundRefType = dyn_cast<mlir_ts::BoundRefType>(type))
+            {
+                return boundRefType.getElementType();
+            }
+            else if (auto valueRefType = dyn_cast<mlir_ts::ValueRefType>(type))
+            {
+                return valueRefType.getElementType();
+            }
+        }
+
+        return type;
+    }    
 };
 
 } // namespace typescript

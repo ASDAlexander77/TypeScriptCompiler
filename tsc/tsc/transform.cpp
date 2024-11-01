@@ -36,6 +36,7 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #ifdef GC_ENABLE
 #include "llvm/IR/GCStrategy.h"
@@ -139,7 +140,11 @@ int runMLIRPasses(mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, mlir::
         pm.addPass(mlir::createConvertAsyncToLLVMPass());
 #endif
         pm.addPass(mlir::typescript::createLowerToLLVMPass(compileOptions));
-        pm.addNestedPass<mlir::LLVM::LLVMFuncOp>(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
+        if (compileOptions.generateDebugInfo)
+        {
+            pm.addPass(mlir::LLVM::createDIScopeForLLVMFuncOpPass());
+        }
+
         if (!disableGC)
         {
             pm.addPass(mlir::typescript::createGCPass(compileOptions));

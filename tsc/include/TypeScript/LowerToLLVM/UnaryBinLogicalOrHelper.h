@@ -11,6 +11,8 @@
 
 #include "scanner_enums.h"
 
+#define DEBUG_TYPE "llvm"
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
@@ -18,10 +20,10 @@ namespace typescript
 {
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value OptionalTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, LLVMTypeConverter &, CompileOptions&);
+mlir::Value OptionalTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, const LLVMTypeConverter &, CompileOptions&);
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value UndefTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, LLVMTypeConverter &, CompileOptions&);
+mlir::Value UndefTypeLogicalOp(Operation *, SyntaxKind, PatternRewriter &, const LLVMTypeConverter &, CompileOptions&);
 
 template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
 void UnaryOp(UnaryOpTy &unaryOp, mlir::Value oper, PatternRewriter &builder)
@@ -63,7 +65,7 @@ LogicalResult BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, Pattern
     {
         builder.replaceOpWithNewOp<StdFOpTy>(binOp, left, right);
     }
-    else if (leftType.template dyn_cast_or_null<mlir_ts::NumberType>())
+    else if (dyn_cast_or_null<mlir_ts::NumberType>(leftType))
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftType, left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, leftType, right);
@@ -80,21 +82,21 @@ LogicalResult BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, Pattern
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
 mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Type leftType, mlir::Value right, mlir::Type rightType,
-                    PatternRewriter &builder, LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
+                    PatternRewriter &builder, const LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
 {
     auto loc = binOp->getLoc();
 
-    LLVMTypeConverterHelper llvmtch(typeConverter);
+    LLVMTypeConverterHelper llvmtch(&typeConverter);
 
-    if (leftType.isa<mlir_ts::OptionalType>() || rightType.isa<mlir_ts::OptionalType>())
+    if (isa<mlir_ts::OptionalType>(leftType) || isa<mlir_ts::OptionalType>(rightType))
     {
         return OptionalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
-    else if (leftType.isa<mlir_ts::UndefinedType>() || rightType.isa<mlir_ts::UndefinedType>())
+    else if (isa<mlir_ts::UndefinedType>(leftType) || isa<mlir_ts::UndefinedType>(rightType))
     {
         return UndefTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, builder, typeConverter, compileOptions);
     }
-    else if (leftType.isIntOrIndex() || leftType.dyn_cast<mlir_ts::BooleanType>() || leftType.dyn_cast<mlir_ts::CharType>())
+    else if (leftType.isIntOrIndex() || isa<mlir_ts::BooleanType>(leftType) || isa<mlir_ts::CharType>(leftType))
     {
         auto value = builder.create<StdIOpTy>(loc, v1, left, right);
         return value;
@@ -104,7 +106,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdFOpTy>(loc, v2, left, right);
         return value;
     }
-    else if (leftType.dyn_cast<mlir_ts::NumberType>())
+    else if (isa<mlir_ts::NumberType>(leftType))
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftType, left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, leftType, right);
@@ -112,7 +114,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         return value;
     }
     /*
-    else if (auto leftEnumType = leftType.dyn_cast<mlir_ts::EnumType>())
+    else if (auto leftEnumType = dyn_cast<mlir_ts::EnumType>(leftType))
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), right);
@@ -121,20 +123,24 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         return value;
     }
     */
-    else if (leftType.dyn_cast<mlir_ts::StringType>())
+    else if (isa<mlir_ts::StringType>(leftType))
     {
         if (left.getType() != right.getType())
         {
             right = builder.create<mlir_ts::CastOp>(loc, left.getType(), right);
         }
 
-        auto value = builder.create<mlir_ts::StringCompareOp>(loc, mlir_ts::BooleanType::get(builder.getContext()), left, right,
+        auto boolType = mlir_ts::BooleanType::get(builder.getContext());
+        auto llvmBoolType = typeConverter.convertType(boolType);
+        mlir::Value value = builder.create<mlir_ts::StringCompareOp>(loc, boolType, left, right,
                                                               builder.getI32IntegerAttr((int)op));
+
+        value = builder.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, value);
 
         return value;
     }
-    else if (leftType.dyn_cast<mlir_ts::AnyType>() || leftType.dyn_cast<mlir_ts::ClassType>() ||
-             leftType.dyn_cast<mlir_ts::OpaqueType>() || leftType.dyn_cast<mlir_ts::NullType>())
+    else if (isa<mlir_ts::AnyType>(leftType) || isa<mlir_ts::ClassType>(leftType) ||
+ isa<mlir_ts::OpaqueType>(leftType) || isa<mlir_ts::NullType>(leftType))
     {
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
@@ -148,15 +154,15 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }
-    else if (leftType.dyn_cast<mlir_ts::InterfaceType>())
+    else if (isa<mlir_ts::InterfaceType>(leftType))
     {
         // TODO, extract interface VTable to compare
         auto leftVtableValue =
-            left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::NullOp>()
+            left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::ZeroOp>() || matchPattern(left, m_Zero())
                 ? left
                 : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(leftType.getContext()), left);
         auto rightVtableValue =
-            right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::NullOp>()
+            right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero())
                 ? right
                 : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rightType.getContext()), right);
 
@@ -172,7 +178,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }
-    else if (auto leftArrayType = leftType.dyn_cast<mlir_ts::ArrayType>())
+    else if (auto leftArrayType = dyn_cast<mlir_ts::ArrayType>(leftType))
     {
         // TODO, extract array pointer to compare
         TypeHelper th(builder);
@@ -181,14 +187,16 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         CastLogicHelper castLogic(binOp, builder, tch, compileOptions);
 
+        LLVM_DEBUG(llvm::dbgs() << "\n\t LogicOp: left: " << left << " right: " << right << "\n";);
+
         auto leftArrayPtrValue =
-            left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::NullOp>()
+            left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::ZeroOp>() || matchPattern(left, m_Zero())
                 ? left
                 : castLogic.extractArrayPtr(left, leftArrayType);
         auto rightArrayPtrValue =
-            right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::NullOp>()
+            right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero())
                 ? right
-                : castLogic.extractArrayPtr(right, rightType.dyn_cast<mlir_ts::ArrayType>());
+                : castLogic.extractArrayPtr(right, dyn_cast<mlir_ts::ArrayType>(rightType));
 
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
@@ -202,7 +210,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }    
-    else if (auto leftTupleType = leftType.dyn_cast<mlir_ts::TupleType>())
+    else if (auto leftTupleType = dyn_cast<mlir_ts::TupleType>(leftType))
     {        
         // TODO: finish comparing 2 the same tuples
     }
@@ -213,5 +221,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     return clh.createI1ConstantOf(false);            
 }
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LOGICALORHELPER_H_

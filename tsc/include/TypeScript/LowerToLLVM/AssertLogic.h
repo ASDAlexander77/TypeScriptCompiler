@@ -38,10 +38,10 @@ class AssertLogic
 
   public:
     AssertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
     {
         sizeType = th.getIndexType();
-        typeOfValueType = th.getI8PtrType();
+        typeOfValueType = th.getPtrType();
     }
 
     mlir::LogicalResult logic(mlir::Value condValue, std::string msg)
@@ -61,7 +61,7 @@ class AssertLogic
         auto [line, column] = lineAndColumn;
 
         // Insert the `_assert` declaration if necessary.
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto assertFuncOp =
             ch.getOrInsertFunction("_assert", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type()}));
 
@@ -114,7 +114,7 @@ class AssertLogic
         auto [line, column] = lineAndColumn;
 
         // Insert the `_assert` declaration if necessary.
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
         auto assertFuncOp = ch.getOrInsertFunction(
             "__assert_fail", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type(), i8PtrTy}));
 
@@ -147,7 +147,7 @@ class AssertLogic
         // auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
 
         mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
-        mlir::Value funcName = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+        mlir::Value funcName = rewriter.create<LLVM::ZeroOp>(loc, i8PtrTy);
 
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes, funcName});
         // rewriter.create<LLVM::UnreachableOp>(loc);

@@ -14,13 +14,13 @@ class LLVMRTTIHelperVC
 {
     Operation *op;
     PatternRewriter &rewriter;
-    TypeConverter &typeConverter;
+    const TypeConverter *typeConverter;
     CompileOptions &compileOptions;
     bool isWasm;
     bool isWindows;
 
   public:
-    LLVMRTTIHelperVC(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter, CompileOptions &compileOptions)
+    LLVMRTTIHelperVC(Operation *op, PatternRewriter &rewriter, const TypeConverter *typeConverter, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions), isWasm(compileOptions.isWasm), isWindows(compileOptions.isWindows)
     {
     }

@@ -56,148 +56,148 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::BooleanType>())
+        if (isa<mlir_ts::BooleanType>(type))
         {
             auto typeOfValue = strValue(loc, "boolean");
             return typeOfValue;
         }
 
         // special case
-        if (type.isa<mlir_ts::TypePredicateType>())
+        if (isa<mlir_ts::TypePredicateType>(type))
         {
             auto typeOfValue = strValue(loc, "boolean");
             return typeOfValue;
         }        
 
-        if (type.isa<mlir_ts::NumberType>())
+        if (isa<mlir_ts::NumberType>(type))
         {
             auto typeOfValue = strValue(loc, "number");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::StringType>())
+        if (isa<mlir_ts::StringType>(type))
         {
             auto typeOfValue = strValue(loc, "string");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::ArrayType>())
+        if (isa<mlir_ts::ArrayType>(type))
         {
             auto typeOfValue = strValue(loc, "array");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::FunctionType>())
+        if (isa<mlir_ts::FunctionType>(type))
         {
             auto typeOfValue = strValue(loc, "function");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::HybridFunctionType>())
+        if (isa<mlir_ts::HybridFunctionType>(type))
         {
             auto typeOfValue = strValue(loc, "function");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::BoundFunctionType>())
+        if (isa<mlir_ts::BoundFunctionType>(type))
         {
             auto typeOfValue = strValue(loc, "function");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::ClassType>())
+        if (isa<mlir_ts::ClassType>(type))
         {
             auto typeOfValue = strValue(loc, "class");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::ClassStorageType>())
+        if (isa<mlir_ts::ClassStorageType>(type))
         {
             auto typeOfValue = strValue(loc, "class");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::ObjectType>())
+        if (isa<mlir_ts::ObjectType>(type))
         {
             auto typeOfValue = strValue(loc, "object");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::InterfaceType>())
+        if (isa<mlir_ts::InterfaceType>(type))
         {
             auto typeOfValue = strValue(loc, "interface");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::OpaqueType>())
+        if (isa<mlir_ts::OpaqueType>(type))
         {
             auto typeOfValue = strValue(loc, "object");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::SymbolType>())
+        if (isa<mlir_ts::SymbolType>(type))
         {
             auto typeOfValue = strValue(loc, "symbol");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::UndefinedType>())
+        if (isa<mlir_ts::UndefinedType>(type))
         {
             auto typeOfValue = strValue(loc, UNDEFINED_NAME);
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::UnknownType>())
+        if (isa<mlir_ts::UnknownType>(type))
         {
             auto typeOfValue = strValue(loc, "unknown");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::ConstTupleType>())
+        if (isa<mlir_ts::ConstTupleType>(type))
         {
             auto typeOfValue = strValue(loc, "tuple");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::TupleType>())
+        if (isa<mlir_ts::TupleType>(type))
         {
             auto typeOfValue = strValue(loc, "tuple");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::ArrayType>())
+        if (isa<mlir_ts::ArrayType>(type))
         {
             auto typeOfValue = strValue(loc, "array");
             return typeOfValue;
         }
 
-        if (type.isa<mlir_ts::ConstArrayType>())
+        if (isa<mlir_ts::ConstArrayType>(type))
         {
             auto typeOfValue = strValue(loc, "array");
             return typeOfValue;
         }
 
-        if (auto subType = type.dyn_cast<mlir_ts::RefType>())
+        if (auto subType = dyn_cast<mlir_ts::RefType>(type))
         {
             return typeOfLogic(loc, subType.getElementType());
         }
 
-        if (auto subType = type.dyn_cast<mlir_ts::ValueRefType>())
+        if (auto subType = dyn_cast<mlir_ts::ValueRefType>(type))
         {
             return typeOfLogic(loc, subType.getElementType());
         }
 
-        if (auto subType = type.dyn_cast<mlir_ts::OptionalType>())
+        if (auto subType = dyn_cast<mlir_ts::OptionalType>(type))
         {
             return typeOfLogic(loc, subType.getElementType());
         }
 
-        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
         {
             return typeOfLogic(loc, literalType.getElementType());
         }
 
-        if (type.isa<mlir_ts::NullType>())
+        if (isa<mlir_ts::NullType>(type))
         {
             auto typeOfValue = strValue(loc, "null");
             return typeOfValue;
@@ -210,19 +210,19 @@ class TypeOfOpHelper
 
     mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value, mlir::Type origType)
     {
-        if (origType.isa<mlir_ts::AnyType>())
+        if (isa<mlir_ts::AnyType>(origType))
         {
             // AnyLogic al(op, rewriter, tch, loc);
             // return al.getTypeOfAny(value);
             return rewriter.create<mlir_ts::TypeOfAnyOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
         }
 
-        if (origType.isa<mlir_ts::UnionType>())
+        if (isa<mlir_ts::UnionType>(origType))
         {
             return rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
         }
 
-        if (auto subType = origType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto subType = dyn_cast<mlir_ts::OptionalType>(origType))
         {
             auto dataTypeIn = subType.getElementType();
             auto resultType = mlir_ts::StringType::get(value.getContext());

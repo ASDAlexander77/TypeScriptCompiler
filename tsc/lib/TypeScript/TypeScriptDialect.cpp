@@ -238,7 +238,7 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
     // Transformation Hooks
     //===--------------------------------------------------------------------===//
 
-    void handleTerminator(mlir::Operation *op, mlir::ArrayRef<Value> valuesToRepl) const final
+    virtual void handleTerminator(mlir::Operation *op, ValueRange valuesToRepl) const final
     {
         LLVM_DEBUG(llvm::dbgs() << "!! handleTerminator: " << *op << "\n";);
 

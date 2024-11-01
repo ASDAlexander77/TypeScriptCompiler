@@ -3,6 +3,7 @@
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/InstIterator.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Module.h"
 
 #include "llvm/ADT/PostOrderIterator.h"
 

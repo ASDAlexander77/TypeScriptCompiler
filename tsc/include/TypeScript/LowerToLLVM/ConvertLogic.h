@@ -31,21 +31,21 @@ class ConvertLogic
 
   public:
     ConvertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
+        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
     {
     }
 
     mlir::Value itoa(mlir::Value value)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto _itoaFuncOp = ch.getOrInsertFunction(
-            "_itoa", th.getFunctionType(th.getI8PtrType(),
-                                        ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
+            "_itoa", th.getFunctionType(th.getPtrType(),
+                                        ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getPtrType(), rewriter.getI32Type()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
+        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
         auto base = clh.createI32ConstantOf(10);
 
         return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{value, newStringValue, base}).getResult();
@@ -53,15 +53,15 @@ class ConvertLogic
 
     mlir::Value i64toa(mlir::Value value)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto _i64toaFuncOp = ch.getOrInsertFunction(
-            "_i64toa", th.getFunctionType(th.getI8PtrType(),
-                                          ArrayRef<mlir::Type>{rewriter.getI64Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
+            "_i64toa", th.getFunctionType(th.getPtrType(),
+                                          ArrayRef<mlir::Type>{rewriter.getI64Type(), th.getPtrType(), rewriter.getI32Type()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
+        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
         auto base = clh.createI32ConstantOf(10);
 
         return rewriter.create<LLVM::CallOp>(loc, _i64toaFuncOp, ValueRange{value, newStringValue, base}).getResult();
@@ -69,15 +69,15 @@ class ConvertLogic
 
     mlir::Value gcvt(mlir::Value in)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto _gcvtFuncOp = ch.getOrInsertFunction(
-            "_gcvt", th.getFunctionType(th.getI8PtrType(),
-                                        ArrayRef<mlir::Type>{rewriter.getF64Type(), rewriter.getI32Type(), th.getI8PtrType()}, true));
+            "_gcvt", th.getFunctionType(th.getPtrType(),
+                                        ArrayRef<mlir::Type>{rewriter.getF64Type(), rewriter.getI32Type(), th.getPtrType()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = ch.Alloca(i8PtrTy, bufferSizeValue, true);
-        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue, MemoryAllocSet::Atomic);
+        auto newStringValue = ch.MemoryAlloc(bufferSizeValue, MemoryAllocSet::Atomic);
         auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), in);
         auto precision = clh.createI32ConstantOf(16);
 
@@ -86,7 +86,7 @@ class ConvertLogic
 
     mlir::Value sprintf(int buffSize, std::string format, mlir::Value value)
     {
-        auto i8PtrTy = th.getI8PtrType();
+        auto i8PtrTy = th.getPtrType();
 
         auto llvmIndexType = tch.convertType(th.getIndexType());
         auto bufferSizeValue = clh.createIndexConstantOf(llvmIndexType, buffSize);

@@ -44,7 +44,7 @@ class CastLogicHelper
 
   public:
     CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter, compileOptions), clh(op, rewriter), loc(op->getLoc()),
+        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(op->getLoc()),
           compileOptions(compileOptions), external(false)
     {
     }
@@ -79,18 +79,18 @@ class CastLogicHelper
             return in;
         }
 
-        if (auto literalType = inType.dyn_cast<mlir_ts::LiteralType>())
+        if (auto literalType = dyn_cast<mlir_ts::LiteralType>(inType))
         {
             return cast(in, literalType.getElementType(), tch.convertType(literalType.getElementType()), resType, resLLVMType);
         }
 
-        if (inType.isa<mlir_ts::CharType>() && resType.isa<mlir_ts::StringType>())
+        if (isa<mlir_ts::CharType>(inType) && isa<mlir_ts::StringType>(resType))
         {
             // types are equals
             return rewriter.create<mlir_ts::CharToStringOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
         }
 
-        auto isResString = resType.isa<mlir_ts::StringType>();
+        auto isResString = isa<mlir_ts::StringType>(resType);
         if (inLLVMType.isInteger(1) && isResString)
         {
             return castBoolToString(in);
@@ -101,7 +101,7 @@ class CastLogicHelper
             return castIntToString(in, tch.getIndexTypeBitwidth(), false);
         }
 
-        if (inType.isa<mlir::IntegerType>() && isResString)
+        if (isa<mlir::IntegerType>(inType) && isResString)
         {
             return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.isSignedInteger());
         }
@@ -141,40 +141,40 @@ class CastLogicHelper
             return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
         }        
 
-        auto isResAny = resType.isa<mlir_ts::AnyType>();
+        auto isResAny = isa<mlir_ts::AnyType>(resType);
         if (isResAny)
         {
             return castToAny(in, inType, inLLVMType);
         }
 
-        auto isInAny = inType.isa<mlir_ts::AnyType>();
+        auto isInAny = isa<mlir_ts::AnyType>(inType);
         if (isInAny)
         {
             return castFromAny(in, resType);
         }
 
-        if (auto numberType = resType.dyn_cast<mlir_ts::NumberType>())
+        if (auto numberType = dyn_cast<mlir_ts::NumberType>(resType))
         {
-            if (auto boolType = inType.dyn_cast<mlir_ts::BooleanType>())
+            if (auto boolType = dyn_cast<mlir_ts::BooleanType>(inType))
             {
                 return castBoolToNumber(in);
             }
         }
 
-        if (auto obj = resType.dyn_cast<mlir_ts::ObjectType>())
+        if (auto obj = dyn_cast<mlir_ts::ObjectType>(resType))
         {
-            if (obj.getStorageType().isa<mlir_ts::AnyType>())
+            if (isa<mlir_ts::AnyType>(obj.getStorageType()))
             {
                 return castToOpaqueType(in, inLLVMType);
             }
         }
 
-        if (auto obj = resType.dyn_cast<mlir_ts::UnknownType>())
+        if (auto obj = dyn_cast<mlir_ts::UnknownType>(resType))
         {
             return castToOpaqueType(in, inLLVMType);
         }
 
-        auto isInString = inType.dyn_cast<mlir_ts::StringType>();
+        auto isInString = dyn_cast<mlir_ts::StringType>(inType);
         if (isInString && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
         {
             auto castIntOp = rewriter.create<mlir_ts::ParseIntOp>(loc, resType, in);
@@ -188,9 +188,9 @@ class CastLogicHelper
         }
 
         // array to ref of element
-        if (auto arrayType = inType.dyn_cast<mlir_ts::ArrayType>())
+        if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(inType))
         {
-            if (auto refType = resType.dyn_cast<mlir_ts::RefType>())
+            if (auto refType = dyn_cast<mlir_ts::RefType>(resType))
             {
                 if (arrayType.getElementType() == refType.getElementType())
                 {
@@ -199,18 +199,18 @@ class CastLogicHelper
                 }
             }
 
-            if (auto opaqueType = resType.dyn_cast<mlir_ts::OpaqueType>())
+            if (auto opaqueType = dyn_cast<mlir_ts::OpaqueType>(resType))
             {
-                auto ptrOfElementValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPointerType(tch.convertType(arrayType.getElementType())), in,
+                auto ptrOfElementValue = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(), in,
                     MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));                
 
-                return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrType(), ptrOfElementValue);
+                return rewriter.create<LLVM::BitcastOp>(loc, th.getPtrType(), ptrOfElementValue);
             }            
         }
 
-        if (auto resFuncType = resType.dyn_cast<mlir_ts::FunctionType>())
+        if (auto resFuncType = dyn_cast<mlir_ts::FunctionType>(resType))
         {
-            if (auto inBoundFunc = inType.dyn_cast<mlir_ts::BoundFunctionType>())
+            if (auto inBoundFunc = dyn_cast<mlir_ts::BoundFunctionType>(inType))
             {
                 // somehow llvm.trampoline accepts only direct method symbol
                 /*
@@ -237,9 +237,9 @@ class CastLogicHelper
             }
         }
 
-        if (auto resHybridFunc = resType.dyn_cast<mlir_ts::HybridFunctionType>())
+        if (auto resHybridFunc = dyn_cast<mlir_ts::HybridFunctionType>(resType))
         {
-            if (auto inFuncType = inType.dyn_cast<mlir_ts::FunctionType>())
+            if (auto inFuncType = dyn_cast<mlir_ts::FunctionType>(inType))
             {
                 // BoundFunction is the same as HybridFunction
                 // null this
@@ -249,35 +249,35 @@ class CastLogicHelper
             }
         }
 
-        if (auto resRefType = resType.dyn_cast<mlir_ts::RefType>())
+        if (auto resRefType = dyn_cast<mlir_ts::RefType>(resType))
         {
-            if (auto inBoundRef = inType.dyn_cast<mlir_ts::BoundRefType>())
+            if (auto inBoundRef = dyn_cast<mlir_ts::BoundRefType>(inType))
             {
                 return castBoundRefToRef(in, inBoundRef, resRefType);
             }
         }
 
-        if (auto tupleTypeRes = resType.dyn_cast<mlir_ts::TupleType>())
+        if (auto tupleTypeRes = dyn_cast<mlir_ts::TupleType>(resType))
         {
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::ConstTupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 return castTupleToTuple(in, tupleTypeIn.getFields(), tupleTypeRes);
             }
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::TupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 return castTupleToTuple(in, tupleTypeIn.getFields(), tupleTypeRes);
             }
         }
 
-        if (auto nullType = inType.dyn_cast<mlir_ts::NullType>())
+        if (auto nullType = dyn_cast<mlir_ts::NullType>(inType))
         {
-            if (auto ifaceType = resType.dyn_cast<mlir_ts::InterfaceType>())
+            if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(resType))
             {
                 // create null interface
                 return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, in, in);
             }
 
-            if (auto resHybridFunc = resType.dyn_cast<mlir_ts::HybridFunctionType>())
+            if (auto resHybridFunc = dyn_cast<mlir_ts::HybridFunctionType>(resType))
             {
                 // null this
                 auto thisNullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
@@ -288,55 +288,55 @@ class CastLogicHelper
             }
         }
 
-        if (auto stringTypeRes = resType.dyn_cast<mlir_ts::StringType>())
+        if (auto stringTypeRes = dyn_cast<mlir_ts::StringType>(resType))
         {
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::ConstTupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 return castTupleToString<mlir_ts::ConstTupleType>(in, inType, tupleTypeIn);
             }
 
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::TupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 return castTupleToString<mlir_ts::TupleType>(in, inType, tupleTypeIn);
             }
         }
 
-        if (auto interfaceTypeRes = resType.dyn_cast<mlir_ts::InterfaceType>())
+        if (auto interfaceTypeRes = dyn_cast<mlir_ts::InterfaceType>(resType))
         {
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::ConstTupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
             }
 
-            if (auto tupleTypeIn = inType.dyn_cast<mlir_ts::TupleType>())
+            if (auto tupleTypeIn = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
             }
         }
 
-        if (auto undefType = inType.dyn_cast<mlir_ts::UndefinedType>())
+        if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(inType))
         {
-            if (auto stringTypeRes = resType.dyn_cast<mlir_ts::StringType>())
+            if (auto stringTypeRes = dyn_cast<mlir_ts::StringType>(resType))
             {
                 return rewriter.create<mlir_ts::ConstantOp>(loc, stringTypeRes, rewriter.getStringAttr(UNDEFINED_NAME));
             }
         }
 
-        if (auto boolType = resType.dyn_cast<mlir_ts::BooleanType>())
+        if (auto boolType = dyn_cast<mlir_ts::BooleanType>(resType))
         {
-            if (auto tupleType = inType.dyn_cast<mlir_ts::TupleType>())
+            if (auto tupleType = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 auto llvmBoolType = tch.convertType(boolType);
                 return rewriter.create<mlir_ts::ConstantOp>(loc, llvmBoolType, rewriter.getBoolAttr(true));
             }
 
-            if (auto constTupleType = inType.dyn_cast<mlir_ts::ConstTupleType>())
+            if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 auto llvmBoolType = tch.convertType(boolType);
                 return rewriter.create<mlir_ts::ConstantOp>(loc, llvmBoolType, rewriter.getBoolAttr(true));
             }
 
-            if (auto ifaceType = inType.dyn_cast<mlir_ts::InterfaceType>())
+            if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(inType))
             {
                 auto ptrValue =
                     rewriter.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
@@ -345,7 +345,7 @@ class CastLogicHelper
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
             }
 
-            if (auto hybridFuncType = inType.dyn_cast<mlir_ts::HybridFunctionType>())
+            if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(inType))
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
@@ -354,7 +354,7 @@ class CastLogicHelper
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
             }
 
-            if (auto boundFuncType = inType.dyn_cast<mlir_ts::BoundFunctionType>())
+            if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(inType))
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
@@ -363,13 +363,13 @@ class CastLogicHelper
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
             }
 
-            if (auto funcType = inType.dyn_cast<mlir_ts::FunctionType>())
+            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(inType))
             {
                 auto llvmBoolType = tch.convertType(boolType);
                 return castLLVMTypes(in, inLLVMType, boolType, llvmBoolType);
             }
 
-            if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(inType))
             {
                 // TODO: use cond switch
                 auto hasValue = rewriter.create<mlir_ts::HasValueOp>(loc, boolType, in);
@@ -388,7 +388,7 @@ class CastLogicHelper
                 }
             }
 
-            if (auto arrayType = inType.dyn_cast<mlir_ts::ArrayType>())
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(inType))
             {
                 auto ptrValue = extractArrayPtr(in, arrayType);
                 auto inLLVMType = tch.convertType(ptrValue.getType());
@@ -396,7 +396,7 @@ class CastLogicHelper
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
             }            
 
-            if (auto unionType = inType.dyn_cast<mlir_ts::UnionType>())
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(inType))
             {
                 MLIRTypeHelper mth(unionType.getContext());
                 mlir::Type baseType;
@@ -416,9 +416,9 @@ class CastLogicHelper
         }
 
         // cast value value to optional value
-        if (auto optType = resType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(resType))
         {
-            if (inType.isa<mlir_ts::UndefinedType>())
+            if (isa<mlir_ts::UndefinedType>(inType))
             {
                 return rewriter.create<mlir_ts::OptionalUndefOp>(loc, resType);
             }
@@ -427,22 +427,22 @@ class CastLogicHelper
             return rewriter.create<mlir_ts::OptionalValueOp>(loc, resType, valCasted);
         }
 
-        if (auto optType = inType.dyn_cast<mlir_ts::OptionalType>())
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(inType))
         {
             auto val = rewriter.create<mlir_ts::ValueOrDefaultOp>(loc, optType.getElementType(), in);
             return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
         }
 
-        if (inType.isa<mlir_ts::UndefinedType>())
+        if (isa<mlir_ts::UndefinedType>(inType))
         {
-            if (auto ifaceType = resType.dyn_cast<mlir_ts::InterfaceType>())
+            if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(resType))
             {
                 // create null interface
                 auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(ifaceType.getContext()));
                 return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, nullVal, nullVal);
             }
 
-            if (auto classType = resType.dyn_cast<mlir_ts::ClassType>())
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(resType))
             {
                 // create null class
                 auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(classType.getContext()));
@@ -450,20 +450,20 @@ class CastLogicHelper
             }
         }
 
-        if (auto arrType = resType.dyn_cast<mlir_ts::ArrayType>())
+        if (auto arrType = dyn_cast<mlir_ts::ArrayType>(resType))
         {
             return castToArrayType(in, inType, resType);
         }
 
-        if (auto opaqueType = resType.dyn_cast<mlir_ts::OpaqueType>())
+        if (auto opaqueType = dyn_cast<mlir_ts::OpaqueType>(resType))
         {
-            if (auto ifaceType = inType.dyn_cast<mlir_ts::InterfaceType>())
+            if (auto ifaceType = dyn_cast<mlir_ts::InterfaceType>(inType))
             {
                 auto ptrValue = rewriter.create<mlir_ts::ExtractInterfaceThisOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
                 return ptrValue;
             }
 
-            if (auto hybridFuncType = inType.dyn_cast<mlir_ts::HybridFunctionType>())
+            if (auto hybridFuncType = dyn_cast<mlir_ts::HybridFunctionType>(inType))
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults(), hybridFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
@@ -473,7 +473,7 @@ class CastLogicHelper
                 return bitcast;
             }
 
-            if (auto boundFuncType = inType.dyn_cast<mlir_ts::BoundFunctionType>())
+            if (auto boundFuncType = dyn_cast<mlir_ts::BoundFunctionType>(inType))
             {
                 auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults(), boundFuncType.isVarArg());
                 auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
@@ -486,9 +486,9 @@ class CastLogicHelper
 
         /*
         // TODO: we do not need as struct can cast to struct
-        if (auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>())
+        if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
-            if (auto resUnionType = resType.dyn_cast<mlir_ts::UnionType>())
+            if (auto resUnionType = dyn_cast<mlir_ts::UnionType>(resType))
             {
                 LLVMTypeConverterHelper ltch((LLVMTypeConverter &)tch.typeConverter);
                 auto maxStoreType = ltch.findMaxSizeType(inUnionType);
@@ -501,10 +501,10 @@ class CastLogicHelper
         }
         */
 
-        if (auto resUnionType = resType.dyn_cast<mlir_ts::UnionType>())
+        if (auto resUnionType = dyn_cast<mlir_ts::UnionType>(resType))
         {
             // TODO: do I need to test income types?
-            if (auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>())
+            if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
             {
                 // nothing to do
             }
@@ -526,7 +526,7 @@ class CastLogicHelper
             }
         }
 
-        if (auto inUnionType = inType.dyn_cast<mlir_ts::UnionType>())
+        if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
             MLIRTypeHelper mth(inUnionType.getContext());
             mlir::Type baseType;
@@ -539,7 +539,7 @@ class CastLogicHelper
             // skip to next steps
         }       
 
-        if (auto undefType = inType.dyn_cast<mlir_ts::UndefinedType>())
+        if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(inType))
         {
             in.getDefiningOp()->emitWarning("using casting to undefined value");
             return rewriter.create<mlir_ts::UndefOp>(loc, resType);
@@ -616,24 +616,24 @@ class CastLogicHelper
             return rewriter.create<mlir::arith::CmpFOp>(loc, arith::CmpFPredicate::ONE, in, clh.createFConstantOf(inLLVMType.getIntOrFloatBitWidth(), 0.0));
         }
 
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isBool(resLLVMType))
+        if (isa<LLVM::LLVMPointerType>(inLLVMType) && isBool(resLLVMType))
         {            
             auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
             return rewriter.create<mlir::arith::CmpIOp>(loc, arith::CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
         }
 
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isInt(resLLVMType))
+        if (isa<LLVM::LLVMPointerType>(inLLVMType) && isInt(resLLVMType))
         {
             return rewriter.create<LLVM::PtrToIntOp>(loc, resLLVMType, in);
         }
 
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isFloat(resLLVMType))
+        if (isa<LLVM::LLVMPointerType>(inLLVMType) && isFloat(resLLVMType))
         {
             auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
             return rewriter.create<mlir::arith::SIToFPOp>(loc, resLLVMType, intVal);
         }
 
-        if (isInt(inLLVMType) && resLLVMType.isa<LLVM::LLVMPointerType>())
+        if (isInt(inLLVMType) && isa<LLVM::LLVMPointerType>(resLLVMType))
         {
             return rewriter.create<LLVM::IntToPtrOp>(loc, resLLVMType, in);
         }
@@ -659,7 +659,7 @@ class CastLogicHelper
         }
 
         // ptrs cast
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && resLLVMType.isa<LLVM::LLVMPointerType>())
+        if (isa<LLVM::LLVMPointerType>(inLLVMType) && isa<LLVM::LLVMPointerType>(resLLVMType))
         {
             return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
         }
@@ -684,9 +684,9 @@ class CastLogicHelper
 
         // review usage of ts.Type here
         // struct to struct. TODO: add validation
-        if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
+        if (isa<LLVM::LLVMStructType>(inLLVMType) && isa<LLVM::LLVMStructType>(resLLVMType))
         {
-            LLVMTypeConverterHelper llvmtch((LLVMTypeConverter &)tch.typeConverter);
+            LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
             auto srcSize = llvmtch.getTypeSizeEstimateInBytes(inLLVMType);
             auto dstSize = llvmtch.getTypeSizeEstimateInBytes(resLLVMType);
 
@@ -714,15 +714,16 @@ class CastLogicHelper
         }
 
         // value to ref of value
-        if (auto destPtr = resLLVMType.dyn_cast<LLVM::LLVMPointerType>())
+        if (auto destPtr = dyn_cast<LLVM::LLVMPointerType>(resLLVMType))
         {
-            if (destPtr.getElementType() == inLLVMType)
-            {
-                // alloc and return address
-                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
-                    loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
-                return valueAddr;
-            }
+            llvm_unreachable("review usage");
+            // if (destPtr.getElementType() == inLLVMType)
+            // {
+            //     // alloc and return address
+            //     auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
+            //         loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
+            //     return valueAddr;
+            // }
         }
 
         LLVM_DEBUG(llvm::dbgs() << "invalid cast operator type 1: '" << inLLVMType << "', type 2: '" << resLLVMType << "'\n";);
@@ -874,13 +875,13 @@ class CastLogicHelper
         auto size = 0;
         bool byValue = true;
         bool isUndef = false;
-        if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
+        if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(type))
         {
             size = constArrayType.getSize();
             srcElementType = constArrayType.getElementType();
             llvmSrcElementType = tch.convertType(srcElementType);
 
-            auto dstElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            auto dstElementType = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
             auto llvmDstElementType = tch.convertType(dstElementType);
             if (size > 0 && llvmDstElementType != llvmSrcElementType)
             {
@@ -889,34 +890,36 @@ class CastLogicHelper
                 return mlir::Value();
             }
         }
-        else if (auto nullType = type.dyn_cast<mlir_ts::NullType>())
+        else if (auto nullType = dyn_cast<mlir_ts::NullType>(type))
         {
             size = 0;
-            srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            srcElementType = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
             llvmSrcElementType = tch.convertType(srcElementType);         
             byValue = false;               
         }   
-        else if (auto undefType = type.dyn_cast<mlir_ts::UndefinedType>())
+        else if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(type))
         {
             size = 0;
-            srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            srcElementType = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
             llvmSrcElementType = tch.convertType(srcElementType);                  
             isUndef = true;      
         }
-        else if (auto ptrValue = type.dyn_cast<LLVM::LLVMPointerType>())
+        else if (auto ptrValue = dyn_cast<LLVM::LLVMPointerType>(type))
         {
-            auto elementType = ptrValue.getElementType();
-            if (auto arrayType = elementType.dyn_cast<LLVM::LLVMArrayType>())
-            {
-                size = arrayType.getNumElements();
-                llvmSrcElementType = tch.convertType(arrayType.getElementType());
-            }
-            else
-            {
-                LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " as type: " << type
-                                        << " to type: " << elementType << "\n";);
-                llvm_unreachable("not implemented");
-            }
+            llvm_unreachable("review usage");
+
+            // auto elementType = ptrValue.getElementType();
+            // if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(elementType))
+            // {
+            //     size = arrayType.getNumElements();
+            //     llvmSrcElementType = tch.convertType(arrayType.getElementType());
+            // }
+            // else
+            // {
+            //     LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " as type: " << type
+            //                             << " to type: " << elementType << "\n";);
+            //     llvm_unreachable("not implemented");
+            // }
         }        
         else
         {
@@ -925,11 +928,11 @@ class CastLogicHelper
             llvm_unreachable("not implemented");
         }
 
+        auto ptrType = th.getPtrType();
         auto sizeValue = clh.createI32ConstantOf(size);
         auto llvmRtArrayStructType = tch.convertType(arrayType);
-        auto destArrayElement = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+        auto destArrayElement = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
         auto llvmDestArrayElement = tch.convertType(destArrayElement);
-        auto llvmDestArray = LLVM::LLVMPointerType::get(llvmDestArrayElement);
 
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         if (isUndef)
@@ -937,9 +940,7 @@ class CastLogicHelper
             return structValue;
         }
         
-        auto arrayPtrType = LLVM::LLVMPointerType::get(llvmSrcElementType);
         auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSrcElementType, size);
-        auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
 
         mlir::Value arrayPtr;
         if (byValue)
@@ -947,19 +948,19 @@ class CastLogicHelper
             auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
             // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
             // auto copyAllocated = ch.Alloca(arrayPtrType, bytesSize);
-            auto copyAllocated = ch.MemoryAllocBitcast(arrayPtrType, bytesSize);
+            auto copyAllocated = ch.MemoryAlloc(bytesSize);
 
-            auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
-            auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
-            rewriter.create<mlir_ts::CopyStructOp>(loc, ptrToArrayDst, ptrToArraySrc);
+            auto ptrToArraySrc = in;
+            auto ptrToArrayDst = copyAllocated;
+            rewriter.create<mlir_ts::MemoryCopyOp>(loc, ptrToArrayDst, ptrToArraySrc, bytesSize);
 
-            arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, llvmDestArray, copyAllocated);
+            arrayPtr = copyAllocated;
         }
         else
         {
             // copy ptr only (const ptr -> ptr)
             // TODO: here we need to clone body to make it writable (and remove logic from VariableOp)
-            arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, arrayPtrType, in);
+            arrayPtr = in;
         }
 
         auto structValue2 =
@@ -979,7 +980,7 @@ class CastLogicHelper
         mlir::Value typeOfValue;
         auto valueForBoxing = in;
 
-        if (auto unionType = inType.dyn_cast<mlir_ts::UnionType>())
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
             MLIRTypeHelper mth(unionType.getContext());
             mlir::Type baseType;
@@ -988,7 +989,7 @@ class CastLogicHelper
             {
                 typeOfValue = toh.typeOfLogic(loc, valueForBoxing, unionType);
 
-                LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)&tch.typeConverter);
+                LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
                 // so we need to get biggest value from Union
                 auto maxUnionType = llvmtch.findMaxSizeType(unionType);
                 LLVM_DEBUG(llvm::dbgs() << "\n!! max size union type: " << maxUnionType << "\n";);
@@ -1023,15 +1024,14 @@ class CastLogicHelper
         auto variableOp = mth.GetReferenceOfLoadOp(in);
         if (variableOp)
         {
-            return clh.castToI8Ptr(variableOp);
+            return variableOp;
         }
 
         auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
             loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
-        mlir::Value valueAddrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(valueAddr.getType()), valueAddr);
-
-        return clh.castToI8Ptr(valueAddrAsLLVMType);
+        auto valueAddrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(valueAddr.getType()), valueAddr);
+        return valueAddrAsLLVMType;
     }
 
     template <typename TupleTy> mlir::Value castTupleToString(mlir::Value in, mlir::Type inType, TupleTy tupleTypeIn)
@@ -1054,7 +1054,7 @@ class CastLogicHelper
 
         mlir::Value value = rewriter.create<mlir_ts::LoadOp>(loc, fieldInfo.type, propField);
 
-        auto funcType = fieldInfo.type.cast<mlir_ts::FunctionType>();
+        auto funcType = mlir::cast<mlir_ts::FunctionType>(fieldInfo.type);
 
         mlir::Value objTypeCasted = cast(inCasted, inCasted.getType(), funcType.getInput(0));
 
@@ -1076,12 +1076,12 @@ class CastLogicHelper
     {
         auto llvmType = tch.convertType(boundRefTypeIn.getElementType());
         auto expectingLlvmType = tch.convertType(refTypeOut);
-        auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
+        auto ptrType = th.getPtrType();
 
         mlir::Value inAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(in.getType()), in);
 
-        mlir::Value valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, inAsLLVMType, MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
-        if (expectingLlvmType != llvmRefType)
+        mlir::Value valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, inAsLLVMType, MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
+        if (expectingLlvmType != ptrType)
         {
             valueRefVal = rewriter.create<LLVM::BitcastOp>(loc, expectingLlvmType, valueRefVal);
         }
@@ -1092,11 +1092,11 @@ class CastLogicHelper
     mlir::Value extractArrayPtr(mlir::Value in, mlir_ts::ArrayType arrayType)
     {
         auto llvmType = tch.convertType(arrayType.getElementType());
-        auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
+        auto ptrType = th.getPtrType();
 
         mlir::Value inAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(in.getType()), in);
 
-        mlir::Value ptrVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, inAsLLVMType, MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
+        mlir::Value ptrVal = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, inAsLLVMType, MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
         return ptrVal;
     }
 

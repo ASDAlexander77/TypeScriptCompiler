@@ -102,18 +102,6 @@ class CodeLogicHelper
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
-    mlir::Value castToI8Ptr(mlir::Value value)
-    {
-        TypeHelper th(rewriter);
-        return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrType(), value);
-    }
-
-    mlir::Value castToI8PtrPtr(mlir::Value value)
-    {
-        TypeHelper th(rewriter);
-        return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrPtrType(), value);
-    }
-
     mlir::Value conditionalExpressionLowering(mlir::Location loc, mlir::Type type, mlir::Value condition,
                                               mlir::function_ref<mlir::Value(OpBuilder &, Location)> thenBuilder,
                                               mlir::function_ref<mlir::Value(OpBuilder &, Location)> elseBuilder)

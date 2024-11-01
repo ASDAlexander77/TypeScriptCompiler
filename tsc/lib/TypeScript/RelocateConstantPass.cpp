@@ -54,7 +54,7 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
         auto firstNonConstOp = seekFirstNonConstOp(f);
         if (firstNonConstOp)
         {
-            ConversionPatternRewriter rewriter(f.getContext());
+            PatternRewriter rewriter(f.getContext());
             rewriter.setInsertionPoint(firstNonConstOp);
 
             LLVM_DEBUG(llvm::dbgs() << "\nInsert const at: \n" << *firstNonConstOp << "\n";);

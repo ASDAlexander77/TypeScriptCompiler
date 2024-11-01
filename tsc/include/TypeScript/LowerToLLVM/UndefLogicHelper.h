@@ -26,11 +26,11 @@ class UndefLogicHelper
 {
     Operation *op;
     PatternRewriter &rewriter;
-    LLVMTypeConverter &typeConverter;
+    const LLVMTypeConverter &typeConverter;
     CompileOptions &compileOptions;
 
   public:
-    UndefLogicHelper(Operation *op, PatternRewriter &rewriter, LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
+    UndefLogicHelper(Operation *op, PatternRewriter &rewriter, const LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
         : op(op), rewriter(rewriter), typeConverter(typeConverter), compileOptions(compileOptions)
     {
     }
@@ -47,8 +47,8 @@ class UndefLogicHelper
         auto right = binOp->getOperand(1);
         auto leftType = left.getType();
         auto rightType = right.getType();
-        auto leftUndefType = leftType.dyn_cast<mlir_ts::UndefinedType>();
-        auto rightUndefType = rightType.dyn_cast<mlir_ts::UndefinedType>();
+        auto leftUndefType = dyn_cast<mlir_ts::UndefinedType>(leftType);
+        auto rightUndefType = dyn_cast<mlir_ts::UndefinedType>(rightType);
 
         assert(leftUndefType || rightUndefType);
 
@@ -112,7 +112,7 @@ class UndefLogicHelper
 
             auto processUndefVale = [&](OpBuilder &builder, Location loc, mlir::Type t1, mlir::Value val1, mlir::Type t2,
                                         mlir::Value val2) {
-                if (t2.isa<mlir_ts::InterfaceType>() || t2.isa<mlir_ts::ClassType>())
+                if (isa<mlir_ts::InterfaceType>(t2) || isa<mlir_ts::ClassType>(t2))
                 {
                     auto casted = rewriter.create<mlir_ts::CastOp>(loc, t2, val1);
                     return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, val2.getType(), casted, casted.getType(),
@@ -126,12 +126,12 @@ class UndefLogicHelper
             };
 
             // when 1 of them is optional
-            if (leftType.isa<mlir_ts::UndefinedType>())
+            if (isa<mlir_ts::UndefinedType>(leftType))
             {
                 return processUndefVale(rewriter, loc, leftType, left, rightType, right);
             }
 
-            if (rightType.isa<mlir_ts::UndefinedType>())
+            if (isa<mlir_ts::UndefinedType>(rightType))
             {
                 return processUndefVale(rewriter, loc, rightType, right, leftType, left);
             }
@@ -143,7 +143,7 @@ class UndefLogicHelper
 };
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value UndefTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
+mlir::Value UndefTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, const LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
 {
     UndefLogicHelper olh(binOp, builder, typeConverter, compileOptions);
     auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode);
