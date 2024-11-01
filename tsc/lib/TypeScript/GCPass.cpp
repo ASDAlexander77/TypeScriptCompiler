@@ -136,7 +136,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         StringRef newName;
         StringRef modeAttrValue;
 
-        if (auto modeAttr = callOp->getAttr("mode").dyn_cast_or_null<mlir::StringAttr>())
+        if (auto modeAttr = dyn_cast_or_null<mlir::StringAttr>(callOp->getAttr("mode")))
         {
             modeAttrValue = modeAttr.getValue();
         }

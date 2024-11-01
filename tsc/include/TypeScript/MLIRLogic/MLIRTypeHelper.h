@@ -2339,7 +2339,7 @@ class MLIRTypeHelper
             return ExtendsResult::True;
         }
 
-        if (auto anyType = srcType.dyn_cast_or_null<mlir_ts::AnyType>())
+        if (auto anyType = dyn_cast_or_null<mlir_ts::AnyType>(srcType))
         {
             SmallVector<mlir_ts::InferType> inferTypes;
             getAllInferTypes(extendType, inferTypes);
@@ -2352,7 +2352,7 @@ class MLIRTypeHelper
             return ExtendsResult::Any;
         }        
 
-        if (auto neverType = srcType.dyn_cast_or_null<mlir_ts::NeverType>())
+        if (auto neverType = dyn_cast_or_null<mlir_ts::NeverType>(srcType))
         {
             SmallVector<mlir_ts::InferType> inferTypes;
             getAllInferTypes(extendType, inferTypes);
@@ -3100,8 +3100,8 @@ class MLIRTypeHelper
         }
 
         // in case of array
-        auto currentTypeArray = currentType.dyn_cast_or_null<mlir_ts::ArrayType>();
-        auto existTypeArray = existType.dyn_cast_or_null<mlir_ts::ArrayType>();
+        auto currentTypeArray = dyn_cast_or_null<mlir_ts::ArrayType>(currentType);
+        auto existTypeArray = dyn_cast_or_null<mlir_ts::ArrayType>(existType);
         if (currentTypeArray && existTypeArray)
         {
             auto arrayElementMerged = mergeType(location, existTypeArray.getElementType(), currentTypeArray.getElementType(), merged);   

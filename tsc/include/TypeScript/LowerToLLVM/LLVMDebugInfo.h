@@ -136,7 +136,7 @@ class LLVMDebugInfoHelper
         }
 
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
-        if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
+        if (auto arrayType = dyn_cast_or_null<mlir_ts::ArrayType>(type))
         {
             return getDIType(arrayType, file, line, scope);
         }
@@ -156,7 +156,7 @@ class LLVMDebugInfoHelper
             return getDITypeWithFields(location, tupleType, "tuple", true, file, line, scope);
         }
 
-        if (auto classType = type.dyn_cast_or_null<mlir_ts::ClassType>())
+        if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(type))
         {
             return getDIType(location, classType, file, line, scope);
         }
@@ -409,7 +409,7 @@ class LLVMDebugInfoHelper
             if (hasFields)
             {
                 auto fieldId = fieldInfo.id;
-                if (auto strFieldId = fieldId.dyn_cast_or_null<mlir::StringAttr>())
+                if (auto strFieldId = dyn_cast_or_null<mlir::StringAttr>(fieldId))
                 {
                     name = strFieldId;
                 }

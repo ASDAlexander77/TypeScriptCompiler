@@ -1919,7 +1919,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         auto loc = newOp.getLoc();
 
         mlir::Type storageType = newOp.getInstance().getType();
-        if (auto classType = storageType.dyn_cast_or_null<mlir_ts::ClassType>())
+        if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(storageType))
         {
             storageType = classType.getStorageType();
         }
@@ -5208,7 +5208,7 @@ class GCNewExplicitlyTypedOpLowering : public TsLlvmPattern<mlir_ts::GCNewExplic
         auto loc = op.getLoc();
 
         mlir::Type storageType = op.getInstance().getType();
-        if (auto classType = storageType.dyn_cast_or_null<mlir_ts::ClassType>())
+        if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(storageType))
         {
             storageType = classType.getStorageType();
         }

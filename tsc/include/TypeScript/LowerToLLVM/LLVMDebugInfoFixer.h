@@ -316,19 +316,19 @@ private:
     }
 
     mlir::Attribute recreateMetadataForNewScope(mlir::Attribute currentMetadata, mlir::Attribute newScope, mlir::Attribute oldScope) {
-        if (auto lexicalBlockAttr = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILexicalBlockAttr>()) {
+        if (auto lexicalBlockAttr = dyn_cast_or_null<mlir::LLVM::DILexicalBlockAttr>(currentMetadata)) {
             return recreateLexicalBlockForNewScope(lexicalBlockAttr, newScope, oldScope);
         }
 
-        if (auto localVarScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILocalVariableAttr>()) {
+        if (auto localVarScope = dyn_cast_or_null<mlir::LLVM::DILocalVariableAttr>(currentMetadata)) {
             return recreateLocalVariableForNewScope(localVarScope, newScope, oldScope);
         }
 
-        if (auto subprogScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DISubprogramAttr>()) {
+        if (auto subprogScope = dyn_cast_or_null<mlir::LLVM::DISubprogramAttr>(currentMetadata)) {
             return recreateSubprogramForNewScope(subprogScope, newScope, oldScope);
         }
 
-        if (auto labelScope = currentMetadata.dyn_cast_or_null<mlir::LLVM::DILabelAttr>()) {
+        if (auto labelScope = dyn_cast_or_null<mlir::LLVM::DILabelAttr>(currentMetadata)) {
             return recreateLabelForNewScope(labelScope, newScope, oldScope);
         }
 
