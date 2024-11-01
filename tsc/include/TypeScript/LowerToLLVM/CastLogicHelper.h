@@ -1054,7 +1054,7 @@ class CastLogicHelper
 
         mlir::Value value = rewriter.create<mlir_ts::LoadOp>(loc, fieldInfo.type, propField);
 
-        auto funcType = fieldInfo.type.cast<mlir_ts::FunctionType>();
+        auto funcType = mlir::cast<mlir_ts::FunctionType>(fieldInfo.type);
 
         mlir::Value objTypeCasted = cast(inCasted, inCasted.getType(), funcType.getInput(0));
 

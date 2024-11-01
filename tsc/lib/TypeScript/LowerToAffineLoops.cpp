@@ -201,8 +201,8 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
 
         auto location = paramOp.getLoc();
 
-        auto dataTypeIn = paramOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
-        auto storeType = paramOp.getType().cast<mlir_ts::RefType>().getElementType();
+        auto dataTypeIn = cast<mlir_ts::OptionalType>(paramOp.getArgValue().getType()).getElementType();
+        auto storeType = cast<mlir_ts::RefType>(paramOp.getType()).getElementType();
 
         // ts.if
         auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.getArgValue());
@@ -256,7 +256,7 @@ struct OptionalValueOrDefaultOpLowering : public TsPattern<mlir_ts::OptionalValu
 
         auto location = optionalValueOrDefaultOp.getLoc();
 
-        auto dataTypeIn = optionalValueOrDefaultOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto dataTypeIn = cast<mlir_ts::OptionalType>(optionalValueOrDefaultOp.getArgValue().getType()).getElementType();
         auto resultType = optionalValueOrDefaultOp.getType();
 
         // ts.if
@@ -932,7 +932,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto visitorCatchContinue = [&](Operation *op) {
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
             {
-                rttih.setType(catchOp.getCatchArg().getType().cast<mlir_ts::RefType>().getElementType());
+                rttih.setType(cast<mlir_ts::RefType>(catchOp.getCatchArg().getType()).getElementType());
                 assert(!catchOpPtr);
                 catchOpPtr = op;
             }
@@ -1660,7 +1660,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
                 }
             }
 
-            assert(val.getType() == fieldRef.getType().cast<mlir_ts::RefType>().getElementType());
+            assert(val.getType() == cast<mlir_ts::RefType>(fieldRef.getType()).getElementType());
 
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
         }

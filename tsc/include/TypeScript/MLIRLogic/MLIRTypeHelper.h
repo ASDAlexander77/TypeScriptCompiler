@@ -1397,7 +1397,7 @@ class MLIRTypeHelper
 
                     MethodInfo foundMethod{};
                     foundMethod.name = methodName;
-                    foundMethod.funcType = foundField.type.cast<mlir_ts::FunctionType>();
+                    foundMethod.funcType = cast<mlir_ts::FunctionType>(foundField.type);
                     // TODO: you need to load function from object
                     //foundMethod.funcOp
                     return foundMethod;
@@ -1839,7 +1839,7 @@ class MLIRTypeHelper
 
     ExtendsResult appendInferTypeToContext(mlir::Location location, mlir::Type srcType, mlir_ts::InferType inferType, llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> &typeParamsWithArgs, bool useTupleType = false)
     {
-        auto name = inferType.getElementType().cast<mlir_ts::NamedGenericType>().getName().getValue();
+        auto name = cast<mlir_ts::NamedGenericType>(inferType.getElementType()).getName().getValue();
         auto currentType = srcType;
 
         auto existType = typeParamsWithArgs.lookup(name);
@@ -2024,7 +2024,7 @@ class MLIRTypeHelper
         } 
         else if (auto srcClassType = dyn_cast<mlir_ts::ClassType>(srcType))
         {
-            for (auto &fieldInfo : srcClassType.getStorageType().cast<mlir_ts::ClassStorageType>().getFields())
+            for (auto &fieldInfo : cast<mlir_ts::ClassStorageType>(srcClassType.getStorageType()).getFields())
             {
                 destTupleFields.push_back(fieldInfo);
             }       

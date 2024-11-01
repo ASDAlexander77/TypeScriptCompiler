@@ -672,7 +672,7 @@ struct ClassInfo
 
     unsigned fieldsCount()
     {
-        auto storageClass = classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+        auto storageClass = cast<mlir_ts::ClassStorageType>(classType.getStorageType());
         return storageClass.size();
     }
 
@@ -680,7 +680,7 @@ struct ClassInfo
     {
         if (index >= 0)
         {
-            auto storageClass = classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+            auto storageClass = cast<mlir_ts::ClassStorageType>(classType.getStorageType());
             return storageClass.getFieldInfo(index);
         }
 
@@ -690,7 +690,7 @@ struct ClassInfo
     mlir_ts::FieldInfo findField(mlir::Attribute id, bool &foundField)
     {
         foundField = false;
-        auto storageClass = classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+        auto storageClass = cast<mlir_ts::ClassStorageType>(classType.getStorageType());
         auto index = storageClass.getIndex(id);
         if (index >= 0)
         {

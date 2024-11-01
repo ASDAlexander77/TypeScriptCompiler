@@ -428,7 +428,7 @@ class MLIRCustomMethods
 
                     if (isa<mlir_ts::StringType>(type))
                     {
-                        msg = constantOp.getValue().cast<mlir::StringAttr>().getValue();
+                        msg = cast<mlir::StringAttr>(constantOp.getValue()).getValue();
                     }
                 }
 
@@ -520,7 +520,7 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
 
-        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+        auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
         SmallVector<mlir::Value> castedValues;
         for (auto value : values)
@@ -564,7 +564,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value value = builder.create<mlir_ts::ArrayPopOp>(
-            location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
+            location, cast<mlir_ts::ArrayType>(operands.front().getType()).getElementType(), thisValue);
 
         return value;
     }
@@ -573,7 +573,7 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
 
-        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+        auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
         SmallVector<mlir::Value> castedValues;
         for (auto value : values)
@@ -617,7 +617,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value value = builder.create<mlir_ts::ArrayShiftOp>(
-            location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
+            location, cast<mlir_ts::ArrayType>(operands.front().getType()).getElementType(), thisValue);
 
         return value;
     }    
@@ -636,7 +636,7 @@ class MLIRCustomMethods
             deleteCountValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), deleteCountValue);
         }
 
-        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+        auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
         SmallVector<mlir::Value> castedValues;
         for (auto value : values)
@@ -691,7 +691,7 @@ class MLIRCustomMethods
         mlir::Value arrayViewValue =
             builder.create<mlir_ts::ArrayViewOp>(
                 location, 
-                thisValue.getType().cast<mlir_ts::ArrayType>(), 
+                cast<mlir_ts::ArrayType>(thisValue.getType()), 
                 thisValue, 
                 castedValues[0], 
                 castedValues[1]);
@@ -807,7 +807,7 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
-        auto loadedValue = builder.create<mlir_ts::LoadOp>(location, refValue.getType().cast<mlir_ts::RefType>().getElementType(), refValue);
+        auto loadedValue = builder.create<mlir_ts::LoadOp>(location, cast<mlir_ts::RefType>(refValue.getType()).getElementType(), refValue);
         return V(loadedValue);
     }
 
@@ -1025,7 +1025,7 @@ class MLIRPropertyAccessCodeLogic
 
             if (auto constOp = effectiveVal.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                auto length = constOp.getValueAttr().cast<mlir::StringAttr>().getValue().size();
+                auto length = cast<mlir::StringAttr>(constOp.getValueAttr()).getValue().size();
                 return V(builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(length)));
             }
 
@@ -1074,7 +1074,7 @@ class MLIRPropertyAccessCodeLogic
         {
             if (isa<mlir_ts::ConstArrayType>(expression.getType()))
             {
-                auto size = getExprConstAttr().cast<mlir::ArrayAttr>().size();
+                auto size = cast<mlir::ArrayAttr>(getExprConstAttr()).size();
                 return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
                                                            builder.getI32IntegerAttr(size));
             }
