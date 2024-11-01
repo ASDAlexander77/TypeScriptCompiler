@@ -322,7 +322,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
-                auto strValue = item.cast<StringAttr>().getValue().str();
+                auto strValue = mlir::cast<StringAttr>(item).getValue().str();
                 auto itemVal = getOrCreateGlobalString(strValue);
 
                 arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
@@ -336,8 +336,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
-                auto arrayValue = item.cast<ArrayAttr>();
-                auto itemVal = getReadOnlyRTArray(loc, originalArrayType, llvmElementType.cast<LLVM::LLVMStructType>(), arrayValue);
+                auto arrayValue = mlir::cast<ArrayAttr>(item);
+                auto itemVal = getReadOnlyRTArray(loc, originalArrayType, mlir::cast<LLVM::LLVMStructType>(llvmElementType), arrayValue);
 
                 arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
@@ -354,7 +354,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
-                auto tupleVal = getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(tupleType).cast<mlir_ts::ConstTupleType>(), llvmElementType.cast<LLVM::LLVMStructType>(),
+                auto tupleVal = getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(tupleType).cast<mlir_ts::ConstTupleType>(), mlir::cast<LLVM::LLVMStructType>(llvmElementType),
                                                         dyn_cast<ArrayAttr>(item));
                 arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
@@ -532,7 +532,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 OpBuilder::InsertionGuard guard(rewriter);
 
                 auto itemVal =
-                    getReadOnlyRTArray(loc, arrayType.cast<mlir_ts::ArrayType>(), llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                    getReadOnlyRTArray(loc, mlir::cast<mlir_ts::ArrayType>(arrayType), mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
                 */
             }
@@ -542,7 +542,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                auto itemVal = getReadOnlyRTArray(loc, arrayType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                auto itemVal = getReadOnlyRTArray(loc, arrayType, mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
             else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
@@ -551,7 +551,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                auto subTupleVal = getTupleFromArrayAttr(loc, constTupleType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                auto subTupleVal = getTupleFromArrayAttr(loc, constTupleType, mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }
@@ -565,7 +565,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 auto subTupleVal =
                     getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(constTupleType).cast<mlir_ts::ConstTupleType>(),
-                                          llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                                          mlir::cast<LLVM::LLVMStructType>(llvmType), subArrayAttr);
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, MLIRHelper::getStructIndex(rewriter, position++));
             }

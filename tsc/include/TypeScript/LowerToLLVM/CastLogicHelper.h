@@ -881,7 +881,7 @@ class CastLogicHelper
             srcElementType = constArrayType.getElementType();
             llvmSrcElementType = tch.convertType(srcElementType);
 
-            auto dstElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            auto dstElementType = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
             auto llvmDstElementType = tch.convertType(dstElementType);
             if (size > 0 && llvmDstElementType != llvmSrcElementType)
             {
@@ -893,14 +893,14 @@ class CastLogicHelper
         else if (auto nullType = dyn_cast<mlir_ts::NullType>(type))
         {
             size = 0;
-            srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            srcElementType = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
             llvmSrcElementType = tch.convertType(srcElementType);         
             byValue = false;               
         }   
         else if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(type))
         {
             size = 0;
-            srcElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            srcElementType = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
             llvmSrcElementType = tch.convertType(srcElementType);                  
             isUndef = true;      
         }
@@ -931,7 +931,7 @@ class CastLogicHelper
         auto ptrType = th.getPtrType();
         auto sizeValue = clh.createI32ConstantOf(size);
         auto llvmRtArrayStructType = tch.convertType(arrayType);
-        auto destArrayElement = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+        auto destArrayElement = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
         auto llvmDestArrayElement = tch.convertType(destArrayElement);
 
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);

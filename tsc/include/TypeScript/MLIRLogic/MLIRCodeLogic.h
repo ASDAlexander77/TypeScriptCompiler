@@ -854,7 +854,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
 
-        auto dictionaryAttr = attrVal.cast<mlir::DictionaryAttr>();
+        auto dictionaryAttr = mlir::cast<mlir::DictionaryAttr>(attrVal);
         auto valueAttr = dictionaryAttr.get(propName);
         if (!valueAttr)
         {

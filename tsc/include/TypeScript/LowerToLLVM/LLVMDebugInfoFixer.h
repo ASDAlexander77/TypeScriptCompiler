@@ -246,7 +246,7 @@ private:
             auto newLexicalBlockAttr = 
                 mlir::LLVM::DILexicalBlockAttr::get(
                     lexicalBlockAttr.getContext(), 
-                    newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                    mlir::cast<mlir::LLVM::DIScopeAttr>(newScope), 
                     lexicalBlockAttr.getFile(), 
                     lexicalBlockAttr.getLine(), 
                     lexicalBlockAttr.getColumn());   
@@ -264,7 +264,7 @@ private:
         if (localVarScope.getScope() == oldScope) {
             auto newLocalVar = mlir::LLVM::DILocalVariableAttr::get(
                 localVarScope.getContext(), 
-                newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                mlir::cast<mlir::LLVM::DIScopeAttr>(newScope), 
                 localVarScope.getName(), 
                 localVarScope.getFile(), 
                 localVarScope.getLine(), 
@@ -283,7 +283,7 @@ private:
                 subprogScope.getContext(), 
                 DistinctAttr::create(mlir::UnitAttr::get(subprogScope.getContext())),
                 subprogScope.getCompileUnit(), 
-                newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                mlir::cast<mlir::LLVM::DIScopeAttr>(newScope), 
                 subprogScope.getName(), 
                 subprogScope.getLinkageName(), 
                 subprogScope.getFile(), 
@@ -305,7 +305,7 @@ private:
         if (labelScope.getScope() == oldScope) {
             auto newLabel = mlir::LLVM::DILabelAttr::get(
                 labelScope.getContext(), 
-                newScope.cast<mlir::LLVM::DIScopeAttr>(), 
+                mlir::cast<mlir::LLVM::DIScopeAttr>(newScope), 
                 labelScope.getName(), 
                 labelScope.getFile(), 
                 labelScope.getLine());

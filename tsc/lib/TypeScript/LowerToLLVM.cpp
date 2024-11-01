@@ -819,7 +819,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         */
 
         auto tupleVal = ch.getTupleFromArrayAttr(location, dyn_cast<mlir_ts::ConstTupleType>(type),
-                                                 convertedTupleType.cast<LLVM::LLVMStructType>(), arrayAttr);
+                                                 mlir::cast<LLVM::LLVMStructType>(convertedTupleType), arrayAttr);
 
         // rewriter.replaceOp(constantOp, ValueRange{loadedValue});
         rewriter.replaceOp(constantOp, ValueRange{tupleVal});

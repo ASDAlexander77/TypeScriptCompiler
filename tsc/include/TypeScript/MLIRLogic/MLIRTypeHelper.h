@@ -367,13 +367,13 @@ class MLIRTypeHelper
         // this is Int
         if (srcType.isIntOrIndex())
         {
-            return builder.getFloatAttr(type, attr.cast<mlir::IntegerAttr>().getValue().signedRoundToDouble());
+            return builder.getFloatAttr(type, mlir::cast<mlir::IntegerAttr>(attr).getValue().signedRoundToDouble());
         }
 
         // this is Float
         if (srcType.isIntOrIndexOrFloat())
         {
-            return builder.getFloatAttr(type, attr.cast<mlir::FloatAttr>().getValue().convertToDouble());
+            return builder.getFloatAttr(type, mlir::cast<mlir::FloatAttr>(attr).getValue().convertToDouble());
         }        
 
         return mlir::Attribute();
@@ -409,7 +409,7 @@ class MLIRTypeHelper
             if (srcType.isIndex())
             {
                 // index
-                auto val = attr.cast<mlir::IntegerAttr>().getValue();
+                auto val = mlir::cast<mlir::IntegerAttr>(attr).getValue();
                 APInt newVal(
                     destType.getIntOrFloatBitWidth(), 
                     val.getZExtValue());
@@ -419,7 +419,7 @@ class MLIRTypeHelper
             else if (srcType.isIntOrIndex())
             {
                 // integer
-                auto val = attr.cast<mlir::IntegerAttr>().getValue();
+                auto val = mlir::cast<mlir::IntegerAttr>(attr).getValue();
                 APInt newVal(
                     destType.getIntOrFloatBitWidth(), 
                     destType.isSignedInteger() ? val.getSExtValue() : val.getZExtValue(), 
@@ -431,7 +431,7 @@ class MLIRTypeHelper
                 // float/double
                 bool lossy;
                 APSInt newVal(destType.getIntOrFloatBitWidth(), !destType.isIndex());
-                attr.cast<mlir::FloatAttr>().getValue().convertToInteger(newVal, llvm::APFloatBase::rmNearestTiesToEven, &lossy);
+                mlir::cast<mlir::FloatAttr>(attr).getValue().convertToInteger(newVal, llvm::APFloatBase::rmNearestTiesToEven, &lossy);
                 return builder.getIntegerAttr(destType, newVal);
             }
             else
@@ -1009,7 +1009,7 @@ class MLIRTypeHelper
             .Case<mlir_ts::HybridFunctionType>([&](auto hybridFunctionType) { funcType = GetFunctionType(hybridFunctionType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto boundFunctionType) { funcType = GetFunctionType(boundFunctionType); })
             .Case<mlir_ts::ExtensionFunctionType>([&](auto extensionFunctionType) { funcType = GetFunctionType(extensionFunctionType); })
-            .Default([&](auto type) { funcType = inFuncType.cast<mlir_ts::FunctionType>(); });
+            .Default([&](auto type) { funcType = mlir::cast<mlir_ts::FunctionType>(inFuncType); });
             
         return funcType;
     }
@@ -2810,7 +2810,7 @@ class MLIRTypeHelper
         {
             if (mergeLiterals)
             {
-                auto baseType = literalType.cast<mlir_ts::LiteralType>().getElementType();
+                auto baseType = mlir::cast<mlir_ts::LiteralType>(literalType).getElementType();
                 if (unionContext.types.count(baseType))
                 {
                     continue;

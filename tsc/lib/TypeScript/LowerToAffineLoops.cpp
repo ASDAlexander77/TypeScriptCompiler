@@ -68,7 +68,7 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
         if (anyResult)
         {
             auto loadedValue = rewriter.create<mlir_ts::LoadOp>(
-                location, returnType.cast<mlir_ts::RefType>().getElementType(), allocValue);
+                location, mlir::cast<mlir_ts::RefType>(returnType).getElementType(), allocValue);
             rewriter.create<mlir_ts::ReturnInternalOp>(location, mlir::ValueRange{loadedValue});
             rewriter.replaceOp(op, allocValue);
         }
@@ -1626,7 +1626,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
         LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture result type: " << captureRefType << "\n\n";);
 
         assert(isa<mlir_ts::RefType>(captureRefType));
-        auto captureStoreType = captureRefType.cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::TupleType>();
+        auto captureStoreType = mlir::cast<mlir_ts::RefType>(captureRefType).getElementType().cast<mlir_ts::TupleType>();
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture store type: " << captureStoreType << "\n\n";);
 

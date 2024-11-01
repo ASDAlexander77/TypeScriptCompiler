@@ -3616,7 +3616,7 @@ class MLIRGenImpl
 
         if (objectBindingElement->initializer)
         {
-            auto tupleType = type.cast<mlir_ts::TupleType>();
+            auto tupleType = mlir::cast<mlir_ts::TupleType>(type);
             auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
             auto res = optionalValueOrDefault(location, subType, value, objectBindingElement->initializer, genContext);
             subInit = V(res);
@@ -11099,7 +11099,7 @@ class MLIRGenImpl
             }
 
             hasType = true;
-            parameters = tupleParamsType.cast<mlir_ts::TupleType>().getFields();
+            parameters = mlir::cast<mlir_ts::TupleType>(tupleParamsType).getFields();
             lastArgIndex = parameters.size() - 1;
             if (!disableSpreadParam && mth.getVarArgFromFuncRef(funcType))
             {
@@ -12164,7 +12164,7 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
     {
         auto attrVal = getNumericLiteralAttribute(numericLiteral);
-        auto attrType = attrVal.cast<mlir::TypedAttr>().getType();
+        auto attrType = mlir::cast<mlir::TypedAttr>(attrVal).getType();
         auto valueType = isa<mlir::FloatType>(attrType) ? getNumberType() : attrType;
         auto literalType = mlir_ts::LiteralType::get(attrVal, valueType);
         return V(builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal));
@@ -15293,7 +15293,7 @@ class MLIRGenImpl
 
         // process static field - register global
         auto fullClassStaticFieldName =
-            concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
+            concat(newClassPtr->fullName, mlir::cast<mlir::StringAttr>(fieldId).getValue());
         VariableClass varClass = newClassPtr->isDeclaration ? VariableType::External : VariableType::Var;
         varClass.isExport = newClassPtr->isExport && isPublic;
         varClass.isImport = newClassPtr->isImport && isPublic;
@@ -15346,7 +15346,7 @@ class MLIRGenImpl
 
         // process static field - register global
         auto fullClassStaticFieldName =
-            concat(newClassPtr->fullName, fieldId.cast<mlir::StringAttr>().getValue());
+            concat(newClassPtr->fullName, mlir::cast<mlir::StringAttr>(fieldId).getValue());
         
         auto staticFieldType = registerVariable(
             location, fullClassStaticFieldName, true, VariableType::Var,
@@ -18748,7 +18748,7 @@ genContext);
 
         auto inEffective = in;
 
-        auto srcTuple = tupleType.cast<mlir_ts::TupleType>();
+        auto srcTuple = mlir::cast<mlir_ts::TupleType>(tupleType);
         if (mlir::failed(mth.canCastTupleToInterface(location, srcTuple, interfaceInfo, true)))
         {
             SmallVector<mlir_ts::FieldInfo> fields;
@@ -20349,7 +20349,7 @@ genContext);
         {
             if (inferType)
             {
-                auto namedGenType = inferType.cast<mlir_ts::NamedGenericType>();
+                auto namedGenType = mlir::cast<mlir_ts::NamedGenericType>(inferType);
                 auto typeParam = std::make_shared<TypeParameterDOM>(namedGenType.getName().getValue().str());
                 zipTypeParameterWithArgument(location, typeParamsWithArgs, typeParam, checkType, false, genContext, false);
             }
@@ -20368,7 +20368,7 @@ genContext);
         // false case
         if (inferType)
         {
-            auto namedGenType = inferType.cast<mlir_ts::NamedGenericType>();
+            auto namedGenType = mlir::cast<mlir_ts::NamedGenericType>(inferType);
             auto typeParam = std::make_shared<TypeParameterDOM>(namedGenType.getName().getValue().str());
             zipTypeParameterWithArgument(location, typeParamsWithArgs, typeParam, checkType, false, genContext, false);
         }
@@ -20785,7 +20785,7 @@ genContext);
         std::stringstream ss;
         ss << head;
 
-        auto typeText = type.cast<mlir_ts::LiteralType>().getValue().cast<mlir::StringAttr>().getValue();
+        auto typeText = mlir::cast<mlir_ts::LiteralType>(type).getValue().cast<mlir::StringAttr>().getValue();
         ss << typeText.str();
 
         auto spanText = convertWideToUTF8(span->literal->rawText);
@@ -20798,7 +20798,7 @@ genContext);
                                      NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex,
                                      const GenContext &genContext)
     {
-        for (auto unionTypeItem : unionType.cast<mlir_ts::UnionType>().getTypes())
+        for (auto unionTypeItem : mlir::cast<mlir_ts::UnionType>(unionType).getTypes())
         {
             getTemplateLiteralTypeItem(types, unionTypeItem, head, spans, spanIndex, genContext);
         }
@@ -21536,7 +21536,7 @@ genContext);
 
         auto funcType = mlir_ts::ConstructFunctionType::get(
             builder.getContext(), 
-            signatureType.cast<mlir_ts::FunctionType>(), 
+            mlir::cast<mlir_ts::FunctionType>(signatureType), 
             hasModifier(signature, SyntaxKind::AbstractKeyword));
         return funcType;
     }
