@@ -3874,7 +3874,7 @@ class MLIRGenImpl
                 {
                     // there is no initializer, var declration can be undefined
                     //type = getUnionType(type, getUndefinedType());
-                    if (!type.isa<mlir_ts::OptionalType>() && !hasModifier(parent, SyntaxKind::DeclareKeyword))
+                    if (!isa<mlir_ts::OptionalType>(type) && !hasModifier(parent, SyntaxKind::DeclareKeyword))
                     {
                         emitWarning(loc(item), "'let' does not have initializer, use undefined union type '<type> | undefined'.");
                     }
@@ -9407,7 +9407,7 @@ class MLIRGenImpl
         if (auto refType = dyn_cast<mlir_ts::RefType>(actualType))
         {
             auto elementType = refType.getElementType();
-            if (!elementType.isa<mlir_ts::TupleType>() && !elementType.isa<mlir_ts::ConstTupleType>())
+            if (!isa<mlir_ts::TupleType>(elementType) && !elementType.isa<mlir_ts::ConstTupleType>())
             {
                 objectValue = builder.create<mlir_ts::LoadOp>(location, elementType, objectValue);
                 actualType = objectValue.getType();
@@ -12958,7 +12958,7 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Recevier type: " << receiverType << "\n";);
 
-            if ((receiverType.isa<mlir_ts::TupleType>() || isa<mlir_ts::ConstTupleType>(receiverType) || isa<mlir_ts::InterfaceType>(receiverType))
+            if ((isa<mlir_ts::TupleType>(receiverType) || isa<mlir_ts::ConstTupleType>(receiverType) || isa<mlir_ts::InterfaceType>(receiverType))
                  && objectLiteral->properties.size() == 0)
             {
                 // return undef tuple
@@ -13927,7 +13927,7 @@ class MLIRGenImpl
 
         if (genContext.thisType && name == SUPER_NAME)
         {
-            if (!genContext.thisType.isa<mlir_ts::ClassType>() && !genContext.thisType.isa<mlir_ts::ClassStorageType>())
+            if (!isa<mlir_ts::ClassType>(genContext.thisType) && !genContext.thisType.isa<mlir_ts::ClassStorageType>())
             {
                 return mlir::Value();
             }
@@ -18141,7 +18141,7 @@ genContext);
         }
 
         // toPrimitive
-        if ((type.isa<mlir_ts::StringType>() 
+        if ((isa<mlir_ts::StringType>(type) 
             || isa<mlir_ts::NumberType>(type) 
             || isa<mlir_ts::BigIntType>(type) 
             || isa<mlir_ts::BooleanType>(type) 
@@ -18554,7 +18554,7 @@ genContext);
         // TODO: put it into Cast::Verify
         if (mth.isAnyFunctionType(valueType) && 
             !mth.isAnyFunctionType(type, true) 
-            && !type.isa<mlir_ts::OpaqueType>() 
+            && !isa<mlir_ts::OpaqueType>(type) 
             && !type.isa<mlir_ts::AnyType>()
             && !type.isa<mlir_ts::BooleanType>()) {
             emitError(location, "invalid cast from ") << valueType << " to " << type;
@@ -19161,7 +19161,7 @@ genContext);
                 LLVM_DEBUG(llvm::dbgs() << "\n!! replacing existing type for: " << name
                                         << " exist type: " << existType.second << " new type: " << type << "\n";);
 
-                if (!existType.second.isa<mlir_ts::NamedGenericType>() && mergeTypes)
+                if (!isa<mlir_ts::NamedGenericType>(existType.second) && mergeTypes)
                 {
                     auto merged = false;
                     if (arrayMerge)

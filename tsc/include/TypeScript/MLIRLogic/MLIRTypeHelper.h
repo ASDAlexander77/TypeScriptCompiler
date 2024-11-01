@@ -1334,7 +1334,7 @@ class MLIRTypeHelper
                 if (foundIndex >= 0)
                 {
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
-                    auto test = foundField.type.isa<mlir_ts::FunctionType>() && isa<mlir_ts::FunctionType>(fieldType)
+                    auto test = isa<mlir_ts::FunctionType>(foundField.type) && isa<mlir_ts::FunctionType>(fieldType)
                                     ? TestFunctionTypesMatchWithObjectMethods(location, foundField.type, fieldType).result == MatchResultType::Match
                                     : stripLiteralType(fieldType) == stripLiteralType(foundField.type);
                     if (!test)
@@ -1485,7 +1485,7 @@ class MLIRTypeHelper
         {
             auto srcTypeUnwrapped = stripOptionalType(srcType);
             auto destTypeUnwrapped = stripOptionalType(destType);
-            if (!srcTypeUnwrapped.isa<mlir_ts::FunctionType>() && isa<mlir_ts::FunctionType>(destTypeUnwrapped))
+            if (!isa<mlir_ts::FunctionType>(srcTypeUnwrapped) && isa<mlir_ts::FunctionType>(destTypeUnwrapped))
             {
                 // because of data loss we need to return false;
                 return false;
@@ -1941,7 +1941,7 @@ class MLIRTypeHelper
         SmallVector<mlir::Type> literalTypes;
         for (auto field : destTupleFields)
         {
-            auto litType = field.id && field.id.isa<mlir::StringAttr>() 
+            auto litType = field.id && isa<mlir::StringAttr>(field.id) 
                 ? mlir_ts::LiteralType::get(field.id, mlir_ts::StringType::get(context))
                 : getAttributeType(field.id);
             literalTypes.push_back(litType);
@@ -1970,7 +1970,7 @@ class MLIRTypeHelper
 
         for (auto field : destTupleFields)
         {
-            auto litType = field.id && field.id.isa<mlir::StringAttr>() 
+            auto litType = field.id && isa<mlir::StringAttr>(field.id) 
                 ? mlir_ts::LiteralType::get(field.id, mlir_ts::StringType::get(context))
                 : getAttributeType(field.id);
             if (litType == index)
@@ -2679,7 +2679,7 @@ class MLIRTypeHelper
         }        
 
         // TODO: do we need to check types inside?
-        if ((srcType.isa<mlir_ts::TypePredicateType>() || isa<mlir_ts::BooleanType>(srcType))
+        if ((isa<mlir_ts::TypePredicateType>(srcType) || isa<mlir_ts::BooleanType>(srcType))
             && (isa<mlir_ts::TypePredicateType>(extendType) || isa<mlir_ts::BooleanType>(extendType)))
         {
             return ExtendsResult::True;

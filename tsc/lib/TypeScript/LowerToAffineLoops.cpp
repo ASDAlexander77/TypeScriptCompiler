@@ -1653,7 +1653,7 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
             // TODO: review capture logic
             if (auto valRefType = dyn_cast<mlir_ts::RefType>(val.getType()))
             {
-                if (!thisStoreFieldType.isa<mlir_ts::RefType>() && thisStoreFieldType == valRefType.getElementType())
+                if (!isa<mlir_ts::RefType>(thisStoreFieldType) && thisStoreFieldType == valRefType.getElementType())
                 {
                     // load value to dereference
                     val = rewriter.create<mlir_ts::LoadOp>(location, valRefType.getElementType(), val);
