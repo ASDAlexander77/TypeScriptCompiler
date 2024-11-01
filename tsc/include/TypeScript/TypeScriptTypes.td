@@ -1198,19 +1198,19 @@ def TypeScript_TypePredicate : TypeScript_Type<"TypePredicate"> {
   ];
 }
 
-def TypeScript_IsConstTupleRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstTupleType>()">;
+def TypeScript_IsConstTupleRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && mlir::cast<::mlir::typescript::RefType>($_self).getElementType().isa<::mlir::typescript::ConstTupleType>()">;
 
 def TypeScript_AnyConstTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsConstTupleRefType, "any const tuple reference type">;
 
-def TypeScript_IsTupleRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::TupleType>()">;
+def TypeScript_IsTupleRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && mlir::cast<::mlir::typescript::RefType>($_self).getElementType().isa<::mlir::typescript::TupleType>()">;
 
 def TypeScript_AnyTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsTupleRefType, "any tuple reference type">;
 
-def TypeScript_IsOptionalRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::OptionalType>()">;
+def TypeScript_IsOptionalRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && mlir::cast<::mlir::typescript::RefType>($_self).getElementType().isa<::mlir::typescript::OptionalType>()">;
 
 def TypeScript_AnyOptionalRef : DialectType<TypeScript_Dialect, TypeScript_IsOptionalRefType, "any optional reference type">;
 
-def TypeScript_IsStringRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::StringType>()">;
+def TypeScript_IsStringRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && mlir::cast<::mlir::typescript::RefType>($_self).getElementType().isa<::mlir::typescript::StringType>()">;
 
 def TypeScript_StringRef : DialectType<TypeScript_Dialect, TypeScript_IsStringRefType, "string reference type">;
 
@@ -1218,7 +1218,7 @@ def TypeScript_IsClassStorageType : CPred<"isa<::mlir::typescript::ClassStorageT
 
 def TypeScript_AnyClassStorageType : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageType, "any class storage type">;
 
-def TypeScript_IsClassStorageRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ClassStorageType>()">;
+def TypeScript_IsClassStorageRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && mlir::cast<::mlir::typescript::RefType>($_self).getElementType().isa<::mlir::typescript::ClassStorageType>()">;
 
 def TypeScript_AnyClassStorageRef : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageRefType, "any tuple reference type">;
 
@@ -1226,11 +1226,11 @@ def TypeScript_IsOptionalType : CPred<"isa<::mlir::typescript::OptionalType>($_s
 
 def TypeScript_AnyOptional : DialectType<TypeScript_Dialect, TypeScript_IsOptionalType, "any optional type">;
 
-def TypeScript_IsArrayRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ArrayType>()">;
+def TypeScript_IsArrayRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && mlir::cast<::mlir::typescript::RefType>($_self).getElementType().isa<::mlir::typescript::ArrayType>()">;
 
 def TypeScript_AnyArrayRef : DialectType<TypeScript_Dialect, TypeScript_IsArrayRefType, "any array reference type">;
 
-def TypeScript_IsConstArrayValueRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstArrayValueType>()">;
+def TypeScript_IsConstArrayValueRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && mlir::cast<::mlir::typescript::RefType>($_self).getElementType().isa<::mlir::typescript::ConstArrayValueType>()">;
 
 def TypeScript_AnyConstArrayValueRef : DialectType<TypeScript_Dialect, TypeScript_IsConstArrayValueRefType, "any const array value reference type">;
 
