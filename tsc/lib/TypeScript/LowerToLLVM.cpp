@@ -415,7 +415,7 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         auto loc = op.getLoc();
 
-        auto arrayType = cast<mlir_ts::RefType>(op.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(op.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
@@ -2222,7 +2222,7 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
         auto loc = pushOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = cast<mlir_ts::RefType>(pushOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(pushOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2314,7 +2314,7 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
         auto loc = popOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = cast<mlir_ts::RefType>(popOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(popOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
         
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2377,7 +2377,7 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
         auto loc = unshiftOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = cast<mlir_ts::RefType>(unshiftOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(unshiftOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2474,7 +2474,7 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
         auto loc = shiftOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = cast<mlir_ts::RefType>(shiftOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(shiftOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2545,7 +2545,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto loc = spliceOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = cast<mlir_ts::RefType>(spliceOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(spliceOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2702,7 +2702,7 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto loc = arrayViewOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = cast<mlir_ts::RefType>(arrayViewOp.getOp().getType()).getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(arrayViewOp.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -3304,7 +3304,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 if (attr.getName() == "comdat") 
                 {
                     toAddComdat = true;
-                    comdat = static_cast<mlir::LLVM::comdat::Comdat>(attr.getValue().cast<mlir::IntegerAttr>().getValue().getLimitedValue());
+                    comdat = static_cast<mlir::LLVM::comdat::Comdat>(cast<mlir::IntegerAttr>(attr.getValue()).getValue().getLimitedValue());
                 }                
             }
 
