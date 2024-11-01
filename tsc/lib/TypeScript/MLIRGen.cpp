@@ -4360,7 +4360,7 @@ class MLIRGenImpl
 
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
-            if (!genContext.thisType || !genContext.thisType.isa<mlir_ts::ObjectType>())
+            if (!genContext.thisType || !isa<mlir_ts::ObjectType>(genContext.thisType))
             {
                 // class method name
                 name = objectOwnerName + "." + name;
@@ -4438,7 +4438,7 @@ class MLIRGenImpl
                 return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
             }
 
-            if (param->getIsOptional() && !paramType.isa<mlir_ts::OptionalType>())
+            if (param->getIsOptional() && !isa<mlir_ts::OptionalType>(paramType))
             {
                 argTypes.push_back(getOptionalType(paramType));
             }
@@ -4746,7 +4746,7 @@ class MLIRGenImpl
                 {
                     MLIRCodeLogic mcl(builder);
                     auto isObjectType =
-                        genContext.thisType != nullptr && genContext.thisType.isa<mlir_ts::ObjectType>();
+                        genContext.thisType != nullptr && isa<mlir_ts::ObjectType>(genContext.thisType);
                     if (!isObjectType)
                     {
                         argTypes.insert(argTypes.begin(), mcl.CaptureType(passResult->outerVariables));
@@ -5318,7 +5318,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, mlir::Type retType, const GenContext &genContext)
     {
-        auto hasReturn = retType && !retType.isa<mlir_ts::VoidType>();
+        auto hasReturn = retType && !isa<mlir_ts::VoidType>(retType);
         if (hasReturn)
         {
             auto entryOp = builder.create<mlir_ts::EntryOp>(location, mlir_ts::RefType::get(retType));
@@ -5338,7 +5338,7 @@ class MLIRGenImpl
     {
         auto callableResult = const_cast<GenContext &>(genContext).funcOp.getCallableResults();
         auto retType = callableResult.size() > 0 ? callableResult.front() : mlir::Type();
-        auto hasReturn = retType && !retType.isa<mlir_ts::VoidType>();
+        auto hasReturn = retType && !isa<mlir_ts::VoidType>(retType);
         if (hasReturn)
         {
             auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
@@ -5373,7 +5373,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        auto isObjectType = genContext.thisType != nullptr && genContext.thisType.isa<mlir_ts::ObjectType>();
+        auto isObjectType = genContext.thisType != nullptr && isa<mlir_ts::ObjectType>(genContext.thisType);
         if (isObjectType)
         {
             return mlir::success();
@@ -5399,7 +5399,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        auto isObjectType = genContext.thisType != nullptr && genContext.thisType.isa<mlir_ts::ObjectType>();
+        auto isObjectType = genContext.thisType != nullptr && isa<mlir_ts::ObjectType>(genContext.thisType);
         if (isObjectType)
         {
 
@@ -9407,7 +9407,7 @@ class MLIRGenImpl
         if (auto refType = dyn_cast<mlir_ts::RefType>(actualType))
         {
             auto elementType = refType.getElementType();
-            if (!isa<mlir_ts::TupleType>(elementType) && !elementType.isa<mlir_ts::ConstTupleType>())
+            if (!isa<mlir_ts::TupleType>(elementType) && !isa<mlir_ts::ConstTupleType>(elementType))
             {
                 objectValue = builder.create<mlir_ts::LoadOp>(location, elementType, objectValue);
                 actualType = objectValue.getType();
@@ -10426,9 +10426,9 @@ class MLIRGenImpl
             && !mth.isBuiltinFunctionType(funcResult)
             // TODO: do I need to use ConstructFunction instead?
             // to support constructor calls
-            && !funcType.isa<mlir_ts::ClassType>()
+            && !isa<mlir_ts::ClassType>(funcType)
             // to support super.constructor calls
-            && !funcType.isa<mlir_ts::ClassStorageType>())
+            && !isa<mlir_ts::ClassStorageType>(funcType))
         {           
             // TODO: rewrite code for calling "5.ToString()"
             // TODO: recursive functions are usually return "failure" as can't be found
@@ -12383,7 +12383,7 @@ class MLIRGenImpl
 
             if (dataType == TypeData::Tuple 
                 && (recevierContext.receiverTupleType == mlir::Type()) 
-                && !accumulatedArrayElementType.isa<mlir_ts::UnionType>())
+                && !isa<mlir_ts::UnionType>(accumulatedArrayElementType))
             {
                 // seems we can convert tuple into array, for example [1.0, 2, 3] -> [1.0, 2.0, 3.0]
                 dataType = TypeData::Array;
@@ -13927,7 +13927,7 @@ class MLIRGenImpl
 
         if (genContext.thisType && name == SUPER_NAME)
         {
-            if (!isa<mlir_ts::ClassType>(genContext.thisType) && !genContext.thisType.isa<mlir_ts::ClassStorageType>())
+            if (!isa<mlir_ts::ClassType>(genContext.thisType) && !isa<mlir_ts::ClassStorageType>(genContext.thisType))
             {
                 return mlir::Value();
             }
@@ -15889,7 +15889,7 @@ genContext);
                 {
                     auto fieldInfo = newClassPtr->fieldInfoByIndex(index);
                     // skip virrual table for speed adv.
-                    if (index == 0 && fieldInfo.type.isa<mlir_ts::OpaqueType>())
+                    if (index == 0 && isa<mlir_ts::OpaqueType>(fieldInfo.type))
                     {
                         continue;
                     }
@@ -17773,7 +17773,7 @@ genContext);
 
             if (fieldInfo.id == mlir::Attribute() || (index < srcTupleType.size() && srcTupleType.getFieldInfo(index).id == mlir::Attribute()))
             {
-                if (index >= srcTupleType.size() && fieldInfo.type.isa<mlir_ts::OptionalType>())
+                if (index >= srcTupleType.size() && isa<mlir_ts::OptionalType>(fieldInfo.type))
                 {
                     // add undefined value
                     auto undefVal = builder.create<mlir_ts::OptionalUndefOp>(location, fieldInfo.type);
@@ -18555,8 +18555,8 @@ genContext);
         if (mth.isAnyFunctionType(valueType) && 
             !mth.isAnyFunctionType(type, true) 
             && !isa<mlir_ts::OpaqueType>(type) 
-            && !type.isa<mlir_ts::AnyType>()
-            && !type.isa<mlir_ts::BooleanType>()) {
+            && !isa<mlir_ts::AnyType>(type)
+            && !isa<mlir_ts::BooleanType>(type)) {
             emitError(location, "invalid cast from ") << valueType << " to " << type;
             return mlir::failure();
         }        

@@ -1375,7 +1375,7 @@ class MLIRTypeHelper
                 if (foundIndex >= 0)
                 {
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
-                    auto test = foundField.type.isa<mlir_ts::FunctionType>()
+                    auto test = isa<mlir_ts::FunctionType>(foundField.type)
                                     ? TestFunctionTypesMatchWithObjectMethods(foundField.type, funcType).result ==
                                           MatchResultType::Match
                                     : funcType == foundField.type;

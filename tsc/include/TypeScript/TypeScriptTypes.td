@@ -1214,7 +1214,7 @@ def TypeScript_IsStringRefType : CPred<"isa<::mlir::typescript::RefType>($_self)
 
 def TypeScript_StringRef : DialectType<TypeScript_Dialect, TypeScript_IsStringRefType, "string reference type">;
 
-def TypeScript_IsClassStorageType : CPred<"$_self.isa<::mlir::typescript::ClassStorageType>()">;
+def TypeScript_IsClassStorageType : CPred<"isa<::mlir::typescript::ClassStorageType>($_self)">;
 
 def TypeScript_AnyClassStorageType : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageType, "any class storage type">;
 
@@ -1222,7 +1222,7 @@ def TypeScript_IsClassStorageRefType : CPred<"isa<::mlir::typescript::RefType>($
 
 def TypeScript_AnyClassStorageRef : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageRefType, "any tuple reference type">;
 
-def TypeScript_IsOptionalType : CPred<"$_self.isa<::mlir::typescript::OptionalType>()">;
+def TypeScript_IsOptionalType : CPred<"isa<::mlir::typescript::OptionalType>($_self)">;
 
 def TypeScript_AnyOptional : DialectType<TypeScript_Dialect, TypeScript_IsOptionalType, "any optional type">;
 
@@ -1234,7 +1234,7 @@ def TypeScript_IsConstArrayValueRefType : CPred<"isa<::mlir::typescript::RefType
 
 def TypeScript_AnyConstArrayValueRef : DialectType<TypeScript_Dialect, TypeScript_IsConstArrayValueRefType, "any const array value reference type">;
 
-def TypeScript_IsNotUnionType : CPred<"!$_self.isa<::mlir::typescript::UnionType>()">;
+def TypeScript_IsNotUnionType : CPred<"!isa<::mlir::typescript::UnionType>($_self)">;
 
 def TypeScript_NonUnion : DialectType<TypeScript_Dialect, TypeScript_IsNotUnionType, "non-union type">;
 
