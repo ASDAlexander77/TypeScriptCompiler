@@ -65,7 +65,7 @@ LogicalResult BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, Pattern
     {
         builder.replaceOpWithNewOp<StdFOpTy>(binOp, left, right);
     }
-    else if (leftType.template dyn_cast_or_null<mlir_ts::NumberType>())
+    else if (dyn_cast_or_null<mlir_ts::NumberType>(leftType))
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftType, left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, leftType, right);

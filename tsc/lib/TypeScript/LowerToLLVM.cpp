@@ -766,7 +766,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         auto elementType = cast<T>(type).getElementType();
         auto llvmElementType = tch.convertType(elementType);
-        auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>();
+        auto arrayAttr = dyn_cast_or_null<ArrayAttr>(constantOp.getValue());
 
         auto arrayValue =
             ch.getArrayValue(elementType, llvmElementType, arrayAttr.size(), arrayAttr);
@@ -788,7 +788,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         LLVM_DEBUG(llvm::dbgs() << "constArrayType: llvmElementType: "; llvmElementType.dump(); llvm::dbgs() << "\n";);
 
-        auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>();
+        auto arrayAttr = dyn_cast_or_null<ArrayAttr>(constantOp.getValue());
 
         LLVM_DEBUG(llvm::dbgs() << "constArrayType: arrayAttr: "; arrayAttr.dump(); llvm::dbgs() << "\n";);
 
@@ -806,7 +806,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
-        auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>();
+        auto arrayAttr = dyn_cast_or_null<ArrayAttr>(constantOp.getValue());
 
         auto convertedTupleType = tch.convertType(type);
         /*
@@ -858,7 +858,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         if (auto constArrayValueType = dyn_cast<mlir_ts::ConstArrayValueType>(type))
         {
-            if (auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>())
+            if (auto arrayAttr = dyn_cast_or_null<ArrayAttr>(constantOp.getValue()))
             {
                 getArrayValue(constantOp, constArrayValueType, rewriter);
                 return success();

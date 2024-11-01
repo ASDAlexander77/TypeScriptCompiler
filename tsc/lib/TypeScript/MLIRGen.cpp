@@ -17131,7 +17131,7 @@ genContext);
                 return nullptr;
             }
 
-            if (auto strAttr = attr.template dyn_cast_or_null<mlir::StringAttr>())
+            if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(attr))
             {
                 name = strAttr.getValue();
             }
