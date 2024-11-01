@@ -1606,7 +1606,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         types.push_back(i8PtrTy);
         types.push_back(valueType);
         auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, UNION_TYPE_PACKED);
-        if (!mth.isUnionTypeNeedsTag(loc, op.getType().cast<mlir_ts::UnionType>()))
+        if (!mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getType())))
         {
             // this is union of tuples, no need to add Tag to it
             // create tagged union
@@ -1655,7 +1655,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
         CodeLogicHelper clh(op, rewriter);
         MLIRTypeHelper mth(rewriter.getContext());
 
-        bool needTag = mth.isUnionTypeNeedsTag(loc, op.getIn().getType().cast<mlir_ts::UnionType>());
+        bool needTag = mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getIn().getType()));
         if (needTag)
         {
             auto in = transformed.getIn();

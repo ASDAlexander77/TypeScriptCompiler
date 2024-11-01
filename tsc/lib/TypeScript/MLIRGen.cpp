@@ -9516,7 +9516,7 @@ class MLIRGenImpl
                         auto accessFailed = false;
                         if (mlir::succeeded(result))
                         {
-                            if (auto value = classAccess(specType.cast<mlir_ts::ClassType>()))
+                            if (auto value = classAccess(mlir::cast<mlir_ts::ClassType>(specType)))
                             {
                                 return value;
                             }
@@ -21522,7 +21522,7 @@ genContext);
             return mlir::Type();
         }
 
-        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), signatureType.cast<mlir_ts::FunctionType>());
+        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), mlir::cast<mlir_ts::FunctionType>(signatureType));
         return funcType;
     }
 
@@ -21549,7 +21549,7 @@ genContext);
             return mlir::Type();
         }
 
-        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), signatureType.cast<mlir_ts::FunctionType>());
+        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), mlir::cast<mlir_ts::FunctionType>(signatureType));
         return funcType;
     }
 
