@@ -642,7 +642,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       DeclareOpInterfaceMethods<SymbolUserOpInterface>,
       TypesMatchWith<"callee result types match result types",
                      "callee", "results",
-                     "(isa<HybridFunctionType>($_self) ? $_self.cast<HybridFunctionType>().getResults() : $_self.cast<FunctionType>().getResults())">
+                     "(isa<HybridFunctionType>($_self) ? cast<HybridFunctionType>($_self).getResults() : cast<FunctionType>($_self).getResults())">
     ]> {
   let summary = "indirect call operation";
   let description = [{
@@ -803,7 +803,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
     OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$callOperands), [{
       $_state.operands.push_back(callee);
       $_state.addOperands(callOperands);
-      $_state.addTypes(callee.getType().cast<FunctionType>().getResults());
+      $_state.addTypes(cast<FunctionType>(callee.getType()).getResults());
     }]>];
 
   let extraClassDeclaration = [{
@@ -834,10 +834,10 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
      DeclareOpInterfaceMethods<SymbolUserOpInterface>,
      TypesMatchWith<"callee input types match argument types",
                     "callee", "callOperands",
-                    "$_self.cast<mlir::typescript::HybridFunctionType>().getInputs()">,
+                    "cast<mlir::typescript::HybridFunctionType>($_self).getInputs()">,
      TypesMatchWith<"callee result types match result types",
                     "callee", "results",
-                    "$_self.cast<mlir::typescript::HybridFunctionType>().getResults()">
+                    "cast<mlir::typescript::HybridFunctionType>($_self).getResults()">
     ]> {
   let summary = "call (hybrid) internal operation";
   let description = [{
@@ -938,7 +938,7 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [Pure, Return
 def TypeScript_OptionalOp : TypeScript_Op<"Optional", 
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",
-                     "$_self.cast<OptionalType>().getElementType()">]> {
+                     "cast<OptionalType>($_self).getElementType()">]> {
   let description = [{
     Example:
       ts.optional %v, %f : i32, bool to ts.optional<i32>
@@ -1007,7 +1007,7 @@ def TypeScript_DefaultOp : TypeScript_Op<"Default"> {
 def TypeScript_OptionalValueOp : TypeScript_Op<"OptionalValue", 
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",
-                     "$_self.cast<OptionalType>().getElementType()">]> {
+                     "cast<OptionalType>($_self).getElementType()">]> {
   let description = [{
     Example:
       ts.optional_value %v : i32 to ts.optional<i32>
@@ -1037,7 +1037,7 @@ def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
 def TypeScript_ValueOp : TypeScript_Op<"Value", 
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "in", "res",
-                     "$_self.cast<OptionalType>().getElementType()">]> {
+                     "cast<OptionalType>($_self).getElementType()">]> {
   let description = [{
     Example:
       ts.value %v : ts.optional<i32> to i32
@@ -1051,7 +1051,7 @@ def TypeScript_ValueOp : TypeScript_Op<"Value",
 def TypeScript_ValueOrDefaultOp : TypeScript_Op<"ValueOrDefault", 
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "in", "res",
-                     "$_self.cast<OptionalType>().getElementType()">]> {
+                     "cast<OptionalType>($_self).getElementType()">]> {
   let description = [{
     Example:
       ts.value_of_default %v : ts.optional<i32> to i32
