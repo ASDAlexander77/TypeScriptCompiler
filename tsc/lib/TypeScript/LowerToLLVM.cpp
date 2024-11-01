@@ -1977,7 +1977,8 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! CreateTuple: type - " << tupleType << " llvm: " << llvmTupleType << "\n";);
 
-            auto offset = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmTupleType, tupleVarAsLLVMType, ArrayRef<LLVM::GEPArg>{0, index});
+            auto offset = rewriter.create<LLVM::GEPOp>(
+                loc, ptrType, llvmTupleType, tupleVarAsLLVMType, ArrayRef<LLVM::GEPArg>{0, static_cast<int32_t>(index)});
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! CreateTuple: op " << offset << "\n";);
 
@@ -2914,7 +2915,7 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
                         PatternRewriter &builder) const
     {
         return LogicOp<arith::CmpIOp, arith::CmpIPredicate, v1, arith::CmpFOp, arith::CmpFPredicate, v2>(
-            logicalBinaryOp, op, left, leftTypeOrig, right, rightTypeOrig, builder, *(LLVMTypeConverter *)getTypeConverter(),
+            logicalBinaryOp, op, left, leftTypeOrig, right, rightTypeOrig, builder, *(const LLVMTypeConverter *)getTypeConverter(),
             tsLlvmContext->compileOptions);
     }
 

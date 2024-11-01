@@ -1165,11 +1165,11 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value Ref(T refType)
     {
-        if (auto constTupleType = refType.getElementType().template dyn_cast<mlir_ts::ConstTupleType>())
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(refType.getElementType()))
         {
             return RefLogic(constTupleType);
         }
-        else if (auto tupleType = refType.getElementType().template dyn_cast<mlir_ts::TupleType>())
+        else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(refType.getElementType()))
         {
             return RefLogic(tupleType);
         }
@@ -1181,15 +1181,15 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value Object(mlir_ts::ObjectType objectType)
     {
-        if (auto constTupleType = objectType.getStorageType().template dyn_cast<mlir_ts::ConstTupleType>())
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(objectType.getStorageType()))
         {
             return RefLogic(constTupleType);
         }
-        else if (auto tupleType = objectType.getStorageType().template dyn_cast<mlir_ts::TupleType>())
+        else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(objectType.getStorageType()))
         {
             return RefLogic(tupleType);
         }
-        else if (auto objectStorageType = objectType.getStorageType().template dyn_cast<mlir_ts::ObjectStorageType>())
+        else if (auto objectStorageType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
         {
             return RefLogic(objectStorageType);
         }        
@@ -1226,7 +1226,7 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value Class(mlir_ts::ClassType classType)
     {
-        if (auto classStorageType = classType.getStorageType().template dyn_cast<mlir_ts::ClassStorageType>())
+        if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType()))
         {
             return Class(classStorageType);
         }
