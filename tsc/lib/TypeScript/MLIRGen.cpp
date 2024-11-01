@@ -7802,7 +7802,7 @@ class MLIRGenImpl
                     mlir::TypeSwitch<mlir::Attribute, mlir::Value>(valueAttr)
                         .Case<mlir::IntegerAttr>([&](auto intAttr) {
                             // TODO: convert unsiged int type into signed
-                            auto intType = intAttr.getType().template cast<mlir::IntegerType>();
+                            auto intType = mlir::cast<mlir::IntegerType>(intAttr.getType());
                             auto constType = constantOp.getType();
                             auto valAttr = intAttr;
                             if (intType.isSignless())

@@ -764,7 +764,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
-        auto elementType = type.template cast<T>().getElementType();
+        auto elementType = cast<T>(type).getElementType();
         auto llvmElementType = tch.convertType(elementType);
         auto arrayAttr = constantOp.getValue().template dyn_cast_or_null<ArrayAttr>();
 
@@ -780,7 +780,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         TypeConverterHelper tch(getTypeConverter());
 
-        auto elementType = type.template cast<T>().getElementType();
+        auto elementType = cast<T>(type).getElementType();
 
         LLVM_DEBUG(llvm::dbgs() << "constArrayType: elementType: "; elementType.dump(); llvm::dbgs() << "\n";);
 
@@ -810,8 +810,8 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         auto convertedTupleType = tch.convertType(type);
         /*
-        auto tupleConstPtr = ch.getOrCreateGlobalTuple(type.template cast<mlir_ts::ConstTupleType>(),
-                                                       convertedTupleType.template cast<LLVM::LLVMStructType>(),
+        auto tupleConstPtr = ch.getOrCreateGlobalTuple(cast<mlir_ts::ConstTupleType>(type),
+                                                       cast<LLVM::LLVMStructType>(convertedTupleType),
         arrayAttr);
 
         // optimize it and replace it with copy memory. (use canon. pass) check  "EraseRedundantAssertions"
