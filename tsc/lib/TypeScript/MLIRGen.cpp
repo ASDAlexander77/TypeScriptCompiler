@@ -814,7 +814,7 @@ class MLIRGenImpl
 
         auto constantOp = modulePath.getDefiningOp<mlir_ts::ConstantOp>();
         assert(constantOp);
-        auto valueAttr = constantOp.getValueAttr().cast<mlir::StringAttr>();
+        auto valueAttr = mlir::cast<mlir::StringAttr>(constantOp.getValueAttr());
 
         auto stringVal = valueAttr.getValue();
 
@@ -2705,7 +2705,7 @@ class MLIRGenImpl
                 // special case to work with interfaces
                 // TODO: finish it, bug
                 auto thisRef = extensFuncRef.getThisVal();
-                auto funcType = newFuncRefValue.getType().cast<mlir_ts::FunctionType>();
+                auto funcType = mlir::cast<mlir_ts::FunctionType>(newFuncRefValue.getType());
 
                 mlir::Value newExtensionFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
                                 location, getExtensionFunctionType(funcType), thisRef, newFuncRefValue);
@@ -3617,7 +3617,7 @@ class MLIRGenImpl
         if (objectBindingElement->initializer)
         {
             auto tupleType = mlir::cast<mlir_ts::TupleType>(type);
-            auto subType = tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type.cast<mlir_ts::OptionalType>().getElementType();
+            auto subType = mlir::cast<mlir_ts::OptionalType>(tupleType.getFieldInfo(tupleType.getIndex(fieldName)).type).getElementType();
             auto res = optionalValueOrDefault(location, subType, value, objectBindingElement->initializer, genContext);
             subInit = V(res);
             subInitType = subInit.getType();                    
@@ -5125,14 +5125,14 @@ class MLIRGenImpl
             getFunctionMap().insert({name, funcOp});
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getFunctionType() << " function name: " << funcProto->getName()
-                                    << " num inputs:" << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs()
+                                    << " num inputs:" << mlir::cast<mlir_ts::FunctionType>(funcOp.getFunctionType()).getNumInputs()
                                     << "\n";);
 
             return true;
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! re-reg. func: " << name << " type:" << funcOp.getFunctionType() << " function name: " << funcProto->getName()
-                                << " num inputs:" << funcOp.getFunctionType().cast<mlir_ts::FunctionType>().getNumInputs()
+                                << " num inputs:" << mlir::cast<mlir_ts::FunctionType>(funcOp.getFunctionType()).getNumInputs()
                                 << "\n";);
 
         return false;
@@ -6329,7 +6329,7 @@ class MLIRGenImpl
             castedValue = builder.create<mlir_ts::UnboxOp>(location, safeType, exprValue);
         }
         else if (isa<mlir_ts::OptionalType>(exprValue.getType()) 
-                 && exprValue.getType().cast<mlir_ts::OptionalType>().getElementType() == safeType)
+                 && mlir::cast<mlir_ts::OptionalType>(exprValue.getType()).getElementType() == safeType)
         {
             if (inverse) 
             {
@@ -9475,7 +9475,7 @@ class MLIRGenImpl
                                 return mlir::Value();
                             }
 
-                            if (auto value = classAccessWithObject(specType.cast<mlir_ts::ClassType>(), arrayNonConst))
+                            if (auto value = classAccessWithObject(mlir::cast<mlir_ts::ClassType>(specType), arrayNonConst))
                             {
                                 return value;
                             }
@@ -9643,7 +9643,7 @@ class MLIRGenImpl
             // if (!isa<mlir_ts::GenericType>(symbolOp.getType()))
             if (!symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
             {
-                auto funcType = funcRef.getType().cast<mlir_ts::FunctionType>();
+                auto funcType = mlir::cast<mlir_ts::FunctionType>(funcRef.getType());
                 if (thisTypeFromFunc == thisValue.getType())
                 {
                     // return funcRef;
@@ -9668,7 +9668,7 @@ class MLIRGenImpl
                     LLVM_DEBUG(llvm::dbgs() << "\n!! recreate ExtensionFunctionOp (generic interface): '" << name << "'\n this ref: '" << thisRef << "'\n func ref: '" << funcRef
                     << "'\n";);
 
-                    auto funcType = funcRef.getType().cast<mlir_ts::FunctionType>();
+                    auto funcType = mlir::cast<mlir_ts::FunctionType>(funcRef.getType());
                     auto extensFuncVal = builder.create<mlir_ts::CreateExtensionFunctionOp>(
                         location, getExtensionFunctionType(funcType), thisRef, funcRef);
                     return extensFuncVal;                        
@@ -11783,7 +11783,7 @@ class MLIRGenImpl
 
             GenContext noReceiverGenContext(genContext);
             noReceiverGenContext.clearReceiverTypes();
-            noReceiverGenContext.receiverType = getArrayType(elementType).cast<mlir_ts::ArrayType>();
+            noReceiverGenContext.receiverType = mlir::cast<mlir_ts::ArrayType>(getArrayType(elementType));
 
             if (mlir::failed(processArrayValues(arguments, values, arrayInfo, noReceiverGenContext)))
             {
@@ -12481,7 +12481,7 @@ class MLIRGenImpl
         if (auto constArray = dyn_cast<mlir_ts::ConstArrayType>(type))
         {
             auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
-            auto arrayAttr = constantOp.getValue().cast<mlir::ArrayAttr>();
+            auto arrayAttr = mlir::cast<mlir::ArrayAttr>(constantOp.getValue());
             // TODO: improve it with using array concat
             for (auto [index, val] : enumerate(arrayAttr))
             {
@@ -12561,7 +12561,7 @@ class MLIRGenImpl
 
             if (auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                auto arrayAttr = constantOp.getValue().cast<mlir::ArrayAttr>();
+                auto arrayAttr = mlir::cast<mlir::ArrayAttr>(constantOp.getValue());
                 auto index = -1;
                 for (auto val : arrayAttr)
                 {
@@ -13500,7 +13500,7 @@ class MLIRGenImpl
             //LLVM_DEBUG(dbgs() << "\n!! variable: " << name << " type: " << value.first.getType() << "\n");
 
             // load value if memref
-            auto valueType = value.first.getType().cast<mlir_ts::RefType>().getElementType();
+            auto valueType = mlir::cast<mlir_ts::RefType>(value.first.getType()).getElementType();
             return builder.create<mlir_ts::LoadOp>(location, valueType, value.first);
         }
 
@@ -13936,7 +13936,7 @@ class MLIRGenImpl
             auto thisValue = V(result);
 
             auto classInfo =
-                getClassInfoByFullName(genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue());
+                getClassInfoByFullName(mlir::cast<mlir_ts::ClassType>(genContext.thisType).getName().getValue());
             auto baseClassInfo = classInfo->baseClasses.front();
 
             // this is access to static base class
@@ -16126,7 +16126,7 @@ genContext);
             storeType = mlir_ts::TupleType::get(builder.getContext(), objectStoreType.getFields());
         }
 
-        auto tupleStorageType = mth.convertConstTupleTypeToTupleType(storeType).cast<mlir_ts::TupleType>();
+        auto tupleStorageType = mlir::cast<mlir_ts::TupleType>(mth.convertConstTupleTypeToTupleType(storeType));
 
         SmallVector<VirtualMethodOrFieldInfo> virtualTable;
         auto result = getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable);
@@ -16171,7 +16171,7 @@ genContext);
                             }
                             else
                             {
-                                assert(fieldRef.getType().cast<mlir_ts::RefType>().getElementType() ==
+                                assert(mlir::cast<mlir_ts::RefType>(fieldRef.getType()).getElementType() ==
                                        methodOrField.fieldInfo.type);
                             }
 
@@ -17864,7 +17864,7 @@ genContext);
             strs.push_back(beginValue);
 
             auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>();
-            auto arrayAttr = constantOp.getValue().cast<mlir::ArrayAttr>();
+            auto arrayAttr = mlir::cast<mlir::ArrayAttr>(constantOp.getValue());
             for (auto [index, val] : enumerate(arrayAttr))
             {
                 if (index > 0) 
@@ -20019,7 +20019,7 @@ genContext);
         {
             if (isa<mlir_ts::StringType>(literalType.getElementType()))
             {
-                auto newStr = f(literalType.getValue().cast<mlir::StringAttr>().getValue());
+                auto newStr = f(mlir::cast<mlir::StringAttr>(literalType.getValue()).getValue());
                 auto copyVal = StringRef(newStr).copy(stringAllocator);
                 return mlir_ts::LiteralType::get(builder.getStringAttr(copyVal), getStringType());
             }
@@ -21630,7 +21630,7 @@ genContext);
         }
         else if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
         {
-            mergeInterfaces(newInterfaceInfo, mth.removeConstType(constTupleType).cast<mlir_ts::TupleType>(), conditional);
+            mergeInterfaces(newInterfaceInfo, mlir::cast<mlir_ts::TupleType>(mth.removeConstType(constTupleType)), conditional);
         }              
         else if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
@@ -22056,7 +22056,7 @@ genContext);
             return mlir::Type();
         }
 
-        return getConstArrayType(arrayType.cast<mlir_ts::ArrayType>().getElementType(), 0);
+        return getConstArrayType(mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType(), 0);
     }
 
     mlir_ts::AnyType getAnyType()
