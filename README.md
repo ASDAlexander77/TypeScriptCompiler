@@ -9,6 +9,8 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new 
+- Migrated to LLVM 19.1.3
+
 - improved ```generating debug information``` more info here: [Wiki:How-To](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/How-To#compile-and-debug-with-visual-studio-code)
 ```cmd
 tsc --di --opt_level=0 --emit=exe example.ts
@@ -84,8 +86,6 @@ class TempFile {
     }
 }
 ```
-
-- Migrated to LLVM 17.0.2
 
 - [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
