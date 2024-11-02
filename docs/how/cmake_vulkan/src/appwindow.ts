@@ -9,7 +9,7 @@ export class AppWindow {
         create_vulkan(this.handler_window);
     }
 
-    protected onMessage(uMsg: uint32_t, wParam: uint64_t, lParam: uint64_t): intptr_t {
+    protected onMessage(uMsg: uint32_t, wParam: uint64_t, lParam: uint64_t): uint32_t {
         switch (uMsg) {
             case Messages.Close:
                 close_window(0);
