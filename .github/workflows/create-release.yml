@@ -13,7 +13,7 @@ env:
   LLVM_VERSION: 19
   LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/xdcj15hlzpod06x4wpls1/llvm_19_1_3_release.zip?rlkey=x38yiyfw3y6bv15z5j3oi84lb&st=bz3u5xkv&dl=1"
   LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/l9xrfupdbwqbnckr5g36p/llvm_19_1_3_release.tgz?rlkey=xubw01vl6ey3xszbph32xqfip&st=okz2ghqx&dl=1"
-  LLVM_UB20_TARGZFILE: "https://www.dropbox.com/scl/fi/6cahnn3wydgefgs31e50i/llvm_19_1_3_release_UB20.tgz?rlkey=njc7fmogw4yw77fmerufiq9ge&st=tpmefwe0&dl=1"
+  LLVM_UB20_TARGZFILE: "https://www.dropbox.com/scl/fi/jfs77u2moymjo57ca4r0s/llvm_19_1_3_release_UB20.tgz?rlkey=tia0bdfa07gaeidepumb1e1fy&st=np5mcrox&dl=1"
 
 jobs:
   build_on_windows:
