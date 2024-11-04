@@ -5110,6 +5110,24 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
     }
 };
 
+struct AppendToUsedOpLowering : public TsLlvmPattern<mlir_ts::AppendToUsedOp>
+{
+    using TsLlvmPattern<mlir_ts::AppendToUsedOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AppendToUsedOp appendToUsedOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = appendToUsedOp->getLoc();
+
+        LLVMCodeHelper lch(appendToUsedOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        
+        lch.createAppendingPtrGlobalVarRegion("llvm.used", appendToUsedOp.getGlobalNameAttr(), "llvm.metadata");
+
+        rewriter.eraseOp(appendToUsedOp);
+        return success();
+    }
+};
+
 struct BodyInternalOpLowering : public TsLlvmPattern<mlir_ts::BodyInternalOp>
 {
     using TsLlvmPattern<mlir_ts::BodyInternalOp>::TsLlvmPattern;
@@ -5943,7 +5961,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
         CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
-        ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, ExtractInterfaceThisOpLowering, 
+        ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, AppendToUsedOpLowering, ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,
         GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering, BodyInternalOpLowering, BodyResultInternalOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS

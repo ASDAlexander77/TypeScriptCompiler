@@ -377,10 +377,15 @@ class MLIRGenImpl
             return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);            
         };
 
+        auto loc = mlir::UnknownLoc::get(builder.getContext());
+
         VariableClass varClass = VariableType::Var;
         varClass.isExport = true;
         varClass.isPublic = true;
-        registerVariable(mlir::UnknownLoc::get(builder.getContext()), SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
+        auto varType = registerVariable(loc, SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
+
+        builder.create<mlir_ts::AppendToUsedOp>(loc, SHARED_LIB_DECLARATIONS);
+
         return mlir::success();
     }
 

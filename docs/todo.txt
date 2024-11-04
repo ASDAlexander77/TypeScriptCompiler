@@ -1,7 +1,5 @@
 1) Add types ThisType and ParamType<name, Type> to be able to carry names with types for functions
 
-2) 208 - test-compile-arrayLiterals-2-ES5 (Failed) - sometimes
-
 3) SideEffectInterfaces.td - C:\dev\TypeScriptCompiler\3rdParty\llvm-project\mlir\include\mlir\Interfaces\SideEffectInterfaces.td 
 	set all Ops with correct side effect (memory read, write etc) needed for optimization
 	

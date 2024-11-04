@@ -125,7 +125,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     }
 
     LLVM::GlobalOp createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst, mlir::Region &initRegion,
-                                             LLVM::Linkage linkage = LLVM::Linkage::Internal)
+                                             LLVM::Linkage linkage = LLVM::Linkage::Internal, StringRef section = "")
     {
         LLVM::GlobalOp global;
 
@@ -147,9 +147,19 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             seekLast(parentModule.getBody());
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, linkage, name, value);
+            auto effectiveValue = value;
+            if (effectiveValue && linkage == LLVM::Linkage::Appending && !isa<mlir::ArrayAttr>(effectiveValue))
+            {
+                effectiveValue = rewriter.getArrayAttr({effectiveValue});
+            }
 
-            if (!value && !initRegion.empty())
+            global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, linkage, name, effectiveValue);
+            if (section.size() > 0)
+            {
+                global.setSection(section);
+            }
+
+            if (!effectiveValue && !initRegion.empty())
             {
                 setStructWritingPoint(global);
 
@@ -158,10 +168,70 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             }
 
             return global;
+        } else if (linkage == LLVM::Linkage::Appending && global.getLinkageAttr().getLinkage() == linkage) {
+            SmallVector<mlir::Attribute> values(cast<mlir::ArrayAttr>(global.getValueAttr()).getValue());
+            values.push_back(value);
+            
+            auto newArrayAttr = rewriter.getArrayAttr(values);
+            
+            global.setValueAttr(newArrayAttr);
+
+            auto arrayType = cast<LLVM::LLVMArrayType>(global.getGlobalType());
+            global.setGlobalType(LLVM::LLVMArrayType::get(arrayType.getElementType(), arrayType.getNumElements() + 1));
         }
 
         return global;
     }
+
+    LLVM::GlobalOp createAppendingPtrGlobalVarRegion(StringRef name, FlatSymbolRefAttr nameValue, StringRef section = "")
+    {
+        LLVM::GlobalOp global;
+
+        auto loc = op->getLoc();
+        auto parentModule = op->getParentOfType<ModuleOp>();
+
+        TypeHelper th(rewriter);
+
+        // Create the global at the entry of the module.
+        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(parentModule.getBody());
+
+            seekLast(parentModule.getBody());
+
+            TypeHelper th(rewriter);
+            auto ptrType = th.getPtrType();
+            auto arrayPtrType = LLVM::LLVMArrayType::get(ptrType, 1);
+
+            global = rewriter.create<LLVM::GlobalOp>(loc, arrayPtrType, false, LLVM::Linkage::Appending, name, mlir::Attribute{});
+            if (section.size() > 0)
+            {
+                global.setSection(section);
+            }
+
+            setStructWritingPoint(global);
+
+            auto arrayType = th.getArrayType(ptrType, 1);
+            mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+
+            auto addrValue = rewriter.create<LLVM::AddressOfOp>(loc, ptrType, nameValue);
+            auto globalNameAddr = rewriter.create<LLVM::GEPOp>(loc, ptrType, ptrType, addrValue, ArrayRef<LLVM::GEPArg>{0});
+
+            arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, globalNameAddr, MLIRHelper::getStructIndex(rewriter, 0));
+
+            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
+
+            return global;
+        } else if (global.getLinkageAttr().getLinkage() == LLVM::Linkage::Appending) {
+            auto arrayType = cast<LLVM::LLVMArrayType>(global.getGlobalType());
+            global.setGlobalType(LLVM::LLVMArrayType::get(arrayType.getElementType(), arrayType.getNumElements() + 1));
+
+            // append value
+        }
+
+        return global;
+    }    
 
     mlir::func::FuncOp createFunctionFromRegion(mlir::Location location, StringRef name, mlir::Region &initRegion, StringRef saveToGlobalName)
     {
