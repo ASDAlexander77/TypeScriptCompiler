@@ -61,8 +61,10 @@
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/WithColor.h"
+#include "mlir/Support/FileUtilities.h"
+#include "llvm/Support/ToolOutputFile.h"
 //#include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/Support/WithColor.h"
 
 #include <algorithm>
 #include <iterator>
@@ -361,6 +363,24 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    /// Create a dependency declaration file for `--emit=dll` option.
+    ///
+    mlir::LogicalResult createDependencyDeclarationFile(StringRef outputFilename,
+                                            StringRef dependencyDeclFileBody) {
+        std::string errorMessage;
+        std::unique_ptr<llvm::ToolOutputFile> outputFile =
+            openOutputFile(outputFilename, &errorMessage);
+        if (!outputFile) {
+            llvm::errs() << errorMessage << "\n";
+            return failure();
+        }
+
+        outputFile->os() << dependencyDeclFileBody << "\n";
+        outputFile->keep();
+
+        return success();
+    }
+
     mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext)
     {
         if (!declExports.rdbuf()->in_avail())
@@ -370,21 +390,23 @@ class MLIRGenImpl
 
         auto declText = convertWideToUTF8(declExports.str());
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);
+        // LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);
 
-        auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
-            auto litValue = V(mlirGenStringValue(location, declText, true));
-            return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);            
-        };
+        // auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
+        //     auto litValue = V(mlirGenStringValue(location, declText, true));
+        //     return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);            
+        // };
 
-        auto loc = mlir::UnknownLoc::get(builder.getContext());
+        // auto loc = mlir::UnknownLoc::get(builder.getContext());
 
-        VariableClass varClass = VariableType::Var;
-        varClass.isExport = true;
-        varClass.isPublic = true;
-        auto varType = registerVariable(loc, SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
+        // VariableClass varClass = VariableType::Var;
+        // varClass.isExport = true;
+        // varClass.isPublic = true;
+        // auto varType = registerVariable(loc, SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
 
-        return mlir::success();
+        llvm::SmallString<128> path(mainSourceFileName);
+        llvm::sys::path::replace_extension(path, ".d.ts");
+        return createDependencyDeclarationFile(path, declText);
     }
 
     int processStatements(NodeArray<Statement> statements,
