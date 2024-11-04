@@ -384,8 +384,6 @@ class MLIRGenImpl
         varClass.isPublic = true;
         auto varType = registerVariable(loc, SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
 
-        builder.create<mlir_ts::AppendToUsedOp>(loc, SHARED_LIB_DECLARATIONS);
-
         return mlir::success();
     }
 
