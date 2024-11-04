@@ -183,7 +183,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return global;
     }
 
-    LLVM::GlobalOp createAppendingPtrGlobalVarRegion(StringRef name, FlatSymbolRefAttr nameValue, StringRef section = "")
+    LLVM::GlobalOp createGlobalVarRegionWithAppendingSymbolRef(StringRef name, FlatSymbolRefAttr nameValue, StringRef section = "")
     {
         LLVM::GlobalOp global;
 
@@ -191,6 +191,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto parentModule = op->getParentOfType<ModuleOp>();
 
         TypeHelper th(rewriter);
+        auto ptrType = th.getPtrType();
 
         // Create the global at the entry of the module.
         if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
@@ -201,7 +202,6 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             seekLast(parentModule.getBody());
 
             TypeHelper th(rewriter);
-            auto ptrType = th.getPtrType();
             auto arrayPtrType = LLVM::LLVMArrayType::get(ptrType, 1);
 
             global = rewriter.create<LLVM::GlobalOp>(loc, arrayPtrType, false, LLVM::Linkage::Appending, name, mlir::Attribute{});
@@ -225,9 +225,37 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             return global;
         } else if (global.getLinkageAttr().getLinkage() == LLVM::Linkage::Appending) {
             auto arrayType = cast<LLVM::LLVMArrayType>(global.getGlobalType());
-            global.setGlobalType(LLVM::LLVMArrayType::get(arrayType.getElementType(), arrayType.getNumElements() + 1));
 
-            // append value
+            auto newIndex = arrayType.getNumElements();
+            auto newCount = newIndex + 1;
+            auto newArrayType = LLVM::LLVMArrayType::get(arrayType.getElementType(), newCount);
+
+            global.setGlobalType(newArrayType);
+
+            global.getBodyRegion().walk(
+                [&](mlir::Operation *op) {
+                    if (auto undefOp = dyn_cast_or_null<LLVM::UndefOp>(op))
+                    {
+                        undefOp.getResult().setType(newArrayType);
+                    }
+                    else if (auto insertValueOp = dyn_cast_or_null<LLVM::InsertValueOp>(op))
+                    {
+                        insertValueOp.getResult().setType(newArrayType);
+                    }
+                });
+
+            auto returnOp = global.getBodyRegion().back().getTerminator();
+            rewriter.setInsertionPoint(returnOp);
+
+            auto returnOpTyped = cast<LLVM::ReturnOp>(returnOp);
+            auto arrayVal = returnOpTyped.getArg();
+
+            auto addrValue = rewriter.create<LLVM::AddressOfOp>(loc, ptrType, nameValue);
+            auto globalNameAddr = rewriter.create<LLVM::GEPOp>(loc, ptrType, ptrType, addrValue, ArrayRef<LLVM::GEPArg>{0});
+
+            arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, globalNameAddr, MLIRHelper::getStructIndex(rewriter, newIndex));
+
+            returnOpTyped.getArgMutable().assign({arrayVal});
         }
 
         return global;

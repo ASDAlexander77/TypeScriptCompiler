@@ -5121,7 +5121,7 @@ struct AppendToUsedOpLowering : public TsLlvmPattern<mlir_ts::AppendToUsedOp>
 
         LLVMCodeHelper lch(appendToUsedOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
         
-        lch.createAppendingPtrGlobalVarRegion("llvm.used", appendToUsedOp.getGlobalNameAttr(), "llvm.metadata");
+        lch.createGlobalVarRegionWithAppendingSymbolRef("llvm.used", appendToUsedOp.getGlobalNameAttr(), "llvm.metadata");
 
         rewriter.eraseOp(appendToUsedOp);
         return success();
