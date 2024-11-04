@@ -70,11 +70,11 @@ enum class Select: int
 
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}
+    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}
+    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}
     {
     }
 
@@ -85,6 +85,7 @@ struct VariableClass
     bool isUsing;
     bool isAppendingLinkage;
     Select comdat;
+    bool isUsed;
 
     inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
 

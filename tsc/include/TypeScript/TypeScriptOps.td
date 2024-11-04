@@ -2088,20 +2088,6 @@ def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
 def TypeScript_AppendToUsedOp : TypeScript_Op<"AppendToUsed"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name);
   let results = (outs );
-
-  let builders = [
-    OpBuilder<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
-    [{
-      build($_builder, $_state, RefType::get(func.getFunctionType()), FlatSymbolRefAttr::get(func.getNameAttr()));
-      $_state.addAttributes(attrs);
-    }]>,
-    OpBuilder<(ins "GlobalOp":$glob, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
-    [{
-      build($_builder, $_state, RefType::get(glob.getType()), FlatSymbolRefAttr::get(glob.getNameAttr()));
-      $_state.addAttributes(attrs);
-    }]>
-
-  ];
 }
 
 def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",

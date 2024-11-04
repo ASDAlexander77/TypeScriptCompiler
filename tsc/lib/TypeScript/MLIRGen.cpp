@@ -2893,7 +2893,7 @@ class MLIRGenImpl
     {
         VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
-            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}
+            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}, isUsed{false}
         {
         };
 
@@ -2968,6 +2968,7 @@ class MLIRGenImpl
             isPublic = varClass.isPublic;
             isAppendingLinkage = varClass.isAppendingLinkage;
             comdat = varClass.comdat;
+            isUsed = varClass.isUsed;
         }
 
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
@@ -3076,6 +3077,7 @@ class MLIRGenImpl
         bool allocateInContextThis;
         Select comdat;
         bool deleted;
+        bool isUsed;
     };
 
     mlir::LogicalResult adjustLocalVariableType(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
@@ -3353,6 +3355,12 @@ class MLIRGenImpl
                     createGlobalVariableInitialization(location, globalOp, variableDeclarationInfo, genContext);
                 }
 
+                if (variableDeclarationInfo.isUsed)
+                {
+                    builder.setInsertionPointAfter(globalOp);
+                    builder.create<mlir_ts::AppendToUsedOp>(location, globalOp.getName());
+                }
+
                 return mlir::success();
             }
         }
@@ -3383,7 +3391,15 @@ class MLIRGenImpl
             builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, address);
         }
 
-        return createGlobalVariableUndefinedInitialization(location, globalOp, variableDeclarationInfo);
+        auto result = createGlobalVariableUndefinedInitialization(location, globalOp, variableDeclarationInfo);
+
+        if (variableDeclarationInfo.isUsed)
+        {
+            builder.setInsertionPointAfter(globalOp);
+            builder.create<mlir_ts::AppendToUsedOp>(location, globalOp.getName());
+        }
+
+        return result;
     }    
 
     mlir::LogicalResult isGlobalConstLambda(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
@@ -4013,6 +4029,12 @@ class MLIRGenImpl
             {
                 addDeclarationToExport(variableDeclarationListAST->parent, "@dllimport\n");
             }
+
+            MLIRHelper::iterateDecorators(variableDeclarationListAST->parent, [&](std::string name, SmallVector<std::string> args) {
+                if (name == "used") {
+                    varClass.isUsed = true;
+                }
+            });
         }
 
         for (auto &item : variableDeclarationListAST->declarations)
@@ -4499,6 +4521,17 @@ class MLIRGenImpl
         return std::make_tuple(funcProto, funcType, argTypes);
     }
 
+    bool isGlobalAttr(StringRef name)
+    {
+        static llvm::StringMap<bool> funcAttrs {
+            {"optnone", true },
+            {DLL_IMPORT, true },
+            {DLL_EXPORT, true },
+        };
+
+        return funcAttrs[name];        
+    }
+
     bool isFuncAttr(StringRef name)
     {
         static llvm::StringMap<bool> funcAttrs {
@@ -4617,6 +4650,10 @@ class MLIRGenImpl
             if (name == "varargs") 
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "func.varargs"), mlir::BoolAttr::get(builder.getContext(), true)});
+            }
+
+            if (name == "used") {
+                builder.create<mlir_ts::AppendToUsedOp>(location, funcProto->getName());
             }
         });
 
