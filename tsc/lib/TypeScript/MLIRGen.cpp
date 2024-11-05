@@ -22220,7 +22220,7 @@ genContext);
         return mlir::success();
     }
 
-    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr)
+    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n")
     {
         // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
         if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
@@ -22235,7 +22235,9 @@ genContext);
             declExports << prefix;
 
         printer.printNode(node);
-        declExports << ";\n";
+        
+        if (postfix)
+            declExports << postfix;
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! added declaration to export: \n" << convertWideToUTF8(declExports.str()) << "\n";);      
     }
@@ -22247,12 +22249,12 @@ genContext);
 
     void addInterfaceDeclarationToExport(InterfaceDeclaration interfaceDeclaration)
     {
-        addDeclarationToExport(interfaceDeclaration);
+        addDeclarationToExport(interfaceDeclaration, nullptr, "\n");
     }
 
     void addEnumDeclarationToExport(EnumDeclaration enumDeclatation)
     {
-        addDeclarationToExport(enumDeclatation);
+        addDeclarationToExport(enumDeclatation, nullptr, "\n");
     }
 
     void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase)
@@ -22262,7 +22264,7 @@ genContext);
 
     void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)
     {
-        addDeclarationToExport(classDeclatation, "@dllimport\n");
+        addDeclarationToExport(classDeclatation, "@dllimport\n", "\n");
     }
 
     auto getNamespaceName() -> StringRef

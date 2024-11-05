@@ -798,7 +798,7 @@ protected:
         case SyntaxKind::IndexSignature:
         {
             auto signatureDeclarationBase = node.as<SignatureDeclarationBase>();
-            printModifiers(node);
+            printModifiersWithMode(node);
             forEachChildrenPrint(signatureDeclarationBase->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(signatureDeclarationBase->parameters, "[", ", ", "]");
             if (signatureDeclarationBase->type)
@@ -1245,7 +1245,7 @@ protected:
         }
         case SyntaxKind::VariableStatement:
         {
-            printModifiers(node);
+            printModifiersWithMode(node);
             forEachChildPrint(node.as<VariableStatement>()->declarationList);
             break;
         }
@@ -1563,7 +1563,7 @@ protected:
         case SyntaxKind::ModuleDeclaration:
         {
             auto moduleDeclaration = node.as<ModuleDeclaration>();
-            printModifiers(node);
+            printModifiersWithMode(node);
             out << "module ";
             forEachChildPrint(moduleDeclaration->name);
 
@@ -1583,7 +1583,7 @@ protected:
         case SyntaxKind::ImportEqualsDeclaration:
         {
             auto importEqualsDeclaration = node.as<ImportEqualsDeclaration>();
-            printModifiers(node);
+            printModifiersWithMode(node);
             out << "import ";
             forEachChildPrint(importEqualsDeclaration->name);
             out << " = ";
@@ -1644,7 +1644,7 @@ protected:
         case SyntaxKind::ExportDeclaration:
         {
             auto exportDeclaration = node.as<ExportDeclaration>();
-            printModifiers(node);
+            printModifiersWithMode(node);
             out << "export ";
             if (exportDeclaration->exportClause)
             {
@@ -1690,7 +1690,7 @@ protected:
         }
         case SyntaxKind::ExportAssignment:
         {
-            printModifiers(node);
+            printModifiersWithMode(node);
             out << "export = ";
             forEachChildPrint(node.as<ExportAssignment>()->expression);
             break;
@@ -1786,7 +1786,7 @@ protected:
         }
         case SyntaxKind::MissingDeclaration:
         {
-            printModifiers(node);
+            printModifiersWithMode(node);
             break;
         }
         case SyntaxKind::CommaListExpression:
