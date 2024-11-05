@@ -224,7 +224,10 @@ class MLIRGenImpl
         std::vector<string> filesToProcess;
 
         Parser parser;
-        auto sourceFile = parser.parseSourceFile(stows(mainSourceFileName.str()), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
+        auto sourceFile = parser.parseSourceFile(
+            stows(mainSourceFileName.str()), 
+            stows(sourceBuf->getBuffer().str()), 
+            ScriptTarget::Latest);
 
         // add default lib
         if (isMain)

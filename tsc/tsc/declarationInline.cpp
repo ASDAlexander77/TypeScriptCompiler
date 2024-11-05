@@ -42,10 +42,10 @@ llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getFileDeclarationContentForO
     return fileOrErr;
 }
 
-int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, llvm::StringRef objFileName, CompileOptions &compileOptions)
+int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, llvm::StringRef tsFileName, CompileOptions &compileOptions, std::string& tempOutputFile)
 {
     // Handle '.d.ts' input to the compiler.
-    auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(objFileName);
+    auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(tsFileName);
     if (std::error_code ec = fileOrErr.getError())
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << ec.message() << "\n";
@@ -57,9 +57,9 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
 
 
     // build body of program
-    OS << "@dllexport const __decls = \"";
+    OS << "@dllexport let __decls = \"";
 
-    auto content = getFileDeclarationContentForObjFile(objFileName);
+    auto content = getFileDeclarationContentForObjFile(tsFileName);
     if (!content.getError())
     {
         OS.write_escaped(content.get().get()->getBuffer());
@@ -85,7 +85,9 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
 
     auto contentBuffer = llvm::MemoryBuffer::getMemBuffer(contentStr.str(), "decl_file", false);
 
-    auto smLoc = llvm::SMLoc();
+    LLVM_DEBUG(llvm::dbgs() << "declaration content: " << contentStr.str() << "\n";);
+
+    auto smLoc = llvm::SMLoc::getFromPointer(contentBuffer->getBufferStart());
     sourceMgr.AddNewSourceBuffer(std::move(contentBuffer), smLoc);
 
     const auto declFileName = "__decls.d.ts";
@@ -99,7 +101,7 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
 
     // get temp file for obj
     auto ext = getDefaultExt(Action::DumpObj);
-    auto tempOutputFile = GetTemporaryPath(declFileName, ext);
+    tempOutputFile = GetTemporaryPath(declFileName, ext);
     auto result = dumpObjOrAssembly(argc, argv, Action::DumpObj, tempOutputFile, *module, compileOptions);
     if (result)
     {

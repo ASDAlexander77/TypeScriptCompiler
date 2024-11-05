@@ -43,8 +43,8 @@ int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp, CompileOptions&);
-int declarationInline(int, char **, mlir::MLIRContext &, llvm::SourceMgr &, llvm::StringRef, CompileOptions&);
-int buildExe(int, char **, std::string, CompileOptions&);
+int declarationInline(int, char **, mlir::MLIRContext &, llvm::SourceMgr &, llvm::StringRef, CompileOptions&, std::string&);
+int buildExe(int, char **, std::string, std::string, CompileOptions&);
 int runJit(int, char **, mlir::ModuleOp, CompileOptions&);
 
 extern cl::OptionCategory ObjOrAssemblyCategory;
@@ -318,14 +318,15 @@ int main(int argc, char **argv)
             return result;
         }
 
+        std::string additionalObjFile{};
         if (emitAction == Action::BuildDll)
         {
             // here we need to try to gather *.d.ts for every obj file involved in compilation and build obj file with __decls global variable in it
             auto fileName = llvm::StringRef(inputFilename);
-            declarationInline(argc, argv, mlirContext, sourceMgr, fileName, compileOptions);
+            declarationInline(argc, argv, mlirContext, sourceMgr, fileName, compileOptions, additionalObjFile);
         }
 
-        return buildExe(argc, argv, tempOutputFile, compileOptions);
+        return buildExe(argc, argv, tempOutputFile, additionalObjFile, compileOptions);
     }
 
     // Otherwise, we must be running the jit.

@@ -213,7 +213,7 @@ void removeCommandArgs(clang::driver::Compilation *c, llvm::ArrayRef<const char*
     }
 }
 
-int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &compileOptions)
+int buildExe(int argc, char **argv, std::string objFileName, std::string additionalObjFileName, CompileOptions &compileOptions)
 {
     // Initialize variables to call the driver
     llvm::InitLLVM x(argc, argv);
@@ -295,6 +295,11 @@ int buildExe(int argc, char **argv, std::string objFileName, CompileOptions &com
     {
         args.push_back(obj.c_str());
     }
+
+    if (!additionalObjFileName.empty())
+    {
+        args.push_back(additionalObjFileName.c_str());
+    }    
 
     if (win && shared)
     {
