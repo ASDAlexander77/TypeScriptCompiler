@@ -24,7 +24,11 @@ namespace cl = llvm::cl;
 
 extern cl::list<std::string> objs;
 
-std::string getFileDeclarationContentForObjFile(std::string objFileName) {
+std::string getDefaultExt(enum Action);
+std::string GetTemporaryPath(llvm::StringRef, llvm::StringRef);
+int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
+
+llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getFileDeclarationContentForObjFile(std::string objFileName) {
     llvm::SmallString<128> path(objFileName);
     llvm::sys::path::replace_extension(path, ".d.ts");
 
@@ -33,19 +37,12 @@ std::string getFileDeclarationContentForObjFile(std::string objFileName) {
     if (std::error_code ec = fileOrErr.getError())
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open obj file: " << ec.message() << "\n";
-        return {};
     }
 
-    auto &f = *fileOrErr.get();
-
-    auto *file1Start = f.getBufferStart();
-    //auto *file1End = f.getBufferEnd();
-    auto size = f.getBufferSize();
-
-    return std::string(file1Start, size);
+    return fileOrErr;
 }
 
-int declarationInline(int argc, char **argv, std::string objFileName, CompileOptions &compileOptions)
+int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, std::string objFileName, CompileOptions &compileOptions)
 {
     // Handle '.d.ts' input to the compiler.
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(objFileName);
@@ -55,36 +52,59 @@ int declarationInline(int argc, char **argv, std::string objFileName, CompileOpt
         return -1;
     }
 
-    std::stringstream ss;
+    llvm::SmallString<256> contentStr;
+    llvm::raw_svector_ostream OS(contentStr);
+
 
     // build body of program
-    ss << "@dllexport const __decls = '";
+    OS << "@dllexport const __decls = \"";
 
     auto content = getFileDeclarationContentForObjFile(objFileName);
-    if (!content.empty())
+    if (!content.getError())
     {
-        // maybe we do not have declarations for it
-        // TODO: print warning about it
-        ss << std::regex_replace(content, std::regex("'"), "\'");
+        OS.write_escaped(content.get().get()->getBuffer());
     }
 
     for (auto aditionalObjFileName : objs)
     {
-        auto content = getFileDeclarationContentForObjFile(objFileName);
-        if (content.empty())
+        auto content = getFileDeclarationContentForObjFile(aditionalObjFileName);
+        if (content.getError())
         {
             // maybe we do not have declarations for it
             // TODO: print warning about it
             continue;
         }
 
-        ss << std::regex_replace(content, std::regex("'"), "\'");
+        OS.write_escaped(content.get().get()->getBuffer());
     }
 
-    ss << "';";
+    OS << "\";";
 
     // ss is content
     // not we need to build obj file with one global field __decls
+
+    auto contentBuffer = llvm::MemoryBuffer::getMemBuffer(contentStr.str(), "decl_file", false);
+
+    auto smLoc = llvm::SMLoc();
+    sourceMgr.AddNewSourceBuffer(std::move(contentBuffer), smLoc);
+
+    const auto declFileName = "__decls.d.ts";
+
+    // get module
+    auto module = mlirGenFromSource(context, smLoc, declFileName, sourceMgr, compileOptions);
+    if (!module)
+    {
+        return -1;
+    }
+
+    // get temp file for obj
+    auto ext = getDefaultExt(Action::DumpObj);
+    auto tempOutputFile = GetTemporaryPath(declFileName, ext);
+    auto result = dumpObjOrAssembly(argc, argv, Action::DumpObj, tempOutputFile, *module, compileOptions);
+    if (result)
+    {
+        return result;
+    }
 
     return 0;
 }

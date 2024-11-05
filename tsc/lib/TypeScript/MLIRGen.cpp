@@ -210,6 +210,14 @@ class MLIRGenImpl
         return loadSourceBuf(sourceFileLoc, sourceBuf, true);
     }    
 
+    std::pair<SourceFile, std::vector<SourceFile>> loadSourceFile(SMLoc loc)
+    {
+        const auto *sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.FindBufferContainingLoc(loc));
+        auto sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
+                    sourceBuf->getBufferIdentifier(), /*line=*/0, /*column=*/0);
+        return loadSourceBuf(sourceFileLoc, sourceBuf, true);
+    }        
+
     std::pair<SourceFile, std::vector<SourceFile>> loadSourceBuf(mlir::Location location, const llvm::MemoryBuffer *sourceBuf, bool isMain = false)
     {
         std::vector<SourceFile> includeFiles;
@@ -22885,13 +22893,21 @@ namespace typescript
     return convertWideToUTF8(s.str());
 }
 
-mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
+mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromMainSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
                                         const llvm::SourceMgr &sourceMgr, CompileOptions &compileOptions)
 {
-
     auto path = llvm::sys::path::parent_path(fileName);
     MLIRGenImpl mlirGenImpl(context, fileName, path, sourceMgr, compileOptions);
     auto [sourceFile, includeFiles] = mlirGenImpl.loadMainSourceFile();
+    return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
+}
+
+mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, SMLoc &smLoc, const llvm::StringRef &fileName,
+                                        const llvm::SourceMgr &sourceMgr, CompileOptions &compileOptions)
+{
+    auto path = llvm::sys::path::parent_path(fileName);
+    MLIRGenImpl mlirGenImpl(context, fileName, path, sourceMgr, compileOptions);
+    auto [sourceFile, includeFiles] = mlirGenImpl.loadSourceFile(smLoc);
     return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
 }
 
