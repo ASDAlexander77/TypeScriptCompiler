@@ -347,6 +347,8 @@
             "args": [
                 "-emit=dll",
                 "-opt",
+                "-debug-only=tsc",
+                "-mlir-disable-threading",                
                 "-o=I:/Playground/decl_enum.dll",
                 "I:/Playground/decl_enum.ts"
             ],

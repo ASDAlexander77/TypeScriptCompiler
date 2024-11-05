@@ -26,6 +26,7 @@ extern cl::list<std::string> objs;
 
 std::string getDefaultExt(enum Action);
 std::string GetTemporaryPath(llvm::StringRef, llvm::StringRef);
+int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
 
 llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getFileDeclarationContentForObjFile(llvm::StringRef objFileName) {
@@ -57,7 +58,7 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
 
 
     // build body of program
-    OS << "@dllexport let __decls = \"";
+    OS << "@dllexport const __decls = \"";
 
     auto content = getFileDeclarationContentForObjFile(tsFileName);
     if (!content.getError())
@@ -98,6 +99,11 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
     {
         return -1;
     }
+
+    if (int error = runMLIRPasses(context, sourceMgr, module, compileOptions))
+    {
+        return error;
+    }    
 
     // get temp file for obj
     auto ext = getDefaultExt(Action::DumpObj);
