@@ -28,7 +28,7 @@ std::string getDefaultExt(enum Action);
 std::string GetTemporaryPath(llvm::StringRef, llvm::StringRef);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
 
-llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getFileDeclarationContentForObjFile(std::string objFileName) {
+llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getFileDeclarationContentForObjFile(llvm::StringRef objFileName) {
     llvm::SmallString<128> path(objFileName);
     llvm::sys::path::replace_extension(path, ".d.ts");
 
@@ -36,13 +36,13 @@ llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getFileDeclarationContentForO
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(path);
     if (std::error_code ec = fileOrErr.getError())
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open obj file: " << ec.message() << "\n";
+        llvm::WithColor::warning(llvm::errs(), "tsc") << "Missing declaration file '.d.ts' for obj file: " << objFileName << " error: " << ec.message() << "\n";
     }
 
     return fileOrErr;
 }
 
-int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, std::string objFileName, CompileOptions &compileOptions)
+int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::SourceMgr &sourceMgr, llvm::StringRef objFileName, CompileOptions &compileOptions)
 {
     // Handle '.d.ts' input to the compiler.
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(objFileName);
