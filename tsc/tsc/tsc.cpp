@@ -43,6 +43,7 @@ int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, mlir::ModuleOp, CompileOptions&);
+int declarationInline(int, char **, std::string, CompileOptions&);
 int buildExe(int, char **, std::string, CompileOptions&);
 int runJit(int, char **, mlir::ModuleOp, CompileOptions&);
 
@@ -315,6 +316,12 @@ int main(int argc, char **argv)
         if (result != 0)
         {
             return result;
+        }
+
+        if (emitAction == Action::BuildDll)
+        {
+            // here we need to try to gather *.d.ts for every obj file involved in compilation and build obj file with __decls global variable in it
+            declarationInline(argc, argv, tempOutputFile, compileOptions);
         }
 
         return buildExe(argc, argv, tempOutputFile, compileOptions);

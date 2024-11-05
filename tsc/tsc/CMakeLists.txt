@@ -51,7 +51,19 @@ set(LIBS
     TypeScriptMemAllocPass
     )
 
-add_llvm_executable(tsc tsc.cpp compile.cpp transform.cpp dump.cpp jit.cpp obj.cpp exe.cpp TextDiagnostic.cpp TextDiagnosticPrinter.cpp utils.cpp opts.cpp)
+add_llvm_executable(tsc 
+    tsc.cpp 
+    compile.cpp 
+    transform.cpp 
+    dump.cpp 
+    jit.cpp 
+    obj.cpp 
+    exe.cpp 
+    TextDiagnostic.cpp 
+    TextDiagnosticPrinter.cpp 
+    utils.cpp 
+    opts.cpp 
+    declarationInline.cpp)
 
 llvm_update_compile_flags(tsc)
 target_link_libraries(tsc PRIVATE ${LIBS})
