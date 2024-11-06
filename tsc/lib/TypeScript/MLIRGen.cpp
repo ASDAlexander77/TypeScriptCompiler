@@ -3783,18 +3783,12 @@ class MLIRGenImpl
         if (name == SyntaxKind::ArrayBindingPattern)
         {
             auto arrayBindingPattern = name.as<ArrayBindingPattern>();
-            if (mlir::failed(processDeclarationArrayBindingPattern(location, arrayBindingPattern, varClass, func, genContext)))
-            {
-                return mlir::failure();
-            }
+            return processDeclarationArrayBindingPattern(location, arrayBindingPattern, varClass, func, genContext);
         }
         else if (name == SyntaxKind::ObjectBindingPattern)
         {
             auto objectBindingPattern = name.as<ObjectBindingPattern>();
-            if (mlir::failed(processDeclarationObjectBindingPattern(location, objectBindingPattern, varClass, func, genContext)))
-            {
-                return mlir::failure();
-            }
+            return processDeclarationObjectBindingPattern(location, objectBindingPattern, varClass, func, genContext);
         }
         else
         {
@@ -3802,10 +3796,31 @@ class MLIRGenImpl
             auto nameStr = MLIRHelper::getName(name);
 
             // register
-            return !!registerVariable(location, nameStr, false, varClass, func, genContext, showWarnings) ? mlir::success() : mlir::failure();
+            auto varType = registerVariable(location, nameStr, false, varClass, func, genContext, showWarnings);
+            if (!varType)
+            {
+                return mlir::failure();
+            }
+
+            if (varClass.isExport)
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+
+                auto isConst = varClass.type == VariableType::Const || varClass.type == VariableType::ConstRef;
+                NodeArray<VariableDeclaration> _varDeclarations;
+                auto _varName = nf.createIdentifier(stows(nameStr));
+                auto _varDecl = nf.createVariableDeclaration(
+                    _varName, undefined, undefined, name->parent.as<VariableDeclaration>()->type);
+                _varDeclarations.push_back(_varDecl);
+                auto _varList = nf.createVariableDeclarationList(_varDeclarations, isConst ? NodeFlags::Const : NodeFlags::Let);
+                auto _varStatement = nf.createVariableStatement(undefined, _varList);
+                addDeclarationToExport(_varStatement, "@dllimport\n", ";\n", _varDecl, varType);
+            }
+
+            return mlir::success();
         }
 
-        return mlir::success();       
+        return mlir::failure();       
     }
 
     mlir::LogicalResult processDeclaration(NamedDeclaration item, VariableClass varClass,
@@ -3816,6 +3831,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+        item->name->parent = item;
         return processDeclarationName(item->name, varClass, func, genContext, showWarnings);
     }
 
@@ -4055,11 +4071,6 @@ class MLIRGenImpl
         {
             varClass.isPublic = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
             varClass.isExport = getExportModifier(variableDeclarationListAST->parent);
-            if (varClass.isExport)
-            {
-                addDeclarationToExport(variableDeclarationListAST->parent, "@dllimport\n");
-            }
-
             MLIRHelper::iterateDecorators(variableDeclarationListAST->parent, [&](std::string name, SmallVector<std::string> args) {
                 if (name == "used") {
                     varClass.isUsed = true;
@@ -22219,7 +22230,7 @@ genContext);
         return mlir::success();
     }
 
-    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n", mlir::Type returnTypeIfNotProvided = {})
+    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n", ts::Node id = {}, mlir::Type returnTypeIfNotProvided = {})
     {
         // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
         if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
@@ -22231,7 +22242,12 @@ genContext);
         printer.setDeclarationMode(true);
         if (returnTypeIfNotProvided)
         {
-            printer.setOnMissingReturnType([&]() { 
+            printer.setOnMissingReturnType([&](auto currentNode) {
+                if (currentNode != id)
+                {
+                    return string{};
+                } 
+
                 stringstream exportType;
                 MLIRPrinter mp{};
                 mp.printType<ostream>(exportType, returnTypeIfNotProvided);
@@ -22267,7 +22283,7 @@ genContext);
 
     void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase, mlir::Type returnType)
     {
-        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n", nullptr, returnType);
+        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n", nullptr, FunctionLikeDeclarationBase, returnType);
     }
 
     void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)

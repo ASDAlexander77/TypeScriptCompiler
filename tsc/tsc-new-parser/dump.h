@@ -24,7 +24,7 @@ class Printer
     OUT &out;
     int ident;
     bool declarationMode;
-    std::function<string(void)> onMissingReturnType;
+    std::function<string(ts::Node)> onMissingReturnType;
 
     // temp var
     bool isLastStatementBlock;
@@ -39,7 +39,7 @@ public:
         declarationMode = declarationMode_;
     }
 
-    void setOnMissingReturnType(std::function<string(void)> onMissingReturnType_)
+    void setOnMissingReturnType(std::function<string(ts::Node)> onMissingReturnType_)
     {
         onMissingReturnType = onMissingReturnType_;
     }
@@ -739,8 +739,19 @@ protected:
                 out << " : ";
                 forEachChildPrint(variableDeclaration->type);
             }
+            else if (declarationMode)
+            {
+                if (onMissingReturnType)
+                {
+                    auto data = onMissingReturnType(node);
+                    if (!data.empty())
+                    {
+                        out << " : " << data;
+                    }
+                }                
+            }
 
-            if (variableDeclaration->initializer) {
+            if (!declarationMode && variableDeclaration->initializer) {
                 out << " = ";
                 forEachChildPrint(variableDeclaration->initializer);
             }
@@ -868,14 +879,17 @@ protected:
             } 
             else if (declarationMode)
             { 
-                out << " : ";
                 if (onMissingReturnType)
                 {
-                    onMissingReturnType();
+                    auto data = onMissingReturnType(node);
+                    if (!data.empty())
+                    {
+                        out << " : " << data;
+                    }
                 }
                 else
                 {
-                    out << "void";
+                    out << " : void";
                 }
             }
 
