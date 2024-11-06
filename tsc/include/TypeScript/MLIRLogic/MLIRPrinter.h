@@ -317,7 +317,7 @@ class MLIRPrinter
                 out << "void";
             })
             .template Case<mlir_ts::ByteType>([&](auto) {
-                out << "i8";
+                out << "byte";
             })
             .template Case<mlir_ts::CharType>([&](auto) {
                 out << "char";
