@@ -866,14 +866,17 @@ protected:
                 out << " : ";
                 forEachChildPrint(functionLikeDeclarationBase->type);
             } 
-            else if (onMissingReturnType)
-            {
+            else if (declarationMode)
+            { 
                 out << " : ";
-                onMissingReturnType();
-            }
-            else 
-            {
-                out << " : void";
+                if (onMissingReturnType)
+                {
+                    onMissingReturnType();
+                }
+                else
+                {
+                    out << "void";
+                }
             }
 
             if (kind == SyntaxKind::ArrowFunction)
