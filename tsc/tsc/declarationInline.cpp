@@ -58,7 +58,7 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
 
 
     // build body of program
-    OS << "@dllexport const __decls = \"";
+    OS << "export const __decls = \"";
 
     auto content = getFileDeclarationContentForObjFile(tsFileName);
     if (!content.getError())

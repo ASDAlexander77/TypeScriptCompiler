@@ -415,7 +415,7 @@ class MLIRGenImpl
         // auto varType = registerVariable(loc, SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
 
         llvm::SmallString<128> path(compileOptions.outputFolder);
-        llvm::sys::path::append(path, mainSourceFileName);
+        llvm::sys::path::append(path, llvm::sys::path::filename(mainSourceFileName));
         llvm::sys::path::replace_extension(path, ".d.ts");
         return createDependencyDeclarationFile(path, declText);
     }
