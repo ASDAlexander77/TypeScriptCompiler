@@ -144,14 +144,14 @@ void createCompileBatchFile()
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
     batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
-    batFile << "set LLVMLIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
-    batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "set TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " 
             << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
+            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSC_LIB_PATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
@@ -172,12 +172,12 @@ void createCompileBatchFile()
     batFile << "FILEPATH=$2" << std::endl;
     batFile << "LINKER_OPTS=$3" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
-    batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o " 
+    batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH $FILENAME.o " 
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm -f $FILENAME.o" << std::endl;
@@ -325,10 +325,10 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
     batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
-    batFile << "set LLVMLIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
-    batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "set TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
     std::stringstream objs;
     for (auto &file : files)
@@ -340,7 +340,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << objs.str() << " "
             << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
+            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSC_LIB_PATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
 
@@ -355,10 +355,10 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
     batFile << "FILENAME=" << tempOutputFileNameNoExt << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
     std::stringstream objs;
     for (auto &file : files)
@@ -369,7 +369,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     }
 
     batFile << TEST_COMPILER << " -o $FILENAME " << objs.str() 
-            << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
+            << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     
@@ -392,10 +392,10 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
     batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
-    batFile << "set LLVMLIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
+    batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
-    batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "set TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
     auto first = true;
     std::stringstream shared_objs;
@@ -429,7 +429,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << sharedBat.str();
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:" << shared_filenameNoExt << ".dll " << linker_opt << " " << shared_objs.str() << " "
             <<  LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
+            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSC_LIB_PATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
 
@@ -457,7 +457,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         }
 
         batFile << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-                << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
+                << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSC_LIB_PATH%" 
                 << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
                 << std::endl;
 
@@ -480,10 +480,10 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
     batFile << "FILENAME=" << tempOutputFileNameNoExt << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
     auto first = true;
     std::stringstream shared_objs;
@@ -514,7 +514,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     batFile << sharedBat.str();
     batFile << TEST_COMPILER << " " << linker_opt << " -o lib" << shared_filenameNoExt << ".so " << shared_objs.str() 
-            << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
+            << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "rm -f " << shared_objs.str() << std::endl;
 
@@ -528,7 +528,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     {
         batFile << execBat.str();
         batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " "; 
-        batFile << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH ";
+        batFile << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH ";
         if (sharedLibCompileTypeCompiler)
         {
             // we need "-Wl,-rpath=" to embed path for compiled shared lib path
