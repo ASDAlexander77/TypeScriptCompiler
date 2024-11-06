@@ -20,6 +20,7 @@ struct CompileOptions
     bool isWasm;
     bool isWindows;
     enum Exports exportOpt;
+    std::string outputFolder;
 };
 
 #endif // TYPESCRIPT_DATASTRUCT_H_
