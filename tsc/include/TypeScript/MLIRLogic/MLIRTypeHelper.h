@@ -19,33 +19,6 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-enum class MatchResultType
-{
-    Match,
-    NotMatchArgCount,
-    NotMatchArg,
-    NotMatchResultCount,
-    NotMatchResult
-};
-
-struct MatchResult
-{
-    MatchResultType result;
-    unsigned index;
-};
-
-enum class ExtendsResult {
-    False,
-    True,
-    Never,
-    Any
-};
-
-inline bool isTrue(ExtendsResult val)
-{
-    return val == ExtendsResult::True || val == ExtendsResult::Any;
-}
-
 class MLIRTypeHelper
 {
     mlir::MLIRContext *context;

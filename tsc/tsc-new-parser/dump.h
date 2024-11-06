@@ -24,6 +24,7 @@ class Printer
     OUT &out;
     int ident;
     bool declarationMode;
+    std::function<string(void)> onMissingReturnType;
 
     // temp var
     bool isLastStatementBlock;
@@ -36,6 +37,11 @@ public:
     void setDeclarationMode(bool declarationMode_)
     {
         declarationMode = declarationMode_;
+    }
+
+    void setOnMissingReturnType(std::function<string(void)> onMissingReturnType_)
+    {
+        onMissingReturnType = onMissingReturnType_;
     }
 
     void printNode(ts::Node node)
@@ -856,13 +862,29 @@ protected:
             forEachChildrenPrint(functionLikeDeclarationBase->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(functionLikeDeclarationBase->parameters, "(", ", ", ")");
             if (functionLikeDeclarationBase->type)
+            {
                 out << " : ";
-            forEachChildPrint(functionLikeDeclarationBase->type);
+                forEachChildPrint(functionLikeDeclarationBase->type);
+            } 
+            else if (onMissingReturnType)
+            {
+                out << " : ";
+                onMissingReturnType();
+            }
+            else 
+            {
+                out << " : void";
+            }
+
             if (kind == SyntaxKind::ArrowFunction)
                 forEachChildPrint(node.as<ArrowFunction>()->equalsGreaterThanToken);
             if (!declarationMode)
             {
                 forEachChildPrint(functionLikeDeclarationBase->body);
+            }
+            else
+            {
+                out << ";";
             }
 
             break;

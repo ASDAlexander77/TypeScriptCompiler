@@ -17,10 +17,9 @@
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIRValueGuard.h"
 #include "TypeScript/MLIRLogic/MLIRDebugInfoHelper.h"
-
-#include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
-
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
+#include "TypeScript/MLIRLogic/MLIRPrinter.h"
+#include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 #include "TypeScript/VisitorAST.h"
 
 #include "TypeScript/DOM.h"
@@ -4698,7 +4697,7 @@ class MLIRGenImpl
                 || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
             {
                 //addDeclarationToExport(funcProto->getName(), funcType, genContext);
-                addFunctionDeclarationToExport(functionLikeDeclarationBaseAST);
+                addFunctionDeclarationToExport(functionLikeDeclarationBaseAST, funcProto->getReturnType());
             }
         }
 
@@ -22220,7 +22219,7 @@ genContext);
         return mlir::success();
     }
 
-    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n")
+    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n", mlir::Type returnTypeIfNotProvided = {})
     {
         // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
         if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
@@ -22230,6 +22229,15 @@ genContext);
 
         Printer<stringstream> printer(declExports);
         printer.setDeclarationMode(true);
+        if (returnTypeIfNotProvided)
+        {
+            printer.setOnMissingReturnType([&]() { 
+                stringstream exportType;
+                MLIRPrinter mp{};
+                mp.printType<ostream>(exportType, returnTypeIfNotProvided);
+                return exportType.str();            
+            });
+        }
 
         if (prefix)
             declExports << prefix;
@@ -22257,9 +22265,9 @@ genContext);
         addDeclarationToExport(enumDeclatation, nullptr, "\n");
     }
 
-    void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase)
+    void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase, mlir::Type returnType)
     {
-        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n");
+        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n", nullptr, returnType);
     }
 
     void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)

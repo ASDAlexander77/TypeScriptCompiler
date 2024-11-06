@@ -33,6 +33,33 @@ static std::wstring convertUTF8toWide(const std::string &s)
     return ws;
 }
 
+enum class MatchResultType
+{
+    Match,
+    NotMatchArgCount,
+    NotMatchArg,
+    NotMatchResultCount,
+    NotMatchResult
+};
+
+struct MatchResult
+{
+    MatchResultType result;
+    unsigned index;
+};
+
+enum class ExtendsResult {
+    False,
+    True,
+    Never,
+    Any
+};
+
+inline bool isTrue(ExtendsResult val)
+{
+    return val == ExtendsResult::True || val == ExtendsResult::Any;
+}
+
 class MLIRHelper
 {
   public:
