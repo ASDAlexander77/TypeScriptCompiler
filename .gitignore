@@ -7,6 +7,7 @@ build
 tsc/out
 tsc/Testing
 tsc/Testing/Temporary/*
+tsc/test/tester/tests/*.d.ts
 package-lock.json
 node_modules
 gc-*
