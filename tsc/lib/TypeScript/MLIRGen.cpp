@@ -22283,7 +22283,7 @@ genContext);
 
     void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase, mlir::Type returnType)
     {
-        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n", nullptr, FunctionLikeDeclarationBase, returnType);
+        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n", "\n", FunctionLikeDeclarationBase, returnType);
     }
 
     void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)
