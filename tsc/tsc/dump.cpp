@@ -27,8 +27,10 @@ extern cl::opt<bool> enableOpt;
 extern cl::opt<int> optLevel;
 extern cl::opt<int> sizeLevel;
 extern cl::opt<bool> lldbDebugInfo;
+extern cl::opt<std::string> outputFilename;
 
-std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action);
+std::string getDefaultOutputFileName(enum Action);
+std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action, std::string);
 int registerMLIRDialects(mlir::ModuleOp);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
 
@@ -46,7 +48,7 @@ int dumpAST()
     return 0;
 }
 
-int dumpLLVMIR(mlir::ModuleOp module, CompileOptions &compileOptions)
+int dumpLLVMIR(enum Action emitAction, std::string outputFile, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     registerMLIRDialects(module);
 
@@ -86,7 +88,7 @@ int dumpLLVMIR(mlir::ModuleOp module, CompileOptions &compileOptions)
     if (emitAction == Action::DumpLLVMIR)
     {
         // TODO: add output into file as well 
-        auto FDOut = getOutputStream(emitAction);
+        auto FDOut = getOutputStream(emitAction, outputFile);
         if (FDOut)
         {
             FDOut->os() << *llvmModule << "\n";
@@ -100,7 +102,7 @@ int dumpLLVMIR(mlir::ModuleOp module, CompileOptions &compileOptions)
 
     if (emitAction == Action::DumpByteCode)
     {
-        auto FDOut = getOutputStream(emitAction);
+        auto FDOut = getOutputStream(emitAction, outputFile);
         if (FDOut)
         {
             llvm::WriteBitcodeToFile(*llvmModule, FDOut->os());
@@ -115,4 +117,10 @@ int dumpLLVMIR(mlir::ModuleOp module, CompileOptions &compileOptions)
 #endif
 
     return 0;
+}
+
+int dumpLLVMIR(mlir::ModuleOp module, CompileOptions &compileOptions)
+{
+    std::string fileOutput = outputFilename.empty() ? getDefaultOutputFileName(emitAction) : outputFilename;
+    return dumpLLVMIR(emitAction, fileOutput, module, compileOptions);
 }

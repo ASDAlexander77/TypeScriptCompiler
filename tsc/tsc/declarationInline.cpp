@@ -23,11 +23,14 @@ using namespace typescript;
 namespace cl = llvm::cl;
 
 extern cl::list<std::string> objs;
+extern cl::opt<bool> verbose;
 
 std::string getDefaultExt(enum Action);
+std::string getDefaultOutputFileName(enum Action);
 std::string GetTemporaryPath(llvm::StringRef, llvm::StringRef);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
+int dumpLLVMIR(enum Action, std::string, mlir::ModuleOp, CompileOptions&);
 
 llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getFileDeclarationContentForObjFile(llvm::StringRef objFileName) {
     llvm::SmallString<128> path(objFileName);
@@ -56,10 +59,9 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
     llvm::SmallString<256> contentStr;
     llvm::raw_svector_ostream OS(contentStr);
 
-
     // build body of program
     OS << "export const __decls = \"";
-
+    
     auto content = getFileDeclarationContentForObjFile(tsFileName);
     if (!content.getError())
     {
@@ -81,6 +83,10 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
 
     OS << "\";";
 
+    OS << "export let rrr = 'asd1122';\n";
+    OS << "let abc = 11;\n";
+    OS << "export function ttt_111() { print('test1', abc); }\n";
+
     // ss is content
     // not we need to build obj file with one global field __decls
 
@@ -91,7 +97,8 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
     auto smLoc = llvm::SMLoc::getFromPointer(contentBuffer->getBufferStart());
     sourceMgr.AddNewSourceBuffer(std::move(contentBuffer), smLoc);
 
-    const auto declFileName = "__decls.d.ts";
+    // !!! do not use .d.ts - or all variables will be declared 'external' and will not be resolved
+    const auto declFileName = "__decls.ts";
 
     // get module
     auto module = mlirGenFromSource(context, smLoc, declFileName, sourceMgr, compileOptions);
@@ -112,6 +119,12 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
     if (result)
     {
         return result;
+    }
+
+    if (verbose.getValue())
+    {
+        dumpLLVMIR(Action::DumpLLVMIR, getDefaultOutputFileName(Action::DumpLLVMIR), *module, compileOptions);
+        dumpObjOrAssembly(argc, argv, Action::DumpAssembly, getDefaultOutputFileName(Action::DumpAssembly), *module, compileOptions);
     }
 
     return 0;

@@ -341,9 +341,9 @@ class MLIRPrinter
                 if (t.isSigned())
                     out << "s";
                 else if (t.isSignless())
-                    out << "u";
-                else
                     out << "i";
+                else
+                    out << "u";
                 out << t.getIntOrFloatBitWidth();
             })
             .template Case<mlir::FloatType>([&](auto t) {
