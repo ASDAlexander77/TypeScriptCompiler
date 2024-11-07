@@ -52,7 +52,10 @@
 #define SYMBOL_TO_PRIMITIVE "toPrimitive"
 #define SYMBOL_DISPOSE "dispose"
 
-#define SHARED_LIB_DECLARATIONS "__decls"
+// we are using 3 underscore as this is feature of ts parser to add _ to __variables
+#define SHARED_LIB_DECLARATIONS_FILENAME "__decls.ts"
+#define SHARED_LIB_DECLARATIONS_2UNDERSCORE "__decls"
+#define SHARED_LIB_DECLARATIONS "___decls"
 #define DLL_EXPORT "dllexport"
 #define DLL_IMPORT "dllimport"
 

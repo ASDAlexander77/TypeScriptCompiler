@@ -398,6 +398,12 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+        //
+        if (mainSourceFileName == SHARED_LIB_DECLARATIONS_FILENAME)
+        {
+            return mlir::success();
+        }
+
         auto declText = convertWideToUTF8(declExports.str());
 
         // LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);

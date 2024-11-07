@@ -13,6 +13,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/FileUtilities.h"
 
+#include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
 #include <regex>
@@ -60,7 +61,7 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
     llvm::raw_svector_ostream OS(contentStr);
 
     // build body of program
-    OS << "export const __decls = \"";
+    OS << "export const " SHARED_LIB_DECLARATIONS_2UNDERSCORE " = \"";
     
     auto content = getFileDeclarationContentForObjFile(tsFileName);
     if (!content.getError())
@@ -86,7 +87,7 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
     // ss is content
     // not we need to build obj file with one global field __decls
 
-    auto contentBuffer = llvm::MemoryBuffer::getMemBuffer(contentStr.str(), "decl_file", false);
+    auto contentBuffer = llvm::MemoryBuffer::getMemBuffer(contentStr.str(), SHARED_LIB_DECLARATIONS_FILENAME, false);
 
     LLVM_DEBUG(llvm::dbgs() << "declaration content: " << contentStr.str() << "\n";);
 
@@ -94,7 +95,7 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
     sourceMgr.AddNewSourceBuffer(std::move(contentBuffer), smLoc);
 
     // !!! do not use .d.ts - or all variables will be declared 'external' and will not be resolved
-    const auto declFileName = "__decls.ts";
+    const auto declFileName = SHARED_LIB_DECLARATIONS_FILENAME;
 
     // get module
     auto module = mlirGenFromSource(context, smLoc, declFileName, sourceMgr, compileOptions);
