@@ -83,10 +83,6 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
 
     OS << "\";";
 
-    OS << "export let rrr = 'asd1122';\n";
-    OS << "let abc = 11;\n";
-    OS << "export function ttt_111() { print('test1', abc); }\n";
-
     // ss is content
     // not we need to build obj file with one global field __decls
 
