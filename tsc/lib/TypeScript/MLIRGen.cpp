@@ -4038,7 +4038,19 @@ class MLIRGenImpl
                 return std::make_tuple(t, mlir::Value(), p ? TypeProvided::Yes : TypeProvided::No);
             }
 
-            return getTypeAndInit(item, genContext);
+            auto typeAndInit = getTypeAndInit(item, genContext);
+
+            if (varClass.isDynamicImport)
+            {
+                auto nameStr = MLIRHelper::getName(item->name);
+                auto dllVarName = V(mlirGenStringValue(location, nameStr, true));
+                auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), dllVarName);
+                auto result = cast(location, std::get<0>(typeAndInit), referenceToStaticFieldOpaque, genContext);
+                auto referenceToStaticField = V(result);
+                return std::make_tuple(referenceToStaticField.getType(), referenceToStaticField, TypeProvided::Yes);                
+            }
+
+            return typeAndInit;
         };
 
         auto valClassItem = varClass;
@@ -4131,11 +4143,15 @@ class MLIRGenImpl
 
                 if (name == DLL_IMPORT)
                 {
+                    varClass.type = isLet ? VariableType::Let : isConst || isUsing ? VariableType::Const : VariableType::Var;                    
                     varClass.isImport = true;
                     // it has parameter, means this is dynamic import, should point to dll path
+                    // TODO: finish it, look at mlirGenCustomRTTIDynamicImport as example how to load it
                     if (args.size() > 0)
                     {
+                        varClass.type = VariableType::Var; 
                         varClass.isDynamicImport = true;
+                        varClass.isImport = false;
                     }
                 }                
 
