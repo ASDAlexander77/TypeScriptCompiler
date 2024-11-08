@@ -70,6 +70,7 @@ namespace Dump
 
 std::unique_ptr<Dumper> createCOFFDumper(const COFFObjectFile &);
 std::unique_ptr<Dumper> createELFDumper(const ELFObjectFileBase &);
+// TODO: finish it
 //std::unique_ptr<Dumper> createMachODumper(const MachOObjectFile &);
 //std::unique_ptr<Dumper> createWasmDumper(const WasmObjectFile &);
 //std::unique_ptr<Dumper> createXCOFFDumper(const XCOFFObjectFile &);
