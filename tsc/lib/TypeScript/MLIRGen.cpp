@@ -427,7 +427,9 @@ class MLIRGenImpl
 
         std::string varName(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
         varName.append("_");
-        varName.append(mainSourceFileName.str());
+        varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
+        varName.append(to_string(hash_value(mainSourceFileName)));
+        
         auto varNameRef = StringRef(varName).copy(stringAllocator);
         
         auto varType = registerVariable(loc, varNameRef, true, varClass, typeWithInit, genContext);
@@ -813,6 +815,11 @@ class MLIRGenImpl
         // only 1 file to load        
         symbols.push_back(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
 #endif        
+
+        if (symbols.empty())
+        {
+            emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");            
+        }
 
         // load library
         auto name = MLIRHelper::getAnonymousName(location, ".ll", "");
