@@ -328,10 +328,10 @@ class MLIRPrinter
             .template Case<mlir_ts::ConstType>([&](auto) {
                 out << "const";
             })
-            .Case<mlir_ts::SymbolType>([&](auto t) {
+            .template Case<mlir_ts::SymbolType>([&](auto) {
                 out << "Symbol";
             })             
-            .template Case<mlir_ts::NullType>([&](auto t) {
+            .template Case<mlir_ts::NullType>([&](auto) {
                 out << "null";
             })
             .template Case<mlir::NoneType>([&](auto) {
