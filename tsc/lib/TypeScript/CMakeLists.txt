@@ -21,6 +21,7 @@ add_mlir_dialect_library(MLIRTypeScript
     LowerToLLVM.cpp
     RelocateConstantPass.cpp
     GCPass.cpp
+    ObjDumper.cpp
     
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/tsc-new-parser

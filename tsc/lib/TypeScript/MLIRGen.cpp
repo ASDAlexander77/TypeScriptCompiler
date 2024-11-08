@@ -9,6 +9,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DiagnosticHelper.h"
+#include "TypeScript/ObjDumper.h"
 
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
@@ -778,6 +779,9 @@ class MLIRGenImpl
             emitError(location, errMsg);
             return mlir::failure();
         }
+
+        // loading Binary to get list of symbols
+        auto symbols = Dump::getSymbols(filePath);
 
         // load library
         auto name = MLIRHelper::getAnonymousName(location, ".ll", "");
