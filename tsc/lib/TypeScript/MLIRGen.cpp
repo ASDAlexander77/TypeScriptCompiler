@@ -4043,11 +4043,14 @@ class MLIRGenImpl
             if (varClass.isDynamicImport)
             {
                 auto nameStr = MLIRHelper::getName(item->name);
+                auto fieldType = std::get<0>(typeAndInit);
+
                 auto dllVarName = V(mlirGenStringValue(location, nameStr, true));
-                auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), dllVarName);
-                auto result = cast(location, std::get<0>(typeAndInit), referenceToStaticFieldOpaque, genContext);
-                auto referenceToStaticField = V(result);
-                return std::make_tuple(referenceToStaticField.getType(), referenceToStaticField, TypeProvided::Yes);                
+                auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                    location, getOpaqueType(), dllVarName);
+                auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
+                auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
+                return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);                
             }
 
             return typeAndInit;
