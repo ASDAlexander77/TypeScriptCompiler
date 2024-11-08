@@ -319,12 +319,14 @@ int main(int argc, char **argv)
         }
 
         std::string additionalObjFile{};
+#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE        
         if (emitAction == Action::BuildDll)
         {
             // here we need to try to gather *.d.ts for every obj file involved in compilation and build obj file with __decls global variable in it
             auto fileName = llvm::StringRef(inputFilename);
             declarationInline(argc, argv, mlirContext, sourceMgr, fileName, compileOptions, additionalObjFile);
         }
+#endif        
 
         return buildExe(argc, argv, tempOutputFile, additionalObjFile, compileOptions);
     }

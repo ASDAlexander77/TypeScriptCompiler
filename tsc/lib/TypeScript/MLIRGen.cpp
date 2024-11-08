@@ -374,6 +374,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
     /// Create a dependency declaration file for `--emit=dll` option.
     ///
     mlir::LogicalResult createDependencyDeclarationFile(StringRef outputFilename,
@@ -391,6 +392,7 @@ class MLIRGenImpl
 
         return success();
     }
+#endif    
 
     mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext)
     {
@@ -399,32 +401,40 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        //
+#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
         if (mainSourceFileName == SHARED_LIB_DECLARATIONS_FILENAME)
         {
             return mlir::success();
         }
+#endif        
 
         auto declText = convertWideToUTF8(declExports.str());
 
-        // LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);
+#ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
+        // default implementation to use variable to store declaration data
+        LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);
 
-        // auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
-        //     auto litValue = V(mlirGenStringValue(location, declText, true));
-        //     return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);            
-        // };
+        auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
+            auto litValue = V(mlirGenStringValue(location, declText, true));
+            return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);            
+        };
 
-        // auto loc = mlir::UnknownLoc::get(builder.getContext());
+        auto loc = mlir::UnknownLoc::get(builder.getContext());
 
-        // VariableClass varClass = VariableType::Var;
-        // varClass.isExport = true;
-        // varClass.isPublic = true;
-        // auto varType = registerVariable(loc, SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
+        VariableClass varClass = VariableType::Var;
+        varClass.isExport = true;
+        varClass.isPublic = true;
+        auto varType = registerVariable(loc, SHARED_LIB_DECLARATIONS_2UNDERSCORE, true, varClass, typeWithInit, genContext);
+#endif        
 
+#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
         llvm::SmallString<128> path(compileOptions.outputFolder);
         llvm::sys::path::append(path, llvm::sys::path::filename(mainSourceFileName));
         llvm::sys::path::replace_extension(path, ".d.ts");
         return createDependencyDeclarationFile(path, declText);
+#else   
+        return success();        
+#endif        
     }
 
     int processStatements(NodeArray<Statement> statements,
@@ -780,9 +790,23 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // loading Binary to get list of symbols
         SmallVector<StringRef> symbols;
-        Dump::getSymbols(filePath, symbols);
+#ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
+        // loading Binary to get list of symbols
+        SmallVector<StringRef> symbolsAll;
+        Dump::getSymbols(filePath, symbolsAll);
+
+        for (auto symbol : symbolsAll)
+        {
+            if (symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE))
+            {
+                symbols.push_back(symbol);
+            }
+        }
+#else
+        // only 1 file to load        
+        symbols.push_back(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
+#endif        
 
         // load library
         auto name = MLIRHelper::getAnonymousName(location, ".ll", "");
@@ -816,36 +840,39 @@ class MLIRGenImpl
                 location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(100));
         }
 
-        // TODO: for now, we have code in TS to load methods from DLL/Shared libs
-        if (auto addrOfDeclText = dynLib.getAddressOfSymbol(SHARED_LIB_DECLARATIONS))
+        for (auto declSymbol : symbols)
         {
-            std::string result;
-            // process shared lib declarations
-            auto dataPtr = *(const char**)addrOfDeclText;
-            if (dynamic)
+            // TODO: for now, we have code in TS to load methods from DLL/Shared libs
+            if (auto addrOfDeclText = dynLib.getAddressOfSymbol(declSymbol.str().c_str()))
             {
-                // TODO: use option variable instead of "this hack"
-                result = MLIRHelper::replaceAll(dataPtr, "@dllimport", "@dllimport('.')");
-                dataPtr = result.c_str();
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
-
-            {
-                MLIRLocationGuard vgLoc(overwriteLoc); 
-                overwriteLoc = location;
-
-                auto importData = convertUTF8toWide(dataPtr);
-                if (mlir::failed(parsePartialStatements(importData, genContext, false)))
+                std::string result;
+                // process shared lib declarations
+                auto dataPtr = *(const char**)addrOfDeclText;
+                if (dynamic)
                 {
-                    //assert(false);
-                    return mlir::failure();
-                }            
+                    // TODO: use option variable instead of "this hack"
+                    result = MLIRHelper::replaceAll(dataPtr, "@dllimport", "@dllimport('.')");
+                    dataPtr = result.c_str();
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
+
+                {
+                    MLIRLocationGuard vgLoc(overwriteLoc); 
+                    overwriteLoc = location;
+
+                    auto importData = convertUTF8toWide(dataPtr);
+                    if (mlir::failed(parsePartialStatements(importData, genContext, false)))
+                    {
+                        //assert(false);
+                        return mlir::failure();
+                    }            
+                }
             }
-        }
-        else
-        {
-            emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");
+            else
+            {
+                emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");
+            }
         }
 
         return mlir::success();
