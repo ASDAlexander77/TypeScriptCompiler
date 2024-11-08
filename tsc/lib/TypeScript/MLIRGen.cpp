@@ -424,7 +424,13 @@ class MLIRGenImpl
         VariableClass varClass = VariableType::Var;
         varClass.isExport = true;
         varClass.isPublic = true;
-        auto varType = registerVariable(loc, SHARED_LIB_DECLARATIONS_2UNDERSCORE, true, varClass, typeWithInit, genContext);
+
+        std::string varName(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
+        varName.append("_");
+        varName.append(mainSourceFileName.str());
+        auto varNameRef = StringRef(varName).copy(stringAllocator);
+        
+        auto varType = registerVariable(loc, varNameRef, true, varClass, typeWithInit, genContext);
 #endif        
 
 #ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
