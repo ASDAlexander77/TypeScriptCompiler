@@ -800,7 +800,7 @@ class MLIRGenImpl
 #ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
         // loading Binary to get list of symbols
         SmallVector<StringRef> symbolsAll;
-        Dump::getSymbols(filePath, symbolsAll);
+        Dump::getSymbols(filePath, symbolsAll, stringAllocator);
 
         for (auto symbol : symbolsAll)
         {

@@ -26,7 +26,7 @@ std::unique_ptr<Dumper> createELFDumper(const ELFObjectFileBase &elfObjectFile)
     return createDumperT(cast<ELF64BEObjectFile>(elfObjectFile));
 }
 
-void COFFDumper::getSymbols(SmallVector<StringRef> &symbols)
+void COFFDumper::getSymbols(SmallVector<StringRef> &symbols, BumpPtrAllocator &stringAllocator)
 {
     export_directory_iterator I = coffObj.export_directory_begin();
     export_directory_iterator E = coffObj.export_directory_end();
@@ -45,7 +45,7 @@ void COFFDumper::getSymbols(SmallVector<StringRef> &symbols)
 
         if (!name.empty())
         {
-            symbols.push_back(name);
+            symbols.push_back(StringRef(name).copy(stringAllocator));
         }
     }
 }
@@ -70,7 +70,7 @@ Expected<std::unique_ptr<Dumper>> createDumper(const ObjectFile &objFile)
 namespace Dump
 {
 
-void getSymbols(StringRef filePath, SmallVector<StringRef> &symbols)
+void getSymbols(StringRef filePath, SmallVector<StringRef> &symbols, llvm::BumpPtrAllocator &stringAllocator)
 {
     auto expectedOwningBinary = createBinary(filePath);
     if (expectedOwningBinary)
@@ -84,7 +84,7 @@ void getSymbols(StringRef filePath, SmallVector<StringRef> &symbols)
             }
 
             auto &dumper = **dumperOrErr;
-            dumper.getSymbols(symbols);
+            dumper.getSymbols(symbols, stringAllocator);
         }
     }
 }

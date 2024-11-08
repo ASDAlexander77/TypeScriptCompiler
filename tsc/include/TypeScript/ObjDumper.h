@@ -5,6 +5,8 @@
 #include "llvm/Object/COFF.h"
 #include "llvm/Object/ELFObjectFile.h"
 
+#include "llvm/Support/Allocator.h"
+
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -16,7 +18,7 @@ class Dumper {
 public:
   virtual ~Dumper() {}
 
-  virtual void getSymbols(SmallVector<StringRef>&) = 0;
+  virtual void getSymbols(SmallVector<StringRef>&, BumpPtrAllocator &) = 0;
 };
 
 class COFFDumper : public Dumper {
@@ -26,7 +28,7 @@ public:
     is64 = !coffObj.getPE32Header();
   }
 
-  void getSymbols(SmallVector<StringRef>&) override;
+  void getSymbols(SmallVector<StringRef>&, BumpPtrAllocator &) override;
 
 private:
 
@@ -40,7 +42,7 @@ class ELFDumper : public Dumper
 public:
     ELFDumper(const ELFObjectFile<ELFT> &objFile) : elfObjectFile(objFile) {}
 
-    void getSymbols(llvm::SmallVector<llvm::StringRef>& symbols) override
+    void getSymbols(llvm::SmallVector<StringRef>& symbols, BumpPtrAllocator &stringAllocator) override
     {
         for (auto I = elfObjectFile.symbol_begin(); I != elfObjectFile.symbol_end(); ++I)
         {
@@ -51,7 +53,7 @@ public:
                 auto name = nameOrError.get();
                 if (!name.empty())
                 {
-                    symbols.push_back(name);
+                    symbols.push_back(StringRef(name).copy(stringAllocator));
                 }
             }
         }
@@ -69,7 +71,7 @@ static std::unique_ptr<Dumper> createDumperT(const ELFObjectFile<ELFT> &elfObjec
 
 namespace Dump
 {
-    void getSymbols(llvm::StringRef, SmallVector<StringRef> &);
+    void getSymbols(llvm::StringRef, SmallVector<StringRef> &, BumpPtrAllocator &);
 }
 
 std::unique_ptr<Dumper> createCOFFDumper(const COFFObjectFile &);
