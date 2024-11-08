@@ -48,7 +48,11 @@ public:
             auto nameOrError = symbol.getName();
             if (nameOrError)
             {
-                symbols.push_back(nameOrError.get());
+                auto name = nameOrError.get();
+                if (!name.empty())
+                {
+                    symbols.push_back(name);
+                }
             }
         }
     }

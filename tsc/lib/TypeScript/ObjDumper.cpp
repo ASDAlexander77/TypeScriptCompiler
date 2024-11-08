@@ -35,61 +35,17 @@ void COFFDumper::getSymbols(SmallVector<StringRef> &symbols)
         return;
     }
 
-    StringRef dllName;
-    uint32_t ordinalBase;
-    if (I->getDllName(dllName))
-    {
-        return;
-    }
-
-    if (I->getOrdinalBase(ordinalBase))
-    {
-        return;
-    }
-
     for (; I != E; I = ++I)
     {
-        uint32_t RVA;
-        if (I->getExportRVA(RVA))
-        {
-            return;
-        }
-
         StringRef name;
         if (I->getSymbolName(name))
         {
             continue;
         }
 
-        if (!RVA && name.empty())
-        {
-            continue;
-        }
-
-        uint32_t ordinal;
-        if (I->getOrdinal(ordinal))
-        {
-            return;
-        }
-
-        bool isForwarder;
-        if (I->isForwarder(isForwarder))
-        {
-            return;
-        }
-
         if (!name.empty())
         {
             symbols.push_back(name);
-        }
-
-        if (isForwarder)
-        {
-            StringRef s;
-            if (I->getForwardTo(s))
-            {
-                return;
-            }
         }
     }
 }
