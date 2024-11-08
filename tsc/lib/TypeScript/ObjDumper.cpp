@@ -70,10 +70,8 @@ Expected<std::unique_ptr<Dumper>> createDumper(const ObjectFile &objFile)
 namespace Dump
 {
 
-SmallVector<StringRef> getSymbols(StringRef filePath)
+void getSymbols(StringRef filePath, SmallVector<StringRef> &symbols)
 {
-    SmallVector<StringRef> symbols{};
-
     auto expectedOwningBinary = createBinary(filePath);
     if (expectedOwningBinary)
     {
@@ -82,16 +80,13 @@ SmallVector<StringRef> getSymbols(StringRef filePath)
         {
             auto dumperOrErr = createDumper(*objFile);
             if (!dumperOrErr) {
-                // report error
-                return symbols;
+                return;
             }
 
             auto &dumper = **dumperOrErr;
             dumper.getSymbols(symbols);
         }
     }
-
-    return symbols;
 }
 
 }

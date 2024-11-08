@@ -781,7 +781,8 @@ class MLIRGenImpl
         }
 
         // loading Binary to get list of symbols
-        auto symbols = Dump::getSymbols(filePath);
+        SmallVector<StringRef> symbols;
+        Dump::getSymbols(filePath, symbols);
 
         // load library
         auto name = MLIRHelper::getAnonymousName(location, ".ll", "");

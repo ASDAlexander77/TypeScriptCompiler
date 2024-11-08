@@ -69,7 +69,7 @@ static std::unique_ptr<Dumper> createDumperT(const ELFObjectFile<ELFT> &elfObjec
 
 namespace Dump
 {
-    llvm::SmallVector<llvm::StringRef> getSymbols(llvm::StringRef filePath);
+    void getSymbols(llvm::StringRef, SmallVector<StringRef> &);
 }
 
 std::unique_ptr<Dumper> createCOFFDumper(const COFFObjectFile &);
