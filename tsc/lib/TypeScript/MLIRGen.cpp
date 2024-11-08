@@ -875,7 +875,7 @@ class MLIRGenImpl
                     overwriteLoc = location;
 
                     auto importData = convertUTF8toWide(dataPtr);
-                    if (mlir::failed(parsePartialStatements(importData, genContext, false)))
+                    if (mlir::failed(parsePartialStatements(importData, genContext, false, true)))
                     {
                         //assert(false);
                         return mlir::failure();
@@ -4124,6 +4124,21 @@ class MLIRGenImpl
             varClass.isPublic = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
             varClass.isExport = getExportModifier(variableDeclarationListAST->parent);
             MLIRHelper::iterateDecorators(variableDeclarationListAST->parent, [&](std::string name, SmallVector<std::string> args) {
+                if (name == DLL_EXPORT)
+                {
+                    varClass.isExport = true;
+                }
+
+                if (name == DLL_IMPORT)
+                {
+                    varClass.isImport = true;
+                    // it has parameter, means this is dynamic import, should point to dll path
+                    if (args.size() > 0)
+                    {
+                        varClass.isDynamicImport = true;
+                    }
+                }                
+
                 if (name == "used") {
                     varClass.isUsed = true;
                 }
@@ -22793,10 +22808,11 @@ genContext);
         return parsePartialStatements(src, emptyContext);
     }
 
-    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true)
+    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true, bool file_d_ts = false)
     {
         Parser parser;
-        auto module = parser.parseSourceFile(S("virtual"), src, ScriptTarget::Latest);
+        // .d.ts will mark all variables as external (be careful)
+        auto module = parser.parseSourceFile(file_d_ts ? S("virtual.d.ts") : S("virtual.ts"), src, ScriptTarget::Latest);
 
         MLIRNamespaceGuard nsGuard(currentNamespace);
         if (useRootNamesapce)
