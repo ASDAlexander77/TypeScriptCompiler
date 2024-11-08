@@ -15,6 +15,17 @@ std::unique_ptr<Dumper> createCOFFDumper(const object::COFFObjectFile &obj) {
   return std::make_unique<COFFDumper>(obj);
 }
 
+std::unique_ptr<Dumper> createELFDumper(const ELFObjectFileBase &elfObjectFile)
+{
+    if (const auto *o = dyn_cast<ELF32LEObjectFile>(&elfObjectFile))
+        return createDumperT(*o);
+    if (const auto *o = dyn_cast<ELF32BEObjectFile>(&elfObjectFile))
+        return createDumperT(*o);
+    if (const auto *o = dyn_cast<ELF64LEObjectFile>(&elfObjectFile))
+        return createDumperT(*o);
+    return createDumperT(cast<ELF64BEObjectFile>(elfObjectFile));
+}
+
 void COFFDumper::getSymbols(SmallVector<StringRef> &symbols)
 {
     export_directory_iterator I = coffObj.export_directory_begin();
@@ -87,8 +98,8 @@ Expected<std::unique_ptr<Dumper>> createDumper(const ObjectFile &objFile)
 {
     if (const auto *obj = dyn_cast<COFFObjectFile>(&objFile))
         return createCOFFDumper(*obj);
-    // if (const auto *obj = dyn_cast<ELFObjectFileBase>(&objFile))
-    //     return createELFDumper(*obj);
+    if (const auto *obj = dyn_cast<ELFObjectFileBase>(&objFile))
+        return createELFDumper(*obj);
     // if (const auto *obj = dyn_cast<MachOObjectFile>(&objFile))
     //     return createMachODumper(*obj);
     // if (const auto *obj = dyn_cast<WasmObjectFile>(&objFile))
