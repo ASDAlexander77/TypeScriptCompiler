@@ -2043,7 +2043,8 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
   let builders = [
     OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, "LLVM::Linkage":$linkage)>,
     OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, "LLVM::Linkage":$linkage, "Attribute":$value)>,
-    OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, "LLVM::Linkage":$linkage, "ArrayRef<NamedAttribute>":$attrs)>    
+    OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, "LLVM::Linkage":$linkage, "ArrayRef<NamedAttribute>":$attrs)>,
+    OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, "LLVM::Linkage":$linkage, "Attribute":$value, "ArrayRef<NamedAttribute>":$attrs)>    
   ];
 
   let extraClassDeclaration = [{
