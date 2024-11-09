@@ -5767,6 +5767,11 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
                 auto [line, column] = lineAndColumn;
 
+                if (!file)
+                {
+                    continue;
+                }
+
                 mlir::Type dataType;
                 auto argIndex = 0;
                 auto isGlobal = false;

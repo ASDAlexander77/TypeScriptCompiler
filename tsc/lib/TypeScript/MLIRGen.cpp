@@ -3413,7 +3413,7 @@ class MLIRGenImpl
             if (this->compileOptions.generateDebugInfo)
             {
                 MLIRDebugInfoHelper mti(builder, debugScope);
-                auto namedLoc = mti.combineWithCompileUnitScopeAndName(location, variableDeclarationInfo.variableName);
+                auto namedLoc = mti.combineWithCurrentScopeAndName(location, variableDeclarationInfo.variableName);
                 location = namedLoc;
             }
 
