@@ -3362,20 +3362,6 @@ class MLIRGenImpl
             theModule.getBody()->walk(lastUse);
 
             SmallVector<mlir::NamedAttribute> attrs;
-            if (variableDeclarationInfo.isExternal || variableDeclarationInfo.comdat != Select::NotSet)
-            {
-                attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("External")});
-            }
-            else if (variableDeclarationInfo.isAppendingLinkage)
-            {
-                attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("Appending")});
-            }
-            else if (variableDeclarationInfo.isSpecialization)
-            {
-                attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("LinkonceODR")});
-                // TODO: dso_local somehow linked with -fno-pic
-                //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
-            }
 
             // add modifiers
             if (variableDeclarationInfo.isExport)
@@ -3396,8 +3382,24 @@ class MLIRGenImpl
                 });
             }  
 
+            auto linkage = LLVM::Linkage::Private;
+            if (variableDeclarationInfo.isExternal || variableDeclarationInfo.comdat != Select::NotSet)
+            {
+                linkage = LLVM::Linkage::External;
+            }
+            else if (variableDeclarationInfo.isAppendingLinkage)
+            {
+                linkage = LLVM::Linkage::Appending;
+            }
+            else if (variableDeclarationInfo.isSpecialization)
+            {
+                linkage = LLVM::Linkage::LinkonceODR;
+                // TODO: dso_local somehow linked with -fno-pic
+                //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
+            }
+
             globalOp = builder.create<mlir_ts::GlobalOp>(
-                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, mlir::Attribute(), attrs);                
+                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, linkage, attrs);                
 
             variableDeclarationInfo.globalOp = globalOp;
 
@@ -22316,22 +22318,6 @@ genContext);
         return mlir::success();
     }
 
-    std::string to_print(mlir::Type type)
-    {
-        stringstream exportType;
-        MLIRPrinter mp{};
-        mp.printType<ostream>(exportType, type);
-        return convertWideToUTF8(exportType.str());      
-    }
-
-    string to_wprint(mlir::Type type)
-    {
-        stringstream exportType;
-        MLIRPrinter mp{};
-        mp.printType<ostream>(exportType, type);
-        return exportType.str();      
-    }
-
     void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n", ts::Node id = {}, mlir::Type returnTypeIfNotProvided = {})
     {
         // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
@@ -22844,7 +22830,7 @@ genContext);
     {
         Parser parser;
         // .d.ts will mark all variables as external (be careful)
-        auto module = parser.parseSourceFile(file_d_ts ? S("virtual.d.ts") : S("virtual.ts"), src, ScriptTarget::Latest);
+        auto module = parser.parseSourceFile(file_d_ts ? S("partial.d.ts") : S("partial.ts"), src, ScriptTarget::Latest);
 
         MLIRNamespaceGuard nsGuard(currentNamespace);
         if (useRootNamesapce)
@@ -22868,6 +22854,22 @@ genContext);
         }
 
         return mlir::success();
+    }
+
+    std::string to_print(mlir::Type type)
+    {
+        stringstream exportType;
+        MLIRPrinter mp{};
+        mp.printType<ostream>(exportType, type);
+        return convertWideToUTF8(exportType.str());      
+    }
+
+    string to_wprint(mlir::Type type)
+    {
+        stringstream exportType;
+        MLIRPrinter mp{};
+        mp.printType<ostream>(exportType, type);
+        return exportType.str();      
     }
 
     void printDebug(ts::Node node)

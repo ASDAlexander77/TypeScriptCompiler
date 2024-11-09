@@ -1623,8 +1623,12 @@ void mlir_ts::LogicalBinaryOp::getCanonicalizationPatterns(RewritePatternSet &re
     results.insert<SimplifyStaticExpression>(context);
 }
 
-void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, Attribute value,
-                              ArrayRef<NamedAttribute> attrs)
+void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, LLVM::Linkage linkage)
+{
+    mlir_ts::GlobalOp::build(builder, result, type, isConstant, name, linkage, Attribute{});
+}
+
+void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, LLVM::Linkage linkage, Attribute value)
 {
     result.addAttribute(SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
     result.addAttribute("type", TypeAttr::get(type));
@@ -1633,10 +1637,26 @@ void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type t
         result.addAttribute("constant", builder.getUnitAttr());
     }
 
+    result.addAttribute("linkage", builder.getStringAttr(LLVM::linkage::stringifyLinkage(linkage)));
+
     if (value)
     {
         result.addAttribute("value", value);
     }
+
+    result.addRegion();
+}
+
+void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, LLVM::Linkage linkage, ArrayRef<NamedAttribute> attrs)
+{
+    result.addAttribute(SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
+    result.addAttribute("type", TypeAttr::get(type));
+    if (isConstant)
+    {
+        result.addAttribute("constant", builder.getUnitAttr());
+    }
+
+    result.addAttribute("linkage", builder.getStringAttr(LLVM::linkage::stringifyLinkage(linkage)));
 
     result.attributes.append(attrs.begin(), attrs.end());
     result.addRegion();

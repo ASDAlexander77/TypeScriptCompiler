@@ -3235,7 +3235,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
         globalOp.getInitializerRegion().walk(visitorAllOps);
 
-        auto linkage = lch.getLinkage(globalOp);
+        auto linkage = globalOp.getLinkage();
         LLVM::GlobalOp llvmGlobalOp;
         if (createAsGlobalConstructor)
         {
@@ -3315,6 +3315,17 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             }
         }
 
+        if (tsLlvmContext->compileOptions.generateDebugInfo)
+        {
+            LocationHelper lh(rewriter.getContext());
+            if (auto globalVarAttrFusedLoc = dyn_cast<mlir::FusedLocWith<LLVM::DIGlobalVariableAttr>>(loc))
+            {
+                auto varInfo = globalVarAttrFusedLoc.getMetadata();
+                LLVM::DIExpressionAttr exprAttr;
+                llvmGlobalOp.setDbgExprAttr(LLVM::DIGlobalVariableExpressionAttr::get(rewriter.getContext(), varInfo, exprAttr));
+            }
+        }
+
         rewriter.eraseOp(globalOp);
         return success();
     }
@@ -3331,6 +3342,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             comdatOp = rewriter.create<mlir::LLVM::ComdatOp>(module.getLoc(), comdatName);
         }
 
+        // TODO: add check if name already added
         mlir::OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPointToEnd(&comdatOp.getBody().back());
         auto selectorOp = rewriter.create<mlir::LLVM::ComdatSelectorOp>(
@@ -5712,10 +5724,13 @@ static void selectAllVariablesAndDebugVariables(mlir::ModuleOp &module, SmallPtr
         {
             workSet.insert(variableOp);
         }
-
-        if (auto debugVariableOp = dyn_cast_or_null<DebugVariableOp>(op))
+        else if (auto debugVariableOp = dyn_cast_or_null<DebugVariableOp>(op))
         {
             workSet.insert(debugVariableOp);
+        }        
+        else if (auto globalOp = dyn_cast_or_null<GlobalOp>(op))
+        {
+            workSet.insert(globalOp);
         }        
     };
 
@@ -5757,6 +5772,8 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
 
                 mlir::Type dataType;
                 auto argIndex = 0;
+                auto isGlobal = false;
+                mlir::StringAttr linkageAttr;
                 if (auto variableOp = dyn_cast<mlir_ts::VariableOp>(op))
                 {
                     dataType = variableOp.getType().getElementType();
@@ -5766,6 +5783,12 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 else if (auto debugVariableOp = dyn_cast<mlir_ts::DebugVariableOp>(op))
                 {
                     dataType = debugVariableOp.getInitializer().getType();
+                }
+                else if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
+                {
+                    dataType = globalOp.getType();
+                    linkageAttr = globalOp.getLinkageAttrName();
+                    isGlobal = true;
                 }
 
                 // TODO: finish the DI logic
@@ -5779,10 +5802,21 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
 
                 auto name = namedLoc.getName();
                 auto scope = scopeFusedLoc.getMetadata();
-                auto varInfo = LLVM::DILocalVariableAttr::get(
-                    location.getContext(), scope, name, file, line, argIndex, alignInBits, diType);
-
-                op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
+                
+                if (isGlobal)
+                {
+                    // recreate globalVar later to set correct LinkageAttr and isDefined
+                    auto varInfo = LLVM::DIGlobalVariableAttr::get(
+                        location.getContext(), scope, name, linkageAttr, 
+                        file, line, diType, true, true, alignInBits);
+                    op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
+                }
+                else
+                {
+                    auto varInfo = LLVM::DILocalVariableAttr::get(
+                        location.getContext(), scope, name, file, line, argIndex, alignInBits, diType);
+                    op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
+                }
             }
         }
     }    

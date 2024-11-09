@@ -292,10 +292,7 @@ class MLIRRTTIHelperVCLinux
             return mlir::failure();
         }
 
-        SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({ATTR("Linkage"), ATTR("External")});
-
-        rewriter.create<mlir_ts::GlobalOp>(loc, mth.getOpaqueType(), true, /*LLVM::Linkage::External,*/ name, mlir::Attribute{}, attrs);
+        rewriter.create<mlir_ts::GlobalOp>(loc, mth.getOpaqueType(), true, name, LLVM::Linkage::External);
         return mlir::success();
     }
 
@@ -370,11 +367,7 @@ class MLIRRTTIHelperVCLinux
             return mlir::failure();
         }
 
-        SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({ATTR("Linkage"), ATTR("LinkonceODR")});
-
-        rewriter.create<mlir_ts::GlobalOp>(loc, stringConstType(className, ti), true,
-                                           /*LLVM::Linkage::LinkonceODR,*/ name, mcl.getStringAttrWith0(label), attrs);
+        rewriter.create<mlir_ts::GlobalOp>(loc, stringConstType(className, ti), true, name, LLVM::Linkage::LinkonceODR, mcl.getStringAttrWith0(label));
 
         return mlir::success();
     }
@@ -473,13 +466,8 @@ class MLIRRTTIHelperVCLinux
             return mlir::failure();
         }
 
-        SmallVector<mlir::NamedAttribute> attrs;
-        attrs.push_back({ATTR("Linkage"), ATTR("LinkonceODR")});
-
         auto typeInfoType = getTIType(ti);
-
-        auto globalOp = rewriter.create<mlir_ts::GlobalOp>(loc, typeInfoType, true,
-                                                           /*LLVM::Linkage::LinkonceODR,*/ name, mlir::Attribute{}, attrs);
+        auto globalOp = rewriter.create<mlir_ts::GlobalOp>(loc, typeInfoType, true, name, LLVM::Linkage::LinkonceODR);
 
         {
             setGlobalOpWritingPoint(globalOp);

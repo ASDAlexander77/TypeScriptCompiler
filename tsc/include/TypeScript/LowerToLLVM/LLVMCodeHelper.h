@@ -64,34 +64,6 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return strVarName.str();
     }
 
-    LLVM::Linkage getLinkage(mlir::Operation *op)
-    {
-        //auto linkage = LLVM::Linkage::Internal;
-        auto linkage = LLVM::Linkage::External;
-        if (auto linkageAttr = op->getAttrOfType<StringAttr>("Linkage"))
-        {
-            auto val = linkageAttr.getValue();
-            if (val == "External")
-            {
-                linkage = LLVM::Linkage::External;
-            }
-            else if (val == "Linkonce")
-            {
-                linkage = LLVM::Linkage::Linkonce;
-            }
-            else if (val == "LinkonceODR")
-            {
-                linkage = LLVM::Linkage::LinkonceODR;
-            }
-            else if (val == "Appending")
-            {
-                linkage = LLVM::Linkage::Appending;
-            }
-        }
-
-        return linkage;
-    }
-
     LLVM::GlobalOp createUndefGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst,
                                                   LLVM::Linkage linkage = LLVM::Linkage::Internal)
     {

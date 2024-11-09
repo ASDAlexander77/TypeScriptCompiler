@@ -17,6 +17,7 @@
 #include "mlir/Interfaces/CopyOpInterface.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 namespace mlir
 {
