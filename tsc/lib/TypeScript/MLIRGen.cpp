@@ -3398,6 +3398,13 @@ class MLIRGenImpl
                 //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
             }
 
+            if (this->compileOptions.generateDebugInfo)
+            {
+                MLIRDebugInfoHelper mti(builder, debugScope);
+                auto namedLoc = mti.combineWithCurrentScopeAndName(location, variableDeclarationInfo.variableName);
+                location = namedLoc;
+            }
+
             globalOp = builder.create<mlir_ts::GlobalOp>(
                 location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, linkage, attrs);                
 
