@@ -7996,7 +7996,7 @@ class MLIRGenImpl
                             {
                                 SmallVector<char> res;
                                 intAttr.getValue().toString(res, 10, false);
-                                emitError(location) << "tcan't apply '-'. Too big value: " << std::string(res.data(), res.size()) << "";
+                                emitError(location) << "can't apply '-'. Too big value: " << std::string(res.data(), res.size()) << "";
                                 return mlir::Value();
                             }
 
@@ -9521,7 +9521,7 @@ class MLIRGenImpl
             auto propType = evaluateProperty(location, objectValue, cl.getName().str(), genContext);
             if (!propType)
             {
-                emitError(location, "Can't resolve property '") << cl.getName() << "' of type " << objectValue.getType();
+                emitError(location, "Can't resolve property '") << cl.getName() << "' of type " << to_print(objectValue.getType());
                 return mlir::failure();
             }
 
@@ -9785,7 +9785,7 @@ class MLIRGenImpl
 
         if (!value)
         {
-            emitError(location, "Can't resolve property '") << name << "' of type " << objectValue.getType();
+            emitError(location, "Can't resolve property '") << name << "' of type " << to_print(objectValue.getType());
             return mlir::failure();
         }
 
@@ -10559,7 +10559,7 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: " << arrayType
                                     << "\n";);
 
-            emitError(location) << "access expression is not applicable to " << arrayType;
+            emitError(location) << "access expression is not applicable to " << to_print(arrayType);
             return mlir::failure();
         }
 
@@ -16449,7 +16449,7 @@ genContext);
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
                 {
-                    emitError(location) << "method signature not matching for '" << name << "'{" << funcType
+                    emitError(location) << "method signature not matching for '" << name << "'{" << to_print(funcType)
                                         << "} for interface '" << newInterfacePtr->fullName << "' in class '"
                                         << newClassPtr->fullName << "'"
                                         << " found method: " << foundMethodFunctionType;
@@ -16490,8 +16490,8 @@ genContext);
                         if (!fieldRef)
                         {
                             emitError(location) << "can't find reference for field: " << methodOrField.fieldInfo.id
-                                                << " in interface: " << newInterfacePtr->interfaceType
-                                                << " for class: " << newClassPtr->classType;
+                                                << " in interface: " << newInterfacePtr->fullName
+                                                << " for class: " << newClassPtr->fullName;
                             return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                         }
 
@@ -17981,7 +17981,7 @@ genContext);
                     }
                     
                     emitError(location)
-                        << "field " << fieldInfo.id << " can't be found in tuple '" << srcTupleType << "'";
+                        << "field " << fieldInfo.id << " can't be found in tuple '" << to_print(srcTupleType) << "'";
                     return mlir::failure();
                 }                
 
@@ -18456,7 +18456,7 @@ genContext);
                     return V(newInterface);
                 }
 
-                emitError(location) << "type: " << classType << " missing interface: " << interfaceType;
+                emitError(location) << "type: " << classType.getName() << " missing interface: " << interfaceType.getName();
                 return mlir::failure();
             }
 
@@ -18687,7 +18687,7 @@ genContext);
             // fall through to finish cast operation
             if (!mth.CanCastFunctionTypeToFunctionType(valueType, type))
             {
-                emitError(location, "invalid cast from ") << valueType << " to " << type;
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();                
             }
 
@@ -18697,7 +18697,7 @@ genContext);
                 auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type).result == MatchResultType::Match;
                 if (!test)
                 {
-                    emitError(location) << valueType << " is not matching type " << type;
+                    emitError(location) << to_print(valueType) << " is not matching type " << to_print(type);
                     return mlir::failure();
                 }
             }
@@ -18726,14 +18726,14 @@ genContext);
             && !isa<mlir_ts::OpaqueType>(type) 
             && !isa<mlir_ts::AnyType>(type)
             && !isa<mlir_ts::BooleanType>(type)) {
-            emitError(location, "invalid cast from ") << valueType << " to " << type;
+            emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
             return mlir::failure();
         }        
 
         if (isa<mlir_ts::ArrayType>(type) && isa<mlir_ts::TupleType>(valueType) 
             || isa<mlir_ts::TupleType>(type) && isa<mlir_ts::ArrayType>(valueType))
         {
-            emitError(location, "invalid cast from ") << valueType << " to " << type;
+            emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
             return mlir::failure();
         }
 
@@ -20710,7 +20710,7 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! can't take 'keyof' from: " << type << "\n";);
 
-        emitError(location, "can't take keyof: ") << type;
+        emitError(location, "can't take keyof: ") << to_print(type);
 
         return mlir::Type();
     }
@@ -22316,6 +22316,22 @@ genContext);
         return mlir::success();
     }
 
+    std::string to_print(mlir::Type type)
+    {
+        stringstream exportType;
+        MLIRPrinter mp{};
+        mp.printType<ostream>(exportType, type);
+        return convertWideToUTF8(exportType.str());      
+    }
+
+    string to_wprint(mlir::Type type)
+    {
+        stringstream exportType;
+        MLIRPrinter mp{};
+        mp.printType<ostream>(exportType, type);
+        return exportType.str();      
+    }
+
     void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n", ts::Node id = {}, mlir::Type returnTypeIfNotProvided = {})
     {
         // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
@@ -22334,10 +22350,7 @@ genContext);
                     return string{};
                 } 
 
-                stringstream exportType;
-                MLIRPrinter mp{};
-                mp.printType<ostream>(exportType, returnTypeIfNotProvided);
-                return exportType.str();            
+                return to_wprint(returnTypeIfNotProvided);      
             });
         }
 
