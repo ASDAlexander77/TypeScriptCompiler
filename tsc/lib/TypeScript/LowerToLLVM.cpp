@@ -5712,6 +5712,11 @@ static void selectAllVariablesAndDebugVariables(mlir::ModuleOp &module, SmallPtr
     auto visitorVariablesAndDebugVariablesOp = [&](Operation *op) {
         if (auto variableOp = dyn_cast_or_null<VariableOp>(op))
         {
+            if (variableOp->getParentOfType<mlir_ts::GlobalOp>())
+            {
+                return;
+            }
+
             workSet.insert(variableOp);
         }
         else if (auto debugVariableOp = dyn_cast_or_null<DebugVariableOp>(op))
@@ -5746,6 +5751,8 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
 
     for (auto op : workSet)
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! workSet DI: " << *op << "\n");
+
         auto location = op->getLoc();
         //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
         if (auto scopeFusedLoc = dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>(location))
@@ -5763,7 +5770,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 mlir::Type dataType;
                 auto argIndex = 0;
                 auto isGlobal = false;
-                mlir::StringAttr linkageAttr;
+                mlir::StringAttr linkageNameAttr;
                 if (auto variableOp = dyn_cast<mlir_ts::VariableOp>(op))
                 {
                     dataType = variableOp.getType().getElementType();
@@ -5777,7 +5784,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 else if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
                 {
                     dataType = globalOp.getType();
-                    linkageAttr = globalOp.getLinkageAttrName();
+                    linkageNameAttr = globalOp.getSymNameAttr();
                     isGlobal = true;
                 }
 
@@ -5797,8 +5804,8 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 {
                     // recreate globalVar later to set correct LinkageAttr and isDefined
                     auto varInfo = LLVM::DIGlobalVariableAttr::get(
-                        location.getContext(), scope, name, linkageAttr, 
-                        file, line, diType, true, true, alignInBits);
+                        location.getContext(), scope, name, linkageNameAttr, 
+                        file, line, diType, false, true, alignInBits);
                     op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
                 }
                 else

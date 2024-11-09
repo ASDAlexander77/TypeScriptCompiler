@@ -44,6 +44,26 @@ class MLIRDebugInfoHelper
         return location;        
     }
 
+    mlir::Location combineWithFileScope(mlir::Location location)
+    {
+        if (auto fileScope = dyn_cast_or_null<mlir::LLVM::DIScopeAttr>(debugScope.lookup(FILE_DEBUG_SCOPE)))
+        {
+            return combine(location, fileScope);          
+        }
+
+        return location;
+    }
+
+    mlir::Location combineWithCompileUnitScope(mlir::Location location)
+    {
+        if (auto cuScope = dyn_cast_or_null<mlir::LLVM::DIScopeAttr>(debugScope.lookup(CU_DEBUG_SCOPE)))
+        {
+            return combine(location, cuScope);          
+        }
+
+        return location;
+    }
+
     mlir::Location combineWithCurrentScope(mlir::Location location)
     {
         if (auto localScope = dyn_cast_or_null<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE)))
@@ -73,6 +93,16 @@ class MLIRDebugInfoHelper
     {
         return combineWithCurrentScope(combineWithName(location, name));
     }
+
+    mlir::Location combineWithFileScopeAndName(mlir::Location location, StringRef name)
+    {
+        return combineWithFileScope(combineWithName(location, name));
+    }    
+
+    mlir::Location combineWithCompileUnitScopeAndName(mlir::Location location, StringRef name)
+    {
+        return combineWithCompileUnitScope(combineWithName(location, name));
+    }    
 
     void clearDebugScope() 
     {
