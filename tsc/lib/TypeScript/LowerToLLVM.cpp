@@ -3272,8 +3272,6 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         {
             auto attrs = globalOp->getAttrs();
 
-            auto toAddComdat = false;
-            auto comdat = mlir::LLVM::comdat::Comdat::Any;
             for (auto &attr : attrs)
             {
                 if (attr.getName() == "export")
@@ -3296,21 +3294,13 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 {
                     llvmGlobalOp.setSection(DLL_IMPORT);
                 }
-
-                if (attr.getName() == "Linkage" && cast<mlir::StringAttr>(attr.getValue()).getValue() == "LinkonceODR") 
-                {
-                    toAddComdat = true;
-                }
-
-                if (attr.getName() == "comdat") 
-                {
-                    toAddComdat = true;
-                    comdat = static_cast<mlir::LLVM::comdat::Comdat>(cast<mlir::IntegerAttr>(attr.getValue()).getValue().getLimitedValue());
-                }                
             }
 
-            if (toAddComdat)
+            if (globalOp.getLinkage() == LLVM::Linkage::LinkonceODR || globalOp.getComdat().has_value())
             {
+                auto comdat = globalOp.getComdat().has_value() 
+                    ? static_cast<mlir::LLVM::comdat::Comdat>(globalOp.getComdat().value()) 
+                    : mlir::LLVM::comdat::Comdat::Any;
                 addComdat(llvmGlobalOp, rewriter, comdat);
             }
         }

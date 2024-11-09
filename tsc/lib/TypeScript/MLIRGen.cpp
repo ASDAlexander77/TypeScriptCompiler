@@ -3128,6 +3128,42 @@ class MLIRGenImpl
             return varDecl;
         }
 
+        bool getIsPublic()
+        {
+            if (isExternal)
+            {
+                return true;
+            }
+
+            if (!isExport && !isPublic)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        LLVM::Linkage getLinkage()
+        {
+            auto linkage = LLVM::Linkage::Private;
+            if (isExternal || comdat != Select::NotSet)
+            {
+                linkage = LLVM::Linkage::External;
+            }
+            else if (isAppendingLinkage)
+            {
+                linkage = LLVM::Linkage::Appending;
+            }
+            else if (isSpecialization)
+            {
+                linkage = LLVM::Linkage::LinkonceODR;
+                // TODO: dso_local somehow linked with -fno-pic
+                //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
+            }
+
+            return linkage;            
+        }
+
         void printDebugInfo()
         {
             LLVM_DEBUG(dbgs() << "\n!! variable = " << fullName << " type: " << type << "\n";);
@@ -3374,30 +3410,6 @@ class MLIRGenImpl
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
             }  
 
-            if (variableDeclarationInfo.comdat != Select::NotSet)
-            {
-                attrs.push_back({
-                    mlir::StringAttr::get(builder.getContext(), "comdat"), 
-                    builder.getUI32IntegerAttr(static_cast<uint32_t>(variableDeclarationInfo.comdat))
-                });
-            }  
-
-            auto linkage = LLVM::Linkage::Private;
-            if (variableDeclarationInfo.isExternal || variableDeclarationInfo.comdat != Select::NotSet)
-            {
-                linkage = LLVM::Linkage::External;
-            }
-            else if (variableDeclarationInfo.isAppendingLinkage)
-            {
-                linkage = LLVM::Linkage::Appending;
-            }
-            else if (variableDeclarationInfo.isSpecialization)
-            {
-                linkage = LLVM::Linkage::LinkonceODR;
-                // TODO: dso_local somehow linked with -fno-pic
-                //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
-            }
-
             if (this->compileOptions.generateDebugInfo)
             {
                 MLIRDebugInfoHelper mti(builder, debugScope);
@@ -3406,7 +3418,12 @@ class MLIRGenImpl
             }
 
             globalOp = builder.create<mlir_ts::GlobalOp>(
-                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, linkage, attrs);                
+                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, variableDeclarationInfo.getLinkage(), attrs);                
+
+            if (variableDeclarationInfo.comdat != Select::NotSet)
+            {
+                globalOp.setComdatAttr(builder.getI32IntegerAttr(static_cast<int32_t>(variableDeclarationInfo.comdat)));
+            }  
 
             variableDeclarationInfo.globalOp = globalOp;
 
@@ -3417,9 +3434,17 @@ class MLIRGenImpl
 
             if (variableDeclarationInfo.scope == VariableScope::Global)
             {
-                if (variableDeclarationInfo.isExternal)
+                if (variableDeclarationInfo.getIsPublic())
                 {
                     globalOp.setPublic();
+                }
+                else 
+                {
+                    globalOp.setPrivate();
+                }
+
+                if (variableDeclarationInfo.isExternal)
+                {
                     if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext)))
                     {
                         return mlir::failure();
@@ -3434,15 +3459,6 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    if (!variableDeclarationInfo.isExport && !variableDeclarationInfo.isPublic)
-                    {
-                        globalOp.setPrivate();
-                    }
-                    else 
-                    {
-                        globalOp.setPublic();
-                    }
-
                     createGlobalVariableInitialization(location, globalOp, variableDeclarationInfo, genContext);
                 }
 

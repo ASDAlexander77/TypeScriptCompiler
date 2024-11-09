@@ -2036,7 +2036,7 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
     StrAttr:$sym_name,
     Linkage:$linkage,
     OptionalAttr<AnyAttr>:$value,
-    OptionalAttr<SymbolRefAttr>:$comdat
+    OptionalAttr<I32Attr>:$comdat
   );
 
   let regions = (region AnyRegion:$initializer);
