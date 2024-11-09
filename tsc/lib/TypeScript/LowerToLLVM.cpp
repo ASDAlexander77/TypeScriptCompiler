@@ -5805,6 +5805,8 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 auto name = namedLoc.getName();
                 auto scope = scopeFusedLoc.getMetadata();
                 
+                LLVM_DEBUG(llvm::dbgs() << "\n!! name: " << name << " scope: " << scope << "\n");
+
                 if (isGlobal)
                 {
                     // recreate globalVar later to set correct LinkageAttr and isDefined

@@ -132,7 +132,7 @@ class MLIRDebugInfoHelper
                 builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), sourceLanguage, file, producer, isOptimized, emissionKind, namedTable);        
         
             debugScope.insert(CU_DEBUG_SCOPE, compileUnit);
-            debugScope.insert(DEBUG_SCOPE, file);
+            debugScope.insert(DEBUG_SCOPE, compileUnit);
 
             return combine(location, compileUnit);
         }
