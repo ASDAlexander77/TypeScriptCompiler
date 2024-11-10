@@ -1874,7 +1874,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
         mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp,
         mlir_ts::ThrowCallOp, mlir_ts::SymbolCallInternalOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp,
-        mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp,
+        mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp, mlir_ts::AppendToUsedOp,
         mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp, mlir_ts::BoxOp, mlir_ts::UnboxOp,
         mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp, mlir_ts::GetTypeInfoFromUnionOp,
         mlir_ts::OptionalOp, mlir_ts::OptionalValueOp, mlir_ts::OptionalUndefOp,

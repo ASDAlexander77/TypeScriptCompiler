@@ -201,11 +201,6 @@ std::string getDefaultOutputFileName(enum Action emitAction)
     return fileNameResult;
 }
 
-std::string getDefaultOutputFileName()
-{
-    return getDefaultOutputFileName(emitAction);
-}
-
 std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action emitAction, std::string outputFilename)
 {
     // Open the file.
@@ -224,14 +219,4 @@ std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action emitAction, st
     }
 
     return FDOut;
-}
-
-std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action emitAction)
-{
-    if (outputFilename.empty())
-    {
-        outputFilename = getDefaultOutputFileName(emitAction);
-    }
-
-    return getOutputStream(emitAction, outputFilename);
 }

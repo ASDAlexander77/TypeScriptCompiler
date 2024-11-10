@@ -23,9 +23,15 @@ class StringRef;
 
 namespace typescript
 {
-::std::string dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source);
-mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::SourceMgr &sourceMgr,
-                                        CompileOptions &compileOptions);
+
+::std::string dumpFromSource(const llvm::StringRef &, const llvm::StringRef &);
+
+mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromMainSource(
+    const mlir::MLIRContext &, const llvm::StringRef &, const llvm::SourceMgr &, CompileOptions &);
+
+mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(
+    const mlir::MLIRContext &, llvm::SMLoc &, const llvm::StringRef &, const llvm::SourceMgr &, CompileOptions &);
+
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_MLIRGEN_H_

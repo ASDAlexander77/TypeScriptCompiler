@@ -1623,23 +1623,45 @@ void mlir_ts::LogicalBinaryOp::getCanonicalizationPatterns(RewritePatternSet &re
     results.insert<SimplifyStaticExpression>(context);
 }
 
-void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, Attribute value,
-                              ArrayRef<NamedAttribute> attrs)
+void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, LLVM::Linkage linkage)
 {
-    result.addAttribute(SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
-    result.addAttribute("type", TypeAttr::get(type));
+    mlir_ts::GlobalOp::build(builder, result, type, isConstant, name, linkage, Attribute{});
+}
+
+void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, LLVM::Linkage linkage, Attribute value)
+{
+    mlir_ts::GlobalOp::build(builder, result, type, isConstant, name, linkage, value, ArrayRef<NamedAttribute>{});
+}
+
+void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, LLVM::Linkage linkage, ArrayRef<NamedAttribute> attrs)
+{
+    mlir_ts::GlobalOp::build(builder, result, type, isConstant, name, linkage, Attribute{}, attrs);
+}
+
+void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &odsState, Type type, bool isConstant, StringRef sym_name, LLVM::Linkage linkage, Attribute value, ArrayRef<NamedAttribute> attrs)
+{
+    auto& prop = odsState.getOrAddProperties<Properties>();
+    prop.type = mlir::TypeAttr::get(type);
     if (isConstant)
     {
-        result.addAttribute("constant", builder.getUnitAttr());
+        prop.constant = builder.getUnitAttr();
     }
 
+    prop.sym_name = builder.getStringAttr(sym_name);
+    prop.linkage = LLVM::LinkageAttr::get(builder.getContext(), linkage);
     if (value)
     {
-        result.addAttribute("value", value);
+        prop.value = value;
     }
 
-    result.attributes.append(attrs.begin(), attrs.end());
-    result.addRegion();
+    // if (comdat)
+    // {
+    //     prop.comdat = comdat;
+    // }
+
+    odsState.attributes.append(attrs.begin(), attrs.end());
+
+    (void)odsState.addRegion();
 }
 
 //===----------------------------------------------------------------------===//

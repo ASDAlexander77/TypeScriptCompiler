@@ -3235,7 +3235,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
         globalOp.getInitializerRegion().walk(visitorAllOps);
 
-        auto linkage = lch.getLinkage(globalOp);
+        auto linkage = globalOp.getLinkage();
         LLVM::GlobalOp llvmGlobalOp;
         if (createAsGlobalConstructor)
         {
@@ -3272,8 +3272,6 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
         {
             auto attrs = globalOp->getAttrs();
 
-            auto toAddComdat = false;
-            auto comdat = mlir::LLVM::comdat::Comdat::Any;
             for (auto &attr : attrs)
             {
                 if (attr.getName() == "export")
@@ -3296,22 +3294,25 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 {
                     llvmGlobalOp.setSection(DLL_IMPORT);
                 }
-
-                if (attr.getName() == "Linkage" && cast<mlir::StringAttr>(attr.getValue()).getValue() == "LinkonceODR") 
-                {
-                    toAddComdat = true;
-                }
-
-                if (attr.getName() == "comdat") 
-                {
-                    toAddComdat = true;
-                    comdat = static_cast<mlir::LLVM::comdat::Comdat>(cast<mlir::IntegerAttr>(attr.getValue()).getValue().getLimitedValue());
-                }                
             }
 
-            if (toAddComdat)
+            if (globalOp.getLinkage() == LLVM::Linkage::LinkonceODR || globalOp.getComdat().has_value())
             {
+                auto comdat = globalOp.getComdat().has_value() 
+                    ? static_cast<mlir::LLVM::comdat::Comdat>(globalOp.getComdat().value()) 
+                    : mlir::LLVM::comdat::Comdat::Any;
                 addComdat(llvmGlobalOp, rewriter, comdat);
+            }
+        }
+
+        if (tsLlvmContext->compileOptions.generateDebugInfo)
+        {
+            LocationHelper lh(rewriter.getContext());
+            if (auto globalVarAttrFusedLoc = dyn_cast<mlir::FusedLocWith<LLVM::DIGlobalVariableAttr>>(loc))
+            {
+                auto varInfo = globalVarAttrFusedLoc.getMetadata();
+                LLVM::DIExpressionAttr exprAttr;
+                llvmGlobalOp.setDbgExprAttr(LLVM::DIGlobalVariableExpressionAttr::get(rewriter.getContext(), varInfo, exprAttr));
             }
         }
 
@@ -3331,6 +3332,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             comdatOp = rewriter.create<mlir::LLVM::ComdatOp>(module.getLoc(), comdatName);
         }
 
+        // TODO: add check if name already added
         mlir::OpBuilder::InsertionGuard guard(rewriter);
         rewriter.setInsertionPointToEnd(&comdatOp.getBody().back());
         auto selectorOp = rewriter.create<mlir::LLVM::ComdatSelectorOp>(
@@ -5110,6 +5112,24 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
     }
 };
 
+struct AppendToUsedOpLowering : public TsLlvmPattern<mlir_ts::AppendToUsedOp>
+{
+    using TsLlvmPattern<mlir_ts::AppendToUsedOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AppendToUsedOp appendToUsedOp, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = appendToUsedOp->getLoc();
+
+        LLVMCodeHelper lch(appendToUsedOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        
+        lch.createGlobalVarRegionWithAppendingSymbolRef("llvm.used", appendToUsedOp.getGlobalNameAttr(), "llvm.metadata");
+
+        rewriter.eraseOp(appendToUsedOp);
+        return success();
+    }
+};
+
 struct BodyInternalOpLowering : public TsLlvmPattern<mlir_ts::BodyInternalOp>
 {
     using TsLlvmPattern<mlir_ts::BodyInternalOp>::TsLlvmPattern;
@@ -5692,12 +5712,20 @@ static void selectAllVariablesAndDebugVariables(mlir::ModuleOp &module, SmallPtr
     auto visitorVariablesAndDebugVariablesOp = [&](Operation *op) {
         if (auto variableOp = dyn_cast_or_null<VariableOp>(op))
         {
+            if (variableOp->getParentOfType<mlir_ts::GlobalOp>())
+            {
+                return;
+            }
+
             workSet.insert(variableOp);
         }
-
-        if (auto debugVariableOp = dyn_cast_or_null<DebugVariableOp>(op))
+        else if (auto debugVariableOp = dyn_cast_or_null<DebugVariableOp>(op))
         {
             workSet.insert(debugVariableOp);
+        }        
+        else if (auto globalOp = dyn_cast_or_null<GlobalOp>(op))
+        {
+            workSet.insert(globalOp);
         }        
     };
 
@@ -5723,6 +5751,8 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
 
     for (auto op : workSet)
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! workSet DI: " << *op << "\n");
+
         auto location = op->getLoc();
         //DIScopeAttr scope, StringAttr name, DIFileAttr file, unsigned line, unsigned arg, unsigned alignInBits, DITypeAttr type
         if (auto scopeFusedLoc = dyn_cast<mlir::FusedLocWith<LLVM::DIScopeAttr>>(location))
@@ -5737,8 +5767,15 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
                 auto [line, column] = lineAndColumn;
 
+                if (!file)
+                {
+                    continue;
+                }
+
                 mlir::Type dataType;
                 auto argIndex = 0;
+                auto isGlobal = false;
+                mlir::StringAttr linkageNameAttr;
                 if (auto variableOp = dyn_cast<mlir_ts::VariableOp>(op))
                 {
                     dataType = variableOp.getType().getElementType();
@@ -5748,6 +5785,12 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 else if (auto debugVariableOp = dyn_cast<mlir_ts::DebugVariableOp>(op))
                 {
                     dataType = debugVariableOp.getInitializer().getType();
+                }
+                else if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
+                {
+                    dataType = globalOp.getType();
+                    linkageNameAttr = globalOp.getSymNameAttr();
+                    isGlobal = true;
                 }
 
                 // TODO: finish the DI logic
@@ -5761,10 +5804,23 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
 
                 auto name = namedLoc.getName();
                 auto scope = scopeFusedLoc.getMetadata();
-                auto varInfo = LLVM::DILocalVariableAttr::get(
-                    location.getContext(), scope, name, file, line, argIndex, alignInBits, diType);
+                
+                LLVM_DEBUG(llvm::dbgs() << "\n!! name: " << name << " scope: " << scope << "\n");
 
-                op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
+                if (isGlobal)
+                {
+                    // recreate globalVar later to set correct LinkageAttr and isDefined
+                    auto varInfo = LLVM::DIGlobalVariableAttr::get(
+                        location.getContext(), scope, name, linkageNameAttr, 
+                        file, line, diType, false, true, alignInBits);
+                    op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
+                }
+                else
+                {
+                    auto varInfo = LLVM::DILocalVariableAttr::get(
+                        location.getContext(), scope, name, file, line, argIndex, alignInBits, diType);
+                    op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
+                }
             }
         }
     }    
@@ -5943,7 +5999,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
         CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering,
         UnreachableOpLowering, SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, 
-        ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, ExtractInterfaceThisOpLowering, 
+        ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering, AppendToUsedOpLowering, ExtractInterfaceThisOpLowering, 
         ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering, CreateUnionInstanceOpLowering,
         GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering, BodyInternalOpLowering, BodyResultInternalOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS

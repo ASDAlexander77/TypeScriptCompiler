@@ -1,5 +1,6 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ToolOutputFile.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/WithColor.h"
 #include "llvm/TargetParser/Triple.h"
@@ -22,6 +23,7 @@ extern cl::opt<std::string> TargetTriple;
 extern cl::opt<enum Exports> exportAction;
 extern cl::opt<bool> enableBuiltins;
 extern cl::opt<bool> noDefaultLib;
+extern cl::opt<std::string> outputFilename;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -71,6 +73,13 @@ CompileOptions prepareOptions()
         || TheTriple.getArch() == llvm::Triple::renderscript64 // 64-bit RenderScript
     ) {        
         compileOptions.sizeBits = 64;
+    }
+
+    if (!outputFilename.empty())
+    {
+        llvm::SmallString<256> outputPath(outputFilename);
+        llvm::sys::path::remove_filename(outputPath);    
+        compileOptions.outputFolder = outputPath.str().str();
     }
 
     return compileOptions;

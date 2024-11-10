@@ -1,5 +1,9 @@
+@used
+let a = 10;
+
 @noinline
 @optnone
+@used
 function test1() {
     print("Hello 1");
 }

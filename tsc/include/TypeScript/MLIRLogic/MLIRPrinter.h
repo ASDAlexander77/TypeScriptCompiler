@@ -19,33 +19,6 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-enum class MatchResultType
-{
-    Match,
-    NotMatchArgCount,
-    NotMatchArg,
-    NotMatchResultCount,
-    NotMatchResult
-};
-
-struct MatchResult
-{
-    MatchResultType result;
-    unsigned index;
-};
-
-enum class ExtendsResult {
-    False,
-    True,
-    Never,
-    Any
-};
-
-inline bool isTrue(ExtendsResult val)
-{
-    return val == ExtendsResult::True || val == ExtendsResult::Any;
-}
-
 class MLIRPrinter
 {
   public:
@@ -186,12 +159,6 @@ class MLIRPrinter
     void printType(T &out, mlir::Type type)
     {
         llvm::TypeSwitch<mlir::Type>(type)
-            .template Case<mlir_ts::NullType>([&](auto t) {
-                out << "null";
-            })
-            .template Case<mlir_ts::UndefinedType>([&](auto t) {
-                out << "undefined";
-            })
             .template Case<mlir_ts::ArrayType>([&](auto t) {
                 printType(out, t.getElementType());
                 out << "[]";
@@ -235,6 +202,9 @@ class MLIRPrinter
                 out << "new ";
                 printFuncType(out, t);
             })
+            .template Case<mlir_ts::ExtensionFunctionType>([&](auto t) {
+                printFuncType(out, t);
+            })            
             .template Case<mlir_ts::InferType>([&](auto t) {
                 out << "infer ";
                 printType(out, t.getElementType());
@@ -319,6 +289,9 @@ class MLIRPrinter
             .template Case<mlir_ts::ObjectType>([&](auto t) {
                 out << "object";
             })
+            .template Case<mlir_ts::ObjectStorageType>([&](auto t) {
+                printTupleType(out, t);       
+            })
             .template Case<mlir_ts::NeverType>([&](auto) { 
                 out << "never";
             })
@@ -337,26 +310,47 @@ class MLIRPrinter
             .template Case<mlir_ts::BooleanType>([&](auto) {
                 out << "boolean";
             })
-            .template Case<mlir_ts::OpaqueType>([&](auto) {
-                out << "Opaque";
+            .template Case<mlir_ts::UndefinedType>([&](auto t) {
+                out << "undefined";
             })
             .template Case<mlir_ts::VoidType>([&](auto) {
                 out << "void";
             })
+            .template Case<mlir_ts::ByteType>([&](auto) {
+                out << "byte";
+            })
+            .template Case<mlir_ts::CharType>([&](auto) {
+                out << "char";
+            })
+            .template Case<mlir_ts::OpaqueType>([&](auto) {
+                out << "Opaque";
+            })
             .template Case<mlir_ts::ConstType>([&](auto) {
                 out << "const";
+            })
+            .template Case<mlir_ts::SymbolType>([&](auto) {
+                out << "Symbol";
+            })             
+            .template Case<mlir_ts::NullType>([&](auto) {
+                out << "null";
             })
             .template Case<mlir::NoneType>([&](auto) {
                 out << "void";
             })
-            .template Case<mlir::IntegerType>([&](auto) {
-                out << "TypeOf<1>";
+            .template Case<mlir::IntegerType>([&](auto t) {
+                if (t.isSigned())
+                    out << "s";
+                else if (t.isSignless())
+                    out << "i";
+                else
+                    out << "u";
+                out << t.getIntOrFloatBitWidth();
             })
-            .template Case<mlir::FloatType>([&](auto) {
-                out << "TypeOf<1.0>";
+            .template Case<mlir::FloatType>([&](auto t) {
+                out << "f" << t.getIntOrFloatBitWidth();
             })
             .template Case<mlir::IndexType>([&](auto) {
-                out << "TypeOf<1>";
+                out << "index";
             })
             .Default([](mlir::Type t) { 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Type print is not implemented for : " << t << "\n";);

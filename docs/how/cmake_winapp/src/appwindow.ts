@@ -8,7 +8,7 @@ export class AppWindow {
         this.handler_window = create_window('Hello World!', parent_handler_window, this.onMessage);
     }
 
-    protected onMessage(uMsg: uint32_t, wParam: uint64_t, lParam: uint64_t): intptr_t {
+    protected onMessage(uMsg: uint32_t, wParam: uint64_t, lParam: uint64_t): uint32_t {
         switch (uMsg) {
             case Messages.Close:
                 close_window(0);

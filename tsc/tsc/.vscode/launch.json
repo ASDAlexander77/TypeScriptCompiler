@@ -254,7 +254,7 @@
                 "I:/Playground/1.ts",
             ],
             "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
+            "cwd": "I:/Playground",
             "environment": [
                 { "name": "GC_LIB_PATH", "value": "${workspaceFolder}/../../__build/gc/msbuild/x64/debug/Debug" },
                 { "name": "LLVM_LIB_PATH", "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib" },
@@ -347,6 +347,8 @@
             "args": [
                 "-emit=dll",
                 "-opt",
+                "-debug-only=tsc",
+                "-mlir-disable-threading",                
                 "-o=I:/Playground/decl_enum.dll",
                 "I:/Playground/decl_enum.ts"
             ],

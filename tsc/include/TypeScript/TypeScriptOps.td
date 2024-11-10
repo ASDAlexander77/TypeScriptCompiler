@@ -4,6 +4,7 @@
 include "TypeScriptDialect.td"
 include "TypeScriptTypes.td"
 include "TypeScriptInterfaces.td"
+include "mlir/Dialect/LLVMIR/LLVMEnums.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
@@ -2033,14 +2034,17 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
     TypeAttr:$type,
     UnitAttr:$constant,
     StrAttr:$sym_name,
-    OptionalAttr<AnyAttr>:$value
+    Linkage:$linkage,
+    OptionalAttr<AnyAttr>:$value,
+    OptionalAttr<I32Attr>:$comdat
   );
 
   let regions = (region AnyRegion:$initializer);
-
   let builders = [
-    OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, 
-        "Attribute":$value, "ArrayRef<NamedAttribute>":$attrs)>
+    OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, "LLVM::Linkage":$linkage)>,
+    OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, "LLVM::Linkage":$linkage, "Attribute":$value)>,
+    OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, "LLVM::Linkage":$linkage, "ArrayRef<NamedAttribute>":$attrs)>,
+    OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, "LLVM::Linkage":$linkage, "Attribute":$value, "ArrayRef<NamedAttribute>":$attrs)>    
   ];
 
   let extraClassDeclaration = [{
@@ -2083,6 +2087,11 @@ def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
     /// Return the ts.func operation that is referenced here.
     FuncOp getFunction();
   }];
+}
+
+def TypeScript_AppendToUsedOp : TypeScript_Op<"AppendToUsed"> {
+  let arguments = (ins FlatSymbolRefAttr:$global_name);
+  let results = (outs );
 }
 
 def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",

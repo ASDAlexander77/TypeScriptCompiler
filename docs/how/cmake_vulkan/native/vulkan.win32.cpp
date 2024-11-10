@@ -1,9 +1,9 @@
-#define VULKAN_HPP_NO_SMART_HANDLE
-#define VULKAN_HPP_NO_EXCEPTIONS
-#define VULKAN_HPP_TYPESAFE_CONVERSION
+#define VULKAN_HPP_NO_SMART_HANDLE 1
+#define VULKAN_HPP_NO_EXCEPTIONS 1
+#define VULKAN_HPP_TYPESAFE_CONVERSION 1
 #include <vulkan/vulkan.h>
 #include <vulkan/vulkan.hpp>
-#include <vulkan/vk_sdk_platform.h>
+#include <vulkan/vk_platform.h>
 
 #include <iostream>
 #include <functional>

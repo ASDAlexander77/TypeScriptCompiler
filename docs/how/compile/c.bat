@@ -1,1 +1,0 @@
-tsc --gc-lib-path=I:\TypeScriptCompiler\3rdParty\gc\x64\debug --tsc-lib-path=I:\TypeScriptCompiler\__build\tsc\windows-msbuild-debug\lib --default-lib-path=I:\TypeScriptCompiler\__build\tsc\windows-msbuild-debug\bin --llvm-lib-path=I:\TypeScriptCompiler\3rdParty\llvm\x64\debug\lib --emit=exe 1.ts

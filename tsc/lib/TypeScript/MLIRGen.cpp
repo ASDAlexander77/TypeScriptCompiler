@@ -9,6 +9,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DiagnosticHelper.h"
+#include "TypeScript/ObjDumper.h"
 
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
@@ -17,10 +18,9 @@
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIRValueGuard.h"
 #include "TypeScript/MLIRLogic/MLIRDebugInfoHelper.h"
-
-#include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
-
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
+#include "TypeScript/MLIRLogic/MLIRPrinter.h"
+#include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 #include "TypeScript/VisitorAST.h"
 
 #include "TypeScript/DOM.h"
@@ -61,8 +61,10 @@
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/WithColor.h"
+#include "mlir/Support/FileUtilities.h"
+#include "llvm/Support/ToolOutputFile.h"
 //#include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/Support/WithColor.h"
 
 #include <algorithm>
 #include <iterator>
@@ -208,13 +210,24 @@ class MLIRGenImpl
         return loadSourceBuf(sourceFileLoc, sourceBuf, true);
     }    
 
+    std::pair<SourceFile, std::vector<SourceFile>> loadSourceFile(SMLoc loc)
+    {
+        const auto *sourceBuf = sourceMgr.getMemoryBuffer(sourceMgr.FindBufferContainingLoc(loc));
+        auto sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
+                    sourceBuf->getBufferIdentifier(), /*line=*/0, /*column=*/0);
+        return loadSourceBuf(sourceFileLoc, sourceBuf, true);
+    }        
+
     std::pair<SourceFile, std::vector<SourceFile>> loadSourceBuf(mlir::Location location, const llvm::MemoryBuffer *sourceBuf, bool isMain = false)
     {
         std::vector<SourceFile> includeFiles;
         std::vector<string> filesToProcess;
 
         Parser parser;
-        auto sourceFile = parser.parseSourceFile(stows(mainSourceFileName.str()), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
+        auto sourceFile = parser.parseSourceFile(
+            stows(mainSourceFileName.str()), 
+            stows(sourceBuf->getBuffer().str()), 
+            ScriptTarget::Latest);
 
         // add default lib
         if (isMain)
@@ -361,6 +374,26 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
+    /// Create a dependency declaration file for `--emit=dll` option.
+    ///
+    mlir::LogicalResult createDependencyDeclarationFile(StringRef outputFilename,
+                                            StringRef dependencyDeclFileBody) {
+        std::string errorMessage;
+        std::unique_ptr<llvm::ToolOutputFile> outputFile =
+            openOutputFile(outputFilename, &errorMessage);
+        if (!outputFile) {
+            llvm::errs() << errorMessage << "\n";
+            return failure();
+        }
+
+        outputFile->os() << dependencyDeclFileBody << "\n";
+        outputFile->keep();
+
+        return success();
+    }
+#endif    
+
     mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext)
     {
         if (!declExports.rdbuf()->in_avail())
@@ -368,8 +401,17 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
+        if (mainSourceFileName == SHARED_LIB_DECLARATIONS_FILENAME)
+        {
+            return mlir::success();
+        }
+#endif        
+
         auto declText = convertWideToUTF8(declExports.str());
 
+#ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
+        // default implementation to use variable to store declaration data
         LLVM_DEBUG(llvm::dbgs() << "\n!! export declaration: \n" << declText << "\n";);
 
         auto typeWithInit = [&](mlir::Location location, const GenContext &genContext) {
@@ -377,11 +419,30 @@ class MLIRGenImpl
             return std::make_tuple(litValue.getType(), litValue, TypeProvided::No);            
         };
 
+        auto loc = mlir::UnknownLoc::get(builder.getContext());
+
         VariableClass varClass = VariableType::Var;
         varClass.isExport = true;
         varClass.isPublic = true;
-        registerVariable(mlir::UnknownLoc::get(builder.getContext()), SHARED_LIB_DECLARATIONS, true, varClass, typeWithInit, genContext);
-        return mlir::success();
+
+        std::string varName(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
+        varName.append("_");
+        varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
+        varName.append(to_string(hash_value(mainSourceFileName)));
+        
+        auto varNameRef = StringRef(varName).copy(stringAllocator);
+        
+        auto varType = registerVariable(loc, varNameRef, true, varClass, typeWithInit, genContext);
+#endif        
+
+#ifdef GENERATE_IMPORT_INFO_USING_D_TS_FILE
+        llvm::SmallString<128> path(compileOptions.outputFolder);
+        llvm::sys::path::append(path, llvm::sys::path::filename(mainSourceFileName));
+        llvm::sys::path::replace_extension(path, ".d.ts");
+        return createDependencyDeclarationFile(path, declText);
+#else   
+        return success();        
+#endif        
     }
 
     int processStatements(NodeArray<Statement> statements,
@@ -737,6 +798,29 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        SmallVector<StringRef> symbols;
+#ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
+        // loading Binary to get list of symbols
+        SmallVector<StringRef> symbolsAll;
+        Dump::getSymbols(filePath, symbolsAll, stringAllocator);
+
+        for (auto symbol : symbolsAll)
+        {
+            if (symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE))
+            {
+                symbols.push_back(symbol);
+            }
+        }
+#else
+        // only 1 file to load        
+        symbols.push_back(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
+#endif        
+
+        if (symbols.empty())
+        {
+            emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");            
+        }
+
         // load library
         auto name = MLIRHelper::getAnonymousName(location, ".ll", "");
         auto fullInitGlobalFuncName = getFullNamespaceName(name);
@@ -769,36 +853,39 @@ class MLIRGenImpl
                 location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(100));
         }
 
-        // TODO: for now, we have code in TS to load methods from DLL/Shared libs
-        if (auto addrOfDeclText = dynLib.getAddressOfSymbol(SHARED_LIB_DECLARATIONS))
+        for (auto declSymbol : symbols)
         {
-            std::string result;
-            // process shared lib declarations
-            auto dataPtr = *(const char**)addrOfDeclText;
-            if (dynamic)
+            // TODO: for now, we have code in TS to load methods from DLL/Shared libs
+            if (auto addrOfDeclText = dynLib.getAddressOfSymbol(declSymbol.str().c_str()))
             {
-                // TODO: use option variable instead of "this hack"
-                result = MLIRHelper::replaceAll(dataPtr, "@dllimport", "@dllimport('.')");
-                dataPtr = result.c_str();
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
-
-            {
-                MLIRLocationGuard vgLoc(overwriteLoc); 
-                overwriteLoc = location;
-
-                auto importData = convertUTF8toWide(dataPtr);
-                if (mlir::failed(parsePartialStatements(importData, genContext, false)))
+                std::string result;
+                // process shared lib declarations
+                auto dataPtr = *(const char**)addrOfDeclText;
+                if (dynamic)
                 {
-                    //assert(false);
-                    return mlir::failure();
-                }            
+                    // TODO: use option variable instead of "this hack"
+                    result = MLIRHelper::replaceAll(dataPtr, "@dllimport", "@dllimport('.')");
+                    dataPtr = result.c_str();
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! Shared lib import: \n" << dataPtr << "\n";);
+
+                {
+                    MLIRLocationGuard vgLoc(overwriteLoc); 
+                    overwriteLoc = location;
+
+                    auto importData = convertUTF8toWide(dataPtr);
+                    if (mlir::failed(parsePartialStatements(importData, genContext, false, true)))
+                    {
+                        //assert(false);
+                        return mlir::failure();
+                    }            
+                }
             }
-        }
-        else
-        {
-            emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");
+            else
+            {
+                emitWarning(location, "missing information about shared library. (reference " SHARED_LIB_DECLARATIONS " is missing)");
+            }
         }
 
         return mlir::success();
@@ -2888,7 +2975,7 @@ class MLIRGenImpl
     {
         VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
-            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}
+            isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}, isUsed{false}
         {
         };
 
@@ -2963,6 +3050,7 @@ class MLIRGenImpl
             isPublic = varClass.isPublic;
             isAppendingLinkage = varClass.isAppendingLinkage;
             comdat = varClass.comdat;
+            isUsed = varClass.isUsed;
         }
 
         mlir::LogicalResult processConstRef(mlir::Location location, mlir::OpBuilder &builder, const GenContext &genContext)
@@ -3040,6 +3128,46 @@ class MLIRGenImpl
             return varDecl;
         }
 
+        bool getIsPublic()
+        {
+            if (isExternal)
+            {
+                return true;
+            }
+
+            if (!isExport && !isPublic)
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        LLVM::Linkage getLinkage()
+        {
+            auto linkage = LLVM::Linkage::Private;
+            if (isExternal || comdat != Select::NotSet)
+            {
+                linkage = LLVM::Linkage::External;
+            }
+            else if (isAppendingLinkage)
+            {
+                linkage = LLVM::Linkage::Appending;
+            }
+            else if (isSpecialization)
+            {
+                linkage = LLVM::Linkage::LinkonceODR;
+                // TODO: dso_local somehow linked with -fno-pic
+                //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
+            }
+            else if (isExport || isImport)
+            {
+                linkage = LLVM::Linkage::External;
+            }
+
+            return linkage;            
+        }
+
         void printDebugInfo()
         {
             LLVM_DEBUG(dbgs() << "\n!! variable = " << fullName << " type: " << type << "\n";);
@@ -3071,6 +3199,7 @@ class MLIRGenImpl
         bool allocateInContextThis;
         Select comdat;
         bool deleted;
+        bool isUsed;
     };
 
     mlir::LogicalResult adjustLocalVariableType(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
@@ -3273,20 +3402,6 @@ class MLIRGenImpl
             theModule.getBody()->walk(lastUse);
 
             SmallVector<mlir::NamedAttribute> attrs;
-            if (variableDeclarationInfo.isExternal || variableDeclarationInfo.comdat != Select::NotSet)
-            {
-                attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("External")});
-            }
-            else if (variableDeclarationInfo.isAppendingLinkage)
-            {
-                attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("Appending")});
-            }
-            else if (variableDeclarationInfo.isSpecialization)
-            {
-                attrs.push_back({builder.getStringAttr("Linkage"), builder.getStringAttr("LinkonceODR")});
-                // TODO: dso_local somehow linked with -fno-pic
-                //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
-            }
 
             // add modifiers
             if (variableDeclarationInfo.isExport)
@@ -3299,16 +3414,20 @@ class MLIRGenImpl
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
             }  
 
-            if (variableDeclarationInfo.comdat != Select::NotSet)
+            if (this->compileOptions.generateDebugInfo)
             {
-                attrs.push_back({
-                    mlir::StringAttr::get(builder.getContext(), "comdat"), 
-                    builder.getUI32IntegerAttr(static_cast<uint32_t>(variableDeclarationInfo.comdat))
-                });
-            }  
+                MLIRDebugInfoHelper mti(builder, debugScope);
+                auto namedLoc = mti.combineWithCurrentScopeAndName(location, variableDeclarationInfo.variableName);
+                location = namedLoc;
+            }
 
             globalOp = builder.create<mlir_ts::GlobalOp>(
-                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, mlir::Attribute(), attrs);                
+                location, builder.getNoneType(), variableDeclarationInfo.isConst, variableDeclarationInfo.fullName, variableDeclarationInfo.getLinkage(), attrs);                
+
+            if (variableDeclarationInfo.comdat != Select::NotSet)
+            {
+                globalOp.setComdatAttr(builder.getI32IntegerAttr(static_cast<int32_t>(variableDeclarationInfo.comdat)));
+            }  
 
             variableDeclarationInfo.globalOp = globalOp;
 
@@ -3319,9 +3438,17 @@ class MLIRGenImpl
 
             if (variableDeclarationInfo.scope == VariableScope::Global)
             {
-                if (variableDeclarationInfo.isExternal)
+                if (variableDeclarationInfo.getIsPublic())
                 {
                     globalOp.setPublic();
+                }
+                else 
+                {
+                    globalOp.setPrivate();
+                }
+
+                if (variableDeclarationInfo.isExternal)
+                {
                     if (mlir::failed(variableDeclarationInfo.getVariableTypeAndInit(location, genContext)))
                     {
                         return mlir::failure();
@@ -3336,16 +3463,13 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    if (!variableDeclarationInfo.isExport && !variableDeclarationInfo.isPublic)
-                    {
-                        globalOp.setPrivate();
-                    }
-                    else 
-                    {
-                        globalOp.setPublic();
-                    }
-
                     createGlobalVariableInitialization(location, globalOp, variableDeclarationInfo, genContext);
+                }
+
+                if (variableDeclarationInfo.isUsed)
+                {
+                    builder.setInsertionPointAfter(globalOp);
+                    builder.create<mlir_ts::AppendToUsedOp>(location, globalOp.getName());
                 }
 
                 return mlir::success();
@@ -3378,7 +3502,15 @@ class MLIRGenImpl
             builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, address);
         }
 
-        return createGlobalVariableUndefinedInitialization(location, globalOp, variableDeclarationInfo);
+        auto result = createGlobalVariableUndefinedInitialization(location, globalOp, variableDeclarationInfo);
+
+        if (variableDeclarationInfo.isUsed)
+        {
+            builder.setInsertionPointAfter(globalOp);
+            builder.create<mlir_ts::AppendToUsedOp>(location, globalOp.getName());
+        }
+
+        return result;
     }    
 
     mlir::LogicalResult isGlobalConstLambda(mlir::Location location, struct VariableDeclarationInfo &variableDeclarationInfo, const GenContext &genContext)
@@ -3732,18 +3864,12 @@ class MLIRGenImpl
         if (name == SyntaxKind::ArrayBindingPattern)
         {
             auto arrayBindingPattern = name.as<ArrayBindingPattern>();
-            if (mlir::failed(processDeclarationArrayBindingPattern(location, arrayBindingPattern, varClass, func, genContext)))
-            {
-                return mlir::failure();
-            }
+            return processDeclarationArrayBindingPattern(location, arrayBindingPattern, varClass, func, genContext);
         }
         else if (name == SyntaxKind::ObjectBindingPattern)
         {
             auto objectBindingPattern = name.as<ObjectBindingPattern>();
-            if (mlir::failed(processDeclarationObjectBindingPattern(location, objectBindingPattern, varClass, func, genContext)))
-            {
-                return mlir::failure();
-            }
+            return processDeclarationObjectBindingPattern(location, objectBindingPattern, varClass, func, genContext);
         }
         else
         {
@@ -3751,10 +3877,31 @@ class MLIRGenImpl
             auto nameStr = MLIRHelper::getName(name);
 
             // register
-            return !!registerVariable(location, nameStr, false, varClass, func, genContext, showWarnings) ? mlir::success() : mlir::failure();
+            auto varType = registerVariable(location, nameStr, false, varClass, func, genContext, showWarnings);
+            if (!varType)
+            {
+                return mlir::failure();
+            }
+
+            if (varClass.isExport)
+            {
+                NodeFactory nf(NodeFactoryFlags::None);
+
+                auto isConst = varClass.type == VariableType::Const || varClass.type == VariableType::ConstRef;
+                NodeArray<VariableDeclaration> _varDeclarations;
+                auto _varName = nf.createIdentifier(stows(nameStr));
+                auto _varDecl = nf.createVariableDeclaration(
+                    _varName, undefined, undefined, name->parent.as<VariableDeclaration>()->type);
+                _varDeclarations.push_back(_varDecl);
+                auto _varList = nf.createVariableDeclarationList(_varDeclarations, isConst ? NodeFlags::Const : NodeFlags::Let);
+                auto _varStatement = nf.createVariableStatement(undefined, _varList);
+                addDeclarationToExport(_varStatement, "@dllimport\n", ";\n", _varDecl, varType);
+            }
+
+            return mlir::success();
         }
 
-        return mlir::success();       
+        return mlir::failure();       
     }
 
     mlir::LogicalResult processDeclaration(NamedDeclaration item, VariableClass varClass,
@@ -3765,6 +3912,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+        item->name->parent = item;
         return processDeclarationName(item->name, varClass, func, genContext, showWarnings);
     }
 
@@ -3919,7 +4067,22 @@ class MLIRGenImpl
                 return std::make_tuple(t, mlir::Value(), p ? TypeProvided::Yes : TypeProvided::No);
             }
 
-            return getTypeAndInit(item, genContext);
+            auto typeAndInit = getTypeAndInit(item, genContext);
+
+            if (varClass.isDynamicImport)
+            {
+                auto nameStr = MLIRHelper::getName(item->name);
+                auto fieldType = std::get<0>(typeAndInit);
+
+                auto dllVarName = V(mlirGenStringValue(location, nameStr, true));
+                auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                    location, getOpaqueType(), dllVarName);
+                auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
+                auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
+                return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);                
+            }
+
+            return typeAndInit;
         };
 
         auto valClassItem = varClass;
@@ -4004,10 +4167,30 @@ class MLIRGenImpl
         {
             varClass.isPublic = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
             varClass.isExport = getExportModifier(variableDeclarationListAST->parent);
-            if (varClass.isExport)
-            {
-                addDeclarationToExport(variableDeclarationListAST->parent, "@dllimport\n");
-            }
+            MLIRHelper::iterateDecorators(variableDeclarationListAST->parent, [&](std::string name, SmallVector<std::string> args) {
+                if (name == DLL_EXPORT)
+                {
+                    varClass.isExport = true;
+                }
+
+                if (name == DLL_IMPORT)
+                {
+                    varClass.type = isLet ? VariableType::Let : isConst || isUsing ? VariableType::Const : VariableType::Var;                    
+                    varClass.isImport = true;
+                    // it has parameter, means this is dynamic import, should point to dll path
+                    // TODO: finish it, look at mlirGenCustomRTTIDynamicImport as example how to load it
+                    if (args.size() > 0)
+                    {
+                        varClass.type = VariableType::Var; 
+                        varClass.isDynamicImport = true;
+                        varClass.isImport = false;
+                    }
+                }                
+
+                if (name == "used") {
+                    varClass.isUsed = true;
+                }
+            });
         }
 
         for (auto &item : variableDeclarationListAST->declarations)
@@ -4494,6 +4677,17 @@ class MLIRGenImpl
         return std::make_tuple(funcProto, funcType, argTypes);
     }
 
+    bool isGlobalAttr(StringRef name)
+    {
+        static llvm::StringMap<bool> funcAttrs {
+            {"optnone", true },
+            {DLL_IMPORT, true },
+            {DLL_EXPORT, true },
+        };
+
+        return funcAttrs[name];        
+    }
+
     bool isFuncAttr(StringRef name)
     {
         static llvm::StringMap<bool> funcAttrs {
@@ -4613,6 +4807,10 @@ class MLIRGenImpl
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), "func.varargs"), mlir::BoolAttr::get(builder.getContext(), true)});
             }
+
+            if (name == "used") {
+                builder.create<mlir_ts::AppendToUsedOp>(location, funcProto->getName());
+            }
         });
 
         // add modifiers
@@ -4625,7 +4823,7 @@ class MLIRGenImpl
                 || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
             {
                 //addDeclarationToExport(funcProto->getName(), funcType, genContext);
-                addFunctionDeclarationToExport(functionLikeDeclarationBaseAST);
+                addFunctionDeclarationToExport(functionLikeDeclarationBaseAST, funcProto->getReturnType());
             }
         }
 
@@ -7827,7 +8025,7 @@ class MLIRGenImpl
                             {
                                 SmallVector<char> res;
                                 intAttr.getValue().toString(res, 10, false);
-                                emitError(location) << "tcan't apply '-'. Too big value: " << std::string(res.data(), res.size()) << "";
+                                emitError(location) << "can't apply '-'. Too big value: " << std::string(res.data(), res.size()) << "";
                                 return mlir::Value();
                             }
 
@@ -9352,7 +9550,7 @@ class MLIRGenImpl
             auto propType = evaluateProperty(location, objectValue, cl.getName().str(), genContext);
             if (!propType)
             {
-                emitError(location, "Can't resolve property '") << cl.getName() << "' of type " << objectValue.getType();
+                emitError(location, "Can't resolve property '") << cl.getName() << "' of type " << to_print(objectValue.getType());
                 return mlir::failure();
             }
 
@@ -9616,7 +9814,7 @@ class MLIRGenImpl
 
         if (!value)
         {
-            emitError(location, "Can't resolve property '") << name << "' of type " << objectValue.getType();
+            emitError(location, "Can't resolve property '") << name << "' of type " << to_print(objectValue.getType());
             return mlir::failure();
         }
 
@@ -10390,7 +10588,7 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: " << arrayType
                                     << "\n";);
 
-            emitError(location) << "access expression is not applicable to " << arrayType;
+            emitError(location) << "access expression is not applicable to " << to_print(arrayType);
             return mlir::failure();
         }
 
@@ -16280,7 +16478,7 @@ genContext);
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
                 {
-                    emitError(location) << "method signature not matching for '" << name << "'{" << funcType
+                    emitError(location) << "method signature not matching for '" << name << "'{" << to_print(funcType)
                                         << "} for interface '" << newInterfacePtr->fullName << "' in class '"
                                         << newClassPtr->fullName << "'"
                                         << " found method: " << foundMethodFunctionType;
@@ -16321,8 +16519,8 @@ genContext);
                         if (!fieldRef)
                         {
                             emitError(location) << "can't find reference for field: " << methodOrField.fieldInfo.id
-                                                << " in interface: " << newInterfacePtr->interfaceType
-                                                << " for class: " << newClassPtr->classType;
+                                                << " in interface: " << newInterfacePtr->fullName
+                                                << " for class: " << newClassPtr->fullName;
                             return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};
                         }
 
@@ -17812,7 +18010,7 @@ genContext);
                     }
                     
                     emitError(location)
-                        << "field " << fieldInfo.id << " can't be found in tuple '" << srcTupleType << "'";
+                        << "field " << fieldInfo.id << " can't be found in tuple '" << to_print(srcTupleType) << "'";
                     return mlir::failure();
                 }                
 
@@ -18287,7 +18485,7 @@ genContext);
                     return V(newInterface);
                 }
 
-                emitError(location) << "type: " << classType << " missing interface: " << interfaceType;
+                emitError(location) << "type: " << classType.getName() << " missing interface: " << interfaceType.getName();
                 return mlir::failure();
             }
 
@@ -18518,7 +18716,7 @@ genContext);
             // fall through to finish cast operation
             if (!mth.CanCastFunctionTypeToFunctionType(valueType, type))
             {
-                emitError(location, "invalid cast from ") << valueType << " to " << type;
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();                
             }
 
@@ -18528,7 +18726,7 @@ genContext);
                 auto test = mth.TestFunctionTypesMatchWithObjectMethods(location, valueType, type).result == MatchResultType::Match;
                 if (!test)
                 {
-                    emitError(location) << valueType << " is not matching type " << type;
+                    emitError(location) << to_print(valueType) << " is not matching type " << to_print(type);
                     return mlir::failure();
                 }
             }
@@ -18557,14 +18755,14 @@ genContext);
             && !isa<mlir_ts::OpaqueType>(type) 
             && !isa<mlir_ts::AnyType>(type)
             && !isa<mlir_ts::BooleanType>(type)) {
-            emitError(location, "invalid cast from ") << valueType << " to " << type;
+            emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
             return mlir::failure();
         }        
 
         if (isa<mlir_ts::ArrayType>(type) && isa<mlir_ts::TupleType>(valueType) 
             || isa<mlir_ts::TupleType>(type) && isa<mlir_ts::ArrayType>(valueType))
         {
-            emitError(location, "invalid cast from ") << valueType << " to " << type;
+            emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
             return mlir::failure();
         }
 
@@ -20541,7 +20739,7 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! can't take 'keyof' from: " << type << "\n";);
 
-        emitError(location, "can't take keyof: ") << type;
+        emitError(location, "can't take keyof: ") << to_print(type);
 
         return mlir::Type();
     }
@@ -22147,7 +22345,7 @@ genContext);
         return mlir::success();
     }
 
-    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr)
+    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n", ts::Node id = {}, mlir::Type returnTypeIfNotProvided = {})
     {
         // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
         if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
@@ -22157,12 +22355,25 @@ genContext);
 
         Printer<stringstream> printer(declExports);
         printer.setDeclarationMode(true);
+        if (returnTypeIfNotProvided)
+        {
+            printer.setOnMissingReturnType([&](auto currentNode) {
+                if (currentNode != id)
+                {
+                    return string{};
+                } 
+
+                return to_wprint(returnTypeIfNotProvided);      
+            });
+        }
 
         if (prefix)
             declExports << prefix;
 
         printer.printNode(node);
-        declExports << ";\n";
+        
+        if (postfix)
+            declExports << postfix;
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! added declaration to export: \n" << convertWideToUTF8(declExports.str()) << "\n";);      
     }
@@ -22174,22 +22385,22 @@ genContext);
 
     void addInterfaceDeclarationToExport(InterfaceDeclaration interfaceDeclaration)
     {
-        addDeclarationToExport(interfaceDeclaration);
+        addDeclarationToExport(interfaceDeclaration, nullptr, "\n");
     }
 
     void addEnumDeclarationToExport(EnumDeclaration enumDeclatation)
     {
-        addDeclarationToExport(enumDeclatation);
+        addDeclarationToExport(enumDeclatation, nullptr, "\n");
     }
 
-    void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase)
+    void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase, mlir::Type returnType)
     {
-        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n");
+        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n", "\n", FunctionLikeDeclarationBase, returnType);
     }
 
     void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)
     {
-        addDeclarationToExport(classDeclatation, "@dllimport\n");
+        addDeclarationToExport(classDeclatation, "@dllimport\n", "\n");
     }
 
     auto getNamespaceName() -> StringRef
@@ -22642,10 +22853,11 @@ genContext);
         return parsePartialStatements(src, emptyContext);
     }
 
-    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true)
+    mlir::LogicalResult parsePartialStatements(string src, const GenContext& genContext, bool useRootNamesapce = true, bool file_d_ts = false)
     {
         Parser parser;
-        auto module = parser.parseSourceFile(S("virtual"), src, ScriptTarget::Latest);
+        // .d.ts will mark all variables as external (be careful)
+        auto module = parser.parseSourceFile(file_d_ts ? S("partial.d.ts") : S("partial.ts"), src, ScriptTarget::Latest);
 
         MLIRNamespaceGuard nsGuard(currentNamespace);
         if (useRootNamesapce)
@@ -22669,6 +22881,22 @@ genContext);
         }
 
         return mlir::success();
+    }
+
+    std::string to_print(mlir::Type type)
+    {
+        stringstream exportType;
+        MLIRPrinter mp{};
+        mp.printType<ostream>(exportType, type);
+        return convertWideToUTF8(exportType.str());      
+    }
+
+    string to_wprint(mlir::Type type)
+    {
+        stringstream exportType;
+        MLIRPrinter mp{};
+        mp.printType<ostream>(exportType, type);
+        return exportType.str();      
     }
 
     void printDebug(ts::Node node)
@@ -22823,13 +23051,21 @@ namespace typescript
     return convertWideToUTF8(s.str());
 }
 
-mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
+mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromMainSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
                                         const llvm::SourceMgr &sourceMgr, CompileOptions &compileOptions)
 {
-
     auto path = llvm::sys::path::parent_path(fileName);
     MLIRGenImpl mlirGenImpl(context, fileName, path, sourceMgr, compileOptions);
     auto [sourceFile, includeFiles] = mlirGenImpl.loadMainSourceFile();
+    return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
+}
+
+mlir::OwningOpRef<mlir::ModuleOp> mlirGenFromSource(const mlir::MLIRContext &context, SMLoc &smLoc, const llvm::StringRef &fileName,
+                                        const llvm::SourceMgr &sourceMgr, CompileOptions &compileOptions)
+{
+    auto path = llvm::sys::path::parent_path(fileName);
+    MLIRGenImpl mlirGenImpl(context, fileName, path, sourceMgr, compileOptions);
+    auto [sourceFile, includeFiles] = mlirGenImpl.loadSourceFile(smLoc);
     return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
 }
 

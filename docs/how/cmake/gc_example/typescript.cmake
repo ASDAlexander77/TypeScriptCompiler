@@ -1,13 +1,8 @@
-set (ROOT_PATH "C:\\dev\\TypeScriptCompiler")
-set (_3RD_PARTY_PATH "${ROOT_PATH}\\3rdParty")
-set (BUILD_PATH "${ROOT_PATH}\\__build")
-set (TSCPATH "${BUILD_PATH}\\tsc\\windows-msbuild-debug\\bin")
-#set (TSCPATH "${BUILD_PATH}\\tsc\\windows-msbuild-release\\bin")
-if (CMAKE_BUILD_TYPE STREQUAL "Release")
-	set (GCLIBPATH "${_3RD_PARTY_PATH}\\gc\\x64\\release")
-else()
-	set (GCLIBPATH "${_3RD_PARTY_PATH}\\gc\\x64\\debug")
-endif()
+set (ROOT_PATH "I:\\tsc\\57")
+set (_3RD_PARTY_PATH "${ROOT_PATH}")
+set (BUILD_PATH "${ROOT_PATH}")
+set (TSCPATH "${BUILD_PATH}")
+set (GCLIBPATH "${_3RD_PARTY_PATH}")
 
 find_program(TSC_APP tsc.exe HINTS "${TSCPATH}" DOC "path to tsc")
 
@@ -48,7 +43,7 @@ macro(add_tsc_files subpath)
 
 	    add_custom_command(
 		OUTPUT "${obj_file}"
-		COMMAND "${TSC_APP}" --emit=obj -o="${obj_file}" ${TS_FLAGS} "${source_file}"
+		COMMAND "${TSC_APP}" --emit=obj --export=none -o="${obj_file}" ${TS_FLAGS} "${source_file}"
 		DEPENDS "${source_file}"
 		BYPRODUCTS "${obj_file}"
   		COMMENT "Compiling ${source_file} to ${obj_file}"
