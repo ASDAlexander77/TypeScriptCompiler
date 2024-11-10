@@ -7,7 +7,7 @@
 
 using llvm::raw_ostream;
 
-namespace ts
+namespace typescript
 {
     class DeclarationPrinter
     {
@@ -19,6 +19,8 @@ namespace ts
         void print(ClassInfo::TypePtr);
     };
 
-} // namespace ts 
+} // namespace typescript 
+
+#undef DEBUG_TYPE
 
 #endif // TYPESCRIPT_DECLARATIONPRINTER_H

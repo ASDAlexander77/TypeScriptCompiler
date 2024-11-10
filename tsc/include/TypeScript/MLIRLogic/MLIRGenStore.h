@@ -12,9 +12,6 @@ using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
 
-namespace
-{
-
 struct NamespaceInfo;
 using NamespaceInfo_TypePtr = std::shared_ptr<NamespaceInfo>;
 
@@ -819,8 +816,6 @@ struct NamespaceInfo
 
     NamespaceInfo::TypePtr parentNamespace;
 };
-
-} // namespace
 
 #undef DEBUG_TYPE
 

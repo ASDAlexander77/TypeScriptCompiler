@@ -6,12 +6,12 @@
 
 #define DEBUG_TYPE "mlir"
 
-namespace ts
+namespace typescript
 {
 
-void DeclarationPrinter::print(ClassInfo::TypePtr)
+void DeclarationPrinter::print(ClassInfo::TypePtr classType)
 {
     // TODO:
 }
 
-} // namespace ts
+} // namespace typescript

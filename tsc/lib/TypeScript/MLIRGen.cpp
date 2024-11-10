@@ -22403,7 +22403,7 @@ genContext);
     {
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
-        DeclarationPrinter dp(ss);
+        ::typescript::DeclarationPrinter dp(ss);
         dp.print(newClassPtr);
 
         declExports << ss.str().str();
