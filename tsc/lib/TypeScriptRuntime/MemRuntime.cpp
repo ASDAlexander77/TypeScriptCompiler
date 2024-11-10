@@ -1,5 +1,3 @@
-// TODO: somehow when we use align_alloc & align_free, I can see the error: pointer is broken
-
 #ifndef _WIN32
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <cstdlib>
@@ -13,7 +11,7 @@
 
 #include <cinttypes>
 #include <cstdlib>
-
+#include <cassert>
 #include "llvm/ADT/StringMap.h"
 
 //===----------------------------------------------------------------------===//
@@ -29,10 +27,18 @@ extern "C" void *Alloc(uint64_t size) { return malloc(size); }
 
 extern "C" void *AlignedAlloc(uint64_t alignment, uint64_t size) {
 #ifdef _WIN32
+  // On Windows, alignment is the second argument
   return _aligned_malloc(size, alignment);
 #else
+  // Check alignment requirements for posix_memalign
+  assert((alignment & (alignment - 1)) == 0 && "alignment must be a power of 2");
+  assert(alignment >= sizeof(void *) && "alignment must be at least sizeof(void *)");
+
   void *result = nullptr;
-  (void)::posix_memalign(&result, alignment, size);
+  int ret = ::posix_memalign(&result, alignment, size);
+  if (ret != 0) {
+    return nullptr; // Allocation failed.
+  }
   return result;
 #endif
 }
@@ -41,15 +47,16 @@ extern "C" void Free(void *ptr) { free(ptr); }
 
 extern "C" void AlignedFree(void *ptr) {
 #ifdef _WIN32
+  // Use Windows-specific aligned free
   _aligned_free(ptr);
 #else
+  // Use regular free for posix aligned_alloc
   free(ptr);
 #endif
 }
 
 } // namespace runtime
 } // namespace mlir
-
 
 //===----------------------------------------------------------------------===//
 // MLIR Runner (JitRunner) dynamic library integration.
