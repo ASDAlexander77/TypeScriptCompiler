@@ -22401,6 +22401,10 @@ genContext);
 
     void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr)
     {
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        DeclarationPrinter dp(ss);
+
         // TODO:
     }
 
