@@ -1,4 +1,4 @@
-#include "TypeScript/LandingPadFixPass.h"
+#include "TypeScript/Pass/LandingPadFixPass.h"
 
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/InstIterator.h"

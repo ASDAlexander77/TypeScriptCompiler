@@ -11,15 +11,15 @@
 #include "TypeScript/AsyncDialectTranslation.h"
 #endif
 #ifdef ENABLE_EXCEPTIONS
-#include "TypeScript/LandingPadFixPass.h"
-#include "TypeScript/Win32ExceptionPass.h"
+#include "TypeScript/Pass/LandingPadFixPass.h"
+#include "TypeScript/Pass/Win32ExceptionPass.h"
 #endif
-#include "TypeScript/ExportFixPass.h"
+#include "TypeScript/Pass/ExportFixPass.h"
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
-#include "TypeScript/DebugInfoPatchPass.h"
+#include "TypeScript/Pass/DebugInfoPatchPass.h"
 #endif
-#include "TypeScript/MemAllocFixPass.h"
-#include "TypeScript/AliasPass.h"
+#include "TypeScript/Pass/MemAllocFixPass.h"
+#include "TypeScript/Pass/AliasPass.h"
 
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/BuiltinOps.h"

@@ -1,4 +1,4 @@
-#include "TypeScript/MemAllocFixPass.h"
+#include "TypeScript/Pass/MemAllocFixPass.h"
 
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/InstIterator.h"

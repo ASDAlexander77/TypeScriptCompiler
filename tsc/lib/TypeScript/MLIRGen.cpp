@@ -10,6 +10,7 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DiagnosticHelper.h"
 #include "TypeScript/ObjDumper.h"
+#include "TypeScript/DeclarationPrinter.h"
 
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
@@ -14862,7 +14863,7 @@ class MLIRGenImpl
         // support dynamic loading
         if (getExportModifier(classDeclarationAST))
         {
-            addClassDeclarationToExport(classDeclarationAST);
+            addClassDeclarationToExport(newClassPtr);
         }
 
         setProcessingState(newClassPtr, ProcessingStages::Processed, genContext);
@@ -22398,9 +22399,9 @@ genContext);
         addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n", "\n", FunctionLikeDeclarationBase, returnType);
     }
 
-    void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)
+    void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr)
     {
-        addDeclarationToExport(classDeclatation, "@dllimport\n", "\n");
+        // TODO:
     }
 
     auto getNamespaceName() -> StringRef
