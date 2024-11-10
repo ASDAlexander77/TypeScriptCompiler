@@ -314,7 +314,8 @@ protected:
         {
             if (declarationMode)
             {
-                return false;
+                //return false;
+                return true;
             }
 
             auto functionLikeDeclarationBase = node.as<FunctionLikeDeclarationBase>();
@@ -902,6 +903,7 @@ protected:
             else
             {
                 out << ";";
+                newLine();
             }
 
             break;
