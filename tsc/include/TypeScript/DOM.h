@@ -1,6 +1,9 @@
 #ifndef MLIR_TYPESCRIPT_DOM_H_
 #define MLIR_TYPESCRIPT_DOM_H_
 
+#include "TypeScript/TypeScriptDialect.h"
+#include "TypeScript/TypeScriptOps.h"
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"

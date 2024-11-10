@@ -409,7 +409,7 @@ class MLIRGenImpl
         }
 #endif        
 
-        auto declText = convertWideToUTF8(declExports.str());
+        auto declText = declExports.str();
 
 #ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
         // default implementation to use variable to store declaration data
@@ -599,7 +599,7 @@ class MLIRGenImpl
         });
 
         // Process generating here
-        declExports.str(S(""));
+        declExports.str("");
         declExports.clear();
         exports.str(S(""));
         exports.clear();
@@ -22348,35 +22348,35 @@ genContext);
 
     void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n", ts::Node id = {}, mlir::Type returnTypeIfNotProvided = {})
     {
-        // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
-        if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
-        {
-            return;
-        }
+        // // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
+        // if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
+        // {
+        //     return;
+        // }
 
-        Printer<stringstream> printer(declExports);
-        printer.setDeclarationMode(true);
-        if (returnTypeIfNotProvided)
-        {
-            printer.setOnMissingReturnType([&](auto currentNode) {
-                if (currentNode != id)
-                {
-                    return string{};
-                } 
+        // Printer<stringstream> printer(declExports);
+        // printer.setDeclarationMode(true);
+        // if (returnTypeIfNotProvided)
+        // {
+        //     printer.setOnMissingReturnType([&](auto currentNode) {
+        //         if (currentNode != id)
+        //         {
+        //             return string{};
+        //         } 
 
-                return to_wprint(returnTypeIfNotProvided);      
-            });
-        }
+        //         return to_wprint(returnTypeIfNotProvided);      
+        //     });
+        // }
 
-        if (prefix)
-            declExports << prefix;
+        // if (prefix)
+        //     declExports << prefix;
 
-        printer.printNode(node);
+        // printer.printNode(node);
         
-        if (postfix)
-            declExports << postfix;
+        // if (postfix)
+        //     declExports << postfix;
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! added declaration to export: \n" << convertWideToUTF8(declExports.str()) << "\n";);      
+        // LLVM_DEBUG(llvm::dbgs() << "\n!! added declaration to export: \n" << convertWideToUTF8(declExports.str()) << "\n";);      
     }
 
     void addTypeDeclarationToExport(TypeAliasDeclaration typeAliasDeclaration)    
@@ -22404,8 +22404,9 @@ genContext);
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         DeclarationPrinter dp(ss);
+        dp.print(newClassPtr);
 
-        // TODO:
+        declExports << ss.str().str();
     }
 
     auto getNamespaceName() -> StringRef
@@ -22986,7 +22987,7 @@ genContext);
 
     bool declarationMode;
 
-    stringstream declExports;
+    std::stringstream declExports;
     stringstream exports;
 
 private:

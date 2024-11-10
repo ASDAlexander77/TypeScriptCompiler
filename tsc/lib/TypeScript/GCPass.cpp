@@ -5,7 +5,7 @@
 #include "TypeScript/TypeScriptFunctionPass.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptPassContext.h"
-#include "TypeScript/ModulePass.h"
+#include "TypeScript/Pass/ModulePass.h"
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
