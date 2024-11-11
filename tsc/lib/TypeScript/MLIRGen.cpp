@@ -15527,7 +15527,7 @@ class MLIRGenImpl
             genContext);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         // add accessor methods
         if (isAccessor)
@@ -15572,7 +15572,7 @@ class MLIRGenImpl
             genContext);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();
     }    
@@ -15891,12 +15891,31 @@ genContext);
             declarationMode = declarationModeStore;
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
-        {
-            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
-        }
+        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();    
+    }
+
+    void PushStaticField(llvm::SmallVector<StaticFieldInfo> &staticFieldInfos, mlir::Attribute fieldId, mlir::Type staticFieldType, StringRef fullClassStaticFieldName, int index)
+    {
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) 
+            { 
+                auto foundField = field.id == fieldId;
+                if (foundField)
+                {
+                    // update field type if different
+                    if (field.type != staticFieldType)
+                    {
+                        assert(false);
+                        field.type = staticFieldType;
+                    }
+                }
+                
+                return foundField; 
+            }))
+        {
+            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, index});
+        }        
     }
 
     // INFO: you can't use standart Static Field declarastion because of RTTI should be declared before used
@@ -15935,10 +15954,7 @@ genContext);
                 genContext);
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
-        {
-            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
-        }
+        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();
     }
@@ -15972,10 +15988,7 @@ genContext);
                 genContext);
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
-        {
-            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
-        }
+        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();
     }

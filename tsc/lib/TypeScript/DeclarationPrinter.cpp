@@ -64,6 +64,21 @@ void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)
     os << "{";
     newline();
 
+    // Static fields
+    for (auto staticField : classType->staticFields)
+    {
+        if (filterField(staticField.id)) continue;
+
+        os.indent(4);
+        os << "static ";
+        printAsFieldName(staticField.id);
+        os << ": ";
+        print(staticField.type);
+        os << ";";
+        newline();        
+    }
+
+    // Fields
     auto storageType = cast<mlir_ts::ClassStorageType>(classType->classType.getStorageType());
     for (auto [index, field] : enumerate(storageType.getFields()))
     {
