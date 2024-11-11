@@ -10,7 +10,6 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DiagnosticHelper.h"
 #include "TypeScript/ObjDumper.h"
-#include "TypeScript/DeclarationPrinter.h"
 
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
@@ -21,6 +20,7 @@
 #include "TypeScript/MLIRLogic/MLIRDebugInfoHelper.h"
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
 #include "TypeScript/MLIRLogic/MLIRPrinter.h"
+#include "TypeScript/MLIRLogic/MLIRDeclarationPrinter.h"
 #include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 #include "TypeScript/VisitorAST.h"
 
@@ -18231,10 +18231,8 @@ genContext);
 
         auto newCtorAttr = MLIRHelper::TupleFieldName(NEW_CTOR_METHOD_NAME, builder.getContext());
         SmallVector<mlir::Value> values;
-        auto posIndex = -1;
-        for (auto fieldInfo : fields)
+        for (auto [posIndex, fieldInfo] : enumerate(fields))
         {
-            posIndex++;
             auto foundField = false;                                        
             auto classFieldInfo = classInfo->findField(fieldInfo.id, foundField);
             if (!foundField)
@@ -22403,7 +22401,7 @@ genContext);
     {
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
-        ::typescript::DeclarationPrinter dp(ss);
+        MLIRDeclarationPrinter dp(ss);
         dp.print(newClassPtr);
 
         declExports << ss.str().str();
