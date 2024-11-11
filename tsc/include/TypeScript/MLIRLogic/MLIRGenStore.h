@@ -118,7 +118,7 @@ struct GenericMethodInfo
     std::string name;
     // TODO: review usage of funcType (it is inside FunctionPrototypeDOM already)
     mlir_ts::FunctionType funcType;
-    FunctionPrototypeDOM::TypePtr funcOp;
+    FunctionPrototypeDOM::TypePtr funcProto;
     bool isStatic;
 };
 

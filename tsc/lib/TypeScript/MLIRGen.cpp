@@ -10155,24 +10155,24 @@ class MLIRGenImpl
         {        
             auto genericMethodInfo = classInfo->staticGenericMethods[genericMethodIndex];
 
-            auto paramsArray = genericMethodInfo.funcOp->getParams();
+            auto paramsArray = genericMethodInfo.funcProto->getParams();
             auto explicitThis = paramsArray.size() > 0 && paramsArray.front()->getName() == THIS_NAME;
             if (genericMethodInfo.isStatic && !explicitThis)
             {
                 auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
                     location, genericMethodInfo.funcType,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcOp->getName()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcProto->getName()));
                 funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return funcSymbolOp;
             }
             else
             {
                 auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
-                auto effectiveFuncType = genericMethodInfo.funcOp->getFuncType();
+                auto effectiveFuncType = genericMethodInfo.funcProto->getFuncType();
 
                 auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcOp->getName()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcProto->getName()));
                 thisSymbOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return thisSymbOp;                
             }

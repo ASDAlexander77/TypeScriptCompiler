@@ -19,7 +19,10 @@ namespace typescript
         void newline();
         void printBeforeDeclaration();
         void printAsFieldName(mlir::Attribute);
+        bool filterName(std::string);
         bool filterField(mlir::Attribute);
+        void printParams(ArrayRef<mlir::Type>);
+        void printMethod(bool, std::string, ArrayRef<mlir::Type>, mlir::Type);
         void print(mlir::Type);
         void print(ClassInfo::TypePtr);
     };
