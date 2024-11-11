@@ -17,7 +17,8 @@ void MLIRDeclarationPrinter::newline()
 
 void MLIRDeclarationPrinter::printBeforeDeclaration() 
 {
-    os << "@dllimport\n";
+    os << "@dllimport";
+    newline();
 }
 
 void MLIRDeclarationPrinter::print(mlir::Type type)
@@ -40,6 +41,20 @@ void MLIRDeclarationPrinter::printAsFieldName(mlir::Attribute attr)
         });   
 }
 
+bool MLIRDeclarationPrinter::filterField(mlir::Attribute attr)
+{
+    return mlir::TypeSwitch<mlir::Attribute, bool>(attr)
+        .Case<mlir::FlatSymbolRefAttr>([&](auto strAttr) {
+            return strAttr.getValue().starts_with(".");
+        })
+        .Case<mlir::StringAttr>([&](auto strAttr) {
+            return strAttr.getValue().starts_with(".");
+        })
+        .Default([&](auto attr) {
+            return false;
+        });   
+}
+
 void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)
 {
     // TODO:
@@ -52,6 +67,8 @@ void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)
     auto storageType = cast<mlir_ts::ClassStorageType>(classType->classType.getStorageType());
     for (auto [index, field] : enumerate(storageType.getFields()))
     {
+        if (filterField(field.id)) continue;
+
         os.indent(4);
         printAsFieldName(field.id);
         if (field.isConditional) os << "?";

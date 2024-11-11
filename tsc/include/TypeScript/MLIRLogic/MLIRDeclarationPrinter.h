@@ -19,6 +19,7 @@ namespace typescript
         void newline();
         void printBeforeDeclaration();
         void printAsFieldName(mlir::Attribute);
+        bool filterField(mlir::Attribute);
         void print(mlir::Type);
         void print(ClassInfo::TypePtr);
     };
