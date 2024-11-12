@@ -15551,14 +15551,25 @@ class MLIRGenImpl
                 // detect field Type
                 auto isConst = false;
                 mlir::Type typeInit;
-                evaluate(
-                    propertyDeclaration->initializer,
-                    [&](mlir::Value val) {
-                        typeInit = val.getType();
-                        typeInit = mth.wideStorageType(typeInit);
-                        isConst = isConstValue(val);
-                    },
-                    genContext);
+                if (propertyDeclaration->type)
+                {
+                    typeInit = getType(propertyDeclaration->type, genContext);
+                }
+                else if (propertyDeclaration->initializer)
+                {
+                    evaluate(
+                        propertyDeclaration->initializer,
+                        [&](mlir::Value val) {
+                            typeInit = val.getType();
+                            typeInit = mth.wideStorageType(typeInit);
+                            isConst = isConstValue(val);
+                        },
+                        genContext);
+                }
+                else
+                {
+                    return {mlir::Type(), mlir::Value(), TypeProvided::No};
+                }
 
                 // add command to load reference from DLL
                 auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
@@ -15568,6 +15579,11 @@ class MLIRGenImpl
                 return {referenceToStaticField.getType(), referenceToStaticField, TypeProvided::No};
             },
             genContext);
+
+        if (!staticFieldType)
+        {
+            return mlir::failure();
+        }
 
         auto &staticFieldInfos = newClassPtr->staticFields;
         PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
