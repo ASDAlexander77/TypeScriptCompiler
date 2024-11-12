@@ -21,6 +21,7 @@ namespace typescript
         void printVariableDeclaration(StringRef, mlir::Type, bool);
         void print(FunctionPrototypeDOM::TypePtr);
         void print(ClassInfo::TypePtr);
+        void print(InterfaceInfo::TypePtr);
 
     protected:
         void newline();
@@ -30,9 +31,9 @@ namespace typescript
         void printFloatValue(const APFloat &, raw_ostream &, bool * = nullptr);
         bool filterName(StringRef);
         bool filterField(mlir::Attribute);
-        void printParams(ArrayRef<mlir::Type>);
+        void printParams(ArrayRef<mlir::Type>, mlir::Type);
         void printFunction(StringRef, ArrayRef<mlir::Type>, mlir::Type);
-        void printMethod(bool, StringRef, ArrayRef<mlir::Type>, mlir::Type);
+        void printMethod(bool, StringRef, ArrayRef<mlir::Type>, mlir::Type, mlir::Type);
         void print(mlir::Type);
     };
 

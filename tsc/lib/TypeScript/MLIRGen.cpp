@@ -17578,7 +17578,7 @@ genContext);
         // add to export if any
         if (auto hasExport = getExportModifier(interfaceDeclarationAST))
         {
-            addInterfaceDeclarationToExport(interfaceDeclarationAST);
+            addInterfaceDeclarationToExport(newInterfacePtr);
         }
 
         return mlir::success();
@@ -17669,7 +17669,8 @@ genContext);
             }
         }
         else if (kind == SyntaxKind::MethodSignature || kind == SyntaxKind::ConstructSignature 
-                || kind == SyntaxKind::IndexSignature || kind == SyntaxKind::CallSignature)
+                || kind == SyntaxKind::IndexSignature || kind == SyntaxKind::CallSignature
+                || kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
             auto isConditional = !!methodSignature->questionToken;
@@ -22365,9 +22366,14 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addInterfaceDeclarationToExport(InterfaceDeclaration interfaceDeclaration)
+    void addInterfaceDeclarationToExport(InterfaceInfo::TypePtr interfaceInfo)
     {
-        //addDeclarationToExport(interfaceDeclaration, nullptr, "\n");
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.print(interfaceInfo);
+
+        declExports << ss.str().str();
     }
 
     void addEnumDeclarationToExport(StringRef name, ArrayRef<mlir::NamedAttribute> enumValues)

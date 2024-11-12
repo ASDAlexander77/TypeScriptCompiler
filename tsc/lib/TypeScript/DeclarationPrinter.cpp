@@ -166,7 +166,7 @@ namespace typescript
                      { return false; });
     }
 
-    void MLIRDeclarationPrinter::printParams(ArrayRef<mlir::Type> params)
+    void MLIRDeclarationPrinter::printParams(ArrayRef<mlir::Type> params, mlir::Type thisType)
     {
         os << "(";
         auto separator = false;
@@ -177,15 +177,28 @@ namespace typescript
             separator = true;
 
             auto actualType = paramType;
+            auto isThisType = false;
             auto isConditional = false;
             if (auto optType = dyn_cast<mlir_ts::OptionalType>(paramType))
             {
                 isConditional = true;
                 actualType = optType.getElementType();
             }
+            else if (index == 0 && paramType == thisType)
+            {
+                isThisType = true;
+            }
 
             os << "p" << index << (isConditional ? "?" : "") << " : ";
-            print(actualType);
+
+            if (isThisType)
+            {
+                os << "this";
+            }
+            else
+            {
+                print(actualType);
+            }
         }
 
         os << ")";
@@ -195,7 +208,7 @@ namespace typescript
     {
         os << "function " << name;
 
-        printParams(params);
+        printParams(params, mlir::Type());
 
         if (returnType)
         {
@@ -204,7 +217,7 @@ namespace typescript
         }
     }
 
-    void MLIRDeclarationPrinter::printMethod(bool isStatic, StringRef name, ArrayRef<mlir::Type> params, mlir::Type returnType)
+    void MLIRDeclarationPrinter::printMethod(bool isStatic, StringRef name, ArrayRef<mlir::Type> params, mlir::Type returnType, mlir::Type thisType)
     {
         if (isStatic)
         {
@@ -213,7 +226,7 @@ namespace typescript
 
         os << name;
 
-        printParams(params);
+        printParams(params, thisType);
 
         if (returnType)
         {
@@ -306,7 +319,7 @@ namespace typescript
 
         // Fields
         auto storageType = cast<mlir_ts::ClassStorageType>(classType->classType.getStorageType());
-        for (auto [index, field] : enumerate(storageType.getFields()))
+        for (auto field : storageType.getFields())
         {
             if (filterField(field.id))
                 continue;
@@ -333,7 +346,8 @@ namespace typescript
                 method.isStatic,
                 method.name,
                 method.funcType.getParams(),
-                method.funcType.getNumResults() > 0 ? method.funcType.getResult(0) : mlir::Type());
+                method.funcType.getNumResults() > 0 ? method.funcType.getResult(0) : mlir::Type(),
+                classType->classType);
 
             newline();
         }
@@ -358,5 +372,68 @@ namespace typescript
         os << "}";
         newline();
     }
+
+    void MLIRDeclarationPrinter::print(InterfaceInfo::TypePtr interfaceType)
+    {
+        printBeforeDeclaration();
+        os << "interface " << interfaceType->name;
+        newline();
+        os << "{";
+        newline();
+
+        // Fields
+        for (auto field : interfaceType->fields)
+        {
+            if (filterField(field.id))
+                continue;
+
+            os.indent(4);
+            printAsFieldName(field.id);
+            if (field.isConditional)
+                os << "?";
+            os << ": ";
+            print(field.type);
+            os << ";";
+            newline();
+        }
+
+        // methods (including static)
+        for (auto method : interfaceType->methods)
+        {
+            if (filterName(method.name))
+                continue;
+
+            os.indent(4);
+
+            printMethod(
+                false,
+                method.name,
+                method.funcType.getParams(),
+                method.funcType.getNumResults() > 0 ? method.funcType.getResult(0) : mlir::Type(),
+                interfaceType->interfaceType);
+
+            newline();
+        }
+
+        // TODO: we can't declare generic methods, otherwise we need to declare body of methods
+        // generic methods
+        // for (auto method : classType->staticGenericMethods)
+        // {
+        //     if (filterName(method.name)) continue;
+
+        //     os.indent(4);
+
+        //     printMethod(
+        //         method.isStatic,
+        //         method.name,
+        //         method.funcType.getParams(),
+        //         method.funcType.getNumResults() > 0 ? method.funcType.getResult(0) : mlir::Type());
+
+        //     newline();
+        // }
+
+        os << "}";
+        newline();
+    }    
 
 } // namespace typescript
