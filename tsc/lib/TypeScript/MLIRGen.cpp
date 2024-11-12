@@ -3583,7 +3583,7 @@ class MLIRGenImpl
         variableDeclarationInfo.detectFlags(isFullName, varClass, genContext);
         variableDeclarationInfo.setName(name);
 
-        if (declarationMode || varClass.isImport)
+        if (declarationMode)
             variableDeclarationInfo.setExternal(true);
 
         if (!variableDeclarationInfo.isGlobal)
@@ -5406,7 +5406,8 @@ class MLIRGenImpl
         if (dynamicImport)
         {
             // TODO: we do not need to register funcOp as we need to reference global variables
-            auto result = mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, funcProto->getNameWithoutNamespace(), funcDeclGenContext);
+            auto result = mlirGenFunctionLikeDeclarationDynamicImport(
+                location, funcOp.getName(), funcOp.getFunctionType(), funcProto->getNameWithoutNamespace(), funcDeclGenContext);
             return {result, funcOp, funcProto->getName().str(), false};
         }
 
@@ -5491,14 +5492,14 @@ class MLIRGenImpl
         return {mlir::success(), funcOp, funcProto->getName().str(), false};
     }
 
-    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, mlir_ts::FuncOp funcOp, StringRef dllFuncName, const GenContext &genContext)
+    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef fullFunctionName, mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext)
     {
-        registerVariable(location, funcOp.getName(), true, VariableType::Var,
+        registerVariable(location, fullFunctionName, true, VariableType::Var,
             [&](mlir::Location location, const GenContext &context) -> TypeValueInitType {
                 // add command to load reference fron DLL
                 auto fullName = V(mlirGenStringValue(location, dllFuncName.str(), true));
                 auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
-                auto result = cast(location, funcOp.getFunctionType(), referenceToFuncOpaque, genContext);
+                auto result = cast(location, functionType, referenceToFuncOpaque, genContext);
                 auto referenceToFunc = V(result);
                 return {referenceToFunc.getType(), referenceToFunc, TypeProvided::No};
             },
@@ -14795,7 +14796,7 @@ class MLIRGenImpl
 
 #if ENABLE_TYPED_GC
         auto enabledGC = !compileOptions.disableGC;
-        if (enabledGC && !newClassPtr->isStatic)
+        if (enabledGC && !newClassPtr->isStatic && !newClassPtr->isDynamicImport)
         {
             mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
             mlirGenClassTypeDescriptorField(location, newClassPtr, classGenContext);
@@ -15085,7 +15086,7 @@ class MLIRGenImpl
         }
 #endif
 
-        if (!newClassPtr->isStatic)
+        if (!newClassPtr->isStatic && !newClassPtr->isDynamicImport)
         {
             mlirGenClassSizeStaticField(location, classDeclarationAST, newClassPtr, genContext);
         }
@@ -15990,6 +15991,7 @@ genContext);
         if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
         {
             // prevent double generating
+            // TODO: use mlirGenFunctionLikeDeclarationDynamicImport 
             registerVariable(
                 location, fullClassStaticFieldName, true, VariableType::Var,
                 [&](mlir::Location location, const GenContext &genContext)  -> TypeValueInitType {
@@ -17148,7 +17150,8 @@ genContext);
         classMethodMemberInfo.setFuncOp(funcOp);
 
         auto location = loc(funcLikeDeclaration);
-        if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, funcProto->getNameWithoutNamespace(), genContext)))
+        if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(
+            location, funcOp.getName(), funcOp.getFunctionType(), funcProto->getNameWithoutNamespace(), genContext)))
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
