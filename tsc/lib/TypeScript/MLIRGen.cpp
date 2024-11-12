@@ -429,6 +429,7 @@ class MLIRGenImpl
         std::string varName(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
         varName.append("_");
         varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
+        varName.append("_");
         varName.append(to_string(hash_value(mainSourceFileName)));
         
         auto varNameRef = StringRef(varName).copy(stringAllocator);
@@ -583,7 +584,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirCodeGenModule(SourceFile module, std::vector<SourceFile> includeFiles = {},
-                                          bool validate = true)
+                                          bool validate = true, bool isMain = true)
     {
         mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedWarningsMessages;
         mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
@@ -629,8 +630,11 @@ class MLIRGenImpl
             return mlir::failure();
         }
        
-        // exports
-        createDeclarationExportGlobalVar(genContext);
+        if (isMain)
+        {
+            // exports
+            createDeclarationExportGlobalVar(genContext);
+        }
 
         clearTempModule();
 
@@ -780,7 +784,7 @@ class MLIRGenImpl
         }          
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
-            mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false)))
+            mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false)))
         {
             return mlir::success();
         }
