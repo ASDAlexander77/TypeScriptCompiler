@@ -4824,7 +4824,7 @@ class MLIRGenImpl
                 || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
             {
                 //addDeclarationToExport(funcProto->getName(), funcType, genContext);
-                addFunctionDeclarationToExport(functionLikeDeclarationBaseAST, funcProto->getReturnType());
+                addFunctionDeclarationToExport(funcProto);
             }
         }
 
@@ -22405,9 +22405,14 @@ genContext);
         addDeclarationToExport(enumDeclatation, nullptr, "\n");
     }
 
-    void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase, mlir::Type returnType)
+    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto)
     {
-        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n", "\n", FunctionLikeDeclarationBase, returnType);
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.print(funcProto);
+
+        declExports << ss.str().str();
     }
 
     void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr)

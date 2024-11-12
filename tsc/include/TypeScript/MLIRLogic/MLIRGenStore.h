@@ -114,7 +114,6 @@ struct MethodInfo
 
 struct GenericMethodInfo
 {
-  public:
     std::string name;
     // TODO: review usage of funcType (it is inside FunctionPrototypeDOM already)
     mlir_ts::FunctionType funcType;

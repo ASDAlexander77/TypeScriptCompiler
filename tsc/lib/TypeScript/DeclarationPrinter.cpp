@@ -41,9 +41,9 @@ void MLIRDeclarationPrinter::printAsFieldName(mlir::Attribute attr)
         });   
 }
 
-bool MLIRDeclarationPrinter::filterName(std::string name)
+bool MLIRDeclarationPrinter::filterName(StringRef name)
 {
-    return StringRef(name).starts_with(".");
+    return name.starts_with(".");
 }
 
 bool MLIRDeclarationPrinter::filterField(mlir::Attribute attr)
@@ -84,7 +84,20 @@ void MLIRDeclarationPrinter::printParams(ArrayRef<mlir::Type> params)
     os << ")";
 }
 
-void MLIRDeclarationPrinter::printMethod(bool isStatic, std::string name, ArrayRef<mlir::Type> params, mlir::Type returnType)
+void MLIRDeclarationPrinter::printFunction(StringRef name, ArrayRef<mlir::Type> params, mlir::Type returnType)
+{
+    os << "function " << name;
+
+    printParams(params);
+
+    if (returnType)
+    {
+        os << " : ";
+        print(returnType);            
+    }
+}
+
+void MLIRDeclarationPrinter::printMethod(bool isStatic, StringRef name, ArrayRef<mlir::Type> params, mlir::Type returnType)
 {
     if (isStatic)
     {
@@ -100,6 +113,15 @@ void MLIRDeclarationPrinter::printMethod(bool isStatic, std::string name, ArrayR
         os << " : ";
         print(returnType);            
     }
+}
+
+void MLIRDeclarationPrinter::print(FunctionPrototypeDOM::TypePtr funcProto)
+{
+    auto funcType = funcProto->getFuncType();
+    printFunction(
+        funcProto->getName(), 
+        funcType.getParams(), 
+        funcType.getNumResults() > 0 ? funcType.getResult(0) : mlir::Type());    
 }
 
 void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)
@@ -140,7 +162,7 @@ void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)
         newline();
     }
 
-    // methods
+    // methods (including static)
     for (auto method : classType->methods)
     {
         if (filterName(method.name)) continue;
@@ -156,21 +178,22 @@ void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)
         newline();
     }
 
+    // TODO: we can't declare generic methods, otherwise we need to declare body of methods
     // generic methods
-    for (auto method : classType->staticGenericMethods)
-    {
-        if (filterName(method.name)) continue;
+    // for (auto method : classType->staticGenericMethods)
+    // {
+    //     if (filterName(method.name)) continue;
 
-        os.indent(4);
+    //     os.indent(4);
 
-        printMethod(
-            method.isStatic, 
-            method.name, 
-            method.funcType.getParams(), 
-            method.funcType.getNumResults() > 0 ? method.funcType.getResult(0) : mlir::Type());
+    //     printMethod(
+    //         method.isStatic, 
+    //         method.name, 
+    //         method.funcType.getParams(), 
+    //         method.funcType.getNumResults() > 0 ? method.funcType.getResult(0) : mlir::Type());
 
-        newline();
-    }
+    //     newline();
+    // }
 
     os << "}";
     newline();
