@@ -14827,7 +14827,7 @@ class MLIRGenImpl
 
 #if ENABLE_TYPED_GC
         auto enabledGC = !compileOptions.disableGC;
-        if (enabledGC && !newClassPtr->isStatic && !newClassPtr->isDynamicImport)
+        if (enabledGC && !newClassPtr->isStatic && !newClassPtr->isImport)
         {
             mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
             mlirGenClassTypeDescriptorField(location, newClassPtr, classGenContext);
@@ -14870,7 +14870,7 @@ class MLIRGenImpl
             }
         }
 
-        if (!newClassPtr->isStatic)
+        if (!newClassPtr->isStatic && !newClassPtr->isImport)
         {
             if (mlir::failed(mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext)))
             {
@@ -16204,7 +16204,7 @@ genContext);
             NodeFactory nf(NodeFactoryFlags::None);
 
             ts::Block body = undefined;
-            if (!newClassPtr->isDeclaration)
+            if (!newClassPtr->isDeclaration && !newClassPtr->isImport)
             {
                 NodeArray<Statement> statements;
 
