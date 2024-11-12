@@ -172,6 +172,9 @@ namespace typescript
         auto separator = false;
         for (auto [index, paramType] : enumerate(params))
         {
+            if (index == 0 && paramType == thisType)
+                continue;
+
             if (separator)
                 os << ", ";
             separator = true;
