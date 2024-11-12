@@ -3583,7 +3583,7 @@ class MLIRGenImpl
         variableDeclarationInfo.detectFlags(isFullName, varClass, genContext);
         variableDeclarationInfo.setName(name);
 
-        if (declarationMode)
+        if (declarationMode || varClass.isImport)
             variableDeclarationInfo.setExternal(true);
 
         if (!variableDeclarationInfo.isGlobal)
@@ -15525,7 +15525,7 @@ class MLIRGenImpl
             genContext);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         // add accessor methods
         if (isAccessor)
@@ -15586,7 +15586,7 @@ class MLIRGenImpl
         }
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();
     }    
@@ -15905,12 +15905,12 @@ genContext);
             declarationMode = declarationModeStore;
         }
 
-        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();    
     }
 
-    void PushStaticField(llvm::SmallVector<StaticFieldInfo> &staticFieldInfos, mlir::Attribute fieldId, mlir::Type staticFieldType, StringRef fullClassStaticFieldName, int index)
+    void pushStaticField(llvm::SmallVector<StaticFieldInfo> &staticFieldInfos, mlir::Attribute fieldId, mlir::Type staticFieldType, StringRef fullClassStaticFieldName, int index)
     {
         if (!llvm::any_of(staticFieldInfos, [&](auto& field) 
             { 
@@ -15968,7 +15968,7 @@ genContext);
                 genContext);
         }
 
-        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();
     }
@@ -16002,7 +16002,7 @@ genContext);
                 genContext);
         }
 
-        PushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();
     }
