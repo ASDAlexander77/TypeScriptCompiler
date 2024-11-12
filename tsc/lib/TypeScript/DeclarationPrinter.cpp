@@ -122,6 +122,8 @@ void MLIRDeclarationPrinter::print(FunctionPrototypeDOM::TypePtr funcProto)
         funcProto->getName(), 
         funcType.getParams(), 
         funcType.getNumResults() > 0 ? funcType.getResult(0) : mlir::Type());    
+    os << ";";
+    newline();        
 }
 
 void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)

@@ -4820,12 +4820,6 @@ class MLIRGenImpl
         if (dllExport)
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
-            if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
-                || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
-            {
-                //addDeclarationToExport(funcProto->getName(), funcType, genContext);
-                addFunctionDeclarationToExport(funcProto);
-            }
         }
 
         auto dllImport = ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllImport) == InternalFlags::DllImport);
@@ -4855,6 +4849,15 @@ class MLIRGenImpl
             }
 
             funcProto->setFuncType(funcType);
+
+            if (dllExport)
+            {
+                if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
+                    || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
+                {
+                    addFunctionDeclarationToExport(funcProto);
+                }
+            }
         }
 
         if (!funcProto->getIsGeneric())
