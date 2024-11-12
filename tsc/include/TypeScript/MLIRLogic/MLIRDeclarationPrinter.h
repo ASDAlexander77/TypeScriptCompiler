@@ -16,9 +16,10 @@ namespace typescript
     public:
         MLIRDeclarationPrinter(raw_ostream &os) : os(os) {};
 
+        void printTypeDeclaration(StringRef, mlir::Type);
         void printEnum(StringRef, ArrayRef<mlir::NamedAttribute>);
-        void print(mlir::Type);
-        void print(FunctionPrototypeDOM::TypePtr funcProto);
+        void printVariableDeclaration(StringRef, mlir::Type, bool);
+        void print(FunctionPrototypeDOM::TypePtr);
         void print(ClassInfo::TypePtr);
 
     protected:
@@ -32,6 +33,7 @@ namespace typescript
         void printParams(ArrayRef<mlir::Type>);
         void printFunction(StringRef, ArrayRef<mlir::Type>, mlir::Type);
         void printMethod(bool, StringRef, ArrayRef<mlir::Type>, mlir::Type);
+        void print(mlir::Type);
     };
 
 } // namespace typescript 

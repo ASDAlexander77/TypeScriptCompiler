@@ -3890,17 +3890,8 @@ class MLIRGenImpl
 
             if (varClass.isExport)
             {
-                NodeFactory nf(NodeFactoryFlags::None);
-
                 auto isConst = varClass.type == VariableType::Const || varClass.type == VariableType::ConstRef;
-                NodeArray<VariableDeclaration> _varDeclarations;
-                auto _varName = nf.createIdentifier(stows(nameStr));
-                auto _varDecl = nf.createVariableDeclaration(
-                    _varName, undefined, undefined, name->parent.as<VariableDeclaration>()->type);
-                _varDeclarations.push_back(_varDecl);
-                auto _varList = nf.createVariableDeclarationList(_varDeclarations, isConst ? NodeFlags::Const : NodeFlags::Let);
-                auto _varStatement = nf.createVariableStatement(undefined, _varList);
-                addDeclarationToExport(_varStatement, "@dllimport\n", ";\n", _varDecl, varType);
+                addVariableDeclarationToExport(nameStr, varType, isConst);
             }
 
             return mlir::success();
@@ -14434,7 +14425,7 @@ class MLIRGenImpl
 
                 if (hasExportModifier)
                 {
-                    addTypeDeclarationToExport(typeAliasDeclarationAST);
+                    addTypeDeclarationToExport(namePtr, type);
                 }
             }
 
@@ -22364,47 +22355,19 @@ genContext);
         return mlir::success();
     }
 
-    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n", ts::Node id = {}, mlir::Type returnTypeIfNotProvided = {})
+    void addTypeDeclarationToExport(StringRef name, mlir::Type type)    
     {
-        // // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
-        // if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
-        // {
-        //     return;
-        // }
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.printTypeDeclaration(name, type);
 
-        // Printer<stringstream> printer(declExports);
-        // printer.setDeclarationMode(true);
-        // if (returnTypeIfNotProvided)
-        // {
-        //     printer.setOnMissingReturnType([&](auto currentNode) {
-        //         if (currentNode != id)
-        //         {
-        //             return string{};
-        //         } 
-
-        //         return to_wprint(returnTypeIfNotProvided);      
-        //     });
-        // }
-
-        // if (prefix)
-        //     declExports << prefix;
-
-        // printer.printNode(node);
-        
-        // if (postfix)
-        //     declExports << postfix;
-
-        // LLVM_DEBUG(llvm::dbgs() << "\n!! added declaration to export: \n" << convertWideToUTF8(declExports.str()) << "\n";);      
-    }
-
-    void addTypeDeclarationToExport(TypeAliasDeclaration typeAliasDeclaration)    
-    {
-        addDeclarationToExport(typeAliasDeclaration);
+        declExports << ss.str().str();
     }
 
     void addInterfaceDeclarationToExport(InterfaceDeclaration interfaceDeclaration)
     {
-        addDeclarationToExport(interfaceDeclaration, nullptr, "\n");
+        //addDeclarationToExport(interfaceDeclaration, nullptr, "\n");
     }
 
     void addEnumDeclarationToExport(StringRef name, ArrayRef<mlir::NamedAttribute> enumValues)
@@ -22415,6 +22378,16 @@ genContext);
         dp.printEnum(name, enumValues);
 
         declExports << ss.str().str();        
+    }
+
+    void addVariableDeclarationToExport(StringRef name, mlir::Type type, bool isConst)
+    {
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.printVariableDeclaration(name, type, isConst);
+
+        declExports << ss.str().str();
     }
 
     void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto)

@@ -222,6 +222,16 @@ namespace typescript
         }
     }
 
+    void MLIRDeclarationPrinter::printTypeDeclaration(StringRef name, mlir::Type type) 
+    {
+        printBeforeDeclaration();
+
+        os << "type " << name << " = ";
+        print(type);
+        os << ";";
+        newline();
+    }
+
     void MLIRDeclarationPrinter::printEnum(StringRef name, ArrayRef<mlir::NamedAttribute> enumValues)
     {
         printBeforeDeclaration();
@@ -246,6 +256,15 @@ namespace typescript
         }
 
         os << "}";
+        newline();
+    }
+
+    void MLIRDeclarationPrinter::printVariableDeclaration(StringRef name, mlir::Type type, bool isConst)
+    {
+        printBeforeDeclaration();
+        os << (isConst ? "const" : "let") << " " << name << " : ";
+        print(type);
+        os << ";";
         newline();
     }
 
