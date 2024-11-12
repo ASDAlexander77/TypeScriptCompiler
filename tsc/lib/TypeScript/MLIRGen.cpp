@@ -14827,7 +14827,7 @@ class MLIRGenImpl
 
 #if ENABLE_TYPED_GC
         auto enabledGC = !compileOptions.disableGC;
-        if (enabledGC && !newClassPtr->isStatic && !newClassPtr->isImport)
+        if (enabledGC && !newClassPtr->isStatic)
         {
             mlirGenClassTypeBitmap(location, newClassPtr, classGenContext);
             mlirGenClassTypeDescriptorField(location, newClassPtr, classGenContext);
@@ -14870,7 +14870,7 @@ class MLIRGenImpl
             }
         }
 
-        if (!newClassPtr->isStatic && !newClassPtr->isImport)
+        if (!newClassPtr->isStatic)
         {
             if (mlir::failed(mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext)))
             {
@@ -15003,6 +15003,7 @@ class MLIRGenImpl
 
                 if (name == DLL_IMPORT)
                 {
+                    newClassPtr->isDeclaration = true;
                     newClassPtr->isImport = true;
                     // it has parameter, means this is dynamic import, should point to dll path
                     if (args.size() > 0)
@@ -15117,7 +15118,7 @@ class MLIRGenImpl
         }
 #endif
 
-        if (!newClassPtr->isStatic && !newClassPtr->isDynamicImport)
+        if (!newClassPtr->isStatic)
         {
             mlirGenClassSizeStaticField(location, classDeclarationAST, newClassPtr, genContext);
         }
@@ -16204,7 +16205,7 @@ genContext);
             NodeFactory nf(NodeFactoryFlags::None);
 
             ts::Block body = undefined;
-            if (!newClassPtr->isDeclaration && !newClassPtr->isImport)
+            if (!newClassPtr->isDeclaration)
             {
                 NodeArray<Statement> statements;
 
