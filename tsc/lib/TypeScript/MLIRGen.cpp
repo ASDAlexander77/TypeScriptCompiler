@@ -14593,7 +14593,7 @@ class MLIRGenImpl
 
         if (getExportModifier(enumDeclarationAST))
         {
-            addEnumDeclarationToExport(enumDeclarationAST);
+            addEnumDeclarationToExport(namePtr, enumValues);
         }
 
         return mlir::success();
@@ -22403,9 +22403,14 @@ genContext);
         addDeclarationToExport(interfaceDeclaration, nullptr, "\n");
     }
 
-    void addEnumDeclarationToExport(EnumDeclaration enumDeclatation)
+    void addEnumDeclarationToExport(StringRef name, ArrayRef<mlir::NamedAttribute> enumValues)
     {
-        addDeclarationToExport(enumDeclatation, nullptr, "\n");
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.printEnum(name, enumValues);
+
+        declExports << ss.str().str();        
     }
 
     void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto)
