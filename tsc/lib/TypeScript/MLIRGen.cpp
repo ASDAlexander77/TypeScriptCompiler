@@ -5492,6 +5492,37 @@ class MLIRGenImpl
         return {mlir::success(), funcOp, funcProto->getName().str(), false};
     }
 
+    mlir::LogicalResult mlirGenStaticFieldDeclarationDynamicImport(mlir::Location location, ClassInfo::TypePtr newClassPtr, StringRef name, mlir::Type type, const GenContext &genContext)
+    {
+        auto &staticFieldInfos = newClassPtr->staticFields;
+
+        auto fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
+
+        // register global
+        auto fullClassStaticFieldName = concat(newClassPtr->fullName, name);
+
+        auto staticFieldType =  mlir_ts::RefType::get(type);
+
+        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            // prevent double generating
+            registerVariable(
+                location, fullClassStaticFieldName, true, VariableType::Var,
+                [&](mlir::Location location, const GenContext &genContext)  -> TypeValueInitType {
+                    auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
+                    auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
+                    auto result = cast(location, staticFieldType, referenceToStaticFieldOpaque, genContext);
+                    auto referenceToStaticField = V(result);
+                    return {referenceToStaticField.getType(), referenceToStaticField, TypeProvided::Yes};
+                },
+                genContext);
+        }
+
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+
+        return mlir::success();
+    }    
+
     mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef fullFunctionName, mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext)
     {
         registerVariable(location, fullFunctionName, true, VariableType::Var,
@@ -15979,34 +16010,7 @@ genContext);
     mlir::LogicalResult mlirGenCustomRTTIDynamicImport(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                           ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
-        auto &staticFieldInfos = newClassPtr->staticFields;
-
-        auto fieldId = MLIRHelper::TupleFieldName(RTTI_NAME, builder.getContext());
-
-        // register global
-        auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
-
-        auto staticFieldType =  mlir_ts::RefType::get(getStringType());
-
-        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
-        {
-            // prevent double generating
-            // TODO: use mlirGenFunctionLikeDeclarationDynamicImport 
-            registerVariable(
-                location, fullClassStaticFieldName, true, VariableType::Var,
-                [&](mlir::Location location, const GenContext &genContext)  -> TypeValueInitType {
-                    auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
-                    auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
-                    auto result = cast(location, staticFieldType, referenceToStaticFieldOpaque, genContext);
-                    auto referenceToStaticField = V(result);
-                    return {referenceToStaticField.getType(), referenceToStaticField, TypeProvided::Yes};
-                },
-                genContext);
-        }
-
-        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
-
-        return mlir::success();
+        return mlirGenStaticFieldDeclarationDynamicImport(location, newClassPtr, RTTI_NAME, getStringType(), genContext);
     }
 
 #ifdef ENABLE_TYPED_GC
