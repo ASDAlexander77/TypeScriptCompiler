@@ -18848,6 +18848,22 @@ genContext);
             return mlir::failure();
         }
 
+        if (auto valueArrayType = dyn_cast<mlir_ts::ArrayType>(valueType))
+        {
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
+            {
+                llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> typeParamsWithArgs;
+                auto extendsResult = mth.extendsType(location, valueArrayType.getElementType(), arrayType.getElementType(), typeParamsWithArgs);
+                if (extendsResult != ExtendsResult::True)
+                {
+                    emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type) 
+                        << " as element type " << to_print(arrayType.getElementType()) << " is not base of type " 
+                        << to_print(valueArrayType.getElementType());
+                    return mlir::failure();
+                }
+            }
+        }
+
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
