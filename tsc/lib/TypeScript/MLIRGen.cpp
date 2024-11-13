@@ -855,7 +855,7 @@ class MLIRGenImpl
 
             // priority is lowest to load as first dependencies
             builder.create<mlir_ts::GlobalConstructorOp>(
-                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(100));
+                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(FIRST_GLOBAL_CONSTRUCTOR_PRIORITY));
         }
 
         for (auto declSymbol : symbols)
@@ -4120,7 +4120,7 @@ class MLIRGenImpl
                 mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());                    
 
                 builder.create<mlir_ts::GlobalConstructorOp>(
-                    location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(1000));
+                    location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
             }
         }
         else if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
@@ -15234,6 +15234,11 @@ class MLIRGenImpl
                         llvm::dbgs() << "\n\tNOT RESOLVED MEMBER: " << classMethodMemberInfo.methodName;);
                     notResolved++;
                 }
+
+                if (mlir::failed(mlirGenClassStaticBlockMember(classDeclarationAST, newClassPtr, classMember, genContext)))
+                {
+                    return mlir::failure();
+                }
             }
 
             for (auto &classMember : newClassPtr->extraMembersPost)
@@ -15868,7 +15873,6 @@ genContext);
             NodeFactory nf(NodeFactoryFlags::None);
 
             NodeArray<Statement> statements;
-
             auto body = nf.createBlock(statements, /*multiLine*/ false);
             ModifiersArray modifiers;
             modifiers.push_back(nf.createToken(SyntaxKind::StaticKeyword));
@@ -17084,6 +17088,48 @@ genContext);
         return registerGenericClassMethod(classMethodMemberInfo, genContext);
     }
 
+    mlir::LogicalResult mlirGenClassStaticBlockMember(ClassLikeDeclaration classDeclarationAST,
+                                                 ClassInfo::TypePtr newClassPtr, ClassElement classMember,
+                                                 const GenContext &genContext)
+    {
+        // we need to add all static blocks to it
+        if (classMember == SyntaxKind::ClassStaticBlockDeclaration)
+        {
+            auto classStaticBlock = classMember.as<ClassStaticBlockDeclaration>();
+
+            // create function
+            auto location = loc(classStaticBlock);
+
+            auto name = MLIRHelper::getAnonymousName(location, ".csb", "");
+            auto fullInitGlobalFuncName = getFullNamespaceName(name);
+
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+
+            // create global construct
+            auto funcType = getFunctionType({}, {}, false);
+
+            if (mlir::failed(mlirGenFunctionBody(location, name, fullInitGlobalFuncName, funcType,
+                [&](mlir::Location location, const GenContext &genContext) {
+                    return mlirGen(classStaticBlock->body, genContext);
+                }, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            auto parentModule = theModule;
+            MLIRCodeLogicHelper mclh(builder, location);
+
+            builder.setInsertionPointToStart(parentModule.getBody());
+            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
+
+            // priority is lowest to load as first dependencies
+            builder.create<mlir_ts::GlobalConstructorOp>(
+                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));            
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult registerGenericClassMethod(ClassMethodMemberInfo &classMethodMemberInfo, const GenContext &genContext)
     {
         // if funcOp is null, means it is generic
@@ -17183,7 +17229,7 @@ genContext);
             mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());
 
             builder.create<mlir_ts::GlobalConstructorOp>(location, 
-                FlatSymbolRefAttr::get(builder.getContext(), StringRef(std::get<0>(funcName))), builder.getIndexAttr(1000));
+                FlatSymbolRefAttr::get(builder.getContext(), StringRef(std::get<0>(funcName))), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
         }
 
         return mlir::success();
