@@ -4924,6 +4924,7 @@ class MLIRGenImpl
                 {
                     // has return value but type is not provided yet
                     genContextWithPassResult.clean();
+                    emitError(loc(functionLikeDeclarationBaseAST)) << "'return' is not found in function or return type can't be resolved";
                     return mlir::failure();
                 }
 
