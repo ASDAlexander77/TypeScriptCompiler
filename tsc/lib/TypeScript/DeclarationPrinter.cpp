@@ -248,7 +248,7 @@ namespace typescript
         newline();
     }
 
-    void MLIRDeclarationPrinter::printEnum(StringRef name, ArrayRef<mlir::NamedAttribute> enumValues)
+    void MLIRDeclarationPrinter::printEnum(StringRef name, mlir::DictionaryAttr enumValues)
     {
         printBeforeDeclaration();
 

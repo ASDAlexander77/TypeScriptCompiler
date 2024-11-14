@@ -123,6 +123,12 @@ enum class DisposeDepth
     FullStack
 };
 
+enum class Stages
+{
+    Discovering,
+    SourceGeneration
+};
+
 typedef std::tuple<mlir::Type, mlir::Value, TypeProvided> TypeValueInitType;
 typedef std::function<TypeValueInitType(mlir::Location, const GenContext &)> TypeValueInitFuncType;
 
@@ -325,10 +331,12 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
 
+        stage = Stages::Discovering;
         auto storeDebugInfo = compileOptions.generateDebugInfo;
         compileOptions.generateDebugInfo = false;
         if (mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)))
         {
+            stage = Stages::SourceGeneration;
             compileOptions.generateDebugInfo = storeDebugInfo;
             if (mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
             {
@@ -14521,22 +14529,31 @@ class MLIRGenImpl
         auto namePtr = MLIRHelper::getName(enumDeclarationAST->name, stringAllocator);
         if (namePtr.empty())
         {
-            llvm_unreachable("not implemented");
             return mlir::failure();
         }
 
         SymbolTableScopeT varScope(symbolTable);
 
-        getEnumsMap().insert(
-        {
-            namePtr, 
-            std::make_pair(
-                getEnumType().getElementType(), mlir::DictionaryAttr::get(builder.getContext(), 
-                {}))
-        });
-
         SmallVector<mlir::Type> enumLiteralTypes;
-        SmallVector<mlir::NamedAttribute> enumValues;
+        StringMap<mlir::Attribute> enumValues;
+
+        auto appending = false;
+        if (getEnumsMap().contains(namePtr))
+        {
+            auto dict = getEnumsMap().lookup(namePtr).second;
+            for (auto key : dict)
+            {
+                enumValues[key.getName()] = key.getValue();
+            }
+
+            appending = true;
+        }
+        else
+        {
+            getEnumsMap().insert(
+                { namePtr, { getEnumType().getElementType(), mlir::DictionaryAttr::get(builder.getContext(), {}) } });
+        }
+
         auto activeBits = 32;
         auto currentEnumValue = 0;
         for (auto enumMember : enumDeclarationAST->members)
@@ -14546,7 +14563,6 @@ class MLIRGenImpl
             auto memberNamePtr = MLIRHelper::getName(enumMember->name, stringAllocator);
             if (memberNamePtr.empty())
             {
-                llvm_unreachable("not implemented");
                 return mlir::failure();
             }
 
@@ -14589,6 +14605,13 @@ class MLIRGenImpl
             }
             else
             {
+                if (appending && currentEnumValue == 0 && stage == Stages::Discovering)
+                {
+                    emitError(loc(enumMember))
+                        << "In an enum with multiple declarations, only one declaration can omit an initializer for its first enum element";                    
+                    return mlir::failure();
+                }
+
                 auto typeInt = mlir::IntegerType::get(builder.getContext(), activeBits);
                 enumValueAttr = builder.getIntegerAttr(typeInt, currentEnumValue);
                 auto indexType = mlir_ts::LiteralType::get(enumValueAttr, typeInt);
@@ -14603,10 +14626,16 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " value attr: " << enumValueAttr << "\n");
 
-            enumValues.push_back({getStringAttr(memberNamePtr.str()), enumValueAttr});
+            enumValues[memberNamePtr] = enumValueAttr;
 
             // update enum to support req. access
-            getEnumsMap()[namePtr].second = mlir::DictionaryAttr::get(builder.getContext(), enumValues /*adjustedEnumValues*/);
+            SmallVector<mlir::NamedAttribute> namedEnumValues;
+            for (auto &key : enumValues)
+            {
+                namedEnumValues.push_back({builder.getStringAttr(key.first()), key.second});
+            }
+
+            getEnumsMap()[namePtr].second = mlir::DictionaryAttr::get(builder.getContext(), namedEnumValues /*adjustedEnumValues*/);
 
             currentEnumValue++;
         }
@@ -14621,7 +14650,7 @@ class MLIRGenImpl
 
         if (getExportModifier(enumDeclarationAST))
         {
-            addEnumDeclarationToExport(namePtr, enumValues);
+            addEnumDeclarationToExport(namePtr, getEnumsMap()[namePtr].second);
         }
 
         return mlir::success();
@@ -22478,7 +22507,7 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addEnumDeclarationToExport(StringRef name, ArrayRef<mlir::NamedAttribute> enumValues)
+    void addEnumDeclarationToExport(StringRef name, mlir::DictionaryAttr enumValues)
     {
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
@@ -23098,6 +23127,8 @@ genContext);
 
     std::stringstream declExports;
     stringstream exports;
+
+    Stages stage;
 
 private:
     std::string label;
