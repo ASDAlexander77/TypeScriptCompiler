@@ -13408,7 +13408,7 @@ class MLIRGenImpl
 
                 fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
             }
-            else if (item == SyntaxKind::MethodDeclaration)
+            else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
                 continue;
             }
@@ -13537,12 +13537,23 @@ class MLIRGenImpl
                 fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
                 processFunctionLikeProto(fieldId, funcLikeDecl);
             }
-            else if (item == SyntaxKind::MethodDeclaration)
+            else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
                 fieldId = TupleFieldName(funcLikeDecl->name, genContext);
+
+                if (item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
+                {
+                    auto stringVal = mlir::cast<mlir::StringAttr>(fieldId).getValue();
+                    std::string newField;
+                    raw_string_ostream rso(newField);
+                    rso << (item == SyntaxKind::GetAccessor ? "get_" : "set_") << stringVal;
+                    
+                    fieldId = mlir::StringAttr::get(builder.getContext(), mlir::StringRef(newField).copy(stringAllocator));                    
+                }
+
                 processFunctionLikeProto(fieldId, funcLikeDecl);
-            }
+            }          
         }
 
         // create accum. captures
@@ -13622,7 +13633,7 @@ class MLIRGenImpl
                 auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
                 processFunctionLike(objThis, funcLikeDecl);
             }
-            else if (item == SyntaxKind::MethodDeclaration)
+            else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
                 processFunctionLike(objThis, funcLikeDecl);
