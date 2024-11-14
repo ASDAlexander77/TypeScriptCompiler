@@ -108,7 +108,7 @@ class MLIRCodeLogic
     std::pair<int, mlir::Type> TupleFieldType(mlir::Location location, T tupleType, mlir::Attribute fieldId,
                                               bool indexAccess = false)
     {
-        auto result = TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
+        auto result = TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
         if (result.first == -1)
         {
             emitError(location, "Tuple member '") << fieldId << "' can't be found";
@@ -117,12 +117,44 @@ class MLIRCodeLogic
         return result;
     }
 
+    void TupleFieldGetterAndSetter(mlir_ts::TupleType tupleType, mlir::Attribute fieldId)
+    {
+        // try to find getter & setter
+        if (auto strFieldName = dyn_cast<mlir::StringAttr>(fieldId))
+        {
+            auto getterIndex = -1;
+            auto setterIndex = -1;
+            for (auto [index, fldInfo] : enumerate(tupleType))
+            {
+                if (auto strAttr = dyn_cast<mlir::StringAttr>(fldInfo.id))
+                {
+                    auto str = strAttr.getValue();
+                    auto isGetter = str.starts_with("get_");
+                    auto isSetter = str.starts_with("set_");
+                    if ((isGetter || isSetter) && str.ends_with(strFieldName) && str.size() == strFieldName.size() + 4/*'get_'.length*/)
+                    {
+                        // we found setter or getter;
+                        if (isGetter)
+                        {
+                            getterIndex = index;
+                        }
+                        else if (isSetter)
+                        {
+                            setterIndex = index;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     template <typename T>
-    std::pair<int, mlir::Type> TupleFieldTypeNoError(mlir::Location location, T tupleType, mlir::Attribute fieldId,
+    std::pair<int, mlir::Type> TupleFieldTypeNoError(T tupleType, mlir::Attribute fieldId,
                                                      bool indexAccess = false)
     {
         auto fieldIndex = tupleType.getIndex(fieldId);
-        if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
+        auto notFound = fieldIndex < 0 || fieldIndex >= tupleType.size();
+        if (indexAccess && notFound)
         {
             // try to resolve index
             auto intAttr = dyn_cast<mlir::IntegerAttr>(fieldId);
@@ -132,7 +164,7 @@ class MLIRCodeLogic
             }
         }
 
-        if (fieldIndex < 0 || fieldIndex >= tupleType.size())
+        if (notFound)
         {
             return std::make_pair<>(-1, mlir::Type());
         }
@@ -929,7 +961,7 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
+        auto pair = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
         if (fieldIndex < 0)
         {
@@ -1241,7 +1273,7 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldTypeNoError(location, classStorageType, fieldId);
+        auto pair = mcl.TupleFieldTypeNoError(classStorageType, fieldId);
         auto fieldIndex = pair.first;
         if (fieldIndex < 0)
         {
