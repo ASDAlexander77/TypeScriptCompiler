@@ -4539,6 +4539,11 @@ class MLIRGenImpl
             objectOwnerName =
                 getNameWithArguments(signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>(), genContext);
         }
+        else if (signatureDeclarationBaseAST->parent == SyntaxKind::ObjectLiteralExpression)
+        {
+            objectOwnerName = mlir::cast<mlir_ts::ObjectStorageType>(
+                mlir::cast<mlir_ts::ObjectType>(genContext.thisType).getStorageType()).getName().getValue();
+        }
         else if (genContext.funcOp)
         {
             auto funcName = const_cast<GenContext &>(genContext).funcOp.getSymName().str();
@@ -4547,7 +4552,7 @@ class MLIRGenImpl
 
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
-            if (!genContext.thisType || !isa<mlir_ts::ObjectType>(genContext.thisType))
+            if (!objectOwnerName.empty())
             {
                 // class method name
                 name = objectOwnerName + "." + name;
