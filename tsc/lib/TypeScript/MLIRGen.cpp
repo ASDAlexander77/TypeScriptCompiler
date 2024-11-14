@@ -17010,18 +17010,17 @@ genContext);
 
         auto location = loc(classMember);
         auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
-        getMethodNameOrPropertyName(
+        if (mlir::failed(getMethodNameOrPropertyName(
             newClassPtr->isStatic,
             funcLikeDeclaration, 
             classMethodMemberInfo.methodName, 
             classMethodMemberInfo.propertyName, 
-            genContext);
-
-        if (classMethodMemberInfo.methodName.empty())
+            genContext)))
         {
-            llvm_unreachable("not implemented");
             return mlir::failure();
         }
+
+        assert (!classMethodMemberInfo.methodName.empty());
 
         if (classMethodMemberInfo.isAbstract && !newClassPtr->isAbstract)
         {
@@ -17804,19 +17803,19 @@ genContext);
         return mlir::success();
     }
 
-    std::string getNameForMethod(SignatureDeclarationBase methodSignature, const GenContext &genContext)
+    std::tuple<std::string, bool> getNameForMethod(SignatureDeclarationBase methodSignature, const GenContext &genContext)
     {
         auto [attr, result] = getNameFromComputedPropertyName(methodSignature->name, genContext);
         if (mlir::failed(result))
         {
-            return nullptr;
+            return {"", false};
         }
 
         if (attr)
         {
             if (auto strAttr = dyn_cast<mlir::StringAttr>(attr))
             {
-                return strAttr.getValue().str();
+                return {strAttr.getValue().str(), true};
             }
             else
             {
@@ -17824,7 +17823,7 @@ genContext);
             }
         }
 
-        return MLIRHelper::getName(methodSignature->name);
+        return {MLIRHelper::getName(methodSignature->name), true};
     }
 
     mlir::LogicalResult getMethodNameOrPropertyName(bool isStaticClass, SignatureDeclarationBase methodSignature, std::string &methodName,
@@ -17857,17 +17856,33 @@ genContext);
         }
         else if (kind == SyntaxKind::GetAccessor)
         {
-            propertyName = getNameForMethod(methodSignature, genContext);
+            auto [propertyName, result] = getNameForMethod(methodSignature, genContext);
+            if (!result)
+            {
+                return mlir::failure();
+            }
+
             methodName = std::string("get_") + propertyName;
         }
         else if (kind == SyntaxKind::SetAccessor)
         {
-            propertyName = getNameForMethod(methodSignature, genContext);
+            auto [propertyName, result] = getNameForMethod(methodSignature, genContext);
+            if (!result)
+            {
+                return mlir::failure();
+            }
+
             methodName = std::string("set_") + propertyName;
         }
         else
         {
-            methodName = getNameForMethod(methodSignature, genContext);
+            auto [name, result] = getNameForMethod(methodSignature, genContext);
+            if (!result)
+            {
+                return mlir::failure();
+            }            
+
+            methodName = name;
         }
 
         return mlir::success();
@@ -21463,7 +21478,7 @@ genContext);
             auto attr = mcl.ExtractAttr(value);
             if (!attr)
             {
-                emitError(loc(name), "not supported ComputedPropertyName expression");
+                emitError(loc(name), "not supported 'Computed Property Name' expression");
             }
 
             return {attr, attr ? mlir::success() : mlir::failure()};
