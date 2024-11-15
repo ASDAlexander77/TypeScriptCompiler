@@ -906,6 +906,30 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
     }
 };
 
+struct ThisAccessorIndirectOpLowering : public TsPattern<mlir_ts::ThisAccessorIndirectOp>
+{
+    using TsPattern<mlir_ts::ThisAccessorIndirectOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisAccessorIndirectOp thisAccessorIndirectOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = thisAccessorIndirectOp.getLoc();
+
+        if (thisAccessorIndirectOp.getGetAccessor().getDefiningOp<mlir_ts::NullOp>())
+        {
+            emitError(loc) << "property does not have get accessor";
+            return failure();
+        }
+
+        auto callRes =
+            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisAccessorIndirectOp.getType()}, 
+                thisAccessorIndirectOp.getGetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal()});
+
+        rewriter.replaceOp(thisAccessorIndirectOp, callRes.getResult(0));
+
+        return success();
+    }
+};
+
 struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 {
     using TsPattern<mlir_ts::TryOp>::TsPattern;
@@ -1894,11 +1918,12 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
 
     patterns.insert<EntryOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, ParamOpLowering,
                     ParamOptionalOpLowering, ParamDefaultValueOpLowering, OptionalValueOrDefaultOpLowering, PrefixUnaryOpLowering, 
-                    PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/
-                    DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering,
-                    SwitchOpLowering, AccessorOpLowering, ThisAccessorOpLowering, LabelOpLowering, CallOpLowering,
-                    CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, CatchOpLowering, StateLabelOpLowering,
-                    SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering, CaptureOpLowering>(
+                    PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/ DoWhileOpLowering, WhileOpLowering, 
+                    ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, 
+                    AccessorOpLowering, ThisAccessorOpLowering, ThisAccessorIndirectOpLowering,
+                    LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, 
+                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, 
+                    TypeOfOpLowering, CaptureOpLowering>(
         &context, &tsContext, &tsFuncContext);
 }
 
