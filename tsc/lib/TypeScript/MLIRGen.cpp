@@ -8973,8 +8973,7 @@ class MLIRGenImpl
             }
 
             auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorOp.getSetAccessor().value(),
-                                                           mlir::TypeRange{},
-                                                           mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
+                mlir::TypeRange{}, mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
         }
         else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
         {
@@ -8990,8 +8989,8 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            auto callRes = builder.create<mlir_ts::CallIndirectOp>(location, mlir::TypeRange{}, 
-                thisAccessorIndirectOp.getSetAccessor(), mlir::ValueRange{thisAccessorIndirectOp.getThisVal(), savingValue});
+            auto callRes = builder.create<mlir_ts::CallIndirectOp>(location, TypeRange{}, 
+                thisAccessorIndirectOp.getSetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal(), savingValue});                
         }        
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
@@ -9817,6 +9816,14 @@ class MLIRGenImpl
                 .Case<mlir_ts::RefType>([&](auto refType) { return cl.Ref(refType); })
                 .Case<mlir_ts::ObjectType>([&](auto objectType) { 
                     if (auto value = cl.Object(objectType))
+                    {
+                        return value;
+                    }
+
+                    return mlir::Value();                    
+                })
+                .Case<mlir_ts::ObjectStorageType>([&](auto objectStorageType) { 
+                    if (auto value = cl.RefLogic(objectStorageType))
                     {
                         return value;
                     }
@@ -13676,11 +13683,14 @@ class MLIRGenImpl
             builder.create<mlir_ts::ConstantOp>(location, constTupleTypeWithReplacedThis, arrayAttr);
         if (fieldsToSet.empty())
         {
-            return V(constantVal);
+            CAST_A(result, location, objectStorageType, constantVal, genContext);
+            return result;
         }
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
-        return mlirGenCreateTuple(location, tupleType, constantVal, fieldsToSet, genContext);
+        auto tupleValue = mlirGenCreateTuple(location, tupleType, constantVal, fieldsToSet, genContext);
+        CAST_A(result, location, objectStorageType, tupleValue, genContext);
+        return result;
     }
 
     ValueOrLogicalResult mlirGenCreateTuple(mlir::Location location, mlir::Type tupleType, mlir::Value initValue,

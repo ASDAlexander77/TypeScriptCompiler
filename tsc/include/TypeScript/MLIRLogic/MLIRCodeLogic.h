@@ -1338,10 +1338,17 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
+        auto pair = mcl.TupleFieldTypeNoError(tupleType, fieldId);
         auto fieldIndex = pair.first;
         if (fieldIndex < 0)
         {
+            auto accessorValue = TupleGetSetAccessor(tupleType, fieldId);
+            if (accessorValue)
+            {
+                return accessorValue;
+            }
+
+            mcl.errorNotFound(location, fieldId);
             return mlir::Value();
         }
 
