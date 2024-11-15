@@ -346,12 +346,21 @@ void mlir_ts::AccessorOp::getCanonicalizationPatterns(RewritePatternSet &results
 }
 
 //===----------------------------------------------------------------------===//
-// ThisAccessorRefOp
+// ThisAccessorOp
 //===----------------------------------------------------------------------===//
 
 void mlir_ts::ThisAccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnused<mlir_ts::ThisAccessorOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// ThisAccessorIndirectOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::ThisAccessorIndirectOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::ThisAccessorIndirectOp>>(context);
 }
 
 //===----------------------------------------------------------------------===//

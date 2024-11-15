@@ -111,13 +111,19 @@ class MLIRCodeLogic
         auto result = TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
         if (result.first == -1)
         {
-            emitError(location, "Tuple member '") << fieldId << "' can't be found";
+            errorNotFound(location, fieldId);
         }
 
         return result;
     }
 
-    void TupleFieldGetterAndSetter(mlir_ts::TupleType tupleType, mlir::Attribute fieldId)
+    void errorNotFound(mlir::Location location, mlir::Attribute fieldId)
+    {
+        emitError(location, "Tuple member '") << fieldId << "' can't be found";
+    }
+
+    template <typename T>
+    std::pair<int, int> TupleFieldGetterAndSetter(T tupleType, mlir::Attribute fieldId)
     {
         // try to find getter & setter
         if (auto strFieldName = dyn_cast<mlir::StringAttr>(fieldId))
@@ -145,7 +151,11 @@ class MLIRCodeLogic
                     }
                 }
             }
+
+            return {getterIndex, setterIndex};
         }
+
+        return {-1, -1};
     }
 
     template <typename T>
@@ -920,10 +930,17 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldType(location, tupleType, fieldId, indexAccess);
+        auto pair = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
         if (fieldIndex < 0)
         {
+            auto accessorValue = TupleGetSetAccessor(tupleType, fieldId);
+            if (accessorValue)
+            {
+                return accessorValue;
+            }
+
+            mcl.errorNotFound(location, fieldId);
             return value;
         }
 
@@ -951,6 +968,66 @@ class MLIRPropertyAccessCodeLogic
 
         return builder.create<mlir_ts::ExtractPropertyOp>(
             location, elementTypeForRef, expression, MLIRHelper::getStructIndex(builder, fieldIndex));
+    }
+
+    template <typename T> mlir::Value TupleGetSetAccessor(T tupleType, mlir::Attribute fieldId) 
+    {
+        MLIRCodeLogic mcl(builder);
+
+        // check if we have getter & setter
+        auto [getterIndex, setterIndex] = mcl.TupleFieldGetterAndSetter(tupleType, fieldId);
+        if (getterIndex >= 0 || setterIndex >= 0)
+        {
+            // found setter of getter
+            auto getterType = tupleType.getType(getterIndex);
+            auto setterType = tupleType.getType(setterIndex);
+
+            auto effectiveFuncType = getterType;
+            if (!effectiveFuncType)
+            {
+                effectiveFuncType = setterType;
+            }
+
+            mlir::Value getterValue;
+            mlir::Value setterValue;
+
+            if (getterIndex >= 0)
+            {
+                getterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, getterType, expression, 
+                    MLIRHelper::getStructIndex(builder, getterIndex));
+            }
+            else
+            {
+                getterValue = builder.create<mlir_ts::NullOp>(location, getterType);
+            }
+
+            if (setterIndex >= 0)
+            {
+                setterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, setterType, expression, 
+                    MLIRHelper::getStructIndex(builder, setterIndex));
+            }
+            else
+            {
+                setterValue = builder.create<mlir_ts::NullOp>(location, setterType);
+            }
+
+            auto refValue = getExprLoadRefValue(location);
+            if (!refValue)
+            {
+                // allocate in stack
+                refValue = builder.create<mlir_ts::VariableOp>(
+                    location, mlir_ts::RefType::get(expression.getType()), expression);
+            }                    
+
+            auto thisValue = refValue;
+
+            auto thisAccessorIndirectOp = builder.create<mlir_ts::ThisAccessorIndirectOp>(
+                location, effectiveFuncType, thisValue, getterValue, setterValue);  
+
+            return thisAccessorIndirectOp;              
+        }
+
+        return mlir::Value();
     }
 
     template <typename T> mlir::Value TupleNoError(T tupleType, bool indexAccess = false)

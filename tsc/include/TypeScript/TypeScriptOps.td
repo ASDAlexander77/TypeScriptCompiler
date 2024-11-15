@@ -128,6 +128,16 @@ def ThisAccessorOp : TypeScript_Op<"ThisAccessor",
   let hasCanonicalizer = 1;
 }
 
+def ThisAccessorIndirectOp : TypeScript_Op<"ThisAccessorIndirect", 
+    [Pure]> {
+  let summary = "accessor of object";
+
+  let arguments = (ins AnyType:$thisVal, FunctionType:$getAccessor, FunctionType:$setAccessor);
+  let results = (outs AnyType:$value);
+
+  let hasCanonicalizer = 1;
+}
+
 def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef", 
     [Pure]> {
   let summary = "symbol reference as to interface member";
