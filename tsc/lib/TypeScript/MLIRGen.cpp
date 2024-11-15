@@ -6928,6 +6928,13 @@ class MLIRGenImpl
                     propertyType = typePredicateType;
                 }
             }
+            else if (auto thisAccessorIndirect = conditionValue.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessorIndirect.getType()))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
 
             if (propertyType && propertyType.getParameterName().getValue() == THIS_NAME)
             {
@@ -8969,6 +8976,23 @@ class MLIRGenImpl
                                                            mlir::TypeRange{},
                                                            mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
         }
+        else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
+        {
+            syncSavingValue(thisAccessorIndirectOp.getType());
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            if (thisAccessorIndirectOp.getSetAccessor().getDefiningOp<mlir_ts::NullOp>())
+            {
+                emitError(location) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            auto callRes = builder.create<mlir_ts::CallIndirectOp>(location, mlir::TypeRange{}, 
+                thisAccessorIndirectOp.getSetAccessor(), mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
+        }        
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
