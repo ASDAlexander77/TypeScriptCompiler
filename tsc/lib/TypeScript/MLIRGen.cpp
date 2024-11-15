@@ -8991,7 +8991,7 @@ class MLIRGenImpl
             }
 
             auto callRes = builder.create<mlir_ts::CallIndirectOp>(location, mlir::TypeRange{}, 
-                thisAccessorIndirectOp.getSetAccessor(), mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
+                thisAccessorIndirectOp.getSetAccessor(), mlir::ValueRange{thisAccessorIndirectOp.getThisVal(), savingValue});
         }        
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
