@@ -6930,7 +6930,7 @@ class MLIRGenImpl
             }
             else if (auto thisAccessorIndirect = conditionValue.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
             {
-                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessorIndirect.getType()))
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessorIndirect.getType(0)))
                 {
                     propertyType = typePredicateType;
                 }
@@ -8977,20 +8977,14 @@ class MLIRGenImpl
         }
         else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
         {
-            syncSavingValue(thisAccessorIndirectOp.getType());
+            syncSavingValue(thisAccessorIndirectOp.getType(0));
             if (!savingValue)
             {
                 return mlir::failure();
             }
 
-            if (thisAccessorIndirectOp.getSetAccessor().getDefiningOp<mlir_ts::NullOp>())
-            {
-                emitError(location) << "property does not have set accessor";
-                return mlir::failure();
-            }
-
-            auto callRes = builder.create<mlir_ts::CallIndirectOp>(location, TypeRange{}, 
-                thisAccessorIndirectOp.getSetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal(), savingValue});                
+            auto callRes = builder.create<mlir_ts::ThisAccessorIndirectOp>(location, mlir::Type(), 
+                    thisAccessorIndirectOp.getThisVal(), thisAccessorIndirectOp.getGetAccessor(), thisAccessorIndirectOp.getSetAccessor(), savingValue);    
         }        
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
@@ -13683,14 +13677,16 @@ class MLIRGenImpl
             builder.create<mlir_ts::ConstantOp>(location, constTupleTypeWithReplacedThis, arrayAttr);
         if (fieldsToSet.empty())
         {
-            CAST_A(result, location, objectStorageType, constantVal, genContext);
-            return result;
+            //CAST_A(result, location, objectStorageType, constantVal, genContext);
+            //return result;
+            return V(constantVal);
         }
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
         auto tupleValue = mlirGenCreateTuple(location, tupleType, constantVal, fieldsToSet, genContext);
-        CAST_A(result, location, objectStorageType, tupleValue, genContext);
-        return result;
+        //CAST_A(result, location, objectStorageType, tupleValue, genContext);
+        //return result;
+        return V(tupleValue);
     }
 
     ValueOrLogicalResult mlirGenCreateTuple(mlir::Location location, mlir::Type tupleType, mlir::Value initValue,

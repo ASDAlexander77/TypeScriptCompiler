@@ -914,17 +914,33 @@ struct ThisAccessorIndirectOpLowering : public TsPattern<mlir_ts::ThisAccessorIn
     {
         Location loc = thisAccessorIndirectOp.getLoc();
 
-        if (thisAccessorIndirectOp.getGetAccessor().getDefiningOp<mlir_ts::NullOp>())
+        if (thisAccessorIndirectOp.getSetValue())
         {
-            emitError(loc) << "property does not have get accessor";
-            return failure();
+            // set case
+            if (thisAccessorIndirectOp.getSetAccessor().getDefiningOp<mlir_ts::NullOp>())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, 
+                thisAccessorIndirectOp.getSetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal(), thisAccessorIndirectOp.getSetValue()});                
+
+            rewriter.replaceOp(thisAccessorIndirectOp, callRes.getResult(0));
         }
+        else
+        {
+            // get case
+            if (thisAccessorIndirectOp.getGetAccessor().getDefiningOp<mlir_ts::NullOp>())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
 
-        auto callRes =
-            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisAccessorIndirectOp.getType()}, 
-                thisAccessorIndirectOp.getGetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal()});
-
-        rewriter.replaceOp(thisAccessorIndirectOp, callRes.getResult(0));
+            auto callRes =
+                rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisAccessorIndirectOp.getType(0)}, 
+                    thisAccessorIndirectOp.getGetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal()});
+        }
 
         return success();
     }

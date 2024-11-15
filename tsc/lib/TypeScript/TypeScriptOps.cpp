@@ -358,9 +358,32 @@ void mlir_ts::ThisAccessorOp::getCanonicalizationPatterns(RewritePatternSet &res
 // ThisAccessorIndirectOp
 //===----------------------------------------------------------------------===//
 
+namespace
+{
+template <typename T> struct RemoveUnusedAccessor : public OpRewritePattern<T>
+{
+    using OpRewritePattern<T>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(T op, PatternRewriter &rewriter) const override
+    {
+        if (op.getSetValue())
+        {
+            return success();
+        }
+
+        if (op->getNumResults() > 0 && op->getResult(0).use_empty())
+        {
+            rewriter.eraseOp(op);
+        }
+
+        return success();
+    }
+};
+} // end anonymous namespace.
+
 void mlir_ts::ThisAccessorIndirectOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
-    results.insert<RemoveUnused<mlir_ts::ThisAccessorIndirectOp>>(context);
+    results.insert<RemoveUnusedAccessor<mlir_ts::ThisAccessorIndirectOp>>(context);
 }
 
 //===----------------------------------------------------------------------===//

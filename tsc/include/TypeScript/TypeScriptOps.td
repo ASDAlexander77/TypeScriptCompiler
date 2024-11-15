@@ -113,9 +113,7 @@ def AccessorOp : TypeScript_Op<"Accessor",
   let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
   let results = (outs AnyType:$value);
 
-  let hasCanonicalizer = 1;
-
-  
+  let hasCanonicalizer = 1; 
 }
 
 def ThisAccessorOp : TypeScript_Op<"ThisAccessor", 
@@ -132,8 +130,8 @@ def ThisAccessorIndirectOp : TypeScript_Op<"ThisAccessorIndirect",
     [Pure]> {
   let summary = "accessor of object";
 
-  let arguments = (ins AnyType:$thisVal, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor);
-  let results = (outs AnyType:$value);
+  let arguments = (ins AnyType:$thisVal, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
 
   let hasCanonicalizer = 1;
 }
@@ -145,9 +143,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
   let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, StrAttr:$identifier, OptionalAttr<BoolAttr>:$optional);
   let results = (outs TypeScript_AnyRefOrCallable:$funcOrFieldReference);
 
-  let hasCanonicalizer = 1;
-
-  
+  let hasCanonicalizer = 1; 
 }
 
 def TypeRefOp : TypeScript_Op<"TypeRef", 
