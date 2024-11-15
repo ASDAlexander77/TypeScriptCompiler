@@ -8983,6 +8983,7 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // TODO: it should return accessor as result as it will return data
             auto callRes = builder.create<mlir_ts::ThisAccessorIndirectOp>(location, mlir::Type(), 
                     thisAccessorIndirectOp.getThisVal(), thisAccessorIndirectOp.getGetAccessor(), thisAccessorIndirectOp.getSetAccessor(), savingValue);    
         }        

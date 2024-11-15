@@ -923,13 +923,12 @@ struct ThisAccessorIndirectOpLowering : public TsPattern<mlir_ts::ThisAccessorIn
                 return mlir::failure();
             }
 
-            auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, 
+            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, 
                 thisAccessorIndirectOp.getSetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal(), 
                 thisAccessorIndirectOp.getSetValue()});                
-
-            rewriter.replaceOp(thisAccessorIndirectOp, callRes.getResult(0));
         }
-        else
+
+        if (thisAccessorIndirectOp.getNumResults() > 0)
         {
             // get case
             if (thisAccessorIndirectOp.getGetAccessor().getDefiningOp<mlir_ts::NullOp>())
@@ -942,6 +941,10 @@ struct ThisAccessorIndirectOpLowering : public TsPattern<mlir_ts::ThisAccessorIn
                     thisAccessorIndirectOp.getGetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal()});
 
             rewriter.replaceOp(thisAccessorIndirectOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(thisAccessorIndirectOp);
         }
 
         return success();

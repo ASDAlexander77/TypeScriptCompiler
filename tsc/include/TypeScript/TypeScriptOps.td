@@ -127,7 +127,7 @@ def ThisAccessorOp : TypeScript_Op<"ThisAccessor",
 }
 
 def ThisAccessorIndirectOp : TypeScript_Op<"ThisAccessorIndirect", 
-    [Pure]> {
+    []> {
   let summary = "accessor of object";
 
   let arguments = (ins AnyType:$thisVal, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
