@@ -924,7 +924,8 @@ struct ThisAccessorIndirectOpLowering : public TsPattern<mlir_ts::ThisAccessorIn
             }
 
             auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, 
-                thisAccessorIndirectOp.getSetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal(), thisAccessorIndirectOp.getSetValue()});                
+                thisAccessorIndirectOp.getSetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal(), 
+                thisAccessorIndirectOp.getSetValue()});                
 
             rewriter.replaceOp(thisAccessorIndirectOp, callRes.getResult(0));
         }
@@ -937,9 +938,10 @@ struct ThisAccessorIndirectOpLowering : public TsPattern<mlir_ts::ThisAccessorIn
                 return failure();
             }
 
-            auto callRes =
-                rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisAccessorIndirectOp.getType(0)}, 
+            auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisAccessorIndirectOp.getType(0)}, 
                     thisAccessorIndirectOp.getGetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal()});
+
+            rewriter.replaceOp(thisAccessorIndirectOp, callRes.getResult(0));
         }
 
         return success();

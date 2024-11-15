@@ -371,7 +371,7 @@ template <typename T> struct RemoveUnusedAccessor : public OpRewritePattern<T>
             return success();
         }
 
-        if (op->getNumResults() > 0 && op->getResult(0).use_empty())
+        if (op.getValue().use_empty())
         {
             rewriter.eraseOp(op);
         }
