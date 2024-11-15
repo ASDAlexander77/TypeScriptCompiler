@@ -132,7 +132,7 @@ def ThisAccessorIndirectOp : TypeScript_Op<"ThisAccessorIndirect",
     [Pure]> {
   let summary = "accessor of object";
 
-  let arguments = (ins AnyType:$thisVal, FunctionType:$getAccessor, FunctionType:$setAccessor);
+  let arguments = (ins AnyType:$thisVal, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor);
   let results = (outs AnyType:$value);
 
   let hasCanonicalizer = 1;

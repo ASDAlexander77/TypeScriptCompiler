@@ -400,6 +400,11 @@ class MLIRCustomMethods
             if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
+                if (!strCast)
+                {
+                    return mlir::failure();
+                }
+
                 vals.push_back(strCast);
             }
             else
@@ -970,7 +975,7 @@ class MLIRPropertyAccessCodeLogic
             location, elementTypeForRef, expression, MLIRHelper::getStructIndex(builder, fieldIndex));
     }
 
-    template <typename T> mlir::Value TupleGetSetAccessor(T tupleType, mlir::Attribute fieldId) 
+    template <typename T> ValueOrLogicalResult TupleGetSetAccessor(T tupleType, mlir::Attribute fieldId) 
     {
         MLIRCodeLogic mcl(builder);
 
@@ -982,10 +987,29 @@ class MLIRPropertyAccessCodeLogic
             auto getterType = tupleType.getType(getterIndex);
             auto setterType = tupleType.getType(setterIndex);
 
-            auto effectiveFuncType = getterType;
-            if (!effectiveFuncType)
+            auto accessorResultType = getterType;
+            if (!accessorResultType)
             {
-                effectiveFuncType = setterType;
+                accessorResultType = setterType;
+            }
+
+            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(getterType))
+            {
+                if (funcType.getNumResults() > 0)
+                {
+                    accessorResultType = funcType.getResult(0);
+                }
+            }
+
+            if (!accessorResultType)
+            {
+                accessorResultType = dyn_cast<mlir_ts::FunctionType>(setterType).getInput(1);
+            }
+
+            if (!accessorResultType)
+            {
+                emitError(location) << "can't resolve type of property";
+                return mlir::failure();
             }
 
             mlir::Value getterValue;
@@ -1022,9 +1046,9 @@ class MLIRPropertyAccessCodeLogic
             auto thisValue = refValue;
 
             auto thisAccessorIndirectOp = builder.create<mlir_ts::ThisAccessorIndirectOp>(
-                location, effectiveFuncType, thisValue, getterValue, setterValue);  
+                location, accessorResultType, thisValue, getterValue, setterValue);  
 
-            return thisAccessorIndirectOp;              
+            return V(thisAccessorIndirectOp);              
         }
 
         return mlir::Value();

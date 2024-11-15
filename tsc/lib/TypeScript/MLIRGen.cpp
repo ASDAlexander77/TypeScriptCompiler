@@ -10229,23 +10229,23 @@ class MLIRGenImpl
             auto accessorInfo = classInfo->accessors[accessorIndex];
             auto getFuncOp = accessorInfo.get;
             auto setFuncOp = accessorInfo.set;
-            mlir::Type effectiveFuncType;
+            mlir::Type accessorResultType;
             if (getFuncOp)
             {
                 auto funcType = dyn_cast<mlir_ts::FunctionType>(getFuncOp.getFunctionType());
                 if (funcType.getNumResults() > 0)
                 {
-                    effectiveFuncType = funcType.getResult(0);
+                    accessorResultType = funcType.getResult(0);
                 }
             }
 
-            if (!effectiveFuncType && setFuncOp)
+            if (!accessorResultType && setFuncOp)
             {
-                effectiveFuncType =
+                accessorResultType =
                     dyn_cast<mlir_ts::FunctionType>(setFuncOp.getFunctionType()).getInput(accessorInfo.isStatic ? 0 : 1);
             }
 
-            if (!effectiveFuncType)
+            if (!accessorResultType)
             {
                 emitError(location) << "can't resolve type of property";
                 return mlir::Value();
@@ -10254,7 +10254,7 @@ class MLIRGenImpl
             if (accessorInfo.isStatic)
             {
                 auto accessorOp = builder.create<mlir_ts::AccessorOp>(
-                    location, effectiveFuncType,
+                    location, accessorResultType,
                     getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
                               : mlir::FlatSymbolRefAttr{},
                     setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
@@ -10264,7 +10264,7 @@ class MLIRGenImpl
             else
             {
                 auto thisAccessorOp = builder.create<mlir_ts::ThisAccessorOp>(
-                    location, effectiveFuncType, thisValue,
+                    location, accessorResultType, thisValue,
                     getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
                               : mlir::FlatSymbolRefAttr{},
                     setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
