@@ -171,6 +171,7 @@ class MLIRCodeLogic
             if (intAttr)
             {
                 fieldIndex = intAttr.getInt();
+                notFound = fieldIndex < 0 || fieldIndex >= tupleType.size();
             }
         }
 
