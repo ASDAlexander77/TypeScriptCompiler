@@ -868,16 +868,36 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
     {
         Location loc = accessorOp.getLoc();
 
-        if (!accessorOp.getGetAccessor().has_value())
+        if (accessorOp.getSetValue())
         {
-            emitError(loc) << "property does not have get accessor";
-            return failure();
+            if (!accessorOp.getSetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getSetAccessor().value(),
+                                mlir::TypeRange{}, mlir::ValueRange{accessorOp.getSetValue()});        
         }
 
-        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getGetAccessor().value(),
-                                                        TypeRange{accessorOp.getType()}, ValueRange{});
+        if (accessorOp.getNumResults() > 0)
+        {
+            if (!accessorOp.getGetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
 
-        rewriter.replaceOp(accessorOp, callRes.getResult(0));
+            auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getGetAccessor().value(),
+                                                            TypeRange{accessorOp.getType(0)}, ValueRange{});
+
+            rewriter.replaceOp(accessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(accessorOp);
+        }
+
         return success();
     }
 };

@@ -8942,21 +8942,18 @@ class MLIRGenImpl
         }
         else if (auto accessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorOp>())
         {
-            syncSavingValue(accessorOp.getType());
+            syncSavingValue(accessorOp.getType(0));
             if (!savingValue)
             {
                 return mlir::failure();
             }
 
-            if (!accessorOp.getSetAccessor().has_value())
-            {
-                emitError(location) << "property does not have set accessor";
-                return mlir::failure();
-            }
-
-            auto callRes =
-                builder.create<mlir_ts::CallOp>(location, accessorOp.getSetAccessor().value(),
-                                                mlir::TypeRange{}, mlir::ValueRange{savingValue});
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::AccessorOp>(
+                location, mlir::Type(),
+                accessorOp.getGetAccessorAttr(), 
+                accessorOp.getSetAccessorAttr(), 
+                savingValue);            
         }
         else if (auto thisAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorOp>())
         {
@@ -8966,6 +8963,7 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // we create new instance of accessor with saving value, previous will be deleted as not used
             auto callRes = builder.create<mlir_ts::ThisAccessorOp>(
                 location, mlir::Type(), thisAccessorOp.getThisVal(),
                 thisAccessorOp.getGetAccessorAttr(), 
@@ -8981,8 +8979,13 @@ class MLIRGenImpl
             }
 
             // TODO: it should return accessor as result as it will return data
-            auto callRes = builder.create<mlir_ts::ThisAccessorIndirectOp>(location, mlir::Type(), 
-                    thisAccessorIndirectOp.getThisVal(), thisAccessorIndirectOp.getGetAccessor(), thisAccessorIndirectOp.getSetAccessor(), savingValue);    
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::ThisAccessorIndirectOp>(
+                location, mlir::Type(), 
+                thisAccessorIndirectOp.getThisVal(), 
+                thisAccessorIndirectOp.getGetAccessor(), 
+                thisAccessorIndirectOp.getSetAccessor(), 
+                savingValue);    
         }        
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
@@ -10281,8 +10284,9 @@ class MLIRGenImpl
                     getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
                               : mlir::FlatSymbolRefAttr{},
                     setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
-                              : mlir::FlatSymbolRefAttr{});
-                return accessorOp;
+                              : mlir::FlatSymbolRefAttr{},
+                    mlir::Value());
+                return accessorOp.getResult(0);
             }
             else
             {
