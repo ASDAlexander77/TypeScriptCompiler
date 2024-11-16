@@ -70,6 +70,7 @@
 #include <algorithm>
 #include <iterator>
 #include <numeric>
+#include <set>
 
 #define DEBUG_TYPE "mlir"
 
@@ -455,11 +456,37 @@ class MLIRGenImpl
 #endif        
     }
 
+    bool isCodeStatment(SyntaxKind kind)
+    {
+        static std::set<SyntaxKind> codeStatements {
+            SyntaxKind::ExpressionStatement,
+            SyntaxKind::IfStatement,
+            SyntaxKind::ReturnStatement,
+            SyntaxKind::LabeledStatement,
+            SyntaxKind::DoStatement,
+            SyntaxKind::WhileStatement,
+            SyntaxKind::ForStatement,
+            SyntaxKind::ForInStatement,
+            SyntaxKind::ForOfStatement,
+            SyntaxKind::ContinueStatement,
+            SyntaxKind::BreakStatement,
+            SyntaxKind::SwitchStatement,
+            SyntaxKind::ThrowStatement,
+            SyntaxKind::TryStatement,
+            SyntaxKind::Block,
+            SyntaxKind::DebuggerStatement
+        };
+
+        return codeStatements.find(kind) != codeStatements.end();    
+    }
+
     int processStatements(NodeArray<Statement> statements,
-                          const GenContext &genContext)
+                          const GenContext &genContext,
+                          bool isRoot = false)
     {
         clearState(statements);
 
+        auto anyCode = false;
         auto notResolved = 0;
         do
         {
@@ -475,6 +502,12 @@ class MLIRGenImpl
             {
                 if (statement->processed)
                 {
+                    continue;
+                }
+
+                if (isRoot && isCodeStatment(statement))
+                {
+                    anyCode = true;
                     continue;
                 }
 
@@ -511,6 +544,54 @@ class MLIRGenImpl
         clearState(statements);
         
         return notResolved;
+    }
+
+    mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
+                          const GenContext &genContext)
+    {
+        // create function
+        //auto name = MLIRHelper::getAnonymousName(location, ".main", "");
+        auto name = "main";
+        auto fullInitGlobalFuncName = getFullNamespaceName(name);
+
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+
+        // create global construct
+        auto funcType = getFunctionType({}, {}, false);
+
+        if (mlir::failed(mlirGenFunctionBody(location, name, fullInitGlobalFuncName, funcType,
+            [&](mlir::Location location, const GenContext &genContext) {
+                for (auto &statement : statements)
+                {
+                    if (isCodeStatment(statement))
+                    {
+                        if (failed(mlirGen(statement, genContext)))
+                        {
+                            emitError(loc(statement), "failed statement");
+                            return mlir::failure();
+                        }
+                    }
+
+                }
+
+                return mlir::success();
+            }, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        // auto parentModule = theModule;
+        // MLIRCodeLogicHelper mclh(builder, location);
+
+        // builder.setInsertionPointToStart(parentModule.getBody());
+        // mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
+
+        // // priority is lowest to load as first dependencies
+        // builder.create<mlir_ts::GlobalConstructorOp>(
+        //     location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));            
+        
+        // TODO:
+        return mlir::success();
     }
 
     mlir::LogicalResult outputDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
@@ -632,14 +713,20 @@ class MLIRGenImpl
             }
         }
 
-        auto notResolved = processStatements(module->statements, genContext);       
+        auto notResolved = processStatements(module->statements, genContext, isMain);       
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
             return mlir::failure();
         }
        
-        if (isMain)
+        if (isMain && notResolved == 0)
         {
+            // generate code to run at global entry
+            if (mlir::failed(generateGlobalEntryCode(loc(module), module->statements, genContext)))
+            {
+                return mlir::failure();
+            }
+
             // exports
             createDeclarationExportGlobalVar(genContext);
         }
