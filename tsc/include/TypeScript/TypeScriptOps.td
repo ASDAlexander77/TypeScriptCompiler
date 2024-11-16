@@ -107,21 +107,21 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
 }
 
 def AccessorOp : TypeScript_Op<"Accessor", 
-    [Pure]> {
+    []> {
   let summary = "symbol reference as to static accessor";
 
-  let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs AnyType:$value);
+  let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
 
   let hasCanonicalizer = 1; 
 }
 
 def ThisAccessorOp : TypeScript_Op<"ThisAccessor", 
-    [Pure]> {
+    []> {
   let summary = "accessor of class";
 
-  let arguments = (ins AnyType:$thisVal, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs AnyType:$value);
+  let arguments = (ins AnyType:$thisVal, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
 
   let hasCanonicalizer = 1;
 }

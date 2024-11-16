@@ -6923,7 +6923,7 @@ class MLIRGenImpl
             }
             else if (auto thisAccessor = conditionValue.getDefiningOp<mlir_ts::ThisAccessorOp>())
             {
-                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessor.getType()))
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessor.getType(0)))
                 {
                     propertyType = typePredicateType;
                 }
@@ -8960,20 +8960,17 @@ class MLIRGenImpl
         }
         else if (auto thisAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorOp>())
         {
-            syncSavingValue(thisAccessorOp.getType());
+            syncSavingValue(thisAccessorOp.getType(0));
             if (!savingValue)
             {
                 return mlir::failure();
             }
 
-            if (!thisAccessorOp.getSetAccessor().has_value())
-            {
-                emitError(location) << "property does not have set accessor";
-                return mlir::failure();
-            }
-
-            auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorOp.getSetAccessor().value(),
-                mlir::TypeRange{}, mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
+            auto callRes = builder.create<mlir_ts::ThisAccessorOp>(
+                location, mlir::Type(), thisAccessorOp.getThisVal(),
+                thisAccessorOp.getGetAccessorAttr(), 
+                thisAccessorOp.getSetAccessorAttr(), 
+                savingValue);
         }
         else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
         {
@@ -10294,8 +10291,9 @@ class MLIRGenImpl
                     getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
                               : mlir::FlatSymbolRefAttr{},
                     setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
-                              : mlir::FlatSymbolRefAttr{});
-                return thisAccessorOp;
+                              : mlir::FlatSymbolRefAttr{},
+                    mlir::Value());
+                return thisAccessorOp.getResult(0);
             }
         }
 

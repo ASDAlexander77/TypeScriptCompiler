@@ -890,17 +890,36 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
     {
         Location loc = thisAccessorOp.getLoc();
 
-        if (!thisAccessorOp.getGetAccessor().has_value())
+        if (thisAccessorOp.getSetValue())
         {
-            emitError(loc) << "property does not have get accessor";
-            return failure();
+            if (!thisAccessorOp.getSetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getSetAccessor().value(),
+                mlir::TypeRange{}, mlir::ValueRange{thisAccessorOp.getThisVal(), thisAccessorOp.getSetValue()});
         }
 
-        auto callRes =
-            rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getGetAccessor().value(),
-                                             TypeRange{thisAccessorOp.getType()}, ValueRange{thisAccessorOp.getThisVal()});
+        if (thisAccessorOp.getNumResults() > 0)
+        {
+            if (!thisAccessorOp.getGetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
 
-        rewriter.replaceOp(thisAccessorOp, callRes.getResult(0));
+            auto callRes =
+                rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getGetAccessor().value(),
+                    TypeRange{thisAccessorOp.getType(0)}, ValueRange{thisAccessorOp.getThisVal()});
+
+            rewriter.replaceOp(thisAccessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(thisAccessorOp);
+        }
 
         return success();
     }

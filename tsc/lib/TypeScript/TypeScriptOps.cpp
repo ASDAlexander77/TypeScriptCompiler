@@ -336,28 +336,6 @@ void mlir_ts::ThisVirtualSymbolRefOp::getCanonicalizationPatterns(RewritePattern
     results.insert<RemoveUnused<mlir_ts::ThisVirtualSymbolRefOp>>(context);
 }
 
-//===----------------------------------------------------------------------===//
-// AccessorRefOp
-//===----------------------------------------------------------------------===//
-
-void mlir_ts::AccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
-{
-    results.insert<RemoveUnused<mlir_ts::AccessorOp>>(context);
-}
-
-//===----------------------------------------------------------------------===//
-// ThisAccessorOp
-//===----------------------------------------------------------------------===//
-
-void mlir_ts::ThisAccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
-{
-    results.insert<RemoveUnused<mlir_ts::ThisAccessorOp>>(context);
-}
-
-//===----------------------------------------------------------------------===//
-// ThisAccessorIndirectOp
-//===----------------------------------------------------------------------===//
-
 namespace
 {
 template <typename T> struct RemoveUnusedAccessor : public OpRewritePattern<T>
@@ -380,6 +358,28 @@ template <typename T> struct RemoveUnusedAccessor : public OpRewritePattern<T>
     }
 };
 } // end anonymous namespace.
+
+//===----------------------------------------------------------------------===//
+// AccessorRefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::AccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<RemoveUnusedAccessor<mlir_ts::AccessorOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// ThisAccessorOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::ThisAccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<RemoveUnusedAccessor<mlir_ts::ThisAccessorOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// ThisAccessorIndirectOp
+//===----------------------------------------------------------------------===//
 
 void mlir_ts::ThisAccessorIndirectOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {

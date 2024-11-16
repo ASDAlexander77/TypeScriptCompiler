@@ -1046,9 +1046,9 @@ class MLIRPropertyAccessCodeLogic
             auto thisValue = refValue;
 
             auto thisAccessorIndirectOp = builder.create<mlir_ts::ThisAccessorIndirectOp>(
-                location, accessorResultType, thisValue, getterValue, setterValue, mlir::Value{});  
+                location, accessorResultType, thisValue, getterValue, setterValue, mlir::Value());  
 
-            return V(thisAccessorIndirectOp.getResult(0));              
+            return thisAccessorIndirectOp.getResult(0);              
         }
 
         return mlir::Value();
