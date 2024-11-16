@@ -9,6 +9,15 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+- Accessor for object fields
+```TypeScript
+let obj = {
+    p: 1.0,
+    get value() { return this.p; },
+    set value(v: number) { this.p = v; },
+}
+```
+
 - Class static block
 ```TypeScript
 class C {
