@@ -132,7 +132,7 @@ class MLIRCodeLogic
             auto setterIndex = -1;
             for (auto [index, fldInfo] : enumerate(tupleType))
             {
-                if (auto strAttr = dyn_cast<mlir::StringAttr>(fldInfo.id))
+                if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fldInfo.id))
                 {
                     auto str = strAttr.getValue();
                     auto isGetter = str.starts_with("get_");
