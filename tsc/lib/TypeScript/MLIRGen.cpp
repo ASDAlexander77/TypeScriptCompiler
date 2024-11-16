@@ -2059,7 +2059,8 @@ class MLIRGenImpl
         funcGenContext.instantiateSpecializedFunction = true;
         funcGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
 
-        if (mlir::failed(processTypeArgumentsFromFunctionParameters(functionGenericTypeInfo->functionDeclaration, funcGenContext)))
+        if (mlir::failed(processTypeArgumentsFromFunctionParameters(
+            functionGenericTypeInfo->functionDeclaration, funcGenContext)))
         {
             emitError(location) << "can't instantiate specialized function from function parameters.";
             return mlir::failure();
@@ -2110,7 +2111,8 @@ class MLIRGenImpl
             builder.setInsertionPoint(symbolOp);
 
             // TODO: append captures vars to generic arrow function
-            auto newOpWithCapture = resolveFunctionWithCapture(location, StringRef(specFuncName), specFuncOp.getFunctionType(), mlir::Value(), false, genContext);
+            auto newOpWithCapture = resolveFunctionWithCapture(
+                location, StringRef(specFuncName), specFuncOp.getFunctionType(), mlir::Value(), false, genContext);
             if (!newOpWithCapture.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
                 // symbolOp will be removed as unsed
@@ -4298,10 +4300,16 @@ class MLIRGenImpl
 
     bool isGenericParameters(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
+        if (parametersContextAST == SyntaxKind::GetAccessor || parametersContextAST == SyntaxKind::SetAccessor)
+        {
+            return false;
+        }
+
         auto formalParams = parametersContextAST->parameters;
         for (auto [index, arg] : enumerate(formalParams))
         {
-            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern 
+                || arg->name == SyntaxKind::ArrayBindingPattern;
 
             mlir::Type type;
             auto typeParameter = arg->type;
@@ -4563,7 +4571,8 @@ class MLIRGenImpl
             }
         }
         // TODO: for new () interfaces
-        else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature || signatureDeclarationBaseAST == SyntaxKind::ConstructSignature)
+        else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature 
+                || signatureDeclarationBaseAST == SyntaxKind::ConstructSignature)
         {
             // class method name
             name = objectOwnerName + "." + name;
@@ -4764,7 +4773,9 @@ class MLIRGenImpl
                     auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
                         ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
                         : mlir::Type();
-                    if (retTypeFromReceiver && !mth.isNoneType(retTypeFromReceiver) && !mth.isGenericType(retTypeFromReceiver))
+                    if (retTypeFromReceiver 
+                        && !mth.isNoneType(retTypeFromReceiver) 
+                        && !mth.isGenericType(retTypeFromReceiver))
                     {
                         funcProto->setReturnType(retTypeFromReceiver);
                         LLVM_DEBUG(llvm::dbgs()
@@ -14434,7 +14445,8 @@ class MLIRGenImpl
         auto formalParams = signatureDeclarationBase->parameters;
         for (auto [index, arg] : enumerate(formalParams))
         {
-            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern 
+                || arg->name == SyntaxKind::ArrayBindingPattern;
 
             mlir::Type type;
             //auto isMultiArgs = !!arg->dotDotDotToken;
@@ -17934,22 +17946,24 @@ genContext);
         }
         else if (kind == SyntaxKind::GetAccessor)
         {
-            auto [propertyName, result] = getNameForMethod(methodSignature, genContext);
+            auto [name, result] = getNameForMethod(methodSignature, genContext);
             if (!result)
             {
                 return mlir::failure();
             }
 
+            propertyName = name;
             methodName = std::string("get_") + propertyName;
         }
         else if (kind == SyntaxKind::SetAccessor)
         {
-            auto [propertyName, result] = getNameForMethod(methodSignature, genContext);
+            auto [name, result] = getNameForMethod(methodSignature, genContext);
             if (!result)
             {
                 return mlir::failure();
             }
 
+            propertyName = name;
             methodName = std::string("set_") + propertyName;
         }
         else
