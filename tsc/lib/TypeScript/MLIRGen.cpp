@@ -14654,7 +14654,7 @@ class MLIRGenImpl
             }
             else
             {
-                if (appending && currentEnumValue == 0 && stage == Stages::Discovering)
+                if (appending && currentEnumValue == 0 && stage == Stages::Discovering && !enumValues.contains(memberNamePtr))
                 {
                     emitError(loc(enumMember))
                         << "In an enum with multiple declarations, only one declaration can omit an initializer for its first enum element";                    
