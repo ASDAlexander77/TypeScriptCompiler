@@ -9,7 +9,7 @@ function main() {
 
     obj.value = 20;
 
-    assert(obj.value == 1.0);
+    assert(obj.value == 20.0);
 
     print("done.");
 }
