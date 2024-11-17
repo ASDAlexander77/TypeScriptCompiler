@@ -486,7 +486,6 @@ class MLIRGenImpl
     {
         clearState(statements);
 
-        auto anyCode = false;
         auto notResolved = 0;
         do
         {
@@ -505,9 +504,8 @@ class MLIRGenImpl
                     continue;
                 }
 
-                if (isRoot && isCodeStatment(statement))
+                if (isRoot && (isCodeStatment(statement) || statement == SyntaxKind::VariableStatement))
                 {
-                    anyCode = true;
                     continue;
                 }
 
@@ -546,9 +544,7 @@ class MLIRGenImpl
         return notResolved;
     }
 
-    mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
-                          const GenContext &genContext)
-    {
+    bool hasGlobalCode(NodeArray<Statement> statements) {
         auto anyCode = false;
         for (auto &statement : statements)
         {
@@ -559,11 +555,12 @@ class MLIRGenImpl
             }
         }
 
-        if (!anyCode)
-        {
-            return mlir::success();
-        }
+        return anyCode;        
+    }
 
+    mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
+                          const GenContext &genContext)
+    {
         // create function
         //auto name = MLIRHelper::getAnonymousName(location, ".main", "");
         auto useGlobalCtor = false;
@@ -587,8 +584,17 @@ class MLIRGenImpl
             [&](mlir::Location location, const GenContext &genContext) {
                 for (auto &statement : statements)
                 {
-                    if (isCodeStatment(statement))
+                    auto isVariableStatement = statement == SyntaxKind::VariableStatement;
+                    if (isCodeStatment(statement) || isVariableStatement)
                     {
+                        if (isVariableStatement)
+                        {
+                            // patch VariableStatement
+                            auto variableStatement = statement.as<VariableStatement>();
+                            variableStatement->declarationList->flags &= ~NodeFlags::Let;
+                            variableStatement->declarationList->flags &= ~NodeFlags::Const;                        
+                        }
+
                         if (failed(mlirGen(statement, genContext)))
                         {
                             emitError(loc(statement), "failed statement");
@@ -742,6 +748,7 @@ class MLIRGenImpl
             }
         }
 
+        auto anyGlobalCode = hasGlobalCode(module->statements);
         auto notResolved = processStatements(module->statements, genContext, isMain);       
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
@@ -751,7 +758,8 @@ class MLIRGenImpl
         if (isMain && notResolved == 0)
         {
             // generate code to run at global entry
-            if (mlir::failed(generateGlobalEntryCode(loc(module), module->statements, genContext)))
+            if (anyGlobalCode && mlir::failed(
+                generateGlobalEntryCode(loc(module), module->statements, genContext)))
             {
                 return mlir::failure();
             }
