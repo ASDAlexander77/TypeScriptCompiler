@@ -549,14 +549,28 @@ class MLIRGenImpl
     mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
                           const GenContext &genContext)
     {
+        auto anyCode = false;
+        for (auto &statement : statements)
+        {
+            if (isCodeStatment(statement))
+            {
+                anyCode = true;
+                break;
+            }
+        }
+
+        if (!anyCode)
+        {
+            return mlir::success();
+        }
+
         // create function
         //auto name = MLIRHelper::getAnonymousName(location, ".main", "");
         auto useGlobalCtor = false;
         std::string name = MAIN_ENTRY_NAME;
         auto fullGlobalFuncName = getFullNamespaceName(name);
 
-        auto exe = compileOptions.isExecutable || compileOptions.isJit;
-        if (!exe || theModule.lookupSymbol(fullGlobalFuncName))
+        if (theModule.lookupSymbol(fullGlobalFuncName))
         {
             // create global ctor
             name = MLIRHelper::getAnonymousName(location, "." MAIN_ENTRY_NAME, "");
