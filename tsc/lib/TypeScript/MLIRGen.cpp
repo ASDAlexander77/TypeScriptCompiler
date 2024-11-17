@@ -552,13 +552,13 @@ class MLIRGenImpl
         // create function
         //auto name = MLIRHelper::getAnonymousName(location, ".main", "");
         auto useGlobalCtor = false;
-        std::string name = "main";
+        std::string name = MAIN_ENTRY_NAME;
         auto fullGlobalFuncName = getFullNamespaceName(name);
 
         if (theModule.lookupSymbol(fullGlobalFuncName))
         {
             // create global ctor
-            name = MLIRHelper::getAnonymousName(location, ".main", "");
+            name = MLIRHelper::getAnonymousName(location, "." MAIN_ENTRY_NAME, "");
             fullGlobalFuncName = getFullNamespaceName(name);
             useGlobalCtor = true;
         }
@@ -584,7 +584,7 @@ class MLIRGenImpl
                 }
 
                 return mlir::success();
-            }, genContext)))
+            }, genContext, 0, true)))
         {
             return mlir::failure();
         }
@@ -6174,7 +6174,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef funcName, StringRef fullFuncName,
                                             mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult(mlir::Location, const GenContext &)> funcBody,                                            
                                             const GenContext &genContext,
-                                            int firstParam = 0)
+                                            int firstParam = 0, bool isPublic = false)
     {
         if (theModule.lookupSymbol(fullFuncName))
         {
@@ -6253,7 +6253,14 @@ class MLIRGenImpl
             theModule.push_back(funcOp);
         }
 
-        funcOp.setPrivate();
+        if (isPublic)
+        {
+            funcOp.setPublic();
+        }
+        else
+        {
+            funcOp.setPrivate();
+        }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 

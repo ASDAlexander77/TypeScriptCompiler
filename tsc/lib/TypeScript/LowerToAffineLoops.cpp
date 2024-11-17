@@ -1994,7 +1994,7 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE FUNC DUMP: \n" << function << "\n";);
 
     // We only lower the main function as we expect that all other functions have been inlined.
-    if (tsContext.compileOptions.isJit && function.getName() == "main")
+    if (tsContext.compileOptions.isJit && function.getName() == MAIN_ENTRY_NAME)
     {
         auto voidType = mlir_ts::VoidType::get(function.getContext());
         // Verify that the given main has no inputs and results.

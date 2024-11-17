@@ -49,7 +49,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                 auto name = std::string(symbolAttr.getValue());
                 if (!funcOp.getBody().empty())
                 {
-                    if (name == "main")
+                    if (name == MAIN_ENTRY_NAME)
                     {
                         injectInit(funcOp);
                     }
