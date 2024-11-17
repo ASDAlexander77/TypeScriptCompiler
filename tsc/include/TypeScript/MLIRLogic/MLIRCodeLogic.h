@@ -1206,7 +1206,7 @@ class MLIRPropertyAccessCodeLogic
         auto propName = getName();
         if (propName == LENGTH_FIELD_NAME)
         {
-            if (auto constArrayType = cast<mlir_ts::ConstArrayType>(expression.getType()))
+            if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(expression.getType()))
             {
                 auto size = constArrayType.getSize();
                 return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),

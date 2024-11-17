@@ -555,7 +555,8 @@ class MLIRGenImpl
         std::string name = MAIN_ENTRY_NAME;
         auto fullGlobalFuncName = getFullNamespaceName(name);
 
-        if (!compileOptions.isExecutable || theModule.lookupSymbol(fullGlobalFuncName))
+        auto exe = compileOptions.isExecutable || compileOptions.isJit;
+        if (!exe || theModule.lookupSymbol(fullGlobalFuncName))
         {
             // create global ctor
             name = MLIRHelper::getAnonymousName(location, "." MAIN_ENTRY_NAME, "");
