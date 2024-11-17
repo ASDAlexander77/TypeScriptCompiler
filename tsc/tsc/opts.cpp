@@ -49,6 +49,7 @@ CompileOptions prepareOptions()
     compileOptions.isWindows = TheTriple.isKnownWindowsMSVCEnvironment();
     compileOptions.isWasm = TheTriple.getArch() == llvm::Triple::wasm64 || TheTriple.getArch() == llvm::Triple::wasm32;
     compileOptions.sizeBits = 32;
+    compileOptions.isExecutable = emitAction == Action::BuildExe;
     if (
         TheTriple.getArch() == llvm::Triple::UnknownArch
         || TheTriple.getArch() == llvm::Triple::aarch64        // AArch64 (little endian): aarch64

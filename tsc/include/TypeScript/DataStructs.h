@@ -19,6 +19,7 @@ struct CompileOptions
     int sizeBits;
     bool isWasm;
     bool isWindows;
+    bool isExecutable;
     enum Exports exportOpt;
     std::string outputFolder;
 };
