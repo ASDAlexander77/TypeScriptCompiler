@@ -551,15 +551,24 @@ class MLIRGenImpl
     {
         // create function
         //auto name = MLIRHelper::getAnonymousName(location, ".main", "");
-        auto name = "main";
-        auto fullInitGlobalFuncName = getFullNamespaceName(name);
+        auto useGlobalCtor = false;
+        std::string name = "main";
+        auto fullGlobalFuncName = getFullNamespaceName(name);
+
+        if (theModule.lookupSymbol(fullGlobalFuncName))
+        {
+            // create global ctor
+            name = MLIRHelper::getAnonymousName(location, ".main", "");
+            fullGlobalFuncName = getFullNamespaceName(name);
+            useGlobalCtor = true;
+        }
 
         mlir::OpBuilder::InsertionGuard insertGuard(builder);
 
         // create global construct
         auto funcType = getFunctionType({}, {}, false);
 
-        if (mlir::failed(mlirGenFunctionBody(location, name, fullInitGlobalFuncName, funcType,
+        if (mlir::failed(mlirGenFunctionBody(location, name, fullGlobalFuncName, funcType,
             [&](mlir::Location location, const GenContext &genContext) {
                 for (auto &statement : statements)
                 {
@@ -580,17 +589,22 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // auto parentModule = theModule;
-        // MLIRCodeLogicHelper mclh(builder, location);
+        if (useGlobalCtor)
+        {
+            auto parentModule = theModule;
+            MLIRCodeLogicHelper mclh(builder, location);
 
-        // builder.setInsertionPointToStart(parentModule.getBody());
-        // mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
+            builder.setInsertionPointToStart(parentModule.getBody());
+            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
 
-        // // priority is lowest to load as first dependencies
-        // builder.create<mlir_ts::GlobalConstructorOp>(
-        //     location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));            
+            // priority is lowest to load as first dependencies
+            builder.create<mlir_ts::GlobalConstructorOp>(
+                location, 
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), 
+                fullGlobalFuncName), 
+                builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));            
+        }
         
-        // TODO:
         return mlir::success();
     }
 
