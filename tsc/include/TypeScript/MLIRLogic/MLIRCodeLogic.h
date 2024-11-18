@@ -984,27 +984,34 @@ class MLIRPropertyAccessCodeLogic
         auto [getterIndex, setterIndex] = mcl.TupleFieldGetterAndSetter(tupleType, fieldId);
         if (getterIndex >= 0 || setterIndex >= 0)
         {
-            // found setter of getter
-            auto getterType = tupleType.getType(getterIndex);
-            auto setterType = tupleType.getType(setterIndex);
-
-            auto accessorResultType = getterType;
-            if (!accessorResultType)
+            mlir::Type accessorResultType;
+            mlir::Type getterFuncType;
+            mlir::Type setterFuncType;
+            if (getterIndex >= 0)
             {
-                accessorResultType = setterType;
-            }
-
-            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(getterType))
-            {
-                if (funcType.getNumResults() > 0)
+                getterFuncType = tupleType.getType(getterIndex);
+                if (auto funcType = dyn_cast<mlir_ts::FunctionType>(getterFuncType))
                 {
-                    accessorResultType = funcType.getResult(0);
+                    if (funcType.getNumResults() > 0)
+                    {
+                        accessorResultType = funcType.getResult(0);
+                    }
                 }
             }
 
-            if (!accessorResultType)
+            if (setterIndex >= 0)
             {
-                accessorResultType = dyn_cast<mlir_ts::FunctionType>(setterType).getInput(1);
+                setterFuncType = tupleType.getType(setterIndex);
+                if (!accessorResultType)
+                {
+                    if (auto funcType = dyn_cast<mlir_ts::FunctionType>(setterFuncType))
+                    {
+                        if (funcType.getNumInputs() > 1)
+                        {
+                            accessorResultType = funcType.getInput(1);
+                        }
+                    }
+                }
             }
 
             if (!accessorResultType)
@@ -1018,22 +1025,26 @@ class MLIRPropertyAccessCodeLogic
 
             if (getterIndex >= 0)
             {
-                getterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, getterType, expression, 
+                getterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, getterFuncType, expression, 
                     MLIRHelper::getStructIndex(builder, getterIndex));
             }
             else
             {
-                getterValue = builder.create<mlir_ts::NullOp>(location, getterType);
+                auto getterFuncType = mlir_ts::FunctionType::get(builder.getContext(), {accessorResultType}, {}, false);
+                getterValue = builder.create<mlir_ts::NullOp>(location,mlir_ts::NullType::get(builder.getContext()));
+                getterValue = builder.create<mlir_ts::CastOp>(location, getterFuncType, getterValue);
             }
 
             if (setterIndex >= 0)
             {
-                setterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, setterType, expression, 
+                setterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, setterFuncType, expression, 
                     MLIRHelper::getStructIndex(builder, setterIndex));
             }
             else
             {
-                setterValue = builder.create<mlir_ts::NullOp>(location, setterType);
+                auto setterFuncType = mlir_ts::FunctionType::get(builder.getContext(), {}, {accessorResultType}, false);
+                setterValue = builder.create<mlir_ts::NullOp>(location, mlir_ts::NullType::get(builder.getContext()));
+                setterValue = builder.create<mlir_ts::CastOp>(location, setterFuncType, setterValue);
             }
 
             auto refValue = getExprLoadRefValue(location);
