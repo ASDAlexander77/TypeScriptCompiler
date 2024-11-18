@@ -9,6 +9,13 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+- no need to define 'main' function
+```TypeScript
+const arr = [1, 2, 3, 4, 5];
+for (const b of arr)
+    print(b);
+``` 
+
 - Accessor for object fields
 ```TypeScript
 let obj = {
@@ -109,7 +116,7 @@ class TempFile {
 - [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
 # Planning
-- [x] Migrating to LLVM 17.0.2
+- [x] Migrating to LLVM 19.1.3
 - [x] Shared libraries
 - [ ] JavaScript Built-in classes library
 

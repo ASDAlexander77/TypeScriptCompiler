@@ -749,7 +749,7 @@ class MLIRGenImpl
         }
 
         auto anyGlobalCode = hasGlobalCode(module->statements);
-        auto notResolved = processStatements(module->statements, genContext, isMain);       
+        auto notResolved = processStatements(module->statements, genContext, isMain && anyGlobalCode);       
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
             return mlir::failure();
