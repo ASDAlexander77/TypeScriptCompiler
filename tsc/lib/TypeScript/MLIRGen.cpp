@@ -10564,8 +10564,8 @@ class MLIRGenImpl
         auto fieldInfo = interfaceInfo->findField(id, totalOffset);
         if (fieldInfo)
         {
-            assert(fieldInfo->interfacePosIndex >= 0);
-            auto vtableIndex = fieldInfo->interfacePosIndex + totalOffset;
+            assert(fieldInfo->virtualIndex >= 0);
+            auto vtableIndex = fieldInfo->virtualIndex;
 
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
 
@@ -10606,8 +10606,8 @@ class MLIRGenImpl
             auto methodInfo = interfaceInfo->findMethod(name, totalOffset);
             if (methodInfo)
             {
-                assert(methodInfo->interfacePosIndex >= 0);
-                auto vtableIndex = methodInfo->interfacePosIndex + totalOffset;
+                assert(methodInfo->virtualIndex >= 0);
+                auto vtableIndex = methodInfo->virtualIndex;
 
                 auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
 
@@ -16618,9 +16618,9 @@ genContext);
                             assert(fieldValue);
                             auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
 
-                            LLVM_DEBUG(llvm::dbgs() << "\n!! vtable field: " << methodOrField.fieldInfo.id
-                                                    << " type: " << methodOrField.fieldInfo.type
-                                                    << " provided data: " << fieldRef << "\n";);
+                            LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable field: " << methodOrField.fieldInfo.id
+                                                    << "\n\t type: " << methodOrField.fieldInfo.type
+                                                    << "\n\t provided data: " << fieldRef << "\n\n";);
 
                             if (isa<mlir_ts::BoundRefType>(fieldRef.getType()))
                             {

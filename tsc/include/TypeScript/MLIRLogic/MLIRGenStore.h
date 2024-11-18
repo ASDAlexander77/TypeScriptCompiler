@@ -153,6 +153,7 @@ struct InterfaceFieldInfo
     mlir::Type type;
     bool isConditional;
     int interfacePosIndex;
+    int virtualIndex;
 };
 
 struct InterfaceMethodInfo
@@ -161,6 +162,7 @@ struct InterfaceMethodInfo
     mlir_ts::FunctionType funcType;
     bool isConditional;
     int interfacePosIndex;
+    int virtualIndex;
 };
 
 struct VirtualMethodOrFieldInfo
@@ -173,7 +175,7 @@ struct VirtualMethodOrFieldInfo
     {
     }
 
-    VirtualMethodOrFieldInfo(MethodInfo methodInfo, bool isMissing)
+    VirtualMethodOrFieldInfo(MethodInfo VirtualMethodOrFieldInfo, bool isMissing)
         : methodInfo(methodInfo), fieldInfo(), isField(false), isMissing(isMissing)
     {
     }
@@ -268,6 +270,7 @@ struct InterfaceInfo
                         MethodInfo missingMethod;
                         missingMethod.name = method.name;
                         missingMethod.funcType = method.funcType;
+                        method.virtualIndex = -1;
                         vtable.push_back({missingMethod, true});
                     }
                     else
@@ -277,6 +280,7 @@ struct InterfaceInfo
                 }
                 else
                 {
+                    method.virtualIndex = vtable.size();
                     vtable.push_back({fieldInfo});
                 }
             }
@@ -290,6 +294,7 @@ struct InterfaceInfo
                         MethodInfo missingMethod;
                         missingMethod.name = method.name;
                         missingMethod.funcType = method.funcType;
+                        method.virtualIndex = -1;
                         vtable.push_back({missingMethod, true});
                     }
                     else
@@ -299,6 +304,7 @@ struct InterfaceInfo
                 }
                 else
                 {
+                    method.virtualIndex = vtable.size();
                     vtable.push_back({classMethodInfo});
                 }
             }
@@ -312,6 +318,7 @@ struct InterfaceInfo
                 if (field.isConditional)
                 {
                     mlir_ts::FieldInfo missingField{field.id, field.type};
+                    field.virtualIndex = -1;
                     vtable.push_back({missingField, true});
                 }
                 else
@@ -321,6 +328,7 @@ struct InterfaceInfo
             }
             else
             {
+                field.virtualIndex = vtable.size();
                 vtable.push_back({fieldInfo});
             }
         }
