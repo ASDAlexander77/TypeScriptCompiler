@@ -1350,42 +1350,37 @@ class MLIRTypeHelper
                 return emptyFieldInfo;
             },
             [&](std::string methodName, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> MethodInfo & {
-                llvm_unreachable("not implemented yet");
-                /*
                 auto id = MLIRHelper::TupleFieldName(methodName, funcType.getContext());
                 auto foundIndex = tupleStorageType.getIndex(id);
                 if (foundIndex >= 0)
                 {
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
                     auto test = isa<mlir_ts::FunctionType>(foundField.type)
-                                    ? TestFunctionTypesMatchWithObjectMethods(foundField.type, funcType).result ==
+                                    ? TestFunctionTypesMatchWithObjectMethods(location, foundField.type, funcType).result ==
                                           MatchResultType::Match
                                     : funcType == foundField.type;
                     if (!test)
                     {
-                        LLVM_DEBUG(llvm::dbgs() << "method " << id << " not matching type: " << funcType << " and "
-                                            << foundField.type << " in interface '" << newInterfacePtr->fullName
-                                            << "' for object '" << tupleStorageType << "'";);                                    
+                        LLVM_DEBUG(llvm::dbgs() << "method " << id << " not matching type: " << to_print(funcType) << " and "
+                                            << to_print(foundField.type) << " in interface '" << newInterfacePtr->fullName
+                                            << "' for object '" << to_print(tupleStorageType) << "'";);                                    
 
                         if (!suppressErrors)
                         {
-                            emitError(location) << "method " << id << " not matching type: " << funcType << " and "
-                                                << foundField.type << " in interface '" << newInterfacePtr->fullName
-                                                << "' for object '" << tupleStorageType << "'";
+                            emitError(location) << "method " << id << " not matching type: " << to_print(funcType) << " and "
+                                                << to_print(foundField.type) << " in interface '" << newInterfacePtr->fullName
+                                                << "' for object '" << to_print(tupleStorageType) << "'";
                         }
 
                         return emptyMethod;
-                    }           
+                    }         
 
-                    MethodInfo foundMethod{};
-                    foundMethod.name = methodName;
-                    foundMethod.funcType = cast<mlir_ts::FunctionType>(foundField.type);
-                    // TODO: you need to load function from object
-                    //foundMethod.funcOp
-                    return foundMethod;
+                    // TODO: we do not return method, as it should be resolved in fields request
                 }
-                */
-            });
+
+                return emptyMethod;
+            },
+            true);
 
         return result;
     }

@@ -243,7 +243,8 @@ struct InterfaceInfo
     mlir::LogicalResult getVirtualTable(
         llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
         std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type, bool)> resolveField,
-        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod)
+        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod,
+        bool methodsAsFields = false)
     {
         for (auto &extent : extends)
         {
@@ -256,24 +257,50 @@ struct InterfaceInfo
         // do vtable for current
         for (auto &method : methods)
         {
-            auto &classMethodInfo = resolveMethod(method.name, method.funcType, method.isConditional, method.interfacePosIndex);
-            if (classMethodInfo.name.empty())
+            if (methodsAsFields)
             {
-                if (method.isConditional)
+                auto methodNameAttr = mlir::StringAttr::get(method.funcType.getContext(), method.name);
+                auto fieldInfo = resolveField(methodNameAttr, method.funcType, method.isConditional);
+                if (!fieldInfo.id)
                 {
-                    MethodInfo missingMethod;
-                    missingMethod.name = method.name;
-                    missingMethod.funcType = method.funcType;
-                    vtable.push_back({missingMethod, true});
+                    if (method.isConditional)
+                    {
+                        MethodInfo missingMethod;
+                        missingMethod.name = method.name;
+                        missingMethod.funcType = method.funcType;
+                        vtable.push_back({missingMethod, true});
+                    }
+                    else
+                    {
+                        return mlir::failure();
+                    }
                 }
                 else
                 {
-                    return mlir::failure();
+                    vtable.push_back({fieldInfo});
                 }
             }
             else
             {
-                vtable.push_back({classMethodInfo});
+                auto &classMethodInfo = resolveMethod(method.name, method.funcType, method.isConditional, method.interfacePosIndex);
+                if (classMethodInfo.name.empty())
+                {
+                    if (method.isConditional)
+                    {
+                        MethodInfo missingMethod;
+                        missingMethod.name = method.name;
+                        missingMethod.funcType = method.funcType;
+                        vtable.push_back({missingMethod, true});
+                    }
+                    else
+                    {
+                        return mlir::failure();
+                    }
+                }
+                else
+                {
+                    vtable.push_back({classMethodInfo});
+                }
             }
         }
 
