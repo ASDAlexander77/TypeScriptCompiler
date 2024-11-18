@@ -10585,7 +10585,7 @@ class MLIRGenImpl
 
             auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
                 location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
-                builder.getStringAttr(""), builder.getBoolAttr(fieldInfo->isConditional));
+                fieldInfo->id, builder.getBoolAttr(fieldInfo->isConditional));
 
             mlir::Value value;
             if (!fieldInfo->isConditional)
@@ -16541,9 +16541,8 @@ genContext);
         return mlir::failure();
     }
 
-    ValueOrLogicalResult mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir_ts::ObjectType objectType,
-                                                               InterfaceInfo::TypePtr newInterfacePtr,
-                                                               const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir::Value in, 
+            mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
     {
         auto fullObjectInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
         auto existValue = resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
@@ -16555,7 +16554,62 @@ genContext);
         if (mlir::succeeded(
                 mlirGenObjectVirtualTableDefinitionForInterface(location, objectType, newInterfacePtr, genContext)))
         {
-            return resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
+            auto globalVTableRefValue = resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
+
+            // we need to update methods references in VTable with functions from object;
+            if (newInterfacePtr->methods.size() > 0) {
+
+                mlir_ts::TupleType storeType;
+                if (auto objectStoreType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
+                {
+                    storeType = mlir_ts::TupleType::get(builder.getContext(), objectStoreType.getFields());
+                }
+                else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(objectType.getStorageType()))
+                {
+                    storeType = tupleType;
+                }
+                else
+                {
+                    return mlir::failure();
+                }
+
+                // match VTable
+                // 1) clone vtable
+                auto vtableType = mlir::cast<mlir_ts::TupleType>(mlir::cast<mlir_ts::RefType>(globalVTableRefValue.getType()).getElementType());
+                auto valueVTable = builder.create<mlir_ts::LoadOp>(location, vtableType, globalVTableRefValue);
+                auto varVTable = builder.create<mlir_ts::VariableOp>(location, globalVTableRefValue.getType(), valueVTable, 
+                    builder.getBoolAttr(false), builder.getIndexAttr(0));
+
+                for (auto& method : newInterfacePtr->methods)
+                {
+                    auto index = mth.getFieldIndexByFieldName(storeType, builder.getStringAttr(method.name));
+                    if (index == -1)
+                    {
+                        return mlir::failure();
+                    }
+
+                    auto fieldInfo = mth.getFieldInfoByIndex(storeType, index);
+
+                    auto methodRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(fieldInfo.type), in, index);
+
+                    LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable method: " << method.name
+                                            << "\n\t object method ref: " << V(methodRef) << "\n\n";);
+
+                    // where to save
+                    auto fieldInfoVT = mth.getFieldInfoByIndex(storeType, method.virtualIndex);
+                    auto methodRefVT = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(fieldInfoVT.type), varVTable, method.virtualIndex);
+
+                    LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable method: " << method.name
+                                            << "\n\t vtable method ref: " << V(methodRefVT) << "\n\n";);                    
+                    
+                    builder.create<mlir_ts::LoadSaveOp>(location, methodRefVT, methodRef);   
+                }       
+
+                // patched VTable
+                return V(varVTable);         
+            }
+
+            return globalVTableRefValue;
         }
 
         return mlir::failure();
@@ -16731,7 +16785,8 @@ genContext);
                     if (name == NEW_CTOR_METHOD_NAME)
                     {
                         // TODO: generate method                        
-                        foundMethodPtr = generateSynthMethodToCallNewCtor(location, newClassPtr, newInterfacePtr, funcType, interfacePosIndex, genContext);
+                        foundMethodPtr = generateSynthMethodToCallNewCtor(
+                            location, newClassPtr, newInterfacePtr, funcType, interfacePosIndex, genContext);
                     }
 
                     if (!foundMethodPtr)
@@ -19343,7 +19398,7 @@ genContext);
     ValueOrLogicalResult castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
                                     InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext)
     {
-        auto result = mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext);
+        auto result = mlirGenCreateInterfaceVTableForObject(location, in, objType, interfaceInfo, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto createdInterfaceVTableForObject = V(result);
 

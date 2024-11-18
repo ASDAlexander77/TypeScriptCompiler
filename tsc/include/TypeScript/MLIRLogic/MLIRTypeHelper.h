@@ -2058,6 +2058,40 @@ class MLIRTypeHelper
         return mlir::success();
     }
 
+    int getFieldIndexByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "!! get index of field '" << fieldName << "' of '" << srcType << "'\n";);
+
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
+        {
+            return constTupleType.getIndex(fieldName);
+        }          
+        
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(srcType))
+        {
+            return tupleType.getIndex(fieldName);
+        }  
+
+        llvm_unreachable("not implemented");
+    }
+
+    mlir::typescript::FieldInfo getFieldInfoByIndex(mlir::Type srcType, int index)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "!! get #" << index << " of '" << srcType << "'\n";);
+
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(srcType))
+        {
+            return constTupleType.getFieldInfo(index);
+        }          
+        
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(srcType))
+        {
+            return tupleType.getFieldInfo(index);
+        }  
+
+        llvm_unreachable("not implemented");
+    }
+
     mlir::Type getFieldTypeByFieldName(mlir::Type srcType, mlir::Attribute fieldName)
     {
         LLVM_DEBUG(llvm::dbgs() << "!! get type of field '" << fieldName << "' of '" << srcType << "'\n";);

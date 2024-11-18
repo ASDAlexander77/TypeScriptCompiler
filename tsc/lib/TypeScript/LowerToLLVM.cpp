@@ -3677,8 +3677,6 @@ struct LoadSaveValueLowering : public TsLlvmPattern<mlir_ts::LoadSaveOp>
     LogicalResult matchAndRewrite(mlir_ts::LoadSaveOp loadSaveOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         auto loc = loadSaveOp->getLoc();
 
         auto value = rewriter.create<LLVM::LoadOp>(loc, transformed.getSrc().getType(), transformed.getSrc());

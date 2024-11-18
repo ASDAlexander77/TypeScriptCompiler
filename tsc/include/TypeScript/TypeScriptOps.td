@@ -140,7 +140,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
     [Pure]> {
   let summary = "symbol reference as to interface member";
 
-  let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, StrAttr:$identifier, OptionalAttr<BoolAttr>:$optional);
+  let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, AnyAttr:$identifier, OptionalAttr<BoolAttr>:$optional);
   let results = (outs TypeScript_AnyRefOrCallable:$funcOrFieldReference);
 
   let hasCanonicalizer = 1; 

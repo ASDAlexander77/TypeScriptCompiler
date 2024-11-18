@@ -6,19 +6,19 @@ interface Point {
 }
 
 const o = {
-        x:1, 
-        y:2, 
-        fromOrigin(p: Point) { return 1.0; }   
+    x:1, 
+    y:2, 
+    fromOrigin(p: Point) { return 3.0; }
 };
 
 const iface: Point = o;
 
 print(iface.x);
 print(iface.y);
-// TODO: finish it
-//print(iface.fromOrigin(iface));
+print(iface.fromOrigin(iface));
 
 assert(iface.x == 1);
 assert(iface.y == 2);
+assert(iface.fromOrigin(iface) == 3.0);
 
 print("done.")
