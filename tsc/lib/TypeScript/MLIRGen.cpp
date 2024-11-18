@@ -10314,8 +10314,7 @@ class MLIRGenImpl
                 auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
                 if (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType)
                 {
-                    LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "' in context func. '"
-                                      << const_cast<GenContext &>(genContext).funcOp.getName() << "'\n";);
+                    LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "'\n";);
 
                     LLVM_DEBUG(dbgs() << "\n!! Virtual call - this val: [ " << effectiveThisValue << " ] func type: [ "
                                       << effectiveFuncType << " ] isStorage access: " << isStorageType << "\n";);
@@ -16739,11 +16738,10 @@ genContext);
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
                 {
-                    emitError(location) << "method signature not matching for '" << name << "'{" << to_print(funcType)
+                    emitError(location) << "method signature not matching for " << name << ":" << to_print(funcType)
                                         << "} for interface '" << newInterfacePtr->fullName << "' in class '"
-                                        << newClassPtr->fullName << "'"
-                                        << " found method: " << foundMethodFunctionType;
-
+                                        << newClassPtr->fullName << "'."
+                                        << " Found method: " << name << ":" << to_print(foundMethodFunctionType);
                     return emptyMethod;
                 }
 
@@ -23223,10 +23221,10 @@ genContext);
 
     std::string to_print(mlir::Type type)
     {
-        stringstream exportType;
+        std::stringstream exportType;
         MLIRPrinter mp{};
-        mp.printType<ostream>(exportType, type);
-        return convertWideToUTF8(exportType.str());      
+        mp.printType<std::ostream>(exportType, type);
+        return exportType.str();      
     }
 
     string to_wprint(mlir::Type type)

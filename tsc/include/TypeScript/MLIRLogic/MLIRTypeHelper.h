@@ -6,6 +6,7 @@
 #include "TypeScript/MLIRLogic/MLIRGenStore.h"
 #include "TypeScript/MLIRLogic/MLIRTypeIterator.h"
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
+#include "TypeScript/MLIRLogic/MLIRPrinter.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/ADT/APSInt.h"
@@ -1290,6 +1291,14 @@ class MLIRTypeHelper
         return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, suppressErrors);
     }
 
+    std::string to_print(mlir::Type type)
+    {
+        std::stringstream exportType;
+        MLIRPrinter mp{};
+        mp.printType<std::ostream>(exportType, type);
+        return exportType.str();      
+    }
+
     mlir::LogicalResult getInterfaceVirtualTableForObject(mlir::Location location, mlir_ts::TupleType tupleStorageType,
                                                           InterfaceInfo::TypePtr newInterfacePtr,
                                                           SmallVector<VirtualMethodOrFieldInfo> &virtualTable,
@@ -1314,13 +1323,13 @@ class MLIRTypeHelper
                     {
                         LLVM_DEBUG(llvm::dbgs() << "field " << id << " not matching type: " << fieldType << " and "
                                             << foundField.type << " in interface '" << newInterfacePtr->fullName
-                                            << "' for object '" << tupleStorageType << "'";);                                    
+                                            << "' for object '" << to_print(tupleStorageType) << "'";);                                    
 
                         if (!suppressErrors)
                         {
                             emitError(location) << "field " << id << " not matching type: " << fieldType << " and "
                                                 << foundField.type << " in interface '" << newInterfacePtr->fullName
-                                                << "' for object '" << tupleStorageType << "'";
+                                                << "' for object '" << to_print(tupleStorageType) << "'";
                         }
 
                         return emptyFieldInfo;
@@ -1330,12 +1339,12 @@ class MLIRTypeHelper
                 }
 
                 LLVM_DEBUG(llvm::dbgs() << id << " field can't be found for interface '"
-                                    << newInterfacePtr->fullName << "' in object '" << tupleStorageType << "'";);
+                                    << newInterfacePtr->fullName << "' in object '" << to_print(tupleStorageType) << "'";);
 
                 if (!isConditional && !suppressErrors)
                 {
-                    emitError(location)  << id << " field can't be found for interface '"
-                                        << newInterfacePtr->fullName << "' in object '" << tupleStorageType << "'";
+                    emitError(location) << id << " field can't be found for interface '"
+                                        << newInterfacePtr->fullName << "' in object '" << to_print(tupleStorageType) << "'";
                 }
 
                 return emptyFieldInfo;
