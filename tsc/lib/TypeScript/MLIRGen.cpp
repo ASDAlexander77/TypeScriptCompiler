@@ -10564,10 +10564,24 @@ class MLIRGenImpl
         auto fieldInfo = interfaceInfo->findField(id, totalOffset);
         if (fieldInfo)
         {
+            auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
+            if (fieldInfo->virtualIndex == -1)
+            {
+                // no data for conditional interface;
+                if (!fieldInfo->isConditional)
+                {
+                    emitError(location, "field '") << fieldInfo->id << "' is not conditional and missing";
+                    return mlir::Value();
+                }
+
+                auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
+                                      ? fieldRefType.getElementType()
+                                      : mlir_ts::OptionalType::get(fieldRefType.getElementType());
+                return builder.create<mlir_ts::OptionalUndefOp>(location, actualType);
+            }
+
             assert(fieldInfo->virtualIndex >= 0);
             auto vtableIndex = fieldInfo->virtualIndex;
-
-            auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
 
             auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
                 location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
