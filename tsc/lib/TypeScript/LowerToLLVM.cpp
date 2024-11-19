@@ -415,17 +415,24 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         auto loc = op.getLoc();
 
+        auto ptrType = th.getPtrType();
         auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(op.getOp().getType()).getElementType());
         auto elementType = arrayType.getElementType();
+
+        auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
-        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto llvmIndexType = tch.convertType(th.getIndexType());        
 
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, transformed.getOp(),
+        LLVM_DEBUG(llvm::dbgs() << "arrayType: elementType: " << elementType << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "arrayType: llvm: " << tch.convertType(arrayType) << "\n";);
+
+        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
-        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmElementType, currentPtrPtr);
+        auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), th.getI32Type(), transformed.getOp(),
+        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
+        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
         auto newLengthAsI32Type = op.getNewLength();
 
         auto newCountAsIndexType = 
@@ -2230,6 +2237,7 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
+        // TODO: use GetAddressOfArrayElement method to sync code
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
