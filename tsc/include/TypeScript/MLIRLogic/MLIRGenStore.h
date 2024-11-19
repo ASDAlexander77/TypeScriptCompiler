@@ -352,7 +352,7 @@ struct InterfaceInfo
         return (signed)dist >= (signed)fields.size() ? -1 : dist;
     }
 
-    InterfaceFieldInfo *findField(mlir::Attribute id, int &totalOffset)
+    InterfaceFieldInfo *findField(mlir::Attribute id)
     {
         auto index = getFieldIndex(id);
         if (index >= 0)
@@ -362,11 +362,9 @@ struct InterfaceInfo
 
         for (auto &extent : extends)
         {
-            auto totalOffsetLocal = 0;
-            auto field = std::get<1>(extent)->findField(id, totalOffsetLocal);
+            auto field = std::get<1>(extent)->findField(id);
             if (field)
             {
-                totalOffset = std::get<0>(extent) + totalOffsetLocal;
                 return field;
             }
         }
@@ -377,7 +375,7 @@ struct InterfaceInfo
         return nullptr;
     }
 
-    InterfaceMethodInfo *findMethod(mlir::StringRef name, int &totalOffset)
+    InterfaceMethodInfo *findMethod(mlir::StringRef name)
     {
         auto index = getMethodIndex(name);
         if (index >= 0)
@@ -387,11 +385,9 @@ struct InterfaceInfo
 
         for (auto &extent : extends)
         {
-            auto totalOffsetLocal = 0;
-            auto *method = std::get<1>(extent)->findMethod(name, totalOffsetLocal);
+            auto *method = std::get<1>(extent)->findMethod(name);
             if (method)
             {
-                totalOffset = std::get<0>(extent) + totalOffsetLocal;
                 return method;
             }
         }

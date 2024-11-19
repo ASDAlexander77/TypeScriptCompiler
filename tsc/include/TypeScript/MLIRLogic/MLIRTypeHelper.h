@@ -2122,8 +2122,7 @@ class MLIRTypeHelper
         {
             if (auto srcInterfaceInfo = getInterfaceInfoByFullName(srcInterfaceType.getName().getValue()))
             {
-                int totalOffset = 0;
-                auto fieldInfo = srcInterfaceInfo->findField(fieldName, totalOffset);
+                auto fieldInfo = srcInterfaceInfo->findField(fieldName);
                 if (fieldInfo)
                 {
                     return fieldInfo->type;
@@ -2131,7 +2130,7 @@ class MLIRTypeHelper
 
                 if (auto strName = dyn_cast<mlir::StringAttr>(fieldName))
                 {
-                    auto methodInfo = srcInterfaceInfo->findMethod(strName, totalOffset);
+                    auto methodInfo = srcInterfaceInfo->findMethod(strName);
                     if (methodInfo)
                     {
                         return methodInfo->funcType;
@@ -2150,8 +2149,7 @@ class MLIRTypeHelper
         {
             if (auto srcClassInfo = getInterfaceInfoByFullName(srcClassType.getName().getValue()))
             {
-                int totalOffset = 0;
-                auto fieldInfo = srcClassInfo->findField(fieldName, totalOffset);
+                auto fieldInfo = srcClassInfo->findField(fieldName);
                 if (fieldInfo)
                 {
                     return fieldInfo->type;
@@ -2159,7 +2157,7 @@ class MLIRTypeHelper
 
                 if (auto strName = dyn_cast<mlir::StringAttr>(fieldName))
                 {
-                    auto methodInfo = srcClassInfo->findMethod(strName, totalOffset);
+                    auto methodInfo = srcClassInfo->findMethod(strName);
                     if (methodInfo)
                     {
                         return methodInfo->funcType;

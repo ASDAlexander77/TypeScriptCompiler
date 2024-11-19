@@ -6945,8 +6945,7 @@ class MLIRGenImpl
                     {
                         if (auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue()))
                         {
-                            int totalOffset = -1;
-                            auto fieldInfo = interfaceInfo->findField(fieldNameAttr, totalOffset);
+                            auto fieldInfo = interfaceInfo->findField(fieldNameAttr);
                             if (auto literalType = dyn_cast<mlir_ts::LiteralType>(fieldInfo->type))
                             {
                                 if (literalType.getValue() == valueAttr)
@@ -10560,8 +10559,7 @@ class MLIRGenImpl
         assert(interfaceInfo);
 
         // check field access
-        auto totalOffset = 0;
-        auto fieldInfo = interfaceInfo->findField(id, totalOffset);
+        auto fieldInfo = interfaceInfo->findField(id);
         if (fieldInfo)
         {
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
@@ -10617,7 +10615,7 @@ class MLIRGenImpl
         if (auto nameAttr = dyn_cast<mlir::StringAttr>(id))
         {
             auto name = nameAttr.getValue();
-            auto methodInfo = interfaceInfo->findMethod(name, totalOffset);
+            auto methodInfo = interfaceInfo->findMethod(name);
             if (methodInfo)
             {
                 assert(methodInfo->virtualIndex >= 0);
@@ -13644,8 +13642,7 @@ class MLIRGenImpl
                                 {
                                     for (auto fieldInfo : destFields)
                                     {
-                                        auto totalOffset = 0;
-                                        auto interfaceFieldInfo = srcInterfaceInfo->findField(fieldInfo.id, totalOffset);
+                                        auto interfaceFieldInfo = srcInterfaceInfo->findField(fieldInfo.id);
 
                                         MLIRPropertyAccessCodeLogic cl(builder, location, tupleValue, fieldInfo.id);
                                         // TODO: implemenet conditional
@@ -18667,9 +18664,8 @@ genContext);
         SmallVector<mlir::Value> values;
         for (auto fieldInfo : fields)
         {
-            auto totalOffset = 0;                                        
-            auto classFieldInfo = interfaceInfo->findField(fieldInfo.id, totalOffset);
-            if (totalOffset < 0)
+            auto classFieldInfo = interfaceInfo->findField(fieldInfo.id);
+            if (!classFieldInfo)
             {
                 emitError(location)
                     << "field '" << fieldInfo.id << "' can't be found "
@@ -18679,7 +18675,8 @@ genContext);
 
             MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
             // TODO: implemenet conditional
-            mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, classFieldInfo->isConditional, cl, genContext); 
+            mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(
+                location, value, classFieldInfo->isConditional, cl, genContext); 
             if (propertyAccess)
             {
                 values.push_back(propertyAccess);
