@@ -2711,7 +2711,7 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto loc = arrayViewOp.getLoc();
 
         auto ptrType = th.getPtrType();
-        auto arrayType = cast<mlir_ts::ArrayType>(cast<mlir_ts::RefType>(arrayViewOp.getOp().getType()).getElementType());
+        auto arrayType = arrayViewOp.getOp().getType();
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
@@ -2725,12 +2725,11 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
 
         auto arrayOffset = ch.GetAddressOfPointerOffset(llvmElementType, arrayPtr, transformed.getOffset());
         // create array type
-        auto llvmRtArrayStructType = tch.convertType(arrayType);
-        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
-        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, arrayOffset,
+        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
+        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue, arrayOffset,
                                                                  MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
 
-        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2,
+        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue2,
                                                                  transformed.getCount(), MLIRHelper::getStructIndex(rewriter, ARRAY_SIZE_INDEX));
 
         rewriter.replaceOp(arrayViewOp, ValueRange{structValue3});

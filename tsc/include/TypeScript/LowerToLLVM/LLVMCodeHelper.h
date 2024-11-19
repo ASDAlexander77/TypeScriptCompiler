@@ -748,8 +748,6 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto llvmElementType = tch.convertType(elementType);
 
-        assert(isa<LLVM::LLVMPointerType>(llvmElementType));
-
         LLVM_DEBUG(llvm::dbgs() << "\n!! GetAddressOfPointerOffset: index #" << index << " type - " << elementType << " llvm: " << llvmElementType << "\n";);
 
         auto loc = op->getLoc();
