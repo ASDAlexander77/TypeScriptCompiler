@@ -2131,32 +2131,52 @@ def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [Pure,
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
 }
 
-def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush"> {
+def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush", [
+    TypesMatchWith<"array element type match all items types",
+                "op", "items",
+                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
+]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
   let results = (outs I32:$new_size);
 }
 
-def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop"> {
+def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop", [
+    TypesMatchWith<"array element type match all items types",
+                "op", "item",
+                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
+]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemFree, MemRead]>:$op);
   let results = (outs AnyType:$item);
 }
 
-def TypeScript_ArrayUnshiftOp : TypeScript_Op<"ArrayUnshift"> {
+def TypeScript_ArrayUnshiftOp : TypeScript_Op<"ArrayUnshift", [
+    TypesMatchWith<"array element type match all items types",
+                "op", "items",
+                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
+]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
   let results = (outs I32:$new_size);
 }
 
-def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift"> {
+def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift", [
+    TypesMatchWith<"array element type match all items types",
+                "op", "item",
+                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
+]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemFree, MemRead]>:$op);
   let results = (outs AnyType:$item);
 }
 
-def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice"> {
+def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice", [
+    TypesMatchWith<"array element type match all items types",
+                "op", "items",
+                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
+]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Index:$start, Index:$deleteCount, Variadic<AnyType>:$items);
   let results = (outs I32:$new_size);
 }
 
-def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView"> {
+def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView", [AllTypesMatch<["op", "result"]>]> {
   let arguments = (ins TypeScript_Array:$op, I32:$offset, I32:$count);
   let results = (outs TypeScript_Array:$result);
 }
