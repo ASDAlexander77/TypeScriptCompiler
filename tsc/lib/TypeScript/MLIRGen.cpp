@@ -16593,8 +16593,8 @@ genContext);
                                             << "\n\t object method ref: " << V(methodRef) << "\n\n";);
 
                     // where to save
-                    auto fieldInfoVT = mth.getFieldInfoByIndex(storeType, method.virtualIndex);
-                    auto methodRefVT = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(fieldInfoVT.type), varVTable, method.virtualIndex);
+                    auto fieldInfoVT = mth.getFieldInfoByIndex(vtableType, method.virtualIndex);
+                    auto methodRefVT = builder.create<mlir_ts::PropertyRefOp>(location, fieldInfoVT.type, varVTable, method.virtualIndex);
 
                     LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable method: " << method.name
                                             << "\n\t vtable method ref: " << V(methodRefVT) << "\n\n";);                    
