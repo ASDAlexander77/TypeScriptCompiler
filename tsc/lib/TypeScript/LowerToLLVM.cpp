@@ -6046,8 +6046,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // when generate Debug Info
     if (tsLlvmContext.compileOptions.generateDebugInfo)
     {
-        preserveTypesForDebugInfo(m, typeConverter);
         setDISubProgramTypesToFormOp(m, typeConverter);
+        preserveTypesForDebugInfo(m, typeConverter);
     }
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << m << "\n";);
