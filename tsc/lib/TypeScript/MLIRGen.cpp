@@ -8938,10 +8938,10 @@ class MLIRGenImpl
                 result = leftInt << rightInt;
                 break;
             case SyntaxKind::GreaterThanGreaterThanToken:
-                result.ashr(rightInt);
+                result = leftInt.ashr(rightInt);
                 break;
             case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                result.ashrInPlace(rightInt);
+                result = leftInt.lshr(rightInt);
                 break;
             case SyntaxKind::AmpersandToken:
                 result = leftInt & rightInt;
