@@ -14753,6 +14753,7 @@ class MLIRGenImpl
         }
 
         auto activeBits = 32;
+        mlir::IntegerType::SignednessSemantics currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Signless;
         llvm::APInt currentEnumValue(32, 0);
         for (auto enumMember : enumDeclarationAST->members)
         {
@@ -14780,6 +14781,19 @@ class MLIRGenImpl
                     enumValueAttr = constOp.getValueAttr();
                     if (auto intAttr = dyn_cast<mlir::IntegerAttr>(enumValueAttr))
                     {
+                        if (intAttr.getType().isSignlessInteger())
+                        {
+                            currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Signless;
+                        }
+                        else if (intAttr.getType().isSignedInteger())
+                        {
+                            currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Signed;
+                        }
+                        else if (intAttr.getType().isUnsignedInteger())
+                        {
+                            currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Unsigned;
+                        }
+
                         currentEnumValue = intAttr.getValue();
                         auto currentActiveBits = (int)intAttr.getValue().getActiveBits();
                         if (currentActiveBits > activeBits)
@@ -14810,7 +14824,7 @@ class MLIRGenImpl
                     return mlir::failure();
                 }
 
-                auto typeInt = mlir::IntegerType::get(builder.getContext(), activeBits);
+                auto typeInt = mlir::IntegerType::get(builder.getContext(), activeBits, currentEnumValueSigedness);
                 enumValueAttr = builder.getIntegerAttr(typeInt, currentEnumValue);
                 auto indexType = mlir_ts::LiteralType::get(enumValueAttr, typeInt);
                 enumLiteralTypes.push_back(indexType);
