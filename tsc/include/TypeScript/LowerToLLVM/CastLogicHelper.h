@@ -716,7 +716,10 @@ class CastLogicHelper
         // value to ref of value
         if (auto destPtr = dyn_cast<LLVM::LLVMPointerType>(resLLVMType))
         {
+            LLVM_DEBUG(llvm::dbgs() << "type 1: '" << inLLVMType << "', type 2: '" << resLLVMType << "'\n";);
+
             llvm_unreachable("review usage");
+            // case1: cast of const_array to array
             // if (destPtr.getElementType() == inLLVMType)
             // {
             //     // alloc and return address

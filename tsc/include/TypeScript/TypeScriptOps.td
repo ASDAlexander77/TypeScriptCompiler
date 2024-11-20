@@ -2132,9 +2132,9 @@ def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [Pure,
 }
 
 def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush", [
-    TypesMatchWith<"array element type match all items types",
+    RangedTypesMatchWith<"array element type match all items types",
                 "op", "items",
-                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
+                "TypeRange((cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType()))">
 ]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
   let results = (outs I32:$new_size);
@@ -2149,11 +2149,7 @@ def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop", [
   let results = (outs AnyType:$item);
 }
 
-def TypeScript_ArrayUnshiftOp : TypeScript_Op<"ArrayUnshift", [
-    TypesMatchWith<"array element type match all items types",
-                "op", "items",
-                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
-]> {
+def TypeScript_ArrayUnshiftOp : TypeScript_Op<"ArrayUnshift"> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
   let results = (outs I32:$new_size);
 }
@@ -2167,11 +2163,7 @@ def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift", [
   let results = (outs AnyType:$item);
 }
 
-def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice", [
-    TypesMatchWith<"array element type match all items types",
-                "op", "items",
-                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
-]> {
+def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice"> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Index:$start, Index:$deleteCount, Variadic<AnyType>:$items);
   let results = (outs I32:$new_size);
 }
