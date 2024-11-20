@@ -14753,7 +14753,7 @@ class MLIRGenImpl
         }
 
         auto activeBits = 32;
-        auto currentEnumValue = 0;
+        llvm::APInt currentEnumValue(32, 0);
         for (auto enumMember : enumDeclarationAST->members)
         {
             auto location = loc(enumMember);
@@ -14780,7 +14780,7 @@ class MLIRGenImpl
                     enumValueAttr = constOp.getValueAttr();
                     if (auto intAttr = dyn_cast<mlir::IntegerAttr>(enumValueAttr))
                     {
-                        currentEnumValue = intAttr.getInt();
+                        currentEnumValue = intAttr.getValue();
                         auto currentActiveBits = (int)intAttr.getValue().getActiveBits();
                         if (currentActiveBits > activeBits)
                         {
