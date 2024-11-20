@@ -1771,7 +1771,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
             if (varOp->hasAttrOfType<mlir::IntegerAttr>(INSTANCES_COUNT_ATTR_NAME))
             {
                 auto intAttr = varOp->getAttrOfType<mlir::IntegerAttr>(INSTANCES_COUNT_ATTR_NAME);
-                count = intAttr.getInt();
+                count = intAttr.getValue().getZExtValue();
             }
 
             allocated = ch.Alloca(storageType, count);

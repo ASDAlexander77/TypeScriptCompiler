@@ -8964,9 +8964,30 @@ class MLIRGenImpl
         auto rightFloatAttr = dyn_cast_or_null<mlir::FloatAttr>(rightConstOp.getValueAttr());
         if (leftFloatAttr && rightFloatAttr)
         {
-            auto leftFloat = leftFloatAttr.getValueAsDouble();
-            auto rightFloat = rightFloatAttr.getValueAsDouble();
-            double result = 0;
+            auto leftFloat = leftFloatAttr.getValue();
+            auto rightFloat = rightFloatAttr.getValue();
+            auto result = leftFloat;
+
+            auto useSigned = true;
+            APSInt leftAPInt(64, /*isUnsigned=*/!useSigned);
+            APSInt rightAPInt(64, /*isUnsigned=*/!useSigned);
+            APSInt resultAPInt(64, /*isUnsigned=*/!useSigned);
+
+            bool ignored;
+            auto castStatus = APFloat::opInvalidOp == leftFloat.convertToInteger(leftAPInt, APFloat::rmTowardZero, &ignored);
+            if (castStatus)
+            {
+                emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
+                return mlir::failure();
+            }
+
+            castStatus = APFloat::opInvalidOp == rightFloat.convertToInteger(rightAPInt, APFloat::rmTowardZero, &ignored);
+            if (castStatus)
+            {
+                emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
+                return mlir::failure();
+            }
+
             switch (opCode)
             {
             case SyntaxKind::PlusToken:
@@ -8979,29 +9000,47 @@ class MLIRGenImpl
                 result = leftFloat * rightFloat;
                 break;
             case SyntaxKind::LessThanLessThanToken:
-                result = (int64_t)leftFloat << (int64_t)rightFloat;
+                resultAPInt = leftAPInt.shl(rightAPInt);
                 break;
             case SyntaxKind::GreaterThanGreaterThanToken:
-                result = (int64_t)leftFloat >> (int64_t)rightFloat;
+                resultAPInt = leftAPInt.ashr(rightAPInt);
                 break;
             case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                result = (uint64_t)leftFloat >> (int64_t)rightFloat;
+                resultAPInt = leftAPInt.lshr(rightAPInt);
                 break;
             case SyntaxKind::AmpersandToken:
-                result = (int64_t)leftFloat & (int64_t)rightFloat;
+                resultAPInt = leftAPInt & rightAPInt;
                 break;
             case SyntaxKind::BarToken:
-                result = (int64_t)leftFloat | (int64_t)rightFloat;
+                resultAPInt = leftAPInt | rightAPInt;
                 break;
             case SyntaxKind::CaretToken:
-                result = (int64_t)leftFloat ^ (int64_t)rightFloat;
+                resultAPInt = leftAPInt ^ rightAPInt;
                 break;
             default:
                 emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
                 return mlir::failure();
             }
 
-            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getFloatAttr(leftFloatAttr.getType(), result)));
+            switch (opCode)
+            {
+            case SyntaxKind::PlusToken:
+            case SyntaxKind::MinusToken:
+            case SyntaxKind::AsteriskToken:
+                break;
+            default:
+                castStatus = APFloat::opInvalidOp == result.convertFromAPInt(resultAPInt, /*IsSigned=*/useSigned,
+                        APFloat::rmNearestTiesToEven);
+                if (castStatus)
+                {
+                    emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
+                    return mlir::failure();
+                }
+                break;
+            }            
+
+            auto resultAttr = builder.getFloatAttr(leftFloatAttr.getType(), result);
+            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, resultAttr));
         }    
 
         return mlir::failure();    

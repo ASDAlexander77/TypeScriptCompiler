@@ -170,7 +170,7 @@ class MLIRCodeLogic
             auto intAttr = dyn_cast<mlir::IntegerAttr>(fieldId);
             if (intAttr)
             {
-                fieldIndex = intAttr.getInt();
+                fieldIndex = intAttr.getValue().getSExtValue();;
                 notFound = fieldIndex < 0 || fieldIndex >= tupleType.size();
             }
         }
