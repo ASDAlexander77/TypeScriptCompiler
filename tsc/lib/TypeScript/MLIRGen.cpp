@@ -18689,6 +18689,8 @@ genContext);
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
     }
 
+    // TODO: cast should not throw error in case of generic methods in "if (false)" conditions (typeof == "..."), 
+    // as it may prevent cmpiling code
     ValueOrLogicalResult cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         if (!type)
@@ -18797,9 +18799,13 @@ genContext);
             }
             else if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(valueType))
             {
-                return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
-                //emitError(location) << "type: " << to_print(arrayType) << " is missing " TO_STRING "() method. It is possible to create method-extention.";
-                //return mlir::failure();
+                // we evaluate property to allow to compile code in "generic methods" with "typeof" conditions
+                // if we throw error here generic method with "if (false)" condition will generate code which
+                // will be removed but because of error, the compilation process will be stopped
+                if (auto toStringMethod = evaluateProperty(location, value, TO_STRING, genContext))
+                {
+                    return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
+                }
             }
 
             if (auto srcConstTupleType = dyn_cast<mlir_ts::ConstTupleType>(valueType))
