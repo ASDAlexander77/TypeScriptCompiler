@@ -299,6 +299,16 @@ class CastLogicHelper
             {
                 return castTupleToString<mlir_ts::TupleType>(in, inType, tupleTypeIn);
             }
+
+            if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(inType))
+            {
+                llvm_unreachable("not implemented, must be processed at MLIR pass");
+            }
+
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(inType))
+            {
+                llvm_unreachable("not implemented, must be processed at MLIR pass");
+            }
         }
 
         if (auto interfaceTypeRes = dyn_cast<mlir_ts::InterfaceType>(resType))

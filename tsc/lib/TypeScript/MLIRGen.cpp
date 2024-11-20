@@ -12559,11 +12559,7 @@ class MLIRGenImpl
             else llvm_unreachable("not implemented");
         }
 
-        auto type = unsignedVal 
-            ? builder.getIntegerType(width, false) 
-            : newVal.isSigned() 
-                ? builder.getIntegerType(width, true)
-                : builder.getIntegerType(width);
+        auto type = builder.getIntegerType(width, !unsignedVal);
         return mlir::IntegerAttr::get(type, newVal.getExtValue());
     }
 
@@ -18801,10 +18797,9 @@ genContext);
             }
             else if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(valueType))
             {
-                if (auto toStringMethod = evaluateProperty(location, value, TO_STRING, genContext))
-                {
-                    return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
-                }
+                return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
+                //emitError(location) << "type: " << to_print(arrayType) << " is missing " TO_STRING "() method. It is possible to create method-extention.";
+                //return mlir::failure();
             }
 
             if (auto srcConstTupleType = dyn_cast<mlir_ts::ConstTupleType>(valueType))
