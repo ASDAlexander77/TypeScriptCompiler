@@ -8920,9 +8920,9 @@ class MLIRGenImpl
         auto resultType = leftConstOp.getType();
         if (leftIntAttr && rightIntAttr)
         {
-            auto leftInt = leftIntAttr.getInt();
-            auto rightInt = rightIntAttr.getInt();            
-            int64_t result = 0;
+            auto leftInt = leftIntAttr.getValue();
+            auto rightInt = rightIntAttr.getValue();            
+            auto result = leftInt;
             switch (opCode)
             {
             case SyntaxKind::PlusToken:
@@ -8938,10 +8938,10 @@ class MLIRGenImpl
                 result = leftInt << rightInt;
                 break;
             case SyntaxKind::GreaterThanGreaterThanToken:
-                result = leftInt >> rightInt;
+                result.ashr(rightInt);
                 break;
             case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                result = (uint64_t)leftInt >> rightInt;
+                result.ashrInPlace(rightInt);
                 break;
             case SyntaxKind::AmpersandToken:
                 result = leftInt & rightInt;
@@ -8957,7 +8957,7 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getI64IntegerAttr(result)));
+            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getIntegerAttr(leftIntAttr.getType(), result)));
         }
 
         auto leftFloatAttr = dyn_cast_or_null<mlir::FloatAttr>(leftConstOp.getValueAttr());
