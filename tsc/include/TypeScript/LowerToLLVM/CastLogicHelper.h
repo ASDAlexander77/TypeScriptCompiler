@@ -299,6 +299,16 @@ class CastLogicHelper
             {
                 return castTupleToString<mlir_ts::TupleType>(in, inType, tupleTypeIn);
             }
+
+            if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(inType))
+            {
+                llvm_unreachable("not implemented, must be processed at MLIR pass");
+            }
+
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(inType))
+            {
+                llvm_unreachable("not implemented, must be processed at MLIR pass");
+            }
         }
 
         if (auto interfaceTypeRes = dyn_cast<mlir_ts::InterfaceType>(resType))
@@ -716,7 +726,10 @@ class CastLogicHelper
         // value to ref of value
         if (auto destPtr = dyn_cast<LLVM::LLVMPointerType>(resLLVMType))
         {
+            LLVM_DEBUG(llvm::dbgs() << "type 1: '" << inLLVMType << "', type 2: '" << resLLVMType << "'\n";);
+
             llvm_unreachable("review usage");
+            // case1: cast of const_array to array
             // if (destPtr.getElementType() == inLLVMType)
             // {
             //     // alloc and return address

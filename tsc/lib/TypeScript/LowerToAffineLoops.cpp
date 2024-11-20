@@ -868,16 +868,36 @@ struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
     {
         Location loc = accessorOp.getLoc();
 
-        if (!accessorOp.getGetAccessor().has_value())
+        if (accessorOp.getSetValue())
         {
-            emitError(loc) << "property does not have get accessor";
-            return failure();
+            if (!accessorOp.getSetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getSetAccessor().value(),
+                                mlir::TypeRange{}, mlir::ValueRange{accessorOp.getSetValue()});        
         }
 
-        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getGetAccessor().value(),
-                                                        TypeRange{accessorOp.getType()}, ValueRange{});
+        if (accessorOp.getNumResults() > 0)
+        {
+            if (!accessorOp.getGetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
 
-        rewriter.replaceOp(accessorOp, callRes.getResult(0));
+            auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getGetAccessor().value(),
+                                                            TypeRange{accessorOp.getType(0)}, ValueRange{});
+
+            rewriter.replaceOp(accessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(accessorOp);
+        }
+
         return success();
     }
 };
@@ -890,17 +910,81 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
     {
         Location loc = thisAccessorOp.getLoc();
 
-        if (!thisAccessorOp.getGetAccessor().has_value())
+        if (thisAccessorOp.getSetValue())
         {
-            emitError(loc) << "property does not have get accessor";
-            return failure();
+            if (!thisAccessorOp.getSetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getSetAccessor().value(),
+                mlir::TypeRange{}, mlir::ValueRange{thisAccessorOp.getThisVal(), thisAccessorOp.getSetValue()});
         }
 
-        auto callRes =
-            rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getGetAccessor().value(),
-                                             TypeRange{thisAccessorOp.getType()}, ValueRange{thisAccessorOp.getThisVal()});
+        if (thisAccessorOp.getNumResults() > 0)
+        {
+            if (!thisAccessorOp.getGetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
 
-        rewriter.replaceOp(thisAccessorOp, callRes.getResult(0));
+            auto callRes =
+                rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getGetAccessor().value(),
+                    TypeRange{thisAccessorOp.getType(0)}, ValueRange{thisAccessorOp.getThisVal()});
+
+            rewriter.replaceOp(thisAccessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(thisAccessorOp);
+        }
+
+        return success();
+    }
+};
+
+struct ThisAccessorIndirectOpLowering : public TsPattern<mlir_ts::ThisAccessorIndirectOp>
+{
+    using TsPattern<mlir_ts::ThisAccessorIndirectOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisAccessorIndirectOp thisAccessorIndirectOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = thisAccessorIndirectOp.getLoc();
+
+        if (thisAccessorIndirectOp.getSetValue())
+        {
+            // set case
+            if (thisAccessorIndirectOp.getSetAccessor().getDefiningOp<mlir_ts::NullOp>())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, 
+                thisAccessorIndirectOp.getSetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal(), 
+                thisAccessorIndirectOp.getSetValue()});                
+        }
+
+        if (thisAccessorIndirectOp.getNumResults() > 0)
+        {
+            // get case
+            if (thisAccessorIndirectOp.getGetAccessor().getDefiningOp<mlir_ts::NullOp>())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
+
+            auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisAccessorIndirectOp.getType(0)}, 
+                    thisAccessorIndirectOp.getGetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal()});
+
+            rewriter.replaceOp(thisAccessorIndirectOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(thisAccessorIndirectOp);
+        }
 
         return success();
     }
@@ -1863,11 +1947,11 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::DefaultOp, mlir_ts::HasValueOp,
         mlir_ts::ValueOp, mlir_ts::ValueOrDefaultOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp,
         mlir_ts::PrintOp, mlir_ts::ConvertFOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
-        mlir_ts::StringLengthOp, mlir_ts::SetStringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
-        mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp,
-        mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, 
-        mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::DebugVariableOp, mlir_ts::AllocaOp, mlir_ts::InvokeOp, 
-        /*mlir_ts::ResultOp,*/ mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, 
+        mlir_ts::StringLengthOp, mlir_ts::SetStringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, 
+        mlir_ts::LoadOp, mlir_ts::LoadSaveOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, 
+        mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, 
+        mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::DebugVariableOp, mlir_ts::AllocaOp, 
+        mlir_ts::InvokeOp, /*mlir_ts::ResultOp,*/ mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, 
         mlir_ts::ExtractInterfaceThisOp, mlir_ts::ExtractInterfaceVTableOp, mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, 
         mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::ArrayViewOp, 
         mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp,
@@ -1894,11 +1978,12 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
 
     patterns.insert<EntryOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, ParamOpLowering,
                     ParamOptionalOpLowering, ParamDefaultValueOpLowering, OptionalValueOrDefaultOpLowering, PrefixUnaryOpLowering, 
-                    PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/
-                    DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering,
-                    SwitchOpLowering, AccessorOpLowering, ThisAccessorOpLowering, LabelOpLowering, CallOpLowering,
-                    CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, CatchOpLowering, StateLabelOpLowering,
-                    SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering, CaptureOpLowering>(
+                    PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/ DoWhileOpLowering, WhileOpLowering, 
+                    ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, 
+                    AccessorOpLowering, ThisAccessorOpLowering, ThisAccessorIndirectOpLowering,
+                    LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, 
+                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, 
+                    TypeOfOpLowering, CaptureOpLowering>(
         &context, &tsContext, &tsFuncContext);
 }
 
@@ -1909,7 +1994,7 @@ void TypeScriptToAffineLoweringTSFuncPass::runOnFunction()
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE FUNC DUMP: \n" << function << "\n";);
 
     // We only lower the main function as we expect that all other functions have been inlined.
-    if (tsContext.compileOptions.isJit && function.getName() == "main")
+    if (tsContext.compileOptions.isJit && function.getName() == MAIN_ENTRY_NAME)
     {
         auto voidType = mlir_ts::VoidType::get(function.getContext());
         // Verify that the given main has no inputs and results.

@@ -1214,13 +1214,21 @@ def TypeScript_IsStringRefType : CPred<"isa<::mlir::typescript::RefType>($_self)
 
 def TypeScript_StringRef : DialectType<TypeScript_Dialect, TypeScript_IsStringRefType, "string reference type">;
 
+def TypeScript_IsObjectStorageType : CPred<"isa<::mlir::typescript::ObjectStorageType>($_self)">;
+
+def TypeScript_AnyObjectStorageType : DialectType<TypeScript_Dialect, TypeScript_IsObjectStorageType, "any object storage type">;
+
+def TypeScript_IsObjectStorageRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && isa<::mlir::typescript::ObjectStorageType>(mlir::cast<::mlir::typescript::RefType>($_self).getElementType())">;
+
+def TypeScript_AnyObjectStorageRef : DialectType<TypeScript_Dialect, TypeScript_IsObjectStorageRefType, "any object storage reference type">;
+
 def TypeScript_IsClassStorageType : CPred<"isa<::mlir::typescript::ClassStorageType>($_self)">;
 
 def TypeScript_AnyClassStorageType : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageType, "any class storage type">;
 
 def TypeScript_IsClassStorageRefType : CPred<"isa<::mlir::typescript::RefType>($_self) && isa<::mlir::typescript::ClassStorageType>(mlir::cast<::mlir::typescript::RefType>($_self).getElementType())">;
 
-def TypeScript_AnyClassStorageRef : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageRefType, "any tuple reference type">;
+def TypeScript_AnyClassStorageRef : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageRefType, "any class storage reference type">;
 
 def TypeScript_IsOptionalType : CPred<"isa<::mlir::typescript::OptionalType>($_self)">;
 
@@ -1259,7 +1267,7 @@ def TypeScript_AnyRefLikeOrInterface : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[
-    TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_ConstArrayValue, TypeScript_Class, TypeScript_AnyClassStorageType
+    TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_ConstArrayValue, TypeScript_AnyClassStorageType, TypeScript_AnyObjectStorageType
   ]>;
 
 def TypeScript_RefOrBoundRef : AnyTypeOf<[

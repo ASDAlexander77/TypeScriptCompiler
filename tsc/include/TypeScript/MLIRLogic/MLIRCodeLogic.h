@@ -108,31 +108,74 @@ class MLIRCodeLogic
     std::pair<int, mlir::Type> TupleFieldType(mlir::Location location, T tupleType, mlir::Attribute fieldId,
                                               bool indexAccess = false)
     {
-        auto result = TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
+        auto result = TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
         if (result.first == -1)
         {
-            emitError(location, "Tuple member '") << fieldId << "' can't be found";
+            errorNotFound(location, fieldId);
         }
 
         return result;
     }
 
+    void errorNotFound(mlir::Location location, mlir::Attribute fieldId)
+    {
+        emitError(location, "Tuple member '") << fieldId << "' can't be found";
+    }
+
     template <typename T>
-    std::pair<int, mlir::Type> TupleFieldTypeNoError(mlir::Location location, T tupleType, mlir::Attribute fieldId,
+    std::pair<int, int> TupleFieldGetterAndSetter(T tupleType, mlir::Attribute fieldId)
+    {
+        // try to find getter & setter
+        if (auto strFieldName = dyn_cast<mlir::StringAttr>(fieldId))
+        {
+            auto getterIndex = -1;
+            auto setterIndex = -1;
+            for (auto [index, fldInfo] : enumerate(tupleType))
+            {
+                if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fldInfo.id))
+                {
+                    auto str = strAttr.getValue();
+                    auto isGetter = str.starts_with("get_");
+                    auto isSetter = str.starts_with("set_");
+                    if ((isGetter || isSetter) && str.ends_with(strFieldName) && str.size() == strFieldName.size() + 4/*'get_'.length*/)
+                    {
+                        // we found setter or getter;
+                        if (isGetter)
+                        {
+                            getterIndex = index;
+                        }
+                        else if (isSetter)
+                        {
+                            setterIndex = index;
+                        }
+                    }
+                }
+            }
+
+            return {getterIndex, setterIndex};
+        }
+
+        return {-1, -1};
+    }
+
+    template <typename T>
+    std::pair<int, mlir::Type> TupleFieldTypeNoError(T tupleType, mlir::Attribute fieldId,
                                                      bool indexAccess = false)
     {
         auto fieldIndex = tupleType.getIndex(fieldId);
-        if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
+        auto notFound = fieldIndex < 0 || fieldIndex >= tupleType.size();
+        if (indexAccess && notFound)
         {
             // try to resolve index
             auto intAttr = dyn_cast<mlir::IntegerAttr>(fieldId);
             if (intAttr)
             {
-                fieldIndex = intAttr.getInt();
+                fieldIndex = intAttr.getValue().getSExtValue();;
+                notFound = fieldIndex < 0 || fieldIndex >= tupleType.size();
             }
         }
 
-        if (fieldIndex < 0 || fieldIndex >= tupleType.size())
+        if (notFound)
         {
             return std::make_pair<>(-1, mlir::Type());
         }
@@ -358,6 +401,11 @@ class MLIRCustomMethods
             if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
+                if (!strCast)
+                {
+                    return mlir::failure();
+                }
+
                 vals.push_back(strCast);
             }
             else
@@ -888,10 +936,17 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldType(location, tupleType, fieldId, indexAccess);
+        auto pair = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
         if (fieldIndex < 0)
         {
+            auto accessorValue = TupleGetSetAccessor(tupleType, fieldId);
+            if (accessorValue)
+            {
+                return accessorValue;
+            }
+
+            mcl.errorNotFound(location, fieldId);
             return value;
         }
 
@@ -921,6 +976,96 @@ class MLIRPropertyAccessCodeLogic
             location, elementTypeForRef, expression, MLIRHelper::getStructIndex(builder, fieldIndex));
     }
 
+    template <typename T> ValueOrLogicalResult TupleGetSetAccessor(T tupleType, mlir::Attribute fieldId) 
+    {
+        MLIRCodeLogic mcl(builder);
+
+        // check if we have getter & setter
+        auto [getterIndex, setterIndex] = mcl.TupleFieldGetterAndSetter(tupleType, fieldId);
+        if (getterIndex >= 0 || setterIndex >= 0)
+        {
+            mlir::Type accessorResultType;
+            mlir::Type getterFuncType;
+            mlir::Type setterFuncType;
+            if (getterIndex >= 0)
+            {
+                getterFuncType = tupleType.getType(getterIndex);
+                if (auto funcType = dyn_cast<mlir_ts::FunctionType>(getterFuncType))
+                {
+                    if (funcType.getNumResults() > 0)
+                    {
+                        accessorResultType = funcType.getResult(0);
+                    }
+                }
+            }
+
+            if (setterIndex >= 0)
+            {
+                setterFuncType = tupleType.getType(setterIndex);
+                if (!accessorResultType)
+                {
+                    if (auto funcType = dyn_cast<mlir_ts::FunctionType>(setterFuncType))
+                    {
+                        if (funcType.getNumInputs() > 1)
+                        {
+                            accessorResultType = funcType.getInput(1);
+                        }
+                    }
+                }
+            }
+
+            if (!accessorResultType)
+            {
+                emitError(location) << "can't resolve type of property";
+                return mlir::failure();
+            }
+
+            mlir::Value getterValue;
+            mlir::Value setterValue;
+
+            if (getterIndex >= 0)
+            {
+                getterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, getterFuncType, expression, 
+                    MLIRHelper::getStructIndex(builder, getterIndex));
+            }
+            else
+            {
+                auto getterFuncType = mlir_ts::FunctionType::get(builder.getContext(), {accessorResultType}, {}, false);
+                getterValue = builder.create<mlir_ts::NullOp>(location,mlir_ts::NullType::get(builder.getContext()));
+                getterValue = builder.create<mlir_ts::CastOp>(location, getterFuncType, getterValue);
+            }
+
+            if (setterIndex >= 0)
+            {
+                setterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, setterFuncType, expression, 
+                    MLIRHelper::getStructIndex(builder, setterIndex));
+            }
+            else
+            {
+                auto setterFuncType = mlir_ts::FunctionType::get(builder.getContext(), {}, {accessorResultType}, false);
+                setterValue = builder.create<mlir_ts::NullOp>(location, mlir_ts::NullType::get(builder.getContext()));
+                setterValue = builder.create<mlir_ts::CastOp>(location, setterFuncType, setterValue);
+            }
+
+            auto refValue = getExprLoadRefValue(location);
+            if (!refValue)
+            {
+                // allocate in stack
+                refValue = builder.create<mlir_ts::VariableOp>(
+                    location, mlir_ts::RefType::get(expression.getType()), expression);
+            }                    
+
+            auto thisValue = refValue;
+
+            auto thisAccessorIndirectOp = builder.create<mlir_ts::ThisAccessorIndirectOp>(
+                location, accessorResultType, thisValue, getterValue, setterValue, mlir::Value());  
+
+            return thisAccessorIndirectOp.getResult(0);              
+        }
+
+        return mlir::Value();
+    }
+
     template <typename T> mlir::Value TupleNoError(T tupleType, bool indexAccess = false)
     {
         mlir::Value value;
@@ -929,7 +1074,7 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
+        auto pair = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
         if (fieldIndex < 0)
         {
@@ -1072,16 +1217,15 @@ class MLIRPropertyAccessCodeLogic
         auto propName = getName();
         if (propName == LENGTH_FIELD_NAME)
         {
-            if (isa<mlir_ts::ConstArrayType>(expression.getType()))
+            if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(expression.getType()))
             {
-                auto size = cast<mlir::ArrayAttr>(getExprConstAttr()).size();
+                auto size = constArrayType.getSize();
                 return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-                                                           builder.getI32IntegerAttr(size));
+                            builder.getI32IntegerAttr(size));
             }
             else if (isa<mlir_ts::ArrayType>(expression.getType()))
             {
-                auto sizeValue = builder.create<mlir_ts::LengthOfOp>(location, builder.getI32Type(), expression);
-                return sizeValue;
+                return builder.create<mlir_ts::LengthOfOp>(location, builder.getI32Type(), expression);
             }
 
             return mlir::Value();
@@ -1205,10 +1349,17 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
+        auto pair = mcl.TupleFieldTypeNoError(tupleType, fieldId);
         auto fieldIndex = pair.first;
         if (fieldIndex < 0)
         {
+            auto accessorValue = TupleGetSetAccessor(tupleType, fieldId);
+            if (accessorValue)
+            {
+                return accessorValue;
+            }
+
+            mcl.errorNotFound(location, fieldId);
             return mlir::Value();
         }
 
@@ -1241,7 +1392,7 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldTypeNoError(location, classStorageType, fieldId);
+        auto pair = mcl.TupleFieldTypeNoError(classStorageType, fieldId);
         auto fieldIndex = pair.first;
         if (fieldIndex < 0)
         {

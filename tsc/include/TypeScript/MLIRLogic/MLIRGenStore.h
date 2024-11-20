@@ -12,9 +12,6 @@ using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
 
-namespace
-{
-
 struct NamespaceInfo;
 using NamespaceInfo_TypePtr = std::shared_ptr<NamespaceInfo>;
 
@@ -117,11 +114,10 @@ struct MethodInfo
 
 struct GenericMethodInfo
 {
-  public:
     std::string name;
     // TODO: review usage of funcType (it is inside FunctionPrototypeDOM already)
     mlir_ts::FunctionType funcType;
-    FunctionPrototypeDOM::TypePtr funcOp;
+    FunctionPrototypeDOM::TypePtr funcProto;
     bool isStatic;
 };
 
@@ -157,6 +153,7 @@ struct InterfaceFieldInfo
     mlir::Type type;
     bool isConditional;
     int interfacePosIndex;
+    int virtualIndex;
 };
 
 struct InterfaceMethodInfo
@@ -165,6 +162,7 @@ struct InterfaceMethodInfo
     mlir_ts::FunctionType funcType;
     bool isConditional;
     int interfacePosIndex;
+    int virtualIndex;
 };
 
 struct VirtualMethodOrFieldInfo
@@ -177,7 +175,7 @@ struct VirtualMethodOrFieldInfo
     {
     }
 
-    VirtualMethodOrFieldInfo(MethodInfo methodInfo, bool isMissing)
+    VirtualMethodOrFieldInfo(MethodInfo VirtualMethodOrFieldInfo, bool isMissing)
         : methodInfo(methodInfo), fieldInfo(), isField(false), isMissing(isMissing)
     {
     }
@@ -247,7 +245,8 @@ struct InterfaceInfo
     mlir::LogicalResult getVirtualTable(
         llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
         std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type, bool)> resolveField,
-        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod)
+        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod,
+        bool methodsAsFields = false)
     {
         for (auto &extent : extends)
         {
@@ -260,24 +259,54 @@ struct InterfaceInfo
         // do vtable for current
         for (auto &method : methods)
         {
-            auto &classMethodInfo = resolveMethod(method.name, method.funcType, method.isConditional, method.interfacePosIndex);
-            if (classMethodInfo.name.empty())
+            if (methodsAsFields)
             {
-                if (method.isConditional)
+                auto methodNameAttr = mlir::StringAttr::get(method.funcType.getContext(), method.name);
+                auto fieldInfo = resolveField(methodNameAttr, method.funcType, method.isConditional);
+                if (!fieldInfo.id)
                 {
-                    MethodInfo missingMethod;
-                    missingMethod.name = method.name;
-                    missingMethod.funcType = method.funcType;
-                    vtable.push_back({missingMethod, true});
+                    if (method.isConditional)
+                    {
+                        MethodInfo missingMethod;
+                        missingMethod.name = method.name;
+                        missingMethod.funcType = method.funcType;
+                        method.virtualIndex = -1;
+                        vtable.push_back({missingMethod, true});
+                    }
+                    else
+                    {
+                        return mlir::failure();
+                    }
                 }
                 else
                 {
-                    return mlir::failure();
+                    method.virtualIndex = vtable.size();
+                    vtable.push_back({fieldInfo});
                 }
             }
             else
             {
-                vtable.push_back({classMethodInfo});
+                auto &classMethodInfo = resolveMethod(method.name, method.funcType, method.isConditional, method.interfacePosIndex);
+                if (classMethodInfo.name.empty())
+                {
+                    if (method.isConditional)
+                    {
+                        MethodInfo missingMethod;
+                        missingMethod.name = method.name;
+                        missingMethod.funcType = method.funcType;
+                        method.virtualIndex = -1;
+                        vtable.push_back({missingMethod, true});
+                    }
+                    else
+                    {
+                        return mlir::failure();
+                    }
+                }
+                else
+                {
+                    method.virtualIndex = vtable.size();
+                    vtable.push_back({classMethodInfo});
+                }
             }
         }
 
@@ -289,6 +318,7 @@ struct InterfaceInfo
                 if (field.isConditional)
                 {
                     mlir_ts::FieldInfo missingField{field.id, field.type};
+                    field.virtualIndex = -1;
                     vtable.push_back({missingField, true});
                 }
                 else
@@ -298,6 +328,7 @@ struct InterfaceInfo
             }
             else
             {
+                field.virtualIndex = vtable.size();
                 vtable.push_back({fieldInfo});
             }
         }
@@ -321,7 +352,7 @@ struct InterfaceInfo
         return (signed)dist >= (signed)fields.size() ? -1 : dist;
     }
 
-    InterfaceFieldInfo *findField(mlir::Attribute id, int &totalOffset)
+    InterfaceFieldInfo *findField(mlir::Attribute id)
     {
         auto index = getFieldIndex(id);
         if (index >= 0)
@@ -331,11 +362,9 @@ struct InterfaceInfo
 
         for (auto &extent : extends)
         {
-            auto totalOffsetLocal = 0;
-            auto field = std::get<1>(extent)->findField(id, totalOffsetLocal);
+            auto field = std::get<1>(extent)->findField(id);
             if (field)
             {
-                totalOffset = std::get<0>(extent) + totalOffsetLocal;
                 return field;
             }
         }
@@ -346,7 +375,7 @@ struct InterfaceInfo
         return nullptr;
     }
 
-    InterfaceMethodInfo *findMethod(mlir::StringRef name, int &totalOffset)
+    InterfaceMethodInfo *findMethod(mlir::StringRef name)
     {
         auto index = getMethodIndex(name);
         if (index >= 0)
@@ -356,11 +385,9 @@ struct InterfaceInfo
 
         for (auto &extent : extends)
         {
-            auto totalOffsetLocal = 0;
-            auto *method = std::get<1>(extent)->findMethod(name, totalOffsetLocal);
+            auto *method = std::get<1>(extent)->findMethod(name);
             if (method)
             {
-                totalOffset = std::get<0>(extent) + totalOffsetLocal;
                 return method;
             }
         }
@@ -819,8 +846,6 @@ struct NamespaceInfo
 
     NamespaceInfo::TypePtr parentNamespace;
 };
-
-} // namespace
 
 #undef DEBUG_TYPE
 

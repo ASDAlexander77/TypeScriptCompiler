@@ -5,7 +5,7 @@
 #include "TypeScript/TypeScriptFunctionPass.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptPassContext.h"
-#include "TypeScript/ModulePass.h"
+#include "TypeScript/Pass/ModulePass.h"
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
@@ -49,7 +49,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                 auto name = std::string(symbolAttr.getValue());
                 if (!funcOp.getBody().empty())
                 {
-                    if (name == "main")
+                    if (name == MAIN_ENTRY_NAME)
                     {
                         injectInit(funcOp);
                     }

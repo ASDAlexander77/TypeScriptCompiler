@@ -20,6 +20,7 @@
 #include "TypeScript/MLIRLogic/MLIRDebugInfoHelper.h"
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVC.h"
 #include "TypeScript/MLIRLogic/MLIRPrinter.h"
+#include "TypeScript/MLIRLogic/MLIRDeclarationPrinter.h"
 #include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 #include "TypeScript/VisitorAST.h"
 
@@ -69,6 +70,7 @@
 #include <algorithm>
 #include <iterator>
 #include <numeric>
+#include <set>
 
 #define DEBUG_TYPE "mlir"
 
@@ -120,6 +122,12 @@ enum class DisposeDepth
     CurrentScopeKeepAfterUse,
     LoopScope,
     FullStack
+};
+
+enum class Stages
+{
+    Discovering,
+    SourceGeneration
 };
 
 typedef std::tuple<mlir::Type, mlir::Value, TypeProvided> TypeValueInitType;
@@ -324,10 +332,12 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
 
+        stage = Stages::Discovering;
         auto storeDebugInfo = compileOptions.generateDebugInfo;
         compileOptions.generateDebugInfo = false;
         if (mlir::succeeded(mlirDiscoverAllDependencies(module, includeFiles)))
         {
+            stage = Stages::SourceGeneration;
             compileOptions.generateDebugInfo = storeDebugInfo;
             if (mlir::succeeded(mlirCodeGenModule(module, includeFiles)))
             {
@@ -408,7 +418,7 @@ class MLIRGenImpl
         }
 #endif        
 
-        auto declText = convertWideToUTF8(declExports.str());
+        auto declText = declExports.str();
 
 #ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
         // default implementation to use variable to store declaration data
@@ -428,6 +438,7 @@ class MLIRGenImpl
         std::string varName(SHARED_LIB_DECLARATIONS_2UNDERSCORE);
         varName.append("_");
         varName.append(llvm::sys::path::stem(llvm::sys::path::filename(mainSourceFileName)));
+        varName.append("_");
         varName.append(to_string(hash_value(mainSourceFileName)));
         
         auto varNameRef = StringRef(varName).copy(stringAllocator);
@@ -445,8 +456,33 @@ class MLIRGenImpl
 #endif        
     }
 
+    bool isCodeStatment(SyntaxKind kind)
+    {
+        static std::set<SyntaxKind> codeStatements {
+            SyntaxKind::ExpressionStatement,
+            SyntaxKind::IfStatement,
+            SyntaxKind::ReturnStatement,
+            SyntaxKind::LabeledStatement,
+            SyntaxKind::DoStatement,
+            SyntaxKind::WhileStatement,
+            SyntaxKind::ForStatement,
+            SyntaxKind::ForInStatement,
+            SyntaxKind::ForOfStatement,
+            SyntaxKind::ContinueStatement,
+            SyntaxKind::BreakStatement,
+            SyntaxKind::SwitchStatement,
+            SyntaxKind::ThrowStatement,
+            SyntaxKind::TryStatement,
+            SyntaxKind::Block,
+            SyntaxKind::DebuggerStatement
+        };
+
+        return codeStatements.find(kind) != codeStatements.end();    
+    }
+
     int processStatements(NodeArray<Statement> statements,
-                          const GenContext &genContext)
+                          const GenContext &genContext,
+                          bool isRoot = false)
     {
         clearState(statements);
 
@@ -464,6 +500,11 @@ class MLIRGenImpl
             for (auto &statement : statements)
             {
                 if (statement->processed)
+                {
+                    continue;
+                }
+
+                if (isRoot && (isCodeStatment(statement) || statement == SyntaxKind::VariableStatement))
                 {
                     continue;
                 }
@@ -501,6 +542,91 @@ class MLIRGenImpl
         clearState(statements);
         
         return notResolved;
+    }
+
+    bool hasGlobalCode(NodeArray<Statement> statements) {
+        auto anyCode = false;
+        for (auto &statement : statements)
+        {
+            if (isCodeStatment(statement))
+            {
+                anyCode = true;
+                break;
+            }
+        }
+
+        return anyCode;        
+    }
+
+    mlir::LogicalResult generateGlobalEntryCode(mlir::Location location, NodeArray<Statement> statements,
+                          const GenContext &genContext)
+    {
+        // create function
+        //auto name = MLIRHelper::getAnonymousName(location, ".main", "");
+        auto useGlobalCtor = false;
+        std::string name = MAIN_ENTRY_NAME;
+        auto fullGlobalFuncName = getFullNamespaceName(name);
+
+        if (theModule.lookupSymbol(fullGlobalFuncName))
+        {
+            // create global ctor
+            name = MLIRHelper::getAnonymousName(location, "." MAIN_ENTRY_NAME, "");
+            fullGlobalFuncName = getFullNamespaceName(name);
+            useGlobalCtor = true;
+        }
+
+        mlir::OpBuilder::InsertionGuard insertGuard(builder);
+
+        // create global construct
+        auto funcType = getFunctionType({}, {}, false);
+
+        if (mlir::failed(mlirGenFunctionBody(location, name, fullGlobalFuncName, funcType,
+            [&](mlir::Location location, const GenContext &genContext) {
+                for (auto &statement : statements)
+                {
+                    auto isVariableStatement = statement == SyntaxKind::VariableStatement;
+                    if (isCodeStatment(statement) || isVariableStatement)
+                    {
+                        if (isVariableStatement)
+                        {
+                            // patch VariableStatement
+                            auto variableStatement = statement.as<VariableStatement>();
+                            variableStatement->declarationList->flags &= ~NodeFlags::Let;
+                            variableStatement->declarationList->flags &= ~NodeFlags::Const;                        
+                        }
+
+                        if (failed(mlirGen(statement, genContext)))
+                        {
+                            emitError(loc(statement), "failed statement");
+                            return mlir::failure();
+                        }
+                    }
+
+                }
+
+                return mlir::success();
+            }, genContext, 0, true)))
+        {
+            return mlir::failure();
+        }
+
+        if (useGlobalCtor)
+        {
+            auto parentModule = theModule;
+            MLIRCodeLogicHelper mclh(builder, location);
+
+            builder.setInsertionPointToStart(parentModule.getBody());
+            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
+
+            // priority is lowest to load as first dependencies
+            builder.create<mlir_ts::GlobalConstructorOp>(
+                location, 
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), 
+                fullGlobalFuncName), 
+                builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));            
+        }
+        
+        return mlir::success();
     }
 
     mlir::LogicalResult outputDiagnostics(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> &postponedMessages,
@@ -582,7 +708,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirCodeGenModule(SourceFile module, std::vector<SourceFile> includeFiles = {},
-                                          bool validate = true)
+                                          bool validate = true, bool isMain = true)
     {
         mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedWarningsMessages;
         mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> postponedMessages;
@@ -598,7 +724,7 @@ class MLIRGenImpl
         });
 
         // Process generating here
-        declExports.str(S(""));
+        declExports.str("");
         declExports.clear();
         exports.str(S(""));
         exports.clear();
@@ -622,14 +748,25 @@ class MLIRGenImpl
             }
         }
 
-        auto notResolved = processStatements(module->statements, genContext);       
+        auto anyGlobalCode = hasGlobalCode(module->statements);
+        auto notResolved = processStatements(module->statements, genContext, isMain && anyGlobalCode);       
         if (failed(outputDiagnostics(postponedMessages, notResolved)))
         {
             return mlir::failure();
         }
        
-        // exports
-        createDeclarationExportGlobalVar(genContext);
+        if (isMain && notResolved == 0)
+        {
+            // generate code to run at global entry
+            if (anyGlobalCode && mlir::failed(
+                generateGlobalEntryCode(loc(module), module->statements, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            // exports
+            createDeclarationExportGlobalVar(genContext);
+        }
 
         clearTempModule();
 
@@ -779,7 +916,7 @@ class MLIRGenImpl
         }          
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
-            mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false)))
+            mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false)))
         {
             return mlir::success();
         }
@@ -850,7 +987,7 @@ class MLIRGenImpl
 
             // priority is lowest to load as first dependencies
             builder.create<mlir_ts::GlobalConstructorOp>(
-                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(100));
+                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(FIRST_GLOBAL_CONSTRUCTOR_PRIORITY));
         }
 
         for (auto declSymbol : symbols)
@@ -2046,7 +2183,8 @@ class MLIRGenImpl
         funcGenContext.instantiateSpecializedFunction = true;
         funcGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
 
-        if (mlir::failed(processTypeArgumentsFromFunctionParameters(functionGenericTypeInfo->functionDeclaration, funcGenContext)))
+        if (mlir::failed(processTypeArgumentsFromFunctionParameters(
+            functionGenericTypeInfo->functionDeclaration, funcGenContext)))
         {
             emitError(location) << "can't instantiate specialized function from function parameters.";
             return mlir::failure();
@@ -2097,7 +2235,8 @@ class MLIRGenImpl
             builder.setInsertionPoint(symbolOp);
 
             // TODO: append captures vars to generic arrow function
-            auto newOpWithCapture = resolveFunctionWithCapture(location, StringRef(specFuncName), specFuncOp.getFunctionType(), mlir::Value(), false, genContext);
+            auto newOpWithCapture = resolveFunctionWithCapture(
+                location, StringRef(specFuncName), specFuncOp.getFunctionType(), mlir::Value(), false, genContext);
             if (!newOpWithCapture.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
                 // symbolOp will be removed as unsed
@@ -3885,17 +4024,8 @@ class MLIRGenImpl
 
             if (varClass.isExport)
             {
-                NodeFactory nf(NodeFactoryFlags::None);
-
                 auto isConst = varClass.type == VariableType::Const || varClass.type == VariableType::ConstRef;
-                NodeArray<VariableDeclaration> _varDeclarations;
-                auto _varName = nf.createIdentifier(stows(nameStr));
-                auto _varDecl = nf.createVariableDeclaration(
-                    _varName, undefined, undefined, name->parent.as<VariableDeclaration>()->type);
-                _varDeclarations.push_back(_varDecl);
-                auto _varList = nf.createVariableDeclarationList(_varDeclarations, isConst ? NodeFlags::Const : NodeFlags::Let);
-                auto _varStatement = nf.createVariableStatement(undefined, _varList);
-                addDeclarationToExport(_varStatement, "@dllimport\n", ";\n", _varDecl, varType);
+                addVariableDeclarationToExport(nameStr, varType, isConst);
             }
 
             return mlir::success();
@@ -4124,7 +4254,7 @@ class MLIRGenImpl
                 mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());                    
 
                 builder.create<mlir_ts::GlobalConstructorOp>(
-                    location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(1000));
+                    location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
             }
         }
         else if (mlir::failed(processDeclaration(item, valClassItem, initFunc, genContext, true)))
@@ -4294,10 +4424,16 @@ class MLIRGenImpl
 
     bool isGenericParameters(SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
+        if (parametersContextAST == SyntaxKind::GetAccessor || parametersContextAST == SyntaxKind::SetAccessor)
+        {
+            return false;
+        }
+
         auto formalParams = parametersContextAST->parameters;
         for (auto [index, arg] : enumerate(formalParams))
         {
-            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern 
+                || arg->name == SyntaxKind::ArrayBindingPattern;
 
             mlir::Type type;
             auto typeParameter = arg->type;
@@ -4535,6 +4671,11 @@ class MLIRGenImpl
             objectOwnerName =
                 getNameWithArguments(signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>(), genContext);
         }
+        else if (signatureDeclarationBaseAST->parent == SyntaxKind::ObjectLiteralExpression)
+        {
+            objectOwnerName = mlir::cast<mlir_ts::ObjectStorageType>(
+                mlir::cast<mlir_ts::ObjectType>(genContext.thisType).getStorageType()).getName().getValue();
+        }
         else if (genContext.funcOp)
         {
             auto funcName = const_cast<GenContext &>(genContext).funcOp.getSymName().str();
@@ -4543,7 +4684,7 @@ class MLIRGenImpl
 
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
-            if (!genContext.thisType || !isa<mlir_ts::ObjectType>(genContext.thisType))
+            if (!objectOwnerName.empty())
             {
                 // class method name
                 name = objectOwnerName + "." + name;
@@ -4554,7 +4695,8 @@ class MLIRGenImpl
             }
         }
         // TODO: for new () interfaces
-        else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature || signatureDeclarationBaseAST == SyntaxKind::ConstructSignature)
+        else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature 
+                || signatureDeclarationBaseAST == SyntaxKind::ConstructSignature)
         {
             // class method name
             name = objectOwnerName + "." + name;
@@ -4755,7 +4897,9 @@ class MLIRGenImpl
                     auto retTypeFromReceiver = mth.isAnyFunctionType(argTypeDestFuncType) 
                         ? mth.getReturnTypeFromFuncRef(argTypeDestFuncType)
                         : mlir::Type();
-                    if (retTypeFromReceiver && !mth.isNoneType(retTypeFromReceiver) && !mth.isGenericType(retTypeFromReceiver))
+                    if (retTypeFromReceiver 
+                        && !mth.isNoneType(retTypeFromReceiver) 
+                        && !mth.isGenericType(retTypeFromReceiver))
                     {
                         funcProto->setReturnType(retTypeFromReceiver);
                         LLVM_DEBUG(llvm::dbgs()
@@ -4819,12 +4963,6 @@ class MLIRGenImpl
         if (dllExport)
         {
             attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
-            if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
-                || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
-            {
-                //addDeclarationToExport(funcProto->getName(), funcType, genContext);
-                addFunctionDeclarationToExport(functionLikeDeclarationBaseAST, funcProto->getReturnType());
-            }
         }
 
         auto dllImport = ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllImport) == InternalFlags::DllImport);
@@ -4854,6 +4992,15 @@ class MLIRGenImpl
             }
 
             funcProto->setFuncType(funcType);
+
+            if (dllExport)
+            {
+                if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
+                    || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
+                {
+                    addFunctionDeclarationToExport(funcProto);
+                }
+            }
         }
 
         if (!funcProto->getIsGeneric())
@@ -4925,6 +5072,7 @@ class MLIRGenImpl
                 {
                     // has return value but type is not provided yet
                     genContextWithPassResult.clean();
+                    emitError(loc(functionLikeDeclarationBaseAST)) << "'return' is not found in function or return type can't be resolved";
                     return mlir::failure();
                 }
 
@@ -5407,7 +5555,8 @@ class MLIRGenImpl
         if (dynamicImport)
         {
             // TODO: we do not need to register funcOp as we need to reference global variables
-            auto result = mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, funcProto->getNameWithoutNamespace(), funcDeclGenContext);
+            auto result = mlirGenFunctionLikeDeclarationDynamicImport(
+                location, funcOp.getName(), funcOp.getFunctionType(), funcProto->getNameWithoutNamespace(), funcDeclGenContext);
             return {result, funcOp, funcProto->getName().str(), false};
         }
 
@@ -5492,14 +5641,45 @@ class MLIRGenImpl
         return {mlir::success(), funcOp, funcProto->getName().str(), false};
     }
 
-    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, mlir_ts::FuncOp funcOp, StringRef dllFuncName, const GenContext &genContext)
+    mlir::LogicalResult mlirGenStaticFieldDeclarationDynamicImport(mlir::Location location, ClassInfo::TypePtr newClassPtr, StringRef name, mlir::Type type, const GenContext &genContext)
     {
-        registerVariable(location, funcOp.getName(), true, VariableType::Var,
+        auto &staticFieldInfos = newClassPtr->staticFields;
+
+        auto fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
+
+        // register global
+        auto fullClassStaticFieldName = concat(newClassPtr->fullName, name);
+
+        auto staticFieldType =  mlir_ts::RefType::get(type);
+
+        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
+        {
+            // prevent double generating
+            registerVariable(
+                location, fullClassStaticFieldName, true, VariableType::Var,
+                [&](mlir::Location location, const GenContext &genContext)  -> TypeValueInitType {
+                    auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
+                    auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
+                    auto result = cast(location, staticFieldType, referenceToStaticFieldOpaque, genContext);
+                    auto referenceToStaticField = V(result);
+                    return {referenceToStaticField.getType(), referenceToStaticField, TypeProvided::Yes};
+                },
+                genContext);
+        }
+
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+
+        return mlir::success();
+    }    
+
+    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef fullFunctionName, mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext)
+    {
+        registerVariable(location, fullFunctionName, true, VariableType::Var,
             [&](mlir::Location location, const GenContext &context) -> TypeValueInitType {
                 // add command to load reference fron DLL
                 auto fullName = V(mlirGenStringValue(location, dllFuncName.str(), true));
                 auto referenceToFuncOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
-                auto result = cast(location, funcOp.getFunctionType(), referenceToFuncOpaque, genContext);
+                auto result = cast(location, functionType, referenceToFuncOpaque, genContext);
                 auto referenceToFunc = V(result);
                 return {referenceToFunc.getType(), referenceToFunc, TypeProvided::No};
             },
@@ -6017,7 +6197,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenFunctionBody(mlir::Location location, StringRef funcName, StringRef fullFuncName,
                                             mlir_ts::FunctionType funcType, std::function<mlir::LogicalResult(mlir::Location, const GenContext &)> funcBody,                                            
                                             const GenContext &genContext,
-                                            int firstParam = 0)
+                                            int firstParam = 0, bool isPublic = false)
     {
         if (theModule.lookupSymbol(fullFuncName))
         {
@@ -6096,7 +6276,14 @@ class MLIRGenImpl
             theModule.push_back(funcOp);
         }
 
-        funcOp.setPrivate();
+        if (isPublic)
+        {
+            funcOp.setPublic();
+        }
+        else
+        {
+            funcOp.setPrivate();
+        }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> SYNTH. FUNCTION (SUCCESS END): '" << fullFuncName << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
@@ -6758,8 +6945,7 @@ class MLIRGenImpl
                     {
                         if (auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue()))
                         {
-                            int totalOffset = -1;
-                            auto fieldInfo = interfaceInfo->findField(fieldNameAttr, totalOffset);
+                            auto fieldInfo = interfaceInfo->findField(fieldNameAttr);
                             if (auto literalType = dyn_cast<mlir_ts::LiteralType>(fieldInfo->type))
                             {
                                 if (literalType.getValue() == valueAttr)
@@ -6878,7 +7064,14 @@ class MLIRGenImpl
             }
             else if (auto thisAccessor = conditionValue.getDefiningOp<mlir_ts::ThisAccessorOp>())
             {
-                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessor.getType()))
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessor.getType(0)))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
+            else if (auto thisAccessorIndirect = conditionValue.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessorIndirect.getType(0)))
                 {
                     propertyType = typePredicateType;
                 }
@@ -8727,9 +8920,9 @@ class MLIRGenImpl
         auto resultType = leftConstOp.getType();
         if (leftIntAttr && rightIntAttr)
         {
-            auto leftInt = leftIntAttr.getInt();
-            auto rightInt = rightIntAttr.getInt();            
-            int64_t result = 0;
+            auto leftInt = leftIntAttr.getValue();
+            auto rightInt = rightIntAttr.getValue();            
+            auto result = leftInt;
             switch (opCode)
             {
             case SyntaxKind::PlusToken:
@@ -8745,10 +8938,10 @@ class MLIRGenImpl
                 result = leftInt << rightInt;
                 break;
             case SyntaxKind::GreaterThanGreaterThanToken:
-                result = leftInt >> rightInt;
+                result = leftInt.ashr(rightInt);
                 break;
             case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                result = (uint64_t)leftInt >> rightInt;
+                result = leftInt.lshr(rightInt);
                 break;
             case SyntaxKind::AmpersandToken:
                 result = leftInt & rightInt;
@@ -8764,16 +8957,37 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getI64IntegerAttr(result)));
+            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getIntegerAttr(leftIntAttr.getType(), result)));
         }
 
         auto leftFloatAttr = dyn_cast_or_null<mlir::FloatAttr>(leftConstOp.getValueAttr());
         auto rightFloatAttr = dyn_cast_or_null<mlir::FloatAttr>(rightConstOp.getValueAttr());
         if (leftFloatAttr && rightFloatAttr)
         {
-            auto leftFloat = leftFloatAttr.getValueAsDouble();
-            auto rightFloat = rightFloatAttr.getValueAsDouble();
-            double result = 0;
+            auto leftFloat = leftFloatAttr.getValue();
+            auto rightFloat = rightFloatAttr.getValue();
+            auto result = leftFloat;
+
+            auto useSigned = true;
+            APSInt leftAPInt(64, /*isUnsigned=*/!useSigned);
+            APSInt rightAPInt(64, /*isUnsigned=*/!useSigned);
+            APSInt resultAPInt(64, /*isUnsigned=*/!useSigned);
+
+            bool ignored;
+            auto castStatus = APFloat::opInvalidOp == leftFloat.convertToInteger(leftAPInt, APFloat::rmTowardZero, &ignored);
+            if (castStatus)
+            {
+                emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
+                return mlir::failure();
+            }
+
+            castStatus = APFloat::opInvalidOp == rightFloat.convertToInteger(rightAPInt, APFloat::rmTowardZero, &ignored);
+            if (castStatus)
+            {
+                emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
+                return mlir::failure();
+            }
+
             switch (opCode)
             {
             case SyntaxKind::PlusToken:
@@ -8786,29 +9000,47 @@ class MLIRGenImpl
                 result = leftFloat * rightFloat;
                 break;
             case SyntaxKind::LessThanLessThanToken:
-                result = (int64_t)leftFloat << (int64_t)rightFloat;
+                resultAPInt = leftAPInt.shl(rightAPInt);
                 break;
             case SyntaxKind::GreaterThanGreaterThanToken:
-                result = (int64_t)leftFloat >> (int64_t)rightFloat;
+                resultAPInt = leftAPInt.ashr(rightAPInt);
                 break;
             case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                result = (uint64_t)leftFloat >> (int64_t)rightFloat;
+                resultAPInt = leftAPInt.lshr(rightAPInt);
                 break;
             case SyntaxKind::AmpersandToken:
-                result = (int64_t)leftFloat & (int64_t)rightFloat;
+                resultAPInt = leftAPInt & rightAPInt;
                 break;
             case SyntaxKind::BarToken:
-                result = (int64_t)leftFloat | (int64_t)rightFloat;
+                resultAPInt = leftAPInt | rightAPInt;
                 break;
             case SyntaxKind::CaretToken:
-                result = (int64_t)leftFloat ^ (int64_t)rightFloat;
+                resultAPInt = leftAPInt ^ rightAPInt;
                 break;
             default:
                 emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
                 return mlir::failure();
             }
 
-            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getFloatAttr(leftFloatAttr.getType(), result)));
+            switch (opCode)
+            {
+            case SyntaxKind::PlusToken:
+            case SyntaxKind::MinusToken:
+            case SyntaxKind::AsteriskToken:
+                break;
+            default:
+                castStatus = APFloat::opInvalidOp == result.convertFromAPInt(resultAPInt, /*IsSigned=*/useSigned,
+                        APFloat::rmNearestTiesToEven);
+                if (castStatus)
+                {
+                    emitError(location) << "can't do binary operation on constants: " << leftConstOp.getValueAttr() << " and " << rightConstOp.getValueAttr() << "";
+                    return mlir::failure();
+                }
+                break;
+            }            
+
+            auto resultAttr = builder.getFloatAttr(leftFloatAttr.getType(), result);
+            return V(builder.create<mlir_ts::ConstantOp>(location, resultType, resultAttr));
         }    
 
         return mlir::failure();    
@@ -8890,40 +9122,51 @@ class MLIRGenImpl
         }
         else if (auto accessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorOp>())
         {
-            syncSavingValue(accessorOp.getType());
+            syncSavingValue(accessorOp.getType(0));
             if (!savingValue)
             {
                 return mlir::failure();
             }
 
-            if (!accessorOp.getSetAccessor().has_value())
-            {
-                emitError(location) << "property does not have set accessor";
-                return mlir::failure();
-            }
-
-            auto callRes =
-                builder.create<mlir_ts::CallOp>(location, accessorOp.getSetAccessor().value(),
-                                                mlir::TypeRange{}, mlir::ValueRange{savingValue});
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::AccessorOp>(
+                location, mlir::Type(),
+                accessorOp.getGetAccessorAttr(), 
+                accessorOp.getSetAccessorAttr(), 
+                savingValue);            
         }
         else if (auto thisAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorOp>())
         {
-            syncSavingValue(thisAccessorOp.getType());
+            syncSavingValue(thisAccessorOp.getType(0));
             if (!savingValue)
             {
                 return mlir::failure();
             }
 
-            if (!thisAccessorOp.getSetAccessor().has_value())
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::ThisAccessorOp>(
+                location, mlir::Type(), thisAccessorOp.getThisVal(),
+                thisAccessorOp.getGetAccessorAttr(), 
+                thisAccessorOp.getSetAccessorAttr(), 
+                savingValue);
+        }
+        else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
+        {
+            syncSavingValue(thisAccessorIndirectOp.getType(0));
+            if (!savingValue)
             {
-                emitError(location) << "property does not have set accessor";
                 return mlir::failure();
             }
 
-            auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorOp.getSetAccessor().value(),
-                                                           mlir::TypeRange{},
-                                                           mlir::ValueRange{thisAccessorOp.getThisVal(), savingValue});
-        }
+            // TODO: it should return accessor as result as it will return data
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::ThisAccessorIndirectOp>(
+                location, mlir::Type(), 
+                thisAccessorIndirectOp.getThisVal(), 
+                thisAccessorIndirectOp.getGetAccessor(), 
+                thisAccessorIndirectOp.getSetAccessor(), 
+                savingValue);    
+        }        
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
@@ -9754,6 +9997,14 @@ class MLIRGenImpl
 
                     return mlir::Value();                    
                 })
+                .Case<mlir_ts::ObjectStorageType>([&](auto objectStorageType) { 
+                    if (auto value = cl.RefLogic(objectStorageType))
+                    {
+                        return value;
+                    }
+
+                    return mlir::Value();                    
+                })
                 .Case<mlir_ts::SymbolType>([&](auto symbolType) { return cl.Symbol(symbolType); })
                 .Case<mlir_ts::NamespaceType>([&](auto namespaceType) {
                     auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
@@ -10101,8 +10352,7 @@ class MLIRGenImpl
                 auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
                 if (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType)
                 {
-                    LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "' in context func. '"
-                                      << const_cast<GenContext &>(genContext).funcOp.getName() << "'\n";);
+                    LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "'\n";);
 
                     LLVM_DEBUG(dbgs() << "\n!! Virtual call - this val: [ " << effectiveThisValue << " ] func type: [ "
                                       << effectiveFuncType << " ] isStorage access: " << isStorageType << "\n";);
@@ -10154,24 +10404,24 @@ class MLIRGenImpl
         {        
             auto genericMethodInfo = classInfo->staticGenericMethods[genericMethodIndex];
 
-            auto paramsArray = genericMethodInfo.funcOp->getParams();
+            auto paramsArray = genericMethodInfo.funcProto->getParams();
             auto explicitThis = paramsArray.size() > 0 && paramsArray.front()->getName() == THIS_NAME;
             if (genericMethodInfo.isStatic && !explicitThis)
             {
                 auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
                     location, genericMethodInfo.funcType,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcOp->getName()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcProto->getName()));
                 funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return funcSymbolOp;
             }
             else
             {
                 auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
-                auto effectiveFuncType = genericMethodInfo.funcOp->getFuncType();
+                auto effectiveFuncType = genericMethodInfo.funcProto->getFuncType();
 
                 auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcOp->getName()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcProto->getName()));
                 thisSymbOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return thisSymbOp;                
             }
@@ -10184,23 +10434,23 @@ class MLIRGenImpl
             auto accessorInfo = classInfo->accessors[accessorIndex];
             auto getFuncOp = accessorInfo.get;
             auto setFuncOp = accessorInfo.set;
-            mlir::Type effectiveFuncType;
+            mlir::Type accessorResultType;
             if (getFuncOp)
             {
                 auto funcType = dyn_cast<mlir_ts::FunctionType>(getFuncOp.getFunctionType());
                 if (funcType.getNumResults() > 0)
                 {
-                    effectiveFuncType = funcType.getResult(0);
+                    accessorResultType = funcType.getResult(0);
                 }
             }
 
-            if (!effectiveFuncType && setFuncOp)
+            if (!accessorResultType && setFuncOp)
             {
-                effectiveFuncType =
+                accessorResultType =
                     dyn_cast<mlir_ts::FunctionType>(setFuncOp.getFunctionType()).getInput(accessorInfo.isStatic ? 0 : 1);
             }
 
-            if (!effectiveFuncType)
+            if (!accessorResultType)
             {
                 emitError(location) << "can't resolve type of property";
                 return mlir::Value();
@@ -10209,22 +10459,24 @@ class MLIRGenImpl
             if (accessorInfo.isStatic)
             {
                 auto accessorOp = builder.create<mlir_ts::AccessorOp>(
-                    location, effectiveFuncType,
+                    location, accessorResultType,
                     getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
                               : mlir::FlatSymbolRefAttr{},
                     setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
-                              : mlir::FlatSymbolRefAttr{});
-                return accessorOp;
+                              : mlir::FlatSymbolRefAttr{},
+                    mlir::Value());
+                return accessorOp.getResult(0);
             }
             else
             {
                 auto thisAccessorOp = builder.create<mlir_ts::ThisAccessorOp>(
-                    location, effectiveFuncType, thisValue,
+                    location, accessorResultType, thisValue,
                     getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
                               : mlir::FlatSymbolRefAttr{},
                     setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
-                              : mlir::FlatSymbolRefAttr{});
-                return thisAccessorOp;
+                              : mlir::FlatSymbolRefAttr{},
+                    mlir::Value());
+                return thisAccessorOp.getResult(0);
             }
         }
 
@@ -10346,18 +10598,31 @@ class MLIRGenImpl
         assert(interfaceInfo);
 
         // check field access
-        auto totalOffset = 0;
-        auto fieldInfo = interfaceInfo->findField(id, totalOffset);
+        auto fieldInfo = interfaceInfo->findField(id);
         if (fieldInfo)
         {
-            assert(fieldInfo->interfacePosIndex >= 0);
-            auto vtableIndex = fieldInfo->interfacePosIndex + totalOffset;
-
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
+            if (fieldInfo->virtualIndex == -1)
+            {
+                // no data for conditional interface;
+                if (!fieldInfo->isConditional)
+                {
+                    emitError(location, "field '") << fieldInfo->id << "' is not conditional and missing";
+                    return mlir::Value();
+                }
+
+                auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
+                                      ? fieldRefType.getElementType()
+                                      : mlir_ts::OptionalType::get(fieldRefType.getElementType());
+                return builder.create<mlir_ts::OptionalUndefOp>(location, actualType);
+            }
+
+            assert(fieldInfo->virtualIndex >= 0);
+            auto vtableIndex = fieldInfo->virtualIndex;
 
             auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
                 location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
-                builder.getStringAttr(""), builder.getBoolAttr(fieldInfo->isConditional));
+                fieldInfo->id, builder.getBoolAttr(fieldInfo->isConditional));
 
             mlir::Value value;
             if (!fieldInfo->isConditional)
@@ -10389,11 +10654,11 @@ class MLIRGenImpl
         if (auto nameAttr = dyn_cast<mlir::StringAttr>(id))
         {
             auto name = nameAttr.getValue();
-            auto methodInfo = interfaceInfo->findMethod(name, totalOffset);
+            auto methodInfo = interfaceInfo->findMethod(name);
             if (methodInfo)
             {
-                assert(methodInfo->interfacePosIndex >= 0);
-                auto vtableIndex = methodInfo->interfacePosIndex + totalOffset;
+                assert(methodInfo->virtualIndex >= 0);
+                auto vtableIndex = methodInfo->virtualIndex;
 
                 auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
 
@@ -12333,11 +12598,7 @@ class MLIRGenImpl
             else llvm_unreachable("not implemented");
         }
 
-        auto type = unsignedVal 
-            ? builder.getIntegerType(width, false) 
-            : newVal.isSigned() 
-                ? builder.getIntegerType(width, true)
-                : builder.getIntegerType(width);
+        auto type = builder.getIntegerType(width, !unsignedVal);
         return mlir::IntegerAttr::get(type, newVal.getExtValue());
     }
 
@@ -13368,7 +13629,7 @@ class MLIRGenImpl
 
                 fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
             }
-            else if (item == SyntaxKind::MethodDeclaration)
+            else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
                 continue;
             }
@@ -13416,8 +13677,7 @@ class MLIRGenImpl
                                 {
                                     for (auto fieldInfo : destFields)
                                     {
-                                        auto totalOffset = 0;
-                                        auto interfaceFieldInfo = srcInterfaceInfo->findField(fieldInfo.id, totalOffset);
+                                        auto interfaceFieldInfo = srcInterfaceInfo->findField(fieldInfo.id);
 
                                         MLIRPropertyAccessCodeLogic cl(builder, location, tupleValue, fieldInfo.id);
                                         // TODO: implemenet conditional
@@ -13497,12 +13757,23 @@ class MLIRGenImpl
                 fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
                 processFunctionLikeProto(fieldId, funcLikeDecl);
             }
-            else if (item == SyntaxKind::MethodDeclaration)
+            else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
                 fieldId = TupleFieldName(funcLikeDecl->name, genContext);
+
+                if (item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
+                {
+                    auto stringVal = mlir::cast<mlir::StringAttr>(fieldId).getValue();
+                    std::string newField;
+                    raw_string_ostream rso(newField);
+                    rso << (item == SyntaxKind::GetAccessor ? "get_" : "set_") << stringVal;
+                    
+                    fieldId = mlir::StringAttr::get(builder.getContext(), mlir::StringRef(newField).copy(stringAllocator));                    
+                }
+
                 processFunctionLikeProto(fieldId, funcLikeDecl);
-            }
+            }          
         }
 
         // create accum. captures
@@ -13582,7 +13853,7 @@ class MLIRGenImpl
                 auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
                 processFunctionLike(objThis, funcLikeDecl);
             }
-            else if (item == SyntaxKind::MethodDeclaration)
+            else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
                 processFunctionLike(objThis, funcLikeDecl);
@@ -13596,11 +13867,16 @@ class MLIRGenImpl
             builder.create<mlir_ts::ConstantOp>(location, constTupleTypeWithReplacedThis, arrayAttr);
         if (fieldsToSet.empty())
         {
+            //CAST_A(result, location, objectStorageType, constantVal, genContext);
+            //return result;
             return V(constantVal);
         }
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
-        return mlirGenCreateTuple(location, tupleType, constantVal, fieldsToSet, genContext);
+        auto tupleValue = mlirGenCreateTuple(location, tupleType, constantVal, fieldsToSet, genContext);
+        //CAST_A(result, location, objectStorageType, tupleValue, genContext);
+        //return result;
+        return V(tupleValue);
     }
 
     ValueOrLogicalResult mlirGenCreateTuple(mlir::Location location, mlir::Type tupleType, mlir::Value initValue,
@@ -14345,7 +14621,8 @@ class MLIRGenImpl
         auto formalParams = signatureDeclarationBase->parameters;
         for (auto [index, arg] : enumerate(formalParams))
         {
-            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern || arg->name == SyntaxKind::ArrayBindingPattern;
+            auto isBindingPattern = arg->name == SyntaxKind::ObjectBindingPattern 
+                || arg->name == SyntaxKind::ArrayBindingPattern;
 
             mlir::Type type;
             //auto isMultiArgs = !!arg->dotDotDotToken;
@@ -14426,7 +14703,7 @@ class MLIRGenImpl
 
                 if (hasExportModifier)
                 {
-                    addTypeDeclarationToExport(typeAliasDeclarationAST);
+                    addTypeDeclarationToExport(namePtr, type);
                 }
             }
 
@@ -14489,24 +14766,34 @@ class MLIRGenImpl
         auto namePtr = MLIRHelper::getName(enumDeclarationAST->name, stringAllocator);
         if (namePtr.empty())
         {
-            llvm_unreachable("not implemented");
             return mlir::failure();
         }
 
         SymbolTableScopeT varScope(symbolTable);
 
-        getEnumsMap().insert(
-        {
-            namePtr, 
-            std::make_pair(
-                getEnumType().getElementType(), mlir::DictionaryAttr::get(builder.getContext(), 
-                {}))
-        });
-
         SmallVector<mlir::Type> enumLiteralTypes;
-        SmallVector<mlir::NamedAttribute> enumValues;
+        StringMap<mlir::Attribute> enumValues;
+
+        auto appending = false;
+        if (getEnumsMap().contains(namePtr))
+        {
+            auto dict = getEnumsMap().lookup(namePtr).second;
+            for (auto key : dict)
+            {
+                enumValues[key.getName()] = key.getValue();
+            }
+
+            appending = true;
+        }
+        else
+        {
+            getEnumsMap().insert(
+                { namePtr, { getEnumType().getElementType(), mlir::DictionaryAttr::get(builder.getContext(), {}) } });
+        }
+
         auto activeBits = 32;
-        auto currentEnumValue = 0;
+        mlir::IntegerType::SignednessSemantics currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Signless;
+        llvm::APInt currentEnumValue(32, 0);
         for (auto enumMember : enumDeclarationAST->members)
         {
             auto location = loc(enumMember);
@@ -14514,7 +14801,6 @@ class MLIRGenImpl
             auto memberNamePtr = MLIRHelper::getName(enumMember->name, stringAllocator);
             if (memberNamePtr.empty())
             {
-                llvm_unreachable("not implemented");
                 return mlir::failure();
             }
 
@@ -14534,7 +14820,20 @@ class MLIRGenImpl
                     enumValueAttr = constOp.getValueAttr();
                     if (auto intAttr = dyn_cast<mlir::IntegerAttr>(enumValueAttr))
                     {
-                        currentEnumValue = intAttr.getInt();
+                        if (intAttr.getType().isSignlessInteger())
+                        {
+                            currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Signless;
+                        }
+                        else if (intAttr.getType().isSignedInteger())
+                        {
+                            currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Signed;
+                        }
+                        else if (intAttr.getType().isUnsignedInteger())
+                        {
+                            currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Unsigned;
+                        }
+
+                        currentEnumValue = intAttr.getValue();
                         auto currentActiveBits = (int)intAttr.getValue().getActiveBits();
                         if (currentActiveBits > activeBits)
                         {
@@ -14557,7 +14856,14 @@ class MLIRGenImpl
             }
             else
             {
-                auto typeInt = mlir::IntegerType::get(builder.getContext(), activeBits);
+                if (appending && currentEnumValue == 0 && stage == Stages::Discovering && !enumValues.contains(memberNamePtr))
+                {
+                    emitError(loc(enumMember))
+                        << "In an enum with multiple declarations, only one declaration can omit an initializer for its first enum element";                    
+                    return mlir::failure();
+                }
+
+                auto typeInt = mlir::IntegerType::get(builder.getContext(), activeBits, currentEnumValueSigedness);
                 enumValueAttr = builder.getIntegerAttr(typeInt, currentEnumValue);
                 auto indexType = mlir_ts::LiteralType::get(enumValueAttr, typeInt);
                 enumLiteralTypes.push_back(indexType);
@@ -14571,10 +14877,16 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " value attr: " << enumValueAttr << "\n");
 
-            enumValues.push_back({getStringAttr(memberNamePtr.str()), enumValueAttr});
+            enumValues[memberNamePtr] = enumValueAttr;
 
             // update enum to support req. access
-            getEnumsMap()[namePtr].second = mlir::DictionaryAttr::get(builder.getContext(), enumValues /*adjustedEnumValues*/);
+            SmallVector<mlir::NamedAttribute> namedEnumValues;
+            for (auto &key : enumValues)
+            {
+                namedEnumValues.push_back({builder.getStringAttr(key.first()), key.second});
+            }
+
+            getEnumsMap()[namePtr].second = mlir::DictionaryAttr::get(builder.getContext(), namedEnumValues /*adjustedEnumValues*/);
 
             currentEnumValue++;
         }
@@ -14589,7 +14901,7 @@ class MLIRGenImpl
 
         if (getExportModifier(enumDeclarationAST))
         {
-            addEnumDeclarationToExport(enumDeclarationAST);
+            addEnumDeclarationToExport(namePtr, getEnumsMap()[namePtr].second);
         }
 
         return mlir::success();
@@ -14862,7 +15174,7 @@ class MLIRGenImpl
         // support dynamic loading
         if (getExportModifier(classDeclarationAST))
         {
-            addClassDeclarationToExport(classDeclarationAST);
+            addClassDeclarationToExport(newClassPtr);
         }
 
         setProcessingState(newClassPtr, ProcessingStages::Processed, genContext);
@@ -14972,6 +15284,7 @@ class MLIRGenImpl
 
                 if (name == DLL_IMPORT)
                 {
+                    newClassPtr->isDeclaration = true;
                     newClassPtr->isImport = true;
                     // it has parameter, means this is dynamic import, should point to dll path
                     if (args.size() > 0)
@@ -15201,6 +15514,11 @@ class MLIRGenImpl
                             genContext);\
                         llvm::dbgs() << "\n\tNOT RESOLVED MEMBER: " << classMethodMemberInfo.methodName;);
                     notResolved++;
+                }
+
+                if (mlir::failed(mlirGenClassStaticBlockMember(classDeclarationAST, newClassPtr, classMember, genContext)))
+                {
+                    return mlir::failure();
                 }
             }
 
@@ -15526,7 +15844,7 @@ class MLIRGenImpl
             genContext);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         // add accessor methods
         if (isAccessor)
@@ -15552,14 +15870,25 @@ class MLIRGenImpl
                 // detect field Type
                 auto isConst = false;
                 mlir::Type typeInit;
-                evaluate(
-                    propertyDeclaration->initializer,
-                    [&](mlir::Value val) {
-                        typeInit = val.getType();
-                        typeInit = mth.wideStorageType(typeInit);
-                        isConst = isConstValue(val);
-                    },
-                    genContext);
+                if (propertyDeclaration->type)
+                {
+                    typeInit = getType(propertyDeclaration->type, genContext);
+                }
+                else if (propertyDeclaration->initializer)
+                {
+                    evaluate(
+                        propertyDeclaration->initializer,
+                        [&](mlir::Value val) {
+                            typeInit = val.getType();
+                            typeInit = mth.wideStorageType(typeInit);
+                            isConst = isConstValue(val);
+                        },
+                        genContext);
+                }
+                else
+                {
+                    return {mlir::Type(), mlir::Value(), TypeProvided::No};
+                }
 
                 // add command to load reference from DLL
                 auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
@@ -15570,8 +15899,13 @@ class MLIRGenImpl
             },
             genContext);
 
+        if (!staticFieldType)
+        {
+            return mlir::failure();
+        }
+
         auto &staticFieldInfos = newClassPtr->staticFields;
-        staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();
     }    
@@ -15820,7 +16154,6 @@ genContext);
             NodeFactory nf(NodeFactoryFlags::None);
 
             NodeArray<Statement> statements;
-
             auto body = nf.createBlock(statements, /*multiLine*/ false);
             ModifiersArray modifiers;
             modifiers.push_back(nf.createToken(SyntaxKind::StaticKeyword));
@@ -15890,12 +16223,31 @@ genContext);
             declarationMode = declarationModeStore;
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
-        {
-            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
-        }
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();    
+    }
+
+    void pushStaticField(llvm::SmallVector<StaticFieldInfo> &staticFieldInfos, mlir::Attribute fieldId, mlir::Type staticFieldType, StringRef fullClassStaticFieldName, int index)
+    {
+        if (!llvm::any_of(staticFieldInfos, [&](auto& field) 
+            { 
+                auto foundField = field.id == fieldId;
+                if (foundField)
+                {
+                    // update field type if different
+                    if (field.type != staticFieldType)
+                    {
+                        assert(false);
+                        field.type = staticFieldType;
+                    }
+                }
+                
+                return foundField; 
+            }))
+        {
+            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, index});
+        }        
     }
 
     // INFO: you can't use standart Static Field declarastion because of RTTI should be declared before used
@@ -15934,10 +16286,7 @@ genContext);
                 genContext);
         }
 
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
-        {
-            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
-        }
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
 
         return mlir::success();
     }
@@ -15947,36 +16296,7 @@ genContext);
     mlir::LogicalResult mlirGenCustomRTTIDynamicImport(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                           ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
-        auto &staticFieldInfos = newClassPtr->staticFields;
-
-        auto fieldId = MLIRHelper::TupleFieldName(RTTI_NAME, builder.getContext());
-
-        // register global
-        auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
-
-        auto staticFieldType =  mlir_ts::RefType::get(getStringType());
-
-        if (!fullNameGlobalsMap.count(fullClassStaticFieldName))
-        {
-            // prevent double generating
-            registerVariable(
-                location, fullClassStaticFieldName, true, VariableType::Var,
-                [&](mlir::Location location, const GenContext &genContext)  -> TypeValueInitType {
-                    auto fullName = V(mlirGenStringValue(location, fullClassStaticFieldName.str(), true));
-                    auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(location, getOpaqueType(), fullName);
-                    auto result = cast(location, staticFieldType, referenceToStaticFieldOpaque, genContext);
-                    auto referenceToStaticField = V(result);
-                    return {referenceToStaticField.getType(), referenceToStaticField, TypeProvided::Yes};
-                },
-                genContext);
-        }
-
-        if (!llvm::any_of(staticFieldInfos, [&](auto& field) { return field.id == fieldId; }))
-        {
-            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
-        }
-
-        return mlir::success();
+        return mlirGenStaticFieldDeclarationDynamicImport(location, newClassPtr, RTTI_NAME, getStringType(), genContext);
     }
 
 #ifdef ENABLE_TYPED_GC
@@ -16267,9 +16587,8 @@ genContext);
         return mlir::failure();
     }
 
-    ValueOrLogicalResult mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir_ts::ObjectType objectType,
-                                                               InterfaceInfo::TypePtr newInterfacePtr,
-                                                               const GenContext &genContext)
+    ValueOrLogicalResult mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir::Value in, 
+            mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
     {
         auto fullObjectInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
         auto existValue = resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
@@ -16281,7 +16600,62 @@ genContext);
         if (mlir::succeeded(
                 mlirGenObjectVirtualTableDefinitionForInterface(location, objectType, newInterfacePtr, genContext)))
         {
-            return resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
+            auto globalVTableRefValue = resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
+
+            // we need to update methods references in VTable with functions from object;
+            if (newInterfacePtr->methods.size() > 0) {
+
+                mlir_ts::TupleType storeType;
+                if (auto objectStoreType = dyn_cast<mlir_ts::ObjectStorageType>(objectType.getStorageType()))
+                {
+                    storeType = mlir_ts::TupleType::get(builder.getContext(), objectStoreType.getFields());
+                }
+                else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(objectType.getStorageType()))
+                {
+                    storeType = tupleType;
+                }
+                else
+                {
+                    return mlir::failure();
+                }
+
+                // match VTable
+                // 1) clone vtable
+                auto vtableType = mlir::cast<mlir_ts::TupleType>(mlir::cast<mlir_ts::RefType>(globalVTableRefValue.getType()).getElementType());
+                auto valueVTable = builder.create<mlir_ts::LoadOp>(location, vtableType, globalVTableRefValue);
+                auto varVTable = builder.create<mlir_ts::VariableOp>(location, globalVTableRefValue.getType(), valueVTable, 
+                    builder.getBoolAttr(false), builder.getIndexAttr(0));
+
+                for (auto& method : newInterfacePtr->methods)
+                {
+                    auto index = mth.getFieldIndexByFieldName(storeType, builder.getStringAttr(method.name));
+                    if (index == -1)
+                    {
+                        return mlir::failure();
+                    }
+
+                    auto fieldInfo = mth.getFieldInfoByIndex(storeType, index);
+
+                    auto methodRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(fieldInfo.type), in, index);
+
+                    LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable method: " << method.name
+                                            << "\n\t object method ref: " << V(methodRef) << "\n\n";);
+
+                    // where to save
+                    auto fieldInfoVT = mth.getFieldInfoByIndex(vtableType, method.virtualIndex);
+                    auto methodRefVT = builder.create<mlir_ts::PropertyRefOp>(location, fieldInfoVT.type, varVTable, method.virtualIndex);
+
+                    LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable method: " << method.name
+                                            << "\n\t vtable method ref: " << V(methodRefVT) << "\n\n";);                    
+                    
+                    builder.create<mlir_ts::LoadSaveOp>(location, methodRefVT, methodRef);   
+                }       
+
+                // patched VTable
+                return V(varVTable);         
+            }
+
+            return globalVTableRefValue;
         }
 
         return mlir::failure();
@@ -16358,9 +16732,9 @@ genContext);
                             assert(fieldValue);
                             auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
 
-                            LLVM_DEBUG(llvm::dbgs() << "\n!! vtable field: " << methodOrField.fieldInfo.id
-                                                    << " type: " << methodOrField.fieldInfo.type
-                                                    << " provided data: " << fieldRef << "\n";);
+                            LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable field: " << methodOrField.fieldInfo.id
+                                                    << "\n\t type: " << methodOrField.fieldInfo.type
+                                                    << "\n\t provided data: " << fieldRef << "\n\n";);
 
                             if (isa<mlir_ts::BoundRefType>(fieldRef.getType()))
                             {
@@ -16457,7 +16831,8 @@ genContext);
                     if (name == NEW_CTOR_METHOD_NAME)
                     {
                         // TODO: generate method                        
-                        foundMethodPtr = generateSynthMethodToCallNewCtor(location, newClassPtr, newInterfacePtr, funcType, interfacePosIndex, genContext);
+                        foundMethodPtr = generateSynthMethodToCallNewCtor(
+                            location, newClassPtr, newInterfacePtr, funcType, interfacePosIndex, genContext);
                     }
 
                     if (!foundMethodPtr)
@@ -16478,11 +16853,10 @@ genContext);
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
                 {
-                    emitError(location) << "method signature not matching for '" << name << "'{" << to_print(funcType)
+                    emitError(location) << "method signature not matching for " << name << ":" << to_print(funcType)
                                         << "} for interface '" << newInterfacePtr->fullName << "' in class '"
-                                        << newClassPtr->fullName << "'"
-                                        << " found method: " << foundMethodFunctionType;
-
+                                        << newClassPtr->fullName << "'."
+                                        << " Found method: " << name << ":" << to_print(foundMethodFunctionType);
                     return emptyMethod;
                 }
 
@@ -16970,18 +17344,17 @@ genContext);
 
         auto location = loc(classMember);
         auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
-        getMethodNameOrPropertyName(
+        if (mlir::failed(getMethodNameOrPropertyName(
             newClassPtr->isStatic,
             funcLikeDeclaration, 
             classMethodMemberInfo.methodName, 
             classMethodMemberInfo.propertyName, 
-            genContext);
-
-        if (classMethodMemberInfo.methodName.empty())
+            genContext)))
         {
-            llvm_unreachable("not implemented");
             return mlir::failure();
         }
+
+        assert (!classMethodMemberInfo.methodName.empty());
 
         if (classMethodMemberInfo.isAbstract && !newClassPtr->isAbstract)
         {
@@ -17047,6 +17420,48 @@ genContext);
         }
 
         return registerGenericClassMethod(classMethodMemberInfo, genContext);
+    }
+
+    mlir::LogicalResult mlirGenClassStaticBlockMember(ClassLikeDeclaration classDeclarationAST,
+                                                 ClassInfo::TypePtr newClassPtr, ClassElement classMember,
+                                                 const GenContext &genContext)
+    {
+        // we need to add all static blocks to it
+        if (classMember == SyntaxKind::ClassStaticBlockDeclaration)
+        {
+            auto classStaticBlock = classMember.as<ClassStaticBlockDeclaration>();
+
+            // create function
+            auto location = loc(classStaticBlock);
+
+            auto name = MLIRHelper::getAnonymousName(location, ".csb", "");
+            auto fullInitGlobalFuncName = getFullNamespaceName(name);
+
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+
+            // create global construct
+            auto funcType = getFunctionType({}, {}, false);
+
+            if (mlir::failed(mlirGenFunctionBody(location, name, fullInitGlobalFuncName, funcType,
+                [&](mlir::Location location, const GenContext &genContext) {
+                    return mlirGen(classStaticBlock->body, genContext);
+                }, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            auto parentModule = theModule;
+            MLIRCodeLogicHelper mclh(builder, location);
+
+            builder.setInsertionPointToStart(parentModule.getBody());
+            mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
+
+            // priority is lowest to load as first dependencies
+            builder.create<mlir_ts::GlobalConstructorOp>(
+                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));            
+        }
+
+        return mlir::success();
     }
 
     mlir::LogicalResult registerGenericClassMethod(ClassMethodMemberInfo &classMethodMemberInfo, const GenContext &genContext)
@@ -17120,7 +17535,8 @@ genContext);
         classMethodMemberInfo.setFuncOp(funcOp);
 
         auto location = loc(funcLikeDeclaration);
-        if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(location, funcOp, funcProto->getNameWithoutNamespace(), genContext)))
+        if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(
+            location, funcOp.getName(), funcOp.getFunctionType(), funcProto->getNameWithoutNamespace(), genContext)))
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
@@ -17147,7 +17563,7 @@ genContext);
             mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());
 
             builder.create<mlir_ts::GlobalConstructorOp>(location, 
-                FlatSymbolRefAttr::get(builder.getContext(), StringRef(std::get<0>(funcName))), builder.getIndexAttr(1000));
+                FlatSymbolRefAttr::get(builder.getContext(), StringRef(std::get<0>(funcName))), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
         }
 
         return mlir::success();
@@ -17566,7 +17982,7 @@ genContext);
         // add to export if any
         if (auto hasExport = getExportModifier(interfaceDeclarationAST))
         {
-            addInterfaceDeclarationToExport(interfaceDeclarationAST);
+            addInterfaceDeclarationToExport(newInterfacePtr);
         }
 
         return mlir::success();
@@ -17657,7 +18073,8 @@ genContext);
             }
         }
         else if (kind == SyntaxKind::MethodSignature || kind == SyntaxKind::ConstructSignature 
-                || kind == SyntaxKind::IndexSignature || kind == SyntaxKind::CallSignature)
+                || kind == SyntaxKind::IndexSignature || kind == SyntaxKind::CallSignature
+                || kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
             auto isConditional = !!methodSignature->questionToken;
@@ -17720,19 +18137,19 @@ genContext);
         return mlir::success();
     }
 
-    std::string getNameForMethod(SignatureDeclarationBase methodSignature, const GenContext &genContext)
+    std::tuple<std::string, bool> getNameForMethod(SignatureDeclarationBase methodSignature, const GenContext &genContext)
     {
         auto [attr, result] = getNameFromComputedPropertyName(methodSignature->name, genContext);
         if (mlir::failed(result))
         {
-            return nullptr;
+            return {"", false};
         }
 
         if (attr)
         {
             if (auto strAttr = dyn_cast<mlir::StringAttr>(attr))
             {
-                return strAttr.getValue().str();
+                return {strAttr.getValue().str(), true};
             }
             else
             {
@@ -17740,7 +18157,7 @@ genContext);
             }
         }
 
-        return MLIRHelper::getName(methodSignature->name);
+        return {MLIRHelper::getName(methodSignature->name), true};
     }
 
     mlir::LogicalResult getMethodNameOrPropertyName(bool isStaticClass, SignatureDeclarationBase methodSignature, std::string &methodName,
@@ -17773,17 +18190,35 @@ genContext);
         }
         else if (kind == SyntaxKind::GetAccessor)
         {
-            propertyName = getNameForMethod(methodSignature, genContext);
+            auto [name, result] = getNameForMethod(methodSignature, genContext);
+            if (!result)
+            {
+                return mlir::failure();
+            }
+
+            propertyName = name;
             methodName = std::string("get_") + propertyName;
         }
         else if (kind == SyntaxKind::SetAccessor)
         {
-            propertyName = getNameForMethod(methodSignature, genContext);
+            auto [name, result] = getNameForMethod(methodSignature, genContext);
+            if (!result)
+            {
+                return mlir::failure();
+            }
+
+            propertyName = name;
             methodName = std::string("set_") + propertyName;
         }
         else
         {
-            methodName = getNameForMethod(methodSignature, genContext);
+            auto [name, result] = getNameForMethod(methodSignature, genContext);
+            if (!result)
+            {
+                return mlir::failure();
+            }            
+
+            methodName = name;
         }
 
         return mlir::success();
@@ -18230,10 +18665,8 @@ genContext);
 
         auto newCtorAttr = MLIRHelper::TupleFieldName(NEW_CTOR_METHOD_NAME, builder.getContext());
         SmallVector<mlir::Value> values;
-        auto posIndex = -1;
-        for (auto fieldInfo : fields)
+        for (auto [posIndex, fieldInfo] : enumerate(fields))
         {
-            posIndex++;
             auto foundField = false;                                        
             auto classFieldInfo = classInfo->findField(fieldInfo.id, foundField);
             if (!foundField)
@@ -18280,9 +18713,8 @@ genContext);
         SmallVector<mlir::Value> values;
         for (auto fieldInfo : fields)
         {
-            auto totalOffset = 0;                                        
-            auto classFieldInfo = interfaceInfo->findField(fieldInfo.id, totalOffset);
-            if (totalOffset < 0)
+            auto classFieldInfo = interfaceInfo->findField(fieldInfo.id);
+            if (!classFieldInfo)
             {
                 emitError(location)
                     << "field '" << fieldInfo.id << "' can't be found "
@@ -18292,7 +18724,8 @@ genContext);
 
             MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
             // TODO: implemenet conditional
-            mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, classFieldInfo->isConditional, cl, genContext); 
+            mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(
+                location, value, classFieldInfo->isConditional, cl, genContext); 
             if (propertyAccess)
             {
                 values.push_back(propertyAccess);
@@ -18309,6 +18742,8 @@ genContext);
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
     }
 
+    // TODO: cast should not throw error in case of generic methods in "if (false)" conditions (typeof == "..."), 
+    // as it may prevent cmpiling code
     ValueOrLogicalResult cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         if (!type)
@@ -18417,6 +18852,9 @@ genContext);
             }
             else if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(valueType))
             {
+                // we evaluate property to allow to compile code in "generic methods" with "typeof" conditions
+                // if we throw error here generic method with "if (false)" condition will generate code which
+                // will be removed but because of error, the compilation process will be stopped
                 if (auto toStringMethod = evaluateProperty(location, value, TO_STRING, genContext))
                 {
                     return mlirGenCallThisMethod(location, value, TO_STRING, undefined, undefined, genContext);
@@ -18766,6 +19204,22 @@ genContext);
             return mlir::failure();
         }
 
+        if (auto valueArrayType = dyn_cast<mlir_ts::ArrayType>(valueType))
+        {
+            if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
+            {
+                llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> typeParamsWithArgs;
+                auto extendsResult = mth.extendsType(location, valueArrayType.getElementType(), arrayType.getElementType(), typeParamsWithArgs);
+                if (extendsResult != ExtendsResult::True)
+                {
+                    emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type) 
+                        << " as element type " << to_print(arrayType.getElementType()) << " is not base of type " 
+                        << to_print(valueArrayType.getElementType());
+                    return mlir::failure();
+                }
+            }
+        }
+
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
@@ -18995,7 +19449,7 @@ genContext);
     ValueOrLogicalResult castObjectToInterface(mlir::Location location, mlir::Value in, mlir_ts::ObjectType objType,
                                     InterfaceInfo::TypePtr interfaceInfo, const GenContext &genContext)
     {
-        auto result = mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext);
+        auto result = mlirGenCreateInterfaceVTableForObject(location, in, objType, interfaceInfo, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto createdInterfaceVTableForObject = V(result);
 
@@ -21365,7 +21819,7 @@ genContext);
             auto attr = mcl.ExtractAttr(value);
             if (!attr)
             {
-                emitError(loc(name), "not supported ComputedPropertyName expression");
+                emitError(loc(name), "not supported 'Computed Property Name' expression");
             }
 
             return {attr, attr ? mlir::success() : mlir::failure()};
@@ -22345,62 +22799,64 @@ genContext);
         return mlir::success();
     }
 
-    void addDeclarationToExport(ts::Node node, const char* prefix = nullptr, const char* postfix = ";\n", ts::Node id = {}, mlir::Type returnTypeIfNotProvided = {})
+    void addTypeDeclarationToExport(StringRef name, mlir::Type type)    
     {
-        // we do not add declarations to DLL export declarations to prevent generating declExports with rubbish data
-        if (declarationMode || hasModifier(node, SyntaxKind::DeclareKeyword))
-        {
-            return;
-        }
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.printTypeDeclaration(name, type);
 
-        Printer<stringstream> printer(declExports);
-        printer.setDeclarationMode(true);
-        if (returnTypeIfNotProvided)
-        {
-            printer.setOnMissingReturnType([&](auto currentNode) {
-                if (currentNode != id)
-                {
-                    return string{};
-                } 
-
-                return to_wprint(returnTypeIfNotProvided);      
-            });
-        }
-
-        if (prefix)
-            declExports << prefix;
-
-        printer.printNode(node);
-        
-        if (postfix)
-            declExports << postfix;
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! added declaration to export: \n" << convertWideToUTF8(declExports.str()) << "\n";);      
+        declExports << ss.str().str();
     }
 
-    void addTypeDeclarationToExport(TypeAliasDeclaration typeAliasDeclaration)    
+    void addInterfaceDeclarationToExport(InterfaceInfo::TypePtr interfaceInfo)
     {
-        addDeclarationToExport(typeAliasDeclaration);
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.print(interfaceInfo);
+
+        declExports << ss.str().str();
     }
 
-    void addInterfaceDeclarationToExport(InterfaceDeclaration interfaceDeclaration)
+    void addEnumDeclarationToExport(StringRef name, mlir::DictionaryAttr enumValues)
     {
-        addDeclarationToExport(interfaceDeclaration, nullptr, "\n");
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.printEnum(name, enumValues);
+
+        declExports << ss.str().str();        
     }
 
-    void addEnumDeclarationToExport(EnumDeclaration enumDeclatation)
+    void addVariableDeclarationToExport(StringRef name, mlir::Type type, bool isConst)
     {
-        addDeclarationToExport(enumDeclatation, nullptr, "\n");
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.printVariableDeclaration(name, type, isConst);
+
+        declExports << ss.str().str();
     }
 
-    void addFunctionDeclarationToExport(FunctionLikeDeclarationBase FunctionLikeDeclarationBase, mlir::Type returnType)
+    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto)
     {
-        addDeclarationToExport(FunctionLikeDeclarationBase, "@dllimport\n", "\n", FunctionLikeDeclarationBase, returnType);
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.print(funcProto);
+
+        declExports << ss.str().str();
     }
 
-    void addClassDeclarationToExport(ClassLikeDeclaration classDeclatation)
+    void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr)
     {
-        addDeclarationToExport(classDeclatation, "@dllimport\n", "\n");
+        SmallVector<char> out;
+        llvm::raw_svector_ostream ss(out);        
+        MLIRDeclarationPrinter dp(ss);
+        dp.print(newClassPtr);
+
+        declExports << ss.str().str();
     }
 
     auto getNamespaceName() -> StringRef
@@ -22885,10 +23341,10 @@ genContext);
 
     std::string to_print(mlir::Type type)
     {
-        stringstream exportType;
+        std::stringstream exportType;
         MLIRPrinter mp{};
-        mp.printType<ostream>(exportType, type);
-        return convertWideToUTF8(exportType.str());      
+        mp.printType<std::ostream>(exportType, type);
+        return exportType.str();      
     }
 
     string to_wprint(mlir::Type type)
@@ -22981,8 +23437,10 @@ genContext);
 
     bool declarationMode;
 
-    stringstream declExports;
+    std::stringstream declExports;
     stringstream exports;
+
+    Stages stage;
 
 private:
     std::string label;

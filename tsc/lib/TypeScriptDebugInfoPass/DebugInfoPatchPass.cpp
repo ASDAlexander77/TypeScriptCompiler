@@ -1,4 +1,4 @@
-#include "TypeScript/DebugInfoPatchPass.h"
+#include "TypeScript/Pass/DebugInfoPatchPass.h"
 
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/InstIterator.h"

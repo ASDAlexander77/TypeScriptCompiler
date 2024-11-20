@@ -87,7 +87,7 @@ cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::Ze
 cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dynamically. (used in --emit=jit)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
                                    cl::cat(TypeScriptCompilerCategory)};
 
-cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called (default=main)"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
+cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called (default=main)"), cl::value_desc("function name"), cl::init(MAIN_ENTRY_NAME), cl::cat(TypeScriptCompilerCategory)};
 
 cl::opt<bool> dumpObjectFile{"dump-object-file", cl::Hidden, cl::desc("Dump JITted-compiled object to file specified with "
         "-object-filename (<input file>.o by default)."), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};

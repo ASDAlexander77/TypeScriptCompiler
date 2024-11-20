@@ -107,23 +107,31 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
 }
 
 def AccessorOp : TypeScript_Op<"Accessor", 
-    [Pure]> {
+    []> {
   let summary = "symbol reference as to static accessor";
 
-  let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs AnyType:$value);
+  let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
 
-  let hasCanonicalizer = 1;
-
-  
+  let hasCanonicalizer = 1; 
 }
 
 def ThisAccessorOp : TypeScript_Op<"ThisAccessor", 
-    [Pure]> {
+    []> {
   let summary = "accessor of class";
 
-  let arguments = (ins AnyType:$thisVal, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs AnyType:$value);
+  let arguments = (ins AnyType:$thisVal, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
+
+  let hasCanonicalizer = 1;
+}
+
+def ThisAccessorIndirectOp : TypeScript_Op<"ThisAccessorIndirect", 
+    []> {
+  let summary = "accessor of object";
+
+  let arguments = (ins AnyType:$thisVal, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
 
   let hasCanonicalizer = 1;
 }
@@ -132,12 +140,10 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
     [Pure]> {
   let summary = "symbol reference as to interface member";
 
-  let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, StrAttr:$identifier, OptionalAttr<BoolAttr>:$optional);
+  let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, AnyAttr:$identifier, OptionalAttr<BoolAttr>:$optional);
   let results = (outs TypeScript_AnyRefOrCallable:$funcOrFieldReference);
 
-  let hasCanonicalizer = 1;
-
-  
+  let hasCanonicalizer = 1; 
 }
 
 def TypeRefOp : TypeScript_Op<"TypeRef", 
@@ -2125,12 +2131,20 @@ def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [Pure,
   let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
 }
 
-def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush"> {
+def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush", [
+    RangedTypesMatchWith<"array element type match all items types",
+                "op", "items",
+                "TypeRange((cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType()))">
+]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
   let results = (outs I32:$new_size);
 }
 
-def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop"> {
+def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop", [
+    TypesMatchWith<"array element type match all items types",
+                "op", "item",
+                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
+]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemFree, MemRead]>:$op);
   let results = (outs AnyType:$item);
 }
@@ -2140,7 +2154,11 @@ def TypeScript_ArrayUnshiftOp : TypeScript_Op<"ArrayUnshift"> {
   let results = (outs I32:$new_size);
 }
 
-def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift"> {
+def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift", [
+    TypesMatchWith<"array element type match all items types",
+                "op", "item",
+                "(cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType())">
+]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemFree, MemRead]>:$op);
   let results = (outs AnyType:$item);
 }
@@ -2150,7 +2168,7 @@ def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice"> {
   let results = (outs I32:$new_size);
 }
 
-def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView"> {
+def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView", [AllTypesMatch<["op", "result"]>]> {
   let arguments = (ins TypeScript_Array:$op, I32:$offset, I32:$count);
   let results = (outs TypeScript_Array:$result);
 }

@@ -1,5 +1,5 @@
 #include "TypeScript/Defines.h"
-#include "TypeScript/AliasPass.h"
+#include "TypeScript/Pass/AliasPass.h"
 
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/InstIterator.h"
@@ -28,12 +28,12 @@ struct AliasPassCode
         LLVM_DEBUG(llvm::dbgs() << "\nEXPORT Function: " << F.getName());
         LLVM_DEBUG(llvm::dbgs() << "\nEXPORT Dump Before: ...\n" << F << "\n";);
 
-        if (isWasm && F.getName() == "main") {
+        if (isWasm && F.getName() == MAIN_ENTRY_NAME) {
             if (!F.isDeclaration() 
                 && F.arg_size() == 0 
                 && !F.isVarArg() 
                 && F.getReturnType()->isIntegerTy(intSize)) {
-                auto *GA = llvm::GlobalAlias::create("__main_void", &F);
+                auto *GA = llvm::GlobalAlias::create("__" MAIN_ENTRY_NAME "_void", &F);
                 GA->setVisibility(llvm::GlobalValue::HiddenVisibility);
 
                 MadeChange = true;

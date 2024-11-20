@@ -1,7 +1,7 @@
 @dllimport
 declare class Account
 {
-    public n?: TypeOf<1>;
+    	public n?: TypeOf<1>;
 
 	constructor(n?: TypeOf<1>);
 }

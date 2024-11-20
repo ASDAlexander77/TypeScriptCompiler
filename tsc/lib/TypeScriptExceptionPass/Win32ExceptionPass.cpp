@@ -1,4 +1,4 @@
-#include "TypeScript/Win32ExceptionPass.h"
+#include "TypeScript/Pass/Win32ExceptionPass.h"
 
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/InstIterator.h"

@@ -1,6 +1,9 @@
 #ifndef MLIR_TYPESCRIPT_DOM_H_
 #define MLIR_TYPESCRIPT_DOM_H_
 
+#include "TypeScript/TypeScriptDialect.h"
+#include "TypeScript/TypeScriptOps.h"
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
@@ -16,35 +19,8 @@ namespace mlir_ts = mlir::typescript;
 
 namespace ts
 {
-class BaseDOM
-{
-  public:
-    enum BaseDOMKind
-    {
-        Base_VariableDeclaration,
-        Base_FunctionParam,
-        Base_FunctionProto,
-        Base_TypeParameter,
-    };
 
-    using TypePtr = std::shared_ptr<BaseDOM>;
-
-    BaseDOM(BaseDOMKind kind) : kind(kind)
-    {
-    }
-
-    virtual ~BaseDOM() = default;
-
-    BaseDOMKind getKind() const
-    {
-        return kind;
-    }
-
-  private:
-    const BaseDOMKind kind;
-};
-
-class VariableDeclarationDOM : public BaseDOM
+class VariableDeclarationDOM
 {
     std::string name;
     mlir::Type type;
@@ -59,7 +35,7 @@ class VariableDeclarationDOM : public BaseDOM
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
     VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = undefined)
-        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), _using(false), readWrite(false)
+        : name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), _using(false), readWrite(false)
     {
     }
 
@@ -149,12 +125,6 @@ class FunctionParamDOM : public VariableDeclarationDOM
     Node getBindingPattern()
     {
         return bindingPattern;
-    }
-
-    /// LLVM style RTTI
-    static bool classof(const BaseDOM *c)
-    {
-        return c->getKind() == Base_FunctionParam;
     }
 
     bool processed;
@@ -275,7 +245,7 @@ class FunctionPrototypeDOM
     }
 };
 
-class TypeParameterDOM : public BaseDOM
+class TypeParameterDOM
 {
     std::string name;
     TypeNode constraint;
@@ -286,7 +256,7 @@ class TypeParameterDOM : public BaseDOM
   public:
     using TypePtr = std::shared_ptr<TypeParameterDOM>;
 
-    TypeParameterDOM(std::string name) : BaseDOM(Base_TypeParameter), name(name), _hasConstraint(false), _hasDefault(false)
+    TypeParameterDOM(std::string name) : name(name), _hasConstraint(false), _hasDefault(false)
     {
     }
 

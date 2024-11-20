@@ -1,5 +1,5 @@
 #include "TypeScript/Defines.h"
-#include "TypeScript/ExportFixPass.h"
+#include "TypeScript/Pass/ExportFixPass.h"
 
 #include "llvm/IR/PatternMatch.h"
 #include "llvm/IR/InstIterator.h"
