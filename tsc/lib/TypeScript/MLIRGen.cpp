@@ -3269,17 +3269,7 @@ class MLIRGenImpl
 
         bool getIsPublic()
         {
-            if (isExternal)
-            {
-                return true;
-            }
-
-            if (!isExport && !isPublic)
-            {
-                return false;
-            }
-
-            return true;
+            return isExternal || isExport || isPublic;
         }
 
         LLVM::Linkage getLinkage()
