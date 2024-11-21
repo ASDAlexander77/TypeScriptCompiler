@@ -3289,7 +3289,7 @@ class MLIRGenImpl
                 // TODO: dso_local somehow linked with -fno-pic
                 //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
             }
-            else if (isExport || isImport)
+            else if (isExport || isImport || isPublic)
             {
                 linkage = LLVM::Linkage::External;
             }
