@@ -726,8 +726,6 @@ class MLIRGenImpl
         // Process generating here
         declExports.str("");
         declExports.clear();
-        exports.str(S(""));
-        exports.clear();
         GenContext genContext{};
         genContext.rootContext = &genContext;
         genContext.postponedMessages = &postponedMessages;
@@ -22789,6 +22787,46 @@ genContext);
         return mlir::success();
     }
 
+    void addDependancyTypesToExport(mlir::Type type)
+    {
+        if (exportedTypes.contains(type))
+        {
+            // already added
+            return;
+        }
+
+        exportedTypes.insert(type);
+
+        // iterate all types
+        mth.forEachTypes(type, [&] (mlir::Type subType) {
+            return addTypeDeclarationToExport(subType);
+        });
+
+    }
+
+    // base method
+    bool addTypeDeclarationToExport(mlir::Type type)
+    {
+        auto cont = mlir::TypeSwitch<mlir::Type, bool>(type)
+            .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
+                auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
+                assert(interfaceInfo);
+                addInterfaceDeclarationToExport(interfaceInfo);
+                return false;
+            })
+            .Case<mlir_ts::ClassType>([&](auto classType) {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                assert(classInfo);
+                addClassDeclarationToExport(classInfo);
+                return false;
+            })
+            .Default([&](auto type) {
+                return true;
+            });
+
+        return cont;
+    }
+
     void addTypeDeclarationToExport(StringRef name, mlir::Type type)    
     {
         SmallVector<char> out;
@@ -22797,6 +22835,8 @@ genContext);
         dp.printTypeDeclaration(name, type);
 
         declExports << ss.str().str();
+
+        addDependancyTypesToExport(type);
     }
 
     void addInterfaceDeclarationToExport(InterfaceInfo::TypePtr interfaceInfo)
@@ -22807,6 +22847,8 @@ genContext);
         dp.print(interfaceInfo);
 
         declExports << ss.str().str();
+
+        addDependancyTypesToExport(interfaceInfo->interfaceType);
     }
 
     void addEnumDeclarationToExport(StringRef name, mlir::DictionaryAttr enumValues)
@@ -22827,6 +22869,8 @@ genContext);
         dp.printVariableDeclaration(name, type, isConst);
 
         declExports << ss.str().str();
+
+        addDependancyTypesToExport(type);
     }
 
     void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto)
@@ -22834,9 +22878,11 @@ genContext);
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.print(funcProto);
+        dp.print(funcProto->getName(), funcProto->getFuncType());
 
         declExports << ss.str().str();
+
+        addDependancyTypesToExport(funcProto->getFuncType());
     }
 
     void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr)
@@ -22847,6 +22893,8 @@ genContext);
         dp.print(newClassPtr);
 
         declExports << ss.str().str();
+
+        addDependancyTypesToExport(newClassPtr->classType);
     }
 
     auto getNamespaceName() -> StringRef
@@ -23428,7 +23476,7 @@ genContext);
     bool declarationMode;
 
     std::stringstream declExports;
-    stringstream exports;
+    mlir::SmallPtrSet<mlir::Type, 32> exportedTypes;
 
     Stages stage;
 

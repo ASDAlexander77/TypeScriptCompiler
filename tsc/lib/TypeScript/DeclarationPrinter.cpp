@@ -284,13 +284,12 @@ namespace typescript
         newline();
     }
 
-    void MLIRDeclarationPrinter::print(FunctionPrototypeDOM::TypePtr funcProto)
+    void MLIRDeclarationPrinter::print(StringRef name, mlir_ts::FunctionType funcType)
     {
         printBeforeDeclaration();
 
-        auto funcType = funcProto->getFuncType();
         printFunction(
-            funcProto->getName(),
+            name,
             funcType.getParams(),
             funcType.getNumResults() > 0 ? funcType.getResult(0) : mlir::Type());
         os << ";";

@@ -19,7 +19,7 @@ namespace typescript
         void printTypeDeclaration(StringRef, mlir::Type);
         void printEnum(StringRef, mlir::DictionaryAttr);
         void printVariableDeclaration(StringRef, mlir::Type, bool);
-        void print(FunctionPrototypeDOM::TypePtr);
+        void print(StringRef, mlir_ts::FunctionType);
         void print(ClassInfo::TypePtr);
         void print(InterfaceInfo::TypePtr);
 
