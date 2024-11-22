@@ -22841,6 +22841,11 @@ genContext);
                     addDependancyTypesToExport(method.funcType);
                 }
 
+                for (auto& field : interfaceInfo->fields)
+                {
+                    addDependancyTypesToExport(field.type);
+                }
+
                 addInterfaceDeclarationToExport(interfaceInfo);
                 return true;
             })
@@ -22852,6 +22857,12 @@ genContext);
                 {
                     addDependancyTypesToExport(method.funcType);
                 }
+
+                for (auto& accessor : classInfo->accessors)
+                {
+                    if (accessor.get) addDependancyTypesToExport(accessor.get.getFunctionType());
+                    if (accessor.set) addDependancyTypesToExport(accessor.set.getFunctionType());
+                }                
 
                 addClassDeclarationToExport(classInfo);
                 return true;
