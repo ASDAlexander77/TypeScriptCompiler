@@ -22835,12 +22835,24 @@ genContext);
             .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
                 auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
                 assert(interfaceInfo);
+
+                for (auto& method : interfaceInfo->methods)
+                {
+                    addDependancyTypesToExport(method.funcType);
+                }
+
                 addInterfaceDeclarationToExport(interfaceInfo);
                 return true;
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
                 assert(classInfo);
+
+                for (auto& method : classInfo->methods)
+                {
+                    addDependancyTypesToExport(method.funcType);
+                }
+
                 addClassDeclarationToExport(classInfo);
                 return true;
             })
