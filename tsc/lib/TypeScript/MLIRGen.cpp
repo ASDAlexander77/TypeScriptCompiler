@@ -14889,7 +14889,11 @@ class MLIRGenImpl
 
         if (getExportModifier(enumDeclarationAST))
         {
-            addEnumDeclarationToExport(namePtr, getEnumsMap()[namePtr].second);
+            auto &enumInfo = getEnumsMap()[namePtr];
+            if (auto enumType = dyn_cast<mlir_ts::EnumType>(getEnumType(enumInfo.first, enumInfo.second)))
+            {
+                addEnumDeclarationToExport(namePtr, enumType);
+            }
         }
 
         return mlir::success();
@@ -22787,12 +22791,22 @@ genContext);
         return mlir::success();
     }
 
-    void addDependancyTypesToExport(mlir::Type type)
+    bool isAddedToExport(mlir::Type type)
     {
-        if (exportedTypes.contains(type))
+        if (stage != Stages::SourceGeneration)
+        {
+            return true;
+        }
+
+        return exportedTypes.contains(type);
+    }
+
+    bool addDependancyTypesToExport(mlir::Type type)
+    {
+        if (isAddedToExport(type))
         {
             // already added
-            return;
+            return true;
         }
 
         exportedTypes.insert(type);
@@ -22802,23 +22816,33 @@ genContext);
             return addTypeDeclarationToExport(subType);
         });
 
+        return false;
     }
 
     // base method
     bool addTypeDeclarationToExport(mlir::Type type)
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! adding type declaration to export: \n" << type << "\n";);
+
+        if (isAddedToExport(type))
+        {
+            // already added
+            LLVM_DEBUG(llvm::dbgs() << "\n!! ALREADY ADDED to export: \n" << type << "\n";);
+            return true;
+        }        
+
         auto cont = mlir::TypeSwitch<mlir::Type, bool>(type)
             .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
                 auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
                 assert(interfaceInfo);
                 addInterfaceDeclarationToExport(interfaceInfo);
-                return false;
+                return true;
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
                 assert(classInfo);
                 addClassDeclarationToExport(classInfo);
-                return false;
+                return true;
             })
             .Default([&](auto type) {
                 return true;
@@ -22829,72 +22853,95 @@ genContext);
 
     void addTypeDeclarationToExport(StringRef name, mlir::Type type)    
     {
+        // TODO: add distinct declaration
+
+        // we need to add it anyway as it is type declaration
+        addDependancyTypesToExport(type);
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
         dp.printTypeDeclaration(name, type);
 
         declExports << ss.str().str();
-
-        addDependancyTypesToExport(type);
     }
 
     void addInterfaceDeclarationToExport(InterfaceInfo::TypePtr interfaceInfo)
     {
+        if (addDependancyTypesToExport(interfaceInfo->interfaceType))
+        {
+            // already added
+            return;
+        }
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
         dp.print(interfaceInfo);
 
         declExports << ss.str().str();
-
-        addDependancyTypesToExport(interfaceInfo->interfaceType);
     }
 
-    void addEnumDeclarationToExport(StringRef name, mlir::DictionaryAttr enumValues)
+    void addEnumDeclarationToExport(StringRef name, mlir_ts::EnumType enumType)
     {
+        if (addDependancyTypesToExport(enumType))
+        {
+            // already added
+            return;
+        }        
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.printEnum(name, enumValues);
+        dp.printEnum(name, enumType.getValues());
 
         declExports << ss.str().str();        
     }
 
     void addVariableDeclarationToExport(StringRef name, mlir::Type type, bool isConst)
-    {
+    {               
+        // TODO: add distinct declaration
+
+        // we need to add it anyway as it is varaible declaration
+        addDependancyTypesToExport(type);
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
         dp.printVariableDeclaration(name, type, isConst);
 
         declExports << ss.str().str();
-
-        addDependancyTypesToExport(type);
     }
 
     void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto)
     {
+        // TODO: add distinct declaration
+
+        // we need to add it anyway as it is function declaration
+        addDependancyTypesToExport(funcProto->getFuncType());
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
         dp.print(funcProto->getName(), funcProto->getFuncType());
 
         declExports << ss.str().str();
-
-        addDependancyTypesToExport(funcProto->getFuncType());
     }
 
     void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr)
     {
+        if (addDependancyTypesToExport(newClassPtr->classType))
+        {
+            // already added
+            return;
+        }    
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
         dp.print(newClassPtr);
 
         declExports << ss.str().str();
-
-        addDependancyTypesToExport(newClassPtr->classType);
     }
 
     auto getNamespaceName() -> StringRef

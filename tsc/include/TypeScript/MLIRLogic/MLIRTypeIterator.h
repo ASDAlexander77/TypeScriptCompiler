@@ -93,6 +93,18 @@ class MLIRTypeIterator
                                         return false;    
                                 }
 
+                                for (auto &baseClass : srcClassInfo->baseClasses)
+                                {
+                                    if (!iterate(baseClass->classType))
+                                        return false;    
+                                }
+
+                                for (auto &impl : srcClassInfo->implements)
+                                {
+                                    if (!iterate(impl.interface->interfaceType))
+                                        return false;    
+                                }
+
                                 if (!iterate(srcClassInfo->classType.getStorageType()))
                                     return false;                                
                             }
@@ -114,6 +126,12 @@ class MLIRTypeIterator
                                     if (!iterate(std::get<1>(pair.getValue())))
                                         return false;    
                                 }
+
+                                for (auto &impl : srcInterfaceInfo->extends)
+                                {
+                                    if (!iterate(std::get<1>(impl)->interfaceType))
+                                        return false;    
+                                }                                
                             }
                             
                             return true;
