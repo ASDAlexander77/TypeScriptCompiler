@@ -349,8 +349,8 @@
                 "-opt",
                 "-debug-only=tsc",
                 "-mlir-disable-threading",                
-                "-o=I:/Playground/decl_enum.dll",
-                "I:/Playground/decl_enum.ts"
+                "-o=I:/Playground/export_class_interface.dll",
+                "I:/Playground/export_class_interface.ts"
             ],
             "stopAtEntry": false,
             "cwd": "I:/Playground",

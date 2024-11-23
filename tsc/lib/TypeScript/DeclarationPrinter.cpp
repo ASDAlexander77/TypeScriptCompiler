@@ -319,6 +319,39 @@ namespace typescript
 
         printBeforeDeclaration();
         os << "class " << classType->name;
+
+        if (classType->baseClasses.size() > 0)
+        {
+            os << " extends ";
+            auto any = false;
+            for (auto baseClass : classType->baseClasses)
+            {
+                if (any) 
+                {
+                    os << ", ";
+                }
+
+                os << classType->fullName;
+                any = true;
+            }
+        }
+
+        if (classType->implements.size() > 0)
+        {
+            os << " implements ";
+            auto any = false;
+            for (auto implement : classType->implements)
+            {
+                if (any) 
+                {
+                    os << ", ";
+                }
+
+                os << implement.interface->fullName;
+                any = true;
+            }
+        }
+
         newline();
         os << "{";
         newline();
@@ -402,6 +435,23 @@ namespace typescript
 
         printBeforeDeclaration();
         os << "interface " << interfaceType->name;
+
+        if (interfaceType->extends.size() > 0)
+        {
+            os << " extends ";
+            auto any = false;
+            for (auto interfaceInfo : interfaceType->extends)
+            {
+                if (any) 
+                {
+                    os << ", ";
+                }
+
+                os << interfaceInfo.second->fullName;
+                any = true;
+            }
+        }
+
         newline();
         os << "{";
         newline();

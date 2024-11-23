@@ -11,7 +11,7 @@ namespace A {
 		constructor(public x: number, public y: number) { }
   
 		fromOrigin(p: Point) {
-			return 1.0;
+			return 123.0;
 		}
 	}
   }
