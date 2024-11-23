@@ -10,5 +10,7 @@ const v =
 
 print(v);    
 
+assert(v == 1.0);
+
 print("done.");
 
