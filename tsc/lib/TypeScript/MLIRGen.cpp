@@ -17529,7 +17529,7 @@ genContext);
 
         auto location = loc(funcLikeDeclaration);
         if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(
-            location, funcOp.getName(), funcOp.getFunctionType(), funcProto->getNameWithoutNamespace(), genContext)))
+            location, funcOp.getName(), funcOp.getFunctionType(), funcOp.getName(), genContext)))
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
