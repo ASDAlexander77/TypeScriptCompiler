@@ -15259,6 +15259,7 @@ class MLIRGenImpl
             newClassPtr = std::make_shared<ClassInfo>();
             newClassPtr->name = namePtr;
             newClassPtr->fullName = fullNamePtr;
+            newClassPtr->elementNamespace = currentNamespace;
             newClassPtr->isAbstract = hasModifier(classDeclarationAST, SyntaxKind::AbstractKeyword);
             newClassPtr->isDeclaration =
                 declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
@@ -17681,9 +17682,9 @@ genContext);
             GenericInterfaceInfo::TypePtr newGenericInterfacePtr = std::make_shared<GenericInterfaceInfo>();
             newGenericInterfacePtr->name = namePtr;
             newGenericInterfacePtr->fullName = fullNamePtr;
+            newGenericInterfacePtr->elementNamespace = currentNamespace;
             newGenericInterfacePtr->typeParams = typeParameters;
             newGenericInterfacePtr->interfaceDeclaration = interfaceDeclarationAST;
-            newGenericInterfacePtr->elementNamespace = currentNamespace;
 
             mlirGenInterfaceType(newGenericInterfacePtr, genContext);
 
@@ -17836,6 +17837,7 @@ genContext);
             newInterfacePtr = std::make_shared<InterfaceInfo>();
             newInterfacePtr->name = namePtr;
             newInterfacePtr->fullName = fullNamePtr;
+            newInterfacePtr->elementNamespace = currentNamespace;
 
             getInterfacesMap().insert({namePtr, newInterfacePtr});
             fullNameInterfacesMap.insert(fullNamePtr, newInterfacePtr);

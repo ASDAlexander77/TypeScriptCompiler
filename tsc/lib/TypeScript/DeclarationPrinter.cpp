@@ -26,6 +26,23 @@ namespace typescript
         MLIRPrinter mp{};
         mp.printType<raw_ostream>(os, type);
     }
+    
+    void MLIRDeclarationPrinter::printNamespaceBegin(NamespaceInfo::TypePtr elementNamespace) {
+        if (elementNamespace)
+        {
+            os << "namespace " << elementNamespace->fullName << " {";
+            newline();
+        }
+    }
+
+    void MLIRDeclarationPrinter::printNamespaceEnd(NamespaceInfo::TypePtr elementNamespace) {
+        if (elementNamespace)
+        {
+            newline();
+            os << "}";
+            newline();
+        }
+    }
 
     void MLIRDeclarationPrinter::printFloatValue(const APFloat &apValue, raw_ostream &os, bool *printedHex)
     {
@@ -298,6 +315,8 @@ namespace typescript
 
     void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)
     {
+        printNamespaceBegin(classType->elementNamespace);
+
         printBeforeDeclaration();
         os << "class " << classType->name;
         newline();
@@ -373,10 +392,14 @@ namespace typescript
 
         os << "}";
         newline();
+
+        printNamespaceEnd(classType->elementNamespace);
     }
 
     void MLIRDeclarationPrinter::print(InterfaceInfo::TypePtr interfaceType)
     {
+        printNamespaceBegin(interfaceType->elementNamespace);
+
         printBeforeDeclaration();
         os << "interface " << interfaceType->name;
         newline();
@@ -436,6 +459,8 @@ namespace typescript
 
         os << "}";
         newline();
+
+        printNamespaceEnd(interfaceType->elementNamespace);
     }    
 
 } // namespace typescript
