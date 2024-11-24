@@ -28,7 +28,7 @@ namespace typescript
     }
     
     void MLIRDeclarationPrinter::printNamespaceBegin(NamespaceInfo::TypePtr elementNamespace) {
-        if (elementNamespace)
+        if (elementNamespace && elementNamespace->name.size() > 0)
         {
             os << "namespace " << elementNamespace->fullName << " {";
             newline();
@@ -36,7 +36,7 @@ namespace typescript
     }
 
     void MLIRDeclarationPrinter::printNamespaceEnd(NamespaceInfo::TypePtr elementNamespace) {
-        if (elementNamespace)
+        if (elementNamespace && elementNamespace->name.size() > 0)
         {
             newline();
             os << "}";
