@@ -18951,6 +18951,11 @@ genContext);
                 fields = constTupleType.getFields();
                 return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
             }
+            else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
+                return mlir::failure();
+            }
         }
 
         // tuple to tuple
@@ -18966,6 +18971,11 @@ genContext);
             {
                 fields = constTupleType.getFields();
                 return castTupleToTuple(location, value, srcTupleType, fields, genContext);
+            }
+            else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
+                return mlir::failure();
             }
         }
 
