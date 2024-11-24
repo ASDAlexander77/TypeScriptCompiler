@@ -4189,7 +4189,7 @@ class MLIRGenImpl
 
             if (varClass.isDynamicImport)
             {
-                auto nameStr = MLIRHelper::getName(item->name);
+                auto nameStr = getFullNamespaceName(MLIRHelper::getName(item->name));
                 auto fieldType = std::get<0>(typeAndInit);
 
                 auto dllVarName = V(mlirGenStringValue(location, nameStr, true));
@@ -12629,7 +12629,7 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), literalType, attrVal));
     }
 
-    ValueOrLogicalResult mlirGenStringValue(mlir::Location location, std::string text, bool asString = false)
+    ValueOrLogicalResult mlirGenStringValue(mlir::Location location, StringRef text, bool asString = false)
     {
         auto attrVal = getStringAttr(text);
         auto literalType = asString ? (mlir::Type)getStringType() : (mlir::Type)mlir_ts::LiteralType::get(attrVal, getStringType());
@@ -23410,7 +23410,7 @@ genContext);
         return mdi.stripMetadata(location);
     }    
 
-    mlir::StringAttr getStringAttr(const std::string &text)
+    mlir::StringAttr getStringAttr(StringRef text)
     {
         return builder.getStringAttr(text);
     }
