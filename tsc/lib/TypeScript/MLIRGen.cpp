@@ -17046,6 +17046,7 @@ genContext);
         for (auto &implementingType : heritageClause->types)
         {
             auto result = mlirGen(implementingType, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto ifaceType = V(result);
             auto success = false;
             mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
@@ -17056,6 +17057,10 @@ genContext);
                     {
                         success = !failed(mlirGenClassVirtualTableDefinitionForInterface(
                             loc(implementingType), newClassPtr, interfaceInfo, genContext));
+                    }
+                    else
+                    {
+                        success = true;
                     }
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
