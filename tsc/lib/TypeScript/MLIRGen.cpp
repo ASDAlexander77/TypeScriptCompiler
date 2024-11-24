@@ -15618,21 +15618,24 @@ class MLIRGenImpl
 
             for (auto &implementingType : heritageClause->types)
             {
-                if (implementingType->processed)
-                {
-                    continue;
-                }
-
                 auto result = mlirGen(implementingType, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto ifaceType = V(result);
                 mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
-                    .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
+                    .template Case<mlir_ts::InterfaceType>([&](mlir_ts::InterfaceType interfaceType) {
+
+                        auto ifaceName = interfaceType.getName().getValue();
+                        auto found = llvm::find_if(interfaceInfos, [&](ImplementInfo &ifaceInfo) {
+                            return ifaceInfo.interface->fullName == ifaceName;
+                        });
+
                         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                         assert(interfaceInfo);
-                        interfaceInfos.push_back({interfaceInfo, -1, false});
-                        // TODO: it will error
-                        // implementingType->processed = true;
+                        if (found != interfaceInfos.end()) {
+                            found->interface = interfaceInfo;
+                        } else {
+                            interfaceInfos.push_back({interfaceInfo, -1, false});
+                        }
                     })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
             }
