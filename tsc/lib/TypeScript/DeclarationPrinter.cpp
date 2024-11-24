@@ -255,18 +255,24 @@ namespace typescript
         }
     }
 
-    void MLIRDeclarationPrinter::printTypeDeclaration(StringRef name, mlir::Type type) 
+    void MLIRDeclarationPrinter::printTypeDeclaration(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type) 
     {
+        printNamespaceBegin(elementNamespace);
+
         printBeforeDeclaration();
 
         os << "type " << name << " = ";
         print(type);
         os << ";";
         newline();
+
+        printNamespaceEnd(elementNamespace);
     }
 
-    void MLIRDeclarationPrinter::printEnum(StringRef name, mlir::DictionaryAttr enumValues)
+    void MLIRDeclarationPrinter::printEnum(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::DictionaryAttr enumValues)
     {
+        printNamespaceBegin(elementNamespace);
+
         printBeforeDeclaration();
 
         os << "enum " << name;
@@ -290,15 +296,21 @@ namespace typescript
 
         os << "}";
         newline();
+
+        printNamespaceEnd(elementNamespace);
     }
 
-    void MLIRDeclarationPrinter::printVariableDeclaration(StringRef name, mlir::Type type, bool isConst)
+    void MLIRDeclarationPrinter::printVariableDeclaration(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type, bool isConst)
     {
+        printNamespaceBegin(elementNamespace);
+
         printBeforeDeclaration();
         os << (isConst ? "const" : "let") << " " << name << " : ";
         print(type);
         os << ";";
         newline();
+
+        printNamespaceEnd(elementNamespace);
     }
 
     void MLIRDeclarationPrinter::print(StringRef name, mlir_ts::FunctionType funcType)

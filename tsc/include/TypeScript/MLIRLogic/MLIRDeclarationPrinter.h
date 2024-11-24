@@ -16,9 +16,9 @@ namespace typescript
     public:
         MLIRDeclarationPrinter(raw_ostream &os) : os(os) {};
 
-        void printTypeDeclaration(StringRef, mlir::Type);
-        void printEnum(StringRef, mlir::DictionaryAttr);
-        void printVariableDeclaration(StringRef, mlir::Type, bool);
+        void printTypeDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type);
+        void printEnum(StringRef, NamespaceInfo::TypePtr, mlir::DictionaryAttr);
+        void printVariableDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type, bool);
         void print(StringRef, mlir_ts::FunctionType);
         void print(ClassInfo::TypePtr);
         void print(InterfaceInfo::TypePtr);       

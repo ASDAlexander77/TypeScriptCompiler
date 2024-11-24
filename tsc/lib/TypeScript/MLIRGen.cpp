@@ -4013,7 +4013,7 @@ class MLIRGenImpl
             if (varClass.isExport)
             {
                 auto isConst = varClass.type == VariableType::Const || varClass.type == VariableType::ConstRef;
-                addVariableDeclarationToExport(nameStr, varType, isConst);
+                addVariableDeclarationToExport(nameStr, currentNamespace, varType, isConst);
             }
 
             return mlir::success();
@@ -14691,7 +14691,7 @@ class MLIRGenImpl
 
                 if (hasExportModifier)
                 {
-                    addTypeDeclarationToExport(namePtr, type);
+                    addTypeDeclarationToExport(namePtr, currentNamespace, type);
                 }
             }
 
@@ -14892,7 +14892,7 @@ class MLIRGenImpl
             auto &enumInfo = getEnumsMap()[namePtr];
             if (auto enumType = dyn_cast<mlir_ts::EnumType>(getEnumType(enumInfo.first, enumInfo.second)))
             {
-                addEnumDeclarationToExport(namePtr, enumType);
+                addEnumDeclarationToExport(namePtr, currentNamespace, enumType);
             }
         }
 
@@ -22884,7 +22884,7 @@ genContext);
         return cont;
     }
 
-    void addTypeDeclarationToExport(StringRef name, mlir::Type type)    
+    void addTypeDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type)    
     {
         // TODO: add distinct declaration
 
@@ -22894,7 +22894,7 @@ genContext);
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.printTypeDeclaration(name, type);
+        dp.printTypeDeclaration(name, elementNamespace, type);
 
         declExports << ss.str().str();
     }
@@ -22915,7 +22915,7 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addEnumDeclarationToExport(StringRef name, mlir_ts::EnumType enumType)
+    void addEnumDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::EnumType enumType)
     {
         if (addDependancyTypesToExport(enumType))
         {
@@ -22926,12 +22926,12 @@ genContext);
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.printEnum(name, enumType.getValues());
+        dp.printEnum(name, currentNamespace, enumType.getValues());
 
         declExports << ss.str().str();        
     }
 
-    void addVariableDeclarationToExport(StringRef name, mlir::Type type, bool isConst)
+    void addVariableDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type, bool isConst)
     {               
         // TODO: add distinct declaration
 
@@ -22941,7 +22941,7 @@ genContext);
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.printVariableDeclaration(name, type, isConst);
+        dp.printVariableDeclaration(name, elementNamespace, type, isConst);
 
         declExports << ss.str().str();
     }
