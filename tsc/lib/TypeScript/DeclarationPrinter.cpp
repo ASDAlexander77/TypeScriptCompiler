@@ -473,6 +473,7 @@ namespace typescript
         }
 
         // methods (including static)
+        auto opaqueType = mlir_ts::OpaqueType::get(interfaceType->interfaceType.getContext());
         for (auto method : interfaceType->methods)
         {
             if (filterName(method.name))
@@ -485,7 +486,7 @@ namespace typescript
                 method.name,
                 method.funcType.getParams(),
                 method.funcType.getNumResults() > 0 ? method.funcType.getResult(0) : mlir::Type(),
-                interfaceType->interfaceType);
+                /*interfaceType->interfaceType*/opaqueType);
 
             newline();
         }

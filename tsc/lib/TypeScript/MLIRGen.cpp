@@ -17013,22 +17013,20 @@ genContext);
     mlir::LogicalResult mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                    const GenContext &genContext)
     {
+        if (newClassPtr->isDeclaration)
+        {
+            return mlir::success();
+        }
+
         for (auto &baseClass : newClassPtr->baseClasses)
         {
             for (auto &implement : baseClass->implements)
             {
-                if (implement.processed)
-                {
-                    continue;
-                }
-
                 if (mlir::failed(mlirGenClassVirtualTableDefinitionForInterface(location, newClassPtr,
                                                                                 implement.interface, genContext)))
                 {
                     return mlir::failure();
                 }
-
-                implement.processed = true;
             }
         }
 
@@ -17047,11 +17045,6 @@ genContext);
 
         for (auto &implementingType : heritageClause->types)
         {
-            if (implementingType->processed)
-            {
-                continue;
-            }
-
             auto result = mlirGen(implementingType, genContext);
             auto ifaceType = V(result);
             auto success = false;
@@ -17059,8 +17052,11 @@ genContext);
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     assert(interfaceInfo);
-                    success = !failed(mlirGenClassVirtualTableDefinitionForInterface(loc(implementingType), newClassPtr,
-                                                                                     interfaceInfo, genContext));
+                    if (!newClassPtr->isDeclaration)
+                    {
+                        success = !failed(mlirGenClassVirtualTableDefinitionForInterface(
+                            loc(implementingType), newClassPtr, interfaceInfo, genContext));
+                    }
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
@@ -17867,11 +17863,6 @@ genContext);
 
         for (auto &extendsType : heritageClause->types)
         {
-            if (extendsType->processed)
-            {
-                continue;
-            }
-
             auto result = mlirGen(extendsType, genContext);
             EXIT_IF_FAILED(result);
             auto ifaceType = V(result);
@@ -17883,7 +17874,6 @@ genContext);
                     {
                         newInterfacePtr->extends.push_back({-1, interfaceInfo});
                         success = true;
-                        extendsType->processed = true;
                     }
                 })
                 .template Case<mlir_ts::TupleType>([&](auto tupleType) {
