@@ -20232,7 +20232,7 @@ genContext);
 #endif
 
             {"TypeOf", true },
-            {"Opague", true }, // to support void*
+            {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
             {"Readonly", true },
             {"Partial", true },
@@ -20323,7 +20323,7 @@ genContext);
 #endif
 
             {"TypeOf", true },
-            {"Opague", true }, // to support void*
+            {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
             {"ThisType", true },
 #ifdef ENABLE_JS_BUILTIN_TYPES
