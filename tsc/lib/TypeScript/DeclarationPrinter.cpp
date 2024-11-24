@@ -313,8 +313,10 @@ namespace typescript
         printNamespaceEnd(elementNamespace);
     }
 
-    void MLIRDeclarationPrinter::print(StringRef name, mlir_ts::FunctionType funcType)
+    void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType)
     {
+        printNamespaceBegin(elementNamespace);
+
         printBeforeDeclaration();
 
         printFunction(
@@ -323,6 +325,8 @@ namespace typescript
             funcType.getNumResults() > 0 ? funcType.getResult(0) : mlir::Type());
         os << ";";
         newline();
+
+        printNamespaceEnd(elementNamespace);
     }
 
     void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)

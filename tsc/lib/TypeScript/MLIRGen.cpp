@@ -4986,7 +4986,7 @@ class MLIRGenImpl
                 if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
                     || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
                 {
-                    addFunctionDeclarationToExport(funcProto);
+                    addFunctionDeclarationToExport(funcProto, currentNamespace);
                 }
             }
         }
@@ -22946,7 +22946,7 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto)
+    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto, NamespaceInfo::TypePtr elementNamespace)
     {
         // TODO: add distinct declaration
 
@@ -22956,7 +22956,7 @@ genContext);
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.print(funcProto->getName(), funcProto->getFuncType());
+        dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType());
 
         declExports << ss.str().str();
     }
