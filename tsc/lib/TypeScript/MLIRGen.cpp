@@ -22857,28 +22857,38 @@ genContext);
         return exportedTypes.contains(type);
     }
 
+    bool isExportDependencyChecked(mlir::Type type)
+    {
+        if (stage != Stages::SourceGeneration)
+        {
+            return true;
+        }
+
+        return exportCheckedDependenciesTypes.contains(type);
+    }
+
     bool addDependancyTypesToExport(mlir::Type type)
     {
-        if (isAddedToExport(type))
+        if (isExportDependencyChecked(type))
         {
             // already added
             return true;
         }
 
-        exportedTypes.insert(type);
-
-        addTypeDeclarationToExportNoCheck(type);
+        exportCheckedDependenciesTypes.insert(type);
 
         // iterate all types
         mth.forEachTypes(type, [&] (mlir::Type subType) {
-            return addTypeDeclarationToExport(subType);
+            return addDependancyTypesToExport(subType);
         });
+
+        addTypeDeclarationToExport(type);
 
         return false;
     }
 
     // base method
-    bool addTypeDeclarationToExportNoCheck(mlir::Type type)
+    bool addDependancyTypesToExportNoCheck(mlir::Type type)
     {
         auto cont = mlir::TypeSwitch<mlir::Type, bool>(type)
             .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
@@ -22895,7 +22905,6 @@ genContext);
                     addDependancyTypesToExport(field.type);
                 }
 
-                addInterfaceDeclarationToExport(interfaceInfo, true);
                 return true;
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
@@ -22913,15 +22922,10 @@ genContext);
                     if (accessor.set) addDependancyTypesToExport(accessor.set.getFunctionType());
                 }                
 
-                addClassDeclarationToExport(classInfo, true);
                 return true;
             })
             .Case<mlir_ts::EnumType>([&](auto enumType) {
-                auto enumInfo = getEnumInfoByFullName(enumType.getName().getValue());
-                assert(enumInfo);
-                assert(enumInfo->enumType == enumType);
-
-                addEnumDeclarationToExport(enumInfo->name, enumInfo->elementNamespace, enumType, true);
+                // no dependancies here
                 return true;
             })
             .Default([&](auto type) {
@@ -22945,6 +22949,36 @@ genContext);
         return addTypeDeclarationToExportNoCheck(type);
     }
 
+    bool addTypeDeclarationToExportNoCheck(mlir::Type type)
+    {
+        auto cont = mlir::TypeSwitch<mlir::Type, bool>(type)
+            .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
+                auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
+                assert(interfaceInfo);
+                addInterfaceDeclarationToExport(interfaceInfo);
+                return true;
+            })
+            .Case<mlir_ts::ClassType>([&](auto classType) {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                assert(classInfo);
+                addClassDeclarationToExport(classInfo);
+                return true;
+            })
+            .Case<mlir_ts::EnumType>([&](auto enumType) {
+                auto enumInfo = getEnumInfoByFullName(enumType.getName().getValue());
+                assert(enumInfo);
+                assert(enumInfo->enumType == enumType);
+
+                addEnumDeclarationToExport(enumInfo->name, enumInfo->elementNamespace, enumType);
+                return true;
+            })
+            .Default([&](auto type) {
+                return true;
+            });
+
+        return cont;
+    }    
+
     void addTypeDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type)    
     {
         // TODO: add distinct declaration
@@ -22960,13 +22994,15 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addInterfaceDeclarationToExport(InterfaceInfo::TypePtr interfaceInfo, bool noCheck = false)
+    void addInterfaceDeclarationToExport(InterfaceInfo::TypePtr interfaceInfo)
     {
-        if (!noCheck && addDependancyTypesToExport(interfaceInfo->interfaceType))
+        if (isAddedToExport(interfaceInfo->interfaceType))
         {
             // already added
             return;
         }
+
+        exportedTypes.insert(interfaceInfo->interfaceType);
 
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
@@ -22976,13 +23012,15 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addEnumDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::EnumType enumType, bool noCheck = false)
+    void addEnumDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::EnumType enumType)
     {
-        if (!noCheck && addDependancyTypesToExport(enumType))
+        if (isAddedToExport(enumType))
         {
             // already added
             return;
         }        
+
+        exportedTypes.insert(enumType);
 
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
@@ -23022,13 +23060,15 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr, bool noCheck = false)
+    void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr)
     {
-        if (!noCheck && addDependancyTypesToExport(newClassPtr->classType))
+        if (isAddedToExport(newClassPtr->classType))
         {
             // already added
             return;
         }    
+
+        exportedTypes.insert(newClassPtr->classType);
 
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
@@ -23624,6 +23664,7 @@ genContext);
     bool declarationMode;
 
     std::stringstream declExports;
+    mlir::SmallPtrSet<mlir::Type, 32> exportCheckedDependenciesTypes;
     mlir::SmallPtrSet<mlir::Type, 32> exportedTypes;
 
     Stages stage;
