@@ -1,9 +1,5 @@
-import './export_enum'
+import './export_vars'
 
-const en = B.f();
-
-print(en, A.Enum1.B1);
-
-assert(en == A.Enum1.A1)
+print(Inner.d);
 
 print("done.");

@@ -4198,13 +4198,15 @@ class MLIRGenImpl
             {
                 auto nameStr = getFullNamespaceName(MLIRHelper::getName(item->name));
                 auto fieldType = std::get<0>(typeAndInit);
-
-                auto dllVarName = V(mlirGenStringValue(location, nameStr, true));
-                auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
-                    location, getOpaqueType(), dllVarName);
-                auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
-                auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
-                return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);                
+                if (fieldType)
+                {
+                    auto dllVarName = V(mlirGenStringValue(location, nameStr, true));
+                    auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                        location, getOpaqueType(), dllVarName);
+                    auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
+                    auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
+                    return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);                
+                }
             }
 
             return typeAndInit;
@@ -22865,6 +22867,8 @@ genContext);
 
         exportedTypes.insert(type);
 
+        addTypeDeclarationToExportNoCheck(type);
+
         // iterate all types
         mth.forEachTypes(type, [&] (mlir::Type subType) {
             return addTypeDeclarationToExport(subType);
@@ -22874,17 +22878,8 @@ genContext);
     }
 
     // base method
-    bool addTypeDeclarationToExport(mlir::Type type)
+    bool addTypeDeclarationToExportNoCheck(mlir::Type type)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! adding type declaration to export: \n" << type << "\n";);
-
-        if (isAddedToExport(type))
-        {
-            // already added
-            LLVM_DEBUG(llvm::dbgs() << "\n!! ALREADY ADDED to export: \n" << type << "\n";);
-            return true;
-        }        
-
         auto cont = mlir::TypeSwitch<mlir::Type, bool>(type)
             .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
                 auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
@@ -22934,6 +22929,20 @@ genContext);
             });
 
         return cont;
+    }
+
+    bool addTypeDeclarationToExport(mlir::Type type)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! adding type declaration to export: \n" << type << "\n";);
+
+        if (isAddedToExport(type))
+        {
+            // already added
+            LLVM_DEBUG(llvm::dbgs() << "\n!! ALREADY ADDED to export: \n" << type << "\n";);
+            return true;
+        }        
+
+        return addTypeDeclarationToExportNoCheck(type);
     }
 
     void addTypeDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type)    
