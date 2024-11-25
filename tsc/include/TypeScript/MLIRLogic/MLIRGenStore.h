@@ -464,6 +464,22 @@ enum class ProcessingStages : int {
     Processed = 7,
 };
 
+struct EnumInfo
+{
+  public:
+    using TypePtr = std::shared_ptr<EnumInfo>;
+
+    mlir::StringRef name;
+
+    mlir::StringRef fullName;
+
+    NamespaceInfo_TypePtr elementNamespace;
+
+    mlir_ts::EnumType enumType;
+
+    EnumInfo() = default;
+};
+
 struct ClassInfo
 {
   public:

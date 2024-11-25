@@ -177,15 +177,15 @@ def TypeScript_Enum : TypeScript_Type<"Enum"> {
     enum<i32>
     ```
   }];
-  let parameters = (ins "Type":$elementType, "DictionaryAttr":$values);
+  let parameters = (ins "FlatSymbolRefAttr":$name, "Type":$elementType, "DictionaryAttr":$values);
 
   let assemblyFormat = "`<` params `>`";
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Type":$elementType, "DictionaryAttr":$values), [{
-      return Base::get(elementType.getContext(), elementType, values);
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name, "Type":$elementType, "DictionaryAttr":$values), [{
+      return Base::get(elementType.getContext(), name, elementType, values);
     }]>
-  ];
+  ]; 
 }
 
 def TypeScript_LiteralType : TypeScript_Type<"Literal"> {

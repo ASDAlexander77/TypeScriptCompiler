@@ -325,6 +325,7 @@ class MLIRGenImpl
             fullNameGlobalsMap);
         llvm::ScopedHashTableScope<StringRef, GenericFunctionInfo::TypePtr> fullNameGenericFunctionsMapScope(
             fullNameGenericFunctionsMap);
+        llvm::ScopedHashTableScope<StringRef, EnumInfo::TypePtr> fullNameEnumsMapScope(fullNameEnumsMap);
         llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
         llvm::ScopedHashTableScope<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMapScope(
             fullNameGenericClassesMap);
@@ -14168,7 +14169,10 @@ class MLIRGenImpl
         if (getEnumsMap().count(name))
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
-            return getEnumType(enumTypeInfo.first, enumTypeInfo.second);
+            return getEnumType(
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), getFullNamespaceName(name)), 
+                enumTypeInfo.first, 
+                enumTypeInfo.second);
         }
 
         if (getImportEqualsMap().count(name))
@@ -14256,7 +14260,13 @@ class MLIRGenImpl
         if (getEnumsMap().count(name))
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
-            return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first, enumTypeInfo.second), enumTypeInfo.second);
+            return builder.create<mlir_ts::ConstantOp>(
+                location, 
+                getEnumType(
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), getFullNamespaceName(name)), 
+                    enumTypeInfo.first, 
+                    enumTypeInfo.second), 
+                enumTypeInfo.second);
         }
 
         if (getNamespaceMap().count(name))
@@ -14779,6 +14789,8 @@ class MLIRGenImpl
                 { namePtr, { getEnumType().getElementType(), mlir::DictionaryAttr::get(builder.getContext(), {}) } });
         }
 
+        auto &enumInfo = getEnumsMap()[namePtr];
+
         auto activeBits = 32;
         mlir::IntegerType::SignednessSemantics currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Signless;
         llvm::APInt currentEnumValue(32, 0);
@@ -14874,7 +14886,7 @@ class MLIRGenImpl
                 namedEnumValues.push_back({builder.getStringAttr(key.first()), key.second});
             }
 
-            getEnumsMap()[namePtr].second = mlir::DictionaryAttr::get(builder.getContext(), namedEnumValues /*adjustedEnumValues*/);
+            enumInfo.second = mlir::DictionaryAttr::get(builder.getContext(), namedEnumValues /*adjustedEnumValues*/);
 
             currentEnumValue++;
         }
@@ -14885,15 +14897,36 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " storage type: " << storeType << "\n");
 
         // update enum to support req. access
-        getEnumsMap()[namePtr].first = storeType;
+        enumInfo.first = storeType;
+
+        // register fullName for enum
+        auto fullNamePtr = getFullNamespaceName(namePtr); 
+
+        auto enumType = getEnumType(
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), 
+                    enumInfo.first, 
+                    enumInfo.second);
+
+        EnumInfo::TypePtr newEnumPtr;
+        if (fullNameEnumsMap.count(fullNamePtr))
+        {
+            newEnumPtr = fullNameEnumsMap.lookup(fullNamePtr);
+            newEnumPtr->enumType = enumType;      
+        }
+        else
+        {
+            // register class
+            newEnumPtr = std::make_shared<EnumInfo>();
+            newEnumPtr->name = namePtr;
+            newEnumPtr->fullName = fullNamePtr;
+            newEnumPtr->elementNamespace = currentNamespace;      
+            newEnumPtr->enumType = enumType;      
+            fullNameEnumsMap.insert(fullNamePtr, newEnumPtr);        
+        }
 
         if (getExportModifier(enumDeclarationAST))
         {
-            auto &enumInfo = getEnumsMap()[namePtr];
-            if (auto enumType = dyn_cast<mlir_ts::EnumType>(getEnumType(enumInfo.first, enumInfo.second)))
-            {
-                addEnumDeclarationToExport(namePtr, currentNamespace, enumType);
-            }
+            addEnumDeclarationToExport(namePtr, currentNamespace, enumType);
         }
 
         return mlir::success();
@@ -21621,17 +21654,15 @@ genContext);
 
     mlir_ts::EnumType getEnumType()
     {
-        return mlir_ts::EnumType::get(builder.getI32Type(), {});
+        return mlir_ts::EnumType::get(
+            mlir::FlatSymbolRefAttr::get(builder.getContext(), StringRef{}), 
+            builder.getI32Type(), 
+            {});
     }
 
-    mlir::Type getEnumType(mlir::Type elementType, mlir::DictionaryAttr values)
+    mlir_ts::EnumType getEnumType(mlir::FlatSymbolRefAttr name, mlir::Type elementType, mlir::DictionaryAttr values)
     {
-        if (!elementType)
-        {
-            return mlir::Type();
-        }
-
-        return mlir_ts::EnumType::get(elementType, values);
+        return mlir_ts::EnumType::get(name, elementType ? elementType : builder.getI32Type(), values);
     }
 
     mlir_ts::ObjectStorageType getObjectStorageType(mlir::FlatSymbolRefAttr name)
@@ -22877,6 +22908,14 @@ genContext);
                 addClassDeclarationToExport(classInfo);
                 return true;
             })
+            .Case<mlir_ts::EnumType>([&](auto enumType) {
+                auto enumInfo = getEnumInfoByFullName(enumType.getName().getValue());
+                assert(enumInfo);
+                assert(enumInfo->enumType == enumType);
+
+                addEnumDeclarationToExport(enumInfo->name, enumInfo->elementNamespace, enumType);
+                return true;
+            })
             .Default([&](auto type) {
                 return true;
             });
@@ -23296,6 +23335,11 @@ genContext);
         return fullNameGenericFunctionsMap.lookup(fullName);
     }
 
+    auto getEnumInfoByFullName(StringRef fullName) -> EnumInfo::TypePtr
+    {
+        return fullNameEnumsMap.lookup(fullName);
+    }
+
     auto getClassInfoByFullName(StringRef fullName) -> ClassInfo::TypePtr
     {
         return fullNameClassesMap.lookup(fullName);
@@ -23536,6 +23580,8 @@ genContext);
     llvm::ScopedHashTable<StringRef, NamespaceInfo::TypePtr> fullNamespacesMap;
 
     llvm::ScopedHashTable<StringRef, GenericFunctionInfo::TypePtr> fullNameGenericFunctionsMap;
+
+    llvm::ScopedHashTable<StringRef, EnumInfo::TypePtr> fullNameEnumsMap;
 
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
 
