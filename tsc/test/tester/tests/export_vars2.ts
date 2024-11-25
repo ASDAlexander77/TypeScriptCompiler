@@ -23,10 +23,9 @@ namespace Inner {
     export let b1 = 1;
     export var c1: string = 'a';
     export let d1: number = 1;
-    // TODO: finish loading GCtors from DLL
-    //class D {}
-    //export var e1 = new D;
-    //export let f1 = new D;
-    //export var g1: D = new D;
-    //export let h1: D = new D;
+    class D {}
+    export var e1 = new D;
+    export let f1 = new D;
+    export var g1: D = new D;
+    export let h1: D = new D;
 }
