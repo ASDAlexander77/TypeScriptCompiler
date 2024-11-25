@@ -5551,7 +5551,8 @@ class MLIRGenImpl
         {
             // TODO: we do not need to register funcOp as we need to reference global variables
             auto result = mlirGenFunctionLikeDeclarationDynamicImport(
-                location, funcOp.getName(), funcOp.getFunctionType(), funcProto->getNameWithoutNamespace(), funcDeclGenContext);
+                location, funcProto->getNameWithoutNamespace(), funcOp.getFunctionType(), 
+                funcProto->getName(), funcDeclGenContext, false);
             return {result, funcOp, funcProto->getName().str(), false};
         }
 
@@ -5667,9 +5668,9 @@ class MLIRGenImpl
         return mlir::success();
     }    
 
-    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef fullFunctionName, mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext)
+    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef funcName, mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext, bool isFullNamespaceName = true)
     {
-        registerVariable(location, fullFunctionName, true, VariableType::Var,
+        registerVariable(location, funcName, isFullNamespaceName, VariableType::Var,
             [&](mlir::Location location, const GenContext &context) -> TypeValueInitType {
                 // add command to load reference fron DLL
                 auto fullName = V(mlirGenStringValue(location, dllFuncName.str(), true));
