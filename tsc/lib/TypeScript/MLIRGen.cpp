@@ -22965,7 +22965,7 @@ genContext);
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.printEnum(name, currentNamespace, enumType.getValues());
+        dp.printEnum(name, elementNamespace, enumType.getValues());
 
         declExports << ss.str().str();        
     }
