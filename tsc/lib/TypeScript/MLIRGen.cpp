@@ -22895,7 +22895,7 @@ genContext);
                     addDependancyTypesToExport(field.type);
                 }
 
-                addInterfaceDeclarationToExport(interfaceInfo);
+                addInterfaceDeclarationToExport(interfaceInfo, true);
                 return true;
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
@@ -22913,7 +22913,7 @@ genContext);
                     if (accessor.set) addDependancyTypesToExport(accessor.set.getFunctionType());
                 }                
 
-                addClassDeclarationToExport(classInfo);
+                addClassDeclarationToExport(classInfo, true);
                 return true;
             })
             .Case<mlir_ts::EnumType>([&](auto enumType) {
@@ -22921,7 +22921,7 @@ genContext);
                 assert(enumInfo);
                 assert(enumInfo->enumType == enumType);
 
-                addEnumDeclarationToExport(enumInfo->name, enumInfo->elementNamespace, enumType);
+                addEnumDeclarationToExport(enumInfo->name, enumInfo->elementNamespace, enumType, true);
                 return true;
             })
             .Default([&](auto type) {
@@ -22960,9 +22960,9 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addInterfaceDeclarationToExport(InterfaceInfo::TypePtr interfaceInfo)
+    void addInterfaceDeclarationToExport(InterfaceInfo::TypePtr interfaceInfo, bool noCheck = false)
     {
-        if (addDependancyTypesToExport(interfaceInfo->interfaceType))
+        if (!noCheck && addDependancyTypesToExport(interfaceInfo->interfaceType))
         {
             // already added
             return;
@@ -22976,9 +22976,9 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addEnumDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::EnumType enumType)
+    void addEnumDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::EnumType enumType, bool noCheck = false)
     {
-        if (addDependancyTypesToExport(enumType))
+        if (!noCheck && addDependancyTypesToExport(enumType))
         {
             // already added
             return;
@@ -23022,9 +23022,9 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr)
+    void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr, bool noCheck = false)
     {
-        if (addDependancyTypesToExport(newClassPtr->classType))
+        if (!noCheck && addDependancyTypesToExport(newClassPtr->classType))
         {
             // already added
             return;
