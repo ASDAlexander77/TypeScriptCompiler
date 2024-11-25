@@ -23004,6 +23004,8 @@ genContext);
 
         exportedTypes.insert(interfaceInfo->interfaceType);
 
+        addDependancyTypesToExport(interfaceInfo->interfaceType);
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
@@ -23021,6 +23023,8 @@ genContext);
         }        
 
         exportedTypes.insert(enumType);
+
+        //addDependancyTypesToExport(enumType);
 
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
@@ -23069,6 +23073,8 @@ genContext);
         }    
 
         exportedTypes.insert(newClassPtr->classType);
+
+        addDependancyTypesToExport(newClassPtr->classType);
 
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
