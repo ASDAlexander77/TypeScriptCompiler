@@ -1,5 +1,5 @@
 import './export_vars2'
 
-print(Inner.d);
+print(Inner.e1 != null);
 
 print("done.");
