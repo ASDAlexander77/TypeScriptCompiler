@@ -760,11 +760,15 @@ class MLIRGenImpl
             if (anyGlobalCode && mlir::failed(
                 generateGlobalEntryCode(loc(module), module->statements, genContext)))
             {
+                outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
             }
 
             // exports
-            createDeclarationExportGlobalVar(genContext);
+            if (mlir::failed(createDeclarationExportGlobalVar(genContext))) {
+                outputDiagnostics(postponedMessages, 1);
+                return mlir::failure();
+            }
         }
 
         clearTempModule();
@@ -3719,7 +3723,9 @@ class MLIRGenImpl
         else
         {
             variableDeclarationInfo.isSpecialization = genContext.specialization;
-            createGlobalVariable(location, variableDeclarationInfo, genContext);
+            if (mlir::failed(createGlobalVariable(location, variableDeclarationInfo, genContext))) {
+                return mlir::Type();
+            }
 
             if (mlir::succeeded(isGlobalConstLambda(location, variableDeclarationInfo, genContext)))
             {
