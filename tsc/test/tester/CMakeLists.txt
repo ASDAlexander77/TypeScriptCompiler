@@ -690,6 +690,9 @@ add_test(NAME test-jit-logicalAssignment5 COMMAND test-runner -jit "${PROJECT_SO
 add_test(NAME test-jit-nbody COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/nbody.ts")
 add_test(NAME test-jit-no-main COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/no_main.ts")
 
+# tesing include
+add_test(NAME test-compile-include-global-var COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/include_global_var.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/define_global_var.ts")
+
 # imports support only compile mode
 add_test(NAME test-compile-import-component COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/component.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/service.ts")
 add_test(NAME test-compile-export-import-class-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
@@ -704,8 +707,15 @@ add_test(NAME test-compile-shared-decl-emit-interface COMMAND test-runner -share
 add_test(NAME test-compile-shared-decl-emit-type COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_type.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
 add_test(NAME test-compile-shared-decl-emit-enum COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_enum.ts")
 add_test(NAME test-compile-shared-decl-emit-class COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_class.ts")
-# TODO: finish it
-#add_test(NAME test-compile-shared-export-import-class-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+
+# shared libs tests (exports/imports)
+add_test(NAME test-compile-shared-export-import-class-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+add_test(NAME test-compile-shared-export-import-object-literal-with-class-types COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+# TODO: error due to global constructor
+#add_test(NAME test-compile-shared-export-import-object-literal-with-interface COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
+add_test(NAME test-compile-shared-export-import-vars COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+#add_test(NAME test-compile-shared-export-import-vars-2 COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
+add_test(NAME test-compile-shared-export-import-enum COMMAND test-runner -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")
 
 # shared libs tests (dlls/dynamics)
 add_test(NAME test-jit-shared-component COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/use_shared.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/shared.ts")
@@ -713,5 +723,12 @@ add_test(NAME test-jit-shared-decl-emit-interface COMMAND test-runner -jit -shar
 add_test(NAME test-jit-shared-decl-emit-type COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_type.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_type.ts")
 add_test(NAME test-jit-shared-decl-emit-enum COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_enum.ts")
 add_test(NAME test-jit-shared-decl-emit-class COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/emit_class.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/decl_class.ts")
-# TODO: finish it
-#add_test(NAME test-jit-shared-export-import-class-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+
+# shared libs tests (exports/imports)
+add_test(NAME test-jit-shared-export-import-class-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_class_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_class_interface.ts")
+add_test(NAME test-jit-shared-export-import-object-literal-with-class-types COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_class_types.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_class_types.ts")
+# TODO: error due to global constructor
+#add_test(NAME test-jit-shared-export-import-object-literal-with-interface COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_object_literal_with_interface.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_object_literal_with_interface.ts")
+add_test(NAME test-jit-shared-export-import-vars COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars.ts")
+#add_test(NAME test-jit-shared-export-import-vars-2 COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_vars2.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_vars2.ts")
+add_test(NAME test-jit-shared-export-import-enum COMMAND test-runner -jit -shared "${PROJECT_SOURCE_DIR}/test/tester/tests/import_enum.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/export_enum.ts")

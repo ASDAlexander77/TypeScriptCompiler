@@ -16,12 +16,12 @@ namespace typescript
     public:
         MLIRDeclarationPrinter(raw_ostream &os) : os(os) {};
 
-        void printTypeDeclaration(StringRef, mlir::Type);
-        void printEnum(StringRef, mlir::DictionaryAttr);
-        void printVariableDeclaration(StringRef, mlir::Type, bool);
-        void print(FunctionPrototypeDOM::TypePtr);
+        void printTypeDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type);
+        void printEnum(StringRef, NamespaceInfo::TypePtr, mlir::DictionaryAttr);
+        void printVariableDeclaration(StringRef, NamespaceInfo::TypePtr, mlir::Type, bool);
+        void print(StringRef, NamespaceInfo::TypePtr, mlir_ts::FunctionType);
         void print(ClassInfo::TypePtr);
-        void print(InterfaceInfo::TypePtr);
+        void print(InterfaceInfo::TypePtr);       
 
     protected:
         void newline();
@@ -34,6 +34,8 @@ namespace typescript
         void printParams(ArrayRef<mlir::Type>, mlir::Type);
         void printFunction(StringRef, ArrayRef<mlir::Type>, mlir::Type);
         void printMethod(bool, StringRef, ArrayRef<mlir::Type>, mlir::Type, mlir::Type);
+        void printNamespaceBegin(NamespaceInfo::TypePtr);
+        void printNamespaceEnd(NamespaceInfo::TypePtr);
         void print(mlir::Type);
     };
 

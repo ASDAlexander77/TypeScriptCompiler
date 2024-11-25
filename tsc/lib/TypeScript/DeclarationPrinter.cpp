@@ -26,6 +26,23 @@ namespace typescript
         MLIRPrinter mp{};
         mp.printType<raw_ostream>(os, type);
     }
+    
+    void MLIRDeclarationPrinter::printNamespaceBegin(NamespaceInfo::TypePtr elementNamespace) {
+        if (elementNamespace && elementNamespace->name.size() > 0)
+        {
+            os << "namespace " << elementNamespace->fullName << " {";
+            newline();
+        }
+    }
+
+    void MLIRDeclarationPrinter::printNamespaceEnd(NamespaceInfo::TypePtr elementNamespace) {
+        if (elementNamespace && elementNamespace->name.size() > 0)
+        {
+            newline();
+            os << "}";
+            newline();
+        }
+    }
 
     void MLIRDeclarationPrinter::printFloatValue(const APFloat &apValue, raw_ostream &os, bool *printedHex)
     {
@@ -238,18 +255,24 @@ namespace typescript
         }
     }
 
-    void MLIRDeclarationPrinter::printTypeDeclaration(StringRef name, mlir::Type type) 
+    void MLIRDeclarationPrinter::printTypeDeclaration(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type) 
     {
+        printNamespaceBegin(elementNamespace);
+
         printBeforeDeclaration();
 
         os << "type " << name << " = ";
         print(type);
         os << ";";
         newline();
+
+        printNamespaceEnd(elementNamespace);
     }
 
-    void MLIRDeclarationPrinter::printEnum(StringRef name, mlir::DictionaryAttr enumValues)
+    void MLIRDeclarationPrinter::printEnum(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::DictionaryAttr enumValues)
     {
+        printNamespaceBegin(elementNamespace);
+
         printBeforeDeclaration();
 
         os << "enum " << name;
@@ -273,34 +296,78 @@ namespace typescript
 
         os << "}";
         newline();
+
+        printNamespaceEnd(elementNamespace);
     }
 
-    void MLIRDeclarationPrinter::printVariableDeclaration(StringRef name, mlir::Type type, bool isConst)
+    void MLIRDeclarationPrinter::printVariableDeclaration(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type, bool isConst)
     {
+        printNamespaceBegin(elementNamespace);
+
         printBeforeDeclaration();
         os << (isConst ? "const" : "let") << " " << name << " : ";
         print(type);
         os << ";";
         newline();
+
+        printNamespaceEnd(elementNamespace);
     }
 
-    void MLIRDeclarationPrinter::print(FunctionPrototypeDOM::TypePtr funcProto)
+    void MLIRDeclarationPrinter::print(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::FunctionType funcType)
     {
+        printNamespaceBegin(elementNamespace);
+
         printBeforeDeclaration();
 
-        auto funcType = funcProto->getFuncType();
         printFunction(
-            funcProto->getName(),
+            name,
             funcType.getParams(),
             funcType.getNumResults() > 0 ? funcType.getResult(0) : mlir::Type());
         os << ";";
         newline();
+
+        printNamespaceEnd(elementNamespace);
     }
 
     void MLIRDeclarationPrinter::print(ClassInfo::TypePtr classType)
     {
+        printNamespaceBegin(classType->elementNamespace);
+
         printBeforeDeclaration();
         os << "class " << classType->name;
+
+        if (classType->baseClasses.size() > 0)
+        {
+            os << " extends ";
+            auto any = false;
+            for (auto baseClass : classType->baseClasses)
+            {
+                if (any) 
+                {
+                    os << ", ";
+                }
+
+                os << classType->fullName;
+                any = true;
+            }
+        }
+
+        if (classType->implements.size() > 0)
+        {
+            os << " implements ";
+            auto any = false;
+            for (auto implement : classType->implements)
+            {
+                if (any) 
+                {
+                    os << ", ";
+                }
+
+                os << implement.interface->fullName;
+                any = true;
+            }
+        }
+
         newline();
         os << "{";
         newline();
@@ -374,12 +441,33 @@ namespace typescript
 
         os << "}";
         newline();
+
+        printNamespaceEnd(classType->elementNamespace);
     }
 
     void MLIRDeclarationPrinter::print(InterfaceInfo::TypePtr interfaceType)
     {
+        printNamespaceBegin(interfaceType->elementNamespace);
+
         printBeforeDeclaration();
         os << "interface " << interfaceType->name;
+
+        if (interfaceType->extends.size() > 0)
+        {
+            os << " extends ";
+            auto any = false;
+            for (auto interfaceInfo : interfaceType->extends)
+            {
+                if (any) 
+                {
+                    os << ", ";
+                }
+
+                os << interfaceInfo.second->fullName;
+                any = true;
+            }
+        }
+
         newline();
         os << "{";
         newline();
@@ -401,6 +489,7 @@ namespace typescript
         }
 
         // methods (including static)
+        auto opaqueType = mlir_ts::OpaqueType::get(interfaceType->interfaceType.getContext());
         for (auto method : interfaceType->methods)
         {
             if (filterName(method.name))
@@ -413,7 +502,7 @@ namespace typescript
                 method.name,
                 method.funcType.getParams(),
                 method.funcType.getNumResults() > 0 ? method.funcType.getResult(0) : mlir::Type(),
-                interfaceType->interfaceType);
+                /*interfaceType->interfaceType*/opaqueType);
 
             newline();
         }
@@ -437,6 +526,8 @@ namespace typescript
 
         os << "}";
         newline();
+
+        printNamespaceEnd(interfaceType->elementNamespace);
     }    
 
 } // namespace typescript

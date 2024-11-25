@@ -325,6 +325,7 @@ class MLIRGenImpl
             fullNameGlobalsMap);
         llvm::ScopedHashTableScope<StringRef, GenericFunctionInfo::TypePtr> fullNameGenericFunctionsMapScope(
             fullNameGenericFunctionsMap);
+        llvm::ScopedHashTableScope<StringRef, EnumInfo::TypePtr> fullNameEnumsMapScope(fullNameEnumsMap);
         llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
         llvm::ScopedHashTableScope<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMapScope(
             fullNameGenericClassesMap);
@@ -726,8 +727,6 @@ class MLIRGenImpl
         // Process generating here
         declExports.str("");
         declExports.clear();
-        exports.str(S(""));
-        exports.clear();
         GenContext genContext{};
         genContext.rootContext = &genContext;
         genContext.postponedMessages = &postponedMessages;
@@ -761,11 +760,15 @@ class MLIRGenImpl
             if (anyGlobalCode && mlir::failed(
                 generateGlobalEntryCode(loc(module), module->statements, genContext)))
             {
+                outputDiagnostics(postponedMessages, 1);
                 return mlir::failure();
             }
 
             // exports
-            createDeclarationExportGlobalVar(genContext);
+            if (mlir::failed(createDeclarationExportGlobalVar(genContext))) {
+                outputDiagnostics(postponedMessages, 1);
+                return mlir::failure();
+            }
         }
 
         clearTempModule();
@@ -3269,17 +3272,7 @@ class MLIRGenImpl
 
         bool getIsPublic()
         {
-            if (isExternal)
-            {
-                return true;
-            }
-
-            if (!isExport && !isPublic)
-            {
-                return false;
-            }
-
-            return true;
+            return isExternal || isExport || isPublic;
         }
 
         LLVM::Linkage getLinkage()
@@ -3299,7 +3292,7 @@ class MLIRGenImpl
                 // TODO: dso_local somehow linked with -fno-pic
                 //attrs.push_back({builder.getStringAttr("dso_local"), builder.getUnitAttr()});
             }
-            else if (isExport || isImport)
+            else if (isExport || isImport || isPublic)
             {
                 linkage = LLVM::Linkage::External;
             }
@@ -3730,7 +3723,9 @@ class MLIRGenImpl
         else
         {
             variableDeclarationInfo.isSpecialization = genContext.specialization;
-            createGlobalVariable(location, variableDeclarationInfo, genContext);
+            if (mlir::failed(createGlobalVariable(location, variableDeclarationInfo, genContext))) {
+                return mlir::Type();
+            }
 
             if (mlir::succeeded(isGlobalConstLambda(location, variableDeclarationInfo, genContext)))
             {
@@ -4025,7 +4020,7 @@ class MLIRGenImpl
             if (varClass.isExport)
             {
                 auto isConst = varClass.type == VariableType::Const || varClass.type == VariableType::ConstRef;
-                addVariableDeclarationToExport(nameStr, varType, isConst);
+                addVariableDeclarationToExport(nameStr, currentNamespace, varType, isConst);
             }
 
             return mlir::success();
@@ -4201,15 +4196,17 @@ class MLIRGenImpl
 
             if (varClass.isDynamicImport)
             {
-                auto nameStr = MLIRHelper::getName(item->name);
+                auto nameStr = getFullNamespaceName(MLIRHelper::getName(item->name));
                 auto fieldType = std::get<0>(typeAndInit);
-
-                auto dllVarName = V(mlirGenStringValue(location, nameStr, true));
-                auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
-                    location, getOpaqueType(), dllVarName);
-                auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
-                auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
-                return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);                
+                if (fieldType)
+                {
+                    auto dllVarName = V(mlirGenStringValue(location, nameStr, true));
+                    auto referenceToStaticFieldOpaque = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                        location, getOpaqueType(), dllVarName);
+                    auto refToTyped = cast(location, mlir_ts::RefType::get(fieldType), referenceToStaticFieldOpaque, genContext);
+                    auto valueOfField = builder.create<mlir_ts::LoadOp>(location, fieldType, refToTyped);
+                    return std::make_tuple(valueOfField.getType(), V(valueOfField), TypeProvided::Yes);                
+                }
             }
 
             return typeAndInit;
@@ -4998,7 +4995,7 @@ class MLIRGenImpl
                 if (functionLikeDeclarationBaseAST == SyntaxKind::FunctionDeclaration
                     || functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction)
                 {
-                    addFunctionDeclarationToExport(funcProto);
+                    addFunctionDeclarationToExport(funcProto, currentNamespace);
                 }
             }
         }
@@ -5556,7 +5553,8 @@ class MLIRGenImpl
         {
             // TODO: we do not need to register funcOp as we need to reference global variables
             auto result = mlirGenFunctionLikeDeclarationDynamicImport(
-                location, funcOp.getName(), funcOp.getFunctionType(), funcProto->getNameWithoutNamespace(), funcDeclGenContext);
+                location, funcProto->getNameWithoutNamespace(), funcOp.getFunctionType(), 
+                funcProto->getName(), funcDeclGenContext, false);
             return {result, funcOp, funcProto->getName().str(), false};
         }
 
@@ -5672,9 +5670,9 @@ class MLIRGenImpl
         return mlir::success();
     }    
 
-    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef fullFunctionName, mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext)
+    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef funcName, mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext, bool isFullNamespaceName = true)
     {
-        registerVariable(location, fullFunctionName, true, VariableType::Var,
+        registerVariable(location, funcName, isFullNamespaceName, VariableType::Var,
             [&](mlir::Location location, const GenContext &context) -> TypeValueInitType {
                 // add command to load reference fron DLL
                 auto fullName = V(mlirGenStringValue(location, dllFuncName.str(), true));
@@ -12641,7 +12639,7 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), literalType, attrVal));
     }
 
-    ValueOrLogicalResult mlirGenStringValue(mlir::Location location, std::string text, bool asString = false)
+    ValueOrLogicalResult mlirGenStringValue(mlir::Location location, StringRef text, bool asString = false)
     {
         auto attrVal = getStringAttr(text);
         auto literalType = asString ? (mlir::Type)getStringType() : (mlir::Type)mlir_ts::LiteralType::get(attrVal, getStringType());
@@ -14180,7 +14178,10 @@ class MLIRGenImpl
         if (getEnumsMap().count(name))
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
-            return getEnumType(enumTypeInfo.first, enumTypeInfo.second);
+            return getEnumType(
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), getFullNamespaceName(name)), 
+                enumTypeInfo.first, 
+                enumTypeInfo.second);
         }
 
         if (getImportEqualsMap().count(name))
@@ -14268,7 +14269,13 @@ class MLIRGenImpl
         if (getEnumsMap().count(name))
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
-            return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first, enumTypeInfo.second), enumTypeInfo.second);
+            return builder.create<mlir_ts::ConstantOp>(
+                location, 
+                getEnumType(
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), getFullNamespaceName(name)), 
+                    enumTypeInfo.first, 
+                    enumTypeInfo.second), 
+                enumTypeInfo.second);
         }
 
         if (getNamespaceMap().count(name))
@@ -14703,7 +14710,7 @@ class MLIRGenImpl
 
                 if (hasExportModifier)
                 {
-                    addTypeDeclarationToExport(namePtr, type);
+                    addTypeDeclarationToExport(namePtr, currentNamespace, type);
                 }
             }
 
@@ -14790,6 +14797,8 @@ class MLIRGenImpl
             getEnumsMap().insert(
                 { namePtr, { getEnumType().getElementType(), mlir::DictionaryAttr::get(builder.getContext(), {}) } });
         }
+
+        auto &enumInfo = getEnumsMap()[namePtr];
 
         auto activeBits = 32;
         mlir::IntegerType::SignednessSemantics currentEnumValueSigedness = mlir::IntegerType::SignednessSemantics::Signless;
@@ -14886,7 +14895,7 @@ class MLIRGenImpl
                 namedEnumValues.push_back({builder.getStringAttr(key.first()), key.second});
             }
 
-            getEnumsMap()[namePtr].second = mlir::DictionaryAttr::get(builder.getContext(), namedEnumValues /*adjustedEnumValues*/);
+            enumInfo.second = mlir::DictionaryAttr::get(builder.getContext(), namedEnumValues /*adjustedEnumValues*/);
 
             currentEnumValue++;
         }
@@ -14897,11 +14906,36 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " storage type: " << storeType << "\n");
 
         // update enum to support req. access
-        getEnumsMap()[namePtr].first = storeType;
+        enumInfo.first = storeType;
+
+        // register fullName for enum
+        auto fullNamePtr = getFullNamespaceName(namePtr); 
+
+        auto enumType = getEnumType(
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), 
+                    enumInfo.first, 
+                    enumInfo.second);
+
+        EnumInfo::TypePtr newEnumPtr;
+        if (fullNameEnumsMap.count(fullNamePtr))
+        {
+            newEnumPtr = fullNameEnumsMap.lookup(fullNamePtr);
+            newEnumPtr->enumType = enumType;      
+        }
+        else
+        {
+            // register class
+            newEnumPtr = std::make_shared<EnumInfo>();
+            newEnumPtr->name = namePtr;
+            newEnumPtr->fullName = fullNamePtr;
+            newEnumPtr->elementNamespace = currentNamespace;      
+            newEnumPtr->enumType = enumType;      
+            fullNameEnumsMap.insert(fullNamePtr, newEnumPtr);        
+        }
 
         if (getExportModifier(enumDeclarationAST))
         {
-            addEnumDeclarationToExport(namePtr, getEnumsMap()[namePtr].second);
+            addEnumDeclarationToExport(namePtr, currentNamespace, enumType);
         }
 
         return mlir::success();
@@ -15267,6 +15301,7 @@ class MLIRGenImpl
             newClassPtr = std::make_shared<ClassInfo>();
             newClassPtr->name = namePtr;
             newClassPtr->fullName = fullNamePtr;
+            newClassPtr->elementNamespace = currentNamespace;
             newClassPtr->isAbstract = hasModifier(classDeclarationAST, SyntaxKind::AbstractKeyword);
             newClassPtr->isDeclaration =
                 declarationMode || hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
@@ -15625,21 +15660,24 @@ class MLIRGenImpl
 
             for (auto &implementingType : heritageClause->types)
             {
-                if (implementingType->processed)
-                {
-                    continue;
-                }
-
                 auto result = mlirGen(implementingType, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto ifaceType = V(result);
                 mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
-                    .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
+                    .template Case<mlir_ts::InterfaceType>([&](mlir_ts::InterfaceType interfaceType) {
+
+                        auto ifaceName = interfaceType.getName().getValue();
+                        auto found = llvm::find_if(interfaceInfos, [&](ImplementInfo &ifaceInfo) {
+                            return ifaceInfo.interface->fullName == ifaceName;
+                        });
+
                         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                         assert(interfaceInfo);
-                        interfaceInfos.push_back({interfaceInfo, -1, false});
-                        // TODO: it will error
-                        // implementingType->processed = true;
+                        if (found != interfaceInfos.end()) {
+                            found->interface = interfaceInfo;
+                        } else {
+                            interfaceInfos.push_back({interfaceInfo, -1, false});
+                        }
                     })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
             }
@@ -17017,22 +17055,20 @@ genContext);
     mlir::LogicalResult mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                    const GenContext &genContext)
     {
+        if (newClassPtr->isDeclaration)
+        {
+            return mlir::success();
+        }
+
         for (auto &baseClass : newClassPtr->baseClasses)
         {
             for (auto &implement : baseClass->implements)
             {
-                if (implement.processed)
-                {
-                    continue;
-                }
-
                 if (mlir::failed(mlirGenClassVirtualTableDefinitionForInterface(location, newClassPtr,
                                                                                 implement.interface, genContext)))
                 {
                     return mlir::failure();
                 }
-
-                implement.processed = true;
             }
         }
 
@@ -17051,20 +17087,23 @@ genContext);
 
         for (auto &implementingType : heritageClause->types)
         {
-            if (implementingType->processed)
-            {
-                continue;
-            }
-
             auto result = mlirGen(implementingType, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto ifaceType = V(result);
             auto success = false;
             mlir::TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     assert(interfaceInfo);
-                    success = !failed(mlirGenClassVirtualTableDefinitionForInterface(loc(implementingType), newClassPtr,
-                                                                                     interfaceInfo, genContext));
+                    if (!newClassPtr->isDeclaration)
+                    {
+                        success = !failed(mlirGenClassVirtualTableDefinitionForInterface(
+                            loc(implementingType), newClassPtr, interfaceInfo, genContext));
+                    }
+                    else
+                    {
+                        success = true;
+                    }
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
@@ -17536,7 +17575,7 @@ genContext);
 
         auto location = loc(funcLikeDeclaration);
         if (mlir::succeeded(mlirGenFunctionLikeDeclarationDynamicImport(
-            location, funcOp.getName(), funcOp.getFunctionType(), funcProto->getNameWithoutNamespace(), genContext)))
+            location, funcOp.getName(), funcOp.getFunctionType(), funcOp.getName(), genContext)))
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
@@ -17689,9 +17728,9 @@ genContext);
             GenericInterfaceInfo::TypePtr newGenericInterfacePtr = std::make_shared<GenericInterfaceInfo>();
             newGenericInterfacePtr->name = namePtr;
             newGenericInterfacePtr->fullName = fullNamePtr;
+            newGenericInterfacePtr->elementNamespace = currentNamespace;
             newGenericInterfacePtr->typeParams = typeParameters;
             newGenericInterfacePtr->interfaceDeclaration = interfaceDeclarationAST;
-            newGenericInterfacePtr->elementNamespace = currentNamespace;
 
             mlirGenInterfaceType(newGenericInterfacePtr, genContext);
 
@@ -17844,6 +17883,7 @@ genContext);
             newInterfacePtr = std::make_shared<InterfaceInfo>();
             newInterfacePtr->name = namePtr;
             newInterfacePtr->fullName = fullNamePtr;
+            newInterfacePtr->elementNamespace = currentNamespace;
 
             getInterfacesMap().insert({namePtr, newInterfacePtr});
             fullNameInterfacesMap.insert(fullNamePtr, newInterfacePtr);
@@ -17870,11 +17910,6 @@ genContext);
 
         for (auto &extendsType : heritageClause->types)
         {
-            if (extendsType->processed)
-            {
-                continue;
-            }
-
             auto result = mlirGen(extendsType, genContext);
             EXIT_IF_FAILED(result);
             auto ifaceType = V(result);
@@ -17886,7 +17921,6 @@ genContext);
                     {
                         newInterfacePtr->extends.push_back({-1, interfaceInfo});
                         success = true;
-                        extendsType->processed = true;
                     }
                 })
                 .template Case<mlir_ts::TupleType>([&](auto tupleType) {
@@ -18773,6 +18807,12 @@ genContext);
             }
         }
 
+        if (auto enumType = dyn_cast<mlir_ts::EnumType>(valueType))
+        {
+            value = builder.create<mlir_ts::CastOp>(location, enumType.getElementType(), value);
+            valueType = value.getType();
+        }        
+
         // toPrimitive
         if ((isa<mlir_ts::StringType>(type) 
             || isa<mlir_ts::NumberType>(type) 
@@ -18959,6 +18999,11 @@ genContext);
                 fields = constTupleType.getFields();
                 return castTupleToTuple(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, genContext);
             }
+            else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
+                return mlir::failure();
+            }
         }
 
         // tuple to tuple
@@ -18974,6 +19019,11 @@ genContext);
             {
                 fields = constTupleType.getFields();
                 return castTupleToTuple(location, value, srcTupleType, fields, genContext);
+            }
+            else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
+                return mlir::failure();
             }
         }
 
@@ -20235,7 +20285,7 @@ genContext);
 #endif
 
             {"TypeOf", true },
-            {"Opague", true }, // to support void*
+            {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
             {"Readonly", true },
             {"Partial", true },
@@ -20326,7 +20376,7 @@ genContext);
 #endif
 
             {"TypeOf", true },
-            {"Opague", true }, // to support void*
+            {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
             {"ThisType", true },
 #ifdef ENABLE_JS_BUILTIN_TYPES
@@ -21619,17 +21669,15 @@ genContext);
 
     mlir_ts::EnumType getEnumType()
     {
-        return mlir_ts::EnumType::get(builder.getI32Type(), {});
+        return mlir_ts::EnumType::get(
+            mlir::FlatSymbolRefAttr::get(builder.getContext(), StringRef{}), 
+            builder.getI32Type(), 
+            {});
     }
 
-    mlir::Type getEnumType(mlir::Type elementType, mlir::DictionaryAttr values)
+    mlir_ts::EnumType getEnumType(mlir::FlatSymbolRefAttr name, mlir::Type elementType, mlir::DictionaryAttr values)
     {
-        if (!elementType)
-        {
-            return mlir::Type();
-        }
-
-        return mlir_ts::EnumType::get(elementType, values);
+        return mlir_ts::EnumType::get(name, elementType ? elementType : builder.getI32Type(), values);
     }
 
     mlir_ts::ObjectStorageType getObjectStorageType(mlir::FlatSymbolRefAttr name)
@@ -22799,18 +22847,165 @@ genContext);
         return mlir::success();
     }
 
-    void addTypeDeclarationToExport(StringRef name, mlir::Type type)    
+    bool isAddedToExport(mlir::Type type)
     {
+        if (stage != Stages::SourceGeneration)
+        {
+            return true;
+        }
+
+        return exportedTypes.contains(type);
+    }
+
+    bool isExportDependencyChecked(mlir::Type type)
+    {
+        if (stage != Stages::SourceGeneration)
+        {
+            return true;
+        }
+
+        return exportCheckedDependenciesTypes.contains(type);
+    }
+
+    bool addDependancyTypesToExport(mlir::Type type)
+    {
+        if (isExportDependencyChecked(type))
+        {
+            // already added
+            return true;
+        }
+
+        exportCheckedDependenciesTypes.insert(type);
+
+        // iterate all types
+        mth.forEachTypes(type, [&] (mlir::Type subType) {
+            return addDependancyTypesToExport(subType);
+        });
+
+        addTypeDeclarationToExport(type);
+
+        return false;
+    }
+
+    // base method
+    bool addDependancyTypesToExportNoCheck(mlir::Type type)
+    {
+        auto cont = mlir::TypeSwitch<mlir::Type, bool>(type)
+            .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
+                auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
+                assert(interfaceInfo);
+
+                for (auto& method : interfaceInfo->methods)
+                {
+                    addDependancyTypesToExport(method.funcType);
+                }
+
+                for (auto& field : interfaceInfo->fields)
+                {
+                    addDependancyTypesToExport(field.type);
+                }
+
+                return true;
+            })
+            .Case<mlir_ts::ClassType>([&](auto classType) {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                assert(classInfo);
+
+                for (auto& method : classInfo->methods)
+                {
+                    addDependancyTypesToExport(method.funcType);
+                }
+
+                for (auto& accessor : classInfo->accessors)
+                {
+                    if (accessor.get) addDependancyTypesToExport(accessor.get.getFunctionType());
+                    if (accessor.set) addDependancyTypesToExport(accessor.set.getFunctionType());
+                }                
+
+                return true;
+            })
+            .Case<mlir_ts::EnumType>([&](auto enumType) {
+                // no dependancies here
+                return true;
+            })
+            .Default([&](auto type) {
+                return true;
+            });
+
+        return cont;
+    }
+
+    bool addTypeDeclarationToExport(mlir::Type type)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! adding type declaration to export: \n" << type << "\n";);
+
+        if (isAddedToExport(type))
+        {
+            // already added
+            LLVM_DEBUG(llvm::dbgs() << "\n!! ALREADY ADDED to export: \n" << type << "\n";);
+            return true;
+        }        
+
+        return addTypeDeclarationToExportNoCheck(type);
+    }
+
+    bool addTypeDeclarationToExportNoCheck(mlir::Type type)
+    {
+        auto cont = mlir::TypeSwitch<mlir::Type, bool>(type)
+            .Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
+                auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
+                assert(interfaceInfo);
+                addInterfaceDeclarationToExport(interfaceInfo);
+                return true;
+            })
+            .Case<mlir_ts::ClassType>([&](auto classType) {
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+                assert(classInfo);
+                addClassDeclarationToExport(classInfo);
+                return true;
+            })
+            .Case<mlir_ts::EnumType>([&](auto enumType) {
+                auto enumInfo = getEnumInfoByFullName(enumType.getName().getValue());
+                assert(enumInfo);
+                assert(enumInfo->enumType == enumType);
+
+                addEnumDeclarationToExport(enumInfo->name, enumInfo->elementNamespace, enumType);
+                return true;
+            })
+            .Default([&](auto type) {
+                return true;
+            });
+
+        return cont;
+    }    
+
+    void addTypeDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type)    
+    {
+        // TODO: add distinct declaration
+
+        // we need to add it anyway as it is type declaration
+        addDependancyTypesToExport(type);
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.printTypeDeclaration(name, type);
+        dp.printTypeDeclaration(name, elementNamespace, type);
 
         declExports << ss.str().str();
     }
 
     void addInterfaceDeclarationToExport(InterfaceInfo::TypePtr interfaceInfo)
     {
+        if (isAddedToExport(interfaceInfo->interfaceType))
+        {
+            // already added
+            return;
+        }
+
+        exportedTypes.insert(interfaceInfo->interfaceType);
+
+        addDependancyTypesToExport(interfaceInfo->interfaceType);
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
@@ -22819,38 +23014,68 @@ genContext);
         declExports << ss.str().str();
     }
 
-    void addEnumDeclarationToExport(StringRef name, mlir::DictionaryAttr enumValues)
+    void addEnumDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir_ts::EnumType enumType)
     {
+        if (isAddedToExport(enumType))
+        {
+            // already added
+            return;
+        }        
+
+        exportedTypes.insert(enumType);
+
+        //addDependancyTypesToExport(enumType);
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.printEnum(name, enumValues);
+        dp.printEnum(name, elementNamespace, enumType.getValues());
 
         declExports << ss.str().str();        
     }
 
-    void addVariableDeclarationToExport(StringRef name, mlir::Type type, bool isConst)
-    {
+    void addVariableDeclarationToExport(StringRef name, NamespaceInfo::TypePtr elementNamespace, mlir::Type type, bool isConst)
+    {               
+        // TODO: add distinct declaration
+
+        // we need to add it anyway as it is varaible declaration
+        addDependancyTypesToExport(type);
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.printVariableDeclaration(name, type, isConst);
+        dp.printVariableDeclaration(name, elementNamespace, type, isConst);
 
         declExports << ss.str().str();
     }
 
-    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto)
+    void addFunctionDeclarationToExport(FunctionPrototypeDOM::TypePtr funcProto, NamespaceInfo::TypePtr elementNamespace)
     {
+        // TODO: add distinct declaration
+
+        // we need to add it anyway as it is function declaration
+        addDependancyTypesToExport(funcProto->getFuncType());
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
-        dp.print(funcProto);
+        dp.print(funcProto->getNameWithoutNamespace(), elementNamespace, funcProto->getFuncType());
 
         declExports << ss.str().str();
     }
 
     void addClassDeclarationToExport(ClassInfo::TypePtr newClassPtr)
     {
+        if (isAddedToExport(newClassPtr->classType))
+        {
+            // already added
+            return;
+        }    
+
+        exportedTypes.insert(newClassPtr->classType);
+
+        addDependancyTypesToExport(newClassPtr->classType);
+
         SmallVector<char> out;
         llvm::raw_svector_ostream ss(out);        
         MLIRDeclarationPrinter dp(ss);
@@ -23178,6 +23403,11 @@ genContext);
         return fullNameGenericFunctionsMap.lookup(fullName);
     }
 
+    auto getEnumInfoByFullName(StringRef fullName) -> EnumInfo::TypePtr
+    {
+        return fullNameEnumsMap.lookup(fullName);
+    }
+
     auto getClassInfoByFullName(StringRef fullName) -> ClassInfo::TypePtr
     {
         return fullNameClassesMap.lookup(fullName);
@@ -23292,7 +23522,7 @@ genContext);
         return mdi.stripMetadata(location);
     }    
 
-    mlir::StringAttr getStringAttr(const std::string &text)
+    mlir::StringAttr getStringAttr(StringRef text)
     {
         return builder.getStringAttr(text);
     }
@@ -23419,6 +23649,8 @@ genContext);
 
     llvm::ScopedHashTable<StringRef, GenericFunctionInfo::TypePtr> fullNameGenericFunctionsMap;
 
+    llvm::ScopedHashTable<StringRef, EnumInfo::TypePtr> fullNameEnumsMap;
+
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
 
     llvm::ScopedHashTable<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMap;
@@ -23438,7 +23670,8 @@ genContext);
     bool declarationMode;
 
     std::stringstream declExports;
-    stringstream exports;
+    mlir::SmallPtrSet<mlir::Type, 32> exportCheckedDependenciesTypes;
+    mlir::SmallPtrSet<mlir::Type, 32> exportedTypes;
 
     Stages stage;
 

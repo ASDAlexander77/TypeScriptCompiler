@@ -22,6 +22,8 @@ struct GenericFunctionInfo
 
     mlir::StringRef name;
 
+    NamespaceInfo_TypePtr elementNamespace;
+
     llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
 
     FunctionLikeDeclarationBase functionDeclaration;
@@ -29,8 +31,6 @@ struct GenericFunctionInfo
     FunctionPrototypeDOM::TypePtr funcOp;
 
     mlir_ts::FunctionType funcType;
-
-    NamespaceInfo_TypePtr elementNamespace;
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
@@ -200,6 +200,8 @@ struct InterfaceInfo
     mlir::StringRef name;
 
     mlir::StringRef fullName;
+
+    NamespaceInfo_TypePtr elementNamespace;
 
     mlir_ts::InterfaceType interfaceType;
 
@@ -431,13 +433,13 @@ struct GenericInterfaceInfo
 
     mlir::StringRef fullName;
 
+    NamespaceInfo_TypePtr elementNamespace;
+
     llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
 
     mlir_ts::InterfaceType interfaceType;
 
     InterfaceDeclaration interfaceDeclaration;
-
-    NamespaceInfo_TypePtr elementNamespace;
 
     GenericInterfaceInfo()
     {
@@ -462,6 +464,22 @@ enum class ProcessingStages : int {
     Processed = 7,
 };
 
+struct EnumInfo
+{
+  public:
+    using TypePtr = std::shared_ptr<EnumInfo>;
+
+    mlir::StringRef name;
+
+    mlir::StringRef fullName;
+
+    NamespaceInfo_TypePtr elementNamespace;
+
+    mlir_ts::EnumType enumType;
+
+    EnumInfo() = default;
+};
+
 struct ClassInfo
 {
   public:
@@ -470,6 +488,8 @@ struct ClassInfo
     mlir::StringRef name;
 
     mlir::StringRef fullName;
+
+    NamespaceInfo_TypePtr elementNamespace;
 
     mlir_ts::ClassType classType;
 
@@ -788,13 +808,13 @@ struct GenericClassInfo
 
     mlir::StringRef fullName;
 
+    NamespaceInfo_TypePtr elementNamespace;
+
     llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
 
     mlir_ts::ClassType classType;
 
     ClassLikeDeclaration classDeclaration;
-
-    NamespaceInfo_TypePtr elementNamespace;
 
     GenericClassInfo()
     {

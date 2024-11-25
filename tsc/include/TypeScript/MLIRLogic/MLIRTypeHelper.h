@@ -3052,6 +3052,15 @@ class MLIRTypeHelper
         return iter.some(type, [](mlir::Type type) { return type && isa<mlir_ts::InferType>(type); });
     }    
 
+    void forEachTypes(mlir::Type type, std::function<bool(mlir::Type)> f)
+    {
+        MLIRTypeIteratorLogic iter(
+            getClassInfoByFullName, getGenericClassInfoByFullName, 
+            getInterfaceInfoByFullName, getGenericInterfaceInfoByFullName
+        );
+        iter.forEach(type, f);
+    }  
+
     bool getAllInferTypes(mlir::Type type, SmallVector<mlir_ts::InferType> &inferTypes)
     {
         MLIRTypeIteratorLogic iter(
