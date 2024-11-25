@@ -18805,6 +18805,12 @@ genContext);
             }
         }
 
+        if (auto enumType = dyn_cast<mlir_ts::EnumType>(valueType))
+        {
+            value = builder.create<mlir_ts::CastOp>(location, enumType.getElementType(), value);
+            valueType = value.getType();
+        }        
+
         // toPrimitive
         if ((isa<mlir_ts::StringType>(type) 
             || isa<mlir_ts::NumberType>(type) 
