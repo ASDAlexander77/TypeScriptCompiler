@@ -190,7 +190,8 @@ class MLIRPrinter
                 printTupleType(out, t);
             })
             .template Case<mlir_ts::EnumType>([&](auto t) {
-                printType(out, t.getElementType());
+                //printType(out, t.getElementType());
+                out << t.getName().getValue().str().c_str();
             })
             .template Case<mlir_ts::FunctionType>([&](auto t) {
                 printFuncType(out, t);
