@@ -3425,7 +3425,7 @@ struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfC
         auto globalPtr =
             rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), addressOfConstStringOp.getGlobalName());
         rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getPtrType(), llvmCharType, globalPtr,
-                                                 ArrayRef<LLVM::GEPArg>{0, 0});
+                                                 ArrayRef<LLVM::GEPArg>{0});
 
         return success();
     }
