@@ -24,6 +24,7 @@ extern cl::opt<enum Exports> exportAction;
 extern cl::opt<bool> enableBuiltins;
 extern cl::opt<bool> noDefaultLib;
 extern cl::opt<std::string> outputFilename;
+extern cl::opt<bool> appendGCtorsToMethod;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -37,19 +38,20 @@ CompileOptions prepareOptions()
     auto TheTriple = llvm::Triple(moduleTargetTriple);
 
     CompileOptions compileOptions;
-    compileOptions.isJit = emitAction == Action::RunJIT;
-    compileOptions.disableGC = disableGC;
-    compileOptions.enableBuiltins = enableBuiltins;
-    compileOptions.noDefaultLib = noDefaultLib;
-    compileOptions.disableWarnings = disableWarnings;
-    compileOptions.exportOpt = exportAction;
-    compileOptions.generateDebugInfo = generateDebugInfo;
-    compileOptions.lldbDebugInfo = lldbDebugInfo;
+    compileOptions.isJit = emitAction.getValue() == Action::RunJIT;
+    compileOptions.disableGC = disableGC.getValue();
+    compileOptions.enableBuiltins = enableBuiltins.getValue();
+    compileOptions.noDefaultLib = noDefaultLib.getValue();
+    compileOptions.disableWarnings = disableWarnings.getValue();
+    compileOptions.exportOpt = exportAction.getValue();
+    compileOptions.generateDebugInfo = generateDebugInfo.getValue();
+    compileOptions.lldbDebugInfo = lldbDebugInfo.getValue();
     compileOptions.moduleTargetTriple = moduleTargetTriple;
     compileOptions.isWindows = TheTriple.isKnownWindowsMSVCEnvironment();
     compileOptions.isWasm = TheTriple.getArch() == llvm::Triple::wasm64 || TheTriple.getArch() == llvm::Triple::wasm32;
     compileOptions.sizeBits = 32;
     compileOptions.isExecutable = emitAction == Action::BuildExe;
+    compileOptions.appendGCtorsToMethod = appendGCtorsToMethod.getValue();
     if (
         TheTriple.getArch() == llvm::Triple::UnknownArch
         || TheTriple.getArch() == llvm::Triple::aarch64        // AArch64 (little endian): aarch64

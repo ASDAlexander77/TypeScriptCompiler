@@ -5030,7 +5030,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
     LogicalResult matchAndRewrite(mlir_ts::GlobalConstructorOp globalConstructorOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isJit)
+        if (tsLlvmContext->compileOptions.appendGCtorsToMethod)
         {
             auto loc = globalConstructorOp->getLoc();
 
@@ -5043,7 +5043,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
 
-                // create dummy __mlir_runner_init for JIT
+                // create dummy __mlir_execution_engine_init for JIT
                 rewriter.setInsertionPointToEnd(parentModule.getBody());
                 auto llvmFnType = mlir::FunctionType::get(rewriter.getContext(), {}, {});
                 auto initFunc = rewriter.create<func::FuncOp>(loc, MLIR_GCTORS, llvmFnType);

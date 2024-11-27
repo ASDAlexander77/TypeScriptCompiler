@@ -51,16 +51,16 @@ void mlir::typescript::registerTypeScriptGCStrategy()
 #define API __attribute__((visibility("default")))
 #endif
 
-extern "C" API void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols);
+extern "C" API void __mlir_execution_engine_init(llvm::StringMap<void *> &exportSymbols);
 
 // to support shared_libs
-void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols)
+void __mlir_execution_engine_init(llvm::StringMap<void *> &exportSymbols)
 {
     // NOT WORKING ANYWAY
     mlir::typescript::registerTypeScriptGCStrategy();
 }
 
-extern "C" API void __mlir_runner_destroy()
+extern "C" API void __mlir_execution_engine_destroy()
 {
     // nothing todo.
 }

@@ -25,10 +25,10 @@ void destroy_dynamicruntime();
 #define API __attribute__((visibility("default")))
 #endif
 
-extern "C" API void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols);
+extern "C" API void __mlir_execution_engine_init(llvm::StringMap<void *> &exportSymbols);
 
 // to support shared_libs
-void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols)
+void __mlir_execution_engine_init(llvm::StringMap<void *> &exportSymbols)
 {
     init_gcruntime(exportSymbols);
     init_memruntime(exportSymbols);
@@ -36,7 +36,7 @@ void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols)
     init_dynamicruntime(exportSymbols);
 }
 
-extern "C" API void __mlir_runner_destroy()
+extern "C" API void __mlir_execution_engine_destroy()
 {
     destroy_gcruntime();
     //destory_memruntime();

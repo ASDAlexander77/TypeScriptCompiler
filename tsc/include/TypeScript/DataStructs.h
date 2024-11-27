@@ -22,6 +22,7 @@ struct CompileOptions
     bool isExecutable;
     enum Exports exportOpt;
     std::string outputFolder;
+    bool appendGCtorsToMethod;
 };
 
 #endif // TYPESCRIPT_DATASTRUCT_H_
