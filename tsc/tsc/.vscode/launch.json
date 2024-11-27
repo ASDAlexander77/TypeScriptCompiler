@@ -347,10 +347,11 @@
             "args": [
                 "-emit=dll",
                 "-opt",
-                "-debug-only=tsc",
+                "-debug-only=tsc,llvm,pass",
                 "-mlir-disable-threading",                
-                "-o=I:/Playground/export_class_interface.dll",
-                "I:/Playground/export_class_interface.ts"
+                "--gctors-as-method",
+                "-o=I:/Playground/export_vars.dll",
+                "I:/Playground/export_vars.ts"
             ],
             "stopAtEntry": false,
             "cwd": "I:/Playground",

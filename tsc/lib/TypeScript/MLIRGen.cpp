@@ -988,10 +988,9 @@ class MLIRGenImpl
                         auto mlirGctorsNameVal = mlirGenStringValue(location, mlirGctors);
                         auto strVal = cast(location, getStringType(), mlirGctorsNameVal, genContext);                        
                         auto globalCtorPtr = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
-                            location, getFunctionType({}, {}, false), strVal);
-                        builder.create<mlir_ts::CallIndirectOp>(
-                            MLIRHelper::getCallSiteLocation(globalCtorPtr, location),
-                            globalCtorPtr, mlir::ValueRange{});                        
+                            location, mlir_ts::OpaqueType::get(builder.getContext()), strVal);
+                        auto funcPtr = builder.create<mlir_ts::CastOp>(location, getFunctionType({}, {}, false), globalCtorPtr);
+                        builder.create<mlir_ts::CallIndirectOp>(location, funcPtr, mlir::ValueRange{});                        
                     }
 
                     return mlir::success();

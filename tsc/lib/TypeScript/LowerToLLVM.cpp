@@ -5052,7 +5052,9 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                 initFunc->setAttr("llvm.linkage", linkage);
                 if (tsLlvmContext->compileOptions.isDLL)
                 {
-                    initFunc->setAttr("export", rewriter.getUnitAttr());
+                    SmallVector<mlir::Attribute> funcAttrs;
+                    funcAttrs.push_back(ATTR("export"));
+                    initFunc->setAttr("passthrough", ArrayAttr::get(rewriter.getContext(), funcAttrs));
                 }
 
                 auto &entryBlock = *initFunc.addEntryBlock();
