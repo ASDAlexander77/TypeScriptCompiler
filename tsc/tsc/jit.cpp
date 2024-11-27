@@ -140,17 +140,16 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 #define LIB_NAME "lib"
 #define LIB_EXT "so"
 #endif
-    if (!addLibFileIfExists(sharedLibPaths, "../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT))
-    {
-        if (!addLibFileIfExists(sharedLibPaths, LIB_NAME "TypeScriptRuntime." LIB_EXT))
-        {
-            /*
-            llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                            "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
-            return -1;            
-            */
-        }        
-    }
+    if (!disableGC.getValue())
+        if (!addLibFileIfExists(sharedLibPaths, "../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT))
+            if (!addLibFileIfExists(sharedLibPaths, LIB_NAME "TypeScriptRuntime." LIB_EXT))
+            {
+                /*
+                llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
+                                "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
+                return -1;            
+                */
+            }        
 
     mlir::ExecutionEngineOptions engineOptions;
     engineOptions.transformer = optPipeline;
@@ -194,8 +193,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     if (module.lookupSymbol(MLIR_GCTORS))
     {
-        auto gctorsResult = engine->invokePacked(MLIR_GCTORS);
-        if (gctorsResult)
+        if (auto gctorsResult = engine->invokePacked(MLIR_GCTORS))
         {
             llvm::WithColor::error(llvm::errs(), "tsc") << "JIT calling global constructors failed, error: " << gctorsResult << "\n";
             return -1;
@@ -203,9 +201,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 
     // Invoke the JIT-compiled function.
-    auto invocationResult = engine->invokePacked(mainFuncName);
-
-    if (invocationResult)
+    if (auto invocationResult = engine->invokePacked(mainFuncName))
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "JIT invocation failed, error: " << invocationResult << "\n";
         return -1;
