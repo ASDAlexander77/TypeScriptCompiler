@@ -431,7 +431,7 @@
             "args": [
                 "-emit=jit",
                 "I:/Playground/1.ts",
-                "-debug-only=mlir,llvm",
+                "-debug-only=mlir,llvm,pass",
                 "-mlir-disable-threading",
                 "-di",
                 "--no-default-lib",
