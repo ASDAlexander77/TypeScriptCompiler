@@ -14356,22 +14356,14 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        if (!value->getReadWriteAccess() && isa<mlir_ts::StringType>(value->getType()))
+        auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()),
+                                                            value->getName(), ::mlir::IntegerAttr());
+        if (asAddess)
         {
-            // load address of const object in global
-            return builder.create<mlir_ts::AddressOfConstStringOp>(location, value->getType(), value->getName());
+            return address;
         }
-        else
-        {
-            auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()),
-                                                                value->getName(), ::mlir::IntegerAttr());
-            if (asAddess)
-            {
-                return address;
-            }
 
-            return builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
-        }
+        return builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
     }
 
     mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)

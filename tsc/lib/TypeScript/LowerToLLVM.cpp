@@ -3409,28 +3409,6 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
     }
 };
 
-struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfConstStringOp>
-{
-    using TsLlvmPattern<mlir_ts::AddressOfConstStringOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::AddressOfConstStringOp addressOfConstStringOp,
-                                  Adaptor transformed, ConversionPatternRewriter &rewriter) const final
-    {
-        
-
-        TypeHelper th(rewriter);
-        auto llvmCharType = typeConverter->convertType(th.getCharType());
-
-        auto loc = addressOfConstStringOp->getLoc();
-        auto globalPtr =
-            rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), addressOfConstStringOp.getGlobalName());
-        rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getPtrType(), llvmCharType, globalPtr,
-                                                 ArrayRef<LLVM::GEPArg>{0});
-
-        return success();
-    }
-};
-
 struct DefaultOpLowering : public TsLlvmPattern<mlir_ts::DefaultOp>
 {
     using TsLlvmPattern<mlir_ts::DefaultOp>::TsLlvmPattern;
@@ -5996,7 +5974,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext{tsContext.compileOptions};
     patterns.insert<
-        AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+        AddressOfOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
         AssertOpLowering, CastOpLowering, ConstantOpLowering, DefaultOpLowering, 
         OptionalOpLowering, ValueOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering, 
         ValueOrDefaultOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,

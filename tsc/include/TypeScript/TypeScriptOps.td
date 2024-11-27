@@ -2021,19 +2021,6 @@ def TypeScript_AddressOfOp : TypeScript_Op<"AddressOf"> {
   }];
 }
 
-def TypeScript_AddressOfConstStringOp : TypeScript_Op<"AddressOfConstString"> {
-  let arguments = (ins FlatSymbolRefAttr:$global_name);
-  let results = (outs TypeScript_String:$instance);
-}
-
-def TypeScript_AddressOfElementOp : TypeScript_Op<"AddressOfElement"> {
-  let arguments = (ins 
-        TypeScript_Ref:$reference,
-        Index:$elementIndex
-  );
-  let results = (outs TypeScript_Ref:$reference_of_element);
-}
-
 def TypeScript_GlobalOp : TypeScript_Op<"Global",
     [IsolatedFromAbove, SingleBlockImplicitTerminator<"GlobalResultOp">, Symbol]> {
   let arguments = (ins
