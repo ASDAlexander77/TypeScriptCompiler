@@ -51,6 +51,7 @@ CompileOptions prepareOptions()
     compileOptions.isWasm = TheTriple.getArch() == llvm::Triple::wasm64 || TheTriple.getArch() == llvm::Triple::wasm32;
     compileOptions.sizeBits = 32;
     compileOptions.isExecutable = emitAction == Action::BuildExe;
+    compileOptions.isDLL = emitAction == Action::BuildDll;
     compileOptions.appendGCtorsToMethod = appendGCtorsToMethod.getValue();
     if (
         TheTriple.getArch() == llvm::Triple::UnknownArch

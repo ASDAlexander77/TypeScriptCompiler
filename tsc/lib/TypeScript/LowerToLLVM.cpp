@@ -5043,12 +5043,18 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
 
-                // create dummy __mlir_execution_engine_init for JIT
+                // create dummy __mlir_gctors for JIT
                 rewriter.setInsertionPointToEnd(parentModule.getBody());
                 auto llvmFnType = mlir::FunctionType::get(rewriter.getContext(), {}, {});
                 auto initFunc = rewriter.create<func::FuncOp>(loc, MLIR_GCTORS, llvmFnType);
-                auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::Internal);
+                initFunc.setPublic();                
+                auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::External);
                 initFunc->setAttr("llvm.linkage", linkage);
+                if (tsLlvmContext->compileOptions.isDLL)
+                {
+                    initFunc->setAttr("export", rewriter.getUnitAttr());
+                }
+
                 auto &entryBlock = *initFunc.addEntryBlock();
                 rewriter.setInsertionPointToEnd(&entryBlock);
 

@@ -20,6 +20,7 @@ struct CompileOptions
     bool isWasm;
     bool isWindows;
     bool isExecutable;
+    bool isDLL;
     enum Exports exportOpt;
     std::string outputFolder;
     bool appendGCtorsToMethod;

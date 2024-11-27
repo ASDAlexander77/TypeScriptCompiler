@@ -939,6 +939,7 @@ class MLIRGenImpl
         }
 
         SmallVector<StringRef> symbols;
+        StringRef mlirGctors;
 #ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
         // loading Binary to get list of symbols
         SmallVector<StringRef> symbolsAll;
@@ -949,6 +950,10 @@ class MLIRGenImpl
             if (symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE))
             {
                 symbols.push_back(symbol);
+            }
+            else if (symbol == MLIR_GCTORS)
+            {
+                mlirGctors = symbol;
             }
         }
 #else
@@ -976,6 +981,19 @@ class MLIRGenImpl
                     auto litValue = mlirGenStringValue(location, filePath.str());
                     auto strVal = cast(location, getStringType(), litValue, genContext);
                     builder.create<mlir_ts::LoadLibraryPermanentlyOp>(location, mth.getI32Type(), strVal);
+
+                    // call global inits
+                    if (!mlirGctors.empty())
+                    {
+                        auto mlirGctorsNameVal = mlirGenStringValue(location, mlirGctors);
+                        auto strVal = cast(location, getStringType(), mlirGctorsNameVal, genContext);                        
+                        auto globalCtorPtr = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                            location, getFunctionType({}, {}, false), strVal);
+                        builder.create<mlir_ts::CallIndirectOp>(
+                            MLIRHelper::getCallSiteLocation(globalCtorPtr, location),
+                            globalCtorPtr, mlir::ValueRange{});                        
+                    }
+
                     return mlir::success();
                 }, genContext)))
             {
