@@ -27,7 +27,19 @@
             "environment": [],
             "externalConsole": true,
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
+        },     
+        {
+            "name": "(Windows) test-runner.exe - Launch (Compile - Shared - Gctors-as-method)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/tester/Debug/test-runner.exe",
+            "args": ["-shared", "-gctors-as-method", "${workspaceFolder}/../../tsc/test/tester/tests/import_object_literal_with_interface.ts ", "${workspaceFolder}/../../tsc/test/tester/tests/export_object_literal_with_interface.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/test/tester/Debug/",
+            "environment": [],
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },              
         {
             "name": "(Windows) test-runner.exe - Launch (Compile-Time)",
             "type": "cppvsdbg",

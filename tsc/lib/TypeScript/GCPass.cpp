@@ -55,7 +55,8 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                 {
                     if (!added)
                     {
-                        if (StringRef(name).ends_with("__cctor"))
+                        // we are adding to gctos(as method - only)
+                        if (StringRef(name).starts_with(MLIR_GCTORS))
                         {
                             added = true;
                             injectInit(funcOp);

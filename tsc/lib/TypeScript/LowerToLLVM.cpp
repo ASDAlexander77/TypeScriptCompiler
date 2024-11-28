@@ -5028,7 +5028,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                 initFunc.setPublic();                
                 auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::External);
                 initFunc->setAttr("llvm.linkage", linkage);
-                if (tsLlvmContext->compileOptions.isDLL)
+                if (true || tsLlvmContext->compileOptions.isDLL)
                 {
                     SmallVector<mlir::Attribute> funcAttrs;
                     funcAttrs.push_back(ATTR("export"));
