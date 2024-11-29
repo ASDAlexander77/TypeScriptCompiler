@@ -870,20 +870,21 @@ class MLIRCustomMethods
 class MLIRPropertyAccessCodeLogic
 {
     mlir::OpBuilder &builder;
-    mlir::Location &location;
-    mlir::Value &expression;
+    mlir::Location location;
+    mlir::Value expression;
     mlir::StringRef name;
     mlir::Attribute fieldId;
+    mlir::Value argument;
 
   public:
-    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression,
+    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
                                 StringRef name)
         : builder(builder), location(location), expression(expression), name(name)
     {
         fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
     }
 
-    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression,
+    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
                                 mlir::Attribute fieldId)
         : builder(builder), location(location), expression(expression), fieldId(fieldId)
     {
@@ -892,6 +893,16 @@ class MLIRPropertyAccessCodeLogic
             name = strAttr.getValue();
         }
     }
+
+    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
+                                mlir::Attribute fieldId, mlir::Value argument)
+        : builder(builder), location(location), expression(expression), fieldId(fieldId), argument(argument)
+    {
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId))
+        {
+            name = strAttr.getValue();
+        }
+    }    
 
     mlir::Value Enum(mlir_ts::EnumType enumType)
     {
@@ -1430,6 +1441,11 @@ class MLIRPropertyAccessCodeLogic
     mlir::Attribute getAttribute()
     {
         return fieldId;
+    }
+
+    mlir::Value getArgument()
+    {
+        return argument;
     }
 
   private:

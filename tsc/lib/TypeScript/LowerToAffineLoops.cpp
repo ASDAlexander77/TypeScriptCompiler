@@ -990,6 +990,51 @@ struct ThisAccessorIndirectOpLowering : public TsPattern<mlir_ts::ThisAccessorIn
     }
 };
 
+struct ThisIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndexAccessorOp>
+{
+    using TsPattern<mlir_ts::ThisIndexAccessorOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisIndexAccessorOp thisIndexAccessorOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = thisIndexAccessorOp.getLoc();
+
+        if (thisIndexAccessorOp.getSetValue())
+        {
+            if (!thisIndexAccessorOp.getSetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            rewriter.create<mlir_ts::CallOp>(loc, thisIndexAccessorOp.getSetAccessor().value(),
+                mlir::TypeRange{}, mlir::ValueRange{thisIndexAccessorOp.getThisVal(), 
+                    thisIndexAccessorOp.getIndex(), thisIndexAccessorOp.getSetValue()});
+        }
+
+        if (thisIndexAccessorOp.getNumResults() > 0)
+        {
+            if (!thisIndexAccessorOp.getGetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
+
+            auto callRes =
+                rewriter.create<mlir_ts::CallOp>(loc, thisIndexAccessorOp.getGetAccessor().value(),
+                    TypeRange{thisIndexAccessorOp.getType(0)}, 
+                        ValueRange{thisIndexAccessorOp.getThisVal(), thisIndexAccessorOp.getIndex()});
+
+            rewriter.replaceOp(thisIndexAccessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(thisIndexAccessorOp);
+        }
+
+        return success();
+    }
+};
+
 struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 {
     using TsPattern<mlir_ts::TryOp>::TsPattern;
@@ -1976,13 +2021,13 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
     // the set of patterns that will lower the TypeScript operations.
 
     patterns.insert<EntryOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, ParamOpLowering,
-                    ParamOptionalOpLowering, ParamDefaultValueOpLowering, OptionalValueOrDefaultOpLowering, PrefixUnaryOpLowering, 
-                    PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/ DoWhileOpLowering, WhileOpLowering, 
-                    ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, 
-                    AccessorOpLowering, ThisAccessorOpLowering, ThisAccessorIndirectOpLowering,
-                    LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, 
-                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, 
-                    TypeOfOpLowering, CaptureOpLowering>(
+                    ParamOptionalOpLowering, ParamDefaultValueOpLowering, OptionalValueOrDefaultOpLowering, 
+                    PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/ 
+                    DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, 
+                    SwitchOpLowering, AccessorOpLowering, ThisAccessorOpLowering, ThisAccessorIndirectOpLowering, 
+                    ThisIndexAccessorOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, 
+                    TryOpLowering, ThrowOpLowering, CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, 
+                    YieldReturnValOpLowering, TypeOfOpLowering, CaptureOpLowering>(
         &context, &tsContext, &tsFuncContext);
 }
 

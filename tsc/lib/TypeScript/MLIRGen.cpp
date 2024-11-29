@@ -7091,6 +7091,13 @@ class MLIRGenImpl
                     propertyType = typePredicateType;
                 }
             }
+            else if (auto thisIndexAccessor = conditionValue.getDefiningOp<mlir_ts::ThisIndexAccessorOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisIndexAccessor.getType(0)))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
 
             if (propertyType && propertyType.getParameterName().getValue() == THIS_NAME)
             {
@@ -9181,7 +9188,22 @@ class MLIRGenImpl
                 thisAccessorIndirectOp.getGetAccessor(), 
                 thisAccessorIndirectOp.getSetAccessor(), 
                 savingValue);    
-        }        
+        } 
+        else if (auto thisIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndexAccessorOp>())
+        {
+            syncSavingValue(thisIndexAccessorOp.getType(0));
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::ThisIndexAccessorOp>(
+                location, mlir::Type(), thisIndexAccessorOp.getThisVal(), thisIndexAccessorOp.getIndex(),
+                thisIndexAccessorOp.getGetAccessorAttr(), 
+                thisIndexAccessorOp.getSetAccessorAttr(), 
+                savingValue);
+        }               
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
@@ -9796,6 +9818,15 @@ class MLIRGenImpl
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
     }
 
+    ValueOrLogicalResult mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue,
+                                                         mlir::Attribute id, bool isConditional,
+                                                         mlir::Value argument/*for index access*/,
+                                                         const GenContext &genContext)
+    {
+        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, id, argument);
+        return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
+    }    
+
     ValueOrLogicalResult mlirGenPropertyAccessExpressionLogic(mlir::Location location, mlir::Value objectValue,
                                                               bool isConditional, MLIRPropertyAccessCodeLogic &cl,
                                                               const GenContext &genContext)
@@ -9828,10 +9859,8 @@ class MLIRGenImpl
                 ifOp.getResults().front().setType(getOptionalType(value.getType()));
             }
 
-            auto optValue =
-                isa<mlir_ts::OptionalType>(value.getType())
-                    ? value 
-                    : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+            auto optValue = isa<mlir_ts::OptionalType>(value.getType())
+                    ? value : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
             // else
@@ -9855,6 +9884,7 @@ class MLIRGenImpl
                                                                   const GenContext &genContext)
     {
         auto name = cl.getName();
+        auto argument = cl.getArgument();
         auto actualType = objectValue.getType();
 
         LLVM_DEBUG(llvm::dbgs() << "\n\tResolving property '" << name << "' of type " << objectValue.getType(););
@@ -9877,7 +9907,8 @@ class MLIRGenImpl
                 return value;
             }
 
-            return ClassMembers(location, objectValue, classType.getName().getValue(), name, false, genContext);
+            return ClassMembers(location, objectValue, classType.getName().getValue(), name, 
+                false, argument, genContext);
         };
 
         auto classAccess = [&](mlir_ts::ClassType classType) {
@@ -10036,7 +10067,8 @@ class MLIRGenImpl
                         return value;
                     }
 
-                    return ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, true, genContext);
+                    return ClassMembers(location, objectValue, 
+                        classStorageType.getName().getValue(), name, true, argument, genContext);
                 })
                 .Case<mlir_ts::ClassType>(classAccess)
                 .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
@@ -10184,7 +10216,7 @@ class MLIRGenImpl
     }
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, mlir::StringRef classFullName,
-                             mlir::StringRef name, bool baseClass, const GenContext &genContext)
+                             mlir::StringRef name, bool baseClass, mlir::Value argument, const GenContext &genContext)
     {
         auto classInfo = getClassInfoByFullName(classFullName);
         if (!classInfo)
@@ -10201,7 +10233,7 @@ class MLIRGenImpl
         }
 
         // static field access
-        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, genContext);
+        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, argument, genContext);
         if (!value)
         {
             emitError(location, "Class member '") << name << "' can't be found";
@@ -10488,7 +10520,14 @@ class MLIRGenImpl
 
     // TODO: why isSuperClass is not used here?
     mlir::Value ClassIndexAccess(ClassInfo::TypePtr classInfo, 
-            mlir::Location location, mlir::Value thisValue, const GenContext &genContext) {
+            mlir::Location location, mlir::Value thisValue, mlir::Value argument, const GenContext &genContext) {
+
+        if (classInfo->indexes.size() == 0)
+        {
+            emitError(location) << "indexer is not defined";
+            return mlir::Value();            
+        }
+
         auto indexInfo = classInfo->indexes.front();
         auto getFuncOp = indexInfo.get;
         auto setFuncOp = indexInfo.set;
@@ -10499,20 +10538,24 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        mlir::Type indexResultType = indexInfo.indexSignature.getResult(0);
+        auto indexResultType = indexInfo.indexSignature.getResult(0);
+        auto argumentType = indexInfo.indexSignature.getInput(0);
 
-        auto thisAccessorOp = builder.create<mlir_ts::ThisAccessorOp>(
-            location, indexResultType, thisValue,
+        // sync index
+        CAST_A(result, location, argumentType, argument, genContext);
+
+        auto thisIndexAccessorOp = builder.create<mlir_ts::ThisIndexAccessorOp>(
+            location, indexResultType, thisValue, V(result),
             getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
                         : mlir::FlatSymbolRefAttr{},
             setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
                         : mlir::FlatSymbolRefAttr{},
             mlir::Value());
-        return thisAccessorOp.getResult(0);
+        return thisIndexAccessorOp.getResult(0);
     }
 
     mlir::Value ClassBaseClassAccess(ClassInfo::TypePtr classInfo, ClassInfo::TypePtr baseClass, int index,
-            mlir::Location location, mlir::Value thisValue, StringRef name, const GenContext &genContext) {
+            mlir::Location location, mlir::Value thisValue, StringRef name, mlir::Value argument, const GenContext &genContext) {
 
         // first base is "super."
         if (index == 0 && name == SUPER_NAME)
@@ -10522,7 +10565,7 @@ class MLIRGenImpl
             return value;
         }
 
-        auto value = ClassMembers(location, thisValue, baseClass, name, true, genContext);
+        auto value = ClassMembers(location, thisValue, baseClass, name, true, argument, genContext);
         if (value)
         {
             return value;
@@ -10561,7 +10604,7 @@ class MLIRGenImpl
     }    
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
-                             mlir::StringRef name, bool isSuperClass, const GenContext &genContext)
+                             mlir::StringRef name, bool isSuperClass, mlir::Value argument, const GenContext &genContext)
     {
         assert(classInfo);
 
@@ -10570,7 +10613,7 @@ class MLIRGenImpl
         // indexer access
         if (name == INDEX_ACCESS_FIELD_NAME)
         {
-            return ClassIndexAccess(classInfo, location, thisValue, genContext);
+            return ClassIndexAccess(classInfo, location, thisValue, argument, genContext);
         }
 
         auto staticFieldIndex = classInfo->getStaticFieldIndex(
@@ -10603,7 +10646,8 @@ class MLIRGenImpl
 
         for (auto [index, baseClass] : enumerate(classInfo->baseClasses))
         {
-            auto value = ClassBaseClassAccess(classInfo, baseClass, index, location, thisValue, name, genContext);
+            auto value = ClassBaseClassAccess(classInfo, baseClass, index, location, 
+                thisValue, name, argument, genContext);
             if (value)
             {
                 return value;
@@ -10885,13 +10929,11 @@ class MLIRGenImpl
                     // TODO: implement '[string]' access here
                     return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
                 }
-
-                // else access of index
-                auto indexAccessor = builder.getStringAttr(INDEX_ACCESS_FIELD_NAME);
-                return mlirGenPropertyAccessExpression(location, expression, indexAccessor, isConditionalAccess, genContext);
             }
 
-            llvm_unreachable("not implemented (ElementAccessExpression)");
+            // else access of index
+            auto indexAccessor = builder.getStringAttr(INDEX_ACCESS_FIELD_NAME);
+            return mlirGenPropertyAccessExpression(location, expression, indexAccessor, isConditionalAccess, argumentExpression, genContext);
         }
         else if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(arrayType))
         {
@@ -17402,7 +17444,7 @@ genContext);
             funcOp = funcOp_;
         }
 
-        void registerClassMethodMember(int orderWeight)
+        bool registerClassMethodMember(mlir::Location location, int orderWeight)
         {
             auto &methodInfos = newClassPtr->methods;
 
@@ -17421,13 +17463,43 @@ genContext);
             {
                 if (methodName == "get")
                 {
-                    newClassPtr->indexes.front().get = funcOp;
+                    auto &indexer = newClassPtr->indexes.front();
+                    auto getFuncType = funcOp.getFunctionType();
+                    auto actualGetFuncType = 
+                        mlir_ts::FunctionType::get(
+                            indexer.indexSignature.getContext(), 
+                            getFuncType.getInputs().drop_front(), 
+                            getFuncType.getResults(), 
+                            false);                    
+                    if (indexer.indexSignature != actualGetFuncType)
+                    {
+                        emitError(location) << "'get' method is not matching 'index' definition";
+                        return false;
+                    }
+
+                    indexer.get = funcOp;
                 }
                 else if (methodName == "set")
                 {
-                    newClassPtr->indexes.front().set = funcOp;
+                    auto &indexer = newClassPtr->indexes.front();
+                    auto setFuncType = funcOp.getFunctionType();
+                    auto actualSetFuncType = 
+                        mlir_ts::FunctionType::get(
+                            indexer.indexSignature.getContext(), 
+                            setFuncType.getInputs().drop_front().drop_back(), 
+                            { setFuncType.getInputs().back() }, 
+                            false);
+                    if (indexer.indexSignature != actualSetFuncType)
+                    {
+                        emitError(location) << "'set' method is not matching 'index' definition";
+                        return false;
+                    }
+
+                    indexer.set = funcOp;
                 }
             }
+
+            return true;
         }
 
         void addAccessor()
@@ -17590,9 +17662,13 @@ genContext);
         if (funcOp)
         {
             classMethodMemberInfo.setFuncOp(funcOp);
-            funcLikeDeclaration->processed = true;
-            classMethodMemberInfo.registerClassMethodMember(orderWeight);
-            return mlir::success();
+            if (classMethodMemberInfo.registerClassMethodMember(loc(funcLikeDeclaration), orderWeight))
+            {
+                funcLikeDeclaration->processed = true;
+                return mlir::success();
+            }
+
+            return mlir::failure();
         }
 
         return registerGenericClassMethod(classMethodMemberInfo, genContext);
@@ -17716,7 +17792,7 @@ genContext);
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
-            classMethodMemberInfo.registerClassMethodMember(orderWeight);
+            classMethodMemberInfo.registerClassMethodMember(location, orderWeight);
             return mlir::success();
         }
 

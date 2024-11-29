@@ -387,6 +387,15 @@ void mlir_ts::ThisAccessorIndirectOp::getCanonicalizationPatterns(RewritePattern
 }
 
 //===----------------------------------------------------------------------===//
+// ThisIndexAccessorOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::ThisIndexAccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<RemoveUnusedAccessor<mlir_ts::ThisIndexAccessorOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // InterfaceSymbolRefOp
 //===----------------------------------------------------------------------===//
 
