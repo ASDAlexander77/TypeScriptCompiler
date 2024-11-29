@@ -10813,7 +10813,15 @@ class MLIRGenImpl
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.getValue();
-                return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                if (attr.isa<mlir::StringAttr>())
+                {
+                    // TODO: implement '[string]' access here
+                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                }
+
+                // else access of index
+                auto indexAccessor = builder.getStringAttr("numberIndexer");
+                return mlirGenPropertyAccessExpression(location, expression, indexAccessor, isConditionalAccess, genContext);
             }
 
             llvm_unreachable("not implemented (ElementAccessExpression)");
@@ -15451,8 +15459,7 @@ class MLIRGenImpl
         // non-static first
         for (auto &classMember : classDeclarationAST->members)
         {
-            if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, false,
-                                                     genContext)))
+            if (mlir::failed(mlirGenClassFieldMember(newClassPtr, classMember, fieldInfos, false, genContext)))
             {
                 return mlir::failure();
             }
@@ -15484,8 +15491,7 @@ class MLIRGenImpl
         // static methods
         for (auto &classMember : classDeclarationAST->members)
         {
-            if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, true,
-                                                     genContext)))
+            if (mlir::failed(mlirGenClassFieldMember(newClassPtr, classMember, fieldInfos, true, genContext)))
             {
                 return mlir::failure();
             }
@@ -15503,6 +15509,18 @@ class MLIRGenImpl
         // dummy class, not used, needed to sync code
         // TODO: refactor it
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
+        // process indexes first
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            if (classMember == SyntaxKind::IndexSignature)
+            {
+                if (mlir::failed(mlirGenClassIndexMember(newClassPtr, classMember, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+        }
 
         // add methods when we have classType
         auto notResolved = 0;
@@ -15539,8 +15557,7 @@ class MLIRGenImpl
                 llvm::dbgs() << "\n****** \tprocessing: " << newClassPtr->fullName << "." << classMethodMemberInfo.methodName;);
 
                 // static fields
-                if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos,
-                                                         true, genContext)))
+                if (mlir::failed(mlirGenClassFieldMember(newClassPtr, classMember, fieldInfos, true, genContext)))
                 {
                     LLVM_DEBUG(llvm::dbgs() << "\n\tNOT RESOLVED FIELD.");
                     notResolved++;
@@ -16026,8 +16043,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenClassFieldMember(ClassLikeDeclaration classDeclarationAST,
-                                                ClassInfo::TypePtr newClassPtr, ClassElement classMember,
+    mlir::LogicalResult mlirGenClassFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember,
                                                 SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool staticOnly,
                                                 const GenContext &genContext)
     {
@@ -17373,6 +17389,38 @@ genContext);
         mlir_ts::FuncOp funcOp;
     };
 
+    mlir::LogicalResult mlirGenClassIndexMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember,
+                                                const GenContext &genContext)
+    {
+        if (classMember->processed)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n\tALREADY PROCESSED.");
+            return mlir::success();
+        }
+
+        // TODO:
+        auto indexElement = classMember.as<IndexSignatureDeclaration>();
+
+        auto &indexInfos = newClassPtr->indexes;
+
+        auto res = mlirGenFunctionSignaturePrototype(indexElement.as<SignatureDeclaration>(), false, genContext);
+        auto funcType = std::get<1>(res);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n\tindex signature: " << funcType << "\n");
+
+        if (std::find_if(
+            indexInfos.begin(), 
+            indexInfos.end(), 
+            [&] (auto& item) { 
+                return item.indexSignature == funcType; 
+            }) == indexInfos.end())
+        {
+            indexInfos.push_back({funcType, {}, {}});
+        } 
+
+        return mlir::success();
+    }    
+
     mlir::LogicalResult mlirGenClassMethodMember(ClassLikeDeclaration classDeclarationAST,
                                                  ClassInfo::TypePtr newClassPtr, ClassElement classMember,
                                                  int orderWeight,
@@ -17387,6 +17435,7 @@ genContext);
         ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);
         if (!classMethodMemberInfo.isFunctionLike())
         {
+            // process indexer here
             return mlir::success();
         }
 

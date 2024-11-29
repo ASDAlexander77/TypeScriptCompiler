@@ -147,6 +147,13 @@ struct AccessorInfo
     bool isAbstract;
 };
 
+struct IndexInfo
+{
+    mlir_ts::FunctionType indexSignature;
+    mlir_ts::FuncOp get;
+    mlir_ts::FuncOp set;
+};
+
 struct InterfaceFieldInfo
 {
     mlir::Attribute id;
@@ -506,6 +513,8 @@ struct ClassInfo
     llvm::SmallVector<GenericMethodInfo> staticGenericMethods;
 
     llvm::SmallVector<AccessorInfo> accessors;
+
+    llvm::SmallVector<IndexInfo> indexes;
 
     NodeArray<ClassElement> extraMembers;
     NodeArray<ClassElement> extraMembersPost;
