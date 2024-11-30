@@ -11390,6 +11390,74 @@ class MLIRGenImpl
         return mlirGenCallExpression(location, funcResult, {}, operands, genContext);
     }
 
+    ValueOrLogicalResult mlirGenCallBuiltInFunction(
+        mlir::Location location, mlir::Value actualFuncRefValue, NodeArray<TypeNode> typeArguments, 
+        SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    {
+        // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
+        auto calleeName = actualFuncRefValue.getDefiningOp()->getAttrOfType<mlir::FlatSymbolRefAttr>(StringRef(IDENTIFIER_ATTR_NAME));
+        auto functionName = calleeName.getValue();
+
+        if (auto thisSymbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            // do not remove it, it is needed for custom methods to be called correctly
+            operands.insert(operands.begin(), thisSymbolRefOp.getThisVal());
+        }
+
+        // temp hack
+        if (functionName == "__array_foreach")
+        {
+            mlirGenArrayForEach(location, operands, genContext);
+            return mlir::success();
+        }
+
+        if (functionName == "__array_every")
+        {
+            return mlirGenArrayEvery(location, operands, genContext);
+        }
+
+        if (functionName == "__array_some")
+        {
+            return mlirGenArraySome(location, operands, genContext);
+        }
+
+        if (functionName == "__array_map")
+        {
+            return mlirGenArrayMap(location, operands, genContext);
+        }
+
+        if (functionName == "__array_filter")
+        {
+            return mlirGenArrayFilter(location, operands, genContext);
+        }
+
+        if (functionName == "__array_reduce")
+        {
+            return mlirGenArrayReduce(location, operands, genContext);
+        }
+
+        // resolve function           
+        MLIRCustomMethods cm(builder, location, compileOptions);
+        mlir::SmallVector<mlir::Type> typeArgs;
+        for (auto typeArgNode : typeArguments)
+        {
+            auto typeArg = getType(typeArgNode, genContext);
+            if (!typeArg)
+            {
+                return mlir::failure();
+            }
+
+            typeArgs.push_back(typeArg);
+        }
+
+        return cm.callMethod(
+            functionName, 
+            typeArgs,
+            operands, 
+            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 
+            genContext);
+    }
+
     ValueOrLogicalResult mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
                                                NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                                const GenContext &genContext)
@@ -11427,68 +11495,8 @@ class MLIRGenImpl
 
         if (mth.isBuiltinFunctionType(actualFuncRefValue))
         {
-            // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
-            auto calleeName = actualFuncRefValue.getDefiningOp()->getAttrOfType<mlir::FlatSymbolRefAttr>(StringRef(IDENTIFIER_ATTR_NAME));
-            auto functionName = calleeName.getValue();
-
-            if (auto thisSymbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
-            {
-                // do not remove it, it is needed for custom methods to be called correctly
-                operands.insert(operands.begin(), thisSymbolRefOp.getThisVal());
-            }
-
-            // temp hack
-            if (functionName == "__array_foreach")
-            {
-                mlirGenArrayForEach(location, operands, genContext);
-                return mlir::success();
-            }
-
-            if (functionName == "__array_every")
-            {
-                return mlirGenArrayEvery(location, operands, genContext);
-            }
-
-            if (functionName == "__array_some")
-            {
-                return mlirGenArraySome(location, operands, genContext);
-            }
-
-            if (functionName == "__array_map")
-            {
-                return mlirGenArrayMap(location, operands, genContext);
-            }
-
-            if (functionName == "__array_filter")
-            {
-                return mlirGenArrayFilter(location, operands, genContext);
-            }
-
-            if (functionName == "__array_reduce")
-            {
-                return mlirGenArrayReduce(location, operands, genContext);
-            }
-
-            // resolve function           
-            MLIRCustomMethods cm(builder, location, compileOptions);
-            mlir::SmallVector<mlir::Type> typeArgs;
-            for (auto typeArgNode : typeArguments)
-            {
-                auto typeArg = getType(typeArgNode, genContext);
-                if (!typeArg)
-                {
-                    return mlir::failure();
-                }
-
-                typeArgs.push_back(typeArg);
-            }
-
-            return cm.callMethod(
-                functionName, 
-                typeArgs,
-                operands, 
-                std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 
-                genContext);
+            return mlirGenCallBuiltInFunction(location, 
+                actualFuncRefValue, typeArguments, operands, genContext);
         }
 
         if (auto optFuncRef = dyn_cast<mlir_ts::OptionalType>(actualFuncRefValue.getType()))
