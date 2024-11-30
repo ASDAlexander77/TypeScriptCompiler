@@ -2281,7 +2281,7 @@ class MLIRGenImpl
                                             llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams,
                                             StringMap<mlir::Type> &inferredTypes, IsGeneric &anyNamedGenericType,
                                             GenContext &genericTypeGenContext,
-                                            bool arrayMerge = false)
+                                            bool arrayMerge = false, bool noExtendsTest = false)
     {
         for (auto &pair : inferredTypes)
         {
@@ -2306,9 +2306,10 @@ class MLIRGenImpl
 
             auto typeParam = (*found);
 
+            // we need to find out type and constrains is not allowing to do it
             auto [result, hasAnyNamedGenericType, reason] =
                 zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam,
-                                             inferredType, false, genericTypeGenContext, true, arrayMerge);
+                                             inferredType, noExtendsTest, genericTypeGenContext, true, arrayMerge);
             if (mlir::failed(result))
             {
                 return mlir::failure();
