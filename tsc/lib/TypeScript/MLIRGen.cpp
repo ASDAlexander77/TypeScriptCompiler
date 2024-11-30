@@ -2584,6 +2584,24 @@ class MLIRGenImpl
                     location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
                 if (mlir::failed(result))
                 {
+                    if (reason == Reason::FailedConstraint)
+                    {
+                        if (functionGenericTypeInfo->funcType.getNumResults() > 0
+                            && mlir::isa<mlir_ts::TypePredicateType>(functionGenericTypeInfo->funcType.getResult(0)))
+                        {
+                            return 
+                                {
+                                    mlir::success(), 
+                                    mlir_ts::FunctionType::get(
+                                        builder.getContext(), 
+                                        {}, 
+                                        { getBooleanLiteral(false) }, 
+                                        false), 
+                                    ""
+                                };
+                        }
+                    }
+
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
@@ -7197,6 +7215,17 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto condValue = V(result);
 
+        // special case: in case of LiteralValue do not process If value is False
+        std::optional<bool> literalValue;
+        if (auto litType = mlir::dyn_cast<mlir_ts::LiteralType>(condValue.getType()))
+        {
+            if (auto boolVal = mlir::dyn_cast<mlir::BoolAttr>(litType.getValue()))
+            {
+                literalValue = boolVal.getValue();
+            }
+        }
+
+        // default implementation of IfOp
         if (condValue.getType() != getBooleanType())
         {
             CAST(condValue, location, getBooleanType(), condValue, genContext);
@@ -7211,8 +7240,13 @@ class MLIRGenImpl
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
             checkSafeCast(ifStatementAST->expression, V(result), hasElse ? &elseSafeCase : nullptr, genContext);
-            auto result = mlirGen(ifStatementAST->thenStatement, genContext);
-            EXIT_IF_FAILED(result)
+
+            auto processIf = !literalValue.has_value() || literalValue.value();
+            if (processIf)
+            {
+                auto result = mlirGen(ifStatementAST->thenStatement, genContext);
+                EXIT_IF_FAILED(result)
+            }
         }
 
         if (hasElse)
@@ -7225,8 +7259,12 @@ class MLIRGenImpl
                 addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
             }
 
-            auto result = mlirGen(ifStatementAST->elseStatement, genContext);
-            EXIT_IF_FAILED(result)
+            auto processIf = !literalValue.has_value() || !literalValue.value();
+            if (processIf)
+            {
+                auto result = mlirGen(ifStatementAST->elseStatement, genContext);
+                EXIT_IF_FAILED(result)
+            }
         }
 
         builder.setInsertionPointAfter(ifOp);
@@ -11369,6 +11407,24 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+        // special case when TypePredicateType is used in generic function and failed constraints 
+        if (auto symbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            if (symbolRefOp.getIdentifier() == "")
+            {
+                if (auto funcType = mlir::dyn_cast<mlir_ts::FunctionType>(symbolRefOp.getType()))
+                {
+                    if (funcType.getNumInputs() == 0 && funcType.getNumResults() == 1)
+                    {
+                        if (auto litType = dyn_cast<mlir_ts::LiteralType>(funcType.getResult(0)))
+                        {
+                            return V(builder.create<mlir_ts::ConstantOp>(location, litType, litType.getValue()));                            
+                        }
+                    }
+                }
+            }
+        }
+
         if (mth.isBuiltinFunctionType(actualFuncRefValue))
         {
             // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
@@ -12695,11 +12751,17 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::NullOp>(loc(nullLiteral), getNullType()));
     }
 
-    ValueOrLogicalResult mlirGenBooleanValue(mlir::Location location, bool val)
+    mlir_ts::LiteralType getBooleanLiteral(bool val) 
     {
         auto attrVal = mlir::BoolAttr::get(builder.getContext(), val);
         auto literalType = mlir_ts::LiteralType::get(attrVal, getBooleanType());
-        return V(builder.create<mlir_ts::ConstantOp>(location, literalType, attrVal));
+        return literalType;
+    }
+
+    ValueOrLogicalResult mlirGenBooleanValue(mlir::Location location, bool val)
+    {
+        auto literalType = getBooleanLiteral(val);
+        return V(builder.create<mlir_ts::ConstantOp>(location, literalType, literalType.getValue()));
     }
 
     ValueOrLogicalResult mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
