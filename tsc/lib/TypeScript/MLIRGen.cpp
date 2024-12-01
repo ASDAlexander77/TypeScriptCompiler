@@ -6739,6 +6739,37 @@ class MLIRGenImpl
         return addSafeCastStatement(expr, safeType, inverse, elseSafeCase, genContext);
     }
 
+    bool isSafeTypeTheSameAndNoNeedToCast(mlir::Type type, mlir::Type safeType)
+    {
+        if (type == safeType)
+        {
+            // nothing todo here
+            return true;
+        }
+        else if (mlir::isa<mlir_ts::ArrayType>(safeType) && mlir::isa<mlir_ts::ArrayType>(type))
+        {
+            // nothing todo here
+            return true;
+        }
+        else if (mlir::isa<mlir_ts::InterfaceType>(safeType) && mlir::isa<mlir_ts::InterfaceType>(type))
+        {
+            // nothing todo here
+            return true;
+        }
+        else if (mlir::isa<mlir_ts::ClassType>(safeType) && mlir::isa<mlir_ts::ClassType>(type))
+        {
+            // nothing todo here
+            return true;
+        }
+        else if (mlir::isa<mlir_ts::ObjectType>(safeType) && mlir::isa<mlir_ts::ObjectType>(type))
+        {
+            // nothing todo here
+            return true;
+        }
+
+        return false;
+    }
+
     mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto location = loc(expr);
@@ -6746,6 +6777,11 @@ class MLIRGenImpl
         auto result = mlirGen(expr, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
+
+        if (isSafeTypeTheSameAndNoNeedToCast(exprValue.getType(), safeType))
+        {
+            return mlir::success();
+        }
 
         if (elseSafeCase)
         {
