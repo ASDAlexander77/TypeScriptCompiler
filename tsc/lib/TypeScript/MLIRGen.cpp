@@ -22344,7 +22344,8 @@ genContext);
                     return mlir::failure();
                 }
 
-                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, builder.getContext()), type});
+                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, builder.getContext()), type});
+                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_SET_FIELD_NAME, builder.getContext()), type});
             }
             else if (kind == SyntaxKind::CallSignature)
             {
@@ -22415,7 +22416,8 @@ genContext);
             auto indexAccessName = MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, builder.getContext());
             if (types.front().id == indexAccessName)
             {
-                if (auto elementTypeOfIndexSignature = mth.getIndexSignatureElementType(types.front().type))
+                auto [arg, res] = mth.getIndexSignatureArgumentAndResultTypes(types.front().type);
+                if (auto elementTypeOfIndexSignature = arg)
                 {
                     auto arrayType = getArrayType(elementTypeOfIndexSignature);
                     LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
@@ -22444,7 +22446,8 @@ genContext);
             if (indexSignatureType)
             {
                 // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
-                if (auto elementTypeOfIndexSignature = mth.getIndexSignatureElementType(indexSignatureType))
+                auto [arg, res] = mth.getIndexSignatureArgumentAndResultTypes(indexSignatureType);
+                if (auto elementTypeOfIndexSignature = arg)
                 {
                     auto arrayType = getArrayType(elementTypeOfIndexSignature);
                     LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);

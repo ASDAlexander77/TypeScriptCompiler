@@ -618,17 +618,19 @@ class MLIRTypeHelper
     }
 
     // TODO: how about multi-index?
-    mlir::Type getIndexSignatureElementType(mlir::Type indexSignatureType)
+    std::pair<mlir::Type, mlir::Type> getIndexSignatureArgumentAndResultTypes(mlir::Type indexSignatureType)
     {
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(indexSignatureType))
         {
-            if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 && isNumericType(funcType.getInput(0)))
+            if (funcType.getNumInputs() == 1 
+                && funcType.getNumResults() == 1 
+                && (isNumericType(funcType.getInput(0)) || isa<mlir_ts::StringType>(funcType.getInput(0))))
             {
-                return funcType.getResult(0);
+                return {funcType.getInput(0), funcType.getResult(0)};
             }
         }
 
-        return mlir::Type();
+        return {mlir::Type(), mlir::Type()};
     }
 
     mlir::Type getIndexSignatureType(mlir::Type elementType)
@@ -640,6 +642,26 @@ class MLIRTypeHelper
 
         return mlir_ts::FunctionType::get(context, {mlir_ts::NumberType::get(context)}, {elementType}, false);
     }
+
+    mlir::Type getIndexGetFunctionType(mlir::Type indexSignature)
+    {
+        auto [arg, res] = getIndexSignatureArgumentAndResultTypes(indexSignature);
+        return mlir_ts::FunctionType::get(
+            indexSignature.getContext(), 
+            {arg}, 
+            {res}, 
+            false);    
+    }
+
+    mlir::Type getIndexSetFunctionType(mlir::Type indexSignature)
+    {
+        auto [arg, res] = getIndexSignatureArgumentAndResultTypes(indexSignature);        
+        return mlir_ts::FunctionType::get(
+            indexSignature.getContext(), 
+            {arg, res}, 
+            {}, 
+            false);    
+    }    
 
     bool isAnyFunctionType(mlir::Type funcType, bool stripRefTypeOpt = false)
     {
@@ -2022,7 +2044,6 @@ class MLIRTypeHelper
             // TODO: do not break the order as it is used in Debug info
             destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context), false });
             destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir_ts::StringType::get(context), false });
-            //destTupleFields.push_back({ MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context), mlir_ts::NumberType::get(context), false });
             return mlir::success();
         }
         else if (auto optType = dyn_cast<mlir_ts::OptionalType>(srcType))
@@ -2181,11 +2202,6 @@ class MLIRTypeHelper
                 return mlir_ts::NumberType::get(context);
             }
 
-            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context))
-            {
-                return  getIndexSignatureType(arrayType.getElementType());
-            }
-
             llvm_unreachable("not implemented");
         }        
 
@@ -2197,11 +2213,6 @@ class MLIRTypeHelper
                 return mlir_ts::NumberType::get(context);
             }
 
-            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context))
-            {
-                return  getIndexSignatureType(constArrayType.getElementType());
-            }
-
             llvm_unreachable("not implemented");
         }        
 
@@ -2211,11 +2222,6 @@ class MLIRTypeHelper
             if (fieldName == MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context))
             {
                 return mlir_ts::NumberType::get(context);
-            }
-
-            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context))
-            {
-                return  getIndexSignatureType(mlir_ts::CharType::get(context));
             }
 
             llvm_unreachable("not implemented");
