@@ -18386,6 +18386,67 @@ genContext);
         return mlir::success();
     }
 
+    mlir::LogicalResult addInterfaceMethod(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
+        llvm::SmallVector<InterfaceMethodInfo> &methodInfos, StringRef methodName, mlir_ts::FunctionType funcType, bool isConditional,
+        bool declareInterface, const GenContext &genContext)
+    {
+        if (methodName.empty())
+        {
+            llvm_unreachable("not implemented");
+            return mlir::failure();
+        }
+
+        if (!funcType)
+        {
+            return mlir::failure();
+        }
+
+        if (llvm::any_of(funcType.getInputs(), [&](mlir::Type type) { return !type; }))
+        {
+            return mlir::failure();
+        }
+
+        if (llvm::any_of(funcType.getResults(), [&](mlir::Type type) { return !type; }))
+        {
+            return mlir::failure();
+        }
+
+        if (declareInterface || newInterfacePtr->getMethodIndex(methodName) == -1)
+        {
+            methodInfos.push_back(
+                {methodName.str(), funcType, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
+        }
+
+        return mlir::success();    
+    }
+
+    mlir::LogicalResult getInterfaceMethodNameAndType(mlir::Location location, mlir_ts::InterfaceType interfaceType,
+        MethodSignature methodSignature, std::string &methodNameOut, mlir_ts::FunctionType &funcTypeOut, 
+        const GenContext &genContext) {
+
+        std::string methodName;
+        std::string propertyName;
+        getMethodNameOrPropertyName(false, methodSignature, methodName, propertyName, genContext);
+
+        methodNameOut = methodName;
+        
+        if (methodSignature->typeParameters.size() > 0)
+        {
+            emitError(location) << "Generic method '" << methodName << "' in the interface is not allowed";
+            return mlir::failure();
+        }
+
+        auto funcGenContext = GenContext(genContext);
+        funcGenContext.clearScopeVars();
+        funcGenContext.thisType = interfaceType;
+
+        auto res = mlirGenFunctionSignaturePrototype(methodSignature, true, funcGenContext);
+        auto funcType = std::get<1>(res);
+        funcTypeOut = funcType;
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenInterfaceMethodMember(InterfaceDeclaration interfaceDeclarationAST,
                                                      InterfaceInfo::TypePtr newInterfacePtr,
                                                      TypeElement interfaceMember, bool declareInterface,
@@ -18428,8 +18489,7 @@ genContext);
             }
         }
         else if (kind == SyntaxKind::MethodSignature || kind == SyntaxKind::ConstructSignature 
-                || kind == SyntaxKind::IndexSignature || kind == SyntaxKind::CallSignature
-                || kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
+                || kind == SyntaxKind::CallSignature || kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
             auto isConditional = !!methodSignature->questionToken;
@@ -18437,52 +18497,53 @@ genContext);
             newInterfacePtr->hasNew |= kind == SyntaxKind::ConstructSignature;
 
             std::string methodName;
-            std::string propertyName;
-            getMethodNameOrPropertyName(false, methodSignature, methodName, propertyName, genContext);
-
-            if (methodName.empty())
+            mlir_ts::FunctionType funcType;
+            if (mlir::failed(getInterfaceMethodNameAndType(
+                location, newInterfacePtr->interfaceType, methodSignature, methodName, funcType, genContext)))
             {
-                llvm_unreachable("not implemented");
                 return mlir::failure();
             }
 
-            if (methodSignature->typeParameters.size() > 0)
+            if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
+                methodName, funcType, isConditional, declarationMode, genContext))) 
             {
-                emitError(location) << "Generic method '" << methodName << "' in the interface is not allowed";
                 return mlir::failure();
             }
 
             interfaceMember->parent = interfaceDeclarationAST;
 
-            auto funcGenContext = GenContext(genContext);
-            funcGenContext.clearScopeVars();
-            funcGenContext.thisType = newInterfacePtr->interfaceType;
-
-            auto res = mlirGenFunctionSignaturePrototype(methodSignature, true, funcGenContext);
-            auto funcType = std::get<1>(res);
-
-            if (!funcType)
-            {
-                return mlir::failure();
-            }
-
-            if (llvm::any_of(funcType.getInputs(), [&](mlir::Type type) { return !type; }))
-            {
-                return mlir::failure();
-            }
-
-            if (llvm::any_of(funcType.getResults(), [&](mlir::Type type) { return !type; }))
-            {
-                return mlir::failure();
-            }
-
             methodSignature->processed = true;
+        }
+        else if (kind == SyntaxKind::IndexSignature)
+        {
+            auto methodSignature = interfaceMember.as<MethodSignature>();
 
-            if (declareInterface || newInterfacePtr->getMethodIndex(methodName) == -1)
+            newInterfacePtr->hasNew |= kind == SyntaxKind::ConstructSignature;
+
+            std::string methodName;
+            mlir_ts::FunctionType funcType;
+            if (mlir::failed(getInterfaceMethodNameAndType(
+                location, newInterfacePtr->interfaceType, methodSignature, methodName, funcType, genContext)))
             {
-                methodInfos.push_back(
-                    {methodName, funcType, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
+                return mlir::failure();
             }
+
+            // add get method
+            if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
+                INDEX_ACCESS_GET_FIELD_NAME, mth.getIndexGetFunctionType(funcType), true, declarationMode, genContext))) 
+            {
+                return mlir::failure();
+            }
+
+            if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
+                INDEX_ACCESS_SET_FIELD_NAME, mth.getIndexGetFunctionType(funcType), true, declarationMode, genContext))) 
+            {
+                return mlir::failure();
+            }
+
+            interfaceMember->parent = interfaceDeclarationAST;
+
+            methodSignature->processed = true;            
         }
         else
         {
@@ -22344,8 +22405,8 @@ genContext);
                     return mlir::failure();
                 }
 
-                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, builder.getContext()), type});
-                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_SET_FIELD_NAME, builder.getContext()), type});
+                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, builder.getContext()), mth.getIndexGetFunctionType(type)});
+                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_SET_FIELD_NAME, builder.getContext()), mth.getIndexSetFunctionType(type)});
             }
             else if (kind == SyntaxKind::CallSignature)
             {

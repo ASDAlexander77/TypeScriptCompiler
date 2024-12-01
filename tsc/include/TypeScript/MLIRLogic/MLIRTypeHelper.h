@@ -643,7 +643,7 @@ class MLIRTypeHelper
         return mlir_ts::FunctionType::get(context, {mlir_ts::NumberType::get(context)}, {elementType}, false);
     }
 
-    mlir::Type getIndexGetFunctionType(mlir::Type indexSignature)
+    mlir_ts::FunctionType getIndexGetFunctionType(mlir::Type indexSignature)
     {
         auto [arg, res] = getIndexSignatureArgumentAndResultTypes(indexSignature);
         return mlir_ts::FunctionType::get(
@@ -653,7 +653,7 @@ class MLIRTypeHelper
             false);    
     }
 
-    mlir::Type getIndexSetFunctionType(mlir::Type indexSignature)
+    mlir_ts::FunctionType getIndexSetFunctionType(mlir::Type indexSignature)
     {
         auto [arg, res] = getIndexSignatureArgumentAndResultTypes(indexSignature);        
         return mlir_ts::FunctionType::get(
