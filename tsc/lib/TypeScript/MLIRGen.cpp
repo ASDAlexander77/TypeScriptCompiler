@@ -113,7 +113,9 @@ enum class IsGeneric
 enum class Reason
 {
     None,
-    FailedConstraint
+    FailedConstraint,
+    Failure,
+    NoConstraint
 };
 
 enum class TypeProvided
@@ -2307,7 +2309,7 @@ class MLIRGenImpl
             auto typeParam = (*found);
 
             // we need to find out type and constrains is not allowing to do it
-            auto [result, hasAnyNamedGenericType, reason] =
+            auto [result, hasAnyNamedGenericType] =
                 zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam,
                                              inferredType, noExtendsTest, genericTypeGenContext, true, arrayMerge);
             if (mlir::failed(result))
@@ -2335,7 +2337,7 @@ class MLIRGenImpl
         StringMap<mlir::Type> inferredTypes;
         inferType(location, paramType, argOp.getType(), inferredTypes, genericTypeGenContext);
         if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
-                                                genericTypeGenContext)))
+                                                genericTypeGenContext, false, true)))
         {
             return {mlir::failure(), true};
         }
@@ -2377,7 +2379,7 @@ class MLIRGenImpl
             StringMap<mlir::Type> inferredTypes;
             inferType(location, paramType, newArrowFuncType, inferredTypes, genericTypeGenContext);
             if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
-                                                    genericTypeGenContext)))
+                                                    genericTypeGenContext, false, true)))
             {
                 return {mlir::failure(), false};
             }
@@ -2581,28 +2583,10 @@ class MLIRGenImpl
             if (typeArguments && typeParams.size() == typeArguments.size())
             {
                 // create typeParamsWithArgs from typeArguments
-                auto [result, hasAnyNamedGenericType, reason] = zipTypeParametersWithArguments(
+                auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                     location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
                 if (mlir::failed(result))
                 {
-                    if (reason == Reason::FailedConstraint)
-                    {
-                        if (functionGenericTypeInfo->funcType.getNumResults() > 0
-                            && mlir::isa<mlir_ts::TypePredicateType>(functionGenericTypeInfo->funcType.getResult(0)))
-                        {
-                            return 
-                                {
-                                    mlir::success(), 
-                                    mlir_ts::FunctionType::get(
-                                        builder.getContext(), 
-                                        {}, 
-                                        { getBooleanLiteral(false) }, 
-                                        false), 
-                                    ""
-                                };
-                        }
-                    }
-
                     return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
@@ -2628,14 +2612,39 @@ class MLIRGenImpl
             }
 
             // we need to wide all types when initializing function
-
+            // TODO: add checking constraints
             for (auto &typeParam : genericTypeGenContext.typeParamsWithArgs)
             {
                 auto name = std::get<0>(typeParam.getValue())->getName();
                 auto type = std::get<1>(typeParam.getValue());
                 auto widenType = mth.wideStorageType(type);
-                genericTypeGenContext.typeParamsWithArgs[name] =
-                    std::make_pair(std::get<0>(typeParam.getValue()), widenType);
+                genericTypeGenContext.typeParamsWithArgs[name] = std::make_pair(std::get<0>(typeParam.getValue()), widenType);
+
+                auto reason = testConstraint(location, genericTypeGenContext.typeParamsWithArgs, typeParam.getValue().first, widenType, genContext);
+                if (reason == Reason::Failure)
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                }
+
+                if (reason == Reason::FailedConstraint)
+                {
+                    if (functionGenericTypeInfo->funcType.getNumResults() > 0
+                        && mlir::isa<mlir_ts::TypePredicateType>(functionGenericTypeInfo->funcType.getResult(0)))
+                    {
+                        return {
+                            mlir::success(), 
+                            mlir_ts::FunctionType::get(
+                                builder.getContext(), 
+                                {}, 
+                                { getBooleanLiteral(false) }, 
+                                false), 
+                            ""
+                        };
+                    }
+
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                }
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized function: " << functionGenericTypeInfo->name
@@ -2784,7 +2793,7 @@ class MLIRGenImpl
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
             auto typeParams = genericClassInfo->typeParams;
-            auto [result, hasAnyNamedGenericType, reason] = zipTypeParametersWithArguments(
+            auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
             if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics))
             {
@@ -2909,7 +2918,7 @@ class MLIRGenImpl
 
             GenContext genericTypeGenContext(genContext);
             auto typeParams = genericInterfaceInfo->typeParams;
-            auto [result, hasAnyNamedGenericType, reason] = zipTypeParametersWithArguments(
+            auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
             if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics))
             {
@@ -20076,7 +20085,57 @@ genContext);
         return getType(typeArguments[1], genContext);
     }
 
-    std::tuple<mlir::LogicalResult, IsGeneric, Reason> zipTypeParameterWithArgument(
+    Reason testConstraint(mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
+        const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, const GenContext &genContext) {
+        // we need to add current type into context to be able to use it in resolving "extends" constraints
+        GenContext constraintGenContext(genContext);
+        constraintGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
+
+        auto constraintType = getType(typeParam->getConstraint(), constraintGenContext);
+        if (!constraintType)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
+            return Reason::Failure;
+        }
+
+        auto extendsResult = mth.extendsType(location, type, constraintType, pairs);
+        if (extendsResult != ExtendsResult::True)
+        {
+            // special case when we work with generic type(which are not specialized yet)
+            if (mth.isGenericType(type))
+            {
+                pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
+                LLVM_DEBUG(llvm::dbgs() << "Extends result: " << type << " (because of generic).";);
+                return Reason::None;                    
+            }
+
+            if (extendsResult == ExtendsResult::Any)
+            {
+                pairs.insert({typeParam->getName(), std::make_pair(typeParam, getAnyType())});
+                LLVM_DEBUG(llvm::dbgs() << "Extends result: any.";);
+                return Reason::None;                    
+            }                
+
+            if (extendsResult == ExtendsResult::Never)
+            {
+                pairs.insert({typeParam->getName(), std::make_pair(typeParam, getNeverType())});
+                LLVM_DEBUG(llvm::dbgs() << "Extends result: never.";);
+                return Reason::None;                    
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does extend "
+                                    << constraintType << ".";);
+
+            emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
+                                    << constraintType << ".";
+
+            return Reason::FailedConstraint;
+        }
+
+        return Reason::NoConstraint;
+    }
+
+    std::tuple<mlir::LogicalResult, IsGeneric> zipTypeParameterWithArgument(
         mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
         const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, bool noExtendTest,
         const GenContext &genContext, bool mergeTypes = false, bool arrayMerge = false)
@@ -20087,61 +20146,13 @@ genContext);
         if (mth.isNoneType(type))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed.\n";);
-            return {mlir::failure(), IsGeneric::False, Reason::None};
+            return {mlir::failure(), IsGeneric::False};
         }
 
         if (isa<mlir_ts::NamedGenericType>(type))
         {
             pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
-            return {mlir::success(), IsGeneric::True, Reason::None};
-        }
-
-        if (!noExtendTest && typeParam->hasConstraint())
-        {
-            // we need to add current type into context to be able to use it in resolving "extends" constraints
-            GenContext constraintGenContext(genContext);
-            constraintGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
-
-            auto constraintType = getType(typeParam->getConstraint(), constraintGenContext);
-            if (!constraintType)
-            {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
-                return {mlir::failure(), IsGeneric::False, Reason::None};
-            }
-
-            auto extendsResult = mth.extendsType(location, type, constraintType, pairs);
-            if (extendsResult != ExtendsResult::True)
-            {
-                // special case when we work with generic type(which are not specialized yet)
-                if (mth.isGenericType(type))
-                {
-                    pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
-                    LLVM_DEBUG(llvm::dbgs() << "Extends result: " << type << " (because of generic).";);
-                    return {mlir::success(), IsGeneric::True, Reason::None};                    
-                }
-
-                if (extendsResult == ExtendsResult::Any)
-                {
-                    pairs.insert({typeParam->getName(), std::make_pair(typeParam, getAnyType())});
-                    LLVM_DEBUG(llvm::dbgs() << "Extends result: any.";);
-                    return {mlir::success(), IsGeneric::False, Reason::None};                    
-                }                
-
-                if (extendsResult == ExtendsResult::Never)
-                {
-                    pairs.insert({typeParam->getName(), std::make_pair(typeParam, getNeverType())});
-                    LLVM_DEBUG(llvm::dbgs() << "Extends result: never.";);
-                    return {mlir::success(), IsGeneric::False, Reason::None};                    
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does extend "
-                                        << constraintType << ".";);
-
-                emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
-                                        << constraintType << ".";
-
-                return {mlir::failure(), IsGeneric::False, Reason::FailedConstraint};
-            }
+            return {mlir::success(), IsGeneric::True};
         }
 
         auto name = typeParam->getName();
@@ -20177,7 +20188,7 @@ genContext);
             pairs.insert({name, std::make_pair(typeParam, type)});
         }
 
-        return {mlir::success(), IsGeneric::False, Reason::None};
+        return {mlir::success(), IsGeneric::False};
     }
 
     std::pair<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArguments(
@@ -20201,7 +20212,7 @@ genContext);
                 return {mlir::failure(), anyNamedGenericType};
             }
 
-            auto [result, hasNamedGenericType, reason] =
+            auto [result, hasNamedGenericType] =
                 zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault, genContext);
             if (mlir::failed(result))
             {
@@ -20218,7 +20229,7 @@ genContext);
     }
 
 
-    std::tuple<mlir::LogicalResult, IsGeneric, Reason> zipTypeParametersWithArguments(
+    std::tuple<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArguments(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
     {
@@ -20236,14 +20247,14 @@ genContext);
                                     : mlir::Type());
             if (!type)
             {
-                return {mlir::failure(), anyNamedGenericType, Reason::None};
+                return {mlir::failure(), anyNamedGenericType};
             }
 
-            auto [result, hasNamedGenericType, reason] =
+            auto [result, hasNamedGenericType] =
                 zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault, genContext);
             if (mlir::failed(result))
             {
-                return {mlir::failure(), anyNamedGenericType, reason};
+                return {mlir::failure(), anyNamedGenericType};
             }
 
             if (hasNamedGenericType == IsGeneric::True)
@@ -20252,7 +20263,7 @@ genContext);
             }
         }
 
-        return {mlir::success(), anyNamedGenericType, Reason::None};
+        return {mlir::success(), anyNamedGenericType};
     }
 
     std::pair<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArgumentsNoDefaults(
@@ -20282,7 +20293,7 @@ genContext);
                 return {mlir::success(), anyNamedGenericType};
             }
 
-            auto [result, hasNamedGenericType, reason] =
+            auto [result, hasNamedGenericType] =
                 zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault, genContext);
             if (mlir::failed(result))
             {
@@ -20335,7 +20346,7 @@ genContext);
             LLVM_DEBUG(llvm::dbgs() << "\n!! adding default type: " << typeParam->getName() << " type: " << type
                                 << "\n";);
 
-            auto [result, hasNamedGenericType, reason] =
+            auto [result, hasNamedGenericType] =
                 zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault, genContext);
             if (mlir::failed(result))
             {
@@ -20420,7 +20431,7 @@ genContext);
                 auto typeParams = std::get<0>(genericTypeAliasInfo);
                 auto typeNode = std::get<1>(genericTypeAliasInfo);
 
-                auto [result, hasAnyNamedGenericType, reason] =
+                auto [result, hasAnyNamedGenericType] =
                     zipTypeParametersWithArguments(location, typeParams, typeReferenceAST->typeArguments,
                                                 genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
 
@@ -22464,7 +22475,7 @@ genContext);
                 return mlir::Type();
             }
 
-            auto [result, hasAnyNamedGenericType, reason] =
+            auto [result, hasAnyNamedGenericType] =
                 zipTypeParametersWithArguments(loc(signature), typeParameters, signature->typeArguments,
                                                genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
 
