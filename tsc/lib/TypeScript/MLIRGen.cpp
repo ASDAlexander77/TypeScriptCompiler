@@ -6751,21 +6751,6 @@ class MLIRGenImpl
             // nothing todo here
             return true;
         }
-        else if (mlir::isa<mlir_ts::InterfaceType>(safeType) && mlir::isa<mlir_ts::InterfaceType>(type))
-        {
-            // nothing todo here
-            return true;
-        }
-        else if (mlir::isa<mlir_ts::ClassType>(safeType) && mlir::isa<mlir_ts::ClassType>(type))
-        {
-            // nothing todo here
-            return true;
-        }
-        else if (mlir::isa<mlir_ts::ObjectType>(safeType) && mlir::isa<mlir_ts::ObjectType>(type))
-        {
-            // nothing todo here
-            return true;
-        }
 
         return false;
     }
