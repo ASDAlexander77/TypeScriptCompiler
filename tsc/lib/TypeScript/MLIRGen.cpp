@@ -2615,35 +2615,36 @@ class MLIRGenImpl
             // TODO: add checking constraints
             for (auto &typeParam : genericTypeGenContext.typeParamsWithArgs)
             {
-                auto name = std::get<0>(typeParam.getValue())->getName();
-                auto type = std::get<1>(typeParam.getValue());
+                auto &typeParamValue = typeParam.getValue();
+                auto typeInfo = std::get<0>(typeParamValue);
+                auto name = typeInfo->getName();
+                auto type = std::get<1>(typeParamValue);
                 auto widenType = mth.wideStorageType(type);
-                genericTypeGenContext.typeParamsWithArgs[name] = std::make_pair(std::get<0>(typeParam.getValue()), widenType);
+                genericTypeGenContext.typeParamsWithArgs[name] = std::make_pair(typeInfo, widenType);
 
-                auto reason = testConstraint(location, genericTypeGenContext.typeParamsWithArgs, typeParam.getValue().first, widenType, genContext);
-                if (reason == Reason::Failure)
+                if (typeParam.getValue().first->getConstraint())
                 {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
-                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
-                }
-
-                if (reason == Reason::FailedConstraint)
-                {
-                    if (functionGenericTypeInfo->funcType.getNumResults() > 0
-                        && mlir::isa<mlir_ts::TypePredicateType>(functionGenericTypeInfo->funcType.getResult(0)))
+                    auto reason = testConstraint(location, genericTypeGenContext.typeParamsWithArgs, typeParamValue.first, widenType, genContext);
+                    if (reason == Reason::Failure)
                     {
-                        return {
-                            mlir::success(), 
-                            mlir_ts::FunctionType::get(
-                                builder.getContext(), 
-                                {}, 
-                                { getBooleanLiteral(false) }, 
-                                false), 
-                            ""
-                        };
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
+                        return {mlir::failure(), mlir_ts::FunctionType(), ""};
                     }
 
-                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                    if (reason == Reason::FailedConstraint)
+                    {
+                        if (functionGenericTypeInfo->funcType.getNumResults() > 0
+                            && mlir::isa<mlir_ts::TypePredicateType>(functionGenericTypeInfo->funcType.getResult(0)))
+                        {
+                            return {
+                                mlir::success(), 
+                                mlir_ts::FunctionType::get(builder.getContext(), {}, { getBooleanLiteral(false) }, false), 
+                                ""
+                            };
+                        }
+
+                        return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                    }
                 }
             }
 
@@ -20089,6 +20090,11 @@ genContext);
         const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, const GenContext &genContext) {
         // we need to add current type into context to be able to use it in resolving "extends" constraints
         GenContext constraintGenContext(genContext);
+        for (auto &typeParamWithArg : pairs)
+        {
+            constraintGenContext.typeParamsWithArgs.insert({typeParamWithArg.getKey(), typeParamWithArg.getValue()});
+        }
+
         constraintGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
 
         auto constraintType = getType(typeParam->getConstraint(), constraintGenContext);
