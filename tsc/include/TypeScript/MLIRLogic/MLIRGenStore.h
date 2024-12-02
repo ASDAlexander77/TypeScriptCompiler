@@ -172,6 +172,21 @@ struct InterfaceMethodInfo
     int virtualIndex;
 };
 
+struct InterfaceAccessorInfo
+{
+    mlir::Type type;
+    std::string name;
+    std::string getMethod;
+    std::string setMethod;
+};
+
+struct InterfaceIndexInfo
+{
+    mlir_ts::FunctionType indexSignature;
+    std::string getMethod;
+    std::string setMethod;
+};
+
 struct VirtualMethodOrFieldInfo
 {
     VirtualMethodOrFieldInfo(MethodInfo methodInfo) : methodInfo(methodInfo), isField(false), isMissing(false)
@@ -219,6 +234,10 @@ struct InterfaceInfo
     llvm::SmallVector<InterfaceFieldInfo> fields;
 
     llvm::SmallVector<InterfaceMethodInfo> methods;
+
+    llvm::SmallVector<InterfaceAccessorInfo> accessors;
+
+    llvm::SmallVector<InterfaceIndexInfo> indexes;
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
@@ -376,6 +395,14 @@ struct InterfaceInfo
         return (signed)dist >= (signed)fields.size() ? -1 : dist;
     }
 
+    int getAccessorIndex(mlir::StringRef name)
+    {
+        auto dist = std::distance(
+            accessors.begin(), std::find_if(accessors.begin(), accessors.end(),
+                                          [&](InterfaceAccessorInfo accessorInfo) { return name == accessorInfo.name; }));
+        return (signed)dist >= (signed)accessors.size() ? -1 : dist;
+    }
+
     InterfaceFieldInfo *findField(mlir::Attribute id)
     {
         auto index = getFieldIndex(id);
@@ -409,8 +436,7 @@ struct InterfaceInfo
 
         for (auto &extent : extends)
         {
-            auto *method = std::get<1>(extent)->findMethod(name);
-            if (method)
+            if (auto *method = std::get<1>(extent)->findMethod(name))
             {
                 return method;
             }
@@ -418,6 +444,43 @@ struct InterfaceInfo
 
         return nullptr;
     }
+
+    InterfaceAccessorInfo *findAccessor(mlir::StringRef name)
+    {
+        auto index = getAccessorIndex(name);
+        if (index >= 0)
+        {
+            return &accessors[index];
+        }
+
+        for (auto &extent : extends)
+        {
+            if (auto *accessor = std::get<1>(extent)->findAccessor(name))
+            {
+                return accessor;
+            }
+        }
+
+        return nullptr;
+    }
+
+    InterfaceIndexInfo *findIndexer()
+    {
+        if (indexes.size() > 0)
+        {
+            return &indexes[0];
+        }
+
+        for (auto &extent : extends)
+        {
+            if (auto *indexer = std::get<1>(extent)->findIndexer())
+            {
+                return indexer;
+            }
+        }
+
+        return nullptr;
+    }    
 
     int getNextVTableMemberIndex()
     {

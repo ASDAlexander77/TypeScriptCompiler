@@ -7140,9 +7140,9 @@ class MLIRGenImpl
                     propertyType = typePredicateType;
                 }
             }
-            else if (auto thisAccessorIndirect = conditionValue.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
+            else if (auto thisIndirectAccessor = conditionValue.getDefiningOp<mlir_ts::ThisIndirectAccessorOp>())
             {
-                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessorIndirect.getType(0)))
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisIndirectAccessor.getType(0)))
                 {
                     propertyType = typePredicateType;
                 }
@@ -7150,6 +7150,13 @@ class MLIRGenImpl
             else if (auto thisIndexAccessor = conditionValue.getDefiningOp<mlir_ts::ThisIndexAccessorOp>())
             {
                 if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisIndexAccessor.getType(0)))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
+            else if (auto thisIndirectIndexAccessor = conditionValue.getDefiningOp<mlir_ts::ThisIndirectIndexAccessorOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisIndirectIndexAccessor.getType(0)))
                 {
                     propertyType = typePredicateType;
                 }
@@ -9248,7 +9255,7 @@ class MLIRGenImpl
                 thisAccessorOp.getSetAccessorAttr(), 
                 savingValue);
         }
-        else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
+        else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndirectAccessorOp>())
         {
             syncSavingValue(thisAccessorIndirectOp.getType(0));
             if (!savingValue)
@@ -9258,7 +9265,7 @@ class MLIRGenImpl
 
             // TODO: it should return accessor as result as it will return data
             // we create new instance of accessor with saving value, previous will be deleted as not used
-            auto callRes = builder.create<mlir_ts::ThisAccessorIndirectOp>(
+            auto callRes = builder.create<mlir_ts::ThisIndirectAccessorOp>(
                 location, mlir::Type(), 
                 thisAccessorIndirectOp.getThisVal(), 
                 thisAccessorIndirectOp.getGetAccessor(), 
@@ -9279,7 +9286,22 @@ class MLIRGenImpl
                 thisIndexAccessorOp.getGetAccessorAttr(), 
                 thisIndexAccessorOp.getSetAccessorAttr(), 
                 savingValue);
-        }               
+        }         
+        else if (auto thisIndirectIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndirectIndexAccessorOp>())
+        {
+            syncSavingValue(thisIndexAccessorOp.getType(0));
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::ThisIndirectIndexAccessorOp>(
+                location, mlir::Type(), thisIndirectIndexAccessorOp.getThisVal(), thisIndirectIndexAccessorOp.getIndex(),
+                thisIndirectIndexAccessorOp.getGetAccessor(), 
+                thisIndirectIndexAccessorOp.getSetAccessor(), 
+                savingValue);
+        }                
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
@@ -10148,8 +10170,9 @@ class MLIRGenImpl
                 })
                 .Case<mlir_ts::ClassType>(classAccess)
                 .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
-                    return InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(),
-                                            genContext);
+                    return InterfaceMembers(
+                        location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(), 
+                        argument, genContext);
                 })
                 .Case<mlir_ts::OptionalType>([&](auto optionalType) {
                     // this is needed for conditional access to properties
@@ -10766,7 +10789,7 @@ class MLIRGenImpl
     }
 
     mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName,
-                                 mlir::Attribute id, const GenContext &genContext)
+                                 mlir::Attribute id, mlir::Value argument, const GenContext &genContext)
     {
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceFullName);
         if (!interfaceInfo)
@@ -10785,7 +10808,7 @@ class MLIRGenImpl
         assert(interfaceInfo);
 
         // static field access
-        auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, id, genContext);
+        auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, id, argument, genContext);
         if (!value)
         {
             emitError(location, "Interface member '") << id << "' can't be found";
@@ -10794,82 +10817,170 @@ class MLIRGenImpl
         return value;
     }
 
-    mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue,
-                                 InterfaceInfo::TypePtr interfaceInfo, mlir::Attribute id, const GenContext &genContext)
+    mlir::Value InterfaceFieldAccess(mlir::Location location, mlir::Value interfaceValue, InterfaceFieldInfo *fieldInfo) 
+    {
+        auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
+        if (fieldInfo->virtualIndex == -1)
+        {
+            // no data for conditional interface;
+            if (!fieldInfo->isConditional)
+            {
+                emitError(location, "field '") << fieldInfo->id << "' is not conditional and missing";
+                return mlir::Value();
+            }
+
+            auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
+                                    ? fieldRefType.getElementType()
+                                    : mlir_ts::OptionalType::get(fieldRefType.getElementType());
+            return builder.create<mlir_ts::OptionalUndefOp>(location, actualType);
+        }
+
+        assert(fieldInfo->virtualIndex >= 0);
+        auto vtableIndex = fieldInfo->virtualIndex;
+
+        auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+            location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
+            fieldInfo->id, builder.getBoolAttr(fieldInfo->isConditional));
+
+        mlir::Value value;
+        if (!fieldInfo->isConditional)
+        {
+            value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(),
+                                                    interfaceSymbolRefValue.getResult());
+        }
+        else
+        {
+            auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
+                                    ? fieldRefType.getElementType()
+                                    : mlir_ts::OptionalType::get(fieldRefType.getElementType());
+            value = builder.create<mlir_ts::LoadOp>(location, actualType, interfaceSymbolRefValue.getResult());
+        }
+
+        // if it is FuncType, we need to create BoundMethod again
+        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(fieldInfo->type))
+        {
+            auto thisVal =
+                builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
+            value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
+                                                                    thisVal, value);
+        }
+
+        return value;
+    }
+
+    mlir::Value InterfaceMethodAccess(mlir::Location location, mlir::Value interfaceValue, InterfaceMethodInfo *methodInfo) 
+    {
+        assert(methodInfo->virtualIndex >= 0);
+        auto vtableIndex = methodInfo->virtualIndex;
+
+        auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
+
+        auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+            location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
+            builder.getStringAttr(methodInfo->name), builder.getBoolAttr(methodInfo->isConditional));
+
+        return interfaceSymbolRefValue;
+    }    
+
+    mlir::Value InterfaceAccessorAccess(InterfaceInfo::TypePtr interfaceInfo, 
+            mlir::Location location, mlir::Value interfaceValue, InterfaceAccessorInfo *accessorInfo, const GenContext &genContext) {
+
+        assert(accessorInfo);
+
+        mlir::Value getMethodInfoValue;
+        mlir::Value setMethodInfoValue;
+        if (!accessorInfo->getMethod.empty())
+            if (auto getMethodInfo = interfaceInfo->findMethod(accessorInfo->getMethod))
+            {
+                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
+            }
+
+        if (!accessorInfo->setMethod.empty())
+            if (auto setMethodInfo = interfaceInfo->findMethod(accessorInfo->setMethod))
+            {
+                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
+            }
+
+        auto thisIndirectAccessorOp = builder.create<mlir_ts::ThisIndirectAccessorOp>(
+            location, accessorInfo->type, interfaceValue, getMethodInfoValue, setMethodInfoValue,
+            mlir::Value());
+        return thisIndirectAccessorOp.getResult(0);
+    }
+
+    mlir::Value InterfaceIndexAccess(InterfaceInfo::TypePtr interfaceInfo, 
+            mlir::Location location, mlir::Value interfaceValue, mlir::Value argument, const GenContext &genContext) {
+
+        auto indexInfo = interfaceInfo->findIndex();
+
+        if (interfaceInfo->findIndexindexes.size() == 0)
+        {
+            emitError(location) << "indexer is not defined";
+            return mlir::Value();            
+        }
+
+        if (!indexInfo.indexSignature || indexInfo.indexSignature.getNumResults() == 0)
+        {
+            emitError(location) << "can't resolve type of indexer";
+            return mlir::Value();
+        }
+
+        auto indexResultType = indexInfo.indexSignature.getResult(0);
+        auto argumentType = indexInfo.indexSignature.getInput(0);
+
+        // sync index
+        CAST_A(result, location, argumentType, argument, genContext);
+
+        mlir::Value getMethodInfoValue;
+        mlir::Value setMethodInfoValue;
+        if (!indexInfo.getMethod.empty())
+            if (auto getMethodInfo = interfaceInfo->findMethod(indexInfo.getMethod))
+            {
+                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
+            }
+
+        if (!indexInfo.setMethod.empty())
+            if (auto setMethodInfo = interfaceInfo->findMethod(indexInfo.setMethod))
+            {
+                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
+            }
+
+        auto thisIndirectIndexAccessorOp = builder.create<mlir_ts::ThisIndirectIndexAccessorOp>(
+            location, indexResultType, interfaceValue, V(result), getMethodInfoValue, setMethodInfoValue,
+            mlir::Value());
+        return thisIndirectIndexAccessorOp.getResult(0);
+    }
+
+    mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, InterfaceInfo::TypePtr interfaceInfo, 
+        mlir::Attribute id, mlir::Value argument, const GenContext &genContext)
     {
         assert(interfaceInfo);
 
-        // check field access
-        auto fieldInfo = interfaceInfo->findField(id);
-        if (fieldInfo)
+        // indexer access
+        auto nameAttr = mlir::dyn_cast<mlir::StringAttr>(id);
+        if (nameAttr && nameAttr.getValue() == INDEX_ACCESS_FIELD_NAME)
         {
-            auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
-            if (fieldInfo->virtualIndex == -1)
-            {
-                // no data for conditional interface;
-                if (!fieldInfo->isConditional)
-                {
-                    emitError(location, "field '") << fieldInfo->id << "' is not conditional and missing";
-                    return mlir::Value();
-                }
+            return InterfaceIndexAccess(interfaceInfo, location, interfaceValue, argument, genContext);
+        }
 
-                auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
-                                      ? fieldRefType.getElementType()
-                                      : mlir_ts::OptionalType::get(fieldRefType.getElementType());
-                return builder.create<mlir_ts::OptionalUndefOp>(location, actualType);
-            }
-
-            assert(fieldInfo->virtualIndex >= 0);
-            auto vtableIndex = fieldInfo->virtualIndex;
-
-            auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
-                fieldInfo->id, builder.getBoolAttr(fieldInfo->isConditional));
-
-            mlir::Value value;
-            if (!fieldInfo->isConditional)
-            {
-                value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(),
-                                                        interfaceSymbolRefValue.getResult());
-            }
-            else
-            {
-                auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
-                                      ? fieldRefType.getElementType()
-                                      : mlir_ts::OptionalType::get(fieldRefType.getElementType());
-                value = builder.create<mlir_ts::LoadOp>(location, actualType, interfaceSymbolRefValue.getResult());
-            }
-
-            // if it is FuncType, we need to create BoundMethod again
-            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(fieldInfo->type))
-            {
-                auto thisVal =
-                    builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
-                value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
-                                                                       thisVal, value);
-            }
-
-            return value;
+        // check field access        
+        if (auto fieldInfo = interfaceInfo->findField(id))
+        {
+            return InterfaceFieldAccess(location, interfaceValue, fieldInfo);
         }
 
         // check method access
-        if (auto nameAttr = dyn_cast<mlir::StringAttr>(id))
+        if (nameAttr)
         {
-            auto name = nameAttr.getValue();
-            auto methodInfo = interfaceInfo->findMethod(name);
-            if (methodInfo)
+            if (auto methodInfo = interfaceInfo->findMethod(nameAttr.getValue()))
             {
-                assert(methodInfo->virtualIndex >= 0);
-                auto vtableIndex = methodInfo->virtualIndex;
-
-                auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
-
-                auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                    location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
-                    builder.getStringAttr(methodInfo->name), builder.getBoolAttr(methodInfo->isConditional));
-
-                return interfaceSymbolRefValue;
+                return InterfaceMethodAccess(location, interfaceValue, methodInfo);
             }
+
+            if (auto accessorInfo = interfaceInfo->findAccessor(nameAttr.getValue()))
+            {
+                return InterfaceAccessorAccess(interfaceInfo, location, interfaceValue, accessorInfo, genContext);
+            }
+
         }
 
         return mlir::Value();
@@ -11027,10 +11138,15 @@ class MLIRGenImpl
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.getValue();
-                return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                if (attr.isa<mlir::StringAttr>())
+                {
+                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                }
             }
 
-            llvm_unreachable("not implemented (ElementAccessExpression)");
+            // else access of index
+            auto indexAccessor = builder.getStringAttr(INDEX_ACCESS_FIELD_NAME);
+            return mlirGenPropertyAccessExpression(location, expression, indexAccessor, isConditionalAccess, argumentExpression, genContext);
         }        
         else if (auto enumType = dyn_cast<mlir_ts::EnumType>(arrayType))
         {
@@ -18321,8 +18437,8 @@ genContext);
 
             for (auto &interfaceMember : interfaceDeclarationAST->members)
             {
-                if (mlir::failed(mlirGenInterfaceMethodMember(interfaceDeclarationAST, newInterfacePtr, interfaceMember,
-                                                              declareInterface, ifaceGenContext)))
+                if (mlir::failed(mlirGenInterfaceMethodMember(
+                        interfaceDeclarationAST, newInterfacePtr, interfaceMember, declareInterface, ifaceGenContext)))
                 {
                     notResolved++;
                 }
@@ -18425,7 +18541,7 @@ genContext);
     }
 
     mlir::LogicalResult getInterfaceMethodNameAndType(mlir::Location location, mlir_ts::InterfaceType interfaceType,
-        MethodSignature methodSignature, std::string &methodNameOut, mlir_ts::FunctionType &funcTypeOut, 
+        MethodSignature methodSignature, std::string &methodNameOut, std::string &propertyNameOut, mlir_ts::FunctionType &funcTypeOut, 
         const GenContext &genContext) {
 
         std::string methodName;
@@ -18433,6 +18549,7 @@ genContext);
         getMethodNameOrPropertyName(false, methodSignature, methodName, propertyName, genContext);
 
         methodNameOut = methodName;
+        propertyNameOut = propertyName;
         
         if (methodSignature->typeParameters.size() > 0)
         {
@@ -18492,8 +18609,9 @@ genContext);
                 return mlir::failure();
             }
         }
-        else if (kind == SyntaxKind::MethodSignature || kind == SyntaxKind::ConstructSignature 
-                || kind == SyntaxKind::CallSignature || kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
+        else if (kind == SyntaxKind::MethodSignature 
+                || kind == SyntaxKind::ConstructSignature || kind == SyntaxKind::CallSignature 
+                || kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
             auto isConditional = !!methodSignature->questionToken;
@@ -18501,9 +18619,10 @@ genContext);
             newInterfacePtr->hasNew |= kind == SyntaxKind::ConstructSignature;
 
             std::string methodName;
+            std::string propertyName;
             mlir_ts::FunctionType funcType;
-            if (mlir::failed(getInterfaceMethodNameAndType(
-                location, newInterfacePtr->interfaceType, methodSignature, methodName, funcType, genContext)))
+            if (mlir::failed(getInterfaceMethodNameAndType(location, newInterfacePtr->interfaceType, methodSignature, 
+                    methodName, propertyName, funcType, genContext)))
             {
                 return mlir::failure();
             }
@@ -18516,18 +18635,48 @@ genContext);
 
             interfaceMember->parent = interfaceDeclarationAST;
 
+            // add info about property
+            if (kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
+            {
+                auto found = llvm::find_if(newInterfacePtr->accessors, [&] (auto accessorInfo) {
+                    return accessorInfo.name == propertyName;
+                });
+                
+                if (found == newInterfacePtr->accessors.end())
+                {
+                    if (kind == SyntaxKind::GetAccessor)
+                    {
+                        newInterfacePtr->accessors.push_back({propertyName, methodName, ""});
+                    }
+                    else
+                    {
+                        newInterfacePtr->accessors.push_back({propertyName, "", methodName});
+                    }
+                }
+                else
+                {
+                    if (kind == SyntaxKind::GetAccessor)
+                    {
+                        found->getMethod = methodName;
+                    }
+                    else
+                    {
+                        found->setMethod = methodName;
+                    }                    
+                }
+            }
+
             methodSignature->processed = true;
         }
         else if (kind == SyntaxKind::IndexSignature)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
 
-            newInterfacePtr->hasNew |= kind == SyntaxKind::ConstructSignature;
-
             std::string methodName;
+            std::string propertyName;
             mlir_ts::FunctionType funcType;
             if (mlir::failed(getInterfaceMethodNameAndType(
-                location, newInterfacePtr->interfaceType, methodSignature, methodName, funcType, genContext)))
+                location, newInterfacePtr->interfaceType, methodSignature, methodName, propertyName, funcType, genContext)))
             {
                 return mlir::failure();
             }
@@ -18546,6 +18695,15 @@ genContext);
             }
 
             interfaceMember->parent = interfaceDeclarationAST;
+
+            auto found = llvm::find_if(newInterfacePtr->indexes, [&] (auto indexInfo) {
+                return indexInfo.indexSignature == funcType;
+            });        
+
+            if (found == newInterfacePtr->indexes.end())
+            {
+                newInterfacePtr->indexes.push_back({funcType});
+            }   
 
             methodSignature->processed = true;            
         }

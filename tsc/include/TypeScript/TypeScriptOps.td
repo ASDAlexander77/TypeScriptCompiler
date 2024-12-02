@@ -126,7 +126,7 @@ def ThisAccessorOp : TypeScript_Op<"ThisAccessor",
   let hasCanonicalizer = 1;
 }
 
-def ThisAccessorIndirectOp : TypeScript_Op<"ThisAccessorIndirect", 
+def ThisIndirectAccessorOp : TypeScript_Op<"ThisIndirectAccessor", 
     []> {
   let summary = "accessor of object";
 
@@ -141,6 +141,16 @@ def ThisIndexAccessorOp : TypeScript_Op<"ThisIndexAccessor",
   let summary = "index accessor of class";
 
   let arguments = (ins AnyType:$thisVal, AnyType:$index, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
+
+  let hasCanonicalizer = 1;
+}
+
+def ThisIndirectIndexAccessorOp : TypeScript_Op<"ThisIndirectIndexAccessor", 
+    []> {
+  let summary = "index accessor of object";
+
+  let arguments = (ins AnyType:$thisVal, AnyType:$index, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
   let results = (outs Optional<AnyType>:$value);
 
   let hasCanonicalizer = 1;
