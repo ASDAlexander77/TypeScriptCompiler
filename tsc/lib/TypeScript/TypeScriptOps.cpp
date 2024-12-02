@@ -378,7 +378,7 @@ void mlir_ts::ThisAccessorOp::getCanonicalizationPatterns(RewritePatternSet &res
 }
 
 //===----------------------------------------------------------------------===//
-// ThisAccessorIndirectOp
+// ThisIndirectAccessorOp
 //===----------------------------------------------------------------------===//
 
 void mlir_ts::ThisIndirectAccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
@@ -402,6 +402,24 @@ void mlir_ts::ThisIndexAccessorOp::getCanonicalizationPatterns(RewritePatternSet
 void mlir_ts::ThisIndirectIndexAccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert<RemoveUnusedAccessor<mlir_ts::ThisIndirectIndexAccessorOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// BoundIndirectAccessorOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::BoundIndirectAccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<RemoveUnusedAccessor<mlir_ts::BoundIndirectAccessorOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// BoundIndirectIndexAccessorOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::BoundIndirectIndexAccessorOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<RemoveUnusedAccessor<mlir_ts::BoundIndirectIndexAccessorOp>>(context);
 }
 
 //===----------------------------------------------------------------------===//

@@ -156,6 +156,26 @@ def ThisIndirectIndexAccessorOp : TypeScript_Op<"ThisIndirectIndexAccessor",
   let hasCanonicalizer = 1;
 }
 
+def BoundIndirectAccessorOp : TypeScript_Op<"BoundIndirectAccessor", 
+    []> {
+  let summary = "accessor of interface";
+
+  let arguments = (ins TypeScript_BoundFunction:$getAccessor, TypeScript_BoundFunction:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
+
+  let hasCanonicalizer = 1;
+}
+
+def BoundIndirectIndexAccessorOp : TypeScript_Op<"BoundIndirectIndexAccessor", 
+    []> {
+  let summary = "index accessor of interface";
+
+  let arguments = (ins AnyType:$index, TypeScript_BoundFunction:$getAccessor, TypeScript_BoundFunction:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
+
+  let hasCanonicalizer = 1;
+}
+
 def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef", 
     [Pure]> {
   let summary = "symbol reference as to interface member";

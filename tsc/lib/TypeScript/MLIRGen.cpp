@@ -7161,6 +7161,20 @@ class MLIRGenImpl
                     propertyType = typePredicateType;
                 }
             }
+            else if (auto boundIndirectAccessor = conditionValue.getDefiningOp<mlir_ts::BoundIndirectAccessorOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(boundIndirectAccessor.getType(0)))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
+            else if (auto boundIndirectIndexAccessor = conditionValue.getDefiningOp<mlir_ts::BoundIndirectIndexAccessorOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(boundIndirectIndexAccessor.getType(0)))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
 
             if (propertyType && propertyType.getParameterName().getValue() == THIS_NAME)
             {
@@ -9302,6 +9316,37 @@ class MLIRGenImpl
                 thisIndirectIndexAccessorOp.getSetAccessor(), 
                 savingValue);
         }                
+        else if (auto boundAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::BoundIndirectAccessorOp>())
+        {
+            syncSavingValue(boundAccessorIndirectOp.getType(0));
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            // TODO: it should return accessor as result as it will return data
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::BoundIndirectAccessorOp>(
+                location, mlir::Type(), 
+                boundAccessorIndirectOp.getGetAccessor(), 
+                boundAccessorIndirectOp.getSetAccessor(), 
+                savingValue);    
+        }         
+        else if (auto boundIndirectIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::BoundIndirectIndexAccessorOp>())
+        {
+            syncSavingValue(thisIndexAccessorOp.getType(0));
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::BoundIndirectIndexAccessorOp>(
+                location, mlir::Type(), boundIndirectIndexAccessorOp.getIndex(),
+                boundIndirectIndexAccessorOp.getGetAccessor(), 
+                boundIndirectIndexAccessorOp.getSetAccessor(), 
+                savingValue);
+        }           
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
@@ -10882,20 +10927,6 @@ class MLIRGenImpl
         return interfaceSymbolRefValue;
     }    
 
-    mlir::Value InterfaceMethodAccessNoBound(mlir::Location location, mlir::Value interfaceValue, InterfaceMethodInfo *methodInfo) 
-    {
-        assert(methodInfo->virtualIndex >= 0);
-        auto vtableIndex = methodInfo->virtualIndex;
-
-        auto effectiveFuncType = methodInfo->funcType;
-
-        auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-            location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
-            builder.getStringAttr(methodInfo->name), builder.getBoolAttr(methodInfo->isConditional));
-
-        return interfaceSymbolRefValue;
-    }        
-
     mlir::Value InterfaceAccessorAccess(mlir::Location location, InterfaceInfo::TypePtr interfaceInfo, 
             mlir::Value interfaceValue, InterfaceAccessorInfo *accessorInfo, const GenContext &genContext) {
 
@@ -10907,7 +10938,7 @@ class MLIRGenImpl
         {
             if (auto getMethodInfo = interfaceInfo->findMethod(accessorInfo->getMethod))
             {
-                getMethodInfoValue = InterfaceMethodAccessNoBound(location, interfaceValue, getMethodInfo);
+                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
             }
             else
             {
@@ -10924,7 +10955,7 @@ class MLIRGenImpl
         {
             if (auto setMethodInfo = interfaceInfo->findMethod(accessorInfo->setMethod))
             {
-                setMethodInfoValue = InterfaceMethodAccessNoBound(location, interfaceValue, setMethodInfo);
+                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
             }
             else
             {
@@ -10977,7 +11008,7 @@ class MLIRGenImpl
         {
             if (auto getMethodInfo = interfaceInfo->findMethod(indexInfo->getMethod))
             {
-                getMethodInfoValue = InterfaceMethodAccessNoBound(location, interfaceValue, getMethodInfo);
+                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
             }
             else
             {
@@ -10994,7 +11025,7 @@ class MLIRGenImpl
         {
             if (auto setMethodInfo = interfaceInfo->findMethod(indexInfo->setMethod))
             {
-                setMethodInfoValue = InterfaceMethodAccessNoBound(location, interfaceValue, setMethodInfo);
+                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
             }
             else
             {
