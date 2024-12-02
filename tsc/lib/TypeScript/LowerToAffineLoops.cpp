@@ -956,7 +956,7 @@ struct ThisIndirectAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectAc
         if (thisIndirectAccessorOp.getSetValue())
         {
             // set case
-            if (thisIndirectAccessorOp.getSetAccessor().getDefiningOp<mlir_ts::NullOp>())
+            if (!thisIndirectAccessorOp.getSetAccessor())
             {
                 emitError(loc) << "property does not have set accessor";
                 return mlir::failure();
@@ -970,7 +970,7 @@ struct ThisIndirectAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectAc
         if (thisIndirectAccessorOp.getNumResults() > 0)
         {
             // get case
-            if (thisIndirectAccessorOp.getGetAccessor().getDefiningOp<mlir_ts::NullOp>())
+            if (!thisIndirectAccessorOp.getGetAccessor())
             {
                 emitError(loc) << "property does not have get accessor";
                 return failure();
@@ -1029,6 +1029,50 @@ struct ThisIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndexAccessor
         else
         {
             rewriter.eraseOp(thisIndexAccessorOp);
+        }
+
+        return success();
+    }
+};
+
+struct ThisIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectIndexAccessorOp>
+{
+    using TsPattern<mlir_ts::ThisIndirectIndexAccessorOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisIndirectIndexAccessorOp thisIndirectIndexAccessorOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = thisIndirectIndexAccessorOp.getLoc();
+
+        if (thisIndirectIndexAccessorOp.getSetValue())
+        {
+            if (!thisIndirectIndexAccessorOp.getSetAccessor())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, thisIndirectIndexAccessorOp.getSetAccessor(),
+                mlir::ValueRange{thisIndirectIndexAccessorOp.getThisVal(), 
+                    thisIndirectIndexAccessorOp.getIndex(), thisIndirectIndexAccessorOp.getSetValue()});
+        }
+
+        if (thisIndirectIndexAccessorOp.getNumResults() > 0)
+        {
+            if (!thisIndirectIndexAccessorOp.getGetAccessor())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
+
+            auto callRes =
+                rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisIndirectIndexAccessorOp.getType(0)}, thisIndirectIndexAccessorOp.getGetAccessor(), 
+                        ValueRange{thisIndirectIndexAccessorOp.getThisVal(), thisIndirectIndexAccessorOp.getIndex()});
+
+            rewriter.replaceOp(thisIndirectIndexAccessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(thisIndirectIndexAccessorOp);
         }
 
         return success();
@@ -2025,9 +2069,9 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
                     PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/ 
                     DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, 
                     SwitchOpLowering, AccessorOpLowering, ThisAccessorOpLowering, ThisIndirectAccessorOpLowering, 
-                    ThisIndexAccessorOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, 
-                    TryOpLowering, ThrowOpLowering, CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, 
-                    YieldReturnValOpLowering, TypeOfOpLowering, CaptureOpLowering>(
+                    ThisIndexAccessorOpLowering, ThisIndirectIndexAccessorOpLowering, LabelOpLowering, CallOpLowering, 
+                    CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, CatchOpLowering, StateLabelOpLowering, 
+                    SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering, CaptureOpLowering>(
         &context, &tsContext, &tsFuncContext);
 }
 

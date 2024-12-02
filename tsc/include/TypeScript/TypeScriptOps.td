@@ -127,10 +127,10 @@ def ThisAccessorOp : TypeScript_Op<"ThisAccessor",
 }
 
 def ThisIndirectAccessorOp : TypeScript_Op<"ThisIndirectAccessor", 
-    []> {
+    [SameVariadicOperandSize]> {
   let summary = "accessor of object";
 
-  let arguments = (ins AnyType:$thisVal, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
+  let arguments = (ins AnyType:$thisVal, Optional<TypeScript_Function>:$getAccessor, Optional<TypeScript_Function>:$setAccessor, Optional<AnyType>:$setValue);
   let results = (outs Optional<AnyType>:$value);
 
   let hasCanonicalizer = 1;
@@ -147,10 +147,10 @@ def ThisIndexAccessorOp : TypeScript_Op<"ThisIndexAccessor",
 }
 
 def ThisIndirectIndexAccessorOp : TypeScript_Op<"ThisIndirectIndexAccessor", 
-    []> {
+    [SameVariadicOperandSize]> {
   let summary = "index accessor of object";
 
-  let arguments = (ins AnyType:$thisVal, AnyType:$index, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
+  let arguments = (ins AnyType:$thisVal, AnyType:$index, Optional<TypeScript_Function>:$getAccessor, Optional<TypeScript_Function>:$setAccessor, Optional<AnyType>:$setValue);
   let results = (outs Optional<AnyType>:$value);
 
   let hasCanonicalizer = 1;

@@ -10882,24 +10882,38 @@ class MLIRGenImpl
         return interfaceSymbolRefValue;
     }    
 
-    mlir::Value InterfaceAccessorAccess(InterfaceInfo::TypePtr interfaceInfo, 
-            mlir::Location location, mlir::Value interfaceValue, InterfaceAccessorInfo *accessorInfo, const GenContext &genContext) {
+    mlir::Value InterfaceAccessorAccess(mlir::Location location, InterfaceInfo::TypePtr interfaceInfo, 
+            mlir::Value interfaceValue, InterfaceAccessorInfo *accessorInfo, const GenContext &genContext) {
 
         assert(accessorInfo);
 
         mlir::Value getMethodInfoValue;
         mlir::Value setMethodInfoValue;
         if (!accessorInfo->getMethod.empty())
+        {
             if (auto getMethodInfo = interfaceInfo->findMethod(accessorInfo->getMethod))
             {
                 getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
             }
+            else
+            {
+                emitError(location) << "Can't find method " << accessorInfo->getMethod << " in interface '" << to_print(interfaceInfo->interfaceType) << "'";
+                return mlir::Value();
+            }
+        }
 
         if (!accessorInfo->setMethod.empty())
+        {
             if (auto setMethodInfo = interfaceInfo->findMethod(accessorInfo->setMethod))
             {
                 setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
             }
+            else
+            {
+                emitError(location) << "Can't find method " << accessorInfo->setMethod << " in interface '" << to_print(interfaceInfo->interfaceType) << "'";
+                return mlir::Value();
+            }
+        }
 
         auto thisIndirectAccessorOp = builder.create<mlir_ts::ThisIndirectAccessorOp>(
             location, accessorInfo->type, interfaceValue, getMethodInfoValue, setMethodInfoValue,
@@ -10933,16 +10947,30 @@ class MLIRGenImpl
         mlir::Value getMethodInfoValue;
         mlir::Value setMethodInfoValue;
         if (!indexInfo->getMethod.empty())
+        {
             if (auto getMethodInfo = interfaceInfo->findMethod(indexInfo->getMethod))
             {
                 getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
             }
+            else
+            {
+                emitError(location) << "Can't find method " << INDEX_ACCESS_GET_FIELD_NAME << " in interface '" << to_print(interfaceInfo->interfaceType) << "'";
+                return mlir::Value();
+            }
+        }
 
         if (!indexInfo->setMethod.empty())
+        {
             if (auto setMethodInfo = interfaceInfo->findMethod(indexInfo->setMethod))
             {
                 setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
             }
+            else
+            {
+                emitError(location) << "Can't find method " << INDEX_ACCESS_SET_FIELD_NAME << " in interface '" << to_print(interfaceInfo->interfaceType) << "'";
+                return mlir::Value();
+            }
+        }
 
         auto thisIndirectIndexAccessorOp = builder.create<mlir_ts::ThisIndirectIndexAccessorOp>(
             location, indexResultType, interfaceValue, V(result), getMethodInfoValue, setMethodInfoValue,
@@ -10978,7 +11006,7 @@ class MLIRGenImpl
 
             if (auto accessorInfo = interfaceInfo->findAccessor(nameAttr.getValue()))
             {
-                return InterfaceAccessorAccess(interfaceInfo, location, interfaceValue, accessorInfo, genContext);
+                return InterfaceAccessorAccess(location, interfaceInfo, interfaceValue, accessorInfo, genContext);
             }
 
         }
