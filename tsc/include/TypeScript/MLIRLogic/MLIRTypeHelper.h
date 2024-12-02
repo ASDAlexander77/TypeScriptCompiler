@@ -1333,7 +1333,7 @@ class MLIRTypeHelper
 
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
-            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> mlir_ts::FieldInfo {
+            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
                 auto foundIndex = tupleStorageType.getIndex(id);
                 if (foundIndex >= 0)
                 {
@@ -1352,12 +1352,14 @@ class MLIRTypeHelper
                             emitError(location) << "field " << id << " not matching type: " << fieldType << " and "
                                                 << foundField.type << " in interface '" << newInterfacePtr->fullName
                                                 << "' for object '" << to_print(tupleStorageType) << "'";
+
+                            return {emptyFieldInfo, mlir::failure()};
                         }
 
-                        return emptyFieldInfo;
+                        return {emptyFieldInfo, mlir::success()};
                     }
 
-                    return foundField;
+                    return {foundField, mlir::success()};
                 }
 
                 LLVM_DEBUG(llvm::dbgs() << id << " field can't be found for interface '"
@@ -1367,11 +1369,12 @@ class MLIRTypeHelper
                 {
                     emitError(location) << id << " field can't be found for interface '"
                                         << newInterfacePtr->fullName << "' in object '" << to_print(tupleStorageType) << "'";
+                    return {emptyFieldInfo, mlir::failure()};
                 }
 
-                return emptyFieldInfo;
+                return {emptyFieldInfo, mlir::success()};
             },
-            [&](std::string methodName, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> MethodInfo & {
+            [&](std::string methodName, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> std::pair<MethodInfo &, mlir::LogicalResult> {
                 auto id = MLIRHelper::TupleFieldName(methodName, funcType.getContext());
                 auto foundIndex = tupleStorageType.getIndex(id);
                 if (foundIndex >= 0)
@@ -1392,15 +1395,17 @@ class MLIRTypeHelper
                             emitError(location) << "method " << id << " not matching type: " << to_print(funcType) << " and "
                                                 << to_print(foundField.type) << " in interface '" << newInterfacePtr->fullName
                                                 << "' for object '" << to_print(tupleStorageType) << "'";
+
+                            return {emptyMethod, mlir::failure()};
                         }
 
-                        return emptyMethod;
+                        return {emptyMethod, mlir::success()};
                     }         
 
                     // TODO: we do not return method, as it should be resolved in fields request
                 }
 
-                return emptyMethod;
+                return {emptyMethod, mlir::success()};
             },
             true);
 

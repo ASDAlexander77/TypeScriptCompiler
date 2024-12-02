@@ -253,8 +253,8 @@ struct InterfaceInfo
 
     mlir::LogicalResult getVirtualTable(
         llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
-        std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type, bool)> resolveField,
-        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod,
+        std::function<std::pair<mlir_ts::FieldInfo, mlir::LogicalResult>(mlir::Attribute, mlir::Type, bool)> resolveField,
+        std::function<std::pair<MethodInfo &, mlir::LogicalResult>(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod,
         bool methodsAsFields = false)
     {
         for (auto &extent : extends)
@@ -271,7 +271,12 @@ struct InterfaceInfo
             if (methodsAsFields)
             {
                 auto methodNameAttr = mlir::StringAttr::get(method.funcType.getContext(), method.name);
-                auto fieldInfo = resolveField(methodNameAttr, method.funcType, method.isConditional);
+                auto [fieldInfo, result] = resolveField(methodNameAttr, method.funcType, method.isConditional);
+                if (mlir::failed(result))
+                {
+                    return mlir::failure();
+                }
+
                 if (!fieldInfo.id)
                 {
                     if (method.isConditional)
@@ -295,7 +300,12 @@ struct InterfaceInfo
             }
             else
             {
-                auto &classMethodInfo = resolveMethod(method.name, method.funcType, method.isConditional, method.interfacePosIndex);
+                auto [classMethodInfo, result] = resolveMethod(method.name, method.funcType, method.isConditional, method.interfacePosIndex);
+                if (mlir::failed(result))
+                {
+                    return mlir::failure();
+                }
+
                 if (classMethodInfo.name.empty())
                 {
                     if (method.isConditional)
@@ -321,7 +331,12 @@ struct InterfaceInfo
 
         for (auto &field : fields)
         {
-            auto fieldInfo = resolveField(field.id, field.type, field.isConditional);
+            auto [fieldInfo, result] = resolveField(field.id, field.type, field.isConditional);
+            if (mlir::failed(result))
+            {
+                return mlir::failure();
+            }
+
             if (!fieldInfo.id)
             {
                 if (field.isConditional)

@@ -17086,7 +17086,7 @@ genContext);
         llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
-            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> mlir_ts::FieldInfo {
+            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
                 auto found = false;
                 auto foundField = newClassPtr->findField(id, found);
                 if (!found || fieldType != foundField.type)
@@ -17096,14 +17096,16 @@ genContext);
                         emitError(location)
                             << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
                             << "' in class '" << newClassPtr->fullName << "'";
+
+                        return {emptyFieldInfo, mlir::failure()};
                     }
 
-                    return emptyFieldInfo;
+                    return {emptyFieldInfo, mlir::success()};
                 }
 
-                return foundField;
+                return {foundField, mlir::success()};
             },
-            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> MethodInfo & {
+            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> std::pair<MethodInfo &, mlir::LogicalResult> {
                 auto foundMethodPtr = newClassPtr->findMethod(name);
                 if (!foundMethodPtr)
                 {
@@ -17122,9 +17124,11 @@ genContext);
                             emitError(location)
                                 << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName
                                 << "' in class '" << newClassPtr->fullName << "'";
+
+                            return {emptyMethod, mlir::failure()};
                         }
 
-                        return emptyMethod;
+                        return {emptyMethod, mlir::success()};
                     }
                 }
 
@@ -17137,10 +17141,10 @@ genContext);
                                         << "} for interface '" << newInterfacePtr->fullName << "' in class '"
                                         << newClassPtr->fullName << "'."
                                         << " Found method: " << name << ":" << to_print(foundMethodFunctionType);
-                    return emptyMethod;
+                    return {emptyMethod, mlir::failure()};
                 }
 
-                return *foundMethodPtr;
+                return {*foundMethodPtr, mlir::success()};
             });
 
         if (mlir::failed(result))
