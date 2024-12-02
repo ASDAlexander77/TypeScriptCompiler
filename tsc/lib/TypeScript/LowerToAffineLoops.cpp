@@ -956,7 +956,7 @@ struct ThisIndirectAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectAc
         if (thisIndirectAccessorOp.getSetValue())
         {
             // set case
-            if (!thisIndirectAccessorOp.getSetAccessor())
+            if (thisIndirectAccessorOp.getSetAccessor().getDefiningOp<mlir_ts::UndefOp>())
             {
                 emitError(loc) << "property does not have set accessor";
                 return mlir::failure();
@@ -970,7 +970,7 @@ struct ThisIndirectAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectAc
         if (thisIndirectAccessorOp.getNumResults() > 0)
         {
             // get case
-            if (!thisIndirectAccessorOp.getGetAccessor())
+            if (thisIndirectAccessorOp.getGetAccessor().getDefiningOp<mlir_ts::UndefOp>())
             {
                 emitError(loc) << "property does not have get accessor";
                 return failure();
@@ -1002,7 +1002,7 @@ struct ThisIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndexAccessor
         {
             if (!thisIndexAccessorOp.getSetAccessor().has_value())
             {
-                emitError(loc) << "property does not have set accessor";
+                emitError(loc) << "property does not have an index set accessor";
                 return mlir::failure();
             }
 
@@ -1015,7 +1015,7 @@ struct ThisIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndexAccessor
         {
             if (!thisIndexAccessorOp.getGetAccessor().has_value())
             {
-                emitError(loc) << "property does not have get accessor";
+                emitError(loc) << "property does not have an index get accessor";
                 return failure();
             }
 
@@ -1045,7 +1045,7 @@ struct ThisIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndir
 
         if (thisIndirectIndexAccessorOp.getSetValue())
         {
-            if (!thisIndirectIndexAccessorOp.getSetAccessor())
+            if (thisIndirectIndexAccessorOp.getSetAccessor().getDefiningOp<mlir_ts::UndefOp>())
             {
                 emitError(loc) << "property does not have set accessor";
                 return mlir::failure();
@@ -1058,7 +1058,7 @@ struct ThisIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndir
 
         if (thisIndirectIndexAccessorOp.getNumResults() > 0)
         {
-            if (!thisIndirectIndexAccessorOp.getGetAccessor())
+            if (thisIndirectIndexAccessorOp.getGetAccessor().getDefiningOp<mlir_ts::UndefOp>())
             {
                 emitError(loc) << "property does not have get accessor";
                 return failure();

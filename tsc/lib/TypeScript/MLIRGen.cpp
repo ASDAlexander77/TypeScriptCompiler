@@ -10882,6 +10882,20 @@ class MLIRGenImpl
         return interfaceSymbolRefValue;
     }    
 
+    mlir::Value InterfaceMethodAccessNoBound(mlir::Location location, mlir::Value interfaceValue, InterfaceMethodInfo *methodInfo) 
+    {
+        assert(methodInfo->virtualIndex >= 0);
+        auto vtableIndex = methodInfo->virtualIndex;
+
+        auto effectiveFuncType = methodInfo->funcType;
+
+        auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+            location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
+            builder.getStringAttr(methodInfo->name), builder.getBoolAttr(methodInfo->isConditional));
+
+        return interfaceSymbolRefValue;
+    }        
+
     mlir::Value InterfaceAccessorAccess(mlir::Location location, InterfaceInfo::TypePtr interfaceInfo, 
             mlir::Value interfaceValue, InterfaceAccessorInfo *accessorInfo, const GenContext &genContext) {
 
@@ -10893,7 +10907,7 @@ class MLIRGenImpl
         {
             if (auto getMethodInfo = interfaceInfo->findMethod(accessorInfo->getMethod))
             {
-                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
+                getMethodInfoValue = InterfaceMethodAccessNoBound(location, interfaceValue, getMethodInfo);
             }
             else
             {
@@ -10901,12 +10915,16 @@ class MLIRGenImpl
                 return mlir::Value();
             }
         }
+        else
+        {
+            getMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
+        }
 
         if (!accessorInfo->setMethod.empty())
         {
             if (auto setMethodInfo = interfaceInfo->findMethod(accessorInfo->setMethod))
             {
-                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
+                setMethodInfoValue = InterfaceMethodAccessNoBound(location, interfaceValue, setMethodInfo);
             }
             else
             {
@@ -10914,10 +10932,19 @@ class MLIRGenImpl
                 return mlir::Value();
             }
         }
+        else
+        {
+            setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
+        }
 
         auto thisIndirectAccessorOp = builder.create<mlir_ts::ThisIndirectAccessorOp>(
             location, accessorInfo->type, interfaceValue, getMethodInfoValue, setMethodInfoValue,
             mlir::Value());
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! .... : " << thisIndirectAccessorOp << "\n";);
+
+        assert(thisIndirectAccessorOp.getGetAccessor());
+        
         return thisIndirectAccessorOp.getResult(0);
     }
 
@@ -10950,7 +10977,7 @@ class MLIRGenImpl
         {
             if (auto getMethodInfo = interfaceInfo->findMethod(indexInfo->getMethod))
             {
-                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
+                getMethodInfoValue = InterfaceMethodAccessNoBound(location, interfaceValue, getMethodInfo);
             }
             else
             {
@@ -10958,18 +10985,26 @@ class MLIRGenImpl
                 return mlir::Value();
             }
         }
+        else
+        {
+            getMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
+        }
 
         if (!indexInfo->setMethod.empty())
         {
             if (auto setMethodInfo = interfaceInfo->findMethod(indexInfo->setMethod))
             {
-                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
+                setMethodInfoValue = InterfaceMethodAccessNoBound(location, interfaceValue, setMethodInfo);
             }
             else
             {
                 emitError(location) << "Can't find method " << INDEX_ACCESS_SET_FIELD_NAME << " in interface '" << to_print(interfaceInfo->interfaceType) << "'";
                 return mlir::Value();
             }
+        }
+        else
+        {
+            setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
         }
 
         auto thisIndirectIndexAccessorOp = builder.create<mlir_ts::ThisIndirectIndexAccessorOp>(
