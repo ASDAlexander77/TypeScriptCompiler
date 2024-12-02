@@ -4555,26 +4555,25 @@ class MLIRGenImpl
         auto isStatic = 
             hasModifier(parametersContextAST->parent, SyntaxKind::StaticKeyword) 
             || hasModifier(parametersContextAST, SyntaxKind::StaticKeyword);
-        if (!isStatic &&
+
+        if (parametersContextAST->parent == SyntaxKind::InterfaceDeclaration)
+        {
+            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
+        }
+        else if (!isStatic &&
             (kind == SyntaxKind::MethodDeclaration || kind == SyntaxKind::Constructor ||
              kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor))
         {
             params.push_back(
                 std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
-
-        if (!isStatic && genContext.thisType && !!parametersContextAST->parent &&
+        else if (!isStatic && genContext.thisType && !!parametersContextAST->parent &&
             (kind == SyntaxKind::FunctionExpression ||
              kind == SyntaxKind::ArrowFunction))
         {            
             // TODO: this is very tricky code, if we rediscover function again and if by any chance thisType is not null, it will append thisType to lambda which very wrong code
             params.push_back(
                 std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
-        }
-
-        if (parametersContextAST->parent == SyntaxKind::InterfaceDeclaration)
-        {
-            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
         }
 
         auto formalParams = parametersContextAST->parameters;
@@ -10948,7 +10947,7 @@ class MLIRGenImpl
         }
         else
         {
-            getMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
+            getMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getBoundFunctionType({}, {}, false));
         }
 
         if (!accessorInfo->setMethod.empty())
@@ -10965,7 +10964,7 @@ class MLIRGenImpl
         }
         else
         {
-            setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
+            setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getBoundFunctionType({}, {}, false));
         }
 
         auto thisIndirectAccessorOp = builder.create<mlir_ts::BoundIndirectAccessorOp>(
@@ -11018,7 +11017,7 @@ class MLIRGenImpl
         }
         else
         {
-            getMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
+            getMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getBoundFunctionType({}, {}, false));
         }
 
         if (!indexInfo->setMethod.empty())
@@ -11035,7 +11034,7 @@ class MLIRGenImpl
         }
         else
         {
-            setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
+            setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getBoundFunctionType({}, {}, false));
         }
 
         auto thisIndirectIndexAccessorOp = builder.create<mlir_ts::BoundIndirectIndexAccessorOp>(
@@ -17347,8 +17346,8 @@ genContext);
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
                 {
-                    emitError(location) << "method signature not matching for " << name << ":" << to_print(funcType)
-                                        << "} for interface '" << newInterfacePtr->fullName << "' in class '"
+                    emitError(location) << "method signature not matching '" << name << ":" << to_print(funcType)
+                                        << "' for interface '" << newInterfacePtr->fullName << "' in class '"
                                         << newClassPtr->fullName << "'."
                                         << " Found method: " << name << ":" << to_print(foundMethodFunctionType);
                     return {emptyMethod, mlir::failure()};
@@ -18711,6 +18710,8 @@ genContext);
             auto isConditional = !!methodSignature->questionToken;
 
             newInterfacePtr->hasNew |= kind == SyntaxKind::ConstructSignature;
+            // we need this code to add "THIS" param to declaration
+            interfaceMember->parent = interfaceDeclarationAST;
 
             std::string methodName;
             std::string propertyName;
@@ -18726,8 +18727,6 @@ genContext);
             {
                 return mlir::failure();
             }
-
-            interfaceMember->parent = interfaceDeclarationAST;
 
             // add info about property
             if (kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
@@ -18765,6 +18764,8 @@ genContext);
         else if (kind == SyntaxKind::IndexSignature)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
+            // we need this code to add "THIS" param to declaration
+            interfaceMember->parent = interfaceDeclarationAST;
 
             std::string methodName;
             std::string propertyName;
@@ -18787,8 +18788,6 @@ genContext);
             {
                 return mlir::failure();
             }
-
-            interfaceMember->parent = interfaceDeclarationAST;
 
             auto found = llvm::find_if(newInterfacePtr->indexes, [&] (auto indexInfo) {
                 return indexInfo.indexSignature == funcType;

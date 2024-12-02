@@ -127,7 +127,7 @@ def ThisAccessorOp : TypeScript_Op<"ThisAccessor",
 }
 
 def ThisIndirectAccessorOp : TypeScript_Op<"ThisIndirectAccessor", 
-    [SameVariadicOperandSize]> {
+    []> {
   let summary = "accessor of object";
 
   let arguments = (ins AnyType:$thisVal, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
@@ -147,7 +147,7 @@ def ThisIndexAccessorOp : TypeScript_Op<"ThisIndexAccessor",
 }
 
 def ThisIndirectIndexAccessorOp : TypeScript_Op<"ThisIndirectIndexAccessor", 
-    [SameVariadicOperandSize]> {
+    []> {
   let summary = "index accessor of object";
 
   let arguments = (ins AnyType:$thisVal, AnyType:$index, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
