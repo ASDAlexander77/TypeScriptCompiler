@@ -10968,8 +10968,8 @@ class MLIRGenImpl
             setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
         }
 
-        auto thisIndirectAccessorOp = builder.create<mlir_ts::ThisIndirectAccessorOp>(
-            location, accessorInfo->type, interfaceValue, getMethodInfoValue, setMethodInfoValue,
+        auto thisIndirectAccessorOp = builder.create<mlir_ts::BoundIndirectAccessorOp>(
+            location, accessorInfo->type, getMethodInfoValue, setMethodInfoValue,
             mlir::Value());
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! .... : " << thisIndirectAccessorOp << "\n";);
@@ -11038,8 +11038,8 @@ class MLIRGenImpl
             setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getFunctionType({}, {}, false));
         }
 
-        auto thisIndirectIndexAccessorOp = builder.create<mlir_ts::ThisIndirectIndexAccessorOp>(
-            location, indexResultType, interfaceValue, V(result), getMethodInfoValue, setMethodInfoValue,
+        auto thisIndirectIndexAccessorOp = builder.create<mlir_ts::BoundIndirectIndexAccessorOp>(
+            location, indexResultType, V(result), getMethodInfoValue, setMethodInfoValue,
             mlir::Value());
         return thisIndirectIndexAccessorOp.getResult(0);
     }
