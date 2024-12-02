@@ -10910,36 +10910,36 @@ class MLIRGenImpl
     mlir::Value InterfaceIndexAccess(InterfaceInfo::TypePtr interfaceInfo, 
             mlir::Location location, mlir::Value interfaceValue, mlir::Value argument, const GenContext &genContext) {
 
-        auto indexInfo = interfaceInfo->findIndex();
+        auto indexInfo = interfaceInfo->findIndexer();
 
-        if (interfaceInfo->findIndexindexes.size() == 0)
+        if (!indexInfo)
         {
             emitError(location) << "indexer is not defined";
             return mlir::Value();            
         }
 
-        if (!indexInfo.indexSignature || indexInfo.indexSignature.getNumResults() == 0)
+        if (!indexInfo->indexSignature || indexInfo->indexSignature.getNumResults() == 0)
         {
             emitError(location) << "can't resolve type of indexer";
             return mlir::Value();
         }
 
-        auto indexResultType = indexInfo.indexSignature.getResult(0);
-        auto argumentType = indexInfo.indexSignature.getInput(0);
+        auto indexResultType = indexInfo->indexSignature.getResult(0);
+        auto argumentType = indexInfo->indexSignature.getInput(0);
 
         // sync index
         CAST_A(result, location, argumentType, argument, genContext);
 
         mlir::Value getMethodInfoValue;
         mlir::Value setMethodInfoValue;
-        if (!indexInfo.getMethod.empty())
-            if (auto getMethodInfo = interfaceInfo->findMethod(indexInfo.getMethod))
+        if (!indexInfo->getMethod.empty())
+            if (auto getMethodInfo = interfaceInfo->findMethod(indexInfo->getMethod))
             {
                 getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
             }
 
-        if (!indexInfo.setMethod.empty())
-            if (auto setMethodInfo = interfaceInfo->findMethod(indexInfo.setMethod))
+        if (!indexInfo->setMethod.empty())
+            if (auto setMethodInfo = interfaceInfo->findMethod(indexInfo->setMethod))
             {
                 setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
             }
@@ -18646,11 +18646,11 @@ genContext);
                 {
                     if (kind == SyntaxKind::GetAccessor)
                     {
-                        newInterfacePtr->accessors.push_back({propertyName, methodName, ""});
+                        newInterfacePtr->accessors.push_back({funcType.getResult(0), propertyName, methodName, ""});
                     }
                     else
                     {
-                        newInterfacePtr->accessors.push_back({propertyName, "", methodName});
+                        newInterfacePtr->accessors.push_back({funcType.getInputs().back(), propertyName, "", methodName});
                     }
                 }
                 else
