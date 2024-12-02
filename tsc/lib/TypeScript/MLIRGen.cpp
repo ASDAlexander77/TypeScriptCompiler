@@ -17577,13 +17577,13 @@ genContext);
                 {
                     auto &indexer = newClassPtr->indexes.front();
                     auto getFuncType = funcOp.getFunctionType();
-                    auto actualGetFuncType = 
+                    auto signatureFromGetFunc = 
                         mlir_ts::FunctionType::get(
                             indexer.indexSignature.getContext(), 
                             getFuncType.getInputs().drop_front(), 
                             getFuncType.getResults(), 
                             false);                    
-                    if (indexer.indexSignature != actualGetFuncType)
+                    if (indexer.indexSignature != signatureFromGetFunc)
                     {
                         emitError(location) << "'get' method is not matching 'index' definition";
                         return false;
@@ -17595,13 +17595,13 @@ genContext);
                 {
                     auto &indexer = newClassPtr->indexes.front();
                     auto setFuncType = funcOp.getFunctionType();
-                    auto actualSetFuncType = 
+                    auto signatureFromSetFunc = 
                         mlir_ts::FunctionType::get(
                             indexer.indexSignature.getContext(), 
                             setFuncType.getInputs().drop_front().drop_back(), 
                             { setFuncType.getInputs().back() }, 
                             false);
-                    if (indexer.indexSignature != actualSetFuncType)
+                    if (indexer.indexSignature != signatureFromSetFunc)
                     {
                         emitError(location) << "'set' method is not matching 'index' definition";
                         return false;
@@ -18540,7 +18540,7 @@ genContext);
             }
 
             if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
-                INDEX_ACCESS_SET_FIELD_NAME, mth.getIndexGetFunctionType(funcType), true, declarationMode, genContext))) 
+                INDEX_ACCESS_SET_FIELD_NAME, mth.getIndexSetFunctionType(funcType), true, declarationMode, genContext))) 
             {
                 return mlir::failure();
             }

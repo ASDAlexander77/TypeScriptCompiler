@@ -648,7 +648,7 @@ class MLIRTypeHelper
         auto [arg, res] = getIndexSignatureArgumentAndResultTypes(indexSignature);
         return mlir_ts::FunctionType::get(
             indexSignature.getContext(), 
-            {arg}, 
+            {getOpaqueType(), arg}, 
             {res}, 
             false);    
     }
@@ -658,7 +658,7 @@ class MLIRTypeHelper
         auto [arg, res] = getIndexSignatureArgumentAndResultTypes(indexSignature);        
         return mlir_ts::FunctionType::get(
             indexSignature.getContext(), 
-            {arg, res}, 
+            {getOpaqueType(), arg, res}, 
             {}, 
             false);    
     }    
