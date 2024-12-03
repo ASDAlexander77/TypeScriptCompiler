@@ -2215,6 +2215,18 @@ class MLIRTypeHelper
                 return mlir_ts::NumberType::get(context);
             }
 
+            // TODO: temp hack to support extends { readonly length: number; readonly [n: number]: ElementOfArray<A>; }
+            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, context))
+            {
+                return mlir_ts::AnyType::get(context);
+            }
+
+            // TODO: temp hack to support extends { readonly length: number; readonly [n: number]: ElementOfArray<A>; }
+            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_SET_FIELD_NAME, context))
+            {
+                return mlir_ts::AnyType::get(context);
+            }
+
             llvm_unreachable("not implemented");
         }        
 
@@ -2224,6 +2236,12 @@ class MLIRTypeHelper
             if (fieldName == MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context))
             {
                 return mlir_ts::NumberType::get(context);
+            }
+
+            // TODO: temp hack to support extends { readonly length: number; readonly [n: number]: ElementOfArray<A>; }
+            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, context))
+            {
+                return mlir_ts::AnyType::get(context);
             }
 
             llvm_unreachable("not implemented");
