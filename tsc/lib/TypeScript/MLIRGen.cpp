@@ -22784,6 +22784,11 @@ genContext);
         return mlir_ts::ObjectType::get(type);
     }
 
+    mlir_ts::OpaqueType getOpaqueType()
+    {
+        return mlir_ts::OpaqueType::get(builder.getContext());
+    }    
+
     mlir_ts::BoundFunctionType getBoundFunctionType(mlir_ts::FunctionType funcType)
     {
         return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
@@ -23438,11 +23443,6 @@ genContext);
     mlir_ts::NullType getNullType()
     {
         return mlir_ts::NullType::get(builder.getContext());
-    }
-
-    mlir_ts::OpaqueType getOpaqueType()
-    {
-        return mlir_ts::OpaqueType::get(builder.getContext());
     }
 
     mlir::LogicalResult declare(mlir::Location location, VariableDeclarationDOM::TypePtr var, mlir::Value value, const GenContext &genContext, bool showWarnings = false)

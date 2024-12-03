@@ -1039,11 +1039,30 @@ class MLIRPropertyAccessCodeLogic
                 getterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, getterFuncType, expression, 
                     MLIRHelper::getStructIndex(builder, getterIndex));
             }
+            else
+            {
+                getterValue = builder.create<mlir_ts::UndefOp>(location, 
+                    mlir_ts::FunctionType::get(
+                        builder.getContext(), 
+                        {mlir_ts::OpaqueType::get(builder.getContext())}, 
+                        {accessorResultType}, 
+                        false));
+            }
 
             if (setterIndex >= 0)
             {
                 setterValue = builder.create<mlir_ts::ExtractPropertyOp>(location, setterFuncType, expression, 
                     MLIRHelper::getStructIndex(builder, setterIndex));
+            }
+            else
+            {
+                setterValue = builder.create<mlir_ts::UndefOp>(location, 
+                    mlir_ts::FunctionType::get(
+                        builder.getContext(), 
+                        {mlir_ts::OpaqueType::get(builder.getContext()), 
+                        accessorResultType}, 
+                        {}, 
+                        false));
             }
 
             auto refValue = getExprLoadRefValue(location);
