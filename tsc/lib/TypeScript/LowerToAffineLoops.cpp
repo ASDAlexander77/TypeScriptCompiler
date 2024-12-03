@@ -1125,8 +1125,8 @@ struct BoundIndirectAccessorOpLowering : public TsPattern<mlir_ts::BoundIndirect
                 boundFuncType.getInputs(), 
                 boundFuncType.getResults());
 
-            auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectAccessorOp.getSetAccessor());
-            auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectAccessorOp.getSetAccessor());
+            auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectAccessorOp.getGetAccessor());
+            auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectAccessorOp.getGetAccessor());
 
             auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{boundIndirectAccessorOp.getType(0)}, 
                     methodOp, ValueRange{thisOp});
