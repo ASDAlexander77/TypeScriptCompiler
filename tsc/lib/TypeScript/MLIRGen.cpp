@@ -18433,7 +18433,7 @@ genContext);
 
     mlir::LogicalResult mlirGenInterfaceHeritageClauseExtends(InterfaceDeclaration interfaceDeclarationAST,
                                                               InterfaceInfo::TypePtr newInterfacePtr,
-                                                              HeritageClause heritageClause, bool declareClass,
+                                                              HeritageClause heritageClause, int &orderWeight, bool declareClass,
                                                               const GenContext &genContext)
     {
         if (heritageClause->token != SyntaxKind::ExtendsKeyword)
@@ -18460,9 +18460,11 @@ genContext);
                     llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
                     if (mlir::succeeded(mth.getFields(tupleType, destTupleFields)))
                     {
+                        orderWeight++;
                         success = true;
                         for (auto field : destTupleFields)
-                            success &= mlir::succeeded(mlirGenInterfaceAddFieldMember(newInterfacePtr, field.id, field.type, field.isConditional));
+                            success &= mlir::succeeded(
+                                mlirGenInterfaceAddFieldMember(newInterfacePtr, field.id, field.type, field.isConditional, orderWeight));
                     }
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
@@ -18503,10 +18505,11 @@ genContext);
         auto ifaceGenContext = GenContext(genContext);
         ifaceGenContext.thisType = newInterfacePtr->interfaceType;
 
+        auto orderWeight = 0;
         for (auto &heritageClause : interfaceDeclarationAST->heritageClauses)
         {
             if (mlir::failed(mlirGenInterfaceHeritageClauseExtends(interfaceDeclarationAST, newInterfacePtr,
-                                                                   heritageClause, declareInterface, genContext)))
+                                                                   heritageClause, orderWeight, declareInterface, genContext)))
             {
                 return mlir::failure();
             }
@@ -18529,8 +18532,9 @@ genContext);
 
             for (auto &interfaceMember : interfaceDeclarationAST->members)
             {
+                orderWeight++;
                 if (mlir::failed(mlirGenInterfaceMethodMember(
-                        interfaceDeclarationAST, newInterfacePtr, interfaceMember, declareInterface, ifaceGenContext)))
+                        interfaceDeclarationAST, newInterfacePtr, interfaceMember, orderWeight, declareInterface, ifaceGenContext)))
                 {
                     notResolved++;
                 }
@@ -18566,7 +18570,7 @@ genContext);
         return mlir::failure();
     }
 
-    mlir::LogicalResult mlirGenInterfaceAddFieldMember(InterfaceInfo::TypePtr newInterfacePtr, mlir::Attribute fieldId, mlir::Type typeIn, bool isConditional, bool declareInterface = true)
+    mlir::LogicalResult mlirGenInterfaceAddFieldMember(InterfaceInfo::TypePtr newInterfacePtr, mlir::Attribute fieldId, mlir::Type typeIn, bool isConditional, int orderWeight, bool declareInterface = true)
     {
         auto &fieldInfos = newInterfacePtr->fields;
         auto type = typeIn;
@@ -18590,9 +18594,15 @@ genContext);
             return mlir::failure();
         }
 
-        if (declareInterface || newInterfacePtr->getFieldIndex(fieldId) == -1)
+        auto fieldIndex = newInterfacePtr->getFieldIndex(fieldId);
+        if (fieldIndex == -1)
         {
-            fieldInfos.push_back({fieldId, type, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
+            fieldInfos.push_back({fieldId, type, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex()});
+        }
+        else
+        {
+            // update
+            fieldInfos[fieldIndex] = {fieldId, type, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex()};
         }
 
         return mlir::success();
@@ -18600,7 +18610,7 @@ genContext);
 
     mlir::LogicalResult addInterfaceMethod(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
         llvm::SmallVector<InterfaceMethodInfo> &methodInfos, StringRef methodName, mlir_ts::FunctionType funcType, bool isConditional,
-        bool declareInterface, const GenContext &genContext)
+        int orderWeight, bool declareInterface, const GenContext &genContext)
     {
         if (methodName.empty())
         {
@@ -18623,10 +18633,16 @@ genContext);
             return mlir::failure();
         }
 
-        if (declareInterface || newInterfacePtr->getMethodIndex(methodName) == -1)
+        auto methodIndex = newInterfacePtr->getMethodIndex(methodName);
+        if (methodIndex == -1)
         {
             methodInfos.push_back(
-                {methodName.str(), funcType, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
+                {methodName.str(), funcType, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex()});
+        }
+        else
+        {
+            methodInfos[methodIndex] = 
+                {methodName.str(), funcType, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex()};
         }
 
         return mlir::success();    
@@ -18662,7 +18678,7 @@ genContext);
 
     mlir::LogicalResult mlirGenInterfaceMethodMember(InterfaceDeclaration interfaceDeclarationAST,
                                                      InterfaceInfo::TypePtr newInterfacePtr,
-                                                     TypeElement interfaceMember, bool declareInterface,
+                                                     TypeElement interfaceMember, int orderWeight, bool declareInterface,
                                                      const GenContext &genContext)
     {
         if (interfaceMember->processed)
@@ -18722,7 +18738,7 @@ genContext);
             }
 
             if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
-                methodName, funcType, isConditional, declarationMode, genContext))) 
+                methodName, funcType, isConditional, orderWeight, declarationMode, genContext))) 
             {
                 return mlir::failure();
             }
@@ -18730,30 +18746,29 @@ genContext);
             // add info about property
             if (kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
             {
-                auto found = llvm::find_if(newInterfacePtr->accessors, [&] (auto accessorInfo) {
-                    return accessorInfo.name == propertyName;
-                });
+                auto accessor = newInterfacePtr->findAccessor(propertyName);
                 
-                if (found == newInterfacePtr->accessors.end())
+                auto &accessors = newInterfacePtr->accessors;
+                if (accessor == nullptr)
                 {
                     if (kind == SyntaxKind::GetAccessor)
                     {
-                        newInterfacePtr->accessors.push_back({funcType.getResult(0), propertyName, methodName, ""});
+                        accessors.push_back({funcType.getResult(0), propertyName, methodName, ""});
                     }
                     else
                     {
-                        newInterfacePtr->accessors.push_back({funcType.getInputs().back(), propertyName, "", methodName});
+                        accessors.push_back({funcType.getInputs().back(), propertyName, "", methodName});
                     }
                 }
                 else
                 {
                     if (kind == SyntaxKind::GetAccessor)
                     {
-                        found->getMethod = methodName;
+                        accessor->getMethod = methodName;
                     }
                     else
                     {
-                        found->setMethod = methodName;
+                        accessor->setMethod = methodName;
                     }                    
                 }
             }
@@ -18777,13 +18792,13 @@ genContext);
 
             // add get method
             if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
-                INDEX_ACCESS_GET_FIELD_NAME, mth.getIndexGetFunctionType(funcType), true, declarationMode, genContext))) 
+                INDEX_ACCESS_GET_FIELD_NAME, mth.getIndexGetFunctionType(funcType), true, orderWeight, declarationMode, genContext))) 
             {
                 return mlir::failure();
             }
 
             if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
-                INDEX_ACCESS_SET_FIELD_NAME, mth.getIndexSetFunctionType(funcType), true, declarationMode, genContext))) 
+                INDEX_ACCESS_SET_FIELD_NAME, mth.getIndexSetFunctionType(funcType), true, orderWeight, declarationMode, genContext))) 
             {
                 return mlir::failure();
             }
