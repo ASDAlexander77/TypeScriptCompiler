@@ -10995,8 +10995,7 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        auto indexResultType = indexInfo->indexSignature.getResult(0);
-        auto argumentType = indexInfo->indexSignature.getInput(0);
+        auto [argumentType, indexResultType] = mth.getIndexSignatureArgumentAndResultTypes(indexInfo->indexSignature);
 
         // sync index
         CAST_A(result, location, argumentType, argument, genContext);
@@ -18795,7 +18794,7 @@ genContext);
 
             if (found == newInterfacePtr->indexes.end())
             {
-                newInterfacePtr->indexes.push_back({funcType});
+                newInterfacePtr->indexes.push_back({funcType, INDEX_ACCESS_GET_FIELD_NAME, INDEX_ACCESS_SET_FIELD_NAME});
             }   
 
             methodSignature->processed = true;            
