@@ -19428,7 +19428,7 @@ genContext);
 
         auto valueType = value.getType();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! cast [" << valueType << "] -> [" << type << "]"
+        LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << " -> " << type
                                 << "\n";);
 
         if (auto litType = dyn_cast<mlir_ts::LiteralType>(type))
@@ -19640,6 +19640,11 @@ genContext);
                 emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();
             }
+            else if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
+            {
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
+                return mlir::failure();
+            }            
         }
 
         // tuple to tuple
@@ -19661,6 +19666,11 @@ genContext);
                 emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();
             }
+            else if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
+            {
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
+                return mlir::failure();
+            }               
         }
 
         // class to tuple
