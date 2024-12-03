@@ -9302,7 +9302,7 @@ class MLIRGenImpl
         }         
         else if (auto thisIndirectIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndirectIndexAccessorOp>())
         {
-            syncSavingValue(thisIndexAccessorOp.getType(0));
+            syncSavingValue(thisIndirectIndexAccessorOp.getType(0));
             if (!savingValue)
             {
                 return mlir::failure();
@@ -9333,7 +9333,7 @@ class MLIRGenImpl
         }         
         else if (auto boundIndirectIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::BoundIndirectIndexAccessorOp>())
         {
-            syncSavingValue(thisIndexAccessorOp.getType(0));
+            syncSavingValue(boundIndirectIndexAccessorOp.getType(0));
             if (!savingValue)
             {
                 return mlir::failure();
@@ -10667,7 +10667,7 @@ class MLIRGenImpl
 
         if (classInfo->indexes.size() == 0)
         {
-            emitError(location) << "indexer is not defined";
+            emitError(location) << "indexer is not declared";
             return mlir::Value();            
         }
 
@@ -10985,7 +10985,7 @@ class MLIRGenImpl
 
         if (!indexInfo)
         {
-            emitError(location) << "indexer is not defined";
+            emitError(location) << "indexer is not declared";
             return mlir::Value();            
         }
 

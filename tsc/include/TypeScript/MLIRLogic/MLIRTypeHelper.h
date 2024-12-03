@@ -622,13 +622,21 @@ class MLIRTypeHelper
     {
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(indexSignatureType))
         {
-            if (funcType.getNumInputs() == 1 
-                && funcType.getNumResults() == 1 
+            if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 
                 && (isNumericType(funcType.getInput(0)) || isa<mlir_ts::StringType>(funcType.getInput(0))))
             {
                 return {funcType.getInput(0), funcType.getResult(0)};
             }
+
+            // in case if first parameter is Opaque
+            if (funcType.getNumInputs() == 2 && funcType.getNumResults() == 1 
+                && (isNumericType(funcType.getInput(1)) || isa<mlir_ts::StringType>(funcType.getInput(1))))
+            {
+                return {funcType.getInput(1), funcType.getResult(0)};
+            }            
         }
+
+        assert(false);
 
         return {mlir::Type(), mlir::Type()};
     }
