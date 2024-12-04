@@ -495,7 +495,8 @@ struct InterfaceInfo
             offset += std::get<1>(extent)->getVTableSize();
         }
 
-        return offset + fields.size() + methods.size();
+        // as I remember methods are first in interfaces
+        return offset + methods.size() + fields.size();
     }
 
     void recalcOffsets()

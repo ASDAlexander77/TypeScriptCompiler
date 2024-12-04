@@ -18602,7 +18602,8 @@ genContext);
         else
         {
             // update
-            fieldInfos[fieldIndex] = {fieldId, type, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex()};
+            fieldInfos[fieldIndex].type = type;
+            fieldInfos[fieldIndex].isConditional = isConditional;
         }
 
         return mlir::success();
@@ -18641,8 +18642,8 @@ genContext);
         }
         else
         {
-            methodInfos[methodIndex] = 
-                {methodName.str(), funcType, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex()};
+            methodInfos[methodIndex].funcType = funcType;
+            methodInfos[methodIndex].isConditional = isConditional;
         }
 
         return mlir::success();    
@@ -18712,7 +18713,7 @@ genContext);
                 return mlir::failure();
             }
 
-            if (mlir::failed(mlirGenInterfaceAddFieldMember(newInterfacePtr, fieldId, type, isConditional, declareInterface)))
+            if (mlir::failed(mlirGenInterfaceAddFieldMember(newInterfacePtr, fieldId, type, isConditional, orderWeight, declareInterface)))
             {
                 return mlir::failure();
             }
