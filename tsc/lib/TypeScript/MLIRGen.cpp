@@ -19088,10 +19088,20 @@ genContext);
     ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
     {
+        auto count = 0;
         for (auto [index, fieldInfo] : enumerate(fields))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
 
+            // filter out special fields
+            if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fieldInfo.id)) 
+            {
+                if (strAttr.getValue().starts_with(".")) {
+                    continue;
+                }
+            }
+
+            count ++;
             if (fieldInfo.id == mlir::Attribute() || (index < srcTupleType.size() && srcTupleType.getFieldInfo(index).id == mlir::Attribute()))
             {
                 if (index >= srcTupleType.size() && isa<mlir_ts::OptionalType>(fieldInfo.type))
@@ -19152,10 +19162,10 @@ genContext);
             }
         }
 
-        if (fields.size() != values.size())
+        if (count != values.size())
         {
             emitError(location)
-                << "count of fields (" << fields.size() << ") in destination is not matching to " << to_print(srcTupleType) << "'";            
+                << "count of fields (" << count << ") in destination is not matching to " << to_print(srcTupleType) << "'";            
             return mlir::failure();
         }
 
@@ -19194,9 +19204,40 @@ genContext);
         // fieldsForTuple.append(fields.begin(), fields.end());
         // return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
 
-        auto newInstanceOfClass = NewClassInstance(location, classType, {}, genContext);
+        SmallVector<mlir::Value, 4> operands;
+        auto newInstanceOfClass = NewClassInstance(location, classType, operands, genContext);
         // TODO: assign fields to values
         
+        auto valueIndex = 0;
+        for (auto fieldInfo : fields)
+        {
+            // filter out special fields
+            if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fieldInfo.id)) 
+            {
+                if (strAttr.getValue().starts_with(".")) {
+                    continue;
+                }
+            }            
+
+            auto value = values[valueIndex];
+
+            MLIRPropertyAccessCodeLogic cl(builder, location, newInstanceOfClass, fieldInfo.id);
+            // TODO: implement conditional
+            auto propertyAccess = mlirGenPropertyAccessExpressionLogic(location, newInstanceOfClass, false, cl, genContext); 
+            EXIT_IF_FAILED_OR_NO_VALUE(propertyAccess)
+
+            auto property = V(propertyAccess);
+            if (value.getType() != fieldInfo.type)
+            {
+                CAST(value, location, fieldInfo.type, value, genContext)
+            }
+
+            auto result = mlirGenSaveLogicOneItem(location, property, value, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+
+            valueIndex++;
+        }
+
         return newInstanceOfClass;
     }    
 
@@ -19693,7 +19734,7 @@ genContext);
             }
             else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
             {
-                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();                
+                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();     
                 return castTupleToClass(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, classType, genContext);                
             }
             else if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
