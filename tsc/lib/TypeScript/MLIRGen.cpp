@@ -11787,6 +11787,22 @@ class MLIRGenImpl
         return mlirGenCall(location, actualFuncRefValue, operands, genContext);
     }
 
+    ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
+                                     SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    {
+        // seems we are calling type constructor
+        // TODO: review it, really u should forbid to use "a = Class1();" to allocate in stack, or finish it
+        // using Class..new(true) method
+        auto newOp = NewClassInstanceLogicAsOp(location, classType, true, genContext);
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (mlir::failed(mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        return V(newOp);
+    }
+
     ValueOrLogicalResult mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
@@ -11821,19 +11837,7 @@ class MLIRGenImpl
                 }
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
-                // seems we are calling type constructor
-                // TODO: review it, really u should forbide to use "a = Class1();" to allocate in stack, or finish it
-                // using Class..new(true) method
-                auto newOp = NewClassInstanceLogicAsOp(location, classType, true, genContext);
-                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-                if (mlir::failed(mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext)))
-                {
-                    value = mlir::failure();
-                }
-                else
-                {
-                    value = newOp;
-                }
+                value = NewClassInstance(location, classType, operands, genContext);
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
                 MLIRCodeLogic mcl(builder);
@@ -19081,11 +19085,9 @@ genContext);
         return resultType;
     }    
 
-    ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
+    ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
     {
-        SmallVector<mlir::Value> values;
-        
         for (auto [index, fieldInfo] : enumerate(fields))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
@@ -19152,12 +19154,50 @@ genContext);
 
         if (fields.size() != values.size())
         {
+            emitError(location)
+                << "count of fields (" << fields.size() << ") in destination is not matching to " << to_print(srcTupleType) << "'";            
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }    
+
+
+    ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        SmallVector<mlir::Value> values;
+
+        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, genContext, errorAsWarning);
+        if (mlir::failed(result))
+        {
             return mlir::failure();
         }
 
         SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
         fieldsForTuple.append(fields.begin(), fields.end());
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
+    }    
+
+    ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        SmallVector<mlir::Value> values;
+        
+        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, genContext, errorAsWarning);
+        if (mlir::failed(result))
+        {
+            return mlir::failure();
+        }
+
+        // SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
+        // fieldsForTuple.append(fields.begin(), fields.end());
+        // return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
+
+        auto newInstanceOfClass = NewClassInstance(location, classType, {}, genContext);
+        // TODO: assign fields to values
+        
+        return newInstanceOfClass;
     }    
 
     // TODO: finish it
@@ -19653,8 +19693,8 @@ genContext);
             }
             else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
             {
-                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
-                return mlir::failure();
+                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();                
+                return castTupleToClass(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, classType, genContext);                
             }
             else if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
             {
