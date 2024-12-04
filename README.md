@@ -9,6 +9,26 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+- Compile-time `if`s
+```TypeScript
+function isArray<T extends unknown[]>(value: T): value is T {
+    return true;
+}
+
+function gen<T>(t: T)
+{
+    if (isArray(t))
+    {
+        return t.length.toString();
+    }
+
+    return "int";
+}
+
+const v1 = gen<i32>(23); // result: int
+const v2 = gen<string[]>([]); // result: 0
+```
+
 - indexes for classes and interfaces, properties for interfaces
 ```TypeScript
 class Test {
