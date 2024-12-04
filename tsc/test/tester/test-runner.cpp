@@ -80,8 +80,9 @@
 #endif        
 
 auto jitRun = false;
-auto sharedLibCompiler = false;
-auto sharedLibCompileTypeCompiler = false;
+auto sharedLib = false;
+auto sharedLibCompileTime = false;
+auto gctorsAsMethod = false;
 #ifndef COMPILE_DEBUG
 auto opt = true;
 auto tsc_opt = "--opt --opt_level=3";
@@ -93,6 +94,8 @@ auto tsc_opt = "--di --opt_level=0";
 #define JIT_NAME "jitd"
 #define COMPILE_NAME "compiled"
 #endif
+
+auto tsc_opt_ext = "";
 
 void createJitBatchFile()
 {
@@ -108,7 +111,7 @@ void createJitBatchFile()
     batFile << "set FILEPATH=%2" << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "echo on" << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll %FILEPATH% 1> %FILENAME%.txt 2> %FILENAME%.err"
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " " << tsc_opt_ext << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll %FILEPATH% 1> %FILENAME%.txt 2> %FILENAME%.err"
             << std::endl;
     batFile.close();
 #else
@@ -121,7 +124,7 @@ void createJitBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "FILEPATH=$2" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so $FILEPATH 1> $FILENAME.txt 2> $FILENAME.err"
+    batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " " << tsc_opt_ext << " --shared-libs=../../lib/libTypeScriptRuntime.so $FILEPATH 1> $FILENAME.txt 2> $FILENAME.err"
             << std::endl;
     batFile.close();    
 #endif    
@@ -148,7 +151,7 @@ void createCompileBatchFile()
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " " << tsc_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " 
             << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSC_LIB_PATH%" 
@@ -176,7 +179,7 @@ void createCompileBatchFile()
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << tsc_opt_ext << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
     batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH $FILENAME.o " 
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
@@ -206,7 +209,7 @@ void buildJitExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::
 void buildCompileExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
     ss << RUN_CMD << COMPILE_NAME BAT_NAME << " " << fileNameNoExt << " " << file;
-    if (sharedLibCompiler)
+    if (sharedLib)
     {
         ss << SHARED_LIB_OPT;
     }    
@@ -317,6 +320,11 @@ void testFile(std::string file)
 
 void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vector<std::string> &files)
 {
+    if (gctorsAsMethod)
+    {
+        tsc_opt_ext = "--gctors-as-method";
+    }
+
 #ifdef WIN32
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
     batFile << "echo off" << std::endl;
@@ -331,11 +339,13 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
     std::stringstream objs;
+    auto isFirst = true;
     for (auto &file : files)
     {
         auto fileNameWithoutExt = fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".obj ";
-        batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+        batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " " << (isFirst ? "" : tsc_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+        isFirst = false;
     }
 
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << objs.str() << " "
@@ -361,11 +371,13 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
     std::stringstream objs;
+    auto isFirst = true;
     for (auto &file : files)
     {
         auto fileNameWithoutExt = fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".o ";
-        batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (isFirst ? "" : tsc_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        isFirst = false;
     }
 
     batFile << TEST_COMPILER << " -o $FILENAME " << objs.str() 
@@ -382,6 +394,11 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 
 void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector<std::string> &files)
 {
+    if (gctorsAsMethod)
+    {
+        tsc_opt_ext = "--gctors-as-method";
+    }
+
     auto linker_opt = SHARED_LIB_OPT;
 
 #ifdef WIN32
@@ -421,7 +438,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             }
         }
 
-        (first ? execBat : sharedBat) << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+        (first ? execBat : sharedBat) << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " " << (first ? "" : tsc_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
 
         first = false;
     }
@@ -451,7 +468,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     {
         batFile << execBat.str();
         batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << exec_objs.str() << " ";
-        if (sharedLibCompileTypeCompiler)
+        if (sharedLibCompileTime)
         {
             batFile << shared_filenameNoExt << ".lib ";
         }
@@ -507,7 +524,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             }
         }
 
-        (first ? execBat : sharedBat) << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        (first ? execBat : sharedBat) << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (first ? "" : tsc_opt) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
 
         first = false;
     }
@@ -529,7 +546,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << execBat.str();
         batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " "; 
         batFile << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH ";
-        if (sharedLibCompileTypeCompiler)
+        if (sharedLibCompileTime)
         {
             // we need "-Wl,-rpath=" to embed path for compiled shared lib path
             batFile << "-L`pwd` -Wl,-rpath=`pwd` -l" << shared_filenameNoExt << " ";
@@ -559,7 +576,7 @@ std::string buildMultiCompileExecCommand(std::string fileNameNoExt)
 void testMutliFiles(std::vector<std::string> &files)
 {    
     auto tempOutputFileNameNoExt = getTempOutputFileNameNoExt(*files.begin());
-    if (sharedLibCompiler)
+    if (sharedLib)
     {
         createSharedMultiBatchFile(tempOutputFileNameNoExt, files);
     }
@@ -593,11 +610,15 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         }
         else if (std::string(argv[index]) == "-shared")
         {
-            sharedLibCompiler = true;
+            sharedLib = true;
         }
         else if (std::string(argv[index]) == "-compile-time")
         {
-            sharedLibCompileTypeCompiler = true;
+            sharedLibCompileTime = true;
+        }
+        else if (std::string(argv[index]) == "-gctors-as-method")
+        {
+            gctorsAsMethod = true;
         }
         else if (std::string(argv[index]) == "-noopt")
         {
@@ -615,12 +636,12 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         }
     }
 
-    if (sharedLibCompileTypeCompiler && !sharedLibCompiler)
+    if (sharedLibCompileTime && !sharedLib)
     {
         throw "-compile-time can be used with -shared";
     }
 
-    if (sharedLibCompileTypeCompiler && jitRun)
+    if (sharedLibCompileTime && jitRun)
     {
         throw "-compile-time can't be used with -jit";
     }

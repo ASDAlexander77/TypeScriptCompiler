@@ -147,6 +147,13 @@ struct AccessorInfo
     bool isAbstract;
 };
 
+struct IndexInfo
+{
+    mlir_ts::FunctionType indexSignature;
+    mlir_ts::FuncOp get;
+    mlir_ts::FuncOp set;
+};
+
 struct InterfaceFieldInfo
 {
     mlir::Attribute id;
@@ -163,6 +170,21 @@ struct InterfaceMethodInfo
     bool isConditional;
     int interfacePosIndex;
     int virtualIndex;
+};
+
+struct InterfaceAccessorInfo
+{
+    mlir::Type type;
+    std::string name;
+    std::string getMethod;
+    std::string setMethod;
+};
+
+struct InterfaceIndexInfo
+{
+    mlir_ts::FunctionType indexSignature;
+    std::string getMethod;
+    std::string setMethod;
 };
 
 struct VirtualMethodOrFieldInfo
@@ -213,6 +235,10 @@ struct InterfaceInfo
 
     llvm::SmallVector<InterfaceMethodInfo> methods;
 
+    llvm::SmallVector<InterfaceAccessorInfo> accessors;
+
+    llvm::SmallVector<InterfaceIndexInfo> indexes;
+
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
     bool hasNew;
@@ -246,8 +272,8 @@ struct InterfaceInfo
 
     mlir::LogicalResult getVirtualTable(
         llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
-        std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type, bool)> resolveField,
-        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod,
+        std::function<std::pair<mlir_ts::FieldInfo, mlir::LogicalResult>(mlir::Attribute, mlir::Type, bool)> resolveField,
+        std::function<std::pair<MethodInfo &, mlir::LogicalResult>(std::string, mlir_ts::FunctionType, bool, int)> resolveMethod,
         bool methodsAsFields = false)
     {
         for (auto &extent : extends)
@@ -264,7 +290,12 @@ struct InterfaceInfo
             if (methodsAsFields)
             {
                 auto methodNameAttr = mlir::StringAttr::get(method.funcType.getContext(), method.name);
-                auto fieldInfo = resolveField(methodNameAttr, method.funcType, method.isConditional);
+                auto [fieldInfo, result] = resolveField(methodNameAttr, method.funcType, method.isConditional);
+                if (mlir::failed(result))
+                {
+                    return mlir::failure();
+                }
+
                 if (!fieldInfo.id)
                 {
                     if (method.isConditional)
@@ -288,7 +319,12 @@ struct InterfaceInfo
             }
             else
             {
-                auto &classMethodInfo = resolveMethod(method.name, method.funcType, method.isConditional, method.interfacePosIndex);
+                auto [classMethodInfo, result] = resolveMethod(method.name, method.funcType, method.isConditional, method.interfacePosIndex);
+                if (mlir::failed(result))
+                {
+                    return mlir::failure();
+                }
+
                 if (classMethodInfo.name.empty())
                 {
                     if (method.isConditional)
@@ -314,7 +350,12 @@ struct InterfaceInfo
 
         for (auto &field : fields)
         {
-            auto fieldInfo = resolveField(field.id, field.type, field.isConditional);
+            auto [fieldInfo, result] = resolveField(field.id, field.type, field.isConditional);
+            if (mlir::failed(result))
+            {
+                return mlir::failure();
+            }
+
             if (!fieldInfo.id)
             {
                 if (field.isConditional)
@@ -354,6 +395,14 @@ struct InterfaceInfo
         return (signed)dist >= (signed)fields.size() ? -1 : dist;
     }
 
+    int getAccessorIndex(mlir::StringRef name)
+    {
+        auto dist = std::distance(
+            accessors.begin(), std::find_if(accessors.begin(), accessors.end(),
+                                          [&](InterfaceAccessorInfo accessorInfo) { return name == accessorInfo.name; }));
+        return (signed)dist >= (signed)accessors.size() ? -1 : dist;
+    }
+
     InterfaceFieldInfo *findField(mlir::Attribute id)
     {
         auto index = getFieldIndex(id);
@@ -387,8 +436,7 @@ struct InterfaceInfo
 
         for (auto &extent : extends)
         {
-            auto *method = std::get<1>(extent)->findMethod(name);
-            if (method)
+            if (auto *method = std::get<1>(extent)->findMethod(name))
             {
                 return method;
             }
@@ -396,6 +444,43 @@ struct InterfaceInfo
 
         return nullptr;
     }
+
+    InterfaceAccessorInfo *findAccessor(mlir::StringRef name)
+    {
+        auto index = getAccessorIndex(name);
+        if (index >= 0)
+        {
+            return &accessors[index];
+        }
+
+        for (auto &extent : extends)
+        {
+            if (auto *accessor = std::get<1>(extent)->findAccessor(name))
+            {
+                return accessor;
+            }
+        }
+
+        return nullptr;
+    }
+
+    InterfaceIndexInfo *findIndexer()
+    {
+        if (indexes.size() > 0)
+        {
+            return &indexes[0];
+        }
+
+        for (auto &extent : extends)
+        {
+            if (auto *indexer = std::get<1>(extent)->findIndexer())
+            {
+                return indexer;
+            }
+        }
+
+        return nullptr;
+    }    
 
     int getNextVTableMemberIndex()
     {
@@ -410,7 +495,8 @@ struct InterfaceInfo
             offset += std::get<1>(extent)->getVTableSize();
         }
 
-        return offset + fields.size() + methods.size();
+        // as I remember methods are first in interfaces
+        return offset + methods.size() + fields.size();
     }
 
     void recalcOffsets()
@@ -506,6 +592,8 @@ struct ClassInfo
     llvm::SmallVector<GenericMethodInfo> staticGenericMethods;
 
     llvm::SmallVector<AccessorInfo> accessors;
+
+    llvm::SmallVector<IndexInfo> indexes;
 
     NodeArray<ClassElement> extraMembers;
     NodeArray<ClassElement> extraMembersPost;

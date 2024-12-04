@@ -110,6 +110,14 @@ enum class IsGeneric
     True
 };
 
+enum class Reason
+{
+    None,
+    FailedConstraint,
+    Failure,
+    NoConstraint
+};
+
 enum class TypeProvided
 {
     No,
@@ -939,6 +947,7 @@ class MLIRGenImpl
         }
 
         SmallVector<StringRef> symbols;
+        StringRef mlirGctors;
 #ifndef GENERATE_IMPORT_INFO_USING_D_TS_FILE
         // loading Binary to get list of symbols
         SmallVector<StringRef> symbolsAll;
@@ -949,6 +958,10 @@ class MLIRGenImpl
             if (symbol.starts_with(SHARED_LIB_DECLARATIONS_2UNDERSCORE))
             {
                 symbols.push_back(symbol);
+            }
+            else if (symbol == MLIR_GCTORS)
+            {
+                mlirGctors = symbol;
             }
         }
 #else
@@ -976,6 +989,18 @@ class MLIRGenImpl
                     auto litValue = mlirGenStringValue(location, filePath.str());
                     auto strVal = cast(location, getStringType(), litValue, genContext);
                     builder.create<mlir_ts::LoadLibraryPermanentlyOp>(location, mth.getI32Type(), strVal);
+
+                    // call global inits
+                    if (!mlirGctors.empty())
+                    {
+                        auto mlirGctorsNameVal = mlirGenStringValue(location, mlirGctors);
+                        auto strVal = cast(location, getStringType(), mlirGctorsNameVal, genContext);                        
+                        auto globalCtorPtr = builder.create<mlir_ts::SearchForAddressOfSymbolOp>(
+                            location, mlir_ts::OpaqueType::get(builder.getContext()), strVal);
+                        auto funcPtr = builder.create<mlir_ts::CastOp>(location, getFunctionType({}, {}, false), globalCtorPtr);
+                        builder.create<mlir_ts::CallIndirectOp>(location, funcPtr, mlir::ValueRange{});                        
+                    }
+
                     return mlir::success();
                 }, genContext)))
             {
@@ -2258,7 +2283,7 @@ class MLIRGenImpl
                                             llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams,
                                             StringMap<mlir::Type> &inferredTypes, IsGeneric &anyNamedGenericType,
                                             GenContext &genericTypeGenContext,
-                                            bool arrayMerge = false)
+                                            bool arrayMerge = false, bool noExtendsTest = false)
     {
         for (auto &pair : inferredTypes)
         {
@@ -2283,9 +2308,10 @@ class MLIRGenImpl
 
             auto typeParam = (*found);
 
+            // we need to find out type and constrains is not allowing to do it
             auto [result, hasAnyNamedGenericType] =
                 zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam,
-                                             inferredType, false, genericTypeGenContext, true, arrayMerge);
+                                             inferredType, noExtendsTest, genericTypeGenContext, true, arrayMerge);
             if (mlir::failed(result))
             {
                 return mlir::failure();
@@ -2311,7 +2337,7 @@ class MLIRGenImpl
         StringMap<mlir::Type> inferredTypes;
         inferType(location, paramType, argOp.getType(), inferredTypes, genericTypeGenContext);
         if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
-                                                genericTypeGenContext)))
+                                                genericTypeGenContext, false, true)))
         {
             return {mlir::failure(), true};
         }
@@ -2353,7 +2379,7 @@ class MLIRGenImpl
             StringMap<mlir::Type> inferredTypes;
             inferType(location, paramType, newArrowFuncType, inferredTypes, genericTypeGenContext);
             if (mlir::failed(appendInferredTypes(location, functionGenericTypeInfo->typeParams, inferredTypes, anyNamedGenericType,
-                                                    genericTypeGenContext)))
+                                                    genericTypeGenContext, false, true)))
             {
                 return {mlir::failure(), false};
             }
@@ -2586,14 +2612,40 @@ class MLIRGenImpl
             }
 
             // we need to wide all types when initializing function
-
+            // TODO: add checking constraints
             for (auto &typeParam : genericTypeGenContext.typeParamsWithArgs)
             {
-                auto name = std::get<0>(typeParam.getValue())->getName();
-                auto type = std::get<1>(typeParam.getValue());
+                auto &typeParamValue = typeParam.getValue();
+                auto typeInfo = std::get<0>(typeParamValue);
+                auto name = typeInfo->getName();
+                auto type = std::get<1>(typeParamValue);
                 auto widenType = mth.wideStorageType(type);
-                genericTypeGenContext.typeParamsWithArgs[name] =
-                    std::make_pair(std::get<0>(typeParam.getValue()), widenType);
+                genericTypeGenContext.typeParamsWithArgs[name] = std::make_pair(typeInfo, widenType);
+
+                if (typeParam.getValue().first->getConstraint())
+                {
+                    auto reason = testConstraint(location, genericTypeGenContext.typeParamsWithArgs, typeParamValue.first, widenType, genContext);
+                    if (reason == Reason::Failure)
+                    {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
+                        return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                    }
+
+                    if (reason == Reason::FailedConstraint)
+                    {
+                        if (functionGenericTypeInfo->funcType.getNumResults() > 0
+                            && mlir::isa<mlir_ts::TypePredicateType>(functionGenericTypeInfo->funcType.getResult(0)))
+                        {
+                            return {
+                                mlir::success(), 
+                                mlir_ts::FunctionType::get(builder.getContext(), {}, { getBooleanLiteral(false) }, false), 
+                                ""
+                            };
+                        }
+
+                        return {mlir::failure(), mlir_ts::FunctionType(), ""};
+                    }
+                }
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized function: " << functionGenericTypeInfo->name
@@ -4503,26 +4555,25 @@ class MLIRGenImpl
         auto isStatic = 
             hasModifier(parametersContextAST->parent, SyntaxKind::StaticKeyword) 
             || hasModifier(parametersContextAST, SyntaxKind::StaticKeyword);
-        if (!isStatic &&
+
+        if (parametersContextAST->parent == SyntaxKind::InterfaceDeclaration)
+        {
+            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
+        }
+        else if (!isStatic &&
             (kind == SyntaxKind::MethodDeclaration || kind == SyntaxKind::Constructor ||
              kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor))
         {
             params.push_back(
                 std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
-
-        if (!isStatic && genContext.thisType && !!parametersContextAST->parent &&
+        else if (!isStatic && genContext.thisType && !!parametersContextAST->parent &&
             (kind == SyntaxKind::FunctionExpression ||
              kind == SyntaxKind::ArrowFunction))
         {            
             // TODO: this is very tricky code, if we rediscover function again and if by any chance thisType is not null, it will append thisType to lambda which very wrong code
             params.push_back(
                 std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
-        }
-
-        if (parametersContextAST->parent == SyntaxKind::InterfaceDeclaration)
-        {
-            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
         }
 
         auto formalParams = parametersContextAST->parameters;
@@ -6687,6 +6738,22 @@ class MLIRGenImpl
         return addSafeCastStatement(expr, safeType, inverse, elseSafeCase, genContext);
     }
 
+    bool isSafeTypeTheSameAndNoNeedToCast(mlir::Type type, mlir::Type safeType)
+    {
+        if (type == safeType)
+        {
+            // nothing todo here
+            return true;
+        }
+        else if (mlir::isa<mlir_ts::ArrayType>(safeType) && mlir::isa<mlir_ts::ArrayType>(type))
+        {
+            // nothing todo here
+            return true;
+        }
+
+        return false;
+    }
+
     mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto location = loc(expr);
@@ -6694,6 +6761,11 @@ class MLIRGenImpl
         auto result = mlirGen(expr, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
+
+        if (isSafeTypeTheSameAndNoNeedToCast(exprValue.getType(), safeType))
+        {
+            return mlir::success();
+        }
 
         if (elseSafeCase)
         {
@@ -6831,16 +6903,16 @@ class MLIRGenImpl
                 {
                     typeToken = nf.createToken(SyntaxKind::BigIntKeyword);
                 }
-                else if (text == S("function") || text == S("class") || text == S("interface"))
+                else if (text == S("function") || text == S("class") || text == S("interface") || text == S("object"))
                 {
                     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(S("Opaque")));
                 }
-                else if (text == S("i8") || text == S("i16") || text == S("i32") || text == S("i64")
-                        || text == S("s8") || text == S("s16") || text == S("s32") || text == S("s64")
-                        || text == S("u8") || text == S("u16") || text == S("u32") || text == S("u64")
-                        || text == S("u8") || text == S("u16") || text == S("u32") || text == S("u64")
-                        || text == S("f16") || text == S("f32") || text == S("f64") || text == S("f128")
-                        || text == S("index") || text == S("char"))
+                else if (text == S("array")) 
+                {
+                    auto typeTokenElement = nf.createTypeReferenceNode(nf.createIdentifier(S("Opaque")));
+                    typeToken = nf.createArrayTypeNode(typeTokenElement);
+                }
+                else if (isEmbededTypeWithBuiltins(wstos(text)))
                 {
                     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(text));
                 }
@@ -7067,9 +7139,37 @@ class MLIRGenImpl
                     propertyType = typePredicateType;
                 }
             }
-            else if (auto thisAccessorIndirect = conditionValue.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
+            else if (auto thisIndirectAccessor = conditionValue.getDefiningOp<mlir_ts::ThisIndirectAccessorOp>())
             {
-                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisAccessorIndirect.getType(0)))
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisIndirectAccessor.getType(0)))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
+            else if (auto thisIndexAccessor = conditionValue.getDefiningOp<mlir_ts::ThisIndexAccessorOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisIndexAccessor.getType(0)))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
+            else if (auto thisIndirectIndexAccessor = conditionValue.getDefiningOp<mlir_ts::ThisIndirectIndexAccessorOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(thisIndirectIndexAccessor.getType(0)))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
+            else if (auto boundIndirectAccessor = conditionValue.getDefiningOp<mlir_ts::BoundIndirectAccessorOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(boundIndirectAccessor.getType(0)))
+                {
+                    propertyType = typePredicateType;
+                }
+            }
+            else if (auto boundIndirectIndexAccessor = conditionValue.getDefiningOp<mlir_ts::BoundIndirectIndexAccessorOp>())
+            {
+                if (auto typePredicateType = dyn_cast<mlir_ts::TypePredicateType>(boundIndirectIndexAccessor.getType(0)))
                 {
                     propertyType = typePredicateType;
                 }
@@ -7167,6 +7267,17 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto condValue = V(result);
 
+        // special case: in case of LiteralValue do not process If value is False
+        std::optional<bool> literalValue;
+        if (auto litType = mlir::dyn_cast<mlir_ts::LiteralType>(condValue.getType()))
+        {
+            if (auto boolVal = mlir::dyn_cast<mlir::BoolAttr>(litType.getValue()))
+            {
+                literalValue = boolVal.getValue();
+            }
+        }
+
+        // default implementation of IfOp
         if (condValue.getType() != getBooleanType())
         {
             CAST(condValue, location, getBooleanType(), condValue, genContext);
@@ -7181,8 +7292,13 @@ class MLIRGenImpl
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
             checkSafeCast(ifStatementAST->expression, V(result), hasElse ? &elseSafeCase : nullptr, genContext);
-            auto result = mlirGen(ifStatementAST->thenStatement, genContext);
-            EXIT_IF_FAILED(result)
+
+            auto processIf = !literalValue.has_value() || literalValue.value();
+            if (processIf)
+            {
+                auto result = mlirGen(ifStatementAST->thenStatement, genContext);
+                EXIT_IF_FAILED(result)
+            }
         }
 
         if (hasElse)
@@ -7195,8 +7311,12 @@ class MLIRGenImpl
                 addSafeCastStatement(elseSafeCase.expr, elseSafeCase.safeType, false, nullptr, genContext);
             }
 
-            auto result = mlirGen(ifStatementAST->elseStatement, genContext);
-            EXIT_IF_FAILED(result)
+            auto processIf = !literalValue.has_value() || !literalValue.value();
+            if (processIf)
+            {
+                auto result = mlirGen(ifStatementAST->elseStatement, genContext);
+                EXIT_IF_FAILED(result)
+            }
         }
 
         builder.setInsertionPointAfter(ifOp);
@@ -9148,7 +9268,7 @@ class MLIRGenImpl
                 thisAccessorOp.getSetAccessorAttr(), 
                 savingValue);
         }
-        else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorIndirectOp>())
+        else if (auto thisAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndirectAccessorOp>())
         {
             syncSavingValue(thisAccessorIndirectOp.getType(0));
             if (!savingValue)
@@ -9158,13 +9278,74 @@ class MLIRGenImpl
 
             // TODO: it should return accessor as result as it will return data
             // we create new instance of accessor with saving value, previous will be deleted as not used
-            auto callRes = builder.create<mlir_ts::ThisAccessorIndirectOp>(
+            auto callRes = builder.create<mlir_ts::ThisIndirectAccessorOp>(
                 location, mlir::Type(), 
                 thisAccessorIndirectOp.getThisVal(), 
                 thisAccessorIndirectOp.getGetAccessor(), 
                 thisAccessorIndirectOp.getSetAccessor(), 
                 savingValue);    
-        }        
+        } 
+        else if (auto thisIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndexAccessorOp>())
+        {
+            syncSavingValue(thisIndexAccessorOp.getType(0));
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::ThisIndexAccessorOp>(
+                location, mlir::Type(), thisIndexAccessorOp.getThisVal(), thisIndexAccessorOp.getIndex(),
+                thisIndexAccessorOp.getGetAccessorAttr(), 
+                thisIndexAccessorOp.getSetAccessorAttr(), 
+                savingValue);
+        }         
+        else if (auto thisIndirectIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisIndirectIndexAccessorOp>())
+        {
+            syncSavingValue(thisIndirectIndexAccessorOp.getType(0));
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::ThisIndirectIndexAccessorOp>(
+                location, mlir::Type(), thisIndirectIndexAccessorOp.getThisVal(), thisIndirectIndexAccessorOp.getIndex(),
+                thisIndirectIndexAccessorOp.getGetAccessor(), 
+                thisIndirectIndexAccessorOp.getSetAccessor(), 
+                savingValue);
+        }                
+        else if (auto boundAccessorIndirectOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::BoundIndirectAccessorOp>())
+        {
+            syncSavingValue(boundAccessorIndirectOp.getType(0));
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            // TODO: it should return accessor as result as it will return data
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::BoundIndirectAccessorOp>(
+                location, mlir::Type(), 
+                boundAccessorIndirectOp.getGetAccessor(), 
+                boundAccessorIndirectOp.getSetAccessor(), 
+                savingValue);    
+        }         
+        else if (auto boundIndirectIndexAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::BoundIndirectIndexAccessorOp>())
+        {
+            syncSavingValue(boundIndirectIndexAccessorOp.getType(0));
+            if (!savingValue)
+            {
+                return mlir::failure();
+            }
+
+            // we create new instance of accessor with saving value, previous will be deleted as not used
+            auto callRes = builder.create<mlir_ts::BoundIndirectIndexAccessorOp>(
+                location, mlir::Type(), boundIndirectIndexAccessorOp.getIndex(),
+                boundIndirectIndexAccessorOp.getGetAccessor(), 
+                boundIndirectIndexAccessorOp.getSetAccessor(), 
+                savingValue);
+        }           
         /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
@@ -9779,6 +9960,15 @@ class MLIRGenImpl
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
     }
 
+    ValueOrLogicalResult mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue,
+                                                         mlir::Attribute id, bool isConditional,
+                                                         mlir::Value argument/*for index access*/,
+                                                         const GenContext &genContext)
+    {
+        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, id, argument);
+        return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
+    }    
+
     ValueOrLogicalResult mlirGenPropertyAccessExpressionLogic(mlir::Location location, mlir::Value objectValue,
                                                               bool isConditional, MLIRPropertyAccessCodeLogic &cl,
                                                               const GenContext &genContext)
@@ -9811,10 +10001,8 @@ class MLIRGenImpl
                 ifOp.getResults().front().setType(getOptionalType(value.getType()));
             }
 
-            auto optValue =
-                isa<mlir_ts::OptionalType>(value.getType())
-                    ? value 
-                    : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
+            auto optValue = isa<mlir_ts::OptionalType>(value.getType())
+                    ? value : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
 
             // else
@@ -9838,6 +10026,7 @@ class MLIRGenImpl
                                                                   const GenContext &genContext)
     {
         auto name = cl.getName();
+        auto argument = cl.getArgument();
         auto actualType = objectValue.getType();
 
         LLVM_DEBUG(llvm::dbgs() << "\n\tResolving property '" << name << "' of type " << objectValue.getType(););
@@ -9860,7 +10049,8 @@ class MLIRGenImpl
                 return value;
             }
 
-            return ClassMembers(location, objectValue, classType.getName().getValue(), name, false, genContext);
+            return ClassMembers(location, objectValue, classType.getName().getValue(), name, 
+                false, argument, genContext);
         };
 
         auto classAccess = [&](mlir_ts::ClassType classType) {
@@ -10019,12 +10209,14 @@ class MLIRGenImpl
                         return value;
                     }
 
-                    return ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, true, genContext);
+                    return ClassMembers(location, objectValue, 
+                        classStorageType.getName().getValue(), name, true, argument, genContext);
                 })
                 .Case<mlir_ts::ClassType>(classAccess)
                 .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
-                    return InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(),
-                                            genContext);
+                    return InterfaceMembers(
+                        location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(), 
+                        argument, genContext);
                 })
                 .Case<mlir_ts::OptionalType>([&](auto optionalType) {
                     // this is needed for conditional access to properties
@@ -10167,7 +10359,7 @@ class MLIRGenImpl
     }
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, mlir::StringRef classFullName,
-                             mlir::StringRef name, bool baseClass, const GenContext &genContext)
+                             mlir::StringRef name, bool baseClass, mlir::Value argument, const GenContext &genContext)
     {
         auto classInfo = getClassInfoByFullName(classFullName);
         if (!classInfo)
@@ -10184,7 +10376,7 @@ class MLIRGenImpl
         }
 
         // static field access
-        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, genContext);
+        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, argument, genContext);
         if (!value)
         {
             emitError(location, "Class member '") << name << "' can't be found";
@@ -10217,36 +10409,98 @@ class MLIRGenImpl
         return effectiveThisValue;
     }
 
-    mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
-                             mlir::StringRef name, bool isSuperClass, const GenContext &genContext)
-    {
-        assert(classInfo);
+    mlir::Value ClassStaticFieldAccess(ClassInfo::TypePtr classInfo, 
+            mlir::Location location, mlir::Value thisValue, int staticFieldIndex, const GenContext &genContext) {
 
-        LLVM_DEBUG(llvm::dbgs() << "\n\t looking for member: " << name << " in class '" << classInfo->fullName << "\n";);
-
-        auto staticFieldIndex = classInfo->getStaticFieldIndex(MLIRHelper::TupleFieldName(name, builder.getContext()));
-        if (staticFieldIndex >= 0)
-        {
-            auto fieldInfo = classInfo->staticFields[staticFieldIndex];
+        auto fieldInfo = classInfo->staticFields[staticFieldIndex];
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
-            if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>() || classInfo->isStatic)
+        if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>() || classInfo->isStatic)
+        {
+#endif
+            auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
+            // load referenced value
+            if (classInfo->isDynamicImport)
+            {
+                if (auto valueRefType = dyn_cast<mlir_ts::RefType>(value.getType()))
+                {
+                    value = builder.create<mlir_ts::LoadOp>(location, valueRefType.getElementType(), value);
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            }
+
+            return value;
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE
+        }
+
+        // static accessing via class reference
+        // TODO:
+        auto effectiveThisValue = thisValue;
+
+        auto result = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
+        auto vtableAccess = V(result);
+
+        assert(genContext.allowPartialResolve || fieldInfo.virtualIndex >= 0);
+
+        auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
+            location, mlir_ts::RefType::get(fieldInfo.type), vtableAccess,
+            builder.getI32IntegerAttr(fieldInfo.virtualIndex),
+            mlir::FlatSymbolRefAttr::get(builder.getContext(), fieldInfo.globalVariableName));
+
+        auto value = builder.create<mlir_ts::LoadOp>(location, fieldInfo.type, virtualSymbOp);
+        return value;
+#endif
+    }
+
+    mlir::Value ClassMethodAccess(ClassInfo::TypePtr classInfo, 
+            mlir::Location location, mlir::Value thisValue, int methodIndex, bool isSuperClass, const GenContext &genContext) {
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! method index access: " << methodIndex << "\n";);
+
+        auto methodInfo = classInfo->methods[methodIndex];
+        auto funcOp = methodInfo.funcOp;
+        auto effectiveFuncType = funcOp.getFunctionType();
+
+        if (methodInfo.isStatic)
+        {
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE
+            auto isThisValueClassRef = thisValue.getDefiningOp<mlir_ts::ClassRefOp>();
+            if (isThisValueClassRef || classInfo->isStatic)
             {
 #endif
-                auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
-                // load referenced value
                 if (classInfo->isDynamicImport)
                 {
-                    if (auto valueRefType = dyn_cast<mlir_ts::RefType>(value.getType()))
-                    {
-                        value = builder.create<mlir_ts::LoadOp>(location, valueRefType.getElementType(), value);
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
-                    }
-                }
+                    // need to resolve global variable
+                    auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
 
-                return value;
+                    if (!isThisValueClassRef)
+                    {
+                        CAST_A(opaqueThisValue, location, getOpaqueType(), thisValue, genContext);
+                        auto boundMethodValue = builder.create<mlir_ts::CreateBoundFunctionOp>(
+                            location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);  
+                        return boundMethodValue;                          
+                    }
+
+                    return globalFuncVar;
+                }
+                else
+                {
+                    if (!isThisValueClassRef)
+                    {
+                        auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                            location, getBoundFunctionType(effectiveFuncType), thisValue,
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));                            
+                        
+                        return thisSymbOp;
+                    }
+
+                    auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
+                        location, effectiveFuncType,
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                    return symbOp;
+                }
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
             }
 
@@ -10254,75 +10508,38 @@ class MLIRGenImpl
             // TODO:
             auto effectiveThisValue = thisValue;
 
-            auto result = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
-            auto vtableAccess = V(result);
+            auto vtableAccess =
+                mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
 
-            assert(genContext.allowPartialResolve || fieldInfo.virtualIndex >= 0);
+            if (!vtableAccess)
+            {
+                emitError(location,"") << "class '" << classInfo->fullName << "' missing 'virtual table'";
+            }
+
+            EXIT_IF_FAILED_OR_NO_VALUE(vtableAccess)                    
+
+            assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
 
             auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
-                location, mlir_ts::RefType::get(fieldInfo.type), vtableAccess,
-                builder.getI32IntegerAttr(fieldInfo.virtualIndex),
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), fieldInfo.globalVariableName));
-
-            auto value = builder.create<mlir_ts::LoadOp>(location, fieldInfo.type, virtualSymbOp);
-            return value;
+                location, effectiveFuncType, vtableAccess, builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+            return virtualSymbOp;
 #endif
         }
-
-        // check method access
-        auto methodIndex = classInfo->getMethodIndex(name);
-        if (methodIndex >= 0)
+        else
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! found method index: " << methodIndex << "\n";);
+            auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
 
-            auto methodInfo = classInfo->methods[methodIndex];
-            auto funcOp = methodInfo.funcOp;
-            auto effectiveFuncType = funcOp.getFunctionType();
-
-            if (methodInfo.isStatic)
+            // TODO: check if you can split calls such as "this.method" and "super.method" ...
+            auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
+            if (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType)
             {
-#ifdef ADD_STATIC_MEMBERS_TO_VTABLE
-                auto isThisValueClassRef = thisValue.getDefiningOp<mlir_ts::ClassRefOp>();
-                if (isThisValueClassRef || classInfo->isStatic)
-                {
-#endif
-                    if (classInfo->isDynamicImport)
-                    {
-                        // need to resolve global variable
-                        auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
+                LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "'\n";);
 
-                        if (!isThisValueClassRef)
-                        {
-                            CAST_A(opaqueThisValue, location, getOpaqueType(), thisValue, genContext);
-                            auto boundMethodValue = builder.create<mlir_ts::CreateBoundFunctionOp>(
-                                location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);  
-                            return boundMethodValue;                          
-                        }
+                LLVM_DEBUG(dbgs() << "\n!! Virtual call - this val: [ " << effectiveThisValue << " ] func type: [ "
+                                    << effectiveFuncType << " ] isStorage access: " << isStorageType << "\n";);
 
-                        return globalFuncVar;
-                    }
-                    else
-                    {
-                        if (!isThisValueClassRef)
-                        {
-                            auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
-                                location, getBoundFunctionType(effectiveFuncType), thisValue,
-                                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));                            
-                            
-                            return thisSymbOp;
-                        }
-
-                        auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
-                            location, effectiveFuncType,
-                            mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-                        return symbOp;
-                    }
-#ifdef ADD_STATIC_MEMBERS_TO_VTABLE
-                }
-
-                // static accessing via class reference
-                // TODO:
-                auto effectiveThisValue = thisValue;
+                // auto inTheSameFunc = funcOp.getName() == const_cast<GenContext &>(genContext).funcOp.getName();
 
                 auto vtableAccess =
                     mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
@@ -10332,198 +10549,252 @@ class MLIRGenImpl
                     emitError(location,"") << "class '" << classInfo->fullName << "' missing 'virtual table'";
                 }
 
-                EXIT_IF_FAILED_OR_NO_VALUE(vtableAccess)                    
+                EXIT_IF_FAILED_OR_NO_VALUE(vtableAccess)
 
                 assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
 
-                auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
-                    location, effectiveFuncType, vtableAccess, builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                auto thisVirtualSymbOp = builder.create<mlir_ts::ThisVirtualSymbolRefOp>(
+                    location, getBoundFunctionType(effectiveFuncType), effectiveThisValue, vtableAccess,
+                    builder.getI32IntegerAttr(methodInfo.virtualIndex),
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-                return virtualSymbOp;
-#endif
+                return thisVirtualSymbOp;
+            }
+
+            if (classInfo->isDynamicImport)
+            {
+                // need to resolve global variable
+                auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
+                CAST_A(opaqueThisValue, location, getOpaqueType(), effectiveThisValue, genContext);
+                auto boundMethodValue = builder.create<mlir_ts::CreateBoundFunctionOp>(
+                    location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);
+                return boundMethodValue;
             }
             else
             {
-                auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
-
-                // TODO: check if you can split calls such as "this.method" and "super.method" ...
-                auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
-                if (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType)
-                {
-                    LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "'\n";);
-
-                    LLVM_DEBUG(dbgs() << "\n!! Virtual call - this val: [ " << effectiveThisValue << " ] func type: [ "
-                                      << effectiveFuncType << " ] isStorage access: " << isStorageType << "\n";);
-
-                    // auto inTheSameFunc = funcOp.getName() == const_cast<GenContext &>(genContext).funcOp.getName();
-
-                    auto vtableAccess =
-                        mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
-
-                    if (!vtableAccess)
-                    {
-                        emitError(location,"") << "class '" << classInfo->fullName << "' missing 'virtual table'";
-                    }
-
-                    EXIT_IF_FAILED_OR_NO_VALUE(vtableAccess)
-
-                    assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
-
-                    auto thisVirtualSymbOp = builder.create<mlir_ts::ThisVirtualSymbolRefOp>(
-                        location, getBoundFunctionType(effectiveFuncType), effectiveThisValue, vtableAccess,
-                        builder.getI32IntegerAttr(methodInfo.virtualIndex),
-                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-                    return thisVirtualSymbOp;
-                }
-
-                if (classInfo->isDynamicImport)
-                {
-                    // need to resolve global variable
-                    auto globalFuncVar = resolveFullNameIdentifier(location, funcOp.getName(), false, genContext);
-                    CAST_A(opaqueThisValue, location, getOpaqueType(), effectiveThisValue, genContext);
-                    auto boundMethodValue = builder.create<mlir_ts::CreateBoundFunctionOp>(
-                        location, getBoundFunctionType(effectiveFuncType), opaqueThisValue, globalFuncVar);
-                    return boundMethodValue;
-                }
-                else
-                {
-                    // default call;
-                    auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
-                        location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
-                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-                    return thisSymbOp;
-                }
+                // default call;
+                auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                    location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                return thisSymbOp;
             }
+        }
+    }    
+
+    mlir::Value ClassGenericMethodAccess(ClassInfo::TypePtr classInfo, 
+            mlir::Location location, mlir::Value thisValue, int genericMethodIndex, 
+            bool isSuperClass, const GenContext &genContext) {
+        auto genericMethodInfo = classInfo->staticGenericMethods[genericMethodIndex];
+
+        auto paramsArray = genericMethodInfo.funcProto->getParams();
+        auto explicitThis = paramsArray.size() > 0 && paramsArray.front()->getName() == THIS_NAME;
+        if (genericMethodInfo.isStatic && !explicitThis)
+        {
+            auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
+                location, genericMethodInfo.funcType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcProto->getName()));
+            funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return funcSymbolOp;
+        }
+        else
+        {
+            auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
+            auto effectiveFuncType = genericMethodInfo.funcProto->getFuncType();
+
+            auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcProto->getName()));
+            thisSymbOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return thisSymbOp;                
+        }
+    }
+
+    mlir::Value ClassAccessorAccess(ClassInfo::TypePtr classInfo, 
+            mlir::Location location, mlir::Value thisValue, int accessorIndex, const GenContext &genContext) {
+
+        auto accessorInfo = classInfo->accessors[accessorIndex];
+        auto getFuncOp = accessorInfo.get;
+        auto setFuncOp = accessorInfo.set;
+        mlir::Type accessorResultType;
+        if (getFuncOp)
+        {
+            auto funcType = dyn_cast<mlir_ts::FunctionType>(getFuncOp.getFunctionType());
+            if (funcType.getNumResults() > 0)
+            {
+                accessorResultType = funcType.getResult(0);
+            }
+        }
+
+        if (!accessorResultType && setFuncOp)
+        {
+            accessorResultType =
+                dyn_cast<mlir_ts::FunctionType>(setFuncOp.getFunctionType()).getInput(accessorInfo.isStatic ? 0 : 1);
+        }
+
+        if (!accessorResultType)
+        {
+            emitError(location) << "can't resolve type of property";
+            return mlir::Value();
+        }
+
+        if (accessorInfo.isStatic)
+        {
+            auto accessorOp = builder.create<mlir_ts::AccessorOp>(
+                location, accessorResultType,
+                getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
+                            : mlir::FlatSymbolRefAttr{},
+                setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
+                            : mlir::FlatSymbolRefAttr{},
+                mlir::Value());
+            return accessorOp.getResult(0);
+        }
+        else
+        {
+            auto thisAccessorOp = builder.create<mlir_ts::ThisAccessorOp>(
+                location, accessorResultType, thisValue,
+                getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
+                            : mlir::FlatSymbolRefAttr{},
+                setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
+                            : mlir::FlatSymbolRefAttr{},
+                mlir::Value());
+            return thisAccessorOp.getResult(0);
+        }
+
+    }
+
+    // TODO: why isSuperClass is not used here?
+    mlir::Value ClassIndexAccess(ClassInfo::TypePtr classInfo, 
+            mlir::Location location, mlir::Value thisValue, mlir::Value argument, const GenContext &genContext) {
+
+        if (classInfo->indexes.size() == 0)
+        {
+            emitError(location) << "indexer is not declared";
+            return mlir::Value();            
+        }
+
+        auto indexInfo = classInfo->indexes.front();
+        auto getFuncOp = indexInfo.get;
+        auto setFuncOp = indexInfo.set;
+
+        if (!indexInfo.indexSignature || indexInfo.indexSignature.getNumResults() == 0)
+        {
+            emitError(location) << "can't resolve type of indexer";
+            return mlir::Value();
+        }
+
+        auto indexResultType = indexInfo.indexSignature.getResult(0);
+        auto argumentType = indexInfo.indexSignature.getInput(0);
+
+        // sync index
+        CAST_A(result, location, argumentType, argument, genContext);
+
+        auto thisIndexAccessorOp = builder.create<mlir_ts::ThisIndexAccessorOp>(
+            location, indexResultType, thisValue, V(result),
+            getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
+                        : mlir::FlatSymbolRefAttr{},
+            setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
+                        : mlir::FlatSymbolRefAttr{},
+            mlir::Value());
+        return thisIndexAccessorOp.getResult(0);
+    }
+
+    mlir::Value ClassBaseClassAccess(ClassInfo::TypePtr classInfo, ClassInfo::TypePtr baseClass, int index,
+            mlir::Location location, mlir::Value thisValue, StringRef name, mlir::Value argument, const GenContext &genContext) {
+
+        // first base is "super."
+        if (index == 0 && name == SUPER_NAME)
+        {
+            auto result = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, genContext);
+            auto value = V(result);
+            return value;
+        }
+
+        auto value = ClassMembers(location, thisValue, baseClass, name, true, argument, genContext);
+        if (value)
+        {
+            return value;
+        }
+
+        SmallVector<ClassInfo::TypePtr> fieldPath;
+        if (classHasField(baseClass, name, fieldPath))
+        {
+            // load value from path
+            auto currentObject = thisValue;
+            for (auto &chain : fieldPath)
+            {
+                auto fieldValue =
+                    mlirGenPropertyAccessExpression(location, currentObject, chain->fullName, genContext);
+                if (!fieldValue)
+                {
+                    emitError(location) << "Can't resolve field/property/base '" << chain->fullName
+                                        << "' of class '" << classInfo->fullName << "'\n";
+                    return fieldValue;
+                }
+
+                assert(fieldValue);
+                currentObject = fieldValue;
+            }
+
+            // last value
+            auto result = mlirGenPropertyAccessExpression(location, currentObject, name, genContext);
+            auto value = V(result);
+            if (value)
+            {
+                return value;
+            }
+        }
+
+        return mlir::Value();
+    }    
+
+    mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
+                             mlir::StringRef name, bool isSuperClass, mlir::Value argument, const GenContext &genContext)
+    {
+        assert(classInfo);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n\t looking for member: " << name << " in class '" << classInfo->fullName << "\n";);
+
+        // indexer access
+        if (name == INDEX_ACCESS_FIELD_NAME)
+        {
+            return ClassIndexAccess(classInfo, location, thisValue, argument, genContext);
+        }
+
+        auto staticFieldIndex = classInfo->getStaticFieldIndex(
+            MLIRHelper::TupleFieldName(name, builder.getContext()));
+        if (staticFieldIndex >= 0)
+        {
+            return ClassStaticFieldAccess(classInfo, location, thisValue, staticFieldIndex, genContext);
+        }
+
+        // check method access
+        auto methodIndex = classInfo->getMethodIndex(name);
+        if (methodIndex >= 0)
+        {
+            return ClassMethodAccess(classInfo, location, thisValue, methodIndex, isSuperClass, genContext);
         }
 
         // static generic methods
         auto genericMethodIndex = classInfo->getGenericMethodIndex(name);
         if (genericMethodIndex >= 0)
         {        
-            auto genericMethodInfo = classInfo->staticGenericMethods[genericMethodIndex];
-
-            auto paramsArray = genericMethodInfo.funcProto->getParams();
-            auto explicitThis = paramsArray.size() > 0 && paramsArray.front()->getName() == THIS_NAME;
-            if (genericMethodInfo.isStatic && !explicitThis)
-            {
-                auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
-                    location, genericMethodInfo.funcType,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcProto->getName()));
-                funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-                return funcSymbolOp;
-            }
-            else
-            {
-                auto effectiveThisValue = getThisRefOfClass(location, classInfo->classType, thisValue, isSuperClass, genContext);
-                auto effectiveFuncType = genericMethodInfo.funcProto->getFuncType();
-
-                auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
-                    location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), genericMethodInfo.funcProto->getName()));
-                thisSymbOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-                return thisSymbOp;                
-            }
+            return ClassGenericMethodAccess(classInfo, location, thisValue, genericMethodIndex, isSuperClass, genContext);
         }        
 
         // check accessor
         auto accessorIndex = classInfo->getAccessorIndex(name);
         if (accessorIndex >= 0)
         {
-            auto accessorInfo = classInfo->accessors[accessorIndex];
-            auto getFuncOp = accessorInfo.get;
-            auto setFuncOp = accessorInfo.set;
-            mlir::Type accessorResultType;
-            if (getFuncOp)
-            {
-                auto funcType = dyn_cast<mlir_ts::FunctionType>(getFuncOp.getFunctionType());
-                if (funcType.getNumResults() > 0)
-                {
-                    accessorResultType = funcType.getResult(0);
-                }
-            }
-
-            if (!accessorResultType && setFuncOp)
-            {
-                accessorResultType =
-                    dyn_cast<mlir_ts::FunctionType>(setFuncOp.getFunctionType()).getInput(accessorInfo.isStatic ? 0 : 1);
-            }
-
-            if (!accessorResultType)
-            {
-                emitError(location) << "can't resolve type of property";
-                return mlir::Value();
-            }
-
-            if (accessorInfo.isStatic)
-            {
-                auto accessorOp = builder.create<mlir_ts::AccessorOp>(
-                    location, accessorResultType,
-                    getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
-                              : mlir::FlatSymbolRefAttr{},
-                    setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
-                              : mlir::FlatSymbolRefAttr{},
-                    mlir::Value());
-                return accessorOp.getResult(0);
-            }
-            else
-            {
-                auto thisAccessorOp = builder.create<mlir_ts::ThisAccessorOp>(
-                    location, accessorResultType, thisValue,
-                    getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName())
-                              : mlir::FlatSymbolRefAttr{},
-                    setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName())
-                              : mlir::FlatSymbolRefAttr{},
-                    mlir::Value());
-                return thisAccessorOp.getResult(0);
-            }
+            return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, genContext);
         }
 
-        auto first = true;
-        for (auto baseClass : classInfo->baseClasses)
+        for (auto [index, baseClass] : enumerate(classInfo->baseClasses))
         {
-            if (first && name == SUPER_NAME)
-            {
-                auto result = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, genContext);
-                auto value = V(result);
-                return value;
-            }
-
-            auto value = ClassMembers(location, thisValue, baseClass, name, true, genContext);
+            auto value = ClassBaseClassAccess(classInfo, baseClass, index, location, 
+                thisValue, name, argument, genContext);
             if (value)
             {
                 return value;
             }
-
-            SmallVector<ClassInfo::TypePtr> fieldPath;
-            if (classHasField(baseClass, name, fieldPath))
-            {
-                // load value from path
-                auto currentObject = thisValue;
-                for (auto &chain : fieldPath)
-                {
-                    auto fieldValue =
-                        mlirGenPropertyAccessExpression(location, currentObject, chain->fullName, genContext);
-                    if (!fieldValue)
-                    {
-                        emitError(location) << "Can't resolve field/property/base '" << chain->fullName
-                                            << "' of class '" << classInfo->fullName << "'\n";
-                        return fieldValue;
-                    }
-
-                    assert(fieldValue);
-                    currentObject = fieldValue;
-                }
-
-                // last value
-                auto result = mlirGenPropertyAccessExpression(location, currentObject, name, genContext);
-                auto value = V(result);
-                if (value)
-                {
-                    return value;
-                }
-            }
-
-            first = false;
         }
 
         if (isSuperClass || genContext.allowPartialResolve)
@@ -10562,7 +10833,7 @@ class MLIRGenImpl
     }
 
     mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName,
-                                 mlir::Attribute id, const GenContext &genContext)
+                                 mlir::Attribute id, mlir::Value argument, const GenContext &genContext)
     {
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceFullName);
         if (!interfaceInfo)
@@ -10581,7 +10852,7 @@ class MLIRGenImpl
         assert(interfaceInfo);
 
         // static field access
-        auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, id, genContext);
+        auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, id, argument, genContext);
         if (!value)
         {
             emitError(location, "Interface member '") << id << "' can't be found";
@@ -10590,82 +10861,218 @@ class MLIRGenImpl
         return value;
     }
 
-    mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue,
-                                 InterfaceInfo::TypePtr interfaceInfo, mlir::Attribute id, const GenContext &genContext)
+    mlir::Value InterfaceFieldAccess(mlir::Location location, mlir::Value interfaceValue, InterfaceFieldInfo *fieldInfo) 
     {
-        assert(interfaceInfo);
-
-        // check field access
-        auto fieldInfo = interfaceInfo->findField(id);
-        if (fieldInfo)
+        auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
+        if (fieldInfo->virtualIndex == -1)
         {
-            auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
-            if (fieldInfo->virtualIndex == -1)
-            {
-                // no data for conditional interface;
-                if (!fieldInfo->isConditional)
-                {
-                    emitError(location, "field '") << fieldInfo->id << "' is not conditional and missing";
-                    return mlir::Value();
-                }
-
-                auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
-                                      ? fieldRefType.getElementType()
-                                      : mlir_ts::OptionalType::get(fieldRefType.getElementType());
-                return builder.create<mlir_ts::OptionalUndefOp>(location, actualType);
-            }
-
-            assert(fieldInfo->virtualIndex >= 0);
-            auto vtableIndex = fieldInfo->virtualIndex;
-
-            auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
-                fieldInfo->id, builder.getBoolAttr(fieldInfo->isConditional));
-
-            mlir::Value value;
+            // no data for conditional interface;
             if (!fieldInfo->isConditional)
             {
-                value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(),
-                                                        interfaceSymbolRefValue.getResult());
+                emitError(location, "field '") << fieldInfo->id << "' is not conditional and missing";
+                return mlir::Value();
+            }
+
+            auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
+                                    ? fieldRefType.getElementType()
+                                    : mlir_ts::OptionalType::get(fieldRefType.getElementType());
+            return builder.create<mlir_ts::OptionalUndefOp>(location, actualType);
+        }
+
+        assert(fieldInfo->virtualIndex >= 0);
+        auto vtableIndex = fieldInfo->virtualIndex;
+
+        auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+            location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
+            fieldInfo->id, builder.getBoolAttr(fieldInfo->isConditional));
+
+        mlir::Value value;
+        if (!fieldInfo->isConditional)
+        {
+            value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(),
+                                                    interfaceSymbolRefValue.getResult());
+        }
+        else
+        {
+            auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
+                                    ? fieldRefType.getElementType()
+                                    : mlir_ts::OptionalType::get(fieldRefType.getElementType());
+            value = builder.create<mlir_ts::LoadOp>(location, actualType, interfaceSymbolRefValue.getResult());
+        }
+
+        // if it is FuncType, we need to create BoundMethod again
+        if (auto funcType = dyn_cast<mlir_ts::FunctionType>(fieldInfo->type))
+        {
+            auto thisVal =
+                builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
+            value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
+                                                                    thisVal, value);
+        }
+
+        return value;
+    }
+
+    mlir::Value InterfaceMethodAccess(mlir::Location location, mlir::Value interfaceValue, InterfaceMethodInfo *methodInfo) 
+    {
+        assert(methodInfo->virtualIndex >= 0);
+        auto vtableIndex = methodInfo->virtualIndex;
+
+        auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
+
+        auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+            location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
+            builder.getStringAttr(methodInfo->name), builder.getBoolAttr(methodInfo->isConditional));
+
+        return interfaceSymbolRefValue;
+    }    
+
+    mlir::Value InterfaceAccessorAccess(mlir::Location location, InterfaceInfo::TypePtr interfaceInfo, 
+            mlir::Value interfaceValue, InterfaceAccessorInfo *accessorInfo, const GenContext &genContext) {
+
+        assert(accessorInfo);
+
+        mlir::Value getMethodInfoValue;
+        mlir::Value setMethodInfoValue;
+        if (!accessorInfo->getMethod.empty())
+        {
+            if (auto getMethodInfo = interfaceInfo->findMethod(accessorInfo->getMethod))
+            {
+                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
             }
             else
             {
-                auto actualType = isa<mlir_ts::OptionalType>(fieldRefType.getElementType())
-                                      ? fieldRefType.getElementType()
-                                      : mlir_ts::OptionalType::get(fieldRefType.getElementType());
-                value = builder.create<mlir_ts::LoadOp>(location, actualType, interfaceSymbolRefValue.getResult());
+                emitError(location) << "Can't find method " << accessorInfo->getMethod << " in interface '" << to_print(interfaceInfo->interfaceType) << "'";
+                return mlir::Value();
             }
+        }
+        else
+        {
+            getMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getBoundFunctionType({}, {}, false));
+        }
 
-            // if it is FuncType, we need to create BoundMethod again
-            if (auto funcType = dyn_cast<mlir_ts::FunctionType>(fieldInfo->type))
+        if (!accessorInfo->setMethod.empty())
+        {
+            if (auto setMethodInfo = interfaceInfo->findMethod(accessorInfo->setMethod))
             {
-                auto thisVal =
-                    builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
-                value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
-                                                                       thisVal, value);
+                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
             }
+            else
+            {
+                emitError(location) << "Can't find method " << accessorInfo->setMethod << " in interface '" << to_print(interfaceInfo->interfaceType) << "'";
+                return mlir::Value();
+            }
+        }
+        else
+        {
+            setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getBoundFunctionType({}, {}, false));
+        }
 
-            return value;
+        auto thisIndirectAccessorOp = builder.create<mlir_ts::BoundIndirectAccessorOp>(
+            location, accessorInfo->type, getMethodInfoValue, setMethodInfoValue,
+            mlir::Value());
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! .... : " << thisIndirectAccessorOp << "\n";);
+
+        assert(thisIndirectAccessorOp.getGetAccessor());
+        
+        return thisIndirectAccessorOp.getResult(0);
+    }
+
+    mlir::Value InterfaceIndexAccess(InterfaceInfo::TypePtr interfaceInfo, 
+            mlir::Location location, mlir::Value interfaceValue, mlir::Value argument, const GenContext &genContext) {
+
+        auto indexInfo = interfaceInfo->findIndexer();
+
+        if (!indexInfo)
+        {
+            emitError(location) << "indexer is not declared";
+            return mlir::Value();            
+        }
+
+        if (!indexInfo->indexSignature || indexInfo->indexSignature.getNumResults() == 0)
+        {
+            emitError(location) << "can't resolve type of indexer";
+            return mlir::Value();
+        }
+
+        auto [argumentType, indexResultType] = mth.getIndexSignatureArgumentAndResultTypes(indexInfo->indexSignature);
+
+        // sync index
+        CAST_A(result, location, argumentType, argument, genContext);
+
+        mlir::Value getMethodInfoValue;
+        mlir::Value setMethodInfoValue;
+        if (!indexInfo->getMethod.empty())
+        {
+            if (auto getMethodInfo = interfaceInfo->findMethod(indexInfo->getMethod))
+            {
+                getMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, getMethodInfo);
+            }
+            else
+            {
+                emitError(location) << "Can't find method " << INDEX_ACCESS_GET_FIELD_NAME << " in interface '" << to_print(interfaceInfo->interfaceType) << "'";
+                return mlir::Value();
+            }
+        }
+        else
+        {
+            getMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getBoundFunctionType({}, {}, false));
+        }
+
+        if (!indexInfo->setMethod.empty())
+        {
+            if (auto setMethodInfo = interfaceInfo->findMethod(indexInfo->setMethod))
+            {
+                setMethodInfoValue = InterfaceMethodAccess(location, interfaceValue, setMethodInfo);
+            }
+            else
+            {
+                emitError(location) << "Can't find method " << INDEX_ACCESS_SET_FIELD_NAME << " in interface '" << to_print(interfaceInfo->interfaceType) << "'";
+                return mlir::Value();
+            }
+        }
+        else
+        {
+            setMethodInfoValue = builder.create<mlir_ts::UndefOp>(location, getBoundFunctionType({}, {}, false));
+        }
+
+        auto thisIndirectIndexAccessorOp = builder.create<mlir_ts::BoundIndirectIndexAccessorOp>(
+            location, indexResultType, V(result), getMethodInfoValue, setMethodInfoValue,
+            mlir::Value());
+        return thisIndirectIndexAccessorOp.getResult(0);
+    }
+
+    mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, InterfaceInfo::TypePtr interfaceInfo, 
+        mlir::Attribute id, mlir::Value argument, const GenContext &genContext)
+    {
+        assert(interfaceInfo);
+
+        // indexer access
+        auto nameAttr = mlir::dyn_cast<mlir::StringAttr>(id);
+        if (nameAttr && nameAttr.getValue() == INDEX_ACCESS_FIELD_NAME)
+        {
+            return InterfaceIndexAccess(interfaceInfo, location, interfaceValue, argument, genContext);
+        }
+
+        // check field access        
+        if (auto fieldInfo = interfaceInfo->findField(id))
+        {
+            return InterfaceFieldAccess(location, interfaceValue, fieldInfo);
         }
 
         // check method access
-        if (auto nameAttr = dyn_cast<mlir::StringAttr>(id))
+        if (nameAttr)
         {
-            auto name = nameAttr.getValue();
-            auto methodInfo = interfaceInfo->findMethod(name);
-            if (methodInfo)
+            if (auto methodInfo = interfaceInfo->findMethod(nameAttr.getValue()))
             {
-                assert(methodInfo->virtualIndex >= 0);
-                auto vtableIndex = methodInfo->virtualIndex;
-
-                auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
-
-                auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                    location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
-                    builder.getStringAttr(methodInfo->name), builder.getBoolAttr(methodInfo->isConditional));
-
-                return interfaceSymbolRefValue;
+                return InterfaceMethodAccess(location, interfaceValue, methodInfo);
             }
+
+            if (auto accessorInfo = interfaceInfo->findAccessor(nameAttr.getValue()))
+            {
+                return InterfaceAccessorAccess(location, interfaceInfo, interfaceValue, accessorInfo, genContext);
+            }
+
         }
 
         return mlir::Value();
@@ -10796,10 +11203,16 @@ class MLIRGenImpl
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.getValue();
-                return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                if (attr.isa<mlir::StringAttr>())
+                {
+                    // TODO: implement '[string]' access here
+                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                }
             }
 
-            llvm_unreachable("not implemented (ElementAccessExpression)");
+            // else access of index
+            auto indexAccessor = builder.getStringAttr(INDEX_ACCESS_FIELD_NAME);
+            return mlirGenPropertyAccessExpression(location, expression, indexAccessor, isConditionalAccess, argumentExpression, genContext);
         }
         else if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(arrayType))
         {
@@ -10817,10 +11230,15 @@ class MLIRGenImpl
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.getValue();
-                return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                if (attr.isa<mlir::StringAttr>())
+                {
+                    return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
+                }
             }
 
-            llvm_unreachable("not implemented (ElementAccessExpression)");
+            // else access of index
+            auto indexAccessor = builder.getStringAttr(INDEX_ACCESS_FIELD_NAME);
+            return mlirGenPropertyAccessExpression(location, expression, indexAccessor, isConditionalAccess, argumentExpression, genContext);
         }        
         else if (auto enumType = dyn_cast<mlir_ts::EnumType>(arrayType))
         {
@@ -11212,6 +11630,74 @@ class MLIRGenImpl
         return mlirGenCallExpression(location, funcResult, {}, operands, genContext);
     }
 
+    ValueOrLogicalResult mlirGenCallBuiltInFunction(
+        mlir::Location location, mlir::Value actualFuncRefValue, NodeArray<TypeNode> typeArguments, 
+        SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    {
+        // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
+        auto calleeName = actualFuncRefValue.getDefiningOp()->getAttrOfType<mlir::FlatSymbolRefAttr>(StringRef(IDENTIFIER_ATTR_NAME));
+        auto functionName = calleeName.getValue();
+
+        if (auto thisSymbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            // do not remove it, it is needed for custom methods to be called correctly
+            operands.insert(operands.begin(), thisSymbolRefOp.getThisVal());
+        }
+
+        // temp hack
+        if (functionName == "__array_foreach")
+        {
+            mlirGenArrayForEach(location, operands, genContext);
+            return mlir::success();
+        }
+
+        if (functionName == "__array_every")
+        {
+            return mlirGenArrayEvery(location, operands, genContext);
+        }
+
+        if (functionName == "__array_some")
+        {
+            return mlirGenArraySome(location, operands, genContext);
+        }
+
+        if (functionName == "__array_map")
+        {
+            return mlirGenArrayMap(location, operands, genContext);
+        }
+
+        if (functionName == "__array_filter")
+        {
+            return mlirGenArrayFilter(location, operands, genContext);
+        }
+
+        if (functionName == "__array_reduce")
+        {
+            return mlirGenArrayReduce(location, operands, genContext);
+        }
+
+        // resolve function           
+        MLIRCustomMethods cm(builder, location, compileOptions);
+        mlir::SmallVector<mlir::Type> typeArgs;
+        for (auto typeArgNode : typeArguments)
+        {
+            auto typeArg = getType(typeArgNode, genContext);
+            if (!typeArg)
+            {
+                return mlir::failure();
+            }
+
+            typeArgs.push_back(typeArg);
+        }
+
+        return cm.callMethod(
+            functionName, 
+            typeArgs,
+            operands, 
+            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 
+            genContext);
+    }
+
     ValueOrLogicalResult mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
                                                NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                                const GenContext &genContext)
@@ -11229,70 +11715,28 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+        // special case when TypePredicateType is used in generic function and failed constraints 
+        if (auto symbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            if (symbolRefOp.getIdentifier() == "")
+            {
+                if (auto funcType = mlir::dyn_cast<mlir_ts::FunctionType>(symbolRefOp.getType()))
+                {
+                    if (funcType.getNumInputs() == 0 && funcType.getNumResults() == 1)
+                    {
+                        if (auto litType = dyn_cast<mlir_ts::LiteralType>(funcType.getResult(0)))
+                        {
+                            return V(builder.create<mlir_ts::ConstantOp>(location, litType, litType.getValue()));                            
+                        }
+                    }
+                }
+            }
+        }
+
         if (mth.isBuiltinFunctionType(actualFuncRefValue))
         {
-            // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
-            auto calleeName = actualFuncRefValue.getDefiningOp()->getAttrOfType<mlir::FlatSymbolRefAttr>(StringRef(IDENTIFIER_ATTR_NAME));
-            auto functionName = calleeName.getValue();
-
-            if (auto thisSymbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
-            {
-                // do not remove it, it is needed for custom methods to be called correctly
-                operands.insert(operands.begin(), thisSymbolRefOp.getThisVal());
-            }
-
-            // temp hack
-            if (functionName == "__array_foreach")
-            {
-                mlirGenArrayForEach(location, operands, genContext);
-                return mlir::success();
-            }
-
-            if (functionName == "__array_every")
-            {
-                return mlirGenArrayEvery(location, operands, genContext);
-            }
-
-            if (functionName == "__array_some")
-            {
-                return mlirGenArraySome(location, operands, genContext);
-            }
-
-            if (functionName == "__array_map")
-            {
-                return mlirGenArrayMap(location, operands, genContext);
-            }
-
-            if (functionName == "__array_filter")
-            {
-                return mlirGenArrayFilter(location, operands, genContext);
-            }
-
-            if (functionName == "__array_reduce")
-            {
-                return mlirGenArrayReduce(location, operands, genContext);
-            }
-
-            // resolve function           
-            MLIRCustomMethods cm(builder, location, compileOptions);
-            mlir::SmallVector<mlir::Type> typeArgs;
-            for (auto typeArgNode : typeArguments)
-            {
-                auto typeArg = getType(typeArgNode, genContext);
-                if (!typeArg)
-                {
-                    return mlir::failure();
-                }
-
-                typeArgs.push_back(typeArg);
-            }
-
-            return cm.callMethod(
-                functionName, 
-                typeArgs,
-                operands, 
-                std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 
-                genContext);
+            return mlirGenCallBuiltInFunction(location, 
+                actualFuncRefValue, typeArguments, operands, genContext);
         }
 
         if (auto optFuncRef = dyn_cast<mlir_ts::OptionalType>(actualFuncRefValue.getType()))
@@ -11343,6 +11787,32 @@ class MLIRGenImpl
         return mlirGenCall(location, actualFuncRefValue, operands, genContext);
     }
 
+    ValueOrLogicalResult NewClassInstanceOnStack(mlir::Location location, mlir_ts::ClassType classType,
+                                     SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    {
+        // seems we are calling type constructor
+        // TODO: review it, really u should forbid to use "a = Class1();" to allocate in stack, or finish it
+        // using Class..new(true) method
+
+        return NewClassInstance(location, classType, operands, genContext, true /*on stack*/);
+    }
+
+    ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
+                                     SmallVector<mlir::Value, 4> &operands, const GenContext &genContext, bool onStack = false)
+    {
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        auto newOp = onStack 
+            ? NewClassInstanceLogicAsOp(location, classType, onStack, genContext)
+            : ValueOrLogicalResult(NewClassInstanceAsMethodCallOp(location, classInfo, true, genContext));
+        EXIT_IF_FAILED_OR_NO_VALUE(newOp)
+        if (mlir::failed(mlirGenCallConstructor(location, classInfo, V(newOp), operands, false, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        return V(newOp);
+    }
+
     ValueOrLogicalResult mlirGenCall(mlir::Location location, mlir::Value funcRefValue,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
@@ -11377,19 +11847,7 @@ class MLIRGenImpl
                 }
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
-                // seems we are calling type constructor
-                // TODO: review it, really u should forbide to use "a = Class1();" to allocate in stack, or finish it
-                // using Class..new(true) method
-                auto newOp = NewClassInstanceLogicAsOp(location, classType, true, genContext);
-                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-                if (mlir::failed(mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext)))
-                {
-                    value = mlir::failure();
-                }
-                else
-                {
-                    value = newOp;
-                }
+                value = NewClassInstanceOnStack(location, classType, operands, genContext);
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
                 MLIRCodeLogic mcl(builder);
@@ -12049,6 +12507,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // TODO: refactor it, somehow when NewClassInstanceAsMethodCallOp calling Ctor and NewClassInstanceLogicAsOp is not
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
                                           NodeArray<TypeNode> typeArguments, bool suppressConstructorCall, 
                                           const GenContext &genContext)
@@ -12065,13 +12524,26 @@ class MLIRGenImpl
             resultType = getValueRefType(type);
         }
 
-        // if true, will call Class..new method, otheriwise ts::NewOp which we need to implement Class..new method
+        // if true, will call Class..new method, otheriwise ts::NewOp which we need to implement Class..new method 
         auto methodCallWay = !suppressConstructorCall;
 
         mlir::Value newOp;
         if (auto classType = dyn_cast<mlir_ts::ClassType>(resultType))
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            if (!classInfo)
+            {
+                auto genericClassInfo = getGenericClassInfoByFullName(classType.getName().getValue());
+                if (genericClassInfo)
+                {
+                    emitError(location) << "Generic class '"<< to_print(classType) << "' is missing type arguments ";
+                    return mlir::failure(); 
+                }
+
+                emitError(location) << "Can't find class " << to_print(classType);
+                return mlir::failure(); 
+            }
+
             if (genContext.dummyRun)
             {
                 // just to cut a lot of calls
@@ -12118,6 +12590,19 @@ class MLIRGenImpl
         {
             // set virtual table
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            if (!classInfo)
+            {
+                auto genericClassInfo = getGenericClassInfoByFullName(classType.getName().getValue());
+                if (genericClassInfo)
+                {
+                    emitError(location) << "Generic class '"<< to_print(classType) << "' is missing type arguments ";
+                    return mlir::failure(); 
+                }
+
+                emitError(location) << "Can't find class " << to_print(classType);
+                return mlir::Value(); 
+            }
+
             return NewClassInstanceLogicAsOp(location, classInfo, stackAlloc, genContext);
         }
 
@@ -12555,11 +13040,17 @@ class MLIRGenImpl
         return V(builder.create<mlir_ts::NullOp>(loc(nullLiteral), getNullType()));
     }
 
-    ValueOrLogicalResult mlirGenBooleanValue(mlir::Location location, bool val)
+    mlir_ts::LiteralType getBooleanLiteral(bool val) 
     {
         auto attrVal = mlir::BoolAttr::get(builder.getContext(), val);
         auto literalType = mlir_ts::LiteralType::get(attrVal, getBooleanType());
-        return V(builder.create<mlir_ts::ConstantOp>(location, literalType, attrVal));
+        return literalType;
+    }
+
+    ValueOrLogicalResult mlirGenBooleanValue(mlir::Location location, bool val)
+    {
+        auto literalType = getBooleanLiteral(val);
+        return V(builder.create<mlir_ts::ConstantOp>(location, literalType, literalType.getValue()));
     }
 
     ValueOrLogicalResult mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
@@ -14339,22 +14830,14 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        if (!value->getReadWriteAccess() && isa<mlir_ts::StringType>(value->getType()))
+        auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()),
+                                                            value->getName(), ::mlir::IntegerAttr());
+        if (asAddess)
         {
-            // load address of const object in global
-            return builder.create<mlir_ts::AddressOfConstStringOp>(location, value->getType(), value->getName());
+            return address;
         }
-        else
-        {
-            auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()),
-                                                                value->getName(), ::mlir::IntegerAttr());
-            if (asAddess)
-            {
-                return address;
-            }
 
-            return builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
-        }
+        return builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
     }
 
     mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
@@ -14666,7 +15149,7 @@ class MLIRGenImpl
                 auto typeParam = std::make_shared<TypeParameterDOM>(typeParamNamePtr.str());
                 auto result = zipTypeParameterWithArgument(
                     location, const_cast<GenContext &>(genContext).typeParamsWithArgs, typeParam, type, false, genContext);
-                EXIT_IF_FAILED(result.first);
+                EXIT_IF_FAILED(std::get<0>(result));
             }
 
             // in case of binding
@@ -15442,8 +15925,7 @@ class MLIRGenImpl
         // non-static first
         for (auto &classMember : classDeclarationAST->members)
         {
-            if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, false,
-                                                     genContext)))
+            if (mlir::failed(mlirGenClassFieldMember(newClassPtr, classMember, fieldInfos, false, genContext)))
             {
                 return mlir::failure();
             }
@@ -15475,8 +15957,7 @@ class MLIRGenImpl
         // static methods
         for (auto &classMember : classDeclarationAST->members)
         {
-            if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, true,
-                                                     genContext)))
+            if (mlir::failed(mlirGenClassFieldMember(newClassPtr, classMember, fieldInfos, true, genContext)))
             {
                 return mlir::failure();
             }
@@ -15494,6 +15975,18 @@ class MLIRGenImpl
         // dummy class, not used, needed to sync code
         // TODO: refactor it
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
+        // process indexes first
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            if (classMember == SyntaxKind::IndexSignature)
+            {
+                if (mlir::failed(mlirGenClassIndexMember(newClassPtr, classMember, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+        }
 
         // add methods when we have classType
         auto notResolved = 0;
@@ -15530,8 +16023,7 @@ class MLIRGenImpl
                 llvm::dbgs() << "\n****** \tprocessing: " << newClassPtr->fullName << "." << classMethodMemberInfo.methodName;);
 
                 // static fields
-                if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos,
-                                                         true, genContext)))
+                if (mlir::failed(mlirGenClassFieldMember(newClassPtr, classMember, fieldInfos, true, genContext)))
                 {
                     LLVM_DEBUG(llvm::dbgs() << "\n\tNOT RESOLVED FIELD.");
                     notResolved++;
@@ -16017,8 +16509,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenClassFieldMember(ClassLikeDeclaration classDeclarationAST,
-                                                ClassInfo::TypePtr newClassPtr, ClassElement classMember,
+    mlir::LogicalResult mlirGenClassFieldMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember,
                                                 SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool staticOnly,
                                                 const GenContext &genContext)
     {
@@ -16844,7 +17335,7 @@ genContext);
         llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
-            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> mlir_ts::FieldInfo {
+            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
                 auto found = false;
                 auto foundField = newClassPtr->findField(id, found);
                 if (!found || fieldType != foundField.type)
@@ -16854,14 +17345,16 @@ genContext);
                         emitError(location)
                             << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
                             << "' in class '" << newClassPtr->fullName << "'";
+
+                        return {emptyFieldInfo, mlir::failure()};
                     }
 
-                    return emptyFieldInfo;
+                    return {emptyFieldInfo, mlir::success()};
                 }
 
-                return foundField;
+                return {foundField, mlir::success()};
             },
-            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> MethodInfo & {
+            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> std::pair<MethodInfo &, mlir::LogicalResult> {
                 auto foundMethodPtr = newClassPtr->findMethod(name);
                 if (!foundMethodPtr)
                 {
@@ -16880,9 +17373,11 @@ genContext);
                             emitError(location)
                                 << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName
                                 << "' in class '" << newClassPtr->fullName << "'";
+
+                            return {emptyMethod, mlir::failure()};
                         }
 
-                        return emptyMethod;
+                        return {emptyMethod, mlir::success()};
                     }
                 }
 
@@ -16891,14 +17386,14 @@ genContext);
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
                 {
-                    emitError(location) << "method signature not matching for " << name << ":" << to_print(funcType)
-                                        << "} for interface '" << newInterfacePtr->fullName << "' in class '"
+                    emitError(location) << "method signature not matching '" << name << ":" << to_print(funcType)
+                                        << "' for interface '" << newInterfacePtr->fullName << "' in class '"
                                         << newClassPtr->fullName << "'."
                                         << " Found method: " << name << ":" << to_print(foundMethodFunctionType);
-                    return emptyMethod;
+                    return {emptyMethod, mlir::failure()};
                 }
 
-                return *foundMethodPtr;
+                return {*foundMethodPtr, mlir::success()};
             });
 
         if (mlir::failed(result))
@@ -17310,7 +17805,7 @@ genContext);
             funcOp = funcOp_;
         }
 
-        void registerClassMethodMember(int orderWeight)
+        bool registerClassMethodMember(mlir::Location location, int orderWeight)
         {
             auto &methodInfos = newClassPtr->methods;
 
@@ -17324,6 +17819,48 @@ genContext);
             {
                 addAccessor();
             }
+
+            if (newClassPtr->indexes.size() > 0)
+            {
+                if (methodName == "get")
+                {
+                    auto &indexer = newClassPtr->indexes.front();
+                    auto getFuncType = funcOp.getFunctionType();
+                    auto signatureFromGetFunc = 
+                        mlir_ts::FunctionType::get(
+                            indexer.indexSignature.getContext(), 
+                            getFuncType.getInputs().drop_front(), 
+                            getFuncType.getResults(), 
+                            false);                    
+                    if (indexer.indexSignature != signatureFromGetFunc)
+                    {
+                        emitError(location) << "'get' method is not matching 'index' definition";
+                        return false;
+                    }
+
+                    indexer.get = funcOp;
+                }
+                else if (methodName == "set")
+                {
+                    auto &indexer = newClassPtr->indexes.front();
+                    auto setFuncType = funcOp.getFunctionType();
+                    auto signatureFromSetFunc = 
+                        mlir_ts::FunctionType::get(
+                            indexer.indexSignature.getContext(), 
+                            setFuncType.getInputs().drop_front().drop_back(), 
+                            { setFuncType.getInputs().back() }, 
+                            false);
+                    if (indexer.indexSignature != signatureFromSetFunc)
+                    {
+                        emitError(location) << "'set' method is not matching 'index' definition";
+                        return false;
+                    }
+
+                    indexer.set = funcOp;
+                }
+            }
+
+            return true;
         }
 
         void addAccessor()
@@ -17364,6 +17901,38 @@ genContext);
         mlir_ts::FuncOp funcOp;
     };
 
+    mlir::LogicalResult mlirGenClassIndexMember(ClassInfo::TypePtr newClassPtr, ClassElement classMember,
+                                                const GenContext &genContext)
+    {
+        if (classMember->processed)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n\tALREADY PROCESSED.");
+            return mlir::success();
+        }
+
+        // TODO:
+        auto indexElement = classMember.as<IndexSignatureDeclaration>();
+
+        auto &indexInfos = newClassPtr->indexes;
+
+        auto res = mlirGenFunctionSignaturePrototype(indexElement.as<SignatureDeclaration>(), false, genContext);
+        auto funcType = std::get<1>(res);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n\tindex signature: " << funcType << "\n");
+
+        if (std::find_if(
+            indexInfos.begin(), 
+            indexInfos.end(), 
+            [&] (auto& item) { 
+                return item.indexSignature == funcType; 
+            }) == indexInfos.end())
+        {
+            indexInfos.push_back({funcType, {}, {}});
+        } 
+
+        return mlir::success();
+    }    
+
     mlir::LogicalResult mlirGenClassMethodMember(ClassLikeDeclaration classDeclarationAST,
                                                  ClassInfo::TypePtr newClassPtr, ClassElement classMember,
                                                  int orderWeight,
@@ -17378,6 +17947,7 @@ genContext);
         ClassMethodMemberInfo classMethodMemberInfo(newClassPtr, classMember);
         if (!classMethodMemberInfo.isFunctionLike())
         {
+            // process indexer here
             return mlir::success();
         }
 
@@ -17453,9 +18023,13 @@ genContext);
         if (funcOp)
         {
             classMethodMemberInfo.setFuncOp(funcOp);
-            funcLikeDeclaration->processed = true;
-            classMethodMemberInfo.registerClassMethodMember(orderWeight);
-            return mlir::success();
+            if (classMethodMemberInfo.registerClassMethodMember(loc(funcLikeDeclaration), orderWeight))
+            {
+                funcLikeDeclaration->processed = true;
+                return mlir::success();
+            }
+
+            return mlir::failure();
         }
 
         return registerGenericClassMethod(classMethodMemberInfo, genContext);
@@ -17579,7 +18153,7 @@ genContext);
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
-            classMethodMemberInfo.registerClassMethodMember(orderWeight);
+            classMethodMemberInfo.registerClassMethodMember(location, orderWeight);
             return mlir::success();
         }
 
@@ -17900,7 +18474,7 @@ genContext);
 
     mlir::LogicalResult mlirGenInterfaceHeritageClauseExtends(InterfaceDeclaration interfaceDeclarationAST,
                                                               InterfaceInfo::TypePtr newInterfacePtr,
-                                                              HeritageClause heritageClause, bool declareClass,
+                                                              HeritageClause heritageClause, int &orderWeight, bool declareClass,
                                                               const GenContext &genContext)
     {
         if (heritageClause->token != SyntaxKind::ExtendsKeyword)
@@ -17927,9 +18501,11 @@ genContext);
                     llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
                     if (mlir::succeeded(mth.getFields(tupleType, destTupleFields)))
                     {
+                        orderWeight++;
                         success = true;
                         for (auto field : destTupleFields)
-                            success &= mlir::succeeded(mlirGenInterfaceAddFieldMember(newInterfacePtr, field.id, field.type, field.isConditional));
+                            success &= mlir::succeeded(
+                                mlirGenInterfaceAddFieldMember(newInterfacePtr, field.id, field.type, field.isConditional, orderWeight));
                     }
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
@@ -17970,10 +18546,11 @@ genContext);
         auto ifaceGenContext = GenContext(genContext);
         ifaceGenContext.thisType = newInterfacePtr->interfaceType;
 
+        auto orderWeight = 0;
         for (auto &heritageClause : interfaceDeclarationAST->heritageClauses)
         {
             if (mlir::failed(mlirGenInterfaceHeritageClauseExtends(interfaceDeclarationAST, newInterfacePtr,
-                                                                   heritageClause, declareInterface, genContext)))
+                                                                   heritageClause, orderWeight, declareInterface, genContext)))
             {
                 return mlir::failure();
             }
@@ -17996,8 +18573,9 @@ genContext);
 
             for (auto &interfaceMember : interfaceDeclarationAST->members)
             {
-                if (mlir::failed(mlirGenInterfaceMethodMember(interfaceDeclarationAST, newInterfacePtr, interfaceMember,
-                                                              declareInterface, ifaceGenContext)))
+                orderWeight++;
+                if (mlir::failed(mlirGenInterfaceMethodMember(
+                        interfaceDeclarationAST, newInterfacePtr, interfaceMember, orderWeight, declareInterface, ifaceGenContext)))
                 {
                     notResolved++;
                 }
@@ -18033,7 +18611,7 @@ genContext);
         return mlir::failure();
     }
 
-    mlir::LogicalResult mlirGenInterfaceAddFieldMember(InterfaceInfo::TypePtr newInterfacePtr, mlir::Attribute fieldId, mlir::Type typeIn, bool isConditional, bool declareInterface = true)
+    mlir::LogicalResult mlirGenInterfaceAddFieldMember(InterfaceInfo::TypePtr newInterfacePtr, mlir::Attribute fieldId, mlir::Type typeIn, bool isConditional, int orderWeight, bool declareInterface = true)
     {
         auto &fieldInfos = newInterfacePtr->fields;
         auto type = typeIn;
@@ -18057,17 +18635,92 @@ genContext);
             return mlir::failure();
         }
 
-        if (declareInterface || newInterfacePtr->getFieldIndex(fieldId) == -1)
+        auto fieldIndex = newInterfacePtr->getFieldIndex(fieldId);
+        if (fieldIndex == -1)
         {
-            fieldInfos.push_back({fieldId, type, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
+            fieldInfos.push_back({fieldId, type, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex()});
         }
+        else
+        {
+            // update
+            fieldInfos[fieldIndex].type = type;
+            fieldInfos[fieldIndex].isConditional = isConditional;
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult addInterfaceMethod(mlir::Location location, InterfaceInfo::TypePtr newInterfacePtr,
+        llvm::SmallVector<InterfaceMethodInfo> &methodInfos, StringRef methodName, mlir_ts::FunctionType funcType, bool isConditional,
+        int orderWeight, bool declareInterface, const GenContext &genContext)
+    {
+        if (methodName.empty())
+        {
+            llvm_unreachable("not implemented");
+            return mlir::failure();
+        }
+
+        if (!funcType)
+        {
+            return mlir::failure();
+        }
+
+        if (llvm::any_of(funcType.getInputs(), [&](mlir::Type type) { return !type; }))
+        {
+            return mlir::failure();
+        }
+
+        if (llvm::any_of(funcType.getResults(), [&](mlir::Type type) { return !type; }))
+        {
+            return mlir::failure();
+        }
+
+        auto methodIndex = newInterfacePtr->getMethodIndex(methodName);
+        if (methodIndex == -1)
+        {
+            methodInfos.push_back(
+                {methodName.str(), funcType, isConditional, orderWeight, newInterfacePtr->getNextVTableMemberIndex()});
+        }
+        else
+        {
+            methodInfos[methodIndex].funcType = funcType;
+            methodInfos[methodIndex].isConditional = isConditional;
+        }
+
+        return mlir::success();    
+    }
+
+    mlir::LogicalResult getInterfaceMethodNameAndType(mlir::Location location, mlir_ts::InterfaceType interfaceType,
+        MethodSignature methodSignature, std::string &methodNameOut, std::string &propertyNameOut, mlir_ts::FunctionType &funcTypeOut, 
+        const GenContext &genContext) {
+
+        std::string methodName;
+        std::string propertyName;
+        getMethodNameOrPropertyName(false, methodSignature, methodName, propertyName, genContext);
+
+        methodNameOut = methodName;
+        propertyNameOut = propertyName;
+        
+        if (methodSignature->typeParameters.size() > 0)
+        {
+            emitError(location) << "Generic method '" << methodName << "' in the interface is not allowed";
+            return mlir::failure();
+        }
+
+        auto funcGenContext = GenContext(genContext);
+        funcGenContext.clearScopeVars();
+        funcGenContext.thisType = interfaceType;
+
+        auto res = mlirGenFunctionSignaturePrototype(methodSignature, true, funcGenContext);
+        auto funcType = std::get<1>(res);
+        funcTypeOut = funcType;
 
         return mlir::success();
     }
 
     mlir::LogicalResult mlirGenInterfaceMethodMember(InterfaceDeclaration interfaceDeclarationAST,
                                                      InterfaceInfo::TypePtr newInterfacePtr,
-                                                     TypeElement interfaceMember, bool declareInterface,
+                                                     TypeElement interfaceMember, int orderWeight, bool declareInterface,
                                                      const GenContext &genContext)
     {
         if (interfaceMember->processed)
@@ -18101,67 +18754,107 @@ genContext);
                 return mlir::failure();
             }
 
-            if (mlir::failed(mlirGenInterfaceAddFieldMember(newInterfacePtr, fieldId, type, isConditional, declareInterface)))
+            if (mlir::failed(mlirGenInterfaceAddFieldMember(newInterfacePtr, fieldId, type, isConditional, orderWeight, declareInterface)))
             {
                 return mlir::failure();
             }
         }
-        else if (kind == SyntaxKind::MethodSignature || kind == SyntaxKind::ConstructSignature 
-                || kind == SyntaxKind::IndexSignature || kind == SyntaxKind::CallSignature
+        else if (kind == SyntaxKind::MethodSignature 
+                || kind == SyntaxKind::ConstructSignature || kind == SyntaxKind::CallSignature 
                 || kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
             auto isConditional = !!methodSignature->questionToken;
 
             newInterfacePtr->hasNew |= kind == SyntaxKind::ConstructSignature;
+            // we need this code to add "THIS" param to declaration
+            interfaceMember->parent = interfaceDeclarationAST;
 
             std::string methodName;
             std::string propertyName;
-            getMethodNameOrPropertyName(false, methodSignature, methodName, propertyName, genContext);
-
-            if (methodName.empty())
-            {
-                llvm_unreachable("not implemented");
-                return mlir::failure();
-            }
-
-            if (methodSignature->typeParameters.size() > 0)
-            {
-                emitError(location) << "Generic method '" << methodName << "' in the interface is not allowed";
-                return mlir::failure();
-            }
-
-            interfaceMember->parent = interfaceDeclarationAST;
-
-            auto funcGenContext = GenContext(genContext);
-            funcGenContext.clearScopeVars();
-            funcGenContext.thisType = newInterfacePtr->interfaceType;
-
-            auto res = mlirGenFunctionSignaturePrototype(methodSignature, true, funcGenContext);
-            auto funcType = std::get<1>(res);
-
-            if (!funcType)
+            mlir_ts::FunctionType funcType;
+            if (mlir::failed(getInterfaceMethodNameAndType(location, newInterfacePtr->interfaceType, methodSignature, 
+                    methodName, propertyName, funcType, genContext)))
             {
                 return mlir::failure();
             }
 
-            if (llvm::any_of(funcType.getInputs(), [&](mlir::Type type) { return !type; }))
+            if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
+                methodName, funcType, isConditional, orderWeight, declarationMode, genContext))) 
             {
                 return mlir::failure();
             }
 
-            if (llvm::any_of(funcType.getResults(), [&](mlir::Type type) { return !type; }))
+            // add info about property
+            if (kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor)
             {
-                return mlir::failure();
+                auto accessor = newInterfacePtr->findAccessor(propertyName);
+                
+                auto &accessors = newInterfacePtr->accessors;
+                if (accessor == nullptr)
+                {
+                    if (kind == SyntaxKind::GetAccessor)
+                    {
+                        accessors.push_back({funcType.getResult(0), propertyName, methodName, ""});
+                    }
+                    else
+                    {
+                        accessors.push_back({funcType.getInputs().back(), propertyName, "", methodName});
+                    }
+                }
+                else
+                {
+                    if (kind == SyntaxKind::GetAccessor)
+                    {
+                        accessor->getMethod = methodName;
+                    }
+                    else
+                    {
+                        accessor->setMethod = methodName;
+                    }                    
+                }
             }
 
             methodSignature->processed = true;
+        }
+        else if (kind == SyntaxKind::IndexSignature)
+        {
+            auto methodSignature = interfaceMember.as<MethodSignature>();
+            // we need this code to add "THIS" param to declaration
+            interfaceMember->parent = interfaceDeclarationAST;
 
-            if (declareInterface || newInterfacePtr->getMethodIndex(methodName) == -1)
+            std::string methodName;
+            std::string propertyName;
+            mlir_ts::FunctionType funcType;
+            if (mlir::failed(getInterfaceMethodNameAndType(
+                location, newInterfacePtr->interfaceType, methodSignature, methodName, propertyName, funcType, genContext)))
             {
-                methodInfos.push_back(
-                    {methodName, funcType, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
+                return mlir::failure();
             }
+
+            // add get method
+            if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
+                INDEX_ACCESS_GET_FIELD_NAME, mth.getIndexGetFunctionType(funcType), true, orderWeight, declarationMode, genContext))) 
+            {
+                return mlir::failure();
+            }
+
+            if (mlir::failed(addInterfaceMethod(location, newInterfacePtr, methodInfos, 
+                INDEX_ACCESS_SET_FIELD_NAME, mth.getIndexSetFunctionType(funcType), true, orderWeight, declarationMode, genContext))) 
+            {
+                return mlir::failure();
+            }
+
+            auto found = llvm::find_if(newInterfacePtr->indexes, [&] (auto indexInfo) {
+                return indexInfo.indexSignature == funcType;
+            });        
+
+            if (found == newInterfacePtr->indexes.end())
+            {
+                newInterfacePtr->indexes.push_back({funcType, INDEX_ACCESS_GET_FIELD_NAME, INDEX_ACCESS_SET_FIELD_NAME});
+            }   
+
+            methodSignature->processed = true;            
         }
         else
         {
@@ -18429,15 +19122,27 @@ genContext);
         return resultType;
     }    
 
-    ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
-        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
+    ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false)
     {
-        SmallVector<mlir::Value> values;
-        
+        auto count = 0;
         for (auto [index, fieldInfo] : enumerate(fields))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
 
+            if (filterSpecialCases)
+            {
+                // filter out special fields
+                if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fieldInfo.id)) 
+                {
+                    if (strAttr.getValue().starts_with(".")) {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! --filtered #" << index << " field [" << fieldInfo.id << "]\n";);           
+                        continue;
+                    }
+                }
+            }
+
+            count ++;
             if (fieldInfo.id == mlir::Attribute() || (index < srcTupleType.size() && srcTupleType.getFieldInfo(index).id == mlir::Attribute()))
             {
                 if (index >= srcTupleType.size() && isa<mlir_ts::OptionalType>(fieldInfo.type))
@@ -18498,7 +19203,24 @@ genContext);
             }
         }
 
-        if (fields.size() != values.size())
+        if (count != values.size())
+        {
+            emitError(location)
+                << "count of fields (" << count << ") in destination is not matching to " << to_print(srcTupleType) << "'";            
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }    
+
+
+    ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        SmallVector<mlir::Value> values;
+
+        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, false, genContext, errorAsWarning);
+        if (mlir::failed(result))
         {
             return mlir::failure();
         }
@@ -18506,6 +19228,58 @@ genContext);
         SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
         fieldsForTuple.append(fields.begin(), fields.end());
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
+    }    
+
+    ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        SmallVector<mlir::Value> values;
+        
+        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, true, genContext, errorAsWarning);
+        if (mlir::failed(result))
+        {
+            return mlir::failure();
+        }
+
+        // SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
+        // fieldsForTuple.append(fields.begin(), fields.end());
+        // return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
+
+        SmallVector<mlir::Value, 4> operands;
+        auto newInstanceOfClass = NewClassInstance(location, classType, operands, genContext);
+        // TODO: assign fields to values
+        
+        auto valueIndex = 0;
+        for (auto fieldInfo : fields)
+        {
+            // filter out special fields
+            if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fieldInfo.id)) 
+            {
+                if (strAttr.getValue().starts_with(".")) {
+                    continue;
+                }
+            }            
+
+            auto value = values[valueIndex];
+
+            MLIRPropertyAccessCodeLogic cl(builder, location, newInstanceOfClass, fieldInfo.id);
+            // TODO: implement conditional
+            auto propertyAccess = mlirGenPropertyAccessExpressionLogic(location, newInstanceOfClass, false, cl, genContext); 
+            EXIT_IF_FAILED_OR_NO_VALUE(propertyAccess)
+
+            auto property = V(propertyAccess);
+            if (value.getType() != fieldInfo.type)
+            {
+                CAST(value, location, fieldInfo.type, value, genContext)
+            }
+
+            auto result = mlirGenSaveLogicOneItem(location, property, value, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(result)
+
+            valueIndex++;
+        }
+
+        return newInstanceOfClass;
     }    
 
     // TODO: finish it
@@ -18792,7 +19566,7 @@ genContext);
 
         auto valueType = value.getType();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! cast [" << valueType << "] -> [" << type << "]"
+        LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << " -> " << type
                                 << "\n";);
 
         if (auto litType = dyn_cast<mlir_ts::LiteralType>(type))
@@ -19001,9 +19775,14 @@ genContext);
             }
             else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
             {
+                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();     
+                return castTupleToClass(location, value, mth.convertConstTupleTypeToTupleType(srcConstTupleType), fields, classType, genContext);                
+            }
+            else if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
+            {
                 emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();
-            }
+            }            
         }
 
         // tuple to tuple
@@ -19025,6 +19804,11 @@ genContext);
                 emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
                 return mlir::failure();
             }
+            else if (auto funcType = dyn_cast<mlir_ts::FunctionType>(type))
+            {
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
+                return mlir::failure();
+            }               
         }
 
         // class to tuple
@@ -19786,7 +20570,62 @@ genContext);
         return getType(typeArguments[1], genContext);
     }
 
-    std::pair<mlir::LogicalResult, IsGeneric> zipTypeParameterWithArgument(
+    Reason testConstraint(mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
+        const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, const GenContext &genContext) {
+        // we need to add current type into context to be able to use it in resolving "extends" constraints
+        GenContext constraintGenContext(genContext);
+        for (auto &typeParamWithArg : pairs)
+        {
+            constraintGenContext.typeParamsWithArgs.insert({typeParamWithArg.getKey(), typeParamWithArg.getValue()});
+        }
+
+        constraintGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
+
+        auto constraintType = getType(typeParam->getConstraint(), constraintGenContext);
+        if (!constraintType)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
+            return Reason::Failure;
+        }
+
+        auto extendsResult = mth.extendsType(location, type, constraintType, pairs);
+        if (extendsResult != ExtendsResult::True)
+        {
+            // special case when we work with generic type(which are not specialized yet)
+            if (mth.isGenericType(type))
+            {
+                pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
+                LLVM_DEBUG(llvm::dbgs() << "Extends result: " << type << " (because of generic).";);
+                return Reason::None;                    
+            }
+
+            if (extendsResult == ExtendsResult::Any)
+            {
+                pairs.insert({typeParam->getName(), std::make_pair(typeParam, getAnyType())});
+                LLVM_DEBUG(llvm::dbgs() << "Extends result: any.";);
+                return Reason::None;                    
+            }                
+
+            if (extendsResult == ExtendsResult::Never)
+            {
+                pairs.insert({typeParam->getName(), std::make_pair(typeParam, getNeverType())});
+                LLVM_DEBUG(llvm::dbgs() << "Extends result: never.";);
+                return Reason::None;                    
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does extend "
+                                    << constraintType << ".";);
+
+            emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
+                                    << constraintType << ".";
+
+            return Reason::FailedConstraint;
+        }
+
+        return Reason::NoConstraint;
+    }
+
+    std::tuple<mlir::LogicalResult, IsGeneric> zipTypeParameterWithArgument(
         mlir::Location location, llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
         const ts::TypeParameterDOM::TypePtr &typeParam, mlir::Type type, bool noExtendTest,
         const GenContext &genContext, bool mergeTypes = false, bool arrayMerge = false)
@@ -19804,54 +20643,6 @@ genContext);
         {
             pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
             return {mlir::success(), IsGeneric::True};
-        }
-
-        if (!noExtendTest && typeParam->hasConstraint())
-        {
-            // we need to add current type into context to be able to use it in resolving "extends" constraints
-            GenContext constraintGenContext(genContext);
-            constraintGenContext.typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
-
-            auto constraintType = getType(typeParam->getConstraint(), constraintGenContext);
-            if (!constraintType)
-            {
-                LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed. should be resolved later\n";);
-                return {mlir::failure(), IsGeneric::False};
-            }
-
-            auto extendsResult = mth.extendsType(location, type, constraintType, pairs);
-            if (extendsResult != ExtendsResult::True)
-            {
-                // special case when we work with generic type(which are not specialized yet)
-                if (mth.isGenericType(type))
-                {
-                    pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
-                    LLVM_DEBUG(llvm::dbgs() << "Extends result: " << type << " (because of generic).";);
-                    return {mlir::success(), IsGeneric::True};                    
-                }
-
-                if (extendsResult == ExtendsResult::Any)
-                {
-                    pairs.insert({typeParam->getName(), std::make_pair(typeParam, getAnyType())});
-                    LLVM_DEBUG(llvm::dbgs() << "Extends result: any.";);
-                    return {mlir::success(), IsGeneric::False};                    
-                }                
-
-                if (extendsResult == ExtendsResult::Never)
-                {
-                    pairs.insert({typeParam->getName(), std::make_pair(typeParam, getNeverType())});
-                    LLVM_DEBUG(llvm::dbgs() << "Extends result: never.";);
-                    return {mlir::success(), IsGeneric::False};                    
-                }
-
-                LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does extend "
-                                        << constraintType << ".";);
-
-                emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
-                                        << constraintType << ".";
-
-                return {mlir::failure(), IsGeneric::False};
-            }
         }
 
         auto name = typeParam->getName();
@@ -19928,7 +20719,7 @@ genContext);
     }
 
 
-    std::pair<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArguments(
+    std::tuple<mlir::LogicalResult, IsGeneric> zipTypeParametersWithArguments(
         mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
         llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
     {
@@ -22016,7 +22807,8 @@ genContext);
                     return mlir::failure();
                 }
 
-                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, builder.getContext()), type});
+                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, builder.getContext()), mth.getIndexGetFunctionType(type)});
+                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_SET_FIELD_NAME, builder.getContext()), mth.getIndexSetFunctionType(type)});
             }
             else if (kind == SyntaxKind::CallSignature)
             {
@@ -22087,7 +22879,8 @@ genContext);
             auto indexAccessName = MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, builder.getContext());
             if (types.front().id == indexAccessName)
             {
-                if (auto elementTypeOfIndexSignature = mth.getIndexSignatureElementType(types.front().type))
+                auto [arg, res] = mth.getIndexSignatureArgumentAndResultTypes(types.front().type);
+                if (auto elementTypeOfIndexSignature = arg)
                 {
                     auto arrayType = getArrayType(elementTypeOfIndexSignature);
                     LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
@@ -22116,7 +22909,8 @@ genContext);
             if (indexSignatureType)
             {
                 // TODO: this is hack, add type IndexSignatureFunctionType to see if it is index declaration
-                if (auto elementTypeOfIndexSignature = mth.getIndexSignatureElementType(indexSignatureType))
+                auto [arg, res] = mth.getIndexSignatureArgumentAndResultTypes(indexSignatureType);
+                if (auto elementTypeOfIndexSignature = arg)
                 {
                     auto arrayType = getArrayType(elementTypeOfIndexSignature);
                     LLVM_DEBUG(llvm::dbgs() << "\n!! this is array type: " << arrayType << "\n";);
@@ -22137,6 +22931,11 @@ genContext);
     {
         return mlir_ts::ObjectType::get(type);
     }
+
+    mlir_ts::OpaqueType getOpaqueType()
+    {
+        return mlir_ts::OpaqueType::get(builder.getContext());
+    }    
 
     mlir_ts::BoundFunctionType getBoundFunctionType(mlir_ts::FunctionType funcType)
     {
@@ -22792,11 +23591,6 @@ genContext);
     mlir_ts::NullType getNullType()
     {
         return mlir_ts::NullType::get(builder.getContext());
-    }
-
-    mlir_ts::OpaqueType getOpaqueType()
-    {
-        return mlir_ts::OpaqueType::get(builder.getContext());
     }
 
     mlir::LogicalResult declare(mlir::Location location, VariableDeclarationDOM::TypePtr var, mlir::Value value, const GenContext &genContext, bool showWarnings = false)

@@ -35,6 +35,8 @@
 #define NEW_CTOR_METHOD_NAME ".new_ctor"
 #define LENGTH_FIELD_NAME "length"
 #define INDEX_ACCESS_FIELD_NAME ".index"
+#define INDEX_ACCESS_GET_FIELD_NAME "get"
+#define INDEX_ACCESS_SET_FIELD_NAME "set"
 #define CALL_FIELD_NAME ".call"
 #define THIS_ALIAS ".this"
 #define GENERATOR_STEP ".step"

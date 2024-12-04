@@ -870,20 +870,21 @@ class MLIRCustomMethods
 class MLIRPropertyAccessCodeLogic
 {
     mlir::OpBuilder &builder;
-    mlir::Location &location;
-    mlir::Value &expression;
+    mlir::Location location;
+    mlir::Value expression;
     mlir::StringRef name;
     mlir::Attribute fieldId;
+    mlir::Value argument;
 
   public:
-    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression,
+    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
                                 StringRef name)
         : builder(builder), location(location), expression(expression), name(name)
     {
         fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
     }
 
-    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression,
+    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
                                 mlir::Attribute fieldId)
         : builder(builder), location(location), expression(expression), fieldId(fieldId)
     {
@@ -892,6 +893,16 @@ class MLIRPropertyAccessCodeLogic
             name = strAttr.getValue();
         }
     }
+
+    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
+                                mlir::Attribute fieldId, mlir::Value argument)
+        : builder(builder), location(location), expression(expression), fieldId(fieldId), argument(argument)
+    {
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId))
+        {
+            name = strAttr.getValue();
+        }
+    }    
 
     mlir::Value Enum(mlir_ts::EnumType enumType)
     {
@@ -1030,9 +1041,12 @@ class MLIRPropertyAccessCodeLogic
             }
             else
             {
-                auto getterFuncType = mlir_ts::FunctionType::get(builder.getContext(), {accessorResultType}, {}, false);
-                getterValue = builder.create<mlir_ts::NullOp>(location,mlir_ts::NullType::get(builder.getContext()));
-                getterValue = builder.create<mlir_ts::CastOp>(location, getterFuncType, getterValue);
+                getterValue = builder.create<mlir_ts::UndefOp>(location, 
+                    mlir_ts::FunctionType::get(
+                        builder.getContext(), 
+                        {mlir_ts::OpaqueType::get(builder.getContext())}, 
+                        {accessorResultType}, 
+                        false));
             }
 
             if (setterIndex >= 0)
@@ -1042,9 +1056,13 @@ class MLIRPropertyAccessCodeLogic
             }
             else
             {
-                auto setterFuncType = mlir_ts::FunctionType::get(builder.getContext(), {}, {accessorResultType}, false);
-                setterValue = builder.create<mlir_ts::NullOp>(location, mlir_ts::NullType::get(builder.getContext()));
-                setterValue = builder.create<mlir_ts::CastOp>(location, setterFuncType, setterValue);
+                setterValue = builder.create<mlir_ts::UndefOp>(location, 
+                    mlir_ts::FunctionType::get(
+                        builder.getContext(), 
+                        {mlir_ts::OpaqueType::get(builder.getContext()), 
+                        accessorResultType}, 
+                        {}, 
+                        false));
             }
 
             auto refValue = getExprLoadRefValue(location);
@@ -1057,7 +1075,7 @@ class MLIRPropertyAccessCodeLogic
 
             auto thisValue = refValue;
 
-            auto thisAccessorIndirectOp = builder.create<mlir_ts::ThisAccessorIndirectOp>(
+            auto thisAccessorIndirectOp = builder.create<mlir_ts::ThisIndirectAccessorOp>(
                 location, accessorResultType, thisValue, getterValue, setterValue, mlir::Value());  
 
             return thisAccessorIndirectOp.getResult(0);              
@@ -1430,6 +1448,11 @@ class MLIRPropertyAccessCodeLogic
     mlir::Attribute getAttribute()
     {
         return fieldId;
+    }
+
+    mlir::Value getArgument()
+    {
+        return argument;
     }
 
   private:

@@ -347,10 +347,11 @@
             "args": [
                 "-emit=dll",
                 "-opt",
-                "-debug-only=tsc",
+                "-debug-only=tsc,llvm,pass",
                 "-mlir-disable-threading",                
-                "-o=I:/Playground/export_class_interface.dll",
-                "I:/Playground/export_class_interface.ts"
+                "--gctors-as-method",
+                "-o=I:/Playground/export_vars.dll",
+                "I:/Playground/export_vars.ts"
             ],
             "stopAtEntry": false,
             "cwd": "I:/Playground",
@@ -413,8 +414,9 @@
                 "-debug-only=mlir,llvm",
                 "-mlir-disable-threading",
                 "-di",
-                "--default-lib-path=C:/temp",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll"
+                "--default-lib-path=I:/TypeScriptCompilerDefaultLib/__build/debug",
+                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll",
+                "--shared-libs=I:/Playground/export_enum.dll"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -430,7 +432,7 @@
             "args": [
                 "-emit=jit",
                 "I:/Playground/1.ts",
-                "-debug-only=mlir,llvm",
+                "-debug-only=mlir,llvm,pass",
                 "-mlir-disable-threading",
                 "-di",
                 "--no-default-lib",

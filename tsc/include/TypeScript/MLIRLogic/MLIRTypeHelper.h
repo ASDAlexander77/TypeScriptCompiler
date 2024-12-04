@@ -618,17 +618,27 @@ class MLIRTypeHelper
     }
 
     // TODO: how about multi-index?
-    mlir::Type getIndexSignatureElementType(mlir::Type indexSignatureType)
+    std::pair<mlir::Type, mlir::Type> getIndexSignatureArgumentAndResultTypes(mlir::Type indexSignatureType)
     {
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(indexSignatureType))
         {
-            if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 && isNumericType(funcType.getInput(0)))
+            if (funcType.getNumInputs() == 1 && funcType.getNumResults() == 1 
+                && (isNumericType(funcType.getInput(0)) || isa<mlir_ts::StringType>(funcType.getInput(0))))
             {
-                return funcType.getResult(0);
+                return {funcType.getInput(0), funcType.getResult(0)};
             }
+
+            // in case if first parameter is Opaque
+            if (funcType.getNumInputs() == 2 && funcType.getNumResults() == 1 
+                && (isNumericType(funcType.getInput(1)) || isa<mlir_ts::StringType>(funcType.getInput(1))))
+            {
+                return {funcType.getInput(1), funcType.getResult(0)};
+            }            
         }
 
-        return mlir::Type();
+        assert(false);
+
+        return {mlir::Type(), mlir::Type()};
     }
 
     mlir::Type getIndexSignatureType(mlir::Type elementType)
@@ -640,6 +650,26 @@ class MLIRTypeHelper
 
         return mlir_ts::FunctionType::get(context, {mlir_ts::NumberType::get(context)}, {elementType}, false);
     }
+
+    mlir_ts::FunctionType getIndexGetFunctionType(mlir::Type indexSignature)
+    {
+        auto [arg, res] = getIndexSignatureArgumentAndResultTypes(indexSignature);
+        return mlir_ts::FunctionType::get(
+            indexSignature.getContext(), 
+            {getOpaqueType(), arg}, 
+            {res}, 
+            false);    
+    }
+
+    mlir_ts::FunctionType getIndexSetFunctionType(mlir::Type indexSignature)
+    {
+        auto [arg, res] = getIndexSignatureArgumentAndResultTypes(indexSignature);        
+        return mlir_ts::FunctionType::get(
+            indexSignature.getContext(), 
+            {getOpaqueType(), arg, res}, 
+            {}, 
+            false);    
+    }    
 
     bool isAnyFunctionType(mlir::Type funcType, bool stripRefTypeOpt = false)
     {
@@ -1311,7 +1341,7 @@ class MLIRTypeHelper
 
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
-            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> mlir_ts::FieldInfo {
+            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> std::pair<mlir_ts::FieldInfo, mlir::LogicalResult> {
                 auto foundIndex = tupleStorageType.getIndex(id);
                 if (foundIndex >= 0)
                 {
@@ -1330,12 +1360,14 @@ class MLIRTypeHelper
                             emitError(location) << "field " << id << " not matching type: " << fieldType << " and "
                                                 << foundField.type << " in interface '" << newInterfacePtr->fullName
                                                 << "' for object '" << to_print(tupleStorageType) << "'";
+
+                            return {emptyFieldInfo, mlir::failure()};
                         }
 
-                        return emptyFieldInfo;
+                        return {emptyFieldInfo, mlir::success()};
                     }
 
-                    return foundField;
+                    return {foundField, mlir::success()};
                 }
 
                 LLVM_DEBUG(llvm::dbgs() << id << " field can't be found for interface '"
@@ -1345,11 +1377,12 @@ class MLIRTypeHelper
                 {
                     emitError(location) << id << " field can't be found for interface '"
                                         << newInterfacePtr->fullName << "' in object '" << to_print(tupleStorageType) << "'";
+                    return {emptyFieldInfo, mlir::failure()};
                 }
 
-                return emptyFieldInfo;
+                return {emptyFieldInfo, mlir::success()};
             },
-            [&](std::string methodName, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> MethodInfo & {
+            [&](std::string methodName, mlir_ts::FunctionType funcType, bool isConditional, int interfacePosIndex) -> std::pair<MethodInfo &, mlir::LogicalResult> {
                 auto id = MLIRHelper::TupleFieldName(methodName, funcType.getContext());
                 auto foundIndex = tupleStorageType.getIndex(id);
                 if (foundIndex >= 0)
@@ -1370,15 +1403,17 @@ class MLIRTypeHelper
                             emitError(location) << "method " << id << " not matching type: " << to_print(funcType) << " and "
                                                 << to_print(foundField.type) << " in interface '" << newInterfacePtr->fullName
                                                 << "' for object '" << to_print(tupleStorageType) << "'";
+
+                            return {emptyMethod, mlir::failure()};
                         }
 
-                        return emptyMethod;
+                        return {emptyMethod, mlir::success()};
                     }         
 
                     // TODO: we do not return method, as it should be resolved in fields request
                 }
 
-                return emptyMethod;
+                return {emptyMethod, mlir::success()};
             },
             true);
 
@@ -2022,7 +2057,6 @@ class MLIRTypeHelper
             // TODO: do not break the order as it is used in Debug info
             destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context), false });
             destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir_ts::StringType::get(context), false });
-            //destTupleFields.push_back({ MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context), mlir_ts::NumberType::get(context), false });
             return mlir::success();
         }
         else if (auto optType = dyn_cast<mlir_ts::OptionalType>(srcType))
@@ -2181,9 +2215,16 @@ class MLIRTypeHelper
                 return mlir_ts::NumberType::get(context);
             }
 
-            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context))
+            // TODO: temp hack to support extends { readonly length: number; readonly [n: number]: ElementOfArray<A>; }
+            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, context))
             {
-                return  getIndexSignatureType(arrayType.getElementType());
+                return mlir_ts::AnyType::get(context);
+            }
+
+            // TODO: temp hack to support extends { readonly length: number; readonly [n: number]: ElementOfArray<A>; }
+            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_SET_FIELD_NAME, context))
+            {
+                return mlir_ts::AnyType::get(context);
             }
 
             llvm_unreachable("not implemented");
@@ -2197,9 +2238,10 @@ class MLIRTypeHelper
                 return mlir_ts::NumberType::get(context);
             }
 
-            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context))
+            // TODO: temp hack to support extends { readonly length: number; readonly [n: number]: ElementOfArray<A>; }
+            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, context))
             {
-                return  getIndexSignatureType(constArrayType.getElementType());
+                return mlir_ts::AnyType::get(context);
             }
 
             llvm_unreachable("not implemented");
@@ -2211,11 +2253,6 @@ class MLIRTypeHelper
             if (fieldName == MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context))
             {
                 return mlir_ts::NumberType::get(context);
-            }
-
-            if (fieldName == MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context))
-            {
-                return  getIndexSignatureType(mlir_ts::CharType::get(context));
             }
 
             llvm_unreachable("not implemented");

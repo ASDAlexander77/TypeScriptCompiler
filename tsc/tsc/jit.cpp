@@ -54,16 +54,16 @@ int loadLibrary(mlir::SmallString<256> &libPath, llvm::StringMap<void *> &export
 
     LLVM_DEBUG(llvm::dbgs() << "loaded path: " << libPath.c_str() << "\n";);
 
-    void *initSym = lib.getAddressOfSymbol("__mlir_runner_init");
+    void *initSym = lib.getAddressOfSymbol("__mlir_execution_engine_init");
     if (!initSym)
     {
-        LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_init";);
+        LLVM_DEBUG(llvm::dbgs() << "missing __mlir_execution_engine_init";);
     }
 
-    void *destroySim = lib.getAddressOfSymbol("__mlir_runner_destroy");
+    void *destroySim = lib.getAddressOfSymbol("__mlir_execution_engine_destroy");
     if (!destroySim)
     {
-        LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_destroy";);
+        LLVM_DEBUG(llvm::dbgs() << "missing __mlir_execution_engine_destroy";);
     }
 
     // Library does not support mlir runner, load it with ExecutionEngine.
@@ -81,6 +81,19 @@ int loadLibrary(mlir::SmallString<256> &libPath, llvm::StringMap<void *> &export
     destroyFns.push_back(destroyFn);
 
     return 0;
+}
+
+bool addLibFileIfExists(mlir::SmallVector<mlir::StringRef>& sharedLibs, mlir::StringRef tsLibPath)
+{
+    mlir::SmallString<256> absPathTypeScriptLib(tsLibPath.begin(), tsLibPath.end());
+    cantFail(llvm::errorCodeToError(llvm::sys::fs::make_absolute(absPathTypeScriptLib)));        
+
+    if (llvm::sys::fs::exists(absPathTypeScriptLib))
+    {
+        return true;
+    }
+
+    return false;
 }
 
 int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
@@ -103,8 +116,6 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
     // engine. Otherwise we'll pass library directly to the execution engine.
-    mlir::SmallVector<mlir::SmallString<256>, 4> libPaths;
-
     if (!compileOptions.noDefaultLib)
     {
         clSharedLibs.push_back(mergeWithDefaultLibPath(getDefaultLibPath(), 
@@ -116,56 +127,12 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         ));
     }      
 
-    // Use absolute library path so that gdb can find the symbol table.
-    transform(clSharedLibs, std::back_inserter(libPaths), [](std::string libPath) {
-        mlir::SmallString<256> absPath(libPath.begin(), libPath.end());
-        cantFail(llvm::errorCodeToError(llvm::sys::fs::make_absolute(absPath)));
-        return absPath;
-    });
-
-    llvm::StringMap<void *> exportSymbols;
-    mlir::SmallVector<MlirRunnerDestroyFn> destroyFns;
-
-    // Handle libraries that do support mlir-runner init/destroy callbacks.
-    for (auto &libPath : libPaths)
-    {
-        auto ret = loadLibrary(libPath, exportSymbols, destroyFns);
-        if (ret < 0)
-            return ret;
-    }
-
-    auto noGC = false;
-
-    // Build a runtime symbol map from the config and exported symbols.
-    auto runtimeSymbolMap = [&](llvm::orc::MangleAndInterner interner) {
-        auto symbolMap = llvm::orc::SymbolMap();
-        for (auto &exportSymbol : exportSymbols)
-        {
-            LLVM_DEBUG(llvm::dbgs() << "loading symbol: " << exportSymbol.getKey() << "\n";);
-            symbolMap[interner(exportSymbol.getKey())] = { llvm::orc::ExecutorAddr::fromPtr(exportSymbol.getValue()), llvm::JITSymbolFlags::Exported };
-        }
-
-        if (!disableGC && symbolMap.count(interner("GC_init")) == 0)
-        {
-            noGC = true;
-        }
-
-        return symbolMap;
-    };
-
     // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
     // the module.
-    mlir::ExecutionEngineOptions engineOptions;
-    engineOptions.transformer = optPipeline;
-    engineOptions.enableObjectDump = dumpObjectFile;
-    engineOptions.enableGDBNotificationListener = !enableOpt;
-    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-    assert(maybeEngine && "failed to construct an execution engine");
-    auto &engine = maybeEngine.get();
+    mlir::SmallVector<mlir::StringRef> sharedLibPaths;
+    sharedLibPaths.append(begin(clSharedLibs), end(clSharedLibs));
 
-    engine->registerSymbols(runtimeSymbolMap);
-    if (noGC)
-    {
+    // add default libs in case they are not part of options
 #ifdef WIN32
 #define LIB_NAME ""
 #define LIB_EXT "dll"
@@ -173,50 +140,30 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 #define LIB_NAME "lib"
 #define LIB_EXT "so"
 #endif
-
-        auto loadLib = [&] (std::string tsLibPath) {
-            mlir::SmallString<256> absPathTypeScriptLib(tsLibPath.begin(), tsLibPath.end());
-            cantFail(llvm::errorCodeToError(llvm::sys::fs::make_absolute(absPathTypeScriptLib)));        
-
-            if (llvm::sys::fs::exists(absPathTypeScriptLib))
+    if (!disableGC.getValue())
+        if (!addLibFileIfExists(sharedLibPaths, "../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT))
+            if (!addLibFileIfExists(sharedLibPaths, LIB_NAME "TypeScriptRuntime." LIB_EXT))
             {
-                // trying to load default TypeScript Library when GC is enabled
-                auto ret = loadLibrary(absPathTypeScriptLib, exportSymbols, destroyFns);
-                if (ret < 0)
-                    return ret;        
+                /*
+                llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
+                                "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
+                return -1;            
+                */
+            }        
 
-                // need to reset noGC to revalidate
-                noGC = false;
-
-                // re-registeting new symbols
-                engine->registerSymbols(runtimeSymbolMap);    
-
-                return 0;
-            }
-
-            return 1;
-        };
-
-        // load lib at default paths
-        std::string tsLibPath1("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
-        auto ret = loadLib(tsLibPath1);
-        if (ret < 0)
-            return ret;        
-        else if (ret != 0)
-        {
-            std::string tsLibPath2(LIB_NAME "TypeScriptRuntime." LIB_EXT);
-            auto ret = loadLib(tsLibPath2);
-            if (ret < 0)
-                return ret;        
-        }
-
-        if (noGC)
-        {
-            llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                            "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
-            return -1;
-        }
+    mlir::ExecutionEngineOptions engineOptions;
+    engineOptions.transformer = optPipeline;
+    engineOptions.enableObjectDump = dumpObjectFile;
+    engineOptions.enableGDBNotificationListener = !enableOpt;
+    engineOptions.sharedLibPaths = sharedLibPaths;
+    if (enableOpt.getValue())
+    {
+        engineOptions.jitCodeGenOptLevel = (llvm::CodeGenOptLevel) optLevel.getValue();
     }
+
+    auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
+    assert(maybeEngine && "failed to construct an execution engine");
+    auto &engine = maybeEngine.get();
 
     if (dumpObjectFile)
     {
@@ -246,8 +193,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     if (module.lookupSymbol(MLIR_GCTORS))
     {
-        auto gctorsResult = engine->invokePacked(MLIR_GCTORS);
-        if (gctorsResult)
+        if (auto gctorsResult = engine->invokePacked(MLIR_GCTORS))
         {
             llvm::WithColor::error(llvm::errs(), "tsc") << "JIT calling global constructors failed, error: " << gctorsResult << "\n";
             return -1;
@@ -255,12 +201,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 
     // Invoke the JIT-compiled function.
-    auto invocationResult = engine->invokePacked(mainFuncName);
-
-    // Run all dynamic library destroy callbacks to prepare for the shutdown.
-    llvm::for_each(destroyFns, [](MlirRunnerDestroyFn destroy) { destroy(); });
-
-    if (invocationResult)
+    if (auto invocationResult = engine->invokePacked(mainFuncName))
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "JIT invocation failed, error: " << invocationResult << "\n";
         return -1;

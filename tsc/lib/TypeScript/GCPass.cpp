@@ -37,7 +37,11 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
     {
         auto m = getModule();
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! GCPass: BEFORE DUMP: \n" << m << "\n";);
+
+        auto added = false;
         m.walk([&](mlir::Operation *op) {
+            // process gctors first
             if (auto funcOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(op))
             {
                 auto symbolAttr = funcOp->getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName());
@@ -49,9 +53,14 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                 auto name = std::string(symbolAttr.getValue());
                 if (!funcOp.getBody().empty())
                 {
-                    if (name == MAIN_ENTRY_NAME)
+                    if (!added)
                     {
-                        injectInit(funcOp);
+                        // we are adding to gctos(as method - only)
+                        if (StringRef(name).starts_with(MLIR_GCTORS))
+                        {
+                            added = true;
+                            injectInit(funcOp);
+                        }
                     }
 
                     return;
@@ -78,6 +87,21 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                 renameCall(name, callOp);
             }
         });
+
+        if (!added)
+        {
+            // process main
+            if (auto funcOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(m.lookupSymbol(MAIN_ENTRY_NAME)))
+            {
+                if (!funcOp.getBody().empty())
+                {
+                    added = true;
+                    injectInit(funcOp);
+                }
+            }
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! GCPass: AFTER DUMP: \n" << m << "\n";);
     }
 
     bool mapName(StringRef name, StringRef modeName, StringRef &newName)
@@ -172,6 +196,8 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         LLVMCodeHelper ch(funcOp, rewriter, nullptr, tsContext.compileOptions);
         auto i8PtrTy = th.getPtrType();
         auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
+
+        rewriter.setInsertionPointToStart(&*funcOp.getBody().begin());
         rewriter.create<LLVM::CallOp>(funcOp->getLoc(), gcInitFuncOp, ValueRange{});
     }
 

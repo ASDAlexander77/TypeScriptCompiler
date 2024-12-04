@@ -9,6 +9,72 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+- Class from Tuple
+```TypeScript
+class Point {
+    x: number;
+    y: number;
+}
+
+class Line {
+    constructor(public start: Point, public end: Point) { }
+}
+
+const l = new Line({ x: 0, y: 1 }, { x: 1.0, y: 2.0 });
+```
+
+- Compile-time `if`s
+```TypeScript
+function isArray<T extends unknown[]>(value: T): value is T {
+    return true;
+}
+
+function gen<T>(t: T)
+{
+    if (isArray(t))
+    {
+        return t.length.toString();
+    }
+
+    return "int";
+}
+
+const v1 = gen<i32>(23); // result: int
+const v2 = gen<string[]>([]); // result: 0
+```
+
+- indexes for classes and interfaces, properties for interfaces
+```TypeScript
+class Test {
+    // declare index (to assing get/set methods to it)
+    [index1: number]: string;
+    
+    get(index: number): string {
+        return "index";
+    }
+
+    set(index: number, value: string) {
+    }
+
+    get val(): string {
+        return "prop";
+    }
+}
+
+interface ITest {
+    [index1: number]: string;
+
+    get val(): string;
+}
+
+const t = new Test();
+print(t[10]);
+
+const ti: ITest = t;
+print(ti[10]);
+print(ti.val);
+```
+
 - no need to define 'main' function
 ```TypeScript
 const arr = [1, 2, 3, 4, 5];

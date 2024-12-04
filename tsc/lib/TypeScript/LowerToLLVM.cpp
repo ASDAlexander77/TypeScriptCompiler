@@ -3409,28 +3409,6 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
     }
 };
 
-struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfConstStringOp>
-{
-    using TsLlvmPattern<mlir_ts::AddressOfConstStringOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::AddressOfConstStringOp addressOfConstStringOp,
-                                  Adaptor transformed, ConversionPatternRewriter &rewriter) const final
-    {
-        
-
-        TypeHelper th(rewriter);
-        auto llvmCharType = typeConverter->convertType(th.getCharType());
-
-        auto loc = addressOfConstStringOp->getLoc();
-        auto globalPtr =
-            rewriter.create<LLVM::AddressOfOp>(loc, th.getPtrType(), addressOfConstStringOp.getGlobalName());
-        rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getPtrType(), llvmCharType, globalPtr,
-                                                 ArrayRef<LLVM::GEPArg>{0, 0});
-
-        return success();
-    }
-};
-
 struct DefaultOpLowering : public TsLlvmPattern<mlir_ts::DefaultOp>
 {
     using TsLlvmPattern<mlir_ts::DefaultOp>::TsLlvmPattern;
@@ -5030,7 +5008,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
     LogicalResult matchAndRewrite(mlir_ts::GlobalConstructorOp globalConstructorOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        if (tsLlvmContext->compileOptions.isJit)
+        if (tsLlvmContext->compileOptions.appendGCtorsToMethod)
         {
             auto loc = globalConstructorOp->getLoc();
 
@@ -5043,12 +5021,20 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
 
-                // create dummy __mlir_runner_init for JIT
+                // create dummy __mlir_gctors for JIT
                 rewriter.setInsertionPointToEnd(parentModule.getBody());
                 auto llvmFnType = mlir::FunctionType::get(rewriter.getContext(), {}, {});
                 auto initFunc = rewriter.create<func::FuncOp>(loc, MLIR_GCTORS, llvmFnType);
-                auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::Internal);
+                initFunc.setPublic();                
+                auto linkage = LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::External);
                 initFunc->setAttr("llvm.linkage", linkage);
+                if (true || tsLlvmContext->compileOptions.isDLL)
+                {
+                    SmallVector<mlir::Attribute> funcAttrs;
+                    funcAttrs.push_back(ATTR("export"));
+                    initFunc->setAttr("passthrough", ArrayAttr::get(rewriter.getContext(), funcAttrs));
+                }
+
                 auto &entryBlock = *initFunc.addEntryBlock();
                 rewriter.setInsertionPointToEnd(&entryBlock);
 
@@ -5988,7 +5974,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext{tsContext.compileOptions};
     patterns.insert<
-        AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+        AddressOfOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
         AssertOpLowering, CastOpLowering, ConstantOpLowering, DefaultOpLowering, 
         OptionalOpLowering, ValueOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering, 
         ValueOrDefaultOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,

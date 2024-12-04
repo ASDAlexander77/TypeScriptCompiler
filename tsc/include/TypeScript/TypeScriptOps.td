@@ -126,11 +126,51 @@ def ThisAccessorOp : TypeScript_Op<"ThisAccessor",
   let hasCanonicalizer = 1;
 }
 
-def ThisAccessorIndirectOp : TypeScript_Op<"ThisAccessorIndirect", 
+def ThisIndirectAccessorOp : TypeScript_Op<"ThisIndirectAccessor", 
     []> {
   let summary = "accessor of object";
 
   let arguments = (ins AnyType:$thisVal, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
+
+  let hasCanonicalizer = 1;
+}
+
+def ThisIndexAccessorOp : TypeScript_Op<"ThisIndexAccessor", 
+    []> {
+  let summary = "index accessor of class";
+
+  let arguments = (ins AnyType:$thisVal, AnyType:$index, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
+
+  let hasCanonicalizer = 1;
+}
+
+def ThisIndirectIndexAccessorOp : TypeScript_Op<"ThisIndirectIndexAccessor", 
+    []> {
+  let summary = "index accessor of object";
+
+  let arguments = (ins AnyType:$thisVal, AnyType:$index, TypeScript_Function:$getAccessor, TypeScript_Function:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
+
+  let hasCanonicalizer = 1;
+}
+
+def BoundIndirectAccessorOp : TypeScript_Op<"BoundIndirectAccessor", 
+    []> {
+  let summary = "accessor of interface";
+
+  let arguments = (ins TypeScript_BoundFunction:$getAccessor, TypeScript_BoundFunction:$setAccessor, Optional<AnyType>:$setValue);
+  let results = (outs Optional<AnyType>:$value);
+
+  let hasCanonicalizer = 1;
+}
+
+def BoundIndirectIndexAccessorOp : TypeScript_Op<"BoundIndirectIndexAccessor", 
+    []> {
+  let summary = "index accessor of interface";
+
+  let arguments = (ins AnyType:$index, TypeScript_BoundFunction:$getAccessor, TypeScript_BoundFunction:$setAccessor, Optional<AnyType>:$setValue);
   let results = (outs Optional<AnyType>:$value);
 
   let hasCanonicalizer = 1;
@@ -2019,19 +2059,6 @@ def TypeScript_AddressOfOp : TypeScript_Op<"AddressOf"> {
     /// Return the ts.func operation that is referenced here.
     FuncOp getFunction();
   }];
-}
-
-def TypeScript_AddressOfConstStringOp : TypeScript_Op<"AddressOfConstString"> {
-  let arguments = (ins FlatSymbolRefAttr:$global_name);
-  let results = (outs TypeScript_String:$instance);
-}
-
-def TypeScript_AddressOfElementOp : TypeScript_Op<"AddressOfElement"> {
-  let arguments = (ins 
-        TypeScript_Ref:$reference,
-        Index:$elementIndex
-  );
-  let results = (outs TypeScript_Ref:$reference_of_element);
 }
 
 def TypeScript_GlobalOp : TypeScript_Op<"Global",

@@ -945,50 +945,265 @@ struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
     }
 };
 
-struct ThisAccessorIndirectOpLowering : public TsPattern<mlir_ts::ThisAccessorIndirectOp>
+struct ThisIndirectAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectAccessorOp>
 {
-    using TsPattern<mlir_ts::ThisAccessorIndirectOp>::TsPattern;
+    using TsPattern<mlir_ts::ThisIndirectAccessorOp>::TsPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ThisAccessorIndirectOp thisAccessorIndirectOp, PatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::ThisIndirectAccessorOp thisIndirectAccessorOp, PatternRewriter &rewriter) const final
     {
-        Location loc = thisAccessorIndirectOp.getLoc();
+        Location loc = thisIndirectAccessorOp.getLoc();
 
-        if (thisAccessorIndirectOp.getSetValue())
+        if (thisIndirectAccessorOp.getSetValue())
         {
             // set case
-            if (thisAccessorIndirectOp.getSetAccessor().getDefiningOp<mlir_ts::NullOp>())
+            if (thisIndirectAccessorOp.getSetAccessor().getDefiningOp<mlir_ts::UndefOp>())
             {
                 emitError(loc) << "property does not have set accessor";
                 return mlir::failure();
             }
 
             rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, 
-                thisAccessorIndirectOp.getSetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal(), 
-                thisAccessorIndirectOp.getSetValue()});                
+                thisIndirectAccessorOp.getSetAccessor(), ValueRange{thisIndirectAccessorOp.getThisVal(), 
+                thisIndirectAccessorOp.getSetValue()});                
         }
 
-        if (thisAccessorIndirectOp.getNumResults() > 0)
+        if (thisIndirectAccessorOp.getNumResults() > 0)
         {
             // get case
-            if (thisAccessorIndirectOp.getGetAccessor().getDefiningOp<mlir_ts::NullOp>())
+            if (thisIndirectAccessorOp.getGetAccessor().getDefiningOp<mlir_ts::UndefOp>())
             {
                 emitError(loc) << "property does not have get accessor";
                 return failure();
             }
 
-            auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisAccessorIndirectOp.getType(0)}, 
-                    thisAccessorIndirectOp.getGetAccessor(), ValueRange{thisAccessorIndirectOp.getThisVal()});
+            auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisIndirectAccessorOp.getType(0)}, 
+                    thisIndirectAccessorOp.getGetAccessor(), ValueRange{thisIndirectAccessorOp.getThisVal()});
 
-            rewriter.replaceOp(thisAccessorIndirectOp, callRes.getResult(0));
+            rewriter.replaceOp(thisIndirectAccessorOp, callRes.getResult(0));
         }
         else
         {
-            rewriter.eraseOp(thisAccessorIndirectOp);
+            rewriter.eraseOp(thisIndirectAccessorOp);
         }
 
         return success();
     }
 };
+
+struct ThisIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndexAccessorOp>
+{
+    using TsPattern<mlir_ts::ThisIndexAccessorOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisIndexAccessorOp thisIndexAccessorOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = thisIndexAccessorOp.getLoc();
+
+        if (thisIndexAccessorOp.getSetValue())
+        {
+            if (!thisIndexAccessorOp.getSetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have an index set accessor";
+                return mlir::failure();
+            }
+
+            rewriter.create<mlir_ts::CallOp>(loc, thisIndexAccessorOp.getSetAccessor().value(),
+                mlir::TypeRange{}, mlir::ValueRange{thisIndexAccessorOp.getThisVal(), 
+                    thisIndexAccessorOp.getIndex(), thisIndexAccessorOp.getSetValue()});
+        }
+
+        if (thisIndexAccessorOp.getNumResults() > 0)
+        {
+            if (!thisIndexAccessorOp.getGetAccessor().has_value())
+            {
+                emitError(loc) << "property does not have an index get accessor";
+                return failure();
+            }
+
+            auto callRes =
+                rewriter.create<mlir_ts::CallOp>(loc, thisIndexAccessorOp.getGetAccessor().value(),
+                    TypeRange{thisIndexAccessorOp.getType(0)}, 
+                        ValueRange{thisIndexAccessorOp.getThisVal(), thisIndexAccessorOp.getIndex()});
+
+            rewriter.replaceOp(thisIndexAccessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(thisIndexAccessorOp);
+        }
+
+        return success();
+    }
+};
+
+struct ThisIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::ThisIndirectIndexAccessorOp>
+{
+    using TsPattern<mlir_ts::ThisIndirectIndexAccessorOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisIndirectIndexAccessorOp thisIndirectIndexAccessorOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = thisIndirectIndexAccessorOp.getLoc();
+
+        if (thisIndirectIndexAccessorOp.getSetValue())
+        {
+            if (thisIndirectIndexAccessorOp.getSetAccessor().getDefiningOp<mlir_ts::UndefOp>())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, thisIndirectIndexAccessorOp.getSetAccessor(),
+                mlir::ValueRange{thisIndirectIndexAccessorOp.getThisVal(), 
+                    thisIndirectIndexAccessorOp.getIndex(), thisIndirectIndexAccessorOp.getSetValue()});
+        }
+
+        if (thisIndirectIndexAccessorOp.getNumResults() > 0)
+        {
+            if (thisIndirectIndexAccessorOp.getGetAccessor().getDefiningOp<mlir_ts::UndefOp>())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
+
+            auto callRes =
+                rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{thisIndirectIndexAccessorOp.getType(0)}, thisIndirectIndexAccessorOp.getGetAccessor(), 
+                        ValueRange{thisIndirectIndexAccessorOp.getThisVal(), thisIndirectIndexAccessorOp.getIndex()});
+
+            rewriter.replaceOp(thisIndirectIndexAccessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(thisIndirectIndexAccessorOp);
+        }
+
+        return success();
+    }
+};
+
+struct BoundIndirectAccessorOpLowering : public TsPattern<mlir_ts::BoundIndirectAccessorOp>
+{
+    using TsPattern<mlir_ts::BoundIndirectAccessorOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BoundIndirectAccessorOp boundIndirectAccessorOp, PatternRewriter &rewriter) const final
+    {
+        auto loc = boundIndirectAccessorOp.getLoc();
+
+        auto opaqueType = mlir_ts::OpaqueType::get(rewriter.getContext());
+        if (boundIndirectAccessorOp.getSetValue())
+        {
+            // set case
+            if (boundIndirectAccessorOp.getSetAccessor().getDefiningOp<mlir_ts::UndefOp>())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            auto boundFuncType = boundIndirectAccessorOp.getSetAccessor().getType();
+            auto funcType = mlir_ts::FunctionType::get(
+                rewriter.getContext(), 
+                boundFuncType.getInputs(), 
+                boundFuncType.getResults());
+
+            auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectAccessorOp.getSetAccessor());
+            auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectAccessorOp.getSetAccessor());
+
+            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, 
+                methodOp, ValueRange{thisOp, boundIndirectAccessorOp.getSetValue()});                
+        }
+
+        if (boundIndirectAccessorOp.getNumResults() > 0)
+        {
+            // get case
+            if (boundIndirectAccessorOp.getGetAccessor().getDefiningOp<mlir_ts::UndefOp>())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
+
+            auto boundFuncType = boundIndirectAccessorOp.getGetAccessor().getType();
+            auto funcType = mlir_ts::FunctionType::get(
+                rewriter.getContext(), 
+                boundFuncType.getInputs(), 
+                boundFuncType.getResults());
+
+            auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectAccessorOp.getGetAccessor());
+            auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectAccessorOp.getGetAccessor());
+
+            auto callRes = rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{boundIndirectAccessorOp.getType(0)}, 
+                    methodOp, ValueRange{thisOp});
+
+            rewriter.replaceOp(boundIndirectAccessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(boundIndirectAccessorOp);
+        }
+
+        return success();
+    }
+};
+
+struct BoundIndirectIndexAccessorOpLowering : public TsPattern<mlir_ts::BoundIndirectIndexAccessorOp>
+{
+    using TsPattern<mlir_ts::BoundIndirectIndexAccessorOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BoundIndirectIndexAccessorOp boundIndirectIndexAccessorOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = boundIndirectIndexAccessorOp.getLoc();
+ 
+        auto opaqueType = mlir_ts::OpaqueType::get(rewriter.getContext());
+        if (boundIndirectIndexAccessorOp.getSetValue())
+        {
+            if (boundIndirectIndexAccessorOp.getSetAccessor().getDefiningOp<mlir_ts::UndefOp>())
+            {
+                emitError(loc) << "property does not have set accessor";
+                return mlir::failure();
+            }
+
+            auto boundFuncType = boundIndirectIndexAccessorOp.getSetAccessor().getType();
+            auto funcType = mlir_ts::FunctionType::get(
+                rewriter.getContext(), 
+                boundFuncType.getInputs(), 
+                boundFuncType.getResults());
+
+            auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectIndexAccessorOp.getSetAccessor());
+            auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectIndexAccessorOp.getSetAccessor());
+
+            rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{}, methodOp, mlir::ValueRange{thisOp, 
+                    boundIndirectIndexAccessorOp.getIndex(), boundIndirectIndexAccessorOp.getSetValue()});
+        }
+
+        if (boundIndirectIndexAccessorOp.getNumResults() > 0)
+        {
+            if (boundIndirectIndexAccessorOp.getGetAccessor().getDefiningOp<mlir_ts::UndefOp>())
+            {
+                emitError(loc) << "property does not have get accessor";
+                return failure();
+            }
+
+            auto boundFuncType = boundIndirectIndexAccessorOp.getGetAccessor().getType();
+            auto funcType = mlir_ts::FunctionType::get(
+                rewriter.getContext(), 
+                boundFuncType.getInputs(), 
+                boundFuncType.getResults());
+
+            auto thisOp = rewriter.create<mlir_ts::GetThisOp>(loc, opaqueType, boundIndirectIndexAccessorOp.getGetAccessor());
+            auto methodOp = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, boundIndirectIndexAccessorOp.getGetAccessor());
+
+            auto callRes =
+                rewriter.create<mlir_ts::CallIndirectOp>(loc, TypeRange{boundIndirectIndexAccessorOp.getType(0)}, 
+                methodOp, ValueRange{thisOp, boundIndirectIndexAccessorOp.getIndex()});
+
+            rewriter.replaceOp(boundIndirectIndexAccessorOp, callRes.getResult(0));
+        }
+        else
+        {
+            rewriter.eraseOp(boundIndirectIndexAccessorOp);
+        }
+
+        return success();
+    }
+};
+
 
 struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 {
@@ -1942,10 +2157,9 @@ void AddTsAffineLegalOps(ConversionTarget &target)
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
     target.addLegalOp<
-        mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
-        mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp,
-        mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::DefaultOp, mlir_ts::HasValueOp,
-        mlir_ts::ValueOp, mlir_ts::ValueOrDefaultOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp,
+        mlir_ts::AddressOfOp, mlir_ts::ArithmeticBinaryOp, mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, 
+        mlir_ts::ElementRefOp, mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::DefaultOp, 
+        mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::ValueOrDefaultOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp,
         mlir_ts::PrintOp, mlir_ts::ConvertFOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
         mlir_ts::StringLengthOp, mlir_ts::SetStringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, 
         mlir_ts::LoadOp, mlir_ts::LoadSaveOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, 
@@ -1977,13 +2191,14 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
     // the set of patterns that will lower the TypeScript operations.
 
     patterns.insert<EntryOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, ParamOpLowering,
-                    ParamOptionalOpLowering, ParamDefaultValueOpLowering, OptionalValueOrDefaultOpLowering, PrefixUnaryOpLowering, 
-                    PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/ DoWhileOpLowering, WhileOpLowering, 
-                    ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, 
-                    AccessorOpLowering, ThisAccessorOpLowering, ThisAccessorIndirectOpLowering,
-                    LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, 
-                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, 
-                    TypeOfOpLowering, CaptureOpLowering>(
+                    ParamOptionalOpLowering, ParamDefaultValueOpLowering, OptionalValueOrDefaultOpLowering, 
+                    PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/ 
+                    DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, 
+                    SwitchOpLowering, AccessorOpLowering, ThisAccessorOpLowering, ThisIndirectAccessorOpLowering, 
+                    ThisIndexAccessorOpLowering, ThisIndirectIndexAccessorOpLowering,
+                    BoundIndirectAccessorOpLowering, BoundIndirectIndexAccessorOpLowering, 
+                    LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, CatchOpLowering, 
+                    StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering, CaptureOpLowering>(
         &context, &tsContext, &tsFuncContext);
 }
 
