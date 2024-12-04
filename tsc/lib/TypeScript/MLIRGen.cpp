@@ -11790,15 +11790,16 @@ class MLIRGenImpl
     ValueOrLogicalResult NewClassInstanceOnStack(mlir::Location location, mlir_ts::ClassType classType,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
     {
+        // seems we are calling type constructor
+        // TODO: review it, really u should forbid to use "a = Class1();" to allocate in stack, or finish it
+        // using Class..new(true) method
+
         return NewClassInstance(location, classType, operands, genContext, true /*on stack*/);
     }
 
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext, bool onStack = false)
     {
-        // seems we are calling type constructor
-        // TODO: review it, really u should forbid to use "a = Class1();" to allocate in stack, or finish it
-        // using Class..new(true) method
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
         auto newOp = onStack 
             ? NewClassInstanceLogicAsOp(location, classType, onStack, genContext)
@@ -19096,18 +19097,22 @@ genContext);
     }    
 
     ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
-        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false)
     {
         auto count = 0;
         for (auto [index, fieldInfo] : enumerate(fields))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
 
-            // filter out special fields
-            if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fieldInfo.id)) 
+            if (filterSpecialCases)
             {
-                if (strAttr.getValue().starts_with(".")) {
-                    continue;
+                // filter out special fields
+                if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fieldInfo.id)) 
+                {
+                    if (strAttr.getValue().starts_with(".")) {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! --filtered #" << index << " field [" << fieldInfo.id << "]\n";);           
+                        continue;
+                    }
                 }
             }
 
@@ -19188,7 +19193,7 @@ genContext);
     {
         SmallVector<mlir::Value> values;
 
-        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, genContext, errorAsWarning);
+        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, false, genContext, errorAsWarning);
         if (mlir::failed(result))
         {
             return mlir::failure();
@@ -19204,7 +19209,7 @@ genContext);
     {
         SmallVector<mlir::Value> values;
         
-        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, genContext, errorAsWarning);
+        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, true, genContext, errorAsWarning);
         if (mlir::failed(result))
         {
             return mlir::failure();

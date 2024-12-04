@@ -9,6 +9,20 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+- Class from Tuple
+```TypeScript
+class Point {
+    x: number;
+    y: number;
+}
+
+class Line {
+    constructor(public start: Point, public end: Point) { }
+}
+
+const l = new Line({ x: 0, y: 1 }, { x: 1.0, y: 2.0 });
+```
+
 - Compile-time `if`s
 ```TypeScript
 function isArray<T extends unknown[]>(value: T): value is T {
