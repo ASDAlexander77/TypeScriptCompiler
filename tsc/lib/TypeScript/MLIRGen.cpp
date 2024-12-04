@@ -12533,6 +12533,13 @@ class MLIRGenImpl
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
             if (!classInfo)
             {
+                auto genericClassInfo = getGenericClassInfoByFullName(classType.getName().getValue());
+                if (genericClassInfo)
+                {
+                    emitError(location) << "Generic class '"<< to_print(classType) << "' is missing type arguments ";
+                    return mlir::failure(); 
+                }
+
                 emitError(location) << "Can't find class " << to_print(classType);
                 return mlir::failure(); 
             }
@@ -12585,6 +12592,13 @@ class MLIRGenImpl
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
             if (!classInfo)
             {
+                auto genericClassInfo = getGenericClassInfoByFullName(classType.getName().getValue());
+                if (genericClassInfo)
+                {
+                    emitError(location) << "Generic class '"<< to_print(classType) << "' is missing type arguments ";
+                    return mlir::failure(); 
+                }
+
                 emitError(location) << "Can't find class " << to_print(classType);
                 return mlir::Value(); 
             }
