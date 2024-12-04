@@ -11787,15 +11787,24 @@ class MLIRGenImpl
         return mlirGenCall(location, actualFuncRefValue, operands, genContext);
     }
 
-    ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
+    ValueOrLogicalResult NewClassInstanceOnStack(mlir::Location location, mlir_ts::ClassType classType,
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    {
+        return NewClassInstance(location, classType, operands, genContext, true /*on stack*/);
+    }
+
+    ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir_ts::ClassType classType,
+                                     SmallVector<mlir::Value, 4> &operands, const GenContext &genContext, bool onStack = false)
     {
         // seems we are calling type constructor
         // TODO: review it, really u should forbid to use "a = Class1();" to allocate in stack, or finish it
         // using Class..new(true) method
-        auto newOp = NewClassInstanceLogicAsOp(location, classType, true, genContext);
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-        if (mlir::failed(mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext)))
+        auto newOp = onStack 
+            ? NewClassInstanceLogicAsOp(location, classType, onStack, genContext)
+            : ValueOrLogicalResult(NewClassInstanceAsMethodCallOp(location, classInfo, true, genContext));
+        EXIT_IF_FAILED_OR_NO_VALUE(newOp)
+        if (mlir::failed(mlirGenCallConstructor(location, classInfo, V(newOp), operands, false, genContext)))
         {
             return mlir::failure();
         }
@@ -11837,7 +11846,7 @@ class MLIRGenImpl
                 }
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
-                value = NewClassInstance(location, classType, operands, genContext);
+                value = NewClassInstanceOnStack(location, classType, operands, genContext);
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
                 MLIRCodeLogic mcl(builder);
@@ -12497,6 +12506,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    // TODO: refactor it, somehow when NewClassInstanceAsMethodCallOp calling Ctor and NewClassInstanceLogicAsOp is not
     ValueOrLogicalResult NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
                                           NodeArray<TypeNode> typeArguments, bool suppressConstructorCall, 
                                           const GenContext &genContext)
@@ -12513,7 +12523,7 @@ class MLIRGenImpl
             resultType = getValueRefType(type);
         }
 
-        // if true, will call Class..new method, otheriwise ts::NewOp which we need to implement Class..new method
+        // if true, will call Class..new method, otheriwise ts::NewOp which we need to implement Class..new method 
         auto methodCallWay = !suppressConstructorCall;
 
         mlir::Value newOp;
