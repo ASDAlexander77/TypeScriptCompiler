@@ -12531,6 +12531,12 @@ class MLIRGenImpl
         if (auto classType = dyn_cast<mlir_ts::ClassType>(resultType))
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            if (!classInfo)
+            {
+                emitError(location) << "Can't find class " << to_print(classType);
+                return mlir::failure(); 
+            }
+
             if (genContext.dummyRun)
             {
                 // just to cut a lot of calls
@@ -12577,6 +12583,12 @@ class MLIRGenImpl
         {
             // set virtual table
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            if (!classInfo)
+            {
+                emitError(location) << "Can't find class " << to_print(classType);
+                return mlir::Value(); 
+            }
+
             return NewClassInstanceLogicAsOp(location, classInfo, stackAlloc, genContext);
         }
 
