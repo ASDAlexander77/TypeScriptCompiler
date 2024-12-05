@@ -10095,6 +10095,7 @@ class MLIRGenImpl
                     return mlir::Value();
                 })
                 .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { 
+#ifdef ARRAY_TYPE_AS_ARRAY_CLASS                    
                     if (auto genericClassTypeInfo = getGenericClassInfoByFullName("Array"))
                     {
                         auto classType = genericClassTypeInfo->classType;
@@ -10126,6 +10127,7 @@ class MLIRGenImpl
 
                         genContext.postponedMessages->clear();
                     }
+#endif
 
                     // find Array type
                     // TODO: should I mix use of Array and Array<T>?
@@ -10142,6 +10144,7 @@ class MLIRGenImpl
                     return mlir::Value();   
                 })
                 .Case<mlir_ts::ArrayType>([&](auto arrayType) { 
+#ifdef ARRAY_TYPE_AS_ARRAY_CLASS                    
                     if (auto genericClassTypeInfo = getGenericClassInfoByFullName("Array"))
                     {
                         auto classType = genericClassTypeInfo->classType;
@@ -10167,7 +10170,7 @@ class MLIRGenImpl
 
                         genContext.postponedMessages->clear();
                     }
-
+#endif
                     // find Array type
                     // TODO: should I mix use of Array and Array<T>?
                     // if (auto classInfo = getClassInfoByFullName("Array"))
