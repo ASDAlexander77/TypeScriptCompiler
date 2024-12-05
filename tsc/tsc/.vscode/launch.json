@@ -583,7 +583,7 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },             
         {
-            "name": "(Windows) tsc.exe - DefaultLib Compile (OBJ)",
+            "name": "(Windows) tsc.exe - DefaultLib Compile (DI) (OBJ)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
@@ -602,7 +602,7 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },     
         {
-            "name": "(Windows) tsc.exe - DefaultLib Compile 2 (OBJ)",
+            "name": "(Windows) tsc.exe - DefaultLib Compile (opt) (OBJ)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",

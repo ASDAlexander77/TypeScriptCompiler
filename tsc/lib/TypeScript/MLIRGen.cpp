@@ -5067,6 +5067,12 @@ class MLIRGenImpl
         return std::make_tuple(funcOp, funcProto, mlir::success(), funcProto->getIsGeneric());
     }
 
+    void resetScope() {
+        // we need to remove "this" reference when we generate generic class inside other function of class
+        symbolTable.insert("this", {mlir::Value(), {}});
+        //symbolTable.insert(THIS_ALIAS, {mlir::Value(), {}});
+    }
+
     mlir::LogicalResult discoverFunctionReturnTypeAndCapturedVars(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, StringRef name, SmallVector<mlir::Type> &argTypes,
         const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
@@ -12606,6 +12612,8 @@ class MLIRGenImpl
             return NewClassInstanceLogicAsOp(location, classInfo, stackAlloc, genContext);
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! new op (no method): " << typeOfInstance << "\n";);
+
         auto newOp = builder.create<mlir_ts::NewOp>(location, typeOfInstance, builder.getBoolAttr(stackAlloc));
         return V(newOp);
     }
@@ -15577,6 +15585,7 @@ class MLIRGenImpl
 
         // we need THIS in params
         SymbolTableScopeT varScope(symbolTable);
+        resetScope();   
 
         setProcessingState(newClassPtr, ProcessingStages::ProcessingStorageClass, genContext);
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, classGenContext)))
@@ -16634,7 +16643,7 @@ genContext);
         newClassPtr->extraMembersPost.push_back(generatedNew);
         */
 
-        //LLVM_DEBUG(printDebug(generatedNew););
+        LLVM_DEBUG(printDebug(generatedNew););
 
         newClassPtr->extraMembers.push_back(generatedNew);
 
@@ -23607,7 +23616,7 @@ genContext);
         if (showWarnings && symbolTable.count(name))
         {
             auto previousVariable = symbolTable.lookup(name).first;
-            if (previousVariable.getParentBlock() == value.getParentBlock())
+            if (previousVariable && previousVariable.getParentBlock() == value.getParentBlock())
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! WARNING redeclaration: " << name << " = [" << value << "]\n";);
                 // TODO: find out why you have redeclared vars
