@@ -1227,7 +1227,7 @@ class MLIRPropertyAccessCodeLogic
         return nullptr;
     }
 
-    template <typename T> mlir::Value Array(T arrayType)
+    template <typename T> mlir::Value Array(T arrayType, CompileOptions& compileOptions)
     {
         SmallVector<mlir::NamedAttribute> customAttrs;
         // customAttrs.push_back({MLIR_IDENT("__virtual"), MLIR_ATTR("true")});
@@ -1266,7 +1266,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
 
-        if (isArrayCustomMethod(propName))
+        if (compileOptions.enableBuiltins && compileOptions.noDefaultLib && isArrayCustomMethod(propName))
         {
             auto arrayType = dyn_cast<mlir_ts::ArrayType>(expression.getType());
             auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(expression.getType());

@@ -10136,7 +10136,7 @@ class MLIRGenImpl
                     //     return classAccess(classInfo->classType);
                     // }
 
-                    if (auto value = cl.Array(arrayType))
+                    if (auto value = cl.Array(arrayType, compileOptions))
                     {
                         return value;
                     }
@@ -10178,7 +10178,7 @@ class MLIRGenImpl
                     //     return classAccess(classInfo->classType);
                     // }
 
-                    if (auto value = cl.Array(arrayType))
+                    if (auto value = cl.Array(arrayType, compileOptions))
                     {
                         return value;
                     }
