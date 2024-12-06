@@ -16470,7 +16470,7 @@ class MLIRGenImpl
 
             auto fieldId = TupleFieldName(parameter->name, genContext);
 
-            auto [type, init, typeProvided] = getTypeAndInit(parameter, genContext);
+            auto [type, init, typeProvided] = evaluateTypeAndInit(parameter, genContext);
 
             LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "");
             if (mth.isNoneType(type))
