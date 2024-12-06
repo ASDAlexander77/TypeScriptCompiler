@@ -12808,6 +12808,7 @@ class MLIRGenImpl
             return NewArray(location, arrayType, newExpression->arguments, genContext);
         }
 
+#ifdef ARRAY_TYPE_AS_ARRAY_CLASS
         // to support custom Array<T>
         if (auto classType = dyn_cast<mlir_ts::ClassType>(value.getType()))
         {
@@ -12820,6 +12821,7 @@ class MLIRGenImpl
                 }
             }
         }
+#endif        
 
         if (auto interfaceType = dyn_cast<mlir_ts::InterfaceType>(value.getType()))
         {
