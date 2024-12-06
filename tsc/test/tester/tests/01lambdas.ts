@@ -1,5 +1,7 @@
 function reduce2<T, V = T>(this: T[], func: (v: V, t: T) => V, initial?: V) {
-    return 1;
+    let result = initial || 0;
+    for (const v of this) result = func(result, v);
+    return result;
 }
 
 function main() {
