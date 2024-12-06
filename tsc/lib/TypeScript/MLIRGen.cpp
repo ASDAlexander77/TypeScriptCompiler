@@ -20690,6 +20690,14 @@ genContext);
             pairs.insert({name, std::make_pair(typeParam, type)});
         }
 
+        // we need to test constaint to infer some types
+        auto constraint = typeParam->getConstraint();
+        if (constraint)
+        {
+            // we ignore the test result but we need infered types, constraint will be checked later
+            testConstraint(location, pairs, typeParam, type, genContext);
+        }
+
         return {mlir::success(), IsGeneric::False};
     }
 
@@ -20829,12 +20837,10 @@ genContext);
                             ? getType(typeParam->getDefault(), genContext) 
                             : typeParam->hasConstraint() 
                                 ? getType(typeParam->getConstraint(), genContext) 
-                                : typeParam->hasConstraint() 
-                                    ? getType(typeParam->getConstraint(), genContext) 
-                                    : mlir::Type();
+                                : mlir::Type();
             if (!type)
             {
-                return {mlir::success(), anyNamedGenericType};
+                continue;
             }
 
             auto name = typeParam->getName();
