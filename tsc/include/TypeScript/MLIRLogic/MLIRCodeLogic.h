@@ -1400,7 +1400,7 @@ class MLIRPropertyAccessCodeLogic
     {
         if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType()))
         {
-            return Class(classStorageType, mlir_ts::AccessLevel::Public);
+            return Class(classStorageType, mlir_ts::AccessLevel::Private);
         }
         else
         {
