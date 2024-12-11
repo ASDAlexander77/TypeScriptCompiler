@@ -16481,6 +16481,9 @@ class MLIRGenImpl
             }
 
             auto fieldId = TupleFieldName(parameter->name, genContext);
+            if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId)) {
+                isPrivate |= strAttr.getValue().starts_with("#");
+            }
 
             auto [type, init, typeProvided] = evaluateTypeAndInit(parameter, genContext);
 
@@ -16495,11 +16498,11 @@ class MLIRGenImpl
                 fieldId, 
                 type, 
                 false, 
-                isPublic 
-                    ? mlir_ts::AccessLevel::Public 
+                isPrivate 
+                    ? mlir_ts::AccessLevel::Private 
                     : isProtected 
                         ? mlir_ts::AccessLevel::Protected 
-                        : mlir_ts::AccessLevel::Private 
+                        : mlir_ts::AccessLevel::Public 
             });
         }
 
@@ -17876,6 +17879,13 @@ genContext);
             isVirtual = isForceVirtual;
         };
 
+        void updateAccessLevel()
+        {
+            if (StringRef(getName()).starts_with("#")) {
+                accessLevel = mlir_ts::AccessLevel::Private;
+            }
+        }
+
         bool isFunctionLike()
         {
             return classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
@@ -18074,6 +18084,8 @@ genContext);
         }
 
         assert (!classMethodMemberInfo.methodName.empty());
+
+        classMethodMemberInfo.updateAccessLevel();
 
         if (classMethodMemberInfo.isAbstract && !newClassPtr->isAbstract)
         {

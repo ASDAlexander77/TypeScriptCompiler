@@ -159,7 +159,7 @@ class MLIRCodeLogic
     }
 
     template <typename T>
-    std::pair<int, mlir::Type> TupleFieldTypeNoError(T tupleType, mlir::Attribute fieldId,
+    std::tuple<int, mlir::Type, mlir_ts::AccessLevel> TupleFieldTypeNoError(T tupleType, mlir::Attribute fieldId,
                                                      bool indexAccess = false)
     {
         auto fieldIndex = tupleType.getIndex(fieldId);
@@ -177,13 +177,16 @@ class MLIRCodeLogic
 
         if (notFound)
         {
-            return std::make_pair<>(-1, mlir::Type());
+            return {-1, mlir::Type(), mlir_ts::AccessLevel::Public};
         }
 
         // type
         auto elementType = tupleType.getType(fieldIndex);
 
-        return std::make_pair(fieldIndex, elementType);
+        // access level
+        auto accessLevel = tupleType.getAccessLevel(fieldIndex);
+
+        return {fieldIndex, elementType, accessLevel};
     }
 
     mlir::Type CaptureTypeStorage(llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> &capturedVars)
@@ -953,8 +956,7 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
-        auto fieldIndex = pair.first;
+        auto [fieldIndex, elementTypeForRef, accessLevel] = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
         if (fieldIndex < 0)
         {
             auto accessorValue = TupleGetSetAccessor(tupleType, fieldId);
@@ -968,8 +970,7 @@ class MLIRPropertyAccessCodeLogic
         }
 
         bool isBoundRef = false;
-        auto elementTypeForRef = pair.second;
-        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
+        auto elementType = mth.isBoundReference(elementTypeForRef, isBoundRef);
 
         auto refValue = getExprLoadRefValue(location);
         if (isBoundRef && !refValue)
@@ -1098,16 +1099,14 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
-        auto fieldIndex = pair.first;
+        auto [fieldIndex, elementTypeForRef, accessLevel] = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
         if (fieldIndex < 0)
         {
             return value;
         }
 
         bool isBoundRef = false;
-        auto elementTypeForRef = pair.second;
-        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
+        auto elementType = mth.isBoundReference(elementTypeForRef, isBoundRef);
 
         auto refValue = getExprLoadRefValue(location);
         if (isBoundRef && !refValue)
@@ -1373,8 +1372,7 @@ class MLIRPropertyAccessCodeLogic
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldTypeNoError(tupleType, fieldId);
-        auto fieldIndex = pair.first;
+        auto [fieldIndex, elementTypeForRef, accessLevel] = mcl.TupleFieldTypeNoError(tupleType, fieldId);
         if (fieldIndex < 0)
         {
             auto accessorValue = TupleGetSetAccessor(tupleType, fieldId);
@@ -1388,8 +1386,7 @@ class MLIRPropertyAccessCodeLogic
         }
 
         bool isBoundRef = false;
-        auto elementTypeForRef = pair.second;
-        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
+        auto elementType = mth.isBoundReference(elementTypeForRef, isBoundRef);
 
         auto refType = isBoundRef ? static_cast<mlir::Type>(mlir_ts::BoundRefType::get(elementTypeForRef))
                                   : static_cast<mlir::Type>(mlir_ts::RefType::get(elementTypeForRef));
@@ -1403,7 +1400,7 @@ class MLIRPropertyAccessCodeLogic
     {
         if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType()))
         {
-            return Class(classStorageType);
+            return Class(classStorageType, mlir_ts::AccessLevel::Public);
         }
         else
         {
@@ -1411,20 +1408,23 @@ class MLIRPropertyAccessCodeLogic
         }
     }
 
-    mlir::Value Class(mlir_ts::ClassStorageType classStorageType)
+    mlir::Value Class(mlir_ts::ClassStorageType classStorageType, mlir_ts::AccessLevel required)
     {
         MLIRCodeLogic mcl(builder);
 
         // resolve index
-        auto pair = mcl.TupleFieldTypeNoError(classStorageType, fieldId);
-        auto fieldIndex = pair.first;
+        auto [fieldIndex, elementTypeForRef, accessLevel] = mcl.TupleFieldTypeNoError(classStorageType, fieldId);
         if (fieldIndex < 0)
         {
             return mlir::Value();
         }
 
+        if (required < accessLevel) {
+            emitError(location, "Class member is not accessable");
+            return mlir::Value();
+        }
+
         bool isBoundRef = false;
-        auto elementTypeForRef = pair.second;
         auto elementType = elementTypeForRef;
         /* as this is class, we do not take reference to class as for object */
         // auto elementType = mcl.isBoundReference(pair.second,
