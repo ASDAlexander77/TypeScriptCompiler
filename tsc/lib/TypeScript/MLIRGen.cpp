@@ -3116,7 +3116,8 @@ class MLIRGenImpl
         {
 
             // create new type with added field
-            genContext.passResult->extraFieldsInThisContext.push_back({MLIRHelper::TupleFieldName(name, builder.getContext()), type});
+            genContext.passResult->extraFieldsInThisContext.push_back(
+                {MLIRHelper::TupleFieldName(name, builder.getContext()), type, false, mlir_ts::AccessLevel::Public});
             return mlir::Value();
         }
 
@@ -4424,7 +4425,7 @@ class MLIRGenImpl
 
         LLVM_DEBUG(dbgs() << "\n!! property " << fieldId << " mapped to type " << fieldType << "");
 
-        fieldInfos.push_back({fieldId, fieldType});
+        fieldInfos.push_back({fieldId, fieldType, false, mlir_ts::AccessLevel::Public});
 
         return mlir::success();
     }
@@ -13699,7 +13700,7 @@ class MLIRGenImpl
             SmallVector<mlir_ts::FieldInfo> fieldInfos;
             for (auto type : constTypes)
             {
-                fieldInfos.push_back({mlir::Attribute(), type});
+                fieldInfos.push_back({mlir::Attribute(), type, false, mlir_ts::AccessLevel::Public});
             }
 
             return V(
@@ -13723,7 +13724,7 @@ class MLIRGenImpl
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         for (auto val : values)
         {
-            fieldInfos.push_back({mlir::Attribute(), val.value.getType()});
+            fieldInfos.push_back({mlir::Attribute(), val.value.getType(), false, mlir_ts::AccessLevel::Public});
             arrayValues.push_back(val.value);
         }
 
@@ -13943,7 +13944,7 @@ class MLIRGenImpl
             auto type = funcType;
 
             values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
-            fieldInfos.push_back({fieldId, type});
+            fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
 
             if (getCaptureVarsMap().find(funcName) != getCaptureVarsMap().end())
             {
@@ -13957,7 +13958,7 @@ class MLIRGenImpl
 
         auto addFieldInfoToArrays = [&](mlir::Attribute fieldId, mlir::Type type) {
             values.push_back(builder.getUnitAttr());
-            fieldInfos.push_back({fieldId, type});
+            fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
         };
 
         auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue, mlir::Type receiverElementType) {
@@ -14004,7 +14005,7 @@ class MLIRGenImpl
             }
 
             values.push_back(value);
-            fieldInfos.push_back({fieldId, type});
+            fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
             if (!isConstValue)
             {
                 fieldsToSet.push_back({fieldId, itemValue});
@@ -15950,7 +15951,7 @@ class MLIRGenImpl
             auto fieldId = MLIRHelper::TupleFieldName(VTABLE_NAME, builder.getContext());
             if (fieldInfos.size() == 0 || fieldInfos.front().id != fieldId)
             {
-                fieldInfos.insert(fieldInfos.begin(), {fieldId, getOpaqueType()});
+                fieldInfos.insert(fieldInfos.begin(), {fieldId, getOpaqueType(), false, mlir_ts::AccessLevel::Public});
             }
         }
 
@@ -16145,7 +16146,7 @@ class MLIRGenImpl
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
                         auto fieldId = MLIRHelper::TupleFieldName(baseName, builder.getContext());
-                        fieldInfos.push_back({fieldId, baseClassType.getStorageType()});
+                        fieldInfos.push_back({fieldId, baseClassType.getStorageType(), false, mlir_ts::AccessLevel::Protected});
 
                         auto classInfo = getClassInfoByFullName(baseName);
                         if (std::find(baseClassInfos.begin(), baseClassInfos.end(), classInfo) == baseClassInfos.end())
@@ -16286,9 +16287,19 @@ class MLIRGenImpl
         return mlir::success();
     }    
 
+    mlir_ts::AccessLevel getAccessLevel(Node node) {
+        return hasModifier(node, SyntaxKind::PrivateKeyword) 
+                ? mlir_ts::AccessLevel::Private 
+                : hasModifier(node, SyntaxKind::ProtectedKeyword) 
+                    ? mlir_ts::AccessLevel::Protected 
+                    : mlir_ts::AccessLevel::Public;
+    }
+
     mlir::LogicalResult mlirGenClassDataFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos, 
                                                     PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
+        auto accessLevel = getAccessLevel(propertyDeclaration);
+
         auto name = propertyDeclaration->name;
         auto isAccessor = hasModifier(propertyDeclaration, SyntaxKind::AccessorKeyword);
         if (isAccessor)
@@ -16325,7 +16336,7 @@ class MLIRGenImpl
 #endif
         }
 
-        fieldInfos.push_back({fieldId, type});
+        fieldInfos.push_back({fieldId, type, false, accessLevel});
 
         // add accessor methods
         if (isAccessor)
@@ -16478,7 +16489,17 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            fieldInfos.push_back({fieldId, type});
+            fieldInfos.push_back(
+            {
+                fieldId, 
+                type, 
+                false, 
+                isPublic 
+                    ? mlir_ts::AccessLevel::Public 
+                    : isProtected 
+                        ? mlir_ts::AccessLevel::Protected 
+                        : mlir_ts::AccessLevel::Private 
+            });
         }
 
         return mlir::success();
@@ -17632,13 +17653,25 @@ genContext);
         {
             if (vtableRecord.isField)
             {
-                fields.push_back({vtableRecord.fieldInfo.id, mlir_ts::RefType::get(vtableRecord.fieldInfo.type)});
+                fields.push_back(
+                {
+                    vtableRecord.fieldInfo.id, 
+                    mlir_ts::RefType::get(vtableRecord.fieldInfo.type), 
+                    false, 
+                    mlir_ts::AccessLevel::Public
+                });
             }
             else
             {
-                fields.push_back({MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()),
-                                  vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getFunctionType()
-                                                                 : vtableRecord.methodInfo.funcType});
+                fields.push_back(
+                {
+                    MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()),
+                    vtableRecord.methodInfo.funcOp 
+                        ? vtableRecord.methodInfo.funcOp.getFunctionType() 
+                        : vtableRecord.methodInfo.funcType,
+                    false,
+                    mlir_ts::AccessLevel::Public
+                });
             }
         }
 
@@ -17653,20 +17686,37 @@ genContext);
         {
             if (vtableRecord.isInterfaceVTable)
             {
-                fields.push_back({MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()), getOpaqueType()});
+                fields.push_back(
+                {
+                    MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()), 
+                    getOpaqueType(),
+                    false,
+                    mlir_ts::AccessLevel::Public
+                });
             }
             else
             {
                 if (!vtableRecord.isStaticField)
                 {
-                    fields.push_back({MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()),
-                                      vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getFunctionType()
-                                                                     : vtableRecord.methodInfo.funcType});
+                    fields.push_back(
+                    {
+                        MLIRHelper::TupleFieldName(vtableRecord.methodInfo.name, builder.getContext()),
+                        vtableRecord.methodInfo.funcOp 
+                            ? vtableRecord.methodInfo.funcOp.getFunctionType()
+                            : vtableRecord.methodInfo.funcType,
+                        false,
+                        mlir_ts::AccessLevel::Public
+                    });
                 }
                 else
                 {
                     fields.push_back(
-                        {vtableRecord.staticFieldInfo.id, mlir_ts::RefType::get(vtableRecord.staticFieldInfo.type)});
+                    {
+                        vtableRecord.staticFieldInfo.id, 
+                        mlir_ts::RefType::get(vtableRecord.staticFieldInfo.type),
+                        false,
+                        mlir_ts::AccessLevel::Public
+                    });
                 }
             }
         }
@@ -21662,7 +21712,7 @@ genContext);
             // get string
             if (auto litType = dyn_cast<mlir_ts::LiteralType>(keyType))
             {
-                fields.push_back({ litType.getValue(), valueType });
+                fields.push_back({ litType.getValue(), valueType, false, mlir_ts::AccessLevel::Public });
             }
         };
 
@@ -22386,7 +22436,7 @@ genContext);
             if (auto literalType = dyn_cast<mlir_ts::LiteralType>(nameType))
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... name: " << literalType << " type: " << type << "\n";);
-                fields.push_back({literalType.getValue(), type});
+                fields.push_back({literalType.getValue(), type, false, mlir_ts::AccessLevel::Public});
             }
             else
             {
@@ -22401,7 +22451,7 @@ genContext);
                             auto mappedType = std::get<1>(pair);
 
                             LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... name: " << literalType << " type: " << mappedType << "\n";);
-                            fields.push_back({literalType.getValue(), mappedType});
+                            fields.push_back({literalType.getValue(), mappedType, false, mlir_ts::AccessLevel::Public});
                         }
                         else
                         {
@@ -22732,7 +22782,7 @@ genContext);
                     return {arrayMode, mlir::failure()};
                 }
 
-                types.push_back({TupleFieldName(namedTupleMember->name, genContext), type});
+                types.push_back({TupleFieldName(namedTupleMember->name, genContext), type, false, mlir_ts::AccessLevel::Public});
                 arrayMode = false;
             }
             else if (typeItem == SyntaxKind::LiteralType)
@@ -22752,7 +22802,7 @@ genContext);
 
                 if (arrayMode)
                 {
-                    types.push_back({builder.getIntegerAttr(builder.getI32Type(), index), constantOp.getType()});
+                    types.push_back({builder.getIntegerAttr(builder.getI32Type(), index), constantOp.getType(), false, mlir_ts::AccessLevel::Public});
                 }
 
                 index++;
@@ -22766,7 +22816,7 @@ genContext);
                     return {arrayMode, mlir::failure()};
                 }
 
-                types.push_back({attrVal, type});
+                types.push_back({attrVal, type, false, mlir_ts::AccessLevel::Public});
             }
 
             attrVal = mlir::Attribute();
@@ -22795,7 +22845,7 @@ genContext);
                 auto type = mcl.getEffectiveFunctionTypeForTupleField(originalType);
 
                 assert(type);
-                types.push_back({TupleFieldName(propertySignature->name, genContext), type});
+                types.push_back({TupleFieldName(propertySignature->name, genContext), type, false, mlir_ts::AccessLevel::Public});
             }
             else if (kind == SyntaxKind::MethodSignature)
             {
@@ -22807,7 +22857,7 @@ genContext);
                     return mlir::failure();
                 }
 
-                types.push_back({TupleFieldName(methodSignature->name, genContext), type});
+                types.push_back({TupleFieldName(methodSignature->name, genContext), type, false, mlir_ts::AccessLevel::Public});
             }
             else if (kind == SyntaxKind::ConstructSignature)
             {
@@ -22817,7 +22867,7 @@ genContext);
                     return mlir::failure();
                 }
 
-                types.push_back({MLIRHelper::TupleFieldName(NEW_CTOR_METHOD_NAME, builder.getContext()), type});
+                types.push_back({MLIRHelper::TupleFieldName(NEW_CTOR_METHOD_NAME, builder.getContext()), type, false, mlir_ts::AccessLevel::Public});
             }            
             else if (kind == SyntaxKind::IndexSignature)
             {
@@ -22827,8 +22877,8 @@ genContext);
                     return mlir::failure();
                 }
 
-                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, builder.getContext()), mth.getIndexGetFunctionType(type)});
-                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_SET_FIELD_NAME, builder.getContext()), mth.getIndexSetFunctionType(type)});
+                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_GET_FIELD_NAME, builder.getContext()), mth.getIndexGetFunctionType(type), false, mlir_ts::AccessLevel::Public});
+                types.push_back({MLIRHelper::TupleFieldName(INDEX_ACCESS_SET_FIELD_NAME, builder.getContext()), mth.getIndexSetFunctionType(type), false, mlir_ts::AccessLevel::Public});
             }
             else if (kind == SyntaxKind::CallSignature)
             {
@@ -22838,7 +22888,7 @@ genContext);
                     return mlir::failure();
                 }
 
-                types.push_back({MLIRHelper::TupleFieldName(CALL_FIELD_NAME, builder.getContext()), type});
+                types.push_back({MLIRHelper::TupleFieldName(CALL_FIELD_NAME, builder.getContext()), type, false, mlir_ts::AccessLevel::Public});
             }
             else
             {

@@ -192,9 +192,15 @@ class MLIRCodeLogic
         for (auto &varInfo : capturedVars)
         {
             auto &value = varInfo.getValue();
-            fields.push_back(mlir_ts::FieldInfo{MLIRHelper::TupleFieldName(value->getName(), context),
-                                                value->getReadWriteAccess() ? mlir_ts::RefType::get(value->getType())
-                                                                            : value->getType()});
+            fields.push_back(
+                mlir_ts::FieldInfo{
+                    MLIRHelper::TupleFieldName(value->getName(), context),
+                    value->getReadWriteAccess() 
+                        ? mlir_ts::RefType::get(value->getType()) 
+                        : value->getType(),
+                    false,
+                    mlir_ts::AccessLevel::Public
+                });
         }
 
         auto lambdaType = mlir_ts::TupleType::get(context, fields);

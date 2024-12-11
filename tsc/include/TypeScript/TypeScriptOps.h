@@ -26,21 +26,31 @@ namespace typescript
 
 /// FieldInfo represents a field in the TupleType(StructType) data type. It is used as a
 /// parameter in TestTypeDefs.td.
+
+enum AccessLevel
+{
+    Public, // default
+    Protected,
+    Private
+};
+
 struct FieldInfo
 {
     Attribute id;
     Type type;
     bool isConditional;
+    AccessLevel accessLevel;
 
     FieldInfo() = default;
-    FieldInfo(Attribute id, Type type) : id{id}, type{type}, isConditional{false} {};
-    FieldInfo(Attribute id, Type type, bool isConditional) : id{id}, type{type}, isConditional{isConditional} {};
+    //FieldInfo(Attribute id, Type type) : id{id}, type{type}, isConditional{false}, accessLevel{AccessLevel::Public} {};
+    //FieldInfo(Attribute id, Type type, bool isConditional) : id{id}, type{type}, isConditional{isConditional}, accessLevel{AccessLevel::Public} {};
+    FieldInfo(Attribute id, Type type, bool isConditional, AccessLevel accessLevel) : id{id}, type{type}, isConditional{isConditional}, accessLevel{accessLevel} {};
 
     // Custom allocation called from generated constructor code
     FieldInfo allocateInto(TypeStorageAllocator &alloc) const
     {
         // return FieldInfo{alloc.copyInto(name), type};
-        return FieldInfo{id, type, false};
+        return FieldInfo{id, type, isConditional, accessLevel};
     }
 };
 

@@ -259,12 +259,18 @@ struct InterfaceInfo
 
         for (auto &method : methods)
         {
-            tupleFields.push_back({MLIRHelper::TupleFieldName(method.name, context), method.funcType, false});
+            tupleFields.push_back(
+            {
+                MLIRHelper::TupleFieldName(method.name, context), 
+                method.funcType, 
+                method.isConditional, 
+                mlir_ts::AccessLevel::Public
+            });
         }
 
         for (auto &field : fields)
         {
-            tupleFields.push_back({field.id, field.type, false});
+            tupleFields.push_back({field.id, field.type, false, mlir_ts::AccessLevel::Public});
         }
 
         return mlir::success();
@@ -360,7 +366,7 @@ struct InterfaceInfo
             {
                 if (field.isConditional)
                 {
-                    mlir_ts::FieldInfo missingField{field.id, field.type};
+                    mlir_ts::FieldInfo missingField{field.id, field.type, false, mlir_ts::AccessLevel::Public};
                     field.virtualIndex = -1;
                     vtable.push_back({missingField, true});
                 }

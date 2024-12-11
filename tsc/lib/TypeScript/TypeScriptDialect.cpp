@@ -87,7 +87,7 @@ Type mlir_ts::ConstTupleType::parse(AsmParser &parser)
             return Type();
         if (parser.parseRBrace())
             return Type();
-        parameters.push_back(FieldInfo{id, type, false});
+        parameters.push_back(FieldInfo{id, type, false, mlir_ts::AccessLevel::Public});
         if (parser.parseOptionalComma())
             break;
     }
@@ -134,7 +134,7 @@ Type mlir_ts::TupleType::parse(AsmParser &parser)
             return Type();
         if (parser.parseRBrace())
             return Type();
-        parameters.push_back(FieldInfo{id, type});
+        parameters.push_back(FieldInfo{id, type, false, mlir_ts::AccessLevel::Public});
         if (parser.parseOptionalComma())
             break;
     }
