@@ -96,6 +96,7 @@ struct StaticFieldInfo
     mlir::Type type;
     mlir::StringRef globalVariableName;
     int virtualIndex;
+    mlir_ts::AccessLevel accessLevel;
 };
 
 struct MethodInfo
@@ -110,6 +111,7 @@ struct MethodInfo
     bool isAbstract;
     int virtualIndex;
     int orderWeight;
+    mlir_ts::AccessLevel accessLevel;
 };
 
 struct GenericMethodInfo
@@ -119,6 +121,7 @@ struct GenericMethodInfo
     mlir_ts::FunctionType funcType;
     FunctionPrototypeDOM::TypePtr funcProto;
     bool isStatic;
+    mlir_ts::AccessLevel accessLevel;
 };
 
 struct VirtualMethodOrInterfaceVTableInfo

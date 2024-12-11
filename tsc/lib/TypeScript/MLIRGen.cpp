@@ -5723,7 +5723,7 @@ class MLIRGenImpl
                 genContext);
         }
 
-        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, mlir_ts::AccessLevel::Public);
 
         return mlir::success();
     }    
@@ -16350,7 +16350,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenClassStaticFieldMember(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
-        auto isPublic = hasModifier(propertyDeclaration, SyntaxKind::PublicKeyword);
+        auto accessLevel = getAccessLevel(propertyDeclaration);
+        auto isPublic = accessLevel == mlir_ts::AccessLevel::Public;
         auto name = propertyDeclaration->name;
 
         auto isAccessor = hasModifier(propertyDeclaration, SyntaxKind::AccessorKeyword);
@@ -16399,7 +16400,7 @@ class MLIRGenImpl
             genContext);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, accessLevel);
 
         // add accessor methods
         if (isAccessor)
@@ -16460,7 +16461,7 @@ class MLIRGenImpl
         }
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, mlir_ts::AccessLevel::Public);
 
         return mlir::success();
     }    
@@ -16599,7 +16600,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenForwardDeclaration(const std::string &funcName, mlir_ts::FunctionType funcType,
                                                   bool isStatic, bool isVirtual, bool isAbstract,
-                                                  ClassInfo::TypePtr newClassPtr, int orderWeight, const GenContext &genContext)
+                                                  ClassInfo::TypePtr newClassPtr, int orderWeight, 
+                                                  mlir_ts::AccessLevel accessLevel, const GenContext &genContext)
     {
         if (newClassPtr->getMethodIndex(funcName) < 0)
         {
@@ -16607,8 +16609,18 @@ class MLIRGenImpl
         }
 
         mlir_ts::FuncOp dummyFuncOp;
-        newClassPtr->methods.push_back({funcName, funcType, dummyFuncOp, isStatic,
-                                        isVirtual || isAbstract, isAbstract, -1, orderWeight});
+        newClassPtr->methods.push_back(
+        {
+            funcName, 
+            funcType, 
+            dummyFuncOp, 
+            isStatic,
+            isVirtual || isAbstract, 
+            isAbstract, 
+            -1, 
+            orderWeight, 
+            accessLevel
+        });        
         return mlir::success();
     }
 
@@ -16787,12 +16799,13 @@ genContext);
             declarationMode = declarationModeStore;
         }
 
-        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, mlir_ts::AccessLevel::Protected);
 
         return mlir::success();    
     }
 
-    void pushStaticField(llvm::SmallVector<StaticFieldInfo> &staticFieldInfos, mlir::Attribute fieldId, mlir::Type staticFieldType, StringRef fullClassStaticFieldName, int index)
+    void pushStaticField(llvm::SmallVector<StaticFieldInfo> &staticFieldInfos, mlir::Attribute fieldId, mlir::Type staticFieldType, 
+        StringRef fullClassStaticFieldName, int index, mlir_ts::AccessLevel accessLevel)
     {
         if (!llvm::any_of(staticFieldInfos, [&](auto& field) 
             { 
@@ -16810,7 +16823,7 @@ genContext);
                 return foundField; 
             }))
         {
-            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, index});
+            staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, index, accessLevel});
         }        
     }
 
@@ -16850,7 +16863,7 @@ genContext);
                 genContext);
         }
 
-        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, mlir_ts::AccessLevel::Public);
 
         return mlir::success();
     }
@@ -17576,7 +17589,17 @@ genContext);
 
             auto &methodInfos = newClassPtr->methods;
             methodInfos.push_back(
-                {fullClassStaticName.str(), funcType, funcOp, true, false, false, -1, posIndex});
+            {
+                fullClassStaticName.str(), 
+                funcType, 
+                funcOp, 
+                true, 
+                false, 
+                false, 
+                -1, 
+                posIndex,
+                mlir_ts::AccessLevel::Public
+            });
         }        
 
         return fullClassStaticName.str();
@@ -17869,14 +17892,24 @@ genContext);
             funcOp = funcOp_;
         }
 
-        bool registerClassMethodMember(mlir::Location location, int orderWeight)
+        bool registerClassMethodMember(mlir::Location location, int orderWeight, mlir_ts::AccessLevel accessLevel)
         {
             auto &methodInfos = newClassPtr->methods;
 
             if (newClassPtr->getMethodIndex(methodName) < 0)
             {
                 methodInfos.push_back(
-                    {methodName, getFuncType(), funcOp, isStatic, isAbstract || isVirtual, isAbstract, -1, orderWeight});
+                {
+                    methodName, 
+                    getFuncType(), 
+                    funcOp, 
+                    isStatic, 
+                    isAbstract || isVirtual, 
+                    isAbstract, 
+                    -1, 
+                    orderWeight, 
+                    accessLevel
+                });
             }
 
             if (propertyName.size() > 0)
@@ -18016,6 +18049,8 @@ genContext);
         }
 
         auto location = loc(classMember);
+
+        auto accessLevel = getAccessLevel(classMember);        
         auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
         if (mlir::failed(getMethodNameOrPropertyName(
             newClassPtr->isStatic,
@@ -18087,7 +18122,7 @@ genContext);
         if (funcOp)
         {
             classMethodMemberInfo.setFuncOp(funcOp);
-            if (classMethodMemberInfo.registerClassMethodMember(loc(funcLikeDeclaration), orderWeight))
+            if (classMethodMemberInfo.registerClassMethodMember(loc(funcLikeDeclaration), orderWeight, accessLevel))
             {
                 funcLikeDeclaration->processed = true;
                 return mlir::success();
@@ -18217,7 +18252,7 @@ genContext);
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
-            classMethodMemberInfo.registerClassMethodMember(location, orderWeight);
+            classMethodMemberInfo.registerClassMethodMember(location, orderWeight, mlir_ts::AccessLevel::Public);
             return mlir::success();
         }
 
