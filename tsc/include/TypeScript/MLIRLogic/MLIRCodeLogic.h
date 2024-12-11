@@ -1420,7 +1420,7 @@ class MLIRPropertyAccessCodeLogic
         }
 
         if (required < accessLevel) {
-            emitError(location, "Class member is not accessable");
+            emitError(location, "Class member '") << fieldId << "' is not accessable";
             return mlir::Value();
         }
 

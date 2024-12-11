@@ -16308,6 +16308,13 @@ class MLIRGenImpl
         }
         
         auto fieldId = TupleFieldName(name, genContext);
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId)) 
+        {
+            if (strAttr.getValue().starts_with("#"))
+            {
+                accessLevel = mlir_ts::AccessLevel::Private;
+            }
+        }
 
         auto [type, init, typeProvided] = evaluateTypeAndInit(propertyDeclaration, genContext);
         if (init)
@@ -16316,7 +16323,7 @@ class MLIRGenImpl
             type = mth.wideStorageType(type);
         }
 
-        LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "");
+        LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << " access level: " << accessLevel);
 
         auto hasType = !!propertyDeclaration->type;
         if (mth.isNoneType(type))
@@ -16362,6 +16369,15 @@ class MLIRGenImpl
         }
 
         auto fieldId = TupleFieldName(name, genContext);
+
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId)) 
+        {
+            if (strAttr.getValue().starts_with("#"))
+            {
+                isPublic = false;
+                accessLevel = mlir_ts::AccessLevel::Private;
+            }
+        }
 
         // process static field - register global
         auto fullClassStaticFieldName =
