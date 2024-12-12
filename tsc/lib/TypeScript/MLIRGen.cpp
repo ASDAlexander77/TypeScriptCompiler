@@ -10710,6 +10710,14 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
+        // remove funcs if access level is not high
+        if (getFuncOp && accessingFromLevel < accessorInfo.getAccessLevel) {
+            getFuncOp = {};
+        }        
+        if (setFuncOp && accessingFromLevel < accessorInfo.setAccessLevel) {
+            setFuncOp = {};
+        }        
+
         if (accessorInfo.isStatic)
         {
             auto accessorOp = builder.create<mlir_ts::AccessorOp>(
@@ -10755,7 +10763,13 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        // TODO: finish access check for get/set methods
+        // remove funcs if access level is not high
+        if (getFuncOp && accessingFromLevel < indexInfo.getAccessLevel) {
+            getFuncOp = {};
+        }        
+        if (setFuncOp && accessingFromLevel < indexInfo.setAccessLevel) {
+            setFuncOp = {};
+        }        
 
         auto indexResultType = indexInfo.indexSignature.getResult(0);
         auto argumentType = indexInfo.indexSignature.getInput(0);
