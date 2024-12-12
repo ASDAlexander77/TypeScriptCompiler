@@ -1,4 +1,18 @@
-class Cls1
+interface IFace1 
+{
+    v_public: int;
+    v_public_by_default: int;
+    v_protected: int;
+}
+
+interface IFace2
+{
+    v_public: int;
+    v_public_by_default: int;
+    //v_protected: int;
+}
+
+class Cls1 implements IFace1
 {
     #v_privatefield = 20;
     private v_private = 25;
@@ -11,7 +25,7 @@ class Cls1
     protected print() {
         this.Value = 12;
 
-        //this[11] = "asd";
+        this[11] = "asd";
 
         print(
             this.v_public_by_default, 
@@ -89,6 +103,12 @@ function main() {
 
     //print(Cls1.#stat);
 
+    const iface1: IFace1 = cls1;
+    print ("iface1", iface1.v_public, iface1.v_protected);
+
+    const iface2: IFace2 = cls1;
+    print ("iface2", iface2.v_public/*, iface2.v_protected*/);
+   
     print ("done.");
 }
   
