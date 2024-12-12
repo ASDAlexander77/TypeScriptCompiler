@@ -3648,7 +3648,10 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    createGlobalVariableInitialization(location, globalOp, variableDeclarationInfo, genContext);
+                    if (mlir::failed(createGlobalVariableInitialization(location, globalOp, variableDeclarationInfo, genContext)))
+                    {
+                        return mlir::failure();
+                    }
                 }
 
                 if (variableDeclarationInfo.isUsed)
@@ -17556,7 +17559,7 @@ genContext);
 
         // register global
         auto fullClassInterfaceVTableFieldName = interfaceVTableNameForClass(newClassPtr, newInterfacePtr);
-        registerVariable(
+        auto registeredType = registerVariable(
             location, fullClassInterfaceVTableFieldName, true, VariableType::Var,
             [&](mlir::Location location, const GenContext &genContext) {
                 // build vtable from names of methods
@@ -17575,6 +17578,14 @@ genContext);
                         auto classNull = cast(location, newClassPtr->classType, nullObj, genContext);
                         auto fieldValue = mlirGenPropertyAccessExpression(location, classNull,
                                                                           methodOrField.fieldInfo.id, genContext);
+                        if (!fieldValue)
+                        {
+                            emitError(location) << "can't find field (or it is inaccessible): " << methodOrField.fieldInfo.id
+                                                << " in interface: " << newInterfacePtr->fullName
+                                                << " for class: " << newClassPtr->fullName;
+                            return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::No};                            
+                        }
+
                         auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
                         if (!fieldRef)
                         {
@@ -17608,7 +17619,7 @@ genContext);
             },
             genContext);
 
-        return mlir::success();
+        return registeredType ? mlir::success() : mlir::failure();
     }
 
     MethodInfo *generateSynthMethodToCallNewCtor(mlir::Location location, ClassInfo::TypePtr newClassPtr, InterfaceInfo::TypePtr newInterfacePtr, 
