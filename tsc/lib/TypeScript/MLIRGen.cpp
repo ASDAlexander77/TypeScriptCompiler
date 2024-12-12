@@ -10090,7 +10090,7 @@ class MLIRGenImpl
         // class member access
         auto classAccessWithObject = [&](mlir_ts::ClassType classType, mlir::Value objectValue) {
 
-            LLVM_DEBUG(llvm::dbgs() << "\n...field: \t" << cl.getName(););
+            LLVM_DEBUG(llvm::dbgs() << "\n\t...field: \t" << cl.getName(););
             auto accessingFromLevel = detectAccessLevel(classType, genContext);
             LLVM_DEBUG(llvm::dbgs() << "\n\t = Accessing from level '" << accessingFromLevel << "'\n\n";);
 
@@ -10257,7 +10257,7 @@ class MLIRGenImpl
                     return mlirGen(location, name, genContext);
                 })
                 .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
-                    LLVM_DEBUG(llvm::dbgs() << "\n...field: \t" << cl.getName(););
+                    LLVM_DEBUG(llvm::dbgs() << "\n\t...field: \t" << cl.getName(););
                     auto accessingFromLevel = detectAccessLevel(classStorageType, genContext);
                     LLVM_DEBUG(llvm::dbgs() << "\n\t = Accessing from level '" << accessingFromLevel << "'\n\n";);
 
@@ -10846,7 +10846,10 @@ class MLIRGenImpl
         // indexer access
         if (name == INDEX_ACCESS_FIELD_NAME)
         {
-            return ClassIndexAccess(classInfo, location, thisValue, argument, accessingFromLevel, genContext);
+            if (!classInfo->indexes.empty())
+            {
+                return ClassIndexAccess(classInfo, location, thisValue, argument, accessingFromLevel, genContext);
+            }
         }
 
         auto staticFieldIndex = classInfo->getStaticFieldIndex(
@@ -10879,8 +10882,10 @@ class MLIRGenImpl
 
         for (auto [index, baseClass] : enumerate(classInfo->baseClasses))
         {
+            auto effectiveAccessingFromLevel = accessingFromLevel == mlir_ts::AccessLevel::Private 
+                ? mlir_ts::AccessLevel::Protected : accessingFromLevel;
             auto value = ClassBaseClassAccess(classInfo, baseClass, index, location, 
-                thisValue, name, argument, accessingFromLevel, genContext);
+                thisValue, name, argument, effectiveAccessingFromLevel, genContext);
             if (value)
             {
                 return value;
@@ -18040,7 +18045,7 @@ genContext);
 
             if (newClassPtr->indexes.size() > 0)
             {
-                if (methodName == "get")
+                if (methodName == INDEX_ACCESS_GET_FIELD_NAME)
                 {
                     auto &indexer = newClassPtr->indexes.front();
                     auto getFuncType = funcOp.getFunctionType();
@@ -18059,7 +18064,7 @@ genContext);
                     indexer.get = funcOp;
                     indexer.getAccessLevel = accessLevel;
                 }
-                else if (methodName == "set")
+                else if (methodName == INDEX_ACCESS_SET_FIELD_NAME)
                 {
                     auto &indexer = newClassPtr->indexes.front();
                     auto setFuncType = funcOp.getFunctionType();
