@@ -148,6 +148,8 @@ struct AccessorInfo
     bool isStatic;
     bool isVirtual;
     bool isAbstract;
+    mlir_ts::AccessLevel getAccessLevel;
+    mlir_ts::AccessLevel setAccessLevel;
 };
 
 struct IndexInfo
@@ -155,6 +157,8 @@ struct IndexInfo
     mlir_ts::FunctionType indexSignature;
     mlir_ts::FuncOp get;
     mlir_ts::FuncOp set;
+    mlir_ts::AccessLevel getAccessLevel;
+    mlir_ts::AccessLevel setAccessLevel;
 };
 
 struct InterfaceFieldInfo

@@ -10097,7 +10097,7 @@ class MLIRGenImpl
             }
 
             return ClassMembers(location, objectValue, classType.getName().getValue(), name, 
-                false, argument, genContext);
+                false, argument, accessingFromLevel, genContext);
         };
 
         auto classAccess = [&](mlir_ts::ClassType classType) {
@@ -10264,7 +10264,7 @@ class MLIRGenImpl
                     }
 
                     return ClassMembers(location, objectValue, 
-                        classStorageType.getName().getValue(), name, true, argument, genContext);
+                        classStorageType.getName().getValue(), name, true, argument, accessingFromLevel, genContext);
                 })
                 .Case<mlir_ts::ClassType>(classAccess)
                 .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
@@ -10413,7 +10413,7 @@ class MLIRGenImpl
     }
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, mlir::StringRef classFullName,
-                             mlir::StringRef name, bool baseClass, mlir::Value argument, const GenContext &genContext)
+                             mlir::StringRef name, bool baseClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
     {
         auto classInfo = getClassInfoByFullName(classFullName);
         if (!classInfo)
@@ -10430,7 +10430,7 @@ class MLIRGenImpl
         }
 
         // static field access
-        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, argument, genContext);
+        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, argument, accessingFromLevel, genContext);
         if (!value)
         {
             emitError(location, "Class member '") << name << "' can't be found";
@@ -10464,9 +10464,14 @@ class MLIRGenImpl
     }
 
     mlir::Value ClassStaticFieldAccess(ClassInfo::TypePtr classInfo, 
-            mlir::Location location, mlir::Value thisValue, int staticFieldIndex, const GenContext &genContext) {
+            mlir::Location location, mlir::Value thisValue, int staticFieldIndex, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext) {
 
         auto fieldInfo = classInfo->staticFields[staticFieldIndex];
+        if (accessingFromLevel < fieldInfo.accessLevel) {
+            emitError(location, "Class member ") << fieldInfo.id << " is not accessable";
+            return mlir::Value();
+        }
+
 #ifdef ADD_STATIC_MEMBERS_TO_VTABLE
         if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>() || classInfo->isStatic)
         {
@@ -10509,11 +10514,16 @@ class MLIRGenImpl
     }
 
     mlir::Value ClassMethodAccess(ClassInfo::TypePtr classInfo, 
-            mlir::Location location, mlir::Value thisValue, int methodIndex, bool isSuperClass, const GenContext &genContext) {
+            mlir::Location location, mlir::Value thisValue, int methodIndex, bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext) {
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! method index access: " << methodIndex << "\n";);
 
         auto methodInfo = classInfo->methods[methodIndex];
+        if (accessingFromLevel < methodInfo.accessLevel) {
+            emitError(location, "Class member ") << methodInfo.name << " is not accessable";
+            return mlir::Value();
+        }
+
         auto funcOp = methodInfo.funcOp;
         auto effectiveFuncType = funcOp.getFunctionType();
 
@@ -10636,8 +10646,12 @@ class MLIRGenImpl
 
     mlir::Value ClassGenericMethodAccess(ClassInfo::TypePtr classInfo, 
             mlir::Location location, mlir::Value thisValue, int genericMethodIndex, 
-            bool isSuperClass, const GenContext &genContext) {
+            bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext) {
         auto genericMethodInfo = classInfo->staticGenericMethods[genericMethodIndex];
+        if (accessingFromLevel < genericMethodInfo.accessLevel) {
+            emitError(location, "Class member ") << genericMethodInfo.name << " is not accessable";
+            return mlir::Value();
+        }
 
         auto paramsArray = genericMethodInfo.funcProto->getParams();
         auto explicitThis = paramsArray.size() > 0 && paramsArray.front()->getName() == THIS_NAME;
@@ -10663,9 +10677,12 @@ class MLIRGenImpl
     }
 
     mlir::Value ClassAccessorAccess(ClassInfo::TypePtr classInfo, 
-            mlir::Location location, mlir::Value thisValue, int accessorIndex, const GenContext &genContext) {
+            mlir::Location location, mlir::Value thisValue, int accessorIndex, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext) {
 
         auto accessorInfo = classInfo->accessors[accessorIndex];
+
+        // TODO: finish access check for get/set methods
+
         auto getFuncOp = accessorInfo.get;
         auto setFuncOp = accessorInfo.set;
         mlir::Type accessorResultType;
@@ -10717,7 +10734,7 @@ class MLIRGenImpl
 
     // TODO: why isSuperClass is not used here?
     mlir::Value ClassIndexAccess(ClassInfo::TypePtr classInfo, 
-            mlir::Location location, mlir::Value thisValue, mlir::Value argument, const GenContext &genContext) {
+            mlir::Location location, mlir::Value thisValue, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext) {
 
         if (classInfo->indexes.size() == 0)
         {
@@ -10734,6 +10751,8 @@ class MLIRGenImpl
             emitError(location) << "can't resolve type of indexer";
             return mlir::Value();
         }
+
+        // TODO: finish access check for get/set methods
 
         auto indexResultType = indexInfo.indexSignature.getResult(0);
         auto argumentType = indexInfo.indexSignature.getInput(0);
@@ -10752,7 +10771,7 @@ class MLIRGenImpl
     }
 
     mlir::Value ClassBaseClassAccess(ClassInfo::TypePtr classInfo, ClassInfo::TypePtr baseClass, int index,
-            mlir::Location location, mlir::Value thisValue, StringRef name, mlir::Value argument, const GenContext &genContext) {
+            mlir::Location location, mlir::Value thisValue, StringRef name, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext) {
 
         // first base is "super."
         if (index == 0 && name == SUPER_NAME)
@@ -10762,7 +10781,7 @@ class MLIRGenImpl
             return value;
         }
 
-        auto value = ClassMembers(location, thisValue, baseClass, name, true, argument, genContext);
+        auto value = ClassMembers(location, thisValue, baseClass, name, true, argument, accessingFromLevel, genContext);
         if (value)
         {
             return value;
@@ -10801,7 +10820,7 @@ class MLIRGenImpl
     }    
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
-                             mlir::StringRef name, bool isSuperClass, mlir::Value argument, const GenContext &genContext)
+                             mlir::StringRef name, bool isSuperClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
     {
         assert(classInfo);
 
@@ -10810,41 +10829,41 @@ class MLIRGenImpl
         // indexer access
         if (name == INDEX_ACCESS_FIELD_NAME)
         {
-            return ClassIndexAccess(classInfo, location, thisValue, argument, genContext);
+            return ClassIndexAccess(classInfo, location, thisValue, argument, accessingFromLevel, genContext);
         }
 
         auto staticFieldIndex = classInfo->getStaticFieldIndex(
             MLIRHelper::TupleFieldName(name, builder.getContext()));
         if (staticFieldIndex >= 0)
         {
-            return ClassStaticFieldAccess(classInfo, location, thisValue, staticFieldIndex, genContext);
+            return ClassStaticFieldAccess(classInfo, location, thisValue, staticFieldIndex, accessingFromLevel, genContext);
         }
 
         // check method access
         auto methodIndex = classInfo->getMethodIndex(name);
         if (methodIndex >= 0)
         {
-            return ClassMethodAccess(classInfo, location, thisValue, methodIndex, isSuperClass, genContext);
+            return ClassMethodAccess(classInfo, location, thisValue, methodIndex, isSuperClass, accessingFromLevel, genContext);
         }
 
         // static generic methods
         auto genericMethodIndex = classInfo->getGenericMethodIndex(name);
         if (genericMethodIndex >= 0)
         {        
-            return ClassGenericMethodAccess(classInfo, location, thisValue, genericMethodIndex, isSuperClass, genContext);
+            return ClassGenericMethodAccess(classInfo, location, thisValue, genericMethodIndex, isSuperClass, accessingFromLevel, genContext);
         }        
 
         // check accessor
         auto accessorIndex = classInfo->getAccessorIndex(name);
         if (accessorIndex >= 0)
         {
-            return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, genContext);
+            return ClassAccessorAccess(classInfo, location, thisValue, accessorIndex, accessingFromLevel, genContext);
         }
 
         for (auto [index, baseClass] : enumerate(classInfo->baseClasses))
         {
             auto value = ClassBaseClassAccess(classInfo, baseClass, index, location, 
-                thisValue, name, argument, genContext);
+                thisValue, name, argument, accessingFromLevel, genContext);
             if (value)
             {
                 return value;
