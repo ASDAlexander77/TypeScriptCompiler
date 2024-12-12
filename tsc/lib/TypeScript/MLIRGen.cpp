@@ -5666,6 +5666,13 @@ class MLIRGenImpl
             || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword)
             || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::IsPublic) == InternalFlags::IsPublic)
             || funcProto->getName() == MAIN_ENTRY_NAME;
+        
+        // access by name
+        if (funcProto->getName().starts_with("#"))
+        {
+            isPublic = false;
+        }
+
         if (isPublic)
         {
             funcOp.setPublic();
@@ -10096,7 +10103,7 @@ class MLIRGenImpl
                 return value;
             }
 
-            return ClassMembers(location, objectValue, classType.getName().getValue(), name, 
+            return ClassMembersAccess(location, objectValue, classType.getName().getValue(), name, 
                 false, argument, accessingFromLevel, genContext);
         };
 
@@ -10263,7 +10270,7 @@ class MLIRGenImpl
                         return value;
                     }
 
-                    return ClassMembers(location, objectValue, 
+                    return ClassMembersAccess(location, objectValue, 
                         classStorageType.getName().getValue(), name, true, argument, accessingFromLevel, genContext);
                 })
                 .Case<mlir_ts::ClassType>(classAccess)
@@ -10412,7 +10419,7 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
-    mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, mlir::StringRef classFullName,
+    mlir::Value ClassMembersAccess(mlir::Location location, mlir::Value thisValue, mlir::StringRef classFullName,
                              mlir::StringRef name, bool baseClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
     {
         auto classInfo = getClassInfoByFullName(classFullName);
@@ -10430,7 +10437,7 @@ class MLIRGenImpl
         }
 
         // static field access
-        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, argument, accessingFromLevel, genContext);
+        auto value = ClassMembersAccess(location, thisValue, classInfo, name, baseClass, argument, accessingFromLevel, genContext);
         if (!value)
         {
             emitError(location, "Class member '") << name << "' can't be found";
@@ -10781,7 +10788,7 @@ class MLIRGenImpl
             return value;
         }
 
-        auto value = ClassMembers(location, thisValue, baseClass, name, true, argument, accessingFromLevel, genContext);
+        auto value = ClassMembersAccess(location, thisValue, baseClass, name, true, argument, accessingFromLevel, genContext);
         if (value)
         {
             return value;
@@ -10819,7 +10826,7 @@ class MLIRGenImpl
         return mlir::Value();
     }    
 
-    mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
+    mlir::Value ClassMembersAccess(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo,
                              mlir::StringRef name, bool isSuperClass, mlir::Value argument, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext)
     {
         assert(classInfo);
@@ -18209,7 +18216,7 @@ genContext);
             //MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
         }
 
-        if (newClassPtr->isPublic && hasModifier(classMember, SyntaxKind::PublicKeyword))
+        if (newClassPtr->isPublic && !hasModifier(classMember, SyntaxKind::PrivateKeyword))
         {
             funcLikeDeclaration->internalFlags |= InternalFlags::IsPublic;
         }
