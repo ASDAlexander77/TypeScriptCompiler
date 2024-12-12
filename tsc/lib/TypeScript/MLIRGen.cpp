@@ -10051,7 +10051,26 @@ class MLIRGenImpl
 
         // class member access
         auto classAccessWithObject = [&](mlir_ts::ClassType classType, mlir::Value objectValue) {
-            if (auto value = cl.Class(classType))
+
+            auto accessingFromLevel = mlir_ts::AccessLevel::Public;
+            if (genContext.thisType) {
+                if (genContext.thisType == classType) {
+                    accessingFromLevel = mlir_ts::AccessLevel::Private;
+                } else {
+                    if (auto thisClassType = dyn_cast<mlir_ts::ClassType>(genContext.thisType)) 
+                    {
+                        // check if protected level
+                        if (auto classInfo = getClassInfoByFullName(thisClassType.getName().getValue()))
+                        {
+                            if (classInfo->hasBase(classType)) {
+                                accessingFromLevel = mlir_ts::AccessLevel::Protected;
+                            }
+                        }                    
+                    }
+                }
+            }
+
+            if (auto value = cl.Class(classType, accessingFromLevel))
             {
                 return value;
             }

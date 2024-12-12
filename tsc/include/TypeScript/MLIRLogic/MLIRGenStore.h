@@ -787,6 +787,19 @@ struct ClassInfo
         return true;
     }
 
+    auto hasBase(mlir_ts::ClassType classType) -> bool
+    {
+        for (auto &base : baseClasses)
+        {
+            if (base->classType == classType || base->hasBase(classType))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// Iterate over the held elements.
     using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
 

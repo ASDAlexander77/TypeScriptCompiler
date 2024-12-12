@@ -1396,11 +1396,11 @@ class MLIRPropertyAccessCodeLogic
         return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
     }
 
-    mlir::Value Class(mlir_ts::ClassType classType)
+    mlir::Value Class(mlir_ts::ClassType classType, mlir_ts::AccessLevel accessingFromLevel)
     {
         if (auto classStorageType = dyn_cast<mlir_ts::ClassStorageType>(classType.getStorageType()))
         {
-            return Class(classStorageType, mlir_ts::AccessLevel::Private);
+            return Class(classStorageType, accessingFromLevel);
         }
         else
         {
@@ -1408,7 +1408,7 @@ class MLIRPropertyAccessCodeLogic
         }
     }
 
-    mlir::Value Class(mlir_ts::ClassStorageType classStorageType, mlir_ts::AccessLevel required)
+    mlir::Value Class(mlir_ts::ClassStorageType classStorageType, mlir_ts::AccessLevel accessingFromLevel)
     {
         MLIRCodeLogic mcl(builder);
 
@@ -1419,7 +1419,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
 
-        if (required < accessLevel) {
+        if (accessingFromLevel < accessLevel) {
             emitError(location, "Class member '") << fieldId << "' is not accessable";
             return mlir::Value();
         }
