@@ -5698,7 +5698,8 @@ class MLIRGenImpl
         return {mlir::success(), funcOp, funcProto->getName().str(), false};
     }
 
-    mlir::LogicalResult mlirGenStaticFieldDeclarationDynamicImport(mlir::Location location, ClassInfo::TypePtr newClassPtr, StringRef name, mlir::Type type, const GenContext &genContext)
+    mlir::LogicalResult mlirGenStaticFieldDeclarationDynamicImport(mlir::Location location, ClassInfo::TypePtr newClassPtr, 
+        StringRef name, mlir::Type type, mlir_ts::AccessLevel accessLevel, const GenContext &genContext)
     {
         auto &staticFieldInfos = newClassPtr->staticFields;
 
@@ -5724,12 +5725,13 @@ class MLIRGenImpl
                 genContext);
         }
 
-        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, mlir_ts::AccessLevel::Public);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, accessLevel);
 
         return mlir::success();
     }    
 
-    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef funcName, mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext, bool isFullNamespaceName = true)
+    mlir::LogicalResult mlirGenFunctionLikeDeclarationDynamicImport(mlir::Location location, StringRef funcName, 
+        mlir_ts::FunctionType functionType, StringRef dllFuncName, const GenContext &genContext, bool isFullNamespaceName = true)
     {
         registerVariable(location, funcName, isFullNamespaceName, VariableType::Var,
             [&](mlir::Location location, const GenContext &context) -> TypeValueInitType {
@@ -16495,6 +16497,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenClassStaticFieldMemberDynamicImport(mlir::Location location, ClassInfo::TypePtr newClassPtr, PropertyDeclaration propertyDeclaration, const GenContext &genContext)
     {
         auto fieldId = TupleFieldName(propertyDeclaration->name, genContext);
+        auto accessLevel = getAccessLevel(propertyDeclaration);
 
         // process static field - register global
         auto fullClassStaticFieldName =
@@ -16541,7 +16544,7 @@ class MLIRGenImpl
         }
 
         auto &staticFieldInfos = newClassPtr->staticFields;
-        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, mlir_ts::AccessLevel::Public);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, accessLevel);
 
         return mlir::success();
     }    
@@ -16956,7 +16959,7 @@ genContext);
     mlir::LogicalResult mlirGenCustomRTTIDynamicImport(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                           ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
-        return mlirGenStaticFieldDeclarationDynamicImport(location, newClassPtr, RTTI_NAME, getStringType(), genContext);
+        return mlirGenStaticFieldDeclarationDynamicImport(location, newClassPtr, RTTI_NAME, getStringType(), mlir_ts::AccessLevel::Public, genContext);
     }
 
 #ifdef ENABLE_TYPED_GC
@@ -17959,13 +17962,6 @@ genContext);
             isVirtual = isForceVirtual;
         };
 
-        void updateAccessLevel()
-        {
-            if (StringRef(getName()).starts_with("#")) {
-                accessLevel = mlir_ts::AccessLevel::Private;
-            }
-        }
-
         bool isFunctionLike()
         {
             return classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
@@ -17992,11 +17988,17 @@ genContext);
             funcOp = funcOp_;
         }
 
+        mlir_ts::AccessLevel getAccessLevel()
+        {
+            return accessLevel;
+        }
+
         bool registerClassMethodMember(mlir::Location location, int orderWeight, mlir_ts::AccessLevel accessLevel)
         {
             auto &methodInfos = newClassPtr->methods;
 
-            if (newClassPtr->getMethodIndex(methodName) < 0)
+            auto methodIndex = newClassPtr->getMethodIndex(methodName);
+            if (methodIndex < 0)
             {
                 methodInfos.push_back(
                 {
@@ -18010,6 +18012,11 @@ genContext);
                     orderWeight, 
                     accessLevel
                 });
+            }
+            else
+            {
+                methodInfos[methodIndex].orderWeight = orderWeight;
+                methodInfos[methodIndex].accessLevel = accessLevel;
             }
 
             if (propertyName.size() > 0)
@@ -18169,7 +18176,10 @@ genContext);
 
         assert (!classMethodMemberInfo.methodName.empty());
 
-        classMethodMemberInfo.updateAccessLevel();
+        // update access based on name
+        if (StringRef(classMethodMemberInfo.getName()).starts_with("#")) {
+            accessLevel = mlir_ts::AccessLevel::Private;
+        }
 
         if (classMethodMemberInfo.isAbstract && !newClassPtr->isAbstract)
         {
@@ -18360,7 +18370,7 @@ genContext);
         {
             // no need to generate method in code
             funcLikeDeclaration->processed = true;
-            classMethodMemberInfo.registerClassMethodMember(location, orderWeight, mlir_ts::AccessLevel::Public);
+            classMethodMemberInfo.registerClassMethodMember(location, orderWeight, classMethodMemberInfo.getAccessLevel());
             return mlir::success();
         }
 
