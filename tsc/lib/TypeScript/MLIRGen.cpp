@@ -5666,12 +5666,6 @@ class MLIRGenImpl
             || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword)
             || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::IsPublic) == InternalFlags::IsPublic)
             || funcProto->getName() == MAIN_ENTRY_NAME;
-        
-        // access by name
-        if (funcProto->getName().starts_with("#"))
-        {
-            isPublic = false;
-        }
 
         if (isPublic)
         {
@@ -10527,7 +10521,7 @@ class MLIRGenImpl
 
         auto methodInfo = classInfo->methods[methodIndex];
         if (accessingFromLevel < methodInfo.accessLevel) {
-            emitError(location, "Class member ") << methodInfo.name << " is not accessable";
+            emitError(location, "Class member '") << methodInfo.name << "' is not accessable";
             return mlir::Value();
         }
 
@@ -10656,7 +10650,7 @@ class MLIRGenImpl
             bool isSuperClass, mlir_ts::AccessLevel accessingFromLevel, const GenContext &genContext) {
         auto genericMethodInfo = classInfo->staticGenericMethods[genericMethodIndex];
         if (accessingFromLevel < genericMethodInfo.accessLevel) {
-            emitError(location, "Class member ") << genericMethodInfo.name << " is not accessable";
+            emitError(location, "Class member '") << genericMethodInfo.name << "' is not accessable";
             return mlir::Value();
         }
 
@@ -18020,7 +18014,7 @@ genContext);
 
             if (propertyName.size() > 0)
             {
-                addAccessor();
+                addAccessor(accessLevel);
             }
 
             if (newClassPtr->indexes.size() > 0)
@@ -18042,6 +18036,7 @@ genContext);
                     }
 
                     indexer.get = funcOp;
+                    indexer.getAccessLevel = accessLevel;
                 }
                 else if (methodName == "set")
                 {
@@ -18060,13 +18055,14 @@ genContext);
                     }
 
                     indexer.set = funcOp;
+                    indexer.setAccessLevel = accessLevel;
                 }
             }
 
             return true;
         }
 
-        void addAccessor()
+        void addAccessor(mlir_ts::AccessLevel accessLevel)
         {
             auto &accessorInfos = newClassPtr->accessors;
 
@@ -18082,10 +18078,12 @@ genContext);
             if (classMember == SyntaxKind::GetAccessor)
             {
                 newClassPtr->accessors[accessorIndex].get = funcOp;
+                newClassPtr->accessors[accessorIndex].getAccessLevel = accessLevel;
             }
             else if (classMember == SyntaxKind::SetAccessor)
             {
                 newClassPtr->accessors[accessorIndex].set = funcOp;
+                newClassPtr->accessors[accessorIndex].setAccessLevel = accessLevel;
             }
         }
 
@@ -18216,7 +18214,7 @@ genContext);
             //MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
         }
 
-        if (newClassPtr->isPublic && !hasModifier(classMember, SyntaxKind::PrivateKeyword))
+        if (newClassPtr->isPublic && hasModifier(classMember, SyntaxKind::PublicKeyword))
         {
             funcLikeDeclaration->internalFlags |= InternalFlags::IsPublic;
         }
@@ -18331,7 +18329,8 @@ genContext);
                     classMethodMemberInfo.methodName, 
                     funcProto->getFuncType(), 
                     funcProto, 
-                    classMethodMemberInfo.isStatic});
+                    classMethodMemberInfo.isStatic,
+                    classMethodMemberInfo.accessLevel});
             }
 
             return mlir::success();
