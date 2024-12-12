@@ -10028,6 +10028,41 @@ class MLIRGenImpl
         }
     }
 
+    mlir_ts::AccessLevel detectAccessLevel(mlir_ts::ClassStorageType classStorageType, const GenContext &genContext)
+    {
+        if (auto classInfo = getClassInfoByFullName(classStorageType.getName().getValue()))
+        {
+            return detectAccessLevel(classInfo->classType, genContext);
+        }                    
+
+        return mlir_ts::AccessLevel::Public;
+    }    
+
+    mlir_ts::AccessLevel detectAccessLevel(mlir_ts::ClassType classType, const GenContext &genContext)
+    {
+        auto accessingFromLevel = mlir_ts::AccessLevel::Public;
+        if (genContext.thisType) {
+            LLVM_DEBUG(llvm::dbgs() << "\n\t scope type \t'" << genContext.thisType << "' \n\t accessing type: \t" << classType << "\n";);
+
+            if (genContext.thisType == classType) {
+                accessingFromLevel = mlir_ts::AccessLevel::Private;
+            } else {
+                if (auto thisClassType = dyn_cast<mlir_ts::ClassType>(genContext.thisType)) 
+                {
+                    // check if protected level
+                    if (auto classInfo = getClassInfoByFullName(thisClassType.getName().getValue()))
+                    {
+                        if (classInfo->hasBase(classType)) {
+                            accessingFromLevel = mlir_ts::AccessLevel::Protected;
+                        }
+                    }                    
+                }
+            }
+        }
+
+        return accessingFromLevel;
+    }
+
     ValueOrLogicalResult mlirGenPropertyAccessExpressionBaseLogic(mlir::Location location, mlir::Value objectValue,
                                                                   MLIRPropertyAccessCodeLogic &cl,
                                                                   const GenContext &genContext)
@@ -10052,23 +10087,9 @@ class MLIRGenImpl
         // class member access
         auto classAccessWithObject = [&](mlir_ts::ClassType classType, mlir::Value objectValue) {
 
-            auto accessingFromLevel = mlir_ts::AccessLevel::Public;
-            if (genContext.thisType) {
-                if (genContext.thisType == classType) {
-                    accessingFromLevel = mlir_ts::AccessLevel::Private;
-                } else {
-                    if (auto thisClassType = dyn_cast<mlir_ts::ClassType>(genContext.thisType)) 
-                    {
-                        // check if protected level
-                        if (auto classInfo = getClassInfoByFullName(thisClassType.getName().getValue()))
-                        {
-                            if (classInfo->hasBase(classType)) {
-                                accessingFromLevel = mlir_ts::AccessLevel::Protected;
-                            }
-                        }                    
-                    }
-                }
-            }
+            LLVM_DEBUG(llvm::dbgs() << "\n...field: \t" << cl.getName(););
+            auto accessingFromLevel = detectAccessLevel(classType, genContext);
+            LLVM_DEBUG(llvm::dbgs() << "\n\t = Accessing from level '" << accessingFromLevel << "'\n\n";);
 
             if (auto value = cl.Class(classType, accessingFromLevel))
             {
@@ -10233,7 +10254,11 @@ class MLIRGenImpl
                     return mlirGen(location, name, genContext);
                 })
                 .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
-                    if (auto value = cl.TupleNoError(classStorageType))
+                    LLVM_DEBUG(llvm::dbgs() << "\n...field: \t" << cl.getName(););
+                    auto accessingFromLevel = detectAccessLevel(classStorageType, genContext);
+                    LLVM_DEBUG(llvm::dbgs() << "\n\t = Accessing from level '" << accessingFromLevel << "'\n\n";);
+
+                    if (auto value = cl.TupleNoError(classStorageType, accessingFromLevel))
                     {
                         return value;
                     }
@@ -10780,7 +10805,7 @@ class MLIRGenImpl
     {
         assert(classInfo);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n\t looking for member: " << name << " in class '" << classInfo->fullName << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n\t looking for member: " << name << " in class '" << classInfo->fullName << "'\n";);
 
         // indexer access
         if (name == INDEX_ACCESS_FIELD_NAME)

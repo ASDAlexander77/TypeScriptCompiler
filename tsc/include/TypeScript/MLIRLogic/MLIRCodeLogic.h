@@ -1091,7 +1091,7 @@ class MLIRPropertyAccessCodeLogic
         return mlir::Value();
     }
 
-    template <typename T> mlir::Value TupleNoError(T tupleType, bool indexAccess = false)
+    template <typename T> mlir::Value TupleNoError(T tupleType, mlir_ts::AccessLevel accessingFromLevel, bool indexAccess = false)
     {
         mlir::Value value;
 
@@ -1104,6 +1104,11 @@ class MLIRPropertyAccessCodeLogic
         {
             return value;
         }
+
+        if (accessingFromLevel < accessLevel) {
+            emitError(location, "Class member ") << fieldId << " is not accessable";
+            return mlir::Value();
+        }        
 
         bool isBoundRef = false;
         auto elementType = mth.isBoundReference(elementTypeForRef, isBoundRef);
@@ -1420,7 +1425,7 @@ class MLIRPropertyAccessCodeLogic
         }
 
         if (accessingFromLevel < accessLevel) {
-            emitError(location, "Class member '") << fieldId << "' is not accessable";
+            emitError(location, "Class member ") << fieldId << " is not accessable";
             return mlir::Value();
         }
 
