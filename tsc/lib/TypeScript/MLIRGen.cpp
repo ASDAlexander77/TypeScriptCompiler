@@ -16165,7 +16165,7 @@ class MLIRGenImpl
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
                         auto fieldId = MLIRHelper::TupleFieldName(baseName, builder.getContext());
-                        fieldInfos.push_back({fieldId, baseClassType.getStorageType(), false, mlir_ts::AccessLevel::Protected});
+                        fieldInfos.push_back({fieldId, baseClassType.getStorageType(), false, mlir_ts::AccessLevel::Public});
 
                         auto classInfo = getClassInfoByFullName(baseName);
                         if (std::find(baseClassInfos.begin(), baseClassInfos.end(), classInfo) == baseClassInfos.end())
@@ -16837,7 +16837,7 @@ genContext);
             declarationMode = declarationModeStore;
         }
 
-        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, mlir_ts::AccessLevel::Protected);
+        pushStaticField(staticFieldInfos, fieldId, staticFieldType, fullClassStaticFieldName, -1, mlir_ts::AccessLevel::Public);
 
         return mlir::success();    
     }
