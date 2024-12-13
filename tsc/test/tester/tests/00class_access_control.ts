@@ -3,6 +3,7 @@ interface IFace1
     v_public: int;
     v_public_by_default: int;
     v_protected: int;
+    get Value(): int;
 }
 
 interface IFace2
@@ -10,6 +11,7 @@ interface IFace2
     v_public: int;
     v_public_by_default: int;
     //v_protected: int;
+    get Value(): int;
 }
 
 class Cls1 implements IFace1
@@ -104,10 +106,10 @@ function main() {
     //print(Cls1.#stat);
 
     const iface1: IFace1 = cls1;
-    print ("iface1", iface1.v_public, iface1.v_protected);
+    print ("iface1", iface1.v_public, iface1.v_protected, iface1.Value);
 
     const iface2: IFace2 = cls1;
-    print ("iface2", iface2.v_public/*, iface2.v_protected*/);
+    print ("iface2", iface2.v_public/*, iface2.v_protected*/, iface2.Value);
    
     print ("done.");
 }
