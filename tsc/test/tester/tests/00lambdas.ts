@@ -8,6 +8,8 @@ class Test {
     }
 }
 
+// TODO: review it
+/*
 static class Array<T>
 {
     public reduce2<V>(this: T[], func: (v: V, t: T) => V, initial: V) {
@@ -16,6 +18,12 @@ static class Array<T>
         for (const v of this) result = func(result, v);
         return result;
     }    
+}
+*/
+function reduce2<T, V = T>(this: T[], func: (v: V, t: T) => V, initial: V) {
+    let result = initial;
+    for (const v of this) result = func(result, v);
+    return result;
 }
 
 function main() {

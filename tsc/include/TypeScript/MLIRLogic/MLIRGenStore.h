@@ -96,6 +96,7 @@ struct StaticFieldInfo
     mlir::Type type;
     mlir::StringRef globalVariableName;
     int virtualIndex;
+    mlir_ts::AccessLevel accessLevel;
 };
 
 struct MethodInfo
@@ -110,6 +111,7 @@ struct MethodInfo
     bool isAbstract;
     int virtualIndex;
     int orderWeight;
+    mlir_ts::AccessLevel accessLevel;
 };
 
 struct GenericMethodInfo
@@ -119,6 +121,7 @@ struct GenericMethodInfo
     mlir_ts::FunctionType funcType;
     FunctionPrototypeDOM::TypePtr funcProto;
     bool isStatic;
+    mlir_ts::AccessLevel accessLevel;
 };
 
 struct VirtualMethodOrInterfaceVTableInfo
@@ -145,6 +148,8 @@ struct AccessorInfo
     bool isStatic;
     bool isVirtual;
     bool isAbstract;
+    mlir_ts::AccessLevel getAccessLevel;
+    mlir_ts::AccessLevel setAccessLevel;
 };
 
 struct IndexInfo
@@ -152,6 +157,8 @@ struct IndexInfo
     mlir_ts::FunctionType indexSignature;
     mlir_ts::FuncOp get;
     mlir_ts::FuncOp set;
+    mlir_ts::AccessLevel getAccessLevel;
+    mlir_ts::AccessLevel setAccessLevel;
 };
 
 struct InterfaceFieldInfo
@@ -259,12 +266,18 @@ struct InterfaceInfo
 
         for (auto &method : methods)
         {
-            tupleFields.push_back({MLIRHelper::TupleFieldName(method.name, context), method.funcType, false});
+            tupleFields.push_back(
+            {
+                MLIRHelper::TupleFieldName(method.name, context), 
+                method.funcType, 
+                method.isConditional, 
+                mlir_ts::AccessLevel::Public
+            });
         }
 
         for (auto &field : fields)
         {
-            tupleFields.push_back({field.id, field.type, false});
+            tupleFields.push_back({field.id, field.type, false, mlir_ts::AccessLevel::Public});
         }
 
         return mlir::success();
@@ -360,7 +373,7 @@ struct InterfaceInfo
             {
                 if (field.isConditional)
                 {
-                    mlir_ts::FieldInfo missingField{field.id, field.type};
+                    mlir_ts::FieldInfo missingField{field.id, field.type, false, mlir_ts::AccessLevel::Public};
                     field.virtualIndex = -1;
                     vtable.push_back({missingField, true});
                 }
@@ -603,6 +616,7 @@ struct ClassInfo
     bool isDeclaration;
     bool hasNew;
     bool hasConstructor;
+    mlir_ts::AccessLevel constructorAccessLevel;
     bool hasInitializers;
     bool hasStaticConstructor;
     bool hasStaticInitializers;
@@ -618,7 +632,7 @@ struct ClassInfo
     ProcessingStages processing;
 
     ClassInfo()
-        : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
+        : isDeclaration(false), hasNew(false), hasConstructor(false), constructorAccessLevel(mlir_ts::AccessLevel::Public), hasInitializers(false), hasStaticConstructor(false),
           hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), 
           isPublic(false), isDynamicImport(false), hasRTTI(false),
           processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
@@ -634,7 +648,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            if (base->hasConstructor)
+            if (base->getHasConstructor())
             {
                 return true;
             }
@@ -642,6 +656,24 @@ struct ClassInfo
 
         return false;
     }
+
+    auto getConstructorAccessLevel() -> mlir_ts::AccessLevel
+    {
+        if (hasConstructor)
+        {
+            return constructorAccessLevel;
+        }
+
+        for (auto &base : baseClasses)
+        {
+            if (base->hasConstructor)
+            {
+                return base->getConstructorAccessLevel();
+            }
+        }
+
+        return mlir_ts::AccessLevel::Public;
+    }    
 
     auto getHasVirtualTable() -> bool
     {
@@ -652,7 +684,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            if (base->hasVirtualTable)
+            if (base->getHasVirtualTable())
             {
                 return true;
             }
@@ -670,7 +702,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            if (base->hasVirtualTable)
+            if (base->getHasVirtualTable())
             {
                 return false;
             }
@@ -776,6 +808,19 @@ struct ClassInfo
         }
 
         return true;
+    }
+
+    auto hasBase(mlir_ts::ClassType classType) -> bool
+    {
+        for (auto &base : baseClasses)
+        {
+            if (base->classType == classType || base->hasBase(classType))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// Iterate over the held elements.

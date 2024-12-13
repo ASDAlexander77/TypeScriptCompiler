@@ -9,6 +9,19 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+
+- Public, private, and protected modifiers
+```TypeScript
+class Point {
+    private x: number;
+    #y: number;
+}
+
+const p = new Point();
+p.x // access error
+p.#y // error
+```
+
 - Class from Tuple
 ```TypeScript
 class Point {
@@ -46,7 +59,7 @@ const v2 = gen<string[]>([]); // result: 0
 - indexes for classes and interfaces, properties for interfaces
 ```TypeScript
 class Test {
-    // declare index (to assing get/set methods to it)
+    // declare index (to assigning get/set methods to it)
     [index1: number]: string;
     
     get(index: number): string {

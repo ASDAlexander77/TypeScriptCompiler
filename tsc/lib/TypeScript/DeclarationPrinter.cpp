@@ -379,6 +379,16 @@ namespace typescript
                 continue;
 
             os.indent(4);
+            
+            if (staticField.accessLevel == mlir_ts::AccessLevel::Protected)
+            {
+                os << "protected ";
+            }
+            else if (staticField.accessLevel == mlir_ts::AccessLevel::Private)
+            {
+                os << "private ";
+            }
+
             os << "static ";
             printAsFieldName(staticField.id);
             os << ": ";
@@ -395,6 +405,16 @@ namespace typescript
                 continue;
 
             os.indent(4);
+
+            if (field.accessLevel == mlir_ts::AccessLevel::Protected)
+            {
+                os << "protected ";
+            }
+            else if (field.accessLevel == mlir_ts::AccessLevel::Private)
+            {
+                os << "private ";
+            }
+
             printAsFieldName(field.id);
             if (field.isConditional)
                 os << "?";
@@ -411,6 +431,15 @@ namespace typescript
                 continue;
 
             os.indent(4);
+
+            if (method.accessLevel == mlir_ts::AccessLevel::Protected)
+            {
+                os << "protected ";
+            }
+            else if (method.accessLevel == mlir_ts::AccessLevel::Private)
+            {
+                os << "private ";
+            }
 
             printMethod(
                 method.isStatic,

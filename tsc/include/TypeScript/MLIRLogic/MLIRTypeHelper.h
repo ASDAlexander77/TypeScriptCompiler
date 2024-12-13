@@ -129,7 +129,7 @@ class MLIRTypeHelper
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
         for (auto type : types)
         {
-            fields.push_back(mlir_ts::FieldInfo{nullptr, type, false});
+            fields.push_back(mlir_ts::FieldInfo{nullptr, type, false, mlir_ts::AccessLevel::Public});
         }
 
         return mlir_ts::TupleType::get(context, fields);
@@ -825,7 +825,7 @@ class MLIRTypeHelper
             SmallVector<mlir_ts::FieldInfo> fieldInfos;
             for (auto param : calledFuncType.getInputs())
             {
-                fieldInfos.push_back({mlir::Attribute(), param, false});
+                fieldInfos.push_back({mlir::Attribute(), param, false, mlir_ts::AccessLevel::Public});
             }
 
             return getTupleType(fieldInfos);
@@ -1878,10 +1878,10 @@ class MLIRTypeHelper
                     }
                     else
                     {
-                        fieldInfos.push_back({mlir::Attribute(), existType.second, false});    
+                        fieldInfos.push_back({mlir::Attribute(), existType.second, false, mlir_ts::AccessLevel::Public});    
                     }
 
-                    fieldInfos.push_back({mlir::Attribute(), currentType, false});
+                    fieldInfos.push_back({mlir::Attribute(), currentType, false, mlir_ts::AccessLevel::Public});
 
                     currentType = getTupleType(fieldInfos);                    
                 }
@@ -2055,15 +2055,15 @@ class MLIRTypeHelper
         else if (isa<mlir_ts::ArrayType>(srcType) || isa<mlir_ts::ConstArrayType>(srcType) || isa<mlir_ts::StringType>(srcType))
         {
             // TODO: do not break the order as it is used in Debug info
-            destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context), false });
-            destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir_ts::StringType::get(context), false });
+            destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context), false, mlir_ts::AccessLevel::Public });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir_ts::StringType::get(context), false, mlir_ts::AccessLevel::Public });
             return mlir::success();
         }
         else if (auto optType = dyn_cast<mlir_ts::OptionalType>(srcType))
         {
             // TODO: do not break the order as it is used in Debug info
-            destTupleFields.push_back({ MLIRHelper::TupleFieldName("value", context), optType.getElementType(), false });
-            destTupleFields.push_back({ MLIRHelper::TupleFieldName("hasValue", context), mlir_ts::BooleanType::get(context), false });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName("value", context), optType.getElementType(), false, mlir_ts::AccessLevel::Public });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName("hasValue", context), mlir_ts::BooleanType::get(context), false, mlir_ts::AccessLevel::Public });
             return mlir::success();
         }
 
@@ -3200,7 +3200,7 @@ class MLIRTypeHelper
             auto mergedType = mergeType(location, existingIt->type, currentIt->type, merged);
             if (mergedType)
             {
-                resultFields.push_back({ existingIt->id, mergedType, false });
+                resultFields.push_back({ existingIt->id, mergedType, false, mlir_ts::AccessLevel::Public });
             }
         }
 
