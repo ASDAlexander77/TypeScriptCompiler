@@ -380,11 +380,11 @@ namespace typescript
 
             os.indent(4);
             
-            if (staticField.accessLevel != mlir_ts::AccessLevel::Protected)
+            if (staticField.accessLevel == mlir_ts::AccessLevel::Protected)
             {
                 os << "protected ";
             }
-            else if (staticField.accessLevel != mlir_ts::AccessLevel::Private)
+            else if (staticField.accessLevel == mlir_ts::AccessLevel::Private)
             {
                 os << "private ";
             }
@@ -406,11 +406,11 @@ namespace typescript
 
             os.indent(4);
 
-            if (field.accessLevel != mlir_ts::AccessLevel::Protected)
+            if (field.accessLevel == mlir_ts::AccessLevel::Protected)
             {
                 os << "protected ";
             }
-            else if (field.accessLevel != mlir_ts::AccessLevel::Private)
+            else if (field.accessLevel == mlir_ts::AccessLevel::Private)
             {
                 os << "private ";
             }
@@ -432,11 +432,11 @@ namespace typescript
 
             os.indent(4);
 
-            if (method.accessLevel != mlir_ts::AccessLevel::Protected)
+            if (method.accessLevel == mlir_ts::AccessLevel::Protected)
             {
                 os << "protected ";
             }
-            else if (method.accessLevel != mlir_ts::AccessLevel::Private)
+            else if (method.accessLevel == mlir_ts::AccessLevel::Private)
             {
                 os << "private ";
             }
