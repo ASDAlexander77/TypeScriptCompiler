@@ -702,7 +702,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            if (base->getHasVirtualTableVariable())
+            if (base->getHasVirtualTable())
             {
                 return false;
             }
