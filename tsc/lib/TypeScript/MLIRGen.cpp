@@ -2566,7 +2566,7 @@ class MLIRGenImpl
                 || functionGenericTypeInfo->functionDeclaration == SyntaxKind::FunctionExpression)
             {
                 // we need to avoid wrong redeclaration of arrow functions (when thisType is provided it will add THIS parameter as first)
-                const_cast<GenContext &>(genContext).setThisType(nullptr);
+                const_cast<GenContext &>(genContext).thisType = nullptr;
             }
 
             MLIRNamespaceGuard ng(currentNamespace);
@@ -3006,7 +3006,7 @@ class MLIRGenImpl
             // create new function instance
             GenContext initSpecGenContext(genContext);
             initSpecGenContext.forceDiscover = true;
-            initSpecGenContext.setThisType(mlir::Type());
+            initSpecGenContext.thisType = mlir::Type();
 
             auto skipThisParam = false;
             mlir::Value thisValue;
@@ -3020,7 +3020,7 @@ class MLIRGenImpl
                 funcName = thisSymbolOp.getIdentifierAttr().getValue();
                 skipThisParam = true;
                 thisValue = thisSymbolOp.getThisVal();
-                initSpecGenContext.setThisType(thisValue.getType());
+                initSpecGenContext.thisType = thisValue.getType();
             }
             else
             {
@@ -4569,15 +4569,15 @@ class MLIRGenImpl
              kind == SyntaxKind::GetAccessor || kind == SyntaxKind::SetAccessor))
         {
             params.push_back(
-                std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.getThisType(), loc(parametersContextAST)));
+                std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
-        else if (!isStatic && genContext.getThisType() && !!parametersContextAST->parent &&
+        else if (!isStatic && genContext.thisType && !!parametersContextAST->parent &&
             (kind == SyntaxKind::FunctionExpression ||
              kind == SyntaxKind::ArrowFunction))
         {            
             // TODO: this is very tricky code, if we rediscover function again and if by any chance thisType is not null, it will append thisType to lambda which very wrong code
             params.push_back(
-                std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.getThisType(), loc(parametersContextAST)));
+                std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
 
         auto formalParams = parametersContextAST->parameters;
@@ -4606,7 +4606,7 @@ class MLIRGenImpl
             // special case, setup 'this' and type provided 
             if (namePtr == THIS_NAME && type) 
             {
-                const_cast<GenContext &>(genContext).setThisType(type);
+                const_cast<GenContext &>(genContext).thisType = type;
                 LLVM_DEBUG(dbgs() << "\n!! param " << THIS_NAME << " mapped to type " << type << "\n");
 
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(THIS_NAME, type, location);
@@ -4726,7 +4726,7 @@ class MLIRGenImpl
         else if (signatureDeclarationBaseAST->parent == SyntaxKind::ObjectLiteralExpression)
         {
             objectOwnerName = mlir::cast<mlir_ts::ObjectStorageType>(
-                mlir::cast<mlir_ts::ObjectType>(genContext.getThisType()).getStorageType()).getName().getValue();
+                mlir::cast<mlir_ts::ObjectType>(genContext.thisType).getStorageType()).getName().getValue();
         }
         else if (genContext.funcOp)
         {
@@ -5102,7 +5102,7 @@ class MLIRGenImpl
 
             GenContext genContextWithPassResult{};
             genContextWithPassResult.funcOp = dummyFuncOp;
-            genContextWithPassResult.setThisType(genContext.getThisType());
+            genContextWithPassResult.thisType = genContext.thisType;
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
@@ -5150,7 +5150,7 @@ class MLIRGenImpl
                 {
                     MLIRCodeLogic mcl(builder);
                     auto isObjectType =
-                        genContext.getThisType() != nullptr && isa<mlir_ts::ObjectType>(genContext.getThisType());
+                        genContext.thisType != nullptr && isa<mlir_ts::ObjectType>(genContext.thisType);
                     if (!isObjectType)
                     {
                         argTypes.insert(argTypes.begin(), mcl.CaptureType(passResult->outerVariables));
@@ -5198,9 +5198,9 @@ class MLIRGenImpl
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
         // declaring function which is nested and object should not have this context (unless it is part of object declaration)
-        if (!functionDeclarationAST->parent && funcGenContext.getThisType() != nullptr)
+        if (!functionDeclarationAST->parent && funcGenContext.thisType != nullptr)
         {
-            funcGenContext.setThisType(nullptr);
+            funcGenContext.thisType = nullptr;
         }
 
         mlir::OpBuilder::InsertionGuard guard(builder);
@@ -5221,7 +5221,7 @@ class MLIRGenImpl
             // provide name for it
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
-            funcGenContext.setThisType(nullptr);
+            funcGenContext.thisType = nullptr;
 
             auto [result, funcOpRet, funcNameRet, isGenericRet] =
                 mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
@@ -5270,7 +5270,7 @@ class MLIRGenImpl
             auto allowFuncGenContext = GenContext(genContext);
             allowFuncGenContext.clearScopeVars();
             // if we set it to value we will not capture 'this' references
-            allowFuncGenContext.setThisType(nullptr);
+            allowFuncGenContext.thisType = nullptr;
             auto [result, funcOpRet, funcNameRet, isGenericRet] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (mlir::failed(result))
@@ -5813,7 +5813,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        auto isObjectType = genContext.getThisType() != nullptr && isa<mlir_ts::ObjectType>(genContext.getThisType());
+        auto isObjectType = genContext.thisType != nullptr && isa<mlir_ts::ObjectType>(genContext.thisType);
         if (isObjectType)
         {
             return mlir::success();
@@ -5839,7 +5839,7 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        auto isObjectType = genContext.getThisType() != nullptr && isa<mlir_ts::ObjectType>(genContext.getThisType());
+        auto isObjectType = genContext.thisType != nullptr && isa<mlir_ts::ObjectType>(genContext.thisType);
         if (isObjectType)
         {
 
@@ -10046,17 +10046,14 @@ class MLIRGenImpl
 
     mlir_ts::AccessLevel detectAccessLevel(mlir_ts::ClassType classType, const GenContext &genContext)
     {
-        // find classType in context
-        auto effectiveThisType = genContext.getThisClassType();
-
         auto accessingFromLevel = mlir_ts::AccessLevel::Public;
-        if (effectiveThisType) {
-            LLVM_DEBUG(llvm::dbgs() << "\n\t scope type \t'" << effectiveThisType << "' \n\t accessing type: \t" << classType << "\n";);
+        if (genContext.thisType) {
+            LLVM_DEBUG(llvm::dbgs() << "\n\t scope type \t'" << genContext.thisType << "' \n\t accessing type: \t" << classType << "\n";);
 
-            if (effectiveThisType == classType) {
+            if (genContext.thisType == classType) {
                 accessingFromLevel = mlir_ts::AccessLevel::Private;
             } else {
-                if (auto thisClassType = dyn_cast<mlir_ts::ClassType>(effectiveThisType)) 
+                if (auto thisClassType = dyn_cast<mlir_ts::ClassType>(genContext.thisType)) 
                 {
                     // check if protected level
                     if (auto classInfo = getClassInfoByFullName(thisClassType.getName().getValue()))
@@ -12671,7 +12668,7 @@ class MLIRGenImpl
 
                 // we need context with correct thisType to get access to contructor
                 GenContext thisTypeGenContext(genContext);
-                thisTypeGenContext.setThisType(newOp.getType());
+                thisTypeGenContext.thisType = mlir::cast<mlir_ts::ClassType>(newOp.getType());
 
                 auto funcValueRef = evaluateProperty(location, newOp, CONSTRUCTOR_NAME, thisTypeGenContext);
                 if (funcValueRef)
@@ -14118,7 +14115,7 @@ class MLIRGenImpl
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.clearReceiverTypes();
-            funcGenContext.setThisType(objThis);
+            funcGenContext.thisType = objThis;
 
             funcLikeDecl->parent = objectLiteral;
 
@@ -14153,7 +14150,7 @@ class MLIRGenImpl
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.clearReceiverTypes();
-            funcGenContext.setThisType(objThis);
+            funcGenContext.thisType = objThis;
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object Process function with this type: " << objThis << "\n";);
 
@@ -14994,20 +14991,20 @@ class MLIRGenImpl
         }
 
         // try to resolve 'this' if not resolved yet
-        if (genContext.getThisType() && name == THIS_NAME)
+        if (genContext.thisType && name == THIS_NAME)
         {
-            if (auto classType = dyn_cast<mlir_ts::ClassType>(genContext.getThisType())) {
+            if (auto classType = dyn_cast<mlir_ts::ClassType>(genContext.thisType)) {
                 return builder.create<mlir_ts::ClassRefOp>(
                     location, classType, mlir::FlatSymbolRefAttr::get(builder.getContext(), 
                     classType.getName().getValue()));
             }
 
-            return builder.create<mlir_ts::TypeRefOp>(location, genContext.getThisType());
+            return builder.create<mlir_ts::TypeRefOp>(location, genContext.thisType);
         }
 
-        if (genContext.getThisType() && name == SUPER_NAME)
+        if (genContext.thisType && name == SUPER_NAME)
         {
-            if (!isa<mlir_ts::ClassType>(genContext.getThisType()) && !isa<mlir_ts::ClassStorageType>(genContext.getThisType()))
+            if (!isa<mlir_ts::ClassType>(genContext.thisType) && !isa<mlir_ts::ClassStorageType>(genContext.thisType))
             {
                 return mlir::Value();
             }
@@ -15016,7 +15013,7 @@ class MLIRGenImpl
             auto thisValue = V(result);
 
             auto classInfo =
-                getClassInfoByFullName(mlir::cast<mlir_ts::ClassType>(genContext.getThisType()).getName().getValue());
+                getClassInfoByFullName(mlir::cast<mlir_ts::ClassType>(genContext.thisType).getName().getValue());
             auto baseClassInfo = classInfo->baseClasses.front();
 
             // this is access to static base class
@@ -15688,7 +15685,7 @@ class MLIRGenImpl
 
         // init this type (needed to use in property evaluations)
         GenContext classGenContext(genContext);
-        classGenContext.setThisType(newClassPtr->classType);
+        classGenContext.thisType = newClassPtr->classType;
         classGenContext.specialization = isGenericClass;
 
         // we need THIS in params
@@ -17661,7 +17658,7 @@ genContext);
 
             GenContext funcGenContext(genContext);
             funcGenContext.clearScopeVars();
-            funcGenContext.setThisType(newClassPtr->classType);
+            funcGenContext.thisType = newClassPtr->classType;
             funcGenContext.disableSpreadParams = true;
 
             auto result = mlirGenFunctionBody(
@@ -18238,7 +18235,7 @@ genContext);
 
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
-        funcGenContext.setThisType(newClassPtr->classType);
+        funcGenContext.thisType = newClassPtr->classType;
         if (classMethodMemberInfo.isConstructor)
         {
             if (classMethodMemberInfo.isStatic && !genContext.allowPartialResolve)
@@ -18806,7 +18803,7 @@ genContext);
         auto location = loc(interfaceDeclarationAST);
 
         auto ifaceGenContext = GenContext(genContext);
-        ifaceGenContext.setThisType(newInterfacePtr->interfaceType);
+        ifaceGenContext.thisType = newInterfacePtr->interfaceType;
 
         auto orderWeight = 0;
         for (auto &heritageClause : interfaceDeclarationAST->heritageClauses)
@@ -18971,7 +18968,7 @@ genContext);
 
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
-        funcGenContext.setThisType(interfaceType);
+        funcGenContext.thisType = interfaceType;
 
         auto res = mlirGenFunctionSignaturePrototype(methodSignature, true, funcGenContext);
         auto funcType = std::get<1>(res);
@@ -20684,9 +20681,9 @@ genContext);
         }
         else if (kind == SyntaxKind::ThisType)
         {
-            if (genContext.getThisType())
+            if (genContext.thisType)
             {
-                return genContext.getThisType();
+                return genContext.thisType;
             }
             
             NodeFactory nf(NodeFactoryFlags::None);
