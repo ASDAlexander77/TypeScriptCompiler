@@ -17510,7 +17510,7 @@ genContext);
                     if (!found && !isConditional || found)
                     {
                         emitError(location)
-                            << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
+                            << "field type not matching for " << id << " for interface '" << newInterfacePtr->fullName
                             << "' in class '" << newClassPtr->fullName << "'";
 
                         return {emptyFieldInfo, mlir::failure()};
