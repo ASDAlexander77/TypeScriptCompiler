@@ -9,6 +9,19 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+
+- Public, private, and protected modifiers
+```TypeScript
+class Point {
+    private x: number;
+    #y: number;
+}
+
+const p = new Point();
+p.x // access error
+p.#y // error
+```
+
 - Class from Tuple
 ```TypeScript
 class Point {
