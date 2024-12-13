@@ -149,6 +149,25 @@ struct GenContext
         return stopProcess || rootContext && rootContext->stopProcess;
     }
 
+    auto getThisType() const -> mlir::Type 
+    {
+        return thisType;
+    }
+
+    auto getThisClassType() const -> mlir_ts::ClassType 
+    {
+        return thisClassType;
+    }
+
+    auto setThisType(mlir::Type thisType) -> void
+    {
+        this->thisType = thisType;
+        if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(thisType))
+        {
+            thisClassType = classType;
+        }
+    }
+
     bool allowPartialResolve;
     bool dummyRun;
     bool allowConstEval;
@@ -163,7 +182,6 @@ struct GenContext
     FunctionPrototypeDOM::TypePtr funcProto;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
     llvm::SmallVector<ts::VariableDeclarationDOM::TypePtr> *usingVars;
-    mlir::Type thisType;
     mlir::Type receiverFuncType;
     mlir::Type receiverType;
     mlir::StringRef receiverName;
@@ -186,6 +204,10 @@ struct GenContext
     bool specialization;
     // TODO: special hack to detect initializing specialized class and see that generic methods are not initialized at the same time
     bool instantiateSpecializedFunction;
+
+private:
+    mlir::Type thisType;
+    mlir_ts::ClassType thisClassType;
 };
 
 struct ValueOrLogicalResult 
