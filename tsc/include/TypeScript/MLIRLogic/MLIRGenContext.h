@@ -164,6 +164,7 @@ struct GenContext
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
     llvm::SmallVector<ts::VariableDeclarationDOM::TypePtr> *usingVars;
     mlir::Type thisType;
+    mlir_ts::ClassType thisClassType;
     mlir::Type receiverFuncType;
     mlir::Type receiverType;
     mlir::StringRef receiverName;

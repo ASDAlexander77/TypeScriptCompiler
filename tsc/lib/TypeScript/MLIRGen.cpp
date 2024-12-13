@@ -5103,6 +5103,7 @@ class MLIRGenImpl
             GenContext genContextWithPassResult{};
             genContextWithPassResult.funcOp = dummyFuncOp;
             genContextWithPassResult.thisType = genContext.thisType;
+            genContextWithPassResult.thisClassType = genContext.thisClassType;
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
@@ -10047,22 +10048,19 @@ class MLIRGenImpl
     mlir_ts::AccessLevel detectAccessLevel(mlir_ts::ClassType classType, const GenContext &genContext)
     {
         auto accessingFromLevel = mlir_ts::AccessLevel::Public;
-        if (genContext.thisType) {
-            LLVM_DEBUG(llvm::dbgs() << "\n\t scope type \t'" << genContext.thisType << "' \n\t accessing type: \t" << classType << "\n";);
+        if (genContext.thisClassType) {
+            LLVM_DEBUG(llvm::dbgs() << "\n\t scope type \t'" << genContext.thisClassType << "' \n\t accessing type: \t" << classType << "\n";);
 
-            if (genContext.thisType == classType) {
+            if (genContext.thisClassType == classType) {
                 accessingFromLevel = mlir_ts::AccessLevel::Private;
             } else {
-                if (auto thisClassType = dyn_cast<mlir_ts::ClassType>(genContext.thisType)) 
+                // check if protected level
+                if (auto classInfo = getClassInfoByFullName(genContext.thisClassType.getName().getValue()))
                 {
-                    // check if protected level
-                    if (auto classInfo = getClassInfoByFullName(thisClassType.getName().getValue()))
-                    {
-                        if (classInfo->hasBase(classType)) {
-                            accessingFromLevel = mlir_ts::AccessLevel::Protected;
-                        }
-                    }                    
-                }
+                    if (classInfo->hasBase(classType)) {
+                        accessingFromLevel = mlir_ts::AccessLevel::Protected;
+                    }
+                }                    
             }
         }
 
@@ -15686,6 +15684,7 @@ class MLIRGenImpl
         // init this type (needed to use in property evaluations)
         GenContext classGenContext(genContext);
         classGenContext.thisType = newClassPtr->classType;
+        classGenContext.thisClassType = newClassPtr->classType;
         classGenContext.specialization = isGenericClass;
 
         // we need THIS in params
@@ -17659,6 +17658,7 @@ genContext);
             GenContext funcGenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.thisType = newClassPtr->classType;
+            funcGenContext.thisClassType = newClassPtr->classType;
             funcGenContext.disableSpreadParams = true;
 
             auto result = mlirGenFunctionBody(
@@ -18236,6 +18236,7 @@ genContext);
         auto funcGenContext = GenContext(genContext);
         funcGenContext.clearScopeVars();
         funcGenContext.thisType = newClassPtr->classType;
+        funcGenContext.thisClassType = newClassPtr->classType;
         if (classMethodMemberInfo.isConstructor)
         {
             if (classMethodMemberInfo.isStatic && !genContext.allowPartialResolve)
