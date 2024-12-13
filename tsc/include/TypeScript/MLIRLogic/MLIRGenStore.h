@@ -616,6 +616,7 @@ struct ClassInfo
     bool isDeclaration;
     bool hasNew;
     bool hasConstructor;
+    mlir_ts::AccessLevel constructorAccessLevel;
     bool hasInitializers;
     bool hasStaticConstructor;
     bool hasStaticInitializers;
@@ -631,7 +632,7 @@ struct ClassInfo
     ProcessingStages processing;
 
     ClassInfo()
-        : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
+        : isDeclaration(false), hasNew(false), hasConstructor(false), constructorAccessLevel(mlir_ts::AccessLevel::Public), hasInitializers(false), hasStaticConstructor(false),
           hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), 
           isPublic(false), isDynamicImport(false), hasRTTI(false),
           processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
@@ -647,7 +648,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            if (base->hasConstructor)
+            if (base->getHasConstructor())
             {
                 return true;
             }
@@ -655,6 +656,24 @@ struct ClassInfo
 
         return false;
     }
+
+    auto getConstructorAccessLevel() -> mlir_ts::AccessLevel
+    {
+        if (hasConstructor)
+        {
+            return constructorAccessLevel;
+        }
+
+        for (auto &base : baseClasses)
+        {
+            if (base->hasConstructor)
+            {
+                return base->getConstructorAccessLevel();
+            }
+        }
+
+        return mlir_ts::AccessLevel::Public;
+    }    
 
     auto getHasVirtualTable() -> bool
     {
@@ -665,7 +684,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            if (base->hasVirtualTable)
+            if (base->getHasVirtualTable())
             {
                 return true;
             }
@@ -683,7 +702,7 @@ struct ClassInfo
 
         for (auto &base : baseClasses)
         {
-            if (base->hasVirtualTable)
+            if (base->getHasVirtualTableVariable())
             {
                 return false;
             }

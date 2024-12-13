@@ -12590,6 +12590,12 @@ class MLIRGenImpl
 
         if (classInfo->getHasConstructor())
         {
+            auto accessingFromLevel = detectAccessLevel(mlir::cast<mlir_ts::ClassType>(effectiveThisValue.getType()), genContext);
+            if (accessingFromLevel < classInfo->constructorAccessLevel) {
+                emitError(location, "Class constructor is not accessable");
+                return mlir::failure();
+            }
+
             auto propAccess =
                 mlirGenPropertyAccessExpression(location, effectiveThisValue, CONSTRUCTOR_NAME, false, genContext);
 
@@ -12659,7 +12665,12 @@ class MLIRGenImpl
             {
                 // evaluate constructor
                 mlir::Type tupleParamsType;
-                auto funcValueRef = evaluateProperty(location, newOp, CONSTRUCTOR_NAME, genContext);
+
+                // we need context with correct thisType to get access to contructor
+                GenContext thisTypeGenContext(genContext);
+                thisTypeGenContext.thisType = mlir::cast<mlir_ts::ClassType>(newOp.getType());
+
+                auto funcValueRef = evaluateProperty(location, newOp, CONSTRUCTOR_NAME, thisTypeGenContext);
                 if (funcValueRef)
                 {
                     SmallVector<mlir::Value, 4> operands;
@@ -16627,6 +16638,7 @@ class MLIRGenImpl
             else
             {
                 newClassPtr->hasConstructor = true;
+                newClassPtr->constructorAccessLevel = getAccessLevel(classMember);
             }
         }
 
