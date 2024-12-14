@@ -1,6 +1,6 @@
 
 namespace __Array {
-    function isT<T, V extends T>(t: T): t is V
+    function is<V extends T, T>(t: T): t is V
     {
         return true;
     }
@@ -12,7 +12,7 @@ namespace __Array {
                 return undefined;
             }
 
-            if (isT<T, V>(this[0]))
+            if (is<V, T>(this[0]))
             {
                 let result = <V>this[0];
                 for (let i = 1; i in this; i++) result = func(result, this[i]);
