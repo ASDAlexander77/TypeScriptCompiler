@@ -2193,8 +2193,15 @@ class MLIRGenImpl
             currValue = createBoundFunctionOp.getFunc();
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! spec. func ref: " << currValue << "\n";);
+
         auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>();
-        assert(symbolOp);
+        if (!symbolOp)
+        {
+            emitError(currValue.getLoc()) << "generic function should be used in 'const' variable declaration.";
+            return mlir::failure();            
+        }
+
         auto functionName = symbolOp.getIdentifier();
 
         // it is not generic arrow function

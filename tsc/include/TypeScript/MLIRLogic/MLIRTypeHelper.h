@@ -1157,12 +1157,26 @@ class MLIRTypeHelper
         return false;
     }
 
+    bool isRefTuple(mlir::Type type)
+    {
+        if (auto refType = dyn_cast<mlir_ts::RefType>(type))
+        {
+            return isa<mlir_ts::TupleType>(refType.getElementType()) || isa<mlir_ts::ConstTupleType>(refType.getElementType());
+        }
+
+        return false;
+    }
+
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Location location, mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType,
                                                         unsigned startParamIn = 0, unsigned startParamRes = 0)
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n!!"
+                                << "@ TestFunctionTypesMatchWithObjectMethods:" << inFuncType << " -> " << resFuncType << "\n";);
+
         // 1 we need to skip opaque and objects
+        // TODO: we need to refactor func types the way that we can understand if this is func with "captured var", bound to object etc
         if (startParamIn <= 0 && inFuncType.getNumInputs() > 0 &&
-            (isa<mlir_ts::OpaqueType>(inFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(inFuncType.getInput(0))))
+            (isa<mlir_ts::OpaqueType>(inFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(inFuncType.getInput(0)) || isRefTuple(inFuncType.getInput(0))))
         {
             startParamIn = 1;
         }
@@ -1174,7 +1188,7 @@ class MLIRTypeHelper
         }
 
         if (startParamRes <= 0 && resFuncType.getNumInputs() > 0 &&
-            (isa<mlir_ts::OpaqueType>(resFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(resFuncType.getInput(0))))
+            (isa<mlir_ts::OpaqueType>(resFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(resFuncType.getInput(0)) || isRefTuple(resFuncType.getInput(0))))
         {
             startParamRes = 1;
         }
