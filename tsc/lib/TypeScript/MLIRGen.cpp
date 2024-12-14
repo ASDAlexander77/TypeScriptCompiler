@@ -10962,7 +10962,7 @@ class MLIRGenImpl
         auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, id, argument, genContext);
         if (!value)
         {
-            emitError(location, "Interface member '") << id << "' can't be found";
+            emitError(location, "Interface member ") << id << " can't be found in interface '" << interfaceInfo->name << "'";
         }
 
         return value;
@@ -19393,6 +19393,51 @@ genContext);
         return resultType;
     }    
 
+    ValueOrLogicalResult selectFieldsValues(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value,  
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        auto count = 0;
+        for (auto [index, fieldInfo] : enumerate(fields))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
+
+            if (filterSpecialCases)
+            {
+                // filter out special fields
+                if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fieldInfo.id)) 
+                {
+                    if (strAttr.getValue().starts_with(".")) {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! --filtered #" << index << " field [" << fieldInfo.id << "]\n";);           
+                        continue;
+                    }
+                }
+            }
+
+            MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
+            // TODO: implement conditional
+            auto propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
+            EXIT_IF_FAILED_OR_NO_VALUE(propertyAccess)
+
+            auto value = V(propertyAccess);
+            if (value.getType() != fieldInfo.type)
+            {
+                CAST(value, location, fieldInfo.type, value, genContext)
+            }
+
+            values.push_back(value);
+        }
+
+        if (count != values.size())
+        {
+            emitError(location)
+                << "count of fields (" << count << ") in destination is not matching to " << to_print(value.getType()) << "'";            
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }      
+
+    // TODO: needs to unified with selectFieldsValues
     ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false)
     {
@@ -19486,7 +19531,7 @@ genContext);
 
 
     ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
-        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
+        ArrayRef<mlir_ts::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
     {
         SmallVector<mlir::Value> values;
 
@@ -19501,21 +19546,9 @@ genContext);
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
     }    
 
-    ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
-        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false)
+    ValueOrLogicalResult NewClassInstanceWithSettingFields(mlir::Location location, mlir_ts::ClassType classType, 
+        ArrayRef<mlir_ts::FieldInfo> fields, ArrayRef<mlir::Value> values, const GenContext &genContext)
     {
-        SmallVector<mlir::Value> values;
-        
-        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, true, genContext, errorAsWarning);
-        if (mlir::failed(result))
-        {
-            return mlir::failure();
-        }
-
-        // SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
-        // fieldsForTuple.append(fields.begin(), fields.end());
-        // return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
-
         SmallVector<mlir::Value, 4> operands;
         auto newInstanceOfClass = NewClassInstance(location, classType, operands, genContext);
         // TODO: assign fields to values
@@ -19551,7 +19584,36 @@ genContext);
         }
 
         return newInstanceOfClass;
+    }
+
+    ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
+        ArrayRef<mlir_ts::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        SmallVector<mlir::Value> values;
+        
+        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, true, genContext, errorAsWarning);
+        if (mlir::failed(result))
+        {
+            return mlir::failure();
+        }
+
+        return NewClassInstanceWithSettingFields(location, classType, fields, values, genContext);
     }    
+
+    ValueOrLogicalResult castFieldsToClass(mlir::Location location, mlir::Value value, 
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, 
+        mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        SmallVector<mlir::Value> values;
+        
+        auto result = selectFieldsValues(location, values, value, fields, true, genContext, errorAsWarning);
+        if (mlir::failed(result))
+        {
+            return mlir::failure();
+        }
+
+        return NewClassInstanceWithSettingFields(location, classType, fields, values, genContext);
+    }
 
     // TODO: finish it
     ValueOrLogicalResult castConstArrayToString(mlir::Location location, mlir::Value value, const GenContext &genContext)
@@ -20112,6 +20174,11 @@ genContext);
                 fields = constTupleType.getFields();
                 return castInterfaceToTuple(location, value, interfaceType, fields, genContext);
             }
+            else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();     
+                return castFieldsToClass(location, value, fields, classType, genContext);                
+            }            
         }
 
         // optional

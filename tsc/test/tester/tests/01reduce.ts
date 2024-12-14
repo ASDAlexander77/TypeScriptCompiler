@@ -7,8 +7,13 @@ namespace __Array {
                 return undefined;
             }
 
+            /* // TODO: disabled for not
             let result = <V>this[0];
             for (let i = 1; i in this; i++) result = func(result, this[i]);
+            return result;
+            */
+            let result: V;
+            for (let i = 0; i in this; i++) result = func(result, this[i]);
             return result;
         }
         else 
