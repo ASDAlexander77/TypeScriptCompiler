@@ -1,5 +1,10 @@
 
 namespace __Array {
+    function isT<T, V extends T>(t: T): t is V
+    {
+        return true;
+    }
+
     function reduce2<T, V = T>(this: T[], func: (v: V, t: T) => V, initial?: V) {
         if (initial == undefined)
         {
@@ -7,14 +12,14 @@ namespace __Array {
                 return undefined;
             }
 
-            /* // TODO: disabled for not
-            let result = <V>this[0];
-            for (let i = 1; i in this; i++) result = func(result, this[i]);
-            return result;
-            */
-            let result: V;
-            for (let i = 0; i in this; i++) result = func(result, this[i]);
-            return result;
+            if (isT<T, V>(this[0]))
+            {
+                let result = <V>this[0];
+                for (let i = 1; i in this; i++) result = func(result, this[i]);
+                return result;
+            }
+
+            return undefined;
         }
         else 
         {
