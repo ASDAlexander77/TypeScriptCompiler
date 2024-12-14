@@ -2275,6 +2275,7 @@ class MLIRGenImpl
             if (!newOpWithCapture.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
                 // symbolOp will be removed as unsed
+                LLVM_DEBUG(llvm::dbgs() << "\n!! newOpWithCapture: " << newOpWithCapture << "\n";);
                 return newOpWithCapture;
             }
             else
@@ -2717,6 +2718,9 @@ class MLIRGenImpl
 
                 // instatiate all ArrowFunctions which are not yet instantiated
                 auto opIndex = skipThisParam ? 0 : -1;
+                // TODO: this is hack, somehow we have difference between operands and call Operands due to CreateExtentionsFunction call
+                // review example raytrace.ts function addLight in getNaturalColor (due to captured params)
+                long operandsShift = static_cast<long>(operands.size()) - static_cast<long>(genContext.callOperands.size());
                 for (auto [callOpIndex, op] : enumerate(genContext.callOperands))
                 {
                     opIndex++;
@@ -2734,7 +2738,7 @@ class MLIRGenImpl
                         auto resultValue = V(result);
                         if (resultValue)
                         {
-                            operands[callOpIndex] = resultValue;
+                            operands[callOpIndex + operandsShift] = resultValue;
                         }
                     }
                 }
@@ -2977,12 +2981,12 @@ class MLIRGenImpl
         {
             currValue = extensFuncRef.getFunc();
 
-            SmallVector<mlir::Value, 4> operands;
-            operands.push_back(extensFuncRef.getThisVal());
-            operands.append(genContext.callOperands.begin(), genContext.callOperands.end());
+            SmallVector<mlir::Value, 4> operandsSpec;
+            operandsSpec.push_back(extensFuncRef.getThisVal());
+            operandsSpec.append(genContext.callOperands.begin(), genContext.callOperands.end());
 
             GenContext specGenContext(genContext);
-            specGenContext.callOperands = operands;
+            specGenContext.callOperands = operandsSpec;
 
             auto newFuncRefOrLogicResult = mlirGenSpecialized(location, currValue, typeArguments, operands, specGenContext);
             EXIT_IF_FAILED(newFuncRefOrLogicResult)
@@ -19833,7 +19837,7 @@ genContext);
 
         auto valueType = value.getType();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << " -> " << type
+        LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
         if (auto litType = dyn_cast<mlir_ts::LiteralType>(type))

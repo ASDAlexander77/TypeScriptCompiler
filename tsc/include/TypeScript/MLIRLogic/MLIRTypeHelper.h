@@ -1173,10 +1173,14 @@ class MLIRTypeHelper
         LLVM_DEBUG(llvm::dbgs() << "\n!!"
                                 << "@ TestFunctionTypesMatchWithObjectMethods:" << inFuncType << " -> " << resFuncType << "\n";);
 
+        // TODO: seems capture function with wrong function type
+        assert(startParamIn > 0 || inFuncType.getNumInputs() == 0 
+            || startParamIn == 0 && inFuncType.getNumInputs() > 0 && !isRefTuple(inFuncType.getInput(0)));
+
         // 1 we need to skip opaque and objects
         // TODO: we need to refactor func types the way that we can understand if this is func with "captured var", bound to object etc
         if (startParamIn <= 0 && inFuncType.getNumInputs() > 0 &&
-            (isa<mlir_ts::OpaqueType>(inFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(inFuncType.getInput(0)) || isRefTuple(inFuncType.getInput(0))))
+            (isa<mlir_ts::OpaqueType>(inFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(inFuncType.getInput(0))))
         {
             startParamIn = 1;
         }
@@ -1188,7 +1192,7 @@ class MLIRTypeHelper
         }
 
         if (startParamRes <= 0 && resFuncType.getNumInputs() > 0 &&
-            (isa<mlir_ts::OpaqueType>(resFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(resFuncType.getInput(0)) || isRefTuple(resFuncType.getInput(0))))
+            (isa<mlir_ts::OpaqueType>(resFuncType.getInput(0)) || isa<mlir_ts::ObjectType>(resFuncType.getInput(0))))
         {
             startParamRes = 1;
         }
