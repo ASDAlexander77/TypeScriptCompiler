@@ -24,6 +24,7 @@ struct CompileOptions
     enum Exports exportOpt;
     std::string outputFolder;
     bool appendGCtorsToMethod;
+    bool strictNullChecks;
 };
 
 #endif // TYPESCRIPT_DATASTRUCT_H_

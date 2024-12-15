@@ -19413,6 +19413,8 @@ genContext);
                 }
             }
 
+            count ++;            
+
             MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
             // TODO: implement conditional
             auto propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
@@ -19430,7 +19432,7 @@ genContext);
         if (count != values.size())
         {
             emitError(location)
-                << "count of fields (" << count << ") in destination is not matching to " << to_print(value.getType()) << "'";            
+                << "count of fields (" << count << ") in destination is not matching to '" << to_print(value.getType()) << "'";            
             return mlir::failure();
         }
 
@@ -19522,7 +19524,7 @@ genContext);
         if (count != values.size())
         {
             emitError(location)
-                << "count of fields (" << count << ") in destination is not matching to " << to_print(srcTupleType) << "'";            
+                << "count of fields (" << count << ") in destination is not matching to '" << to_print(srcTupleType) << "'";            
             return mlir::failure();
         }
 
@@ -19909,6 +19911,28 @@ genContext);
                 if (litType.getValue() != valLitType.getValue())
                 {
                     emitError(location, "can't cast from literal type: '") << valLitType.getValue() << "' to '" << litType.getValue() << "'";
+                    return mlir::failure(); 
+                }
+            }
+        }
+
+        // strict null
+        if (compileOptions.strictNullChecks)
+        {
+            if (isa<mlir_ts::NullType>(valueType))
+            {
+                auto hasNull = false;
+                if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
+                {
+                    auto foundType = llvm::find_if(unionType.getTypes(), [&] (auto elementOfUnionType) {
+                        return elementOfUnionType == valueType;
+                    });
+                    hasNull |= foundType != unionType.getTypes().end();
+                }
+
+                if (!hasNull)
+                {
+                    emitError(location, "can't cast from null type to '") << to_print(type) << "' in 'strict null mode'";
                     return mlir::failure(); 
                 }
             }

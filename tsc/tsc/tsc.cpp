@@ -121,6 +121,8 @@ cl::opt<bool> noDefaultLib("no-default-lib", cl::desc("Disable loading default l
 cl::opt<bool> enableBuiltins("builtins", cl::desc("Builtin functionality (needed if Default lib is not provided)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> appendGCtorsToMethod("gctors-as-method", cl::desc("Creeate method (" MLIR_GCTORS ") to initialize Static Objects instead of Global Constructors (gctors)"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 
+cl::opt<bool> strictNullChecks("strict-null-checks", cl::desc("Strict Null Checks"), cl::init(true), cl::cat(TypeScriptCompilerCategory)); 
+
 static void TscPrintVersion(llvm::raw_ostream &OS) {
   OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
   OS << "  TySC version " << TSC_PACKAGE_VERSION << '\n' << '\n';
