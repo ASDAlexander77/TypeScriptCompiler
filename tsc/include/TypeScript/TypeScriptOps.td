@@ -1261,7 +1261,7 @@ def TypeScript_PointerOffsetRefOp : TypeScript_Op<"PointerOffsetRef"> {
 
   let arguments = (ins
     TypeScript_Ref:$ref,
-    I32:$index
+    Index:$index
   );
 
   let results = (outs
@@ -2164,7 +2164,7 @@ def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush", [
                 "TypeRange((cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType()))">
 ]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
-  let results = (outs I32:$new_size);
+  let results = (outs Index:$new_size);
 }
 
 def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop", [
@@ -2178,7 +2178,7 @@ def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop", [
 
 def TypeScript_ArrayUnshiftOp : TypeScript_Op<"ArrayUnshift"> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
-  let results = (outs I32:$new_size);
+  let results = (outs Index:$new_size);
 }
 
 def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift", [
@@ -2192,7 +2192,7 @@ def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift", [
 
 def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice"> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Index:$start, Index:$deleteCount, Variadic<AnyType>:$items);
-  let results = (outs I32:$new_size);
+  let results = (outs Index:$new_size);
 }
 
 def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView", [AllTypesMatch<["op", "result"]>]> {
@@ -2202,7 +2202,7 @@ def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView", [AllTypesMatch<["op", "r
 
 def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
   let arguments = (ins TypeScript_ArrayLike:$op);
-  let results = (outs I32:$result);
+  let results = (outs Index:$result);
 }
 
 def TypeScript_SetLengthOfOp : TypeScript_Op<"SetLengthOf"> {
@@ -2266,7 +2266,7 @@ def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllT
 }
 
 def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
-  let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, I32:$count);
+  let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
 
   let extraClassDeclaration = [{
