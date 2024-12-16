@@ -9763,8 +9763,12 @@ class MLIRGenImpl
 
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
-                static SmallVector<mlir::Type> types = {builder.getF128Type(), getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getF32Type(), SInt(32), 
-                    builder.getI32Type(), builder.getF16Type(), SInt(16), builder.getI16Type(), SInt(8), builder.getI8Type()};
+                static SmallVector<mlir::Type> types = {
+                    builder.getF128Type(), 
+                    getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
+                    builder.getF32Type(), SInt(32), builder.getI32Type(), 
+                    builder.getF16Type(), SInt(16), builder.getI16Type(), 
+                    SInt(8), builder.getI8Type()};
                 for (auto type : types)
                 {
                     if (syncTypes(location, type, leftExpressionValue, rightExpressionValue, genContext))
@@ -12334,8 +12338,8 @@ class MLIRGenImpl
 
             for (auto spreadIndex = 0;  spreadIndex < count; spreadIndex++)
             {
-                auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
-                                                    mth.getStructIndexAttrValue(spreadIndex));
+                auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(),
+                                                    mth.getIndexAttrValue(spreadIndex));
 
                 // conditional expr:  length > "spreadIndex" ? value[index] : undefined
                 auto inBoundsValue =  V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),

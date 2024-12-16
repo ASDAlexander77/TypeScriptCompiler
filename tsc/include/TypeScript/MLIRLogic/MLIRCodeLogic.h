@@ -600,7 +600,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value sizeOfValue =
-            builder.create<mlir_ts::ArrayPushOp>(location, builder.getI32Type(), thisValueLoaded, mlir::ValueRange{castedValues});
+            builder.create<mlir_ts::ArrayPushOp>(location, builder.getIndexType(), thisValueLoaded, mlir::ValueRange{castedValues});
 
         return sizeOfValue;
     }    
@@ -653,7 +653,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value sizeOfValue =
-            builder.create<mlir_ts::ArrayUnshiftOp>(location, builder.getI32Type(), thisValueLoaded, mlir::ValueRange{castedValues});
+            builder.create<mlir_ts::ArrayUnshiftOp>(location, builder.getIndexType(), thisValueLoaded, mlir::ValueRange{castedValues});
 
         return sizeOfValue;
     }    
@@ -1202,7 +1202,7 @@ class MLIRPropertyAccessCodeLogic
                 return V(builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(length)));
             }
 
-            return builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);
+            return builder.create<mlir_ts::StringLengthOp>(location, builder.getIndexType(), expression);
         }
 
         return mlir::Value();
