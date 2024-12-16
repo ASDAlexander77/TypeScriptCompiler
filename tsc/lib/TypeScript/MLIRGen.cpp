@@ -12839,7 +12839,7 @@ class MLIRGenImpl
         mlir::Value count;
         if (arguments.size() == 0)
         {
-            count = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerType(32, false), builder.getUI32IntegerAttr(0));
+            count = builder.create<mlir_ts::ConstantOp>(location, builder.getIndexType(), builder.getIndexAttr(0));
         }
         else if (arguments.size() == 1)
         {
@@ -12864,10 +12864,10 @@ class MLIRGenImpl
             return createArrayFromArrayInfo(location, values, arrayInfo, genContext);
         }
 
-        if (count.getType() != builder.getI32Type())
+        if (count.getType() != builder.getIndexType())
         {
             // TODO: test cast result
-            count = cast(location, builder.getI32Type(), count, genContext);
+            count = cast(location, builder.getIndexType(), count, genContext);
         }
 
         auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(elementType), count);
