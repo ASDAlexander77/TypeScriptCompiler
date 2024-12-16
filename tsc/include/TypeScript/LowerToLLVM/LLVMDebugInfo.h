@@ -105,6 +105,14 @@ class LLVMDebugInfoHelper
         return getDILLVMType(location, llvmType, file, line, scope);
     }
 
+    std::string to_print(mlir::Type type)
+    {
+        std::stringstream exportType;
+        MLIRPrinter mp{};
+        mp.printType<std::ostream>(exportType, type);
+        return exportType.str();      
+    }
+
     LLVM::DITypeAttr getDITypeScriptType(mlir::Location location, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         if (!type)
@@ -135,25 +143,23 @@ class LLVMDebugInfoHelper
             return getDIType(location, anyType, file, line, scope);
         }
 
-#ifdef ENABLE_DEBUGINFO_PATCH_INFO
-        if (auto arrayType = dyn_cast_or_null<mlir_ts::ArrayType>(type))
-        {
-            return getDIType(arrayType, file, line, scope);
-        }
-#endif        
-
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             MLIRTypeHelper mth(context);
-            if (mth.isUnionTypeNeedsTag(location, unionType))
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(location, unionType, baseType))
             {
                 return getDIType(location, unionType, file, line, scope);
+            }
+            else
+            {
+                return getDIType(location, mlir::Type(), baseType, file, line, scope);
             }
         }
 
         if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
         {
-            return getDITypeWithFields(location, tupleType, "tuple", true, file, line, scope);
+            return getDITypeWithFields(location, tupleType, to_print(tupleType), false, file, line, scope);
         }
 
         if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(type))
@@ -166,10 +172,24 @@ class LLVMDebugInfoHelper
             return getDITypeWithFields(location, classStorageType, classStorageType.getName().getValue().str(), false, file, line, scope);
         }
 
+#ifndef ENABLE_DEBUGINFO_PATCH_INFO
+        if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(type))
+        {
+            return getDITypeWithFields(location, arrayType, to_print(arrayType), false, file, line, scope);
+        }        
+#endif        
+
         if (auto enumType = dyn_cast<mlir_ts::EnumType>(type))
         {
             return getDIType(location, enumType, file, line, scope);
         }
+
+#ifdef ENABLE_DEBUGINFO_PATCH_INFO
+        if (auto arrayType = dyn_cast_or_null<mlir_ts::ArrayType>(type))
+        {
+            return getDIType(arrayType, file, line, scope);
+        }
+#endif        
 
         return getDILLVMType(location, llvmtch.typeConverter->convertType(type), file, line, scope);
     }    

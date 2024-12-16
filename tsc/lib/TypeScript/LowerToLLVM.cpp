@@ -5338,7 +5338,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         // pointer to data type
         rtArrayType.push_back(th.getPtrType());
         // field which store length of array
-        rtArrayType.push_back(th.getI32Type());
+        rtArrayType.push_back(converter.convertType(th.getIndexType()));
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), rtArrayType, false);
     });

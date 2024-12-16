@@ -2074,12 +2074,21 @@ class MLIRTypeHelper
             
             return mlir::success();            
         }
-        else if (isa<mlir_ts::ArrayType>(srcType) || isa<mlir_ts::ConstArrayType>(srcType) || isa<mlir_ts::StringType>(srcType))
+        else if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(srcType))
         {
             // TODO: do not break the order as it is used in Debug info
-            destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context), false, mlir_ts::AccessLevel::Public });
-            destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir_ts::StringType::get(context), false, mlir_ts::AccessLevel::Public });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName("data", context), mlir_ts::RefType::get(arrayType.getElementType()), false, mlir_ts::AccessLevel::Public });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir::IndexType::get(context), false, mlir_ts::AccessLevel::Public });
             return mlir::success();
+
+        }
+        else if (auto stringType = dyn_cast<mlir_ts::StringType>(srcType))
+        {
+            // TODO: do not break the order as it is used in Debug info
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName("data", context), mlir_ts::RefType::get(mlir_ts::CharType::get(context)), false, mlir_ts::AccessLevel::Public });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir::IndexType::get(context), false, mlir_ts::AccessLevel::Public });
+            return mlir::success();
+
         }
         else if (auto optType = dyn_cast<mlir_ts::OptionalType>(srcType))
         {
