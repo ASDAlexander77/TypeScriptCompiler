@@ -2206,18 +2206,18 @@ def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
 }
 
 def TypeScript_SetLengthOfOp : TypeScript_Op<"SetLengthOf"> {
-  let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, I32:$newLength);
+  let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Index:$newLength);
   let results = (outs );
 }
 
 def TypeScript_SetStringLengthOp : TypeScript_Op<"SetStringLength"> {
-  let arguments = (ins Arg<TypeScript_StringRef, "", [MemAlloc, MemWrite]>:$op,  I32:$size);
+  let arguments = (ins Arg<TypeScript_StringRef, "", [MemAlloc, MemWrite]>:$op,  Index:$size);
   let results = (outs );
 }
 
 def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {
   let arguments = (ins TypeScript_String:$op);
-  let results = (outs I32:$result);
+  let results = (outs Index:$result);
 }
 
 def TypeScript_StringConcatOp : TypeScript_Op<"StringConcat"> {

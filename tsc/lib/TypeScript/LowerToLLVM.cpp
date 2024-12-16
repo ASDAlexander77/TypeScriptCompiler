@@ -393,7 +393,7 @@ class LengthOfOpLowering : public TsLlvmPattern<mlir_ts::LengthOfOp>
 
         auto loc = op->getLoc();
 
-        rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(op, th.getI32Type(), transformed.getOp(),
+        rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(op, typeConverter->convertType(th.getIndexType()), transformed.getOp(),
                                                                 MLIRHelper::getStructIndex(rewriter, ARRAY_SIZE_INDEX));
 
         return success();
