@@ -11806,7 +11806,7 @@ class MLIRGenImpl
             functionName, 
             typeArgs,
             operands, 
-            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 
+            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
             genContext);
     }
 
@@ -17434,14 +17434,24 @@ genContext);
                 {
                     if (methodOrField.isField)
                     {
-                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
+                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());                        
                         if (!methodOrField.isMissing)
                         {
                             // TODO: test cast result
-                            auto objectNull = cast(location, objectType, nullObj, genContext);
+                            auto objectNull = cast(location, objectType, nullObj, genContext, true);
+                            if (!objectNull)
+                            {
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::Yes};
+                            }
+
                             auto fieldValue = mlirGenPropertyAccessExpression(location, objectNull,
                                                                               methodOrField.fieldInfo.id, genContext);
                             assert(fieldValue);
+                            if (!fieldValue)
+                            {
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::Yes};
+                            }
+
                             auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
 
                             LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable field: " << methodOrField.fieldInfo.id
@@ -17470,10 +17480,10 @@ genContext);
                             // auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
                             auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
                                                                                  mth.getI64AttrValue(-1));
-                            auto castedNull = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type),
+                            auto castedPtr = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type),
                                                    negative1, genContext);
                             vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
-                                location, virtTuple, castedNull, vtableValue,
+                                location, virtTuple, castedPtr, vtableValue,
                                 MLIRHelper::getStructIndex(builder, fieldIndex));
                         }
                     }
@@ -19892,7 +19902,7 @@ genContext);
 
     // TODO: cast should not throw error in case of generic methods in "if (false)" conditions (typeof == "..."), 
     // as it may prevent cmpiling code
-    ValueOrLogicalResult cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
+    ValueOrLogicalResult cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck = false)
     {
         if (!type)
         {
@@ -19922,7 +19932,7 @@ genContext);
         }
 
         // strict null
-        if (compileOptions.strictNullChecks)
+        if (compileOptions.strictNullChecks && !disableStrictNullCheck)
         {
             if (isa<mlir_ts::NullType>(valueType))
             {

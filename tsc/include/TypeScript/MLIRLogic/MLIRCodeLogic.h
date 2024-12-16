@@ -315,7 +315,7 @@ class MLIRCustomMethods
         return m[functionName.str()];    
     }   
 
-    ValueOrLogicalResult callMethod(StringRef functionName, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
+    ValueOrLogicalResult callMethod(StringRef functionName, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         if (functionName == "print")
         {
@@ -402,14 +402,14 @@ class MLIRCustomMethods
         return mlir::failure();
     }
 
-    mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
+    mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         SmallVector<mlir::Value> vals;
         for (auto &oper : operands)
         {
             if (!isa<mlir_ts::StringType>(oper.getType()))
             {
-                auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
+                auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext, false);
                 if (!strCast)
                 {
                     return mlir::failure();
@@ -428,7 +428,7 @@ class MLIRCustomMethods
         return mlir::success();
     }
 
-    ValueOrLogicalResult mlirGenConvertF(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenConvertF(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         mlir::Value bufferSize;
         mlir::Value format;
@@ -440,14 +440,14 @@ class MLIRCustomMethods
         bufferSize = operands[0];
         if (!isa<mlir::IndexType>(bufferSize.getType()))
         {
-            bufferSize = castFn(location, mlir::IndexType::get(builder.getContext()), bufferSize, genContext);
+            bufferSize = castFn(location, mlir::IndexType::get(builder.getContext()), bufferSize, genContext, false);
         }
 
         auto stringType = mlir_ts::StringType::get(builder.getContext());
         format = operands[1];
         if (!isa<mlir_ts::StringType>(format.getType()))
         {
-            format = castFn(location, stringType, format, genContext);
+            format = castFn(location, stringType, format, genContext, false);
         }
 
         SmallVector<mlir::Value> vals;
