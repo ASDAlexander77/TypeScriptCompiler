@@ -2245,11 +2245,9 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
-        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
-
-        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
+        auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
         auto incSize = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
         auto newCountAsIndexType =
@@ -2298,15 +2296,9 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
         }
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
 
-        auto newCountAsI32Type = 
-            newCountAsIndexType.getType() != th.getI32Type()
-                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType)
-                : (mlir::Value) newCountAsIndexType;
-
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
-
-        rewriter.replaceOp(pushOp, ValueRange{newCountAsI32Type});
+        rewriter.replaceOp(pushOp, ValueRange{newCountAsIndexType});
         return success();
     }
 };
@@ -2337,11 +2329,9 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
-        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
-
-        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
+        auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
         auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
         auto newCountAsIndexType =
@@ -2361,13 +2351,7 @@ struct ArrayPopOpLowering : public TsLlvmPattern<mlir_ts::ArrayPopOp>
         auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
-
-        auto newCountAsI32Type = 
-            newCountAsIndexType.getType() != th.getI32Type()
-                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType)
-                : (mlir::Value) newCountAsIndexType;
-
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
 
         rewriter.replaceOp(popOp, ValueRange{loadedElement});
         return success();
@@ -2400,11 +2384,9 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
-        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
-
-        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
+        auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
         auto incSize = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
         auto newCountAsIndexType =
@@ -2458,15 +2440,9 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
         }
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
 
-        auto newCountAsI32Type = 
-            newCountAsIndexType.getType() != th.getI32Type()
-                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType)
-                : (mlir::Value) newCountAsIndexType;
-
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
-
-        rewriter.replaceOp(unshiftOp, ValueRange{newCountAsI32Type});
+        rewriter.replaceOp(unshiftOp, ValueRange{newCountAsIndexType});
         return success();
     }
 };
@@ -2500,11 +2476,9 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
-        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
-
-        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
+        auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsIndexTypePtr);
 
         auto incSize = clh.createIndexConstantOf(llvmIndexType, 1);
         auto newCountAsIndexType =
@@ -2529,13 +2503,7 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
         auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
-
-        auto newCountAsI32Type = 
-            newCountAsIndexType.getType() != th.getI32Type()
-                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType)
-                : (mlir::Value) newCountAsIndexType;
-
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
 
         rewriter.replaceOp(shiftOp, ValueRange{loadedElement});
         return success();
@@ -2563,38 +2531,21 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto llvmArrayType = tch.convertType(arrayType);
         auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
-        auto llvmI32Type = th.getI32Type();
 
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
-        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
-
-        auto countAsIndexType = rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type);
+        auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
 
         auto startIndexAsIndexType = spliceOp.getStart();
-        auto startIndexAsI32Type = 
-            llvmI32Type != startIndexAsIndexType.getType()
-            ? (mlir::Value) rewriter.create<mlir::index::CastUOp>(loc, llvmI32Type, startIndexAsIndexType)
-            : (mlir::Value) startIndexAsIndexType;
-
         auto decSizeAsIndexType = spliceOp.getDeleteCount();
-        auto decSizeAsI32Type = 
-            llvmI32Type != decSizeAsIndexType.getType()
-            ? (mlir::Value) rewriter.create<mlir::index::CastUOp>(loc, llvmI32Type, decSizeAsIndexType)
-            : (mlir::Value) decSizeAsIndexType;
 
-        auto incSizeAsI32Type = clh.createI32ConstantOf(transformed.getItems().size());
         auto incSizeAsIndexType = clh.createIndexConstantOf(llvmIndexType, transformed.getItems().size());
 
-        mlir::Value newCountAsI32Type = rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{countAsI32Type, decSizeAsI32Type});
-        auto newCountAsIndexType = 
-            llvmIndexType != newCountAsI32Type.getType()
-            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, newCountAsI32Type)
-            : (mlir::Value) newCountAsI32Type;
+        mlir::Value newCountAsIndexType = rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, decSizeAsIndexType});
 
         newCountAsIndexType = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, ValueRange{newCountAsIndexType, incSizeAsIndexType});
 
@@ -2607,19 +2558,15 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         auto increaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
             auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
-            auto moveCountAsI32Type =
-                rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{countAsI32Type, startIndexAsI32Type});
-            moveCountAsI32Type =
-                rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{moveCountAsI32Type, decSizeAsI32Type});
-            auto moveCountAsIndexType = 
-                llvmIndexType != moveCountAsI32Type.getType()
-                ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, moveCountAsI32Type)
-                : (mlir::Value) moveCountAsI32Type;
+            auto moveCountAsIndexType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndexAsIndexType});
+            moveCountAsIndexType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{moveCountAsIndexType, decSizeAsIndexType});
 
             // realloc
-            auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, allocated, ValueRange{startIndexAsI32Type});
-            auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{decSizeAsI32Type});
-            auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{incSizeAsI32Type});
+            auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, allocated, ValueRange{startIndexAsIndexType});
+            auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{decSizeAsIndexType});
+            auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{incSizeAsIndexType});
             rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexType);
 
             return allocated;
@@ -2627,29 +2574,25 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
 
         auto decreaseArrayFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
 
-            auto moveCountAsI32Type =
-                rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{countAsI32Type, startIndexAsI32Type});
-            moveCountAsI32Type =
-                rewriter.create<LLVM::SubOp>(loc, llvmI32Type, ValueRange{moveCountAsI32Type, decSizeAsI32Type});
-            auto moveCountAsIndexType = 
-                llvmIndexType != moveCountAsI32Type.getType()
-                ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, moveCountAsI32Type)
-                : (mlir::Value) moveCountAsI32Type;
+            auto moveCountAsIndexType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{countAsIndexType, startIndexAsIndexType});
+            moveCountAsIndexType =
+                rewriter.create<LLVM::SubOp>(loc, llvmIndexType, ValueRange{moveCountAsIndexType, decSizeAsIndexType});
 
             // realloc
-            auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr, ValueRange{startIndexAsI32Type});
-            auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{decSizeAsI32Type});
-            auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{incSizeAsI32Type});
+            auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr, ValueRange{startIndexAsIndexType});
+            auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{decSizeAsIndexType});
+            auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{incSizeAsIndexType});
             rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexType);
 
             auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
             return allocated;
         };
 
-        auto cond = rewriter.create<arith::CmpIOp>(loc, th.getLLVMBoolType(), arith::CmpIPredicateAttr::get(rewriter.getContext(), arith::CmpIPredicate::ugt), incSizeAsI32Type, decSizeAsI32Type);
+        auto cond = rewriter.create<arith::CmpIOp>(loc, th.getLLVMBoolType(), arith::CmpIPredicateAttr::get(rewriter.getContext(), arith::CmpIPredicate::ugt), incSizeAsIndexType, decSizeAsIndexType);
         auto allocated = clh.conditionalExpressionLowering(loc, th.getPtrType(), cond, increaseArrayFunc, decreaseArrayFunc);
 
-        mlir::Value index = startIndexAsI32Type;
+        mlir::Value index = startIndexAsIndexType;
         auto next = false;
         mlir::Value value1;
         for (auto itemPair : llvm::zip(transformed.getItems(), spliceOp.getItems()))
@@ -2684,15 +2627,9 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
         }
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
 
-        newCountAsI32Type = 
-            newCountAsIndexType.getType() != llvmI32Type
-                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, llvmI32Type, newCountAsIndexType)
-                : (mlir::Value) newCountAsIndexType;
-
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
-
-        rewriter.replaceOp(spliceOp, ValueRange{newCountAsI32Type});
+        rewriter.replaceOp(spliceOp, ValueRange{newCountAsIndexType});
         return success();
     }
 };

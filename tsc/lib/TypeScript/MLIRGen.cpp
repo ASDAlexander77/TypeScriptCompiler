@@ -11364,7 +11364,7 @@ class MLIRGenImpl
         }          
         else if (auto refType = dyn_cast<mlir_ts::RefType>(arrayType)) 
         {
-            CAST_A(index, location, mth.getStructIndexType(), argumentExpression, genContext);
+            CAST_A(index, location, mth.getIndexType(), argumentExpression, genContext);
 
             auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
                 location, refType, expression, index);            
@@ -17141,10 +17141,8 @@ genContext);
                         location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken),
                         fieldAddrAsInt, sizeOfStoreElement);
 
-                    CAST_A(calcIndex32, location, mth.getStructIndexType(), calcIndex, genContext);
-
                     auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
-                        location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex32);
+                        location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex);
 
                     // calc bit
                     auto indexModIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
