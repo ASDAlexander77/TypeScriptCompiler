@@ -942,8 +942,9 @@ class CastLogicHelper
         }
 
         auto ptrType = th.getPtrType();
-        auto sizeValue = clh.createI32ConstantOf(size);
         auto llvmRtArrayStructType = tch.convertType(arrayType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto sizeValue = clh.createIndexConstantOf(llvmIndexType, size);
         auto destArrayElement = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
         auto llvmDestArrayElement = tch.convertType(destArrayElement);
 

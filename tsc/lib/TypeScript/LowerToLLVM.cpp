@@ -2114,13 +2114,13 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
 
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);
+
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
                                                                  MLIRHelper::getStructIndex(rewriter, 0));
 
-        auto newCountAsI32Type = clh.createI32ConstantOf(createArrayOp.getItems().size());
         auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2,
-                                                                 newCountAsI32Type, MLIRHelper::getStructIndex(rewriter, 1));
+                                                                 newCountAsIndexType, MLIRHelper::getStructIndex(rewriter, 1));
 
         rewriter.replaceOp(createArrayOp, ValueRange{structValue3});
         return success();
@@ -2156,11 +2156,13 @@ struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
 
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
                                                                  MLIRHelper::getStructIndex(rewriter, 0));
 
-        auto size0 = clh.createI32ConstantOf(0);
+        auto size0 = clh.createIndexConstantOf(llvmIndexType, 0);
         auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, size0,
                                                                  MLIRHelper::getStructIndex(rewriter, 1));
 
@@ -2203,6 +2205,7 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
 
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);
+
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
                                                                  MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));

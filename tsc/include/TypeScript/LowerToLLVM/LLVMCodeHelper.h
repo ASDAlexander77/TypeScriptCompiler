@@ -344,12 +344,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // create ReadOnlyRuntimeArrayType
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
-        // auto arrayPtrType = LLVM::LLVMPointerType::get(llvmSubElementType);
-        // auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSubElementType, size);
-        // auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
-
         auto sizeValue = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32),
-                                                           rewriter.getIntegerAttr(rewriter.getI32Type(), arrayValue.size()));
+                                                           rewriter.getIndexAttr(arrayValue.size()));
 
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue, itemValArrayPtr,
                                                                  MLIRHelper::getStructIndex(rewriter, 0));

@@ -607,7 +607,7 @@ def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
     allocate in memory few instances
   }];
 
-  let arguments = (ins I32:$count);
+  let arguments = (ins Index:$count);
   let results = (outs Res<TypeScript_Array, "", [MemAlloc]>:$instance);
 
   
@@ -2196,7 +2196,7 @@ def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice"> {
 }
 
 def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView", [AllTypesMatch<["op", "result"]>]> {
-  let arguments = (ins TypeScript_Array:$op, I32:$offset, I32:$count);
+  let arguments = (ins TypeScript_Array:$op, Index:$offset, Index:$count);
   let results = (outs TypeScript_Array:$result);
 }
 
