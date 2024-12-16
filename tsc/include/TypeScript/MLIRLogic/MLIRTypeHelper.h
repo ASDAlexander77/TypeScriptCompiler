@@ -3,6 +3,7 @@
 
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DOM.h"
+#include "TypeScript/DataStructs.h"
 #include "TypeScript/MLIRLogic/MLIRGenStore.h"
 #include "TypeScript/MLIRLogic/MLIRTypeIterator.h"
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
@@ -23,6 +24,7 @@ namespace typescript
 class MLIRTypeHelper
 {
     mlir::MLIRContext *context;
+    CompileOptions compileOptions;
 
   public:
 
@@ -34,11 +36,13 @@ class MLIRTypeHelper
 
     MLIRTypeHelper(
         mlir::MLIRContext *context, 
+        CompileOptions compileOptions,
         std::function<ClassInfo::TypePtr(StringRef)> getClassInfoByFullName,
         std::function<GenericClassInfo::TypePtr(StringRef)> getGenericClassInfoByFullName,
         std::function<InterfaceInfo::TypePtr(StringRef)> getInterfaceInfoByFullName,
         std::function<GenericInterfaceInfo::TypePtr(StringRef)> getGenericInterfaceInfoByFullName) 
         : context(context), 
+          compileOptions(compileOptions),
           getClassInfoByFullName(getClassInfoByFullName),
           getGenericClassInfoByFullName(getGenericClassInfoByFullName),
           getInterfaceInfoByFullName(getInterfaceInfoByFullName),
@@ -2918,6 +2922,11 @@ class MLIRTypeHelper
                 return mlir_ts::OptionalType::get(resType);
             }     
 
+            if (compileOptions.strictNullChecks && unionContext.isNullable)
+            {
+                return mlir_ts::UnionType::get(context, {resType, getNullType()});             
+            }
+
             return resType;       
         }
 
@@ -2928,6 +2937,11 @@ class MLIRTypeHelper
             mlir::SmallVector<mlir::Type> mergedTypesAll;
             this->mergeTypes(location, typesAll, mergedTypesAll);
 
+            if (compileOptions.strictNullChecks && unionContext.isNullable)
+            {
+                mergedTypesAll.push_back(getNullType());
+            }
+
             mlir::Type retType = mergedTypesAll.size() == 1 ? mergedTypesAll.front() : getUnionType(mergedTypesAll);
             if (unionContext.isUndefined)
             {
@@ -2935,6 +2949,11 @@ class MLIRTypeHelper
             }
 
             return retType;
+        }
+
+        if (compileOptions.strictNullChecks && unionContext.isNullable)
+        {
+            typesAll.push_back(getNullType());
         }
 
         mlir::Type retType = typesAll.size() == 1 ? typesAll.front() : getUnionType(typesAll);
@@ -3063,7 +3082,9 @@ class MLIRTypeHelper
 
         std::sort (newTypes.begin(), newTypes.end(), [](auto i, auto j) { return (i.getAsOpaquePointer() < j.getAsOpaquePointer()); });
 
-        return isUndefined ? mlir::Type(mlir_ts::OptionalType::get(mlir_ts::UnionType::get(context, newTypes))) : mlir::Type(mlir_ts::UnionType::get(context, newTypes));
+        return isUndefined 
+            ? mlir::Type(mlir_ts::OptionalType::get(mlir_ts::UnionType::get(context, newTypes))) 
+            : mlir::Type(mlir_ts::UnionType::get(context, newTypes));
     }
 
     mlir::Type getIntersectionType(mlir::Type type1, mlir::Type type2)

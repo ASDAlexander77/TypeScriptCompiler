@@ -155,6 +155,7 @@ class MLIRGenImpl
           sourceMgr(const_cast<llvm::SourceMgr &>(sourceMgr)),
           sourceMgrHandler(const_cast<llvm::SourceMgr &>(sourceMgr), &const_cast<mlir::MLIRContext &>(context)),
           mth(&const_cast<mlir::MLIRContext &>(context), 
+            compileOptions,
             std::bind(&MLIRGenImpl::getClassInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getGenericClassInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
