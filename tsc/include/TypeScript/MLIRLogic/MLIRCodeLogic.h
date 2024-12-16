@@ -1248,12 +1248,12 @@ class MLIRPropertyAccessCodeLogic
             if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(expression.getType()))
             {
                 auto size = constArrayType.getSize();
-                return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
-                            builder.getI32IntegerAttr(size));
+                return builder.create<mlir_ts::ConstantOp>(location, builder.getIndexType(),
+                            builder.getIndexAttr(size));
             }
             else if (isa<mlir_ts::ArrayType>(expression.getType()))
             {
-                return builder.create<mlir_ts::LengthOfOp>(location, builder.getI32Type(), expression);
+                return builder.create<mlir_ts::LengthOfOp>(location, builder.getIndexType(), expression);
             }
 
             return mlir::Value();
