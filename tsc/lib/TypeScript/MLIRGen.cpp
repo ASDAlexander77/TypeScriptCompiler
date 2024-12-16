@@ -17073,7 +17073,7 @@ genContext);
                 auto bitmapValueType = mth.getTypeBitmapValueType();
 
                 auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
-                CAST_A(classNull, location, newClassPtr->classType, nullOp, genContext);
+                CAST_A_NULLCHECK(classNull, location, newClassPtr->classType, nullOp, genContext, true);
 
                 auto sizeOfStoreElement =
                     builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), mth.getTypeBitmapValueType());
