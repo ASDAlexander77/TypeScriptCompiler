@@ -259,6 +259,15 @@ class MLIRGenImpl
                 //  S(DEFAULT_LIB_DIR "/lib.d.ts")
                 filesToProcess.push_back(convertUTF8toWide(compileOptions.defaultDeclarationTSFile));
             }
+
+            if (sourceFile->pragmas.find(S("ts-nocheck")) != sourceFile->pragmas.end())
+            {
+                compileOptions.strictNullChecks = false;
+            }
+            else if (sourceFile->pragmas.find(S("ts-check")) != sourceFile->pragmas.end())
+            {
+                compileOptions.strictNullChecks = true;
+            }
         }
 
         for (auto refFile : sourceFile->referencedFiles)
