@@ -19932,18 +19932,18 @@ genContext);
         // strict null
         if (compileOptions.strictNullChecks && !disableStrictNullCheck)
         {
-            if (isa<mlir_ts::NullType>(valueType))
+            if (isa<mlir_ts::NullType>(valueType) && !isa<mlir_ts::AnyType>(type))
             {
-                auto hasNull = false;
+                auto hasNullOrAny = false;
                 if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
                 {
                     auto foundType = llvm::find_if(unionType.getTypes(), [&] (auto elementOfUnionType) {
-                        return elementOfUnionType == valueType;
+                        return elementOfUnionType == valueType || isa<mlir_ts::AnyType>(elementOfUnionType);
                     });
-                    hasNull |= foundType != unionType.getTypes().end();
+                    hasNullOrAny |= foundType != unionType.getTypes().end();
                 }
 
-                if (!hasNull)
+                if (!hasNullOrAny)
                 {
                     emitError(location, "can't cast from null type to '") << to_print(type) << "' in 'strict null mode'";
                     return mlir::failure(); 
@@ -20472,6 +20472,9 @@ genContext);
         operands.push_back(value);
 
         NodeFactory nf(NodeFactoryFlags::None);
+
+        MLIRValueGuard<bool> vgStrictNullCheck(compileOptions.strictNullChecks);
+        compileOptions.strictNullChecks = false;
         return mlirGenCallExpression(location, funcResult, { nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS")).as<Node>()) }, operands, funcCallGenContext);
     }
 
