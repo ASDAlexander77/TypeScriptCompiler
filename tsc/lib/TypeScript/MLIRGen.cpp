@@ -20448,7 +20448,8 @@ genContext);
         if (!existGenericFunctionMap(funcName))
         {
             // TODO: must be improved, outdated
-            auto src = S("function __as<T>(a: any) : T \
+            auto src = S("// @ts-nocheck\n\
+                function __as<T>(a: any) : T \
                 { \
                     if (typeof a == 'number') return a; \
                     if (typeof a == 'string') return a; \
