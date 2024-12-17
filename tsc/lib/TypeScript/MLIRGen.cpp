@@ -19932,21 +19932,29 @@ genContext);
         // strict null
         if (compileOptions.strictNullChecks && !disableStrictNullCheck)
         {
-            if (isa<mlir_ts::NullType>(valueType) && !isa<mlir_ts::AnyType>(type))
-            {
-                auto hasNullOrAny = false;
-                if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
-                {
-                    auto foundType = llvm::find_if(unionType.getTypes(), [&] (auto elementOfUnionType) {
-                        return elementOfUnionType == valueType || isa<mlir_ts::AnyType>(elementOfUnionType);
-                    });
-                    hasNullOrAny |= foundType != unionType.getTypes().end();
-                }
+            auto effectiveType = type;
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(effectiveType)) {
+                effectiveType = optType.getElementType();
+            }
 
-                if (!hasNullOrAny)
+            if (isa<mlir_ts::NullType>(valueType))
+            {
+                if (!isa<mlir_ts::NullType>(effectiveType) && !isa<mlir_ts::AnyType>(effectiveType))
                 {
-                    emitError(location, "can't cast from null type to '") << to_print(type) << "' in 'strict null mode'";
-                    return mlir::failure(); 
+                    auto hasNullOrAny = false;
+                    if (auto unionType = dyn_cast<mlir_ts::UnionType>(effectiveType))
+                    {
+                        auto foundType = llvm::find_if(unionType.getTypes(), [&] (auto elementOfUnionType) {
+                            return elementOfUnionType == valueType || isa<mlir_ts::AnyType>(elementOfUnionType);
+                        });
+                        hasNullOrAny |= foundType != unionType.getTypes().end();
+                    }
+
+                    if (!hasNullOrAny)
+                    {
+                        emitError(location, "can't cast from 'null' to '") << to_print(type) << "' in 'strict null mode'";
+                        return mlir::failure(); 
+                    }
                 }
             }
         }
