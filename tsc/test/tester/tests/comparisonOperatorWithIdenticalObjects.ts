@@ -1,3 +1,4 @@
+// @ts-nocheck
 class A1 {
     public a: string;
     public b: number;

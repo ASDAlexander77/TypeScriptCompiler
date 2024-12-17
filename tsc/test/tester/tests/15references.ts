@@ -1,3 +1,4 @@
+// @ts-nocheck
 type Action = () => void;
 
 let glb1 = 0;

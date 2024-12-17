@@ -1,3 +1,4 @@
+// @ts-nocheck
 class BazClass {}
 function testBoolCasts() {
     print("testBoolCast");

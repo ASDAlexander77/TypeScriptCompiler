@@ -1,3 +1,4 @@
+// @ts-nocheck
 module Test {
     interface IState {
     }

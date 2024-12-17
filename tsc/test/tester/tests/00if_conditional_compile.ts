@@ -1,3 +1,4 @@
+// @ts-nocheck
 function isArray<T extends unknown[]>(value: T): value is T {
     return true;
 }

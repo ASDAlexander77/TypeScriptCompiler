@@ -1,3 +1,4 @@
+// @ts-nocheck
 function foo3(results: number[] | undefined) {
     results ||= [];
     if (results) print("has values");

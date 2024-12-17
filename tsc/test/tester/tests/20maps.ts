@@ -1,3 +1,4 @@
+// @ts-nocheck
 class Node<T> {
     v: T;
     k: string;

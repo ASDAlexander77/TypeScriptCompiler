@@ -1,3 +1,4 @@
+// @ts-nocheck
 class C {
     val: number;
 

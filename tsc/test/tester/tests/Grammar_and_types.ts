@@ -1,3 +1,4 @@
+// @ts-nocheck
 function main() {
     print("Basics");
 

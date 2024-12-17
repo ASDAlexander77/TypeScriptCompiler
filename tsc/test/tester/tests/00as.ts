@@ -1,3 +1,4 @@
+// @ts-nocheck
 // TODO: add cast 'string[]' -> 'any[]'
 //function tag(...x: any[]): any
 function tag(...x: string[]): string

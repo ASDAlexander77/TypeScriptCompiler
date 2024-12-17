@@ -1,3 +1,4 @@
+// @ts-nocheck
 function getArray() : Array<string>
 {
 	return null;

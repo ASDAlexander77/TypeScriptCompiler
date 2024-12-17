@@ -1,3 +1,4 @@
+// @ts-nocheck
 class Testrec {
     str: string;
     num: number;
