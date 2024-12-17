@@ -483,17 +483,7 @@ class StringLengthOpLowering : public TsLlvmPattern<mlir_ts::StringLengthOp>
 
         auto strlenFuncOp = ch.getOrInsertFunction("strlen", th.getFunctionType(llvmIndexType, {i8PtrTy}));
 
-        // calc size
-        if (th.getI32Type() != llvmIndexType)
-        {
-            auto size = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, transformed.getOp());
-            rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, th.getI32Type(), size.getResult());
-        }
-        else
-        {
-            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, strlenFuncOp, transformed.getOp());
-        }
-
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, strlenFuncOp, transformed.getOp());
         return success();
     }
 };
@@ -520,10 +510,7 @@ class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthO
         mlir::Value ptr = transformed.getOp();
         mlir::Value size = transformed.getSize();
 
-        mlir::Value strPtr = rewriter.create<LLVM::LoadOp>(
-            loc, 
-            i8PtrTy, 
-            ptr);
+        mlir::Value strPtr = rewriter.create<LLVM::LoadOp>(loc, i8PtrTy, ptr);
 
         mlir::Value newStringValue = ch.MemoryRealloc(strPtr, size);
 

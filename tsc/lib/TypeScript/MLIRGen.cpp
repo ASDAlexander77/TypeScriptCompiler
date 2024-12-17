@@ -17610,7 +17610,7 @@ genContext);
                     if (methodOrField.isField)
                     {
                         auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
-                        auto classNull = cast(location, newClassPtr->classType, nullObj, genContext);
+                        auto classNull = cast(location, newClassPtr->classType, nullObj, genContext, true);
                         auto fieldValue = mlirGenPropertyAccessExpression(location, classNull,
                                                                           methodOrField.fieldInfo.id, genContext);
                         if (!fieldValue)
