@@ -430,15 +430,10 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
                                                           ArrayRef<LLVM::GEPArg>{0, ARRAY_DATA_INDEX});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, ptrType, currentPtrPtr);
 
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
+        auto countAsIndexTypePtr = rewriter.create<LLVM::GEPOp>(loc, ptrType, llvmArrayType, transformed.getOp(),
                                                               ArrayRef<LLVM::GEPArg>{0, ARRAY_SIZE_INDEX});
-        auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
-        auto newLengthAsI32Type = op.getNewLength();
-
-        auto newCountAsIndexType = 
-            llvmIndexType != newLengthAsI32Type.getType()
-            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, newLengthAsI32Type)
-            : (mlir::Value) newLengthAsI32Type;
+        auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, th.getIndexType(), countAsIndexTypePtr);
+        auto newCountAsIndexType = op.getNewLength();
 
         auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
         auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
@@ -450,12 +445,7 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
 
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
-        auto newCountAsI32Type = 
-            newCountAsIndexType.getType() != th.getI32Type()
-                ? (mlir::Value) rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), newCountAsIndexType)
-                : (mlir::Value) newCountAsIndexType;
-
-        rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
+        rewriter.create<LLVM::StoreOp>(loc, newCountAsIndexType, countAsIndexTypePtr);
 
         rewriter.eraseOp(op);
 
@@ -505,7 +495,6 @@ class SetStringLengthOpLowering : public TsLlvmPattern<mlir_ts::SetStringLengthO
 
         // TODO implement str concat
         auto i8PtrTy = th.getPtrType();
-        auto llvmIndexType = tch.convertType(th.getIndexType());
 
         mlir::Value ptr = transformed.getOp();
         mlir::Value size = transformed.getSize();
