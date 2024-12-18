@@ -3710,18 +3710,13 @@ struct MemoryMoveOpLowering : public TsLlvmPattern<mlir_ts::MemoryMoveOp>
         values.push_back(transformed.getDst());
         values.push_back(transformed.getSrc());
 
-        auto countAsI32Type = memoryMoveOp.getCount();
-
-        auto newCountAsIndexType = 
-            llvmIndexType != countAsI32Type.getType()
-            ? (mlir::Value) rewriter.create<LLVM::ZExtOp>(loc, llvmIndexType, countAsI32Type)
-            : (mlir::Value) countAsI32Type;
+        auto countAsIndexType = memoryMoveOp.getCount();
 
         auto llvmSrcType = tch.convertType(memoryMoveOp.getSrc().getType());
         auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), transformed.getSrc().getType());
         auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
         auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{srcSize, newCountAsIndexType});
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{srcSize, countAsIndexType});
 
         values.push_back(multSizeOfTypeValue);
 

@@ -126,11 +126,11 @@ class CastLogicHelper
 
         if (inType.isIndex())
         {
-            if (resType.isSignedInteger())
+            if (resType.isSignedInteger() || isFloat(resType))
             {
                 return rewriter.create<mlir::index::CastSOp>(loc, resLLVMType, in);
             }
-            else
+            else if (resType.isUnsignedInteger() || resType.isInteger())
             {
                 return rewriter.create<mlir::index::CastUOp>(loc, resLLVMType, in);
             }
