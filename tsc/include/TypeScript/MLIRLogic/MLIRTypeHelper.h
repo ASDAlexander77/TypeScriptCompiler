@@ -1657,6 +1657,11 @@ class MLIRTypeHelper
     {
         found = false;
 
+        if (!isAnyFunctionType(typeLeft) || !isAnyFunctionType(typeRight))
+        {
+            return mlir::Type();
+        }
+
         auto leftTypeUnwrapped = stripOptionalType(typeLeft);
         auto rightTypeUnwrapped = stripOptionalType(typeRight);
 
