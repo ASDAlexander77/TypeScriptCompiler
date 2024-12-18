@@ -9041,7 +9041,6 @@ struct Parser
             }
         }
 
-        // TODO: complete later
         if (range->kind == SyntaxKind::SingleLineCommentTrivia)
         {
             auto singleLine_begin =

@@ -20538,8 +20538,11 @@ genContext);
                         .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
                         .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
-                        .Case<mlir_ts::NullType>([&](auto _) { typeOfs["null"] = true; })
-                        .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = true; })
+                        // TODO: we can't use null type here and undefined otherwise code will be cycling 
+                        // due to issue with TypeOf == 'null' as it should denounce UnionType into Single Type
+                        // review code to use null in "TypeGuard"
+                        .Case<mlir_ts::NullType>([&](auto _) { /* TODO: uncomment when finish with TypeGuard and null */ /*typeOfs["null"] = true;*/ })
+                        .Case<mlir_ts::UndefinedType>([&](auto _) { /* TODO: I don't think we need any code here */ /*typeOfs["undefined"] = true;*/ })
                         .Default([&](auto type) { 
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
                             llvm_unreachable("not implemented yet"); 
