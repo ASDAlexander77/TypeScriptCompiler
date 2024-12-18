@@ -1135,66 +1135,6 @@ class MLIRPropertyAccessCodeLogic
             location, elementTypeForRef, expression, MLIRHelper::getStructIndex(builder, fieldIndex));
     }
 
-    mlir::Value Bool(mlir_ts::BooleanType intType)
-    {
-        auto propName = getName();
-        if (propName == TO_STRING)
-        {
-            return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
-                                                   expression);
-        }
-
-        return mlir::Value();
-    }
-
-    mlir::Value Int(mlir::IntegerType intType)
-    {
-        auto propName = getName();
-        if (propName == TO_STRING)
-        {
-            return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
-                                                   expression);
-        }
-
-        return mlir::Value();
-    }
-
-    mlir::Value Index(mlir::IndexType intType)
-    {
-        auto propName = getName();
-        if (propName == TO_STRING)
-        {
-            return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
-                                                   expression);
-        }
-
-        return mlir::Value();
-    }    
-
-    mlir::Value Float(mlir::FloatType floatType)
-    {
-        auto propName = getName();
-        if (propName == TO_STRING)
-        {
-            return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
-                                                   expression);
-        }
-
-        return mlir::Value();
-    }
-
-    mlir::Value Number(mlir_ts::NumberType numberType)
-    {
-        auto propName = getName();
-        if (propName == TO_STRING)
-        {
-            return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
-                                                   expression);
-        }
-
-        return mlir::Value();
-    }
-
     mlir::Value String(mlir_ts::StringType stringType)
     {
         LLVM_DEBUG(dbgs() << "\n!! string prop access for : " << expression << "\n");

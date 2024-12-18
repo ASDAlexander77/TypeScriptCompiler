@@ -10138,25 +10138,6 @@ class MLIRGenImpl
                 .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
                 .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
                 .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
-                .Case<mlir_ts::BooleanType>([&](auto intType) { 
-                    if (auto value = cl.Bool(intType))
-                    {
-                        return value;
-                    }
-                    
-                    return mlir::Value();                    
-                })
-                .Case<mlir::IntegerType>([&](auto intType) { return cl.Int(intType); })
-                .Case<mlir::FloatType>([&](auto floatType) { return cl.Float(floatType); })
-                .Case<mlir::IndexType>([&](auto intType) { return cl.Index(intType); })
-                .Case<mlir_ts::NumberType>([&](auto numberType) {                    
-                    if (auto value = cl.Number(numberType))
-                    {
-                        return value;
-                    }
-
-                    return mlir::Value();                        
-                })
                 .Case<mlir_ts::StringType>([&](auto stringType) { 
                     if (auto value = cl.String(stringType))
                     {
@@ -11430,11 +11411,9 @@ class MLIRGenImpl
             && !isa<mlir_ts::ClassType>(funcType)
             // to support super.constructor calls
             && !isa<mlir_ts::ClassStorageType>(funcType))
-        {           
-            // TODO: rewrite code for calling "5.ToString()"
-            // TODO: recursive functions are usually return "failure" as can't be found
-            //return mlir::failure();
-            return funcResult;
+        {      
+            emitError(location, "not a function to call");
+            return mlir::failure();
         }
 
         // so if method is generic and you need to infer types you can cast to generic types

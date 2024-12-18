@@ -7,7 +7,7 @@ function gen<T>(t: T)
 {
     if (isArray(t))
     {
-        return t.length.toString();
+        return <string>t.length;
     }
 
     return "int";
