@@ -1159,6 +1159,18 @@ class MLIRPropertyAccessCodeLogic
         return mlir::Value();
     }
 
+    mlir::Value Index(mlir::IndexType intType)
+    {
+        auto propName = getName();
+        if (propName == TO_STRING)
+        {
+            return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()),
+                                                   expression);
+        }
+
+        return mlir::Value();
+    }    
+
     mlir::Value Float(mlir::FloatType floatType)
     {
         auto propName = getName();

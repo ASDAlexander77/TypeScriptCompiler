@@ -10148,6 +10148,7 @@ class MLIRGenImpl
                 })
                 .Case<mlir::IntegerType>([&](auto intType) { return cl.Int(intType); })
                 .Case<mlir::FloatType>([&](auto floatType) { return cl.Float(floatType); })
+                .Case<mlir::IndexType>([&](auto intType) { return cl.Index(intType); })
                 .Case<mlir_ts::NumberType>([&](auto numberType) {                    
                     if (auto value = cl.Number(numberType))
                     {
