@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 interface ReturnVal {
     something(): void;
 }

@@ -8903,7 +8903,9 @@ struct Parser
             static std::map<string, int> cases = {
                 {S("reference"), 1},  {S("amd-dependency"), 2},  {S("amd-module"), 3},
                 {S("ts-nocheck"), 4}, {S("ts-check"), 5},        {S("jsx"), 6},
-                {S("jsxfrag"), 7},    {S("jsximportsource"), 8}, {S("jsxruntime"), 9}};
+                {S("jsxfrag"), 7},    {S("jsximportsource"), 8}, {S("jsxruntime"), 9},
+                // my addon
+                {S("strict-null"), 10}};
 
             /*JSDocTag*/ Node tag;
             auto index = cases[key];
@@ -8947,6 +8949,9 @@ struct Parser
             case 8:
             case 9:
                 return; // Accessed directly
+            case 10:
+                // nothing todo
+                return;        
             default:
                 Debug::fail<void>(S("Unhandled pragma kind")); // Can this be made into an assertNever in the future?
             }
@@ -9095,20 +9100,23 @@ struct Parser
 
         std::map<string, data::ArgumentWithCommentRange> argMap{};
         for (auto i = 0; i < pragma.args.size(); i++) {
+            string arg_val = text;
             if (args_begin != args_end)
             {
-                auto argument = pragma.args[i];
-                if (args_begin->prefix().str().empty() && !argument.optional) {
-                    return {{}, false};
-                }
-
-                if (argument.captureSpan) {
-                    return Debug::fail<std::pair<std::map<string, data::ArgumentWithCommentRange>, bool>>(S("Capture spans not yet implemented for non-xml pragmas"));
-                }
-
-                argMap[argument.name] = { {args_begin->prefix().str()}, range };
+                arg_val = args_begin->prefix().str();
                 args_begin++;
             }
+
+            auto argument = pragma.args[i];
+            if (arg_val.empty() && !argument.optional) {
+                return {{}, false};
+            }
+
+            if (argument.captureSpan) {
+                return Debug::fail<std::pair<std::map<string, data::ArgumentWithCommentRange>, bool>>(S("Capture spans not yet implemented for non-xml pragmas"));
+            }
+
+            argMap[argument.name] = { {arg_val}, range };
         }
 
         return {argMap, true};

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 function main() {
     print("Basics");
 

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 function gen<T>(t: T)
 {
     if (typeof t == "array")

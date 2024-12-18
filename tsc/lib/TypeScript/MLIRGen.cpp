@@ -260,13 +260,14 @@ class MLIRGenImpl
                 filesToProcess.push_back(convertUTF8toWide(compileOptions.defaultDeclarationTSFile));
             }
 
-            if (sourceFile->pragmas.find(S("ts-nocheck")) != sourceFile->pragmas.end())
-            {
-                compileOptions.strictNullChecks = false;
-            }
-            else if (sourceFile->pragmas.find(S("ts-check")) != sourceFile->pragmas.end())
-            {
-                compileOptions.strictNullChecks = true;
+            auto strictNull = sourceFile->pragmas.find(S("strict-null"));
+            if (strictNull != sourceFile->pragmas.end())
+            {                
+                auto option = strictNull->second.front().find(S("option"));
+                if (option != strictNull->second.front().end()) 
+                {
+                    compileOptions.strictNullChecks = option->second._arg.value == S("true");
+                }
             }
         }
 

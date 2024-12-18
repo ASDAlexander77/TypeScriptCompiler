@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 let glb1 = 0;
 function test(this: string) {
     print(this);

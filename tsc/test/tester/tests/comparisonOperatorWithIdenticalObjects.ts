@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 class A1 {
     public a: string;
     public b: number;

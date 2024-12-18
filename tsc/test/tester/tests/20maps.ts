@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 class Node<T> {
     v: T;
     k: string;

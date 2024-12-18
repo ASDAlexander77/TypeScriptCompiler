@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 function cast<T>(a: any) : T
 {
 	if (typeof a == "number") return <T>a;

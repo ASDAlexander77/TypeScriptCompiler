@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 namespace LambdaProperty {
 
     interface IFoo {

@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 function t_null() {
     let s: string = null;
     assert((s == null) == true, "null");

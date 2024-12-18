@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 declare function sqrt(v: number): number;
 declare function floor(v: number): number;
 declare function pow(v: number, s: number): number;

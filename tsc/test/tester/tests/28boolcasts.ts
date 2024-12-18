@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 class BazClass {}
 function testBoolCasts() {
     print("testBoolCast");

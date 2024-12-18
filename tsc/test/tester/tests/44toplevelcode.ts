@@ -1,4 +1,4 @@
-// @ts-nocheck
+// @strict-null false
 let s2: string;
 let xyz = 12;
 

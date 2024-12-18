@@ -117,6 +117,12 @@ namespace ts
             {{ S("factory") }},
             PragmaKindFlags::MultiLine
         }},
+
+        // my addon
+        {S("strict-null"), {
+            {{ S("option") }},
+            PragmaKindFlags::SingleLine
+        }},        
     };
 
 } // namespace ts
