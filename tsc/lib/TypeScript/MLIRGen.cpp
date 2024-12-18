@@ -11966,10 +11966,8 @@ class MLIRGenImpl
                 }
             })
             .Default([&](auto type) {
-                // TODO: this is hack, rewrite it
-                // it is not function, so just return value as maybe it has been resolved earlier like in case
-                // "<number>.ToString()"
-                value = funcRefValue;
+                emitError(location, "not supported function type");
+                value = mlir::Value();
             });
 
         return value;

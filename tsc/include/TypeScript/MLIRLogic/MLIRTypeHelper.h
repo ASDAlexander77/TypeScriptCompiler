@@ -1447,6 +1447,42 @@ class MLIRTypeHelper
         return result;
     }
 
+    bool equalFunctionTypes(mlir::Type srcType, mlir::Type destType, bool ignoreThisType = false)
+    {
+        auto srcTypeUnwrapped = stripOptionalType(srcType);
+        auto destTypeUnwrapped = stripOptionalType(destType);
+
+        auto isSrcTypeFunc = isa<mlir_ts::FunctionType>(srcTypeUnwrapped);
+        auto isDstTypeFunc = isa<mlir_ts::FunctionType>(destTypeUnwrapped);
+        if (!isSrcTypeFunc && isDstTypeFunc)
+        {
+            // because of data loss we need to return false;
+            return false;
+        }
+
+        auto srcInputs = getParamsFromFuncRef(srcType);
+        auto destInputs = getParamsFromFuncRef(destType);
+        auto srcResults = getReturnsFromFuncRef(srcType);
+        auto destResults = getReturnsFromFuncRef(destType);
+        auto srcIsVarArg = getVarArgFromFuncRef(srcType);
+        auto destIsVarArg = getVarArgFromFuncRef(destType);
+
+        if (ignoreThisType)
+        {
+            if (!isSrcTypeFunc)
+            {
+                srcInputs = srcInputs.drop_back();
+            }
+
+            if (!isDstTypeFunc)
+            {
+                destInputs = destInputs.drop_back();
+            }
+        }
+
+        return TestFunctionTypesMatch(srcInputs, destInputs, srcResults, destResults, srcIsVarArg, destIsVarArg).result == MatchResultType::Match;
+    }
+
     bool canCastFromTo(mlir::Location location, mlir::Type srcType, mlir::Type destType)
     {
         if (srcType == destType)
@@ -1522,21 +1558,7 @@ class MLIRTypeHelper
 
         if (isAnyFunctionType(srcType) && isAnyFunctionType(destType))
         {
-            auto srcTypeUnwrapped = stripOptionalType(srcType);
-            auto destTypeUnwrapped = stripOptionalType(destType);
-            if (!isa<mlir_ts::FunctionType>(srcTypeUnwrapped) && isa<mlir_ts::FunctionType>(destTypeUnwrapped))
-            {
-                // because of data loss we need to return false;
-                return false;
-            }
-
-            auto srcInputs = getParamsFromFuncRef(srcType);
-            auto destInputs = getParamsFromFuncRef(destType);
-            auto srcResults = getReturnsFromFuncRef(srcType);
-            auto destResults = getReturnsFromFuncRef(destType);
-            auto srcIsVarArg = getVarArgFromFuncRef(srcType);
-            auto destIsVarArg = getVarArgFromFuncRef(destType);
-            return TestFunctionTypesMatch(srcInputs, destInputs, srcResults, destResults, srcIsVarArg, destIsVarArg).result == MatchResultType::Match;
+            return equalFunctionTypes(srcType, destType);
         }
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(destType))
@@ -1626,6 +1648,67 @@ class MLIRTypeHelper
                         : anyUnsigned 
                             ? mlir::IntegerType::Unsigned 
                             : mlir::IntegerType::Signless);
+        }
+
+        return mlir::Type();
+    }
+
+    mlir::Type mergeFuncTypes(mlir::Type typeLeft, mlir::Type typeRight, bool& found)
+    {
+        found = false;
+
+        auto leftTypeUnwrapped = stripOptionalType(typeLeft);
+        auto rightTypeUnwrapped = stripOptionalType(typeRight);
+
+        auto isLeftTypeFunc = isa<mlir_ts::FunctionType>(leftTypeUnwrapped);
+        auto isRightTypeFunc = isa<mlir_ts::FunctionType>(rightTypeUnwrapped);
+
+        auto leftInputs = getParamsFromFuncRef(typeLeft);
+        auto rightInputs = getParamsFromFuncRef(typeRight);
+        auto leftResults = getReturnsFromFuncRef(typeLeft);
+        auto rightResults = getReturnsFromFuncRef(typeRight);
+        auto leftIsVarArg = getVarArgFromFuncRef(typeLeft);
+        auto rightIsVarArg = getVarArgFromFuncRef(typeRight);
+
+        auto hybridFuncIsNeeded = false;
+        if (!isLeftTypeFunc)
+        {
+            leftInputs = leftInputs.drop_back();
+            hybridFuncIsNeeded = true;
+        }
+
+        if (!isRightTypeFunc)
+        {
+            rightInputs = rightInputs.drop_back();
+            hybridFuncIsNeeded = true;
+        }
+
+        auto equalFuncs = TestFunctionTypesMatch(leftInputs, rightInputs, leftResults, rightResults, leftIsVarArg, rightIsVarArg).result == MatchResultType::Match;
+        if (equalFuncs)
+        {
+            found = true;
+            
+            if (isa<mlir_ts::BoundFunctionType>(leftTypeUnwrapped) && isa<mlir_ts::BoundFunctionType>(rightTypeUnwrapped))
+            {
+                return typeLeft;
+            }
+
+            if (isa<mlir_ts::FunctionType>(leftTypeUnwrapped) && isa<mlir_ts::FunctionType>(rightTypeUnwrapped))
+            {
+                return typeLeft;
+            }
+
+            if (isa<mlir_ts::HybridFunctionType>(leftTypeUnwrapped) && isa<mlir_ts::HybridFunctionType>(rightTypeUnwrapped))
+            {
+                return typeLeft;
+            }
+
+            if (isa<mlir_ts::ExtensionFunctionType>(leftTypeUnwrapped) && isa<mlir_ts::ExtensionFunctionType>(rightTypeUnwrapped))
+            {
+                return typeLeft;
+            }
+
+            return mlir_ts::HybridFunctionType::get(context, leftInputs, leftResults, leftIsVarArg);
         }
 
         return mlir::Type();
@@ -3289,8 +3372,18 @@ class MLIRTypeHelper
         auto resNewIntType = mergeIntTypes(existType, currentType, mergedInts);
         if (mergedInts)
         {
+            merged = true;
             return resNewIntType;
         }
+
+        // in case of merging function types
+        auto mergedFuncs = false;
+        auto resNewFuncType = mergeFuncTypes(existType, currentType, mergedFuncs);
+        if (mergedFuncs)
+        {
+            merged = true;
+            return resNewFuncType;
+        }        
         
         // wide type - remove const & literal
         auto resType = wideStorageType(currentType);
