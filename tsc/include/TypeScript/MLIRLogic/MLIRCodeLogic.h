@@ -716,7 +716,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value sizeOfValue =
-            builder.create<mlir_ts::ArraySpliceOp>(location, builder.getI32Type(), thisValueLoaded, startValue, deleteCountValue, mlir::ValueRange{castedValues});
+            builder.create<mlir_ts::ArraySpliceOp>(location, builder.getIndexType(), thisValueLoaded, startValue, deleteCountValue, mlir::ValueRange{castedValues});
 
         return sizeOfValue;
     }    
