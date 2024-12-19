@@ -2510,7 +2510,7 @@ class MLIRTypeHelper
         }
 
         auto isOptional = false;
-        if (auto optType = dyn_cast<mlir_ts::OptionalType>(srcType)) {
+        if (auto optType = dyn_cast_or_null<mlir_ts::OptionalType>(srcType)) {
             isOptional = true;
             srcType = optType.getElementType();
         }
