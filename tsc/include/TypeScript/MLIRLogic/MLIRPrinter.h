@@ -138,7 +138,9 @@ class MLIRPrinter
     {
         llvm::TypeSwitch<mlir::Attribute>(attr)
             .template Case<mlir::StringAttr>([&](auto a) {
-                out << a.str().c_str();
+                out << "\"";
+                out.write_escaped(a.str().c_str());
+                out << "\"";
             })
             .template Case<mlir::FlatSymbolRefAttr>([&](auto a) {
                 out << a.getValue().str().c_str();
@@ -211,7 +213,8 @@ class MLIRPrinter
                 printType(out, t.getElementType());
             })
             .template Case<mlir_ts::LiteralType>([&](auto t) {
-                printType(out, t.getElementType());
+                printAttribute(out, t.getValue());
+                //printType(out, t.getElementType());
             })
             .template Case<mlir_ts::OptionalType>([&](auto t) {
                 printType(out, t.getElementType());

@@ -25,15 +25,17 @@ public:
         context.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
     }
 
-    std::string getTypeString(mlir::Type type)
+    StringRef getTypeString(mlir::Type type)
     {
-        std::stringstream exports;
+        SmallString<128> exportType;
+        raw_svector_ostream rso(exportType);        
+
         MLIRPrinter mp{};
-        mp.printType<std::ostream>(exports, type);
-        return exports.str();
+        mp.printType<raw_svector_ostream>(rso, type);
+        return exportType.str();  
     }
 
-    void test(mlir::Type type, std::string expect)
+    void test(mlir::Type type, StringRef expect)
     {
         EXPECT_THAT( getTypeString(type), expect );
     }

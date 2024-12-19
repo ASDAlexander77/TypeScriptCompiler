@@ -21000,8 +21000,8 @@ genContext);
             LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does extend "
                                     << constraintType << ".";);
 
-            emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
-                                    << constraintType << ".";
+            emitWarning(location, "") << "Type " << to_print(type) << " does not satisfy the constraint "
+                                    << to_print(constraintType) << ".";
 
             return Reason::FailedConstraint;
         }
@@ -24776,29 +24776,26 @@ genContext);
         return mlir::success();
     }
 
-    std::string to_print(mlir::Type type)
+    StringRef to_print(mlir::Type type)
     {
-        std::stringstream exportType;
-        MLIRPrinter mp{};
-        mp.printType<std::ostream>(exportType, type);
-        return exportType.str();      
-    }
+        SmallString<128> exportType;
+        raw_svector_ostream rso(exportType);        
 
-    string to_wprint(mlir::Type type)
-    {
-        stringstream exportType;
         MLIRPrinter mp{};
-        mp.printType<ostream>(exportType, type);
+        mp.printType<raw_svector_ostream>(rso, type);
         return exportType.str();      
     }
 
     void printDebug(ts::Node node)
     {
-        // Printer<llvm::raw_ostream> printer(llvm::dbgs());
-        std::wcerr << std::endl << "dump ===============================================" << std::endl;
         Printer<std::wostream> printer(std::wcerr);
+        printer.newLine();
+        printer.printText("dump ===============================================");
+        printer.newLine();
         printer.printNode(node);
-        std::wcerr << std::endl << "end of dump ========================================" << std::endl;
+        printer.newLine();
+        printer.printText("end of dump ========================================");
+        printer.newLine();
     }
 
     // TODO: fix issue with cercular reference of include files

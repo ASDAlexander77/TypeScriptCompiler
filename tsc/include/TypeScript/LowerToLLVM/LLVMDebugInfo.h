@@ -105,11 +105,13 @@ class LLVMDebugInfoHelper
         return getDILLVMType(location, llvmType, file, line, scope);
     }
 
-    std::string to_print(mlir::Type type)
+    StringRef to_print(mlir::Type type)
     {
-        std::stringstream exportType;
+        SmallString<128> exportType;
+        raw_svector_ostream rso(exportType);        
+
         MLIRPrinter mp{};
-        mp.printType<std::ostream>(exportType, type);
+        mp.printType<raw_svector_ostream>(rso, type);
         return exportType.str();      
     }
 
@@ -389,7 +391,7 @@ class LLVMDebugInfoHelper
         return diBaseType;
     }
 
-    LLVM::DITypeAttr getDITypeWithFields(mlir::Location location, mlir::Type typeWithFields, std::string name, bool isNamePrefix, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    LLVM::DITypeAttr getDITypeWithFields(mlir::Location location, mlir::Type typeWithFields, StringRef name, bool isNamePrefix, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         if (!isNamePrefix)
         {
@@ -443,7 +445,7 @@ class LLVMDebugInfoHelper
 
         LLVM::DIExpressionAttr emptyDIExpr;
         auto compositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, 
-            DistinctAttr::create(mlir::UnitAttr::get(context)), StringAttr::get(context, isNamePrefix ? MLIRHelper::getAnonymousName(typeWithFields, name.c_str()) : name), 
+            DistinctAttr::create(mlir::UnitAttr::get(context)), StringAttr::get(context, isNamePrefix ? MLIRHelper::getAnonymousName(typeWithFields, name.data()) : name), 
             file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr);
 
         if (!isNamePrefix)

@@ -1348,11 +1348,13 @@ class MLIRTypeHelper
         return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, suppressErrors);
     }
 
-    std::string to_print(mlir::Type type)
+    StringRef to_print(mlir::Type type)
     {
-        std::stringstream exportType;
+        SmallString<128> exportType;
+        raw_svector_ostream rso(exportType);        
+
         MLIRPrinter mp{};
-        mp.printType<std::ostream>(exportType, type);
+        mp.printType<raw_svector_ostream>(rso, type);
         return exportType.str();      
     }
 
