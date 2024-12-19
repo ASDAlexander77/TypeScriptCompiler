@@ -22649,28 +22649,36 @@ genContext);
 
         auto span = spans[spanIndex];
         auto type = getType(span->type, genContext);
-        getTemplateLiteralTypeItem(types, type, head, spans, spanIndex, genContext);
-    }
-
-    void getTemplateLiteralTypeItem(SmallVector<mlir::Type> &types, mlir::Type type, const std::string &head,
-                                    NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex,
-                                    const GenContext &genContext)
-    {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! TemplateLiteralType, processing type: " << type << ", span: " << spanIndex
-                                << "\n";);
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             getTemplateLiteralUnionType(types, unionType, head, spans, spanIndex, genContext);
-            return;
         }
+        else if (auto litType = dyn_cast<mlir_ts::LiteralType>(type))
+        {
+            getTemplateLiteralTypeItem(types, litType, head, spans, spanIndex, genContext);
+        }
+        else
+        {
+            // it is just type as example: type HexColor<T extends Color> = `#${string}`;
+            // as 'string' is not union literal type then we have just type in result
+            types.push_back(type);
+        }
+    }
+
+    void getTemplateLiteralTypeItem(SmallVector<mlir::Type> &types, mlir_ts::LiteralType literalType, const std::string &head,
+                                    NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex,
+                                    const GenContext &genContext)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! TemplateLiteralType, processing type: " << literalType << ", span: " << spanIndex
+                                << "\n";);
 
         auto span = spans[spanIndex];
 
         std::stringstream ss;
         ss << head;
 
-        auto typeText = mlir::cast<mlir::StringAttr>(mlir::cast<mlir_ts::LiteralType>(type).getValue()).getValue();
+        auto typeText = mlir::cast<mlir::StringAttr>(literalType.getValue()).getValue();
         ss << typeText.str();
 
         auto spanText = convertWideToUTF8(span->literal->rawText);
@@ -22685,7 +22693,20 @@ genContext);
     {
         for (auto unionTypeItem : mlir::cast<mlir_ts::UnionType>(unionType).getTypes())
         {
-            getTemplateLiteralTypeItem(types, unionTypeItem, head, spans, spanIndex, genContext);
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(unionTypeItem))
+            {
+                getTemplateLiteralUnionType(types, unionType, head, spans, spanIndex, genContext);
+            }
+            else if (auto litType = dyn_cast<mlir_ts::LiteralType>(unionTypeItem))
+            {
+                getTemplateLiteralTypeItem(types, litType, head, spans, spanIndex, genContext);
+            }            
+            else 
+            {
+                // it is just type as example: type HexColor<T extends Color> = `#${string}`;
+                // as 'string' is not union literal type then we have just type in result
+                types.push_back(unionTypeItem);
+            }
         }
     }
 
