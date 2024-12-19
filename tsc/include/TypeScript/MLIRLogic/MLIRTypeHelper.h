@@ -2509,6 +2509,12 @@ class MLIRTypeHelper
             return ExtendsResult::True;
         }
 
+        auto isOptional = false;
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(srcType)) {
+            isOptional = true;
+            srcType = optType.getElementType();
+        }
+
         if (auto anyType = dyn_cast_or_null<mlir_ts::AnyType>(srcType))
         {
             SmallVector<mlir_ts::InferType> inferTypes;
@@ -2655,7 +2661,14 @@ class MLIRTypeHelper
                 return isTrue(unionExtResult); 
             };
             auto types = unionType.getTypes();
-            return std::find_if(types.begin(), types.end(), pred) != types.end() ? ExtendsResult::True : falseResult;
+            auto foundResult = std::find_if(types.begin(), types.end(), pred) != types.end() ? ExtendsResult::True : falseResult;
+            if (isOptional && foundResult == falseResult)
+            {
+                auto undefType = mlir_ts::UndefinedType::get(srcType.getContext());
+                foundResult = pred(undefType) ? ExtendsResult::True : falseResult;
+            }
+
+            return foundResult;
         }
 
         // seems it is generic interface

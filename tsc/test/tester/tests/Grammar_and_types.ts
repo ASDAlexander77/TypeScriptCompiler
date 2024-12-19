@@ -3,7 +3,7 @@ function main() {
     print("Basics");
 
     // Basics
-    let foo = "foobar";
+    let foo1 = "foobar";
 
     print("Comments");
     // Comments

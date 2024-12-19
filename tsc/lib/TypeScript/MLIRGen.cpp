@@ -6798,8 +6798,11 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Is Safe Type the same: [" << exprValue.getType() << "] and [" << safeType << "]\n");
+
         if (isSafeTypeTheSameAndNoNeedToCast(exprValue.getType(), safeType))
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! == Yes\n");
             return mlir::success();
         }
 
@@ -11413,6 +11416,7 @@ class MLIRGenImpl
             // to support super.constructor calls
             && !isa<mlir_ts::ClassStorageType>(funcType))
         {      
+            LLVM_DEBUG(llvm::dbgs() << "\n!! function type: " << funcType << "\n";);
             emitError(location, "not a function to call");
             return mlir::failure();
         }
@@ -22014,7 +22018,9 @@ genContext);
             }
         }
 
-        return getUnionType(resTypes);
+        auto resultType = getUnionType(resTypes);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Extract: " << resultType << "\n";);
+        return resultType;
     }
 
     mlir::Type RecordType(mlir::Type keys, mlir::Type valueType)
