@@ -9,6 +9,17 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+- Strict null checks
+```TypeScript
+let sn: string | null = null; // Ok
+let s: string = null; // error
+```
+
+- improved `Template Literal Types`
+```TypeScript
+type Color = "red" | "green" | "blue";
+type HexColor<T extends Color> = `#${string}`;
+```
 
 - Public, private, and protected modifiers
 ```TypeScript
