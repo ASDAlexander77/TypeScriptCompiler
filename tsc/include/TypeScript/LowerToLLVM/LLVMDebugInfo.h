@@ -105,14 +105,14 @@ class LLVMDebugInfoHelper
         return getDILLVMType(location, llvmType, file, line, scope);
     }
 
-    StringRef to_print(mlir::Type type)
+    std::string to_print(mlir::Type type)
     {
         SmallString<128> exportType;
         raw_svector_ostream rso(exportType);        
 
         MLIRPrinter mp{};
         mp.printType<raw_svector_ostream>(rso, type);
-        return exportType.str();      
+        return exportType.str().str();      
     }
 
     LLVM::DITypeAttr getDITypeScriptType(mlir::Location location, mlir::Type type, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)

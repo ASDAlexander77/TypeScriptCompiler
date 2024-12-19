@@ -19498,7 +19498,7 @@ genContext);
                     if (errorAsWarning)
                     {
                         emitWarning(location)
-                            << "field " << fieldInfo.id << " can't be found in tuple '" << srcTupleType << "'";
+                            << "field " << fieldInfo.id << " can't be found in tuple '" << to_print(srcTupleType) << "'";
 
                         // add undefined value
                         auto undefVal = builder.create<mlir_ts::UndefOp>(location, fieldInfo.type);
@@ -24776,14 +24776,14 @@ genContext);
         return mlir::success();
     }
 
-    StringRef to_print(mlir::Type type)
+    std::string to_print(mlir::Type type)
     {
         SmallString<128> exportType;
         raw_svector_ostream rso(exportType);        
 
         MLIRPrinter mp{};
         mp.printType<raw_svector_ostream>(rso, type);
-        return exportType.str();      
+        return exportType.str().str();      
     }
 
     void printDebug(ts::Node node)
