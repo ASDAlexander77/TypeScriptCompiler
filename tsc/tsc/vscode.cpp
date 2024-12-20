@@ -69,6 +69,55 @@ int createVSCodeFolder()
         return -1;
     }
 
+    SmallString<128> projectPath;
+    if (auto error_code = fs::current_path(projectPath)) 
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't get info about current folder: " << error_code.message() << "\n";
+        return -1;
+    }
+
+    // node_modules
+    if (auto error_code = fs::create_directories(NODE_MODULE_TSNC_PATH))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not create folder/directory '" << NODE_MODULE_TSNC_PATH << "' : " << error_code.message() << "\n";
+        return -1;            
+    }    
+
+    if (auto error_code = fs::set_current_path(NODE_MODULE_TSNC_PATH))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory '" << NODE_MODULE_TSNC_PATH << "' : " << error_code.message() << "\n";
+        return -1;
+    }
+
+    if (auto error_code = create_file_base("index.d.ts", TSNC_INDEX_D_TS))
+    {
+        return -1;
+    }
+
+    // need to create .vscode
+    if (auto error_code = fs::set_current_path(projectPath))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory '" << projectPath << "' : " << error_code.message() << "\n";
+        return -1;
+    }    
+
+    if (auto error_code = fs::create_directory(DOT_VSCODE_PATH))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not create folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
+        return -1;            
+    }    
+
+    if (auto error_code = fs::set_current_path(DOT_VSCODE_PATH))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
+        return -1;
+    }     
+
+    if (auto error_code = create_file_base("settings.json", "{}"))
+    {
+        return -1;
+    }    
+
     return 0;
 }
 
