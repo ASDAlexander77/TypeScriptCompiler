@@ -1,0 +1,122 @@
+#include "TypeScript/MLIRGen.h"
+
+#include "mlir/IR/BuiltinOps.h"
+
+#include "llvm/IR/LLVMContext.h"
+
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/WithColor.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ToolOutputFile.h"
+
+#include "TypeScript/TypeScriptCompiler/Defines.h"
+#include "TypeScript/VSCodeTemplate/Files.h"
+
+#include <regex>
+
+#define DEBUG_TYPE "tsc"
+
+using namespace typescript;
+using namespace llvm;
+namespace cl = llvm::cl;
+namespace fs = llvm::sys::fs;
+namespace path = llvm::sys::path;
+
+extern cl::opt<std::string> inputFilename;
+
+int create_file_base(StringRef filepath, StringRef data);
+int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &result);
+
+int createVSCodeFolder()
+{
+    auto projectName = llvm::StringRef(inputFilename);
+    if (projectName == "-") {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Name is not provided. (use file name without file extension)\n";
+        return -1;
+    }
+
+    if (auto error_code = fs::create_directory(projectName))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not create project: " << error_code.message() << "\n";
+        return -1;            
+    }
+
+    if (auto error_code = fs::set_current_path(projectName))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory: " << error_code.message() << "\n";
+        return -1;
+    }
+
+    SmallString<256> fullFilePath(projectName);
+    path::replace_extension(fullFilePath, ".ts");   
+    if (auto error_code = create_file_base(fullFilePath.str(), "print(\"Hello World!\");"))
+    {
+        return -1;
+    }
+
+    StringRef tsconfig(TSCONFIG_JSON_DATA);
+    StringMap<StringRef> vals;
+    vals["PROJECT"] = projectName;
+    SmallString<128> result;
+    substitute(tsconfig, vals, result);
+
+    if (auto error_code = create_file_base("tsconfig.json", result.str()))
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+int create_file_base(StringRef filepath, StringRef data)
+{
+    std::error_code ec;
+    llvm::ToolOutputFile out(filepath, ec, 
+#ifdef WIN32    
+    fs::OpenFlags::OF_TextWithCRLF
+#else
+    fs::OpenFlags::OF_Text
+#endif    
+    );
+
+    // ... print into out
+    out.os() << data;
+
+    out.os().flush();
+    out.keep();
+    out.os().close();
+
+    if (out.os().has_error())
+    {
+        llvm::report_fatal_error(llvm::Twine("Error emitting data to file '") + filepath);
+        return -1;
+    }
+
+    return 0;
+}
+
+std::regex paramsRegEx = std::regex(R"(<<(.*?)>>)", std::regex_constants::ECMAScript); 
+
+int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &result)
+{
+    auto str = data.str();
+    auto begin = std::sregex_iterator(str.begin(), str.end(), paramsRegEx);
+    auto end = std::sregex_iterator();     
+
+    std::string suffix;
+    for (auto it = begin; it != end; it++) 
+    {
+        auto match = *it;
+        result.append(match.prefix().str());
+        result.append(values[match[1].str()]);
+        suffix = match.suffix().str();
+    }
+
+    result.append(suffix);
+
+    return 0;
+}

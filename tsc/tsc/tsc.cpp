@@ -39,6 +39,7 @@ std::string getDefaultExt(enum Action);
 std::string getDefaultLibPath();
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
+int createVSCodeFolder();
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
@@ -122,6 +123,8 @@ cl::opt<bool> enableBuiltins("builtins", cl::desc("Builtin functionality (needed
 cl::opt<bool> appendGCtorsToMethod("gctors-as-method", cl::desc("Creeate method (" MLIR_GCTORS ") to initialize Static Objects instead of Global Constructors (gctors)"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 
 cl::opt<bool> strictNullChecks("strict-null-checks", cl::desc("Strict Null Checks"), cl::init(true), cl::cat(TypeScriptCompilerCategory)); 
+
+cl::opt<bool> newVSCodeFolder("new", cl::desc("New VS Code Project"), cl::cat(TypeScriptCompilerCategory));
 
 static void TscPrintVersion(llvm::raw_ostream &OS) {
   OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
@@ -244,6 +247,11 @@ int main(int argc, char **argv)
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript native compiler\n");
 
+    if (newVSCodeFolder.getValue())
+    {
+        return createVSCodeFolder();
+    }
+
     if (emitAction == Action::DumpAST)
     {
         return dumpAST();
@@ -280,12 +288,12 @@ int main(int argc, char **argv)
 
     llvm::SourceMgr sourceMgr;
     mlir::OwningOpRef<mlir::ModuleOp> module;
-    if (int error = compileTypeScriptFileIntoMLIR(mlirContext, sourceMgr, module, compileOptions))
+    if (auto error = compileTypeScriptFileIntoMLIR(mlirContext, sourceMgr, module, compileOptions))
     {
         return error;
     }
 
-    if (int error = runMLIRPasses(mlirContext, sourceMgr, module, compileOptions))
+    if (auto error = runMLIRPasses(mlirContext, sourceMgr, module, compileOptions))
     {
         return error;
     }

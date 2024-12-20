@@ -9005,8 +9005,8 @@ struct Parser
             {
                 for (sregex_iterator i = tripleSlashXMLComment_begin; i != tripleSlashXMLComment_end; ++i)
                 {
-                    smatch match = *i;
-                    string name = match[1].str();
+                    auto match = *i;
+                    auto name = match[1].str();
 
                     if (name == S("reference"))
                     {

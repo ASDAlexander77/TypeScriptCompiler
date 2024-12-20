@@ -655,6 +655,21 @@
                 "moduleLoad": true,
                 "trace": true
             },            
-        }        
+        },
+        {
+            "name": "(Windows) tsc.exe - new VSCode project",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "args": [
+                "--new",
+                "Test1"
+            ],
+            "stopAtEntry": false,
+            "cwd": "I:/Playground",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        }
     ]
 }
