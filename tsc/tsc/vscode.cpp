@@ -58,9 +58,10 @@ int createVSCodeFolder()
         return -1;
     }
 
-    StringRef tsconfig(TSCONFIG_JSON_DATA);
     StringMap<StringRef> vals;
     vals["PROJECT"] = projectName;
+
+    StringRef tsconfig(TSCONFIG_JSON_DATA);
     SmallString<128> result;
     substitute(tsconfig, vals, result);
 
@@ -118,8 +119,14 @@ int createVSCodeFolder()
         return -1;
     }    
 
+    // set params
+    vals["TSC_CMD"] = "";
+    vals["GC_LIB_PATH"] = "";
+    vals["LLVM_LIB_PATH"] = "";
+    vals["TSC_LIB_PATH"] = "";
+    vals["DEFAULT_LIB_PATH"] = "";
+
     StringRef tasks(TASKS_JSON_DATA);
-    //vals["PROJECT"] = projectName;
     SmallString<128> resultTasks;
     substitute(tasks, vals, resultTasks);
 
@@ -128,8 +135,13 @@ int createVSCodeFolder()
         return -1;
     }    
 
-    StringRef launch(LAUNCH_JSON_DATA);
-    //vals["PROJECT"] = projectName;
+    StringRef launch(
+#if WIN32        
+        LAUNCH_JSON_DATA_WIN32
+#else
+        LAUNCH_JSON_DATA_LINUX
+#endif
+    );
     SmallString<128> resultLaunch;
     substitute(launch, vals, resultLaunch);
 
