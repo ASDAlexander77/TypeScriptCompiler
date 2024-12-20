@@ -32,6 +32,7 @@ int create_file_base(StringRef filepath, StringRef data);
 int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &result);
 
 std::string getExecutablePath(const char *);
+std::string getGCLibPath();
 
 int createVSCodeFolder(int argc, char **argv)
 {
@@ -127,7 +128,7 @@ int createVSCodeFolder(int argc, char **argv)
     std::string driverPath = getExecutablePath(args[0]);
 
     vals["TSC_CMD"] = driverPath;
-    vals["GC_LIB_PATH"] = "";
+    vals["GC_LIB_PATH"] = getGCLibPath();
     vals["LLVM_LIB_PATH"] = "";
     vals["TSC_LIB_PATH"] = "";
     vals["DEFAULT_LIB_PATH"] = "";
