@@ -36,6 +36,7 @@ std::string getGCLibPath();
 std::string getLLVMLibPath();
 std::string getTscLibPath();
 std::string getDefaultLibPath();
+std::string fixpath(std::string);
 
 int createVSCodeFolder(int argc, char **argv)
 {
@@ -128,13 +129,13 @@ int createVSCodeFolder(int argc, char **argv)
     // set params
 
     llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
-    std::string driverPath = getExecutablePath(args[0]);
+    auto driverPath = getExecutablePath(args[0]);
 
-    vals["TSC_CMD"] = driverPath;
-    vals["GC_LIB_PATH"] = StringRef(getGCLibPath());
-    vals["LLVM_LIB_PATH"] = StringRef(getLLVMLibPath());
-    vals["TSC_LIB_PATH"] = StringRef(getTscLibPath());
-    vals["DEFAULT_LIB_PATH"] = StringRef(getDefaultLibPath());
+    vals["TSC_CMD"] = StringRef(fixpath(driverPath));
+    vals["GC_LIB_PATH"] = StringRef(fixpath(getGCLibPath()));
+    vals["LLVM_LIB_PATH"] = StringRef(fixpath(getLLVMLibPath()));
+    vals["TSC_LIB_PATH"] = StringRef(fixpath(getTscLibPath()));
+    vals["DEFAULT_LIB_PATH"] = StringRef(fixpath(getDefaultLibPath()));
 
     StringRef tasks(TASKS_JSON_DATA);
     SmallString<128> resultTasks;
@@ -210,4 +211,27 @@ int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &r
     result.append(suffix);
 
     return 0;
+}
+
+std::string fixpath(std::string path)
+{
+#ifdef WIN32    
+    std::string output;
+    output.reserve(path.size());
+    for (const auto c: path) {
+        switch (c) {
+            case '\\':
+            case '/':  
+                output += "\\\\";        
+                break;
+            default:    
+                output += c;            
+                break;
+        }
+    }
+
+    return output;
+#else
+    return path;    
+#endif    
 }
