@@ -36,7 +36,7 @@ std::string getGCLibPath();
 std::string getLLVMLibPath();
 std::string getTscLibPath();
 std::string getDefaultLibPath();
-std::string fixpath(std::string);
+std::string fixpath(std::string, const SmallVectorImpl<char>&);
 
 int createVSCodeFolder(int argc, char **argv)
 {
@@ -131,11 +131,21 @@ int createVSCodeFolder(int argc, char **argv)
     llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
     auto driverPath = getExecutablePath(args[0]);
 
-    vals["TSC_CMD"] = StringRef(fixpath(driverPath));
-    vals["GC_LIB_PATH"] = StringRef(fixpath(getGCLibPath()));
-    vals["LLVM_LIB_PATH"] = StringRef(fixpath(getLLVMLibPath()));
-    vals["TSC_LIB_PATH"] = StringRef(fixpath(getTscLibPath()));
-    vals["DEFAULT_LIB_PATH"] = StringRef(fixpath(getDefaultLibPath()));
+    llvm::SmallVector<char> appPath{};
+    appPath.append(driverPath.begin(), driverPath.end());
+    path::remove_filename(appPath);
+
+    auto tscCmd = fixpath(driverPath, appPath);
+    auto gcLibPath = fixpath(getGCLibPath(), appPath);
+    auto llvmLibPath = fixpath(getLLVMLibPath(), appPath);
+    auto tscLibPath = fixpath(getTscLibPath(), appPath);
+    auto defaultLibPath = fixpath(getDefaultLibPath(), appPath);
+
+    vals["TSC_CMD"] = tscCmd;
+    vals["GC_LIB_PATH"] = gcLibPath;
+    vals["LLVM_LIB_PATH"] = llvmLibPath;
+    vals["TSC_LIB_PATH"] = tscLibPath;
+    vals["DEFAULT_LIB_PATH"] = defaultLibPath;
 
     StringRef tasks(TASKS_JSON_DATA);
     SmallString<128> resultTasks;
@@ -213,8 +223,13 @@ int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &r
     return 0;
 }
 
-std::string fixpath(std::string path)
+std::string fixpath(std::string path, const SmallVectorImpl<char>& defaultPath)
 {
+    if (path.empty())
+    {
+        path = std::string(defaultPath.begin(), defaultPath.end());
+    }
+
 #ifdef WIN32    
     std::string output;
     output.reserve(path.size());
