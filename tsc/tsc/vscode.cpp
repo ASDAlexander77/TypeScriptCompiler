@@ -33,6 +33,9 @@ int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &r
 
 std::string getExecutablePath(const char *);
 std::string getGCLibPath();
+std::string getLLVMLibPath();
+std::string getTscLibPath();
+std::string getDefaultLibPath();
 
 int createVSCodeFolder(int argc, char **argv)
 {
@@ -128,10 +131,10 @@ int createVSCodeFolder(int argc, char **argv)
     std::string driverPath = getExecutablePath(args[0]);
 
     vals["TSC_CMD"] = driverPath;
-    vals["GC_LIB_PATH"] = getGCLibPath();
-    vals["LLVM_LIB_PATH"] = "";
-    vals["TSC_LIB_PATH"] = "";
-    vals["DEFAULT_LIB_PATH"] = "";
+    vals["GC_LIB_PATH"] = StringRef(getGCLibPath());
+    vals["LLVM_LIB_PATH"] = StringRef(getLLVMLibPath());
+    vals["TSC_LIB_PATH"] = StringRef(getTscLibPath());
+    vals["DEFAULT_LIB_PATH"] = StringRef(getDefaultLibPath());
 
     StringRef tasks(TASKS_JSON_DATA);
     SmallString<128> resultTasks;
