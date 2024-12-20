@@ -118,6 +118,26 @@ int createVSCodeFolder()
         return -1;
     }    
 
+    StringRef tasks(TASKS_JSON_DATA);
+    //vals["PROJECT"] = projectName;
+    SmallString<128> resultTasks;
+    substitute(tasks, vals, resultTasks);
+
+    if (auto error_code = create_file_base("tasks.json", resultTasks.str()))
+    {
+        return -1;
+    }    
+
+    StringRef launch(LAUNCH_JSON_DATA);
+    //vals["PROJECT"] = projectName;
+    SmallString<128> resultLaunch;
+    substitute(launch, vals, resultLaunch);
+
+    if (auto error_code = create_file_base("launch.json", resultLaunch.str()))
+    {
+        return -1;
+    }    
+
     return 0;
 }
 
