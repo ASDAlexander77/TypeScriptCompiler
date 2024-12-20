@@ -31,7 +31,9 @@ extern cl::opt<std::string> inputFilename;
 int create_file_base(StringRef filepath, StringRef data);
 int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &result);
 
-int createVSCodeFolder()
+std::string getExecutablePath(const char *);
+
+int createVSCodeFolder(int argc, char **argv)
 {
     auto projectName = llvm::StringRef(inputFilename);
     if (projectName == "-") {
@@ -120,7 +122,11 @@ int createVSCodeFolder()
     }    
 
     // set params
-    vals["TSC_CMD"] = "";
+
+    llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
+    std::string driverPath = getExecutablePath(args[0]);
+
+    vals["TSC_CMD"] = driverPath;
     vals["GC_LIB_PATH"] = "";
     vals["LLVM_LIB_PATH"] = "";
     vals["TSC_LIB_PATH"] = "";

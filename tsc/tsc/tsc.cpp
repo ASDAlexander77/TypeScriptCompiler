@@ -39,7 +39,7 @@ std::string getDefaultExt(enum Action);
 std::string getDefaultLibPath();
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
-int createVSCodeFolder();
+int createVSCodeFolder(int, char **);
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
 int dumpObjOrAssembly(int, char **, enum Action, std::string, mlir::ModuleOp, CompileOptions&);
@@ -249,7 +249,7 @@ int main(int argc, char **argv)
 
     if (newVSCodeFolder.getValue())
     {
-        return createVSCodeFolder();
+        return createVSCodeFolder(argc, argv);
     }
 
     if (emitAction == Action::DumpAST)
