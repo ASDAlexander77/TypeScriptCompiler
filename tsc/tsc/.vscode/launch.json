@@ -670,6 +670,6 @@
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        }
+        }     
     ]
 }

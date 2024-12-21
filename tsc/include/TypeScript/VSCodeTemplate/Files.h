@@ -260,3 +260,23 @@ declare type int = any;
     ]
 }
 )raw"
+
+#define TSNC_NATVIS R"raw(<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+
+  <!-- TypeScript -->
+
+  <Type Name="array&lt;*&gt;">
+    <DisplayString>array of {length} elements</DisplayString>
+    <Expand>
+      <Item Name="[length]">length</Item>
+      <ArrayItems>
+        <Size>length</Size>
+        <ValuePointer>data</ValuePointer>
+      </ArrayItems>
+    </Expand>
+  </Type>  
+
+</AutoVisualizer>
+
+)raw"

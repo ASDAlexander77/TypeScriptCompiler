@@ -65,6 +65,11 @@ int createVSCodeFolder(int argc, char **argv)
         return -1;
     }
 
+    if (auto error_code = create_file_base("tsnc.natvis", TSNC_NATVIS))
+    {
+        return -1;
+    }    
+
     StringMap<StringRef> vals;
     vals["PROJECT"] = projectName;
 

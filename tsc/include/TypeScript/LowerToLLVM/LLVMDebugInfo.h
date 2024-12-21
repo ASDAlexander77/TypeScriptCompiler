@@ -110,10 +110,19 @@ class LLVMDebugInfoHelper
         SmallString<128> exportType;
         raw_svector_ostream rso(exportType);        
 
-        // MLIRPrinter mp{};
-        // mp.printType<raw_svector_ostream>(rso, type);
+        //MLIRPrinter mp{};
+        //mp.printType<raw_svector_ostream>(rso, type);
 
-        rso << type;
+        if (auto arr = dyn_cast<mlir_ts::ArrayType>(type))
+        {
+            rso << "array<";
+            rso << to_print(arr.getElementType());
+            rso << ">";
+        }
+        else
+        {
+            rso << type;
+        }
 
         return exportType.str().str();      
     }
