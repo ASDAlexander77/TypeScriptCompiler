@@ -110,8 +110,11 @@ class LLVMDebugInfoHelper
         SmallString<128> exportType;
         raw_svector_ostream rso(exportType);        
 
-        MLIRPrinter mp{};
-        mp.printType<raw_svector_ostream>(rso, type);
+        // MLIRPrinter mp{};
+        // mp.printType<raw_svector_ostream>(rso, type);
+
+        rso << type;
+
         return exportType.str().str();      
     }
 
@@ -185,6 +188,12 @@ class LLVMDebugInfoHelper
         {
             return getDIType(location, enumType, file, line, scope);
         }
+
+        if (auto refType = dyn_cast<mlir_ts::RefType>(type))
+        {
+            return getDIType(location, refType, file, line, scope);
+        }
+
 
 #ifdef ENABLE_DEBUGINFO_PATCH_INFO
         if (auto arrayType = dyn_cast_or_null<mlir_ts::ArrayType>(type))
@@ -320,6 +329,12 @@ class LLVMDebugInfoHelper
         auto diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), size, typeCode);
         return getDIPointerType(diTypeAttr, file, line);
     }     
+
+    LLVM::DITypeAttr getDIType(mlir::Location location, mlir_ts::RefType refType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
+    {
+        auto elementDiType = getDITypeScriptType(location, refType.getElementType(), file, line, scope);
+        return getDIPointerType(elementDiType, file, line);    
+    }
 
     LLVM::DITypeAttr getDIType(mlir::Location location, mlir_ts::AnyType anyType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
