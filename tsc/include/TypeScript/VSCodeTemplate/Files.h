@@ -179,7 +179,7 @@ declare type int = any;
             "request": "launch",
             "program": "<<TSC_CMD>>",
             "args": [
-                "--shared-libs=<<TSC_LIB_PATH>>\\\\TypeScriptRuntime.dll",
+                "--shared-libs=<<TSC_LIB_PATH>>\\TypeScriptRuntime.dll",
                 "--gc-lib-path=<<GC_LIB_PATH>>",
                 "--llvm-lib-path=<<LLVM_LIB_PATH>>",
                 "--tsc-lib-path=<<TSC_LIB_PATH>>",
