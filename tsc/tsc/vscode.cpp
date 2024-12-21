@@ -60,7 +60,7 @@ int createVSCodeFolder(int argc, char **argv)
 
     SmallString<256> fullFilePath(projectName);
     path::replace_extension(fullFilePath, ".ts");   
-    if (auto error_code = create_file_base(fullFilePath.str(), "print(\"Hello World!\");"))
+    if (auto error_code = create_file_base(fullFilePath.str(), R"(print("Hello World!");)"))
     {
         return -1;
     }
@@ -121,7 +121,7 @@ int createVSCodeFolder(int argc, char **argv)
         return -1;
     }     
 
-    if (auto error_code = create_file_base("settings.json", "{}"))
+    if (auto error_code = create_file_base("settings.json", R"({})"))
     {
         return -1;
     }    
