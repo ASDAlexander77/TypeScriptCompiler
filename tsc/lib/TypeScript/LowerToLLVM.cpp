@@ -3230,16 +3230,16 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                     : mlir::LLVM::comdat::Comdat::Any;
                 addComdat(llvmGlobalOp, rewriter, comdat);
             }
-        }
 
-        if (tsLlvmContext->compileOptions.generateDebugInfo)
-        {
-            LocationHelper lh(rewriter.getContext());
-            if (auto globalVarAttrFusedLoc = dyn_cast<mlir::FusedLocWith<LLVM::DIGlobalVariableAttr>>(loc))
+            if (tsLlvmContext->compileOptions.generateDebugInfo)
             {
-                auto varInfo = globalVarAttrFusedLoc.getMetadata();
-                LLVM::DIExpressionAttr exprAttr;
-                llvmGlobalOp.setDbgExprAttr(LLVM::DIGlobalVariableExpressionAttr::get(rewriter.getContext(), varInfo, exprAttr));
+                LocationHelper lh(rewriter.getContext());
+                if (auto globalVarAttrFusedLoc = dyn_cast<mlir::FusedLocWith<LLVM::DIGlobalVariableAttr>>(loc))
+                {
+                    auto varInfo = globalVarAttrFusedLoc.getMetadata();
+                    LLVM::DIExpressionAttr exprAttr;
+                    llvmGlobalOp.setDbgExprAttr(LLVM::DIGlobalVariableExpressionAttr::get(rewriter.getContext(), varInfo, exprAttr));
+                }
             }
         }
 
