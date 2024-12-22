@@ -136,6 +136,15 @@ int buildWin32(const SmallVectorImpl<char>& appPath)
 
     auto cmdPath = fromPath.get();
 
+    fromPath = llvm::sys::findProgramByName("vswhere");
+    if (!fromPath)
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "'vswhere' not found on PATH" << "\n";
+        return -1;        
+    }
+
+    auto vswherePath = fromPath.get();    
+
     std::optional<StringRef> redirects[] = {
         std::nullopt, // Stdin
         std::nullopt, // Stdout
@@ -158,12 +167,14 @@ int buildWin32(const SmallVectorImpl<char>& appPath)
     std::string llvmLibPathVar = llvm::formatv("{0}={1}", "LLVM_LIB_PATH", llvmLibPath);
     std::string tscLibPathVar = llvm::formatv("{0}={1}", "TSC_LIB_PATH", tscLibPath);
     std::string defaultLibPathVar = llvm::formatv("{0}={1}", "DEFAULT_LIB_PATH", defaultLibPath);    
+    std::string vswherePathVar = llvm::formatv("{0}={1}", "VSWHERE_PATH", vswherePath);    
 
     envp.push_back(StringRef(appPathVar));
     envp.push_back(StringRef(gcLibPathVar));
     envp.push_back(StringRef(llvmLibPathVar));
     envp.push_back(StringRef(tscLibPathVar));
     envp.push_back(StringRef(defaultLibPathVar));
+    envp.push_back(StringRef(vswherePathVar));
 
     std::string errMsg;
     auto returnCode = sys::ExecuteAndWait(
