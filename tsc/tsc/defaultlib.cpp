@@ -18,6 +18,7 @@
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 #include "TypeScript/VSCodeTemplate/Files.h"
 
+#include <cstdlib>
 #include <regex>
 
 #define DEBUG_TYPE "tsc"
@@ -125,6 +126,7 @@ int clone()
     return 0;
 }
 
+#ifdef WIN32
 int buildWin32(const SmallVectorImpl<char>& appPath)
 {
     auto fromPath = llvm::sys::findProgramByName("cmd");
@@ -155,8 +157,6 @@ int buildWin32(const SmallVectorImpl<char>& appPath)
 
     SmallVector<StringRef, 4> args{cmdPath, "/S /C", "build.bat"};
 
-    SmallVector<StringRef, 4> envp{};
-
     auto gcLibPath = getpath(getGCLibPath(), appPath);
     auto llvmLibPath = getpath(getLLVMLibPath(), appPath);
     auto tscLibPath = getpath(getTscLibPath(), appPath);
@@ -169,16 +169,16 @@ int buildWin32(const SmallVectorImpl<char>& appPath)
     std::string defaultLibPathVar = llvm::formatv("{0}={1}", "DEFAULT_LIB_PATH", defaultLibPath);    
     std::string vswherePathVar = llvm::formatv("{0}={1}", "VSWHERE_PATH", vswherePath);    
 
-    envp.push_back(StringRef(appPathVar));
-    envp.push_back(StringRef(gcLibPathVar));
-    envp.push_back(StringRef(llvmLibPathVar));
-    envp.push_back(StringRef(tscLibPathVar));
-    envp.push_back(StringRef(defaultLibPathVar));
-    envp.push_back(StringRef(vswherePathVar));
+    _putenv(appPathVar.data());
+    _putenv(gcLibPathVar.data());
+    _putenv(llvmLibPathVar.data());
+    _putenv(tscLibPathVar.data());
+    _putenv(defaultLibPathVar.data());
+    _putenv(vswherePathVar.data());
 
     std::string errMsg;
     auto returnCode = sys::ExecuteAndWait(
-        cmdPath, args, envp, redirects, /*SecondsToWait=*/0, /*MemoryLimit=*/0, &errMsg);
+        cmdPath, args, std::nullopt, redirects, /*SecondsToWait=*/0, /*MemoryLimit=*/0, &errMsg);
 
     if (returnCode < 0)
     {
@@ -188,6 +188,7 @@ int buildWin32(const SmallVectorImpl<char>& appPath)
 
     return 0;
 }
+#endif
 
 std::string getpath(std::string path, const SmallVectorImpl<char>& defaultPath)
 {
