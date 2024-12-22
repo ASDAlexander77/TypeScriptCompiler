@@ -435,11 +435,10 @@ class SetLengthOfOpLowering : public TsLlvmPattern<mlir_ts::SetLengthOfOp>
         auto countAsIndexType = rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, countAsIndexTypePtr);
         auto newCountAsIndexType = op.getNewLength();
 
-        auto sizeOfTypeValueMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeOfTypeValueMLIR);
+        auto sizeOfTypeAsIndexType = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
 
         auto multSizeOfTypeValue =
-            rewriter.create<mlir::index::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
+            rewriter.create<mlir::index::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeAsIndexType, newCountAsIndexType});
 
         auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 

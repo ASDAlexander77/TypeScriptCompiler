@@ -64,7 +64,8 @@ add_llvm_executable(tsc
     utils.cpp 
     opts.cpp 
     declarationInline.cpp
-    vscode.cpp)
+    vscode.cpp
+    defaultlib.cpp)
 
 llvm_update_compile_flags(tsc)
 target_link_libraries(tsc PRIVATE ${LIBS})
