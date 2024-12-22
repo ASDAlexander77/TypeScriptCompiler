@@ -92,7 +92,7 @@ class MLIRPrinter
 
             if (field.id)
             {
-                printAttribute(out, field.id);
+                printAttribute(out, field.id, true);
                 out << ":";
             }
 
@@ -134,13 +134,20 @@ class MLIRPrinter
     }
     
     template <typename T>
-    void printAttribute(T &out, mlir::Attribute attr)
+    void printAttribute(T &out, mlir::Attribute attr, bool stringAsFieldName =  false)
     {
         llvm::TypeSwitch<mlir::Attribute>(attr)
             .template Case<mlir::StringAttr>([&](auto a) {
-                out << "\"";
-                out.write_escaped(a.str().c_str());
-                out << "\"";
+                if (stringAsFieldName)
+                {
+                    out << a.getValue().str().c_str();
+                }
+                else
+                {
+                    out << "\"";
+                    out.write_escaped(a.str().c_str());
+                    out << "\"";
+                }
             })
             .template Case<mlir::FlatSymbolRefAttr>([&](auto a) {
                 out << a.getValue().str().c_str();
@@ -151,6 +158,12 @@ class MLIRPrinter
                 StringRef strRef(Str.data(), Str.size());
                 out << strRef.str().c_str();
             })
+            .template Case<mlir::FloatAttr>([&](auto a) {
+                SmallVector<char> Str;
+                a.getValue().toString(Str);
+                StringRef strRef(Str.data(), Str.size());
+                out << strRef.str().c_str();
+            })            
             .Default([](mlir::Attribute a) { 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Type print is not implemented for : " << a << "\n";);
                 llvm_unreachable("not implemented");
@@ -214,7 +227,7 @@ class MLIRPrinter
             })
             .template Case<mlir_ts::LiteralType>([&](auto t) {
                 printAttribute(out, t.getValue());
-                //printType(out, t.getElementType());
+                // printType(out, t.getElementType());
             })
             .template Case<mlir_ts::OptionalType>([&](auto t) {
                 printType(out, t.getElementType());
