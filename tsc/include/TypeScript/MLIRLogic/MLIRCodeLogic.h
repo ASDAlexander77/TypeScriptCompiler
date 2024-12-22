@@ -730,7 +730,7 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
 
-        auto indexType = builder.getI32Type();
+        auto indexType = builder.getIndexType();
 
         SmallVector<mlir::Value> castedValues;
         for (auto value : values)

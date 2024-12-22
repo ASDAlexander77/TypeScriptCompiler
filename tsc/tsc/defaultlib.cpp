@@ -146,14 +146,6 @@ int buildWin32(const SmallVectorImpl<char>& appPath)
 
     SmallVector<StringRef, 4> args{cmdPath, "/k", "build.bat"};
 
-    /*
-          TOOL_PATH: ./compiler/tsc
-          GC_LIB_PATH: ./compiler/tsc
-          LLVM_LIB_PATH: ./compiler/tsc
-          TSC_LIB_PATH: ./compiler/tsc
-
-    */
-
     SmallVector<StringRef, 4> envp{};
 
     auto gcLibPath = getpath(getGCLibPath(), appPath);
