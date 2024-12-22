@@ -1620,6 +1620,17 @@ class MLIRTypeHelper
         found = false;
         auto intTypeLeft = dyn_cast<mlir::IntegerType>(typeLeft);
         auto intTypeRight = dyn_cast<mlir::IntegerType>(typeRight);
+
+        if (typeLeft.isIndex())
+        {
+            intTypeLeft = mlir::IntegerType::get(typeLeft.getContext(), compileOptions.sizeBits);
+        }
+
+        if (typeRight.isIndex())
+        {
+            intTypeRight = mlir::IntegerType::get(typeRight.getContext(), compileOptions.sizeBits);
+        }
+
         if (intTypeLeft && intTypeRight)
         {
             auto width = std::max(intTypeLeft.getIntOrFloatBitWidth(), intTypeRight.getIntOrFloatBitWidth());
@@ -1758,7 +1769,7 @@ class MLIRTypeHelper
         return typeLeft;
     }
 
-    // TODO: review using canCast in detecting base Type, in case of "i32" & "number" + "number" & "i32"
+    // TODO: review using canCast in detecting base Type. index, int, number
     bool canWideTypeWithoutDataLoss(mlir::Type srcType, mlir::Type dstType)
     {
         if (!srcType || !dstType)
@@ -1771,7 +1782,7 @@ class MLIRTypeHelper
             return true;
         }
 
-        if (isa<mlir::IntegerType>(srcType))
+        if (isa<mlir::IntegerType>(srcType) || isa<mlir::IndexType>(srcType))
         {
             if (isa<mlir_ts::NumberType>(dstType))
             {
@@ -1812,7 +1823,16 @@ class MLIRTypeHelper
 
         if (auto literalType = dyn_cast<mlir_ts::LiteralType>(srcType))
         {
-            return canWideTypeWithoutDataLoss(literalType.getElementType(), dstType);
+            auto litType = literalType.getElementType();
+            if (auto litIntType = dyn_cast<mlir::IntegerType>(litType))
+            {
+                if (isa<mlir::IndexType>(dstType) && litIntType.getIntOrFloatBitWidth() <= (unsigned int)compileOptions.sizeBits)
+                {
+                    return true;
+                }
+            }
+
+            return canWideTypeWithoutDataLoss(litType, dstType);
         }
 
         if (auto enumType = dyn_cast<mlir_ts::EnumType>(srcType))
@@ -1850,29 +1870,39 @@ class MLIRTypeHelper
         }        
 
         // native types
-        if (auto destIntType = dyn_cast<mlir::IntegerType>(dstType))
+        auto destIntType = dyn_cast<mlir::IntegerType>(dstType);
+        auto srcIntType = dyn_cast<mlir::IntegerType>(srcType);
+
+        if (dstType.isIndex())
         {
-            if (auto srcIntType = dyn_cast<mlir::IntegerType>(srcType))
+            destIntType = mlir::IntegerType::get(dstType.getContext(), compileOptions.sizeBits);
+        }
+
+        if (srcType.isIndex())
+        {
+            srcIntType = mlir::IntegerType::get(srcType.getContext(), compileOptions.sizeBits);
+        }
+
+        if (destIntType && srcIntType)
+        {
+            if ((srcIntType.getSignedness() == destIntType.getSignedness() || srcIntType.isSignless() || destIntType.isSignless())
+                && srcIntType.getIntOrFloatBitWidth() <= destIntType.getIntOrFloatBitWidth())
             {
-                if ((srcIntType.getSignedness() == destIntType.getSignedness() || srcIntType.isSignless() || destIntType.isSignless())
-                    && srcIntType.getIntOrFloatBitWidth() <= destIntType.getIntOrFloatBitWidth())
-                {
-                    return true;
-                }
+                return true;
+            }
 
-                if (destIntType.getIntOrFloatBitWidth() - srcIntType.getIntOrFloatBitWidth() > 1)
-                {
-                    return true;
-                }
+            if (destIntType.getIntOrFloatBitWidth() - srcIntType.getIntOrFloatBitWidth() > 1)
+            {
+                return true;
+            }
 
-                if (srcIntType.getIntOrFloatBitWidth() == destIntType.getIntOrFloatBitWidth()
-                    && srcIntType.isSigned() == destIntType.isSigned())
-                {
-                    return true;
-                }
+            if (srcIntType.getIntOrFloatBitWidth() == destIntType.getIntOrFloatBitWidth()
+                && srcIntType.isSigned() == destIntType.isSigned())
+            {
+                return true;
+            }
 
-                return false;
-            }    
+            return false;
         }          
 
         if (auto destFloatType = dyn_cast<mlir::FloatType>(dstType))
