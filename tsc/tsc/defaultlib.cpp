@@ -153,7 +153,7 @@ int buildWin32(const SmallVectorImpl<char>& appPath)
 
     // 1, run git to get data
 
-    SmallVector<StringRef, 4> args{cmdPath, "/k", "build.bat"};
+    SmallVector<StringRef, 4> args{cmdPath, "/S /C", "build.bat"};
 
     SmallVector<StringRef, 4> envp{};
 
