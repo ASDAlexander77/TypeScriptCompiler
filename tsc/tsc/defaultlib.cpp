@@ -188,6 +188,11 @@ int buildWin32(const SmallVectorImpl<char>& appPath)
 
     return 0;
 }
+#else
+int buildLinux(const SmallVectorImpl<char>& appPath)
+{
+    // TODO:...
+}
 #endif
 
 std::string getpath(std::string path, const SmallVectorImpl<char>& defaultPath)

@@ -9,6 +9,11 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+- Visual Studio Code project
+```cmd
+tsc --new Test1
+```
+
 - Strict null checks
 ```TypeScript
 let sn: string | null = null; // Ok
