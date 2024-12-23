@@ -254,10 +254,10 @@ int main(int argc, char **argv)
         return createVSCodeFolder(argc, argv);
     }
 
-    if (installDefaultLibCmd.getValue())
-    {
-        return installDefaultLib(argc, argv);
-    }
+    // if (installDefaultLibCmd.getValue())
+    // {
+    //     return installDefaultLib(argc, argv);
+    // }
 
     if (emitAction == Action::DumpAST)
     {
