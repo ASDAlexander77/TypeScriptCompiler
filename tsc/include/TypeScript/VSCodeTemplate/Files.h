@@ -1,7 +1,7 @@
 #define NODE_MODULE_TSNC_PATH "node_modules/tsnc"
 #define DOT_VSCODE_PATH ".vscode"
 
-#define TSCONFIG_JSON_DATA R"raw(
+const auto TSCONFIG_JSON_DATA = R"raw(
 {
     "compilerOptions": {
       "target": "es2017",
@@ -22,15 +22,15 @@
     "include": ["<<PROJECT>>.ts"],
     "exclude": ["node_modules"]
 }
-)raw"
+)raw";
 
-#define TSNC_INDEX_D_TS R"raw(
+const auto TSNC_INDEX_D_TS = R"raw(
 declare function print(...args: (string | number)[]) : void;
 declare function assert(cond: boolean, msg?: string) : void;
 declare type int = any;
-)raw"
+)raw";
 
-#define TASKS_JSON_DATA R"raw(
+const auto TASKS_JSON_DATA = R"raw(
 {
     // See https://go.microsoft.com/fwlink/?LinkId=733558
     // for the documentation about the tasks.json format
@@ -134,9 +134,9 @@ declare type int = any;
         }        
     ]
 }
-)raw"
+)raw";
 
-#define LAUNCH_JSON_DATA_WIN32 R"raw(
+const auto LAUNCH_JSON_DATA_WIN32 = R"raw(
 {
     // Use IntelliSense to learn about possible attributes.
     // Hover to view descriptions of existing attributes.
@@ -198,9 +198,9 @@ declare type int = any;
         }
     ]
 }
-)raw"
+)raw";
 
-#define LAUNCH_JSON_DATA_LINUX R"raw(
+const auto LAUNCH_JSON_DATA_LINUX = R"raw(
 {
     // Use IntelliSense to learn about possible attributes.
     // Hover to view descriptions of existing attributes.
@@ -259,9 +259,9 @@ declare type int = any;
         }
     ]
 }
-)raw"
+)raw";
 
-#define TSNC_NATVIS R"raw(<?xml version="1.0" encoding="utf-8"?>
+const auto TSNC_NATVIS = R"raw(<?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
   <!-- TypeScript -->
@@ -279,4 +279,4 @@ declare type int = any;
 
 </AutoVisualizer>
 
-)raw"
+)raw";
