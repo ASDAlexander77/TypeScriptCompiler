@@ -30,7 +30,12 @@ class MLIRTypeHelper
 
     MLIRTypeHelper(
         mlir::MLIRContext *context)
-        : context(context)
+        : context(context), 
+          compileOptions(),           
+          getClassInfoByFullName{},
+          getGenericClassInfoByFullName{},
+          getInterfaceInfoByFullName{},
+          getGenericInterfaceInfoByFullName{}
     {
     }
 

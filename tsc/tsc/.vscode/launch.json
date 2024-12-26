@@ -489,6 +489,8 @@
             "args": [
                 "-emit=exe",
                 "-relocation-model=pic",
+                "--no-default-lib",
+                "-debug-only=mlir",
                 "~/dev/playground/1.ts"
             ],
             "stopAtEntry": false,
