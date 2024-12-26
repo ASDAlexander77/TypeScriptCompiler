@@ -1,7 +1,7 @@
 function testStringCollection(): void {
     let coll = <string[]>[];
     coll.push("foobar");
-    coll.push((12).toString());
+    coll.push((<string>12));
     coll.push(coll[0] + "xx");
     //assert(coll.indexOf("12") == 1, "idx");
     coll = ["a" + "b", coll[2]];

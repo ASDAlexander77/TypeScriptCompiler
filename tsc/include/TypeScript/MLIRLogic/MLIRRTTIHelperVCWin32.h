@@ -43,12 +43,14 @@ class MLIRRTTIHelperVCWin32
 
     SmallVector<TypeNames> types;
 
+    CompileOptions& compileOptions;
+
   public:
     std::string catchableTypeInfoArrayRef;
     std::string throwInfoRef;
 
-    MLIRRTTIHelperVCWin32(mlir::OpBuilder &rewriter, mlir::ModuleOp &parentModule)
-        : rewriter(rewriter), parentModule(parentModule), mth(rewriter.getContext()), mlh()
+    MLIRRTTIHelperVCWin32(mlir::OpBuilder &rewriter, mlir::ModuleOp &parentModule, CompileOptions& compileOptions)
+        : rewriter(rewriter), parentModule(parentModule), mth(rewriter.getContext(), compileOptions), mlh(), compileOptions(compileOptions)
     {
         // setI32AsCatchType();
     }
@@ -341,7 +343,7 @@ class MLIRRTTIHelperVCWin32
             return mlir::failure();
         }
 
-        MLIRCodeLogic mcl(rewriter);
+        MLIRCodeLogic mcl(rewriter, compileOptions);
 
         auto rttiTypeDescriptor2Ty = getRttiTypeDescriptor2Ty(StringRef(typeName).size());
 

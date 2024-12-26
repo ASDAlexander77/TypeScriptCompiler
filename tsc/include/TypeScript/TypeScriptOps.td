@@ -607,7 +607,7 @@ def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
     allocate in memory few instances
   }];
 
-  let arguments = (ins I32:$count);
+  let arguments = (ins Index:$count);
   let results = (outs Res<TypeScript_Array, "", [MemAlloc]>:$instance);
 
   
@@ -1261,7 +1261,7 @@ def TypeScript_PointerOffsetRefOp : TypeScript_Op<"PointerOffsetRef"> {
 
   let arguments = (ins
     TypeScript_Ref:$ref,
-    I32:$index
+    Index:$index
   );
 
   let results = (outs
@@ -2164,7 +2164,7 @@ def TypeScript_ArrayPushOp : TypeScript_Op<"ArrayPush", [
                 "TypeRange((cast<ArrayType>(cast<RefType>($_self).getElementType()).getElementType()))">
 ]> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
-  let results = (outs I32:$new_size);
+  let results = (outs Index:$new_size);
 }
 
 def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop", [
@@ -2178,7 +2178,7 @@ def TypeScript_ArrayPopOp : TypeScript_Op<"ArrayPop", [
 
 def TypeScript_ArrayUnshiftOp : TypeScript_Op<"ArrayUnshift"> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Variadic<AnyType>:$items);
-  let results = (outs I32:$new_size);
+  let results = (outs Index:$new_size);
 }
 
 def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift", [
@@ -2192,32 +2192,32 @@ def TypeScript_ArrayShiftOp : TypeScript_Op<"ArrayShift", [
 
 def TypeScript_ArraySpliceOp : TypeScript_Op<"ArraySplice"> {
   let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Index:$start, Index:$deleteCount, Variadic<AnyType>:$items);
-  let results = (outs I32:$new_size);
+  let results = (outs Index:$new_size);
 }
 
 def TypeScript_ArrayViewOp : TypeScript_Op<"ArrayView", [AllTypesMatch<["op", "result"]>]> {
-  let arguments = (ins TypeScript_Array:$op, I32:$offset, I32:$count);
+  let arguments = (ins TypeScript_Array:$op, Index:$offset, Index:$count);
   let results = (outs TypeScript_Array:$result);
 }
 
 def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
   let arguments = (ins TypeScript_ArrayLike:$op);
-  let results = (outs I32:$result);
+  let results = (outs Index:$result);
 }
 
 def TypeScript_SetLengthOfOp : TypeScript_Op<"SetLengthOf"> {
-  let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, I32:$newLength);
+  let arguments = (ins Arg<TypeScript_AnyArrayRef, "", [MemAlloc, MemWrite]>:$op, Index:$newLength);
   let results = (outs );
 }
 
 def TypeScript_SetStringLengthOp : TypeScript_Op<"SetStringLength"> {
-  let arguments = (ins Arg<TypeScript_StringRef, "", [MemAlloc, MemWrite]>:$op,  I32:$size);
+  let arguments = (ins Arg<TypeScript_StringRef, "", [MemAlloc, MemWrite]>:$op, Index:$size);
   let results = (outs );
 }
 
 def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {
   let arguments = (ins TypeScript_String:$op);
-  let results = (outs I32:$result);
+  let results = (outs Index:$result);
 }
 
 def TypeScript_StringConcatOp : TypeScript_Op<"StringConcat"> {
@@ -2266,7 +2266,7 @@ def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllT
 }
 
 def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
-  let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, I32:$count);
+  let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
 
   let extraClassDeclaration = [{

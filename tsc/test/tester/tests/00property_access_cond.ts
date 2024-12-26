@@ -1,3 +1,4 @@
+// @strict-null false
 class C {
     val: number;
 

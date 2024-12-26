@@ -1,3 +1,4 @@
+// @strict-null false
 function defaultArgs(x: number, y = 3, z = 7) {
     return x + y + z;
 }

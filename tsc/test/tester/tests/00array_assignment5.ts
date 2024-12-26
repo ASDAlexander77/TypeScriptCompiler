@@ -1,3 +1,4 @@
+// @strict-null false
 module Test {
     interface IState {
     }

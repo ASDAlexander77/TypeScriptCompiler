@@ -91,6 +91,11 @@ using DITableScopeT = llvm::ScopedHashTableScope<StringRef, mlir::LLVM::DIScopeA
 
 // TODO: optimize of amount of calls to detect return types and if it is was calculated before then do not run it all
 // the time
+static CompileOptions *compileOptionsPtr = nullptr;
+CompileOptions& getCompileOptions()
+{
+    return *compileOptionsPtr;
+}
 
 SourceMgrDiagnosticHandlerEx::SourceMgrDiagnosticHandlerEx(llvm::SourceMgr &mgr, mlir::MLIRContext *ctx) : mlir::SourceMgrDiagnosticHandler(mgr, ctx)
 {
@@ -155,6 +160,7 @@ class MLIRGenImpl
           sourceMgr(const_cast<llvm::SourceMgr &>(sourceMgr)),
           sourceMgrHandler(const_cast<llvm::SourceMgr &>(sourceMgr), &const_cast<mlir::MLIRContext &>(context)),
           mth(&const_cast<mlir::MLIRContext &>(context), 
+            compileOptions,
             std::bind(&MLIRGenImpl::getClassInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getGenericClassInfoByFullName, this, std::placeholders::_1), 
             std::bind(&MLIRGenImpl::getInterfaceInfoByFullName, this, std::placeholders::_1), 
@@ -166,6 +172,8 @@ class MLIRGenImpl
           tempEntryBlock(nullptr),
           overwriteLoc(mlir::UnknownLoc::get(builder.getContext()))
     {
+        compileOptionsPtr = &compileOptions;
+
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
 
         std::vector<std::string> includeDirs;
@@ -257,6 +265,16 @@ class MLIRGenImpl
             {
                 //  S(DEFAULT_LIB_DIR "/lib.d.ts")
                 filesToProcess.push_back(convertUTF8toWide(compileOptions.defaultDeclarationTSFile));
+            }
+
+            auto strictNull = sourceFile->pragmas.find(S("strict-null"));
+            if (strictNull != sourceFile->pragmas.end())
+            {                
+                auto option = strictNull->second.front().find(S("option"));
+                if (option != strictNull->second.front().end()) 
+                {
+                    compileOptions.strictNullChecks = option->second._arg.value == S("true");
+                }
             }
         }
 
@@ -622,7 +640,7 @@ class MLIRGenImpl
         if (useGlobalCtor)
         {
             auto parentModule = theModule;
-            MLIRCodeLogicHelper mclh(builder, location);
+            MLIRCodeLogicHelper mclh(builder, location, compileOptions);
 
             builder.setInsertionPointToStart(parentModule.getBody());
             mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
@@ -1008,7 +1026,7 @@ class MLIRGenImpl
             }
 
             auto parentModule = theModule;
-            MLIRCodeLogicHelper mclh(builder, location);
+            MLIRCodeLogicHelper mclh(builder, location, compileOptions);
 
             builder.setInsertionPointToStart(parentModule.getBody());
             mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
@@ -2193,8 +2211,15 @@ class MLIRGenImpl
             currValue = createBoundFunctionOp.getFunc();
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! spec. func ref: " << currValue << "\n";);
+
         auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>();
-        assert(symbolOp);
+        if (!symbolOp)
+        {
+            emitError(currValue.getLoc()) << "generic function should be used in 'const' variable declaration.";
+            return mlir::failure();            
+        }
+
         auto functionName = symbolOp.getIdentifier();
 
         // it is not generic arrow function
@@ -2268,6 +2293,7 @@ class MLIRGenImpl
             if (!newOpWithCapture.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
                 // symbolOp will be removed as unsed
+                LLVM_DEBUG(llvm::dbgs() << "\n!! newOpWithCapture: " << newOpWithCapture << "\n";);
                 return newOpWithCapture;
             }
             else
@@ -2710,6 +2736,9 @@ class MLIRGenImpl
 
                 // instatiate all ArrowFunctions which are not yet instantiated
                 auto opIndex = skipThisParam ? 0 : -1;
+                // TODO: this is hack, somehow we have difference between operands and call Operands due to CreateExtentionsFunction call
+                // review example raytrace.ts function addLight in getNaturalColor (due to captured params)
+                long operandsShift = static_cast<long>(operands.size()) - static_cast<long>(genContext.callOperands.size());
                 for (auto [callOpIndex, op] : enumerate(genContext.callOperands))
                 {
                     opIndex++;
@@ -2727,7 +2756,7 @@ class MLIRGenImpl
                         auto resultValue = V(result);
                         if (resultValue)
                         {
-                            operands[callOpIndex] = resultValue;
+                            operands[callOpIndex + operandsShift] = resultValue;
                         }
                     }
                 }
@@ -2970,12 +2999,12 @@ class MLIRGenImpl
         {
             currValue = extensFuncRef.getFunc();
 
-            SmallVector<mlir::Value, 4> operands;
-            operands.push_back(extensFuncRef.getThisVal());
-            operands.append(genContext.callOperands.begin(), genContext.callOperands.end());
+            SmallVector<mlir::Value, 4> operandsSpec;
+            operandsSpec.push_back(extensFuncRef.getThisVal());
+            operandsSpec.append(genContext.callOperands.begin(), genContext.callOperands.end());
 
             GenContext specGenContext(genContext);
-            specGenContext.callOperands = operands;
+            specGenContext.callOperands = operandsSpec;
 
             auto newFuncRefOrLogicResult = mlirGenSpecialized(location, currValue, typeArguments, operands, specGenContext);
             EXIT_IF_FAILED(newFuncRefOrLogicResult)
@@ -3135,7 +3164,7 @@ class MLIRGenImpl
 
         assert(thisVarValue);
 
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         auto thisVarValueRef = mcl.GetReferenceFromValue(location, thisVarValue);
 
         assert(thisVarValueRef);
@@ -3168,15 +3197,16 @@ class MLIRGenImpl
 
     struct VariableDeclarationInfo
     {
-        VariableDeclarationInfo() : variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
+        VariableDeclarationInfo(CompileOptions& compileOptions) : compileOptions(compileOptions), variableName(), fullName(), initial(), type(), storage(), globalOp(), varClass(),
             scope{VariableScope::Local}, isFullName{false}, isGlobal{false}, isConst{false}, isExternal{false}, isExport{false}, isImport{false}, 
             isSpecialization{false}, allocateOutsideOfOperation{false}, allocateInContextThis{false}, comdat{Select::NotSet}, deleted{false}, isUsed{false}
         {
         };
 
         VariableDeclarationInfo(
+            CompileOptions& compileOptions,
             TypeValueInitFuncType func_, 
-            std::function<StringRef(StringRef)> getFullNamespaceName_) : VariableDeclarationInfo() 
+            std::function<StringRef(StringRef)> getFullNamespaceName_) : VariableDeclarationInfo(compileOptions) 
         {
             getFullNamespaceName = getFullNamespaceName_;
             func = func_;
@@ -3257,7 +3287,7 @@ class MLIRGenImpl
 
             if (varClass == VariableType::ConstRef)
             {
-                MLIRCodeLogic mcl(builder);
+                MLIRCodeLogic mcl(builder, compileOptions);
                 if (auto possibleInit = mcl.GetReferenceFromValue(location, initial))
                 {
                     setInitial(possibleInit);
@@ -3357,6 +3387,8 @@ class MLIRGenImpl
         {
             LLVM_DEBUG(dbgs() << "\n!! variable = " << fullName << " type: " << type << "\n";);
         }
+
+        CompileOptions& compileOptions;
 
         TypeValueInitFuncType func;
         std::function<StringRef(StringRef)> getFullNamespaceName;
@@ -3761,7 +3793,7 @@ class MLIRGenImpl
                                 TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false)
     {
         struct VariableDeclarationInfo variableDeclarationInfo(
-            func, std::bind(&MLIRGenImpl::getGlobalsFullNamespaceName, this, std::placeholders::_1));
+            compileOptions, func, std::bind(&MLIRGenImpl::getGlobalsFullNamespaceName, this, std::placeholders::_1));
 
         variableDeclarationInfo.detectFlags(isFullName, varClass, genContext);
         variableDeclarationInfo.setName(name);
@@ -3811,7 +3843,7 @@ class MLIRGenImpl
     // TODO: to support '...' u need to use 'processOperandSpreadElement' and instead of "index" param use "next" logic
     ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(mlir::Location location, int index, mlir::Type type, mlir::Value init, const GenContext &genContext)
     {
-        MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index));
+        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, init, builder.getI32IntegerAttr(index));
         mlir::Value subInit =
             mlir::TypeSwitch<mlir::Type, mlir::Value>(type)
                 .template Case<mlir_ts::ConstTupleType>(
@@ -3914,7 +3946,7 @@ class MLIRGenImpl
         mlir::Value value;
         if (isNumericAccess)
         {
-            MLIRPropertyAccessCodeLogic cl(builder, location, init, fieldName);
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, init, fieldName);
             if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
             {
                 value = cl.Tuple(tupleType, true);
@@ -4301,7 +4333,7 @@ class MLIRGenImpl
                 }
 
                 auto parentModule = theModule;
-                MLIRCodeLogicHelper mclh(builder, location);
+                MLIRCodeLogicHelper mclh(builder, location, compileOptions);
 
                 builder.setInsertionPointToStart(parentModule.getBody());
                 mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());                    
@@ -5149,7 +5181,7 @@ class MLIRGenImpl
                 // if we have captured parameters, add first param to send lambda's type(class)
                 if (passResult->outerVariables.size() > 0)
                 {
-                    MLIRCodeLogic mcl(builder);
+                    MLIRCodeLogic mcl(builder, compileOptions);
                     auto isObjectType =
                         genContext.thisType != nullptr && isa<mlir_ts::ObjectType>(genContext.thisType);
                     if (!isObjectType)
@@ -6776,8 +6808,11 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Is Safe Type the same: [" << exprValue.getType() << "] and [" << safeType << "]\n");
+
         if (isSafeTypeTheSameAndNoNeedToCast(exprValue.getType(), safeType))
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! == Yes\n");
             return mlir::success();
         }
 
@@ -6999,7 +7034,7 @@ class MLIRGenImpl
                 assert(constantOp);
                 auto valueAttr = constantOp.getValueAttr();
 
-                MLIRCodeLogic mcl(builder);
+                MLIRCodeLogic mcl(builder, compileOptions);
                 auto fieldNameAttr = TupleFieldName(name, genContext);
 
                 for (auto unionSubType : unionType.getTypes())
@@ -8231,7 +8266,7 @@ class MLIRGenImpl
             auto location = loc(catchClause->block);
             if (!varName.empty())
             {
-                MLIRCodeLogic mcl(builder);
+                MLIRCodeLogic mcl(builder, compileOptions);
                 auto varInfo = resolveIdentifier(location, varName, tryGenContext);
                 auto varRef = mcl.GetReferenceFromValue(location, varInfo);
                 builder.create<mlir_ts::CatchOp>(location, varRef);
@@ -8989,7 +9024,7 @@ class MLIRGenImpl
                     location, getBooleanType(), typeOfAnyValue, classStrConst,
                     builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
 
-                MLIRCodeLogicHelper mclh(builder, location);
+                MLIRCodeLogicHelper mclh(builder, location, compileOptions);
                 auto returnValue = mclh.conditionalExpression(
                     getBooleanType(), cmpResult,
                     [&](mlir::OpBuilder &builder, mlir::Location location) {
@@ -9241,7 +9276,7 @@ class MLIRGenImpl
 
             // access to conditional tuple
             // let's see if we can get reference to it
-            MLIRCodeLogic mcl(builder);
+            MLIRCodeLogic mcl(builder, compileOptions);
             auto propRef = mcl.GetReferenceFromValue(location, leftExpressionValueBeforeCast);
             if (!propRef)
             {
@@ -9369,7 +9404,7 @@ class MLIRGenImpl
         */
         else if (auto lengthOf = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LengthOfOp>())
         {
-            MLIRCodeLogic mcl(builder);
+            MLIRCodeLogic mcl(builder, compileOptions);
             auto arrayValueLoaded = mcl.GetReferenceFromValue(location, lengthOf.getOp());
             if (!arrayValueLoaded)
             {
@@ -9383,7 +9418,7 @@ class MLIRGenImpl
         }
         else if (auto stringLength = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::StringLengthOp>())
         {
-            MLIRCodeLogic mcl(builder);
+            MLIRCodeLogic mcl(builder, compileOptions);
             auto stringValueLoaded = mcl.GetReferenceFromValue(location, stringLength.getOp());
             if (!stringValueLoaded)
             {
@@ -9512,7 +9547,7 @@ class MLIRGenImpl
                     leftExpressionValue = V(result);
                 }
 
-                MLIRPropertyAccessCodeLogic cl(builder, location, rightExpressionValue, builder.getI32IntegerAttr(index));
+                MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, rightExpressionValue, builder.getI32IntegerAttr(index));
                 auto rightValue = cl.Tuple(tupleType, true);
                 if (!rightValue)
                 {
@@ -9751,8 +9786,12 @@ class MLIRGenImpl
 
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
-                static SmallVector<mlir::Type> types = {builder.getF128Type(), getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getF32Type(), SInt(32), 
-                    builder.getI32Type(), builder.getF16Type(), SInt(16), builder.getI16Type(), SInt(8), builder.getI8Type()};
+                static SmallVector<mlir::Type> types = {
+                    builder.getF128Type(), 
+                    getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
+                    builder.getF32Type(), SInt(32), builder.getI32Type(), 
+                    builder.getF16Type(), SInt(16), builder.getI16Type(), 
+                    SInt(8), builder.getI8Type()};
                 for (auto type : types)
                 {
                     if (syncTypes(location, type, leftExpressionValue, rightExpressionValue, genContext))
@@ -9946,7 +9985,7 @@ class MLIRGenImpl
                                                          mlir::StringRef name, const GenContext &genContext)
     {
         assert(objectValue);
-        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
+        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, name);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, false, cl, genContext);
     }
 
@@ -9955,14 +9994,14 @@ class MLIRGenImpl
                                                          const GenContext &genContext)
     {
         assert(objectValue);
-        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
+        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, name);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
     }
 
     ValueOrLogicalResult mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue,
                                                          mlir::Attribute id, const GenContext &genContext)
     {
-        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, id);
+        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, id);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, false, cl, genContext);
     }
 
@@ -9970,7 +10009,7 @@ class MLIRGenImpl
                                                          mlir::Attribute id, bool isConditional,
                                                          const GenContext &genContext)
     {
-        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, id);
+        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, id);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
     }
 
@@ -9979,7 +10018,7 @@ class MLIRGenImpl
                                                          mlir::Value argument/*for index access*/,
                                                          const GenContext &genContext)
     {
-        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, id, argument);
+        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, objectValue, id, argument);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
     }    
 
@@ -10113,24 +10152,6 @@ class MLIRGenImpl
                 .Case<mlir_ts::EnumType>([&](auto enumType) { return cl.Enum(enumType); })
                 .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { return cl.Tuple(constTupleType); })
                 .Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType); })
-                .Case<mlir_ts::BooleanType>([&](auto intType) { 
-                    if (auto value = cl.Bool(intType))
-                    {
-                        return value;
-                    }
-                    
-                    return mlir::Value();                    
-                })
-                .Case<mlir::IntegerType>([&](auto intType) { return cl.Int(intType); })
-                .Case<mlir::FloatType>([&](auto floatType) { return cl.Float(floatType); })
-                .Case<mlir_ts::NumberType>([&](auto numberType) {                    
-                    if (auto value = cl.Number(numberType))
-                    {
-                        return value;
-                    }
-
-                    return mlir::Value();                        
-                })
                 .Case<mlir_ts::StringType>([&](auto stringType) { 
                     if (auto value = cl.String(stringType))
                     {
@@ -10456,7 +10477,7 @@ class MLIRGenImpl
             auto isStorageType = isa<mlir_ts::ClassStorageType>(thisValue.getType());
             if (isStorageType)
             {
-                MLIRCodeLogic mcl(builder);
+                MLIRCodeLogic mcl(builder, compileOptions);
                 thisValue = mcl.GetReferenceFromValue(location, thisValue);
                 assert(thisValue);
             }
@@ -10951,7 +10972,7 @@ class MLIRGenImpl
         auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, id, argument, genContext);
         if (!value)
         {
-            emitError(location, "Interface member '") << id << "' can't be found";
+            emitError(location, "Interface member ") << id << " can't be found in interface '" << interfaceInfo->name << "'";
         }
 
         return value;
@@ -11182,7 +11203,7 @@ class MLIRGenImpl
         if (auto indexConstOp = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
         {
             // this is property access
-            MLIRPropertyAccessCodeLogic cl(builder, location, expression, indexConstOp.getValue());
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, expression, indexConstOp.getValue());
             return cl.Tuple(tupleType, true);
         }
         else
@@ -11348,7 +11369,7 @@ class MLIRGenImpl
         }          
         else if (auto refType = dyn_cast<mlir_ts::RefType>(arrayType)) 
         {
-            CAST_A(index, location, mth.getStructIndexType(), argumentExpression, genContext);
+            CAST_A(index, location, mth.getIndexType(), argumentExpression, genContext);
 
             auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
                 location, refType, expression, index);            
@@ -11404,11 +11425,10 @@ class MLIRGenImpl
             && !isa<mlir_ts::ClassType>(funcType)
             // to support super.constructor calls
             && !isa<mlir_ts::ClassStorageType>(funcType))
-        {           
-            // TODO: rewrite code for calling "5.ToString()"
-            // TODO: recursive functions are usually return "failure" as can't be found
-            //return mlir::failure();
-            return funcResult;
+        {      
+            LLVM_DEBUG(llvm::dbgs() << "\n!! function type: " << funcType << "\n";);
+            emitError(location, "not a function to call");
+            return mlir::failure();
         }
 
         // so if method is generic and you need to infer types you can cast to generic types
@@ -11790,7 +11810,7 @@ class MLIRGenImpl
             functionName, 
             typeArgs,
             operands, 
-            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4), 
+            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
             genContext);
     }
 
@@ -11946,7 +11966,7 @@ class MLIRGenImpl
                 value = NewClassInstanceOnStack(location, classType, operands, genContext);
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
-                MLIRCodeLogic mcl(builder);
+                MLIRCodeLogic mcl(builder, compileOptions);
                 auto refValue = mcl.GetReferenceFromValue(location, funcRefValue);
                 if (refValue)
                 {
@@ -11961,10 +11981,8 @@ class MLIRGenImpl
                 }
             })
             .Default([&](auto type) {
-                // TODO: this is hack, rewrite it
-                // it is not function, so just return value as maybe it has been resolved earlier like in case
-                // "<number>.ToString()"
-                value = funcRefValue;
+                emitError(location, "not supported function type");
+                value = mlir::Value();
             });
 
         return value;
@@ -12322,8 +12340,8 @@ class MLIRGenImpl
 
             for (auto spreadIndex = 0;  spreadIndex < count; spreadIndex++)
             {
-                auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getStructIndexType(),
-                                                    mth.getStructIndexAttrValue(spreadIndex));
+                auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(),
+                                                    mth.getIndexAttrValue(spreadIndex));
 
                 // conditional expr:  length > "spreadIndex" ? value[index] : undefined
                 auto inBoundsValue =  V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
@@ -12527,7 +12545,7 @@ class MLIRGenImpl
 
         auto result = mlirGenPropertyAccessExpression(location, thisValue, VTABLE_NAME, genContext);
         auto vtableVal = V(result);
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         auto vtableRefVal = mcl.GetReferenceFromValue(location, vtableVal);
 
         // vtable symbol reference
@@ -12823,7 +12841,7 @@ class MLIRGenImpl
         mlir::Value count;
         if (arguments.size() == 0)
         {
-            count = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerType(32, false), builder.getUI32IntegerAttr(0));
+            count = builder.create<mlir_ts::ConstantOp>(location, builder.getIndexType(), builder.getIndexAttr(0));
         }
         else if (arguments.size() == 1)
         {
@@ -12848,10 +12866,10 @@ class MLIRGenImpl
             return createArrayFromArrayInfo(location, values, arrayInfo, genContext);
         }
 
-        if (count.getType() != builder.getI32Type())
+        if (count.getType() != builder.getIndexType())
         {
             // TODO: test cast result
-            count = cast(location, builder.getI32Type(), count, genContext);
+            count = cast(location, builder.getIndexType(), count, genContext);
         }
 
         auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(elementType), count);
@@ -13420,7 +13438,7 @@ class MLIRGenImpl
         // TODO: review all receivers in case of generic types in generic functions, to avoid merging T with actual types
         void setReceiver(mlir::Type type, bool isReceiverGenericType)
         {
-            MLIRTypeHelper mth(nullptr);
+            MLIRTypeHelper mth(nullptr, {});
             type = mth.stripOptionalType(type);
 
             mlir::TypeSwitch<mlir::Type>(type)
@@ -13624,7 +13642,7 @@ class MLIRGenImpl
                 auto index = -1;
                 for (auto val : arrayAttr)
                 {
-                    MLIRPropertyAccessCodeLogic cl(builder, location, itemValue, builder.getIndexAttr(++index));
+                    MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, itemValue, builder.getIndexAttr(++index));
                     auto newConstVal = cl.Tuple(constTuple, true);
 
                     values.push_back({newConstVal, false, false});
@@ -14001,7 +14019,7 @@ class MLIRGenImpl
     {
         auto location = loc(objectLiteral);
 
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         // first value
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -14279,7 +14297,7 @@ class MLIRGenImpl
                                     {
                                         auto interfaceFieldInfo = srcInterfaceInfo->findField(fieldInfo.id);
 
-                                        MLIRPropertyAccessCodeLogic cl(builder, location, tupleValue, fieldInfo.id);
+                                        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, tupleValue, fieldInfo.id);
                                         // TODO: implemenet conditional
                                         mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, interfaceFieldInfo->isConditional, cl, genContext); 
                                         addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType);
@@ -14299,7 +14317,7 @@ class MLIRGenImpl
                                         auto foundField = false;                                        
                                         auto classFieldInfo = srcClassInfo->findField(fieldInfo.id, foundField);
 
-                                        MLIRPropertyAccessCodeLogic cl(builder, location, tupleValue, fieldInfo.id);
+                                        MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, tupleValue, fieldInfo.id);
                                         // TODO: implemenet conditional
                                         mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, false, cl, genContext); 
                                         addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType);
@@ -14586,7 +14604,7 @@ class MLIRGenImpl
                                                    SmallVector<mlir::Value> &capturedValues,
                                                    const GenContext &genContext)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         for (auto &item : captureVars)
         {
             auto result = mlirGen(location, item.first(), genContext);
@@ -14665,7 +14683,7 @@ class MLIRGenImpl
                 return mlir::Value();
             }
 
-            MLIRCodeLogic mcl(builder);
+            MLIRCodeLogic mcl(builder, compileOptions);
 
             auto captureType = mcl.CaptureType(captureVars->getValue());
             auto result = mlirGenCreateCapture(location, captureType, capturedValues, genContext);
@@ -16005,7 +16023,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenClassStorageType(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                                 ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
 
         // add base classes
@@ -16229,7 +16247,7 @@ class MLIRGenImpl
                                                    SmallVector<mlir_ts::FieldInfo> &fieldInfos,
                                                    const GenContext &genContext)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         if (heritageClause->token == SyntaxKind::ExtendsKeyword)
         {
@@ -17043,7 +17061,7 @@ genContext);
             return mlir::success();
         }
 
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         // register global
         auto name = TYPE_BITMAP_NAME;
@@ -17057,7 +17075,7 @@ genContext);
                 auto bitmapValueType = mth.getTypeBitmapValueType();
 
                 auto nullOp = builder.create<mlir_ts::NullOp>(location, getNullType());
-                CAST_A(classNull, location, newClassPtr->classType, nullOp, genContext);
+                CAST_A_NULLCHECK(classNull, location, newClassPtr->classType, nullOp, genContext, true);
 
                 auto sizeOfStoreElement =
                     builder.create<mlir_ts::SizeOfOp>(location, mth.getIndexType(), mth.getTypeBitmapValueType());
@@ -17125,10 +17143,8 @@ genContext);
                         location, mth.getIndexType(), builder.getI32IntegerAttr((int)SyntaxKind::SlashToken),
                         fieldAddrAsInt, sizeOfStoreElement);
 
-                    CAST_A(calcIndex32, location, mth.getStructIndexType(), calcIndex, genContext);
-
                     auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
-                        location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex32);
+                        location, mlir_ts::RefType::get(bitmapValueType), arrayValue, calcIndex);
 
                     // calc bit
                     auto indexModIndex = builder.create<mlir_ts::ArithmeticBinaryOp>(
@@ -17384,7 +17400,7 @@ genContext);
                                                                         const GenContext &genContext)
     {
 
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         auto storeType = objectType.getStorageType();
 
@@ -17418,14 +17434,24 @@ genContext);
                 {
                     if (methodOrField.isField)
                     {
-                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
+                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());                        
                         if (!methodOrField.isMissing)
                         {
                             // TODO: test cast result
-                            auto objectNull = cast(location, objectType, nullObj, genContext);
+                            auto objectNull = cast(location, objectType, nullObj, genContext, true);
+                            if (!objectNull)
+                            {
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::Yes};
+                            }
+
                             auto fieldValue = mlirGenPropertyAccessExpression(location, objectNull,
                                                                               methodOrField.fieldInfo.id, genContext);
                             assert(fieldValue);
+                            if (!fieldValue)
+                            {
+                                return TypeValueInitType{mlir::Type(), mlir::Value(), TypeProvided::Yes};
+                            }
+
                             auto fieldRef = mcl.GetReferenceFromValue(location, fieldValue);
 
                             LLVM_DEBUG(llvm::dbgs() << "\n!!\n\t vtable field: " << methodOrField.fieldInfo.id
@@ -17454,10 +17480,10 @@ genContext);
                             // auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
                             auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(),
                                                                                  mth.getI64AttrValue(-1));
-                            auto castedNull = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type),
+                            auto castedPtr = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type),
                                                    negative1, genContext);
                             vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
-                                location, virtTuple, castedNull, vtableValue,
+                                location, virtTuple, castedPtr, vtableValue,
                                 MLIRHelper::getStructIndex(builder, fieldIndex));
                         }
                     }
@@ -17492,7 +17518,7 @@ genContext);
                                                                        const GenContext &genContext)
     {
 
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         MethodInfo emptyMethod;
         mlir_ts::FieldInfo emptyFieldInfo;
@@ -17510,7 +17536,7 @@ genContext);
                     if (!found && !isConditional || found)
                     {
                         emitError(location)
-                            << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
+                            << "field type not matching for " << id << " for interface '" << newInterfacePtr->fullName
                             << "' in class '" << newClassPtr->fullName << "'";
 
                         return {emptyFieldInfo, mlir::failure()};
@@ -17575,7 +17601,7 @@ genContext);
             [&](mlir::Location location, const GenContext &genContext) {
                 // build vtable from names of methods
 
-                MLIRCodeLogic mcl(builder);
+                MLIRCodeLogic mcl(builder, compileOptions);
 
                 auto virtTuple = getVirtualTableType(virtualTable);
 
@@ -17586,7 +17612,7 @@ genContext);
                     if (methodOrField.isField)
                     {
                         auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
-                        auto classNull = cast(location, newClassPtr->classType, nullObj, genContext);
+                        auto classNull = cast(location, newClassPtr->classType, nullObj, genContext, true);
                         auto fieldValue = mlirGenPropertyAccessExpression(location, classNull,
                                                                           methodOrField.fieldInfo.id, genContext);
                         if (!fieldValue)
@@ -17912,7 +17938,7 @@ genContext);
                 }
 
                 // build vtable from names of methods
-                MLIRCodeLogic mcl(builder);
+                MLIRCodeLogic mcl(builder, compileOptions);
                 mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
                 auto fieldIndex = 0;
                 for (auto vtRecord : virtualTable)
@@ -18323,7 +18349,7 @@ genContext);
             }
 
             auto parentModule = theModule;
-            MLIRCodeLogicHelper mclh(builder, location);
+            MLIRCodeLogicHelper mclh(builder, location, compileOptions);
 
             builder.setInsertionPointToStart(parentModule.getBody());
             mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
@@ -18425,7 +18451,7 @@ genContext);
         auto location = loc(classMember);
 
         auto parentModule = theModule;
-        MLIRCodeLogicHelper mclh(builder, location);
+        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
 
         auto funcName = getNameOfFunction(classMember, genContext);
 
@@ -18997,7 +19023,7 @@ genContext);
         mlir::Type type;
         StringRef memberNamePtr;
 
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         SyntaxKind kind = interfaceMember;
         if (kind == SyntaxKind::PropertySignature)
@@ -19382,6 +19408,53 @@ genContext);
         return resultType;
     }    
 
+    ValueOrLogicalResult selectFieldsValues(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value,  
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        auto count = 0;
+        for (auto [index, fieldInfo] : enumerate(fields))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
+
+            if (filterSpecialCases)
+            {
+                // filter out special fields
+                if (auto strAttr = dyn_cast_or_null<mlir::StringAttr>(fieldInfo.id)) 
+                {
+                    if (strAttr.getValue().starts_with(".")) {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! --filtered #" << index << " field [" << fieldInfo.id << "]\n";);           
+                        continue;
+                    }
+                }
+            }
+
+            count ++;            
+
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, fieldInfo.id);
+            // TODO: implement conditional
+            auto propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
+            EXIT_IF_FAILED_OR_NO_VALUE(propertyAccess)
+
+            auto value = V(propertyAccess);
+            if (value.getType() != fieldInfo.type)
+            {
+                CAST(value, location, fieldInfo.type, value, genContext)
+            }
+
+            values.push_back(value);
+        }
+
+        if (count != values.size())
+        {
+            emitError(location)
+                << "count of fields (" << count << ") in destination is not matching to '" << to_print(value.getType()) << "'";            
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }      
+
+    // TODO: needs to unified with selectFieldsValues
     ValueOrLogicalResult mapTupleToFields(mlir::Location location, SmallVector<mlir::Value> &values, mlir::Value value, mlir_ts::TupleType srcTupleType, 
         ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, bool filterSpecialCases, const GenContext &genContext, bool errorAsWarning = false)
     {
@@ -19413,7 +19486,7 @@ genContext);
                     continue;
                 }
 
-                MLIRPropertyAccessCodeLogic cl(builder, location, value, builder.getI32IntegerAttr(index));
+                MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, builder.getI32IntegerAttr(index));
                 auto value = cl.Tuple(srcTupleType, true);
                 VALIDATE(value, location)
                 values.push_back(value);
@@ -19435,7 +19508,7 @@ genContext);
                     if (errorAsWarning)
                     {
                         emitWarning(location)
-                            << "field " << fieldInfo.id << " can't be found in tuple '" << srcTupleType << "'";
+                            << "field " << fieldInfo.id << " can't be found in tuple '" << to_print(srcTupleType) << "'";
 
                         // add undefined value
                         auto undefVal = builder.create<mlir_ts::UndefOp>(location, fieldInfo.type);
@@ -19448,7 +19521,7 @@ genContext);
                     return mlir::failure();
                 }                
 
-                MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
+                MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, fieldInfo.id);
                 // TODO: implement conditional
                 auto propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
                 EXIT_IF_FAILED_OR_NO_VALUE(propertyAccess)
@@ -19466,7 +19539,7 @@ genContext);
         if (count != values.size())
         {
             emitError(location)
-                << "count of fields (" << count << ") in destination is not matching to " << to_print(srcTupleType) << "'";            
+                << "count of fields (" << count << ") in destination is not matching to '" << to_print(srcTupleType) << "'";            
             return mlir::failure();
         }
 
@@ -19475,7 +19548,7 @@ genContext);
 
 
     ValueOrLogicalResult castTupleToTuple(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
-        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
+        ArrayRef<mlir_ts::FieldInfo> fields, const GenContext &genContext, bool errorAsWarning = false)
     {
         SmallVector<mlir::Value> values;
 
@@ -19490,21 +19563,9 @@ genContext);
         return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
     }    
 
-    ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
-        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false)
+    ValueOrLogicalResult NewClassInstanceWithSettingFields(mlir::Location location, mlir_ts::ClassType classType, 
+        ArrayRef<mlir_ts::FieldInfo> fields, ArrayRef<mlir::Value> values, const GenContext &genContext)
     {
-        SmallVector<mlir::Value> values;
-        
-        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, true, genContext, errorAsWarning);
-        if (mlir::failed(result))
-        {
-            return mlir::failure();
-        }
-
-        // SmallVector<::mlir::typescript::FieldInfo> fieldsForTuple;
-        // fieldsForTuple.append(fields.begin(), fields.end());
-        // return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldsForTuple), values));
-
         SmallVector<mlir::Value, 4> operands;
         auto newInstanceOfClass = NewClassInstance(location, classType, operands, genContext);
         // TODO: assign fields to values
@@ -19522,7 +19583,7 @@ genContext);
 
             auto value = values[valueIndex];
 
-            MLIRPropertyAccessCodeLogic cl(builder, location, newInstanceOfClass, fieldInfo.id);
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, newInstanceOfClass, fieldInfo.id);
             // TODO: implement conditional
             auto propertyAccess = mlirGenPropertyAccessExpressionLogic(location, newInstanceOfClass, false, cl, genContext); 
             EXIT_IF_FAILED_OR_NO_VALUE(propertyAccess)
@@ -19540,7 +19601,36 @@ genContext);
         }
 
         return newInstanceOfClass;
+    }
+
+    ValueOrLogicalResult castTupleToClass(mlir::Location location, mlir::Value value, mlir_ts::TupleType srcTupleType, 
+        ArrayRef<mlir_ts::FieldInfo> fields, mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        SmallVector<mlir::Value> values;
+        
+        auto result = mapTupleToFields(location, values, value, srcTupleType, fields, true, genContext, errorAsWarning);
+        if (mlir::failed(result))
+        {
+            return mlir::failure();
+        }
+
+        return NewClassInstanceWithSettingFields(location, classType, fields, values, genContext);
     }    
+
+    ValueOrLogicalResult castFieldsToClass(mlir::Location location, mlir::Value value, 
+        ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, 
+        mlir_ts::ClassType classType, const GenContext &genContext, bool errorAsWarning = false)
+    {
+        SmallVector<mlir::Value> values;
+        
+        auto result = selectFieldsValues(location, values, value, fields, true, genContext, errorAsWarning);
+        if (mlir::failed(result))
+        {
+            return mlir::failure();
+        }
+
+        return NewClassInstanceWithSettingFields(location, classType, fields, values, genContext);
+    }
 
     // TODO: finish it
     ValueOrLogicalResult castConstArrayToString(mlir::Location location, mlir::Value value, const GenContext &genContext)
@@ -19661,7 +19751,7 @@ genContext);
                 strs.push_back(fieldSepValue);
             }
 
-            MLIRPropertyAccessCodeLogic cl(builder, location, value, builder.getI32IntegerAttr(index));
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, builder.getI32IntegerAttr(index));
             auto fieldValue = cl.Tuple(tupleType, true);
             VALIDATE(value, location)
 
@@ -19753,7 +19843,7 @@ genContext);
                 return mlir::failure();
             }                
 
-            MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, fieldInfo.id);
             // TODO: implemenet conditional
             mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, value, false, cl, genContext); 
             if (propertyAccess)
@@ -19790,7 +19880,7 @@ genContext);
                 return mlir::failure();
             }                
 
-            MLIRPropertyAccessCodeLogic cl(builder, location, value, fieldInfo.id);
+            MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, value, fieldInfo.id);
             // TODO: implemenet conditional
             mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(
                 location, value, classFieldInfo->isConditional, cl, genContext); 
@@ -19812,7 +19902,7 @@ genContext);
 
     // TODO: cast should not throw error in case of generic methods in "if (false)" conditions (typeof == "..."), 
     // as it may prevent cmpiling code
-    ValueOrLogicalResult cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
+    ValueOrLogicalResult cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext, bool disableStrictNullCheck = false)
     {
         if (!type)
         {
@@ -19826,7 +19916,7 @@ genContext);
 
         auto valueType = value.getType();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << " -> " << type
+        LLVM_DEBUG(llvm::dbgs() << "\n!! cast " << valueType << "\n -> " << type
                                 << "\n";);
 
         if (auto litType = dyn_cast<mlir_ts::LiteralType>(type))
@@ -19837,6 +19927,36 @@ genContext);
                 {
                     emitError(location, "can't cast from literal type: '") << valLitType.getValue() << "' to '" << litType.getValue() << "'";
                     return mlir::failure(); 
+                }
+            }
+        }
+
+        // strict null
+        if (compileOptions.strictNullChecks && !disableStrictNullCheck)
+        {
+            auto effectiveType = type;
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(effectiveType)) {
+                effectiveType = optType.getElementType();
+            }
+
+            if (isa<mlir_ts::NullType>(valueType))
+            {
+                if (!isa<mlir_ts::NullType>(effectiveType) && !isa<mlir_ts::AnyType>(effectiveType))
+                {
+                    auto hasNullOrAny = false;
+                    if (auto unionType = dyn_cast<mlir_ts::UnionType>(effectiveType))
+                    {
+                        auto foundType = llvm::find_if(unionType.getTypes(), [&] (auto elementOfUnionType) {
+                            return elementOfUnionType == valueType || isa<mlir_ts::AnyType>(elementOfUnionType);
+                        });
+                        hasNullOrAny |= foundType != unionType.getTypes().end();
+                    }
+
+                    if (!hasNullOrAny)
+                    {
+                        emitError(location, "can't cast from 'null' to '") << to_print(type) << "' in 'strict null mode'";
+                        return mlir::failure(); 
+                    }
                 }
             }
         }
@@ -20101,6 +20221,11 @@ genContext);
                 fields = constTupleType.getFields();
                 return castInterfaceToTuple(location, value, interfaceType, fields, genContext);
             }
+            else if (auto classType = dyn_cast<mlir_ts::ClassType>(type))
+            {
+                fields = mlir::cast<mlir_ts::ClassStorageType>(classType.getStorageType()).getFields();     
+                return castFieldsToClass(location, value, fields, classType, genContext);                
+            }            
         }
 
         // optional
@@ -20325,7 +20450,8 @@ genContext);
         if (!existGenericFunctionMap(funcName))
         {
             // TODO: must be improved, outdated
-            auto src = S("function __as<T>(a: any) : T \
+            auto src = S("// @ts-nocheck\n\
+                function __as<T>(a: any) : T \
                 { \
                     if (typeof a == 'number') return a; \
                     if (typeof a == 'string') return a; \
@@ -20357,6 +20483,9 @@ genContext);
         operands.push_back(value);
 
         NodeFactory nf(NodeFactoryFlags::None);
+
+        MLIRValueGuard<bool> vgStrictNullCheck(compileOptions.strictNullChecks);
+        compileOptions.strictNullChecks = false;
         return mlirGenCallExpression(location, funcResult, { nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS")).as<Node>()) }, operands, funcCallGenContext);
     }
 
@@ -20402,6 +20531,11 @@ genContext);
                         .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
                         .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
+                        // TODO: we can't use null type here and undefined otherwise code will be cycling 
+                        // due to issue with TypeOf == 'null' as it should denounce UnionType into Single Type
+                        // review code to use null in "TypeGuard"
+                        .Case<mlir_ts::NullType>([&](auto _) { /* TODO: uncomment when finish with TypeGuard and null */ /*typeOfs["null"] = true;*/ })
+                        .Case<mlir_ts::UndefinedType>([&](auto _) { /* TODO: I don't think we need any code here */ /*typeOfs["undefined"] = true;*/ })
                         .Default([&](auto type) { 
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
                             llvm_unreachable("not implemented yet"); 
@@ -20876,8 +21010,8 @@ genContext);
             LLVM_DEBUG(llvm::dbgs() << "Type " << type << " does extend "
                                     << constraintType << ".";);
 
-            emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
-                                    << constraintType << ".";
+            emitWarning(location, "") << "Type " << to_print(type) << " does not satisfy the constraint "
+                                    << to_print(constraintType) << ".";
 
             return Reason::FailedConstraint;
         }
@@ -21894,7 +22028,9 @@ genContext);
             }
         }
 
-        return getUnionType(resTypes);
+        auto resultType = getUnionType(resTypes);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Extract: " << resultType << "\n";);
+        return resultType;
     }
 
     mlir::Type RecordType(mlir::Type keys, mlir::Type valueType)
@@ -22523,28 +22659,36 @@ genContext);
 
         auto span = spans[spanIndex];
         auto type = getType(span->type, genContext);
-        getTemplateLiteralTypeItem(types, type, head, spans, spanIndex, genContext);
-    }
-
-    void getTemplateLiteralTypeItem(SmallVector<mlir::Type> &types, mlir::Type type, const std::string &head,
-                                    NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex,
-                                    const GenContext &genContext)
-    {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! TemplateLiteralType, processing type: " << type << ", span: " << spanIndex
-                                << "\n";);
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             getTemplateLiteralUnionType(types, unionType, head, spans, spanIndex, genContext);
-            return;
         }
+        else if (auto litType = dyn_cast<mlir_ts::LiteralType>(type))
+        {
+            getTemplateLiteralTypeItem(types, litType, head, spans, spanIndex, genContext);
+        }
+        else
+        {
+            // it is just type as example: type HexColor<T extends Color> = `#${string}`;
+            // as 'string' is not union literal type then we have just type in result
+            types.push_back(type);
+        }
+    }
+
+    void getTemplateLiteralTypeItem(SmallVector<mlir::Type> &types, mlir_ts::LiteralType literalType, const std::string &head,
+                                    NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex,
+                                    const GenContext &genContext)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! TemplateLiteralType, processing type: " << literalType << ", span: " << spanIndex
+                                << "\n";);
 
         auto span = spans[spanIndex];
 
         std::stringstream ss;
         ss << head;
 
-        auto typeText = mlir::cast<mlir::StringAttr>(mlir::cast<mlir_ts::LiteralType>(type).getValue()).getValue();
+        auto typeText = mlir::cast<mlir::StringAttr>(literalType.getValue()).getValue();
         ss << typeText.str();
 
         auto spanText = convertWideToUTF8(span->literal->rawText);
@@ -22559,7 +22703,20 @@ genContext);
     {
         for (auto unionTypeItem : mlir::cast<mlir_ts::UnionType>(unionType).getTypes())
         {
-            getTemplateLiteralTypeItem(types, unionTypeItem, head, spans, spanIndex, genContext);
+            if (auto unionType = dyn_cast<mlir_ts::UnionType>(unionTypeItem))
+            {
+                getTemplateLiteralUnionType(types, unionType, head, spans, spanIndex, genContext);
+            }
+            else if (auto litType = dyn_cast<mlir_ts::LiteralType>(unionTypeItem))
+            {
+                getTemplateLiteralTypeItem(types, litType, head, spans, spanIndex, genContext);
+            }            
+            else 
+            {
+                // it is just type as example: type HexColor<T extends Color> = `#${string}`;
+                // as 'string' is not union literal type then we have just type in result
+                types.push_back(unionTypeItem);
+            }
         }
     }
 
@@ -22917,7 +23074,7 @@ genContext);
     {
         if (name == SyntaxKind::ComputedPropertyName)
         {
-            MLIRCodeLogic mcl(builder);
+            MLIRCodeLogic mcl(builder, compileOptions);
             auto result = mlirGen(name.as<ComputedPropertyName>(), genContext);
             auto value = V(result);
             LLVM_DEBUG(llvm::dbgs() << "!! ComputedPropertyName: " << value << "\n";);
@@ -22944,7 +23101,7 @@ genContext);
                 return attrComputed;
             }
                         
-            MLIRCodeLogic mcl(builder);
+            MLIRCodeLogic mcl(builder, compileOptions);
             auto result = mlirGen(name.as<Expression>(), genContext);
             auto value = V(result);
             auto attr = mcl.ExtractAttr(value);
@@ -22962,7 +23119,7 @@ genContext);
     std::pair<bool, mlir::LogicalResult> getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types,
                            const GenContext &genContext)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         mlir::Attribute attrVal;
         auto arrayMode = true;
         auto index = 0;
@@ -23024,7 +23181,7 @@ genContext);
     mlir::LogicalResult getTupleFieldInfo(TypeLiteralNode typeLiteral, mlir::SmallVector<mlir_ts::FieldInfo> &types,
                            const GenContext &genContext)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         for (auto typeItem : typeLiteral->members)
         {
             SyntaxKind kind = typeItem;
@@ -24631,27 +24788,24 @@ genContext);
 
     std::string to_print(mlir::Type type)
     {
-        std::stringstream exportType;
-        MLIRPrinter mp{};
-        mp.printType<std::ostream>(exportType, type);
-        return exportType.str();      
-    }
+        SmallString<128> exportType;
+        raw_svector_ostream rso(exportType);        
 
-    string to_wprint(mlir::Type type)
-    {
-        stringstream exportType;
         MLIRPrinter mp{};
-        mp.printType<ostream>(exportType, type);
-        return exportType.str();      
+        mp.printType<raw_svector_ostream>(rso, type);
+        return exportType.str().str();      
     }
 
     void printDebug(ts::Node node)
     {
-        // Printer<llvm::raw_ostream> printer(llvm::dbgs());
-        std::wcerr << std::endl << "dump ===============================================" << std::endl;
         Printer<std::wostream> printer(std::wcerr);
+        printer.newLine();
+        printer.printText("dump ===============================================");
+        printer.newLine();
         printer.printNode(node);
-        std::wcerr << std::endl << "end of dump ========================================" << std::endl;
+        printer.newLine();
+        printer.printText("end of dump ========================================");
+        printer.newLine();
     }
 
     // TODO: fix issue with cercular reference of include files

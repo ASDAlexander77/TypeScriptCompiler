@@ -63,7 +63,9 @@ add_llvm_executable(tsc
     TextDiagnosticPrinter.cpp 
     utils.cpp 
     opts.cpp 
-    declarationInline.cpp)
+    declarationInline.cpp
+    vscode.cpp
+    defaultlib.cpp)
 
 llvm_update_compile_flags(tsc)
 target_link_libraries(tsc PRIVATE ${LIBS})

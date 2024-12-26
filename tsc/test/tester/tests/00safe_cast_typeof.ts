@@ -1,8 +1,9 @@
+// @strict-null false
 function gen<T>(t: T)
 {
     if (typeof t == "array")
     {
-        return t.length.toString();
+        return <string>t.length;
     }
 
     return "int";

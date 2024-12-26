@@ -53,8 +53,8 @@ class MLIRRTTIHelperVCLinux
     SmallVector<TypeNames> types;
 
   public:
-    MLIRRTTIHelperVCLinux(mlir::OpBuilder &rewriter, mlir::ModuleOp &parentModule)
-        : rewriter(rewriter), parentModule(parentModule), mth(rewriter.getContext()), mlh(), mcl(rewriter)
+    MLIRRTTIHelperVCLinux(mlir::OpBuilder &rewriter, mlir::ModuleOp &parentModule, CompileOptions& compileOptions)
+        : rewriter(rewriter), parentModule(parentModule), mth(rewriter.getContext(), compileOptions), mlh(), mcl(rewriter, compileOptions)
     {
         // setI32AsCatchType();
     }

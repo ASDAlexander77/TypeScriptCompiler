@@ -126,11 +126,11 @@ class CastLogicHelper
 
         if (inType.isIndex())
         {
-            if (resType.isSignedInteger())
+            if (resType.isSignedInteger() || isFloat(resType))
             {
                 return rewriter.create<mlir::index::CastSOp>(loc, resLLVMType, in);
             }
-            else
+            else if (resType.isUnsignedInteger() || resType.isInteger())
             {
                 return rewriter.create<mlir::index::CastUOp>(loc, resLLVMType, in);
             }
@@ -408,7 +408,7 @@ class CastLogicHelper
 
             if (auto unionType = dyn_cast<mlir_ts::UnionType>(inType))
             {
-                MLIRTypeHelper mth(unionType.getContext());
+                MLIRTypeHelper mth(unionType.getContext(), compileOptions);
                 mlir::Type baseType;
                 bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
                 if (!needTag)
@@ -520,7 +520,7 @@ class CastLogicHelper
             }
             else
             {
-                MLIRTypeHelper mth(resUnionType.getContext());
+                MLIRTypeHelper mth(resUnionType.getContext(), compileOptions);
                 mlir::Type baseType;
                 bool needTag = mth.isUnionTypeNeedsTag(loc, resUnionType, baseType);
                 if (needTag)
@@ -538,7 +538,7 @@ class CastLogicHelper
 
         if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
-            MLIRTypeHelper mth(inUnionType.getContext());
+            MLIRTypeHelper mth(inUnionType.getContext(), compileOptions);
             mlir::Type baseType;
             bool needTag = mth.isUnionTypeNeedsTag(loc, inUnionType, baseType);
             if (!needTag)
@@ -942,8 +942,9 @@ class CastLogicHelper
         }
 
         auto ptrType = th.getPtrType();
-        auto sizeValue = clh.createI32ConstantOf(size);
         auto llvmRtArrayStructType = tch.convertType(arrayType);
+        auto llvmIndexType = tch.convertType(th.getIndexType());
+        auto sizeValue = clh.createIndexConstantOf(llvmIndexType, size);
         auto destArrayElement = mlir::cast<mlir_ts::ArrayType>(arrayType).getElementType();
         auto llvmDestArrayElement = tch.convertType(destArrayElement);
 
@@ -995,7 +996,7 @@ class CastLogicHelper
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
-            MLIRTypeHelper mth(unionType.getContext());
+            MLIRTypeHelper mth(unionType.getContext(), compileOptions);
             mlir::Type baseType;
             bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
             if (needTag)
@@ -1033,7 +1034,7 @@ class CastLogicHelper
 
     mlir::Value castToOpaqueType(mlir::Value in, mlir::Type inLLVMType)
     {
-        MLIRTypeHelper mth(rewriter.getContext());
+        MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
         auto variableOp = mth.GetReferenceOfLoadOp(in);
         if (variableOp)
         {

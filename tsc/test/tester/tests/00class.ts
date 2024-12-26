@@ -1,3 +1,4 @@
+// @strict-null false
 class Testrec {
     str: string;
     num: number;

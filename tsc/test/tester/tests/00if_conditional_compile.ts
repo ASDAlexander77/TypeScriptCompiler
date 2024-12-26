@@ -1,3 +1,4 @@
+// @strict-null false
 function isArray<T extends unknown[]>(value: T): value is T {
     return true;
 }
@@ -6,7 +7,7 @@ function gen<T>(t: T)
 {
     if (isArray(t))
     {
-        return t.length.toString();
+        return <string>t.length;
     }
 
     return "int";

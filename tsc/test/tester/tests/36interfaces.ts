@@ -14,7 +14,7 @@ namespace Ifaces {
             return 12;
         }
         bar(v: number) {
-            return v.toString();
+            return <string>v;
         }
         twoArg(x: number, y: number) {
             return x;

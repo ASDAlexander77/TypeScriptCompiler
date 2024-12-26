@@ -9,6 +9,22 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new
+- Visual Studio Code project
+```cmd
+tsc --new Test1
+```
+
+- Strict null checks
+```TypeScript
+let sn: string | null = null; // Ok
+let s: string = null; // error
+```
+
+- improved `Template Literal Types`
+```TypeScript
+type Color = "red" | "green" | "blue";
+type HexColor<T extends Color> = `#${string}`;
+```
 
 - Public, private, and protected modifiers
 ```TypeScript
@@ -56,142 +72,12 @@ const v1 = gen<i32>(23); // result: int
 const v2 = gen<string[]>([]); // result: 0
 ```
 
-- indexes for classes and interfaces, properties for interfaces
-```TypeScript
-class Test {
-    // declare index (to assigning get/set methods to it)
-    [index1: number]: string;
-    
-    get(index: number): string {
-        return "index";
-    }
-
-    set(index: number, value: string) {
-    }
-
-    get val(): string {
-        return "prop";
-    }
-}
-
-interface ITest {
-    [index1: number]: string;
-
-    get val(): string;
-}
-
-const t = new Test();
-print(t[10]);
-
-const ti: ITest = t;
-print(ti[10]);
-print(ti.val);
-```
-
-- no need to define 'main' function
-```TypeScript
-const arr = [1, 2, 3, 4, 5];
-for (const b of arr)
-    print(b);
-``` 
-
-- Accessor for object fields
-```TypeScript
-let obj = {
-    p: 1.0,
-    get value() { return this.p; },
-    set value(v: number) { this.p = v; },
-}
-```
-
-- Class static block
-```TypeScript
-class C {
-    static x: number;
-    static {
-        C.x = 1;
-    }
-}
-```
-
 - Migrated to LLVM 19.1.3
 
 - improved ```generating debug information``` more info here: [Wiki:How-To](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/How-To#compile-and-debug-with-visual-studio-code)
 ```cmd
 tsc --di --opt_level=0 --emit=exe example.ts
 ```
-
-- cast from Union Types
-```TypeScript
-let a: string | number = 5;
-let b: string = a; // b is "5"
-```
-
-- All functions without types are generics
-```TypeScript
-static class Array {
-    public of(...arg) {
-        return arg;
-    }
-
-    public from(arrayLike) {
-        return [...arrayLike];
-    }       
-}
-```
-
-- Native types aliases
-```TypeScript
-// byte, short, ushort, int, uint, long, ulong, char, i8, i16, i32, i64,
-// u8, u16, u32, u64, s8, s16, s32, s64, f16, f32, f64, f128, half, float, double, index
-
-const s1: s8 = -1;
-const s2: u16 = 2;
-const s3: i32 = 3;
-const s4: f64 = 1.0;
-```
-- Reference types (aka pointers)
-```TypeScript
-let a = [1, 2, 3];
-const view: Reference<TypeOf<1>> = ReferenceOf(a[1]);
-const data = LoadReference(view);
-const data1 = LoadReference(view[1]);
-```
-- Accessor
-```TypeScript
-class Person {
-    static accessor sname: string;
-    accessor name = "no value";
-    constructor(name: string) {
-        this.name = name;
-    }
-}
-```
-
-- Explicit Resource Management 
-```TypeScript
-function main()
-{
-    using file = new TempFile(".some_temp_file");
-    print("done.");
-}
-
-class TempFile {
-    #path: string;
-    #handle: number;
-    constructor(path: string) {
-        this.#path = path;
-        this.#handle = 1;
-    }
-    // other methods
-    [Symbol.dispose]() {
-        // Close the file and delete it.
-        this.#handle = 0;
-        print("dispose");
-    }
-}
-```
-
 - [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
 # Planning

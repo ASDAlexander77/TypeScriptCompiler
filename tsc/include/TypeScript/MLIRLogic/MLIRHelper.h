@@ -241,6 +241,12 @@ class MLIRHelper
             return;
         }
 
+        if (auto optType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            type = optType.getElementType();
+            types.insert(mlir_ts::UndefinedType::get(type.getContext()));
+        }
+
         if (auto sourceUnionType = dyn_cast<mlir_ts::UnionType>(type))
         {
             for (auto item : sourceUnionType.getTypes())

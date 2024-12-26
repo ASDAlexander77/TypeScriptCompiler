@@ -77,7 +77,7 @@
 
   <Type Name="mlir::Location">
     <Expand>
-      <ExpandedItem >(LocationAttr)impl</ExpandedItem>
+      <ExpandedItem>(LocationAttr)impl</ExpandedItem>
     </Expand>
   </Type>
 

@@ -3,6 +3,8 @@
 #include "node_test.h"
 #include "utilities.h"
 
+#include  <cctype>
+
 namespace ts
 {
 namespace Impl
@@ -8901,7 +8903,9 @@ struct Parser
             static std::map<string, int> cases = {
                 {S("reference"), 1},  {S("amd-dependency"), 2},  {S("amd-module"), 3},
                 {S("ts-nocheck"), 4}, {S("ts-check"), 5},        {S("jsx"), 6},
-                {S("jsxfrag"), 7},    {S("jsximportsource"), 8}, {S("jsxruntime"), 9}};
+                {S("jsxfrag"), 7},    {S("jsximportsource"), 8}, {S("jsxruntime"), 9},
+                // my addon
+                {S("strict-null"), 10}};
 
             /*JSDocTag*/ Node tag;
             auto index = cases[key];
@@ -8945,6 +8949,9 @@ struct Parser
             case 8:
             case 9:
                 return; // Accessed directly
+            case 10:
+                // nothing todo
+                return;        
             default:
                 Debug::fail<void>(S("Unhandled pragma kind")); // Can this be made into an assertNever in the future?
             }
@@ -8963,10 +8970,11 @@ struct Parser
 
     regex tripleSlashXMLCommentStartRegEx = regex(S(R"(^///\s*<(\S+)\s(.*)?/>)"), std::regex_constants::ECMAScript);
     regex singleLinePragmaRegEx = regex(S(R"(^///?\s*@(\S+)\s*(.*)\s*$)"), std::regex_constants::ECMAScript);
-    regex multiLinePragmaRegEx =
-        regex(S(R"(\s*@(\S+)\s*(.*)\s*$)"),
+    regex multiLinePragmaRegEx = regex(S(R"(\s*@(\S+)\s*(.*)\s*$)"),
               std::regex_constants::ECMAScript); // Defined inline since it uses the "g" flag,
                                                  // which keeps a persistent index (for iterating)
+
+    regex splitPragmasRegEx = regex(S("\\s+"));
 
     std::map<string, regex> namedArgRegExCache;
     auto getNamedArgRegEx(string name) -> regex
@@ -8997,8 +9005,8 @@ struct Parser
             {
                 for (sregex_iterator i = tripleSlashXMLComment_begin; i != tripleSlashXMLComment_end; ++i)
                 {
-                    smatch match = *i;
-                    string name = match[1].str();
+                    auto match = *i;
+                    auto name = match[1].str();
 
                     if (name == S("reference"))
                     {
@@ -9033,44 +9041,86 @@ struct Parser
                         pragmas.push_back({name, _args});
                     }
                 }
+
+                return;
             }
         }
 
-        // TODO: complete later
+        if (range->kind == SyntaxKind::SingleLineCommentTrivia)
+        {
+            auto singleLine_begin =
+                sregex_iterator(text.begin(), text.end(), singleLinePragmaRegEx);
+            auto singleLine_end = sregex_iterator();        
+            if (singleLine_begin != singleLine_end)
+            {
+                addPragmaForMatch(pragmas, range, PragmaKindFlags::SingleLine, singleLine_begin);                
+                return;
+            }            
+        }
+
+        if (range->kind == SyntaxKind::MultiLineCommentTrivia) {
+            auto multiLinePragma_begin =
+                sregex_iterator(text.begin(), text.end(), multiLinePragmaRegEx);
+            auto multiLinePragma_end = sregex_iterator();       
+
+            while (multiLinePragma_begin != multiLinePragma_end) {
+                addPragmaForMatch(pragmas, range, PragmaKindFlags::MultiLine, multiLinePragma_begin);
+                multiLinePragma_begin++;
+            }
+        }
+
     }
 
-    // auto addPragmaForMatch(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, PragmaKindFlags kind,
-    // RegExpExecArray match) {
-    //     if (!match) return;
-    //     auto name = match[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so
-    //     they below check to make it safe typechecks auto pragma = commentPragmas[name].as<PragmaDefinition>(); if
-    //     (!pragma || !(pragma->kind! & kind)) {
-    //         return;
-    //     }
-    //     auto args = match[2]; // Split on spaces and match up positionally with definition
-    //     auto argument = getNamedPragmaArguments(pragma, args);
-    //     if (argument == "fail") return; // Missing required argument, fail to parse it
-    //     pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
-    //     return;
-    // }
+    auto addPragmaForMatch(std::vector<data::PragmaPseudoMapEntry> &pragmas, CommentRange range, PragmaKindFlags kind, sregex_iterator& singleLine_iter) -> void
+    {
+        if (singleLine_iter == sregex_iterator()) return;
 
-    // auto getNamedPragmaArguments(PragmaDefinition pragma, string text) -> std::map<string, string> {
-    //     if (!text) return {};
-    //     if (!pragma.args) return {};
-    //     auto args = text.split(regex(S("\\s+")));
-    //     auto argMap: {[string index]: string} = {};
-    //     for (auto i = 0; i < pragma.args.size(); i++) {
-    //         auto argument = pragma.args[i];
-    //         if (!args[i] && !argument.optional) {
-    //             return "fail";
-    //         }
-    //         if (argument.captureSpan) {
-    //             return Debug::fail("Capture spans not yet implemented for non-xml pragmas");
-    //         }
-    //         argMap[argument.name] = args[i];
-    //     }
-    //     return argMap;
-    // }
+        auto match = *singleLine_iter;
+
+        auto name = match[1].str(); // Technically unsafe cast, but we do it so
+        // they below check to make it safe typechecks 
+        std::transform(name.begin(), name.end(), name.begin(), [](auto c){ return std::tolower(c); });        
+        auto pragma = commentPragmas[name]; 
+        if ((((int)pragma.kind) & (int)kind) != (int)kind) {
+            return;
+        }
+
+        auto args = match[2].str(); // Split on spaces and match up positionally with definition
+        auto [argument, success] = getNamedPragmaArguments(pragma, args, range);
+        if (!success) return; // Missing required argument, fail to parse it
+        pragmas.push_back({ name, argument });
+    }
+
+    auto getNamedPragmaArguments(PragmaDefinition pragma, string text, CommentRange range) -> std::pair<std::map<string, data::ArgumentWithCommentRange>, bool> {
+        if (text.empty()) return {{}, true};
+        if (pragma.args.empty()) return {{}, true};
+
+        auto args_begin = sregex_iterator(text.begin(), text.end(), splitPragmasRegEx);
+        auto args_end = sregex_iterator(); 
+
+        std::map<string, data::ArgumentWithCommentRange> argMap{};
+        for (auto i = 0; i < pragma.args.size(); i++) {
+            string arg_val = text;
+            if (args_begin != args_end)
+            {
+                arg_val = args_begin->prefix().str();
+                args_begin++;
+            }
+
+            auto argument = pragma.args[i];
+            if (arg_val.empty() && !argument.optional) {
+                return {{}, false};
+            }
+
+            if (argument.captureSpan) {
+                return Debug::fail<std::pair<std::map<string, data::ArgumentWithCommentRange>, bool>>(S("Capture spans not yet implemented for non-xml pragmas"));
+            }
+
+            argMap[argument.name] = { {arg_val}, range };
+        }
+
+        return {argMap, true};
+    }
 
     /** @internal */
     auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean

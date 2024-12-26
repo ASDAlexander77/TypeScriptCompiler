@@ -16,8 +16,6 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-CompileOptions &getCompileOptions();
-
 class TypeHelper
 {
     MLIRContext *context;

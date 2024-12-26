@@ -1,3 +1,4 @@
+// @strict-null false
 interface ReturnVal {
     something(): void;
 }
@@ -7,7 +8,9 @@ function run(options: { something?(): void }, val: ReturnVal) {
     something();
 }
 
+let glb1 = false;
 function main() {
-    run({ something() { print("something"); } }, null);
+    run({ something() { print("something"); glb1 = true; } }, null);
+    assert(glb1);
     print("done.");
 }

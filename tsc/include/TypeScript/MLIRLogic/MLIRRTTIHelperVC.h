@@ -20,7 +20,7 @@ class MLIRRTTIHelperVC
   public:
     MLIRRTTIHelperVC(mlir::OpBuilder &rewriter, mlir::ModuleOp &parentModule, CompileOptions &compileOptions) 
         : rewriter(rewriter), parentModule(parentModule), isWasm(compileOptions.isWasm), isWindows(compileOptions.isWindows), 
-          rttiWin(rewriter, parentModule), rttiLinux(rewriter, parentModule)
+          rttiWin(rewriter, parentModule, compileOptions), rttiLinux(rewriter, parentModule, compileOptions)
     {
     }
 

@@ -56,7 +56,6 @@ public:
         forEachChildrenPrint(nodes, open, separator, end, ifAny);
     }
 
-protected:
     void write_escaped(string const& s) {
         out << S('"');
         for (auto i = s.begin(), end = s.end(); i != end; ++i) {
@@ -181,7 +180,7 @@ protected:
 
     void newLine()
     {
-        out << std::endl;
+        out << "\n";
     }
 
     void newLineWithIntent()
@@ -208,6 +207,7 @@ protected:
         ident--;
     }
 
+protected:
     inline bool isBlock(ts::Node node)
     {
         return node == SyntaxKind::Block || node == SyntaxKind::ModuleBlock;

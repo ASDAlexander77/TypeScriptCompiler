@@ -1,3 +1,4 @@
+// @strict-null false
 // TODO: not finished - testGenRef is not compiled (ignored)
 function testGenRef<T>(v: T) {
     let x = v

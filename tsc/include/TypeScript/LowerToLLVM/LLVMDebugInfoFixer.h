@@ -27,10 +27,11 @@ class LLVMDebugInfoHelperCreator
     LLVM::LLVMFuncOp llvmFuncOp;
     const LLVMTypeConverter *typeConverter;
     MLIRContext *context;
+    CompileOptions& compileOptions;
 
 public:
-    LLVMDebugInfoHelperCreator(LLVM::LLVMFuncOp llvmFuncOp, const LLVMTypeConverter *typeConverter)
-        : llvmFuncOp(llvmFuncOp), typeConverter(typeConverter)
+    LLVMDebugInfoHelperCreator(LLVM::LLVMFuncOp llvmFuncOp, const LLVMTypeConverter *typeConverter, CompileOptions& compileOptions)
+        : llvmFuncOp(llvmFuncOp), typeConverter(typeConverter), compileOptions(compileOptions)
     {
         context = llvmFuncOp.getContext();
     }
@@ -51,7 +52,7 @@ public:
 
             LocationHelper lh(context);
             LLVMTypeConverterHelper llvmtch(typeConverter);
-            LLVMDebugInfoHelper di(context, llvmtch);        
+            LLVMDebugInfoHelper di(context, llvmtch, compileOptions);        
 
             auto funcNameAttr = llvmFuncOp.getNameAttr();
 
@@ -110,10 +111,11 @@ class LLVMDebugInfoHelperFixer
     mlir_ts::FuncOp funcOp;
     const LLVMTypeConverter *typeConverter;
     MLIRContext *context;
+    CompileOptions& compileOptions;
 
 public:
-    LLVMDebugInfoHelperFixer(mlir_ts::FuncOp funcOp, const LLVMTypeConverter *typeConverter)
-        : funcOp(funcOp), typeConverter(typeConverter)
+    LLVMDebugInfoHelperFixer(mlir_ts::FuncOp funcOp, const LLVMTypeConverter *typeConverter, CompileOptions& compileOptions)
+        : funcOp(funcOp), typeConverter(typeConverter), compileOptions(compileOptions)
     {
         context = funcOp.getContext();
     }
@@ -124,7 +126,7 @@ public:
         {
             LocationHelper lh(context);
             LLVMTypeConverterHelper llvmtch(typeConverter);
-            LLVMDebugInfoHelper di(context, llvmtch);        
+            LLVMDebugInfoHelper di(context, llvmtch, compileOptions);        
 
             auto oldMetadata = funcLocWithSubprog.getMetadata();
             auto funcNameAttr = funcOp.getNameAttr();
