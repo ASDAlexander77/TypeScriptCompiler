@@ -3176,7 +3176,7 @@ class MLIRTypeHelper
             processUnionTypeItem(type, unionContext);
         }
 
-        return getUnionTypeMergeTypes(location, unionContext, mergeLiterals, mergeTypes);
+        return getUnionTypeMergeTypes(location, unionContext, mergeLiterals, mergeTypes, disableStrickNullCheck);
     }
 
     mlir::Type getUnionType(mlir::SmallVector<mlir::Type> &types)
