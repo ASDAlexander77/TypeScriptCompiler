@@ -22,10 +22,10 @@ using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
 
+CompileOptions& getCompileOptions();
+
 namespace typescript
 {
-
-extern CompileOptions compileOptions;
 
 class MLIRCodeLogic
 {
@@ -61,7 +61,7 @@ class MLIRCodeLogic
 
     mlir::Value GetReferenceFromValue(mlir::Location location, mlir::Value object)
     {
-        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        MLIRTypeHelper mth(builder.getContext(), getCompileOptions());
         if (auto refVal = mth.GetReferenceOfLoadOp(object))
         {
             return refVal;
@@ -954,7 +954,7 @@ class MLIRPropertyAccessCodeLogic
     {
         mlir::Value value;
 
-        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        MLIRTypeHelper mth(builder.getContext(), getCompileOptions());
         MLIRCodeLogic mcl(builder);
 
         // resolve index
@@ -1097,7 +1097,7 @@ class MLIRPropertyAccessCodeLogic
     {
         mlir::Value value;
 
-        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        MLIRTypeHelper mth(builder.getContext(), getCompileOptions());
         MLIRCodeLogic mcl(builder);
 
         // resolve index
@@ -1327,7 +1327,7 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value RefLogic(T tupleType)
     {
-        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        MLIRTypeHelper mth(builder.getContext(), getCompileOptions());
         MLIRCodeLogic mcl(builder);
 
         // resolve index

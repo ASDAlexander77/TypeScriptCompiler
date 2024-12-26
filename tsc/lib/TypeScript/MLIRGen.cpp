@@ -141,6 +141,12 @@ enum class Stages
 typedef std::tuple<mlir::Type, mlir::Value, TypeProvided> TypeValueInitType;
 typedef std::function<TypeValueInitType(mlir::Location, const GenContext &)> TypeValueInitFuncType;
 
+static CompileOptions *compileOptionsPtr = nullptr;
+CompileOptions& getCompileOptions()
+{
+    return *compileOptionsPtr;
+}
+
 /// Implementation of a simple MLIR emission from the TypeScript AST.
 ///
 /// This will emit operations that are specific to the TypeScript language, preserving
@@ -167,6 +173,8 @@ class MLIRGenImpl
           tempEntryBlock(nullptr),
           overwriteLoc(mlir::UnknownLoc::get(builder.getContext()))
     {
+        compileOptionsPtr = &compileOptions;
+
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
 
         std::vector<std::string> includeDirs;

@@ -573,8 +573,6 @@ void mlir_ts::UndefOp::getCanonicalizationPatterns(RewritePatternSet &results, M
 // CastOp
 //===----------------------------------------------------------------------===//
 
-extern CompileOptions compileOptions;
-
 LogicalResult mlir_ts::CastOp::verify()
 {
     auto inType = getIn().getType();
@@ -585,7 +583,7 @@ LogicalResult mlir_ts::CastOp::verify()
     auto resFuncType = dyn_cast<mlir_ts::FunctionType>(resType);
     if (inFuncType && resFuncType)
     {
-        ::typescript::MLIRTypeHelper mth(getContext(), compileOptions);
+        ::typescript::MLIRTypeHelper mth(getContext(), getCompileOptions());
         auto result = mth.TestFunctionTypesMatchWithObjectMethods(getLoc(), inFuncType, resFuncType);
         if (::typescript::MatchResultType::Match != result.result)
         {
@@ -624,7 +622,7 @@ LogicalResult mlir_ts::CastOp::verify()
     auto resUnionType = dyn_cast<mlir_ts::UnionType>(resType);
     if (inUnionType || resUnionType)
     {
-        ::typescript::MLIRTypeHelper mth(getContext(), compileOptions);
+        ::typescript::MLIRTypeHelper mth(getContext(), getCompileOptions());
         auto cmpTypes = [&](mlir::Type t1, mlir::Type t2) { return mth.canCastFromTo(getLoc(), t1, t2); };
 
         if (inUnionType && !resUnionType)
@@ -635,7 +633,7 @@ LogicalResult mlir_ts::CastOp::verify()
             auto types = inUnionType.getTypes();
             if (!std::all_of(types.begin(), types.end(), pred))
             {
-                ::typescript::MLIRTypeHelper mth(getContext(), compileOptions);
+                ::typescript::MLIRTypeHelper mth(getContext(), getCompileOptions());
                 mlir::Type baseType;
                 if (!mth.isUnionTypeNeedsTag(getLoc(), inUnionType, baseType)/* && mth.canCastFromTo(baseType, resType)*/)
                 {
@@ -751,7 +749,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         auto inUnionType = dyn_cast<mlir_ts::UnionType>(in.getType());
         if (resUnionType && !inUnionType)
         {
-            ::typescript::MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
+            ::typescript::MLIRTypeHelper mth(rewriter.getContext(), getCompileOptions());
             if (mth.isUnionTypeNeedsTag(location, resUnionType))
             {
                 // TODO: boxing, finish it, need to send TypeOf
@@ -766,7 +764,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         // TODO: review it, if you still need it as we are should be using "safeCast"
         if (inUnionType && !resUnionType)
         {
-            ::typescript::MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
+            ::typescript::MLIRTypeHelper mth(rewriter.getContext(), getCompileOptions());
             if (mth.isUnionTypeNeedsTag(location, inUnionType))
             {
                 auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, res.getType(), in);

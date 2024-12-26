@@ -1216,7 +1216,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
-        MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
+        MLIRTypeHelper mth(rewriter.getContext(), tsContext->compileOptions);
         CodeLogicHelper clh(tryOp, rewriter);
 
         auto module = tryOp->getParentOfType<mlir::ModuleOp>();
