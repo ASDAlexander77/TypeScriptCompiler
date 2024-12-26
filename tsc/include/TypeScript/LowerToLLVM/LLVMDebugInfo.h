@@ -85,12 +85,13 @@ struct CompositeSizesTrack
 class LLVMDebugInfoHelper
 {
     MLIRContext *context;
+    CompileOptions& compileOptions;
     LLVMTypeConverterHelper llvmtch;
     llvm::StringMap<LLVM::DITypeAttr> namedTypes;
     mlir::SmallPtrSet<mlir::Type, 32> usedTypes;
 
   public:
-    LLVMDebugInfoHelper(MLIRContext *context, LLVMTypeConverterHelper llvmtch) : context(context), llvmtch(llvmtch), namedTypes(), usedTypes()
+    LLVMDebugInfoHelper(MLIRContext *context, LLVMTypeConverterHelper llvmtch, CompileOptions& compileOptions) : context(context), compileOptions(compileOptions), llvmtch(llvmtch), namedTypes(), usedTypes()
     {
     }
 
@@ -159,7 +160,7 @@ class LLVMDebugInfoHelper
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(type))
         {
-            MLIRTypeHelper mth(context);
+            MLIRTypeHelper mth(context, compileOptions);
             mlir::Type baseType;
             if (mth.isUnionTypeNeedsTag(location, unionType, baseType))
             {
@@ -437,7 +438,7 @@ class LLVMDebugInfoHelper
             usedTypes.insert(typeWithFields);            
         }
 
-        MLIRTypeHelper mth(context);
+        MLIRTypeHelper mth(context, compileOptions);
         llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
         auto hasFields = mlir::succeeded(mth.getFields(typeWithFields, destTupleFields, true));
 
@@ -537,7 +538,7 @@ class LLVMDebugInfoHelper
             usedTypes.insert(structType);
         }
 
-        MLIRTypeHelper mth(context);
+        MLIRTypeHelper mth(context, compileOptions);
         CompositeSizesTrack sizesTrack(llvmtch);
 
         // now we can resolve recursive types
@@ -571,7 +572,7 @@ class LLVMDebugInfoHelper
 
     LLVM::DICompositeTypeAttr getDIStructType(mlir::Location location, StringRef name, ArrayRef<std::pair<StringRef, mlir::Type>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        MLIRTypeHelper mth(context);
+        MLIRTypeHelper mth(context, compileOptions);
 
         CompositeSizesTrack sizesTrack(llvmtch);
 
@@ -600,7 +601,7 @@ class LLVMDebugInfoHelper
 
     LLVM::DICompositeTypeAttr getDIStructType(StringRef name, ArrayRef<std::pair<StringRef, LLVM::DITypeAttr>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
-        MLIRTypeHelper mth(context);
+        MLIRTypeHelper mth(context, compileOptions);
 
         CompositeSizesTrack sizesTrack(llvmtch);
 
@@ -628,7 +629,7 @@ class LLVMDebugInfoHelper
     {
         auto sizeInBits = 0;
 
-        MLIRTypeHelper mth(context);
+        MLIRTypeHelper mth(context, compileOptions);
 
         CompositeSizesTrack sizesTrack(llvmtch);
 

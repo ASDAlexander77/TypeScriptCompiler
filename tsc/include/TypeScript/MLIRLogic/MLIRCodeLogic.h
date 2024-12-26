@@ -25,6 +25,8 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
+extern CompileOptions compileOptions;
+
 class MLIRCodeLogic
 {
     mlir::MLIRContext *context;
@@ -59,7 +61,7 @@ class MLIRCodeLogic
 
     mlir::Value GetReferenceFromValue(mlir::Location location, mlir::Value object)
     {
-        MLIRTypeHelper mth(builder.getContext());
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
         if (auto refVal = mth.GetReferenceOfLoadOp(object))
         {
             return refVal;
@@ -952,7 +954,7 @@ class MLIRPropertyAccessCodeLogic
     {
         mlir::Value value;
 
-        MLIRTypeHelper mth(builder.getContext());
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
         MLIRCodeLogic mcl(builder);
 
         // resolve index
@@ -1095,7 +1097,7 @@ class MLIRPropertyAccessCodeLogic
     {
         mlir::Value value;
 
-        MLIRTypeHelper mth(builder.getContext());
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
         MLIRCodeLogic mcl(builder);
 
         // resolve index
@@ -1239,7 +1241,7 @@ class MLIRPropertyAccessCodeLogic
                 {
                     elementType = constArrayType.getElementType();
 
-                    MLIRTypeHelper mth(builder.getContext());
+                    MLIRTypeHelper mth(builder.getContext(), compileOptions);
                     auto nonConstArray = mth.convertConstArrayTypeToArrayType(expression.getType());
                     expression = builder.create<mlir_ts::CastOp>(location, nonConstArray, expression);
                 }
@@ -1325,7 +1327,7 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value RefLogic(T tupleType)
     {
-        MLIRTypeHelper mth(builder.getContext());
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
         MLIRCodeLogic mcl(builder);
 
         // resolve index

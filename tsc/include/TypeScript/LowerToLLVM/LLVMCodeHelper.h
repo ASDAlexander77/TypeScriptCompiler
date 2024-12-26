@@ -416,7 +416,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         }
         else if (auto tupleType = dyn_cast<mlir_ts::TupleType>(originalElementType))
         {
-            MLIRTypeHelper mth(rewriter.getContext());
+            MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
@@ -627,7 +627,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                ::typescript::MLIRTypeHelper mth(rewriter.getContext());
+                ::typescript::MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
 
                 auto subTupleVal =
                     getTupleFromArrayAttr(loc, cast<mlir_ts::ConstTupleType>(mth.convertTupleTypeToConstTupleType(constTupleType)),

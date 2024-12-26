@@ -408,7 +408,7 @@ class CastLogicHelper
 
             if (auto unionType = dyn_cast<mlir_ts::UnionType>(inType))
             {
-                MLIRTypeHelper mth(unionType.getContext());
+                MLIRTypeHelper mth(unionType.getContext(), compileOptions);
                 mlir::Type baseType;
                 bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
                 if (!needTag)
@@ -520,7 +520,7 @@ class CastLogicHelper
             }
             else
             {
-                MLIRTypeHelper mth(resUnionType.getContext());
+                MLIRTypeHelper mth(resUnionType.getContext(), compileOptions);
                 mlir::Type baseType;
                 bool needTag = mth.isUnionTypeNeedsTag(loc, resUnionType, baseType);
                 if (needTag)
@@ -538,7 +538,7 @@ class CastLogicHelper
 
         if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
-            MLIRTypeHelper mth(inUnionType.getContext());
+            MLIRTypeHelper mth(inUnionType.getContext(), compileOptions);
             mlir::Type baseType;
             bool needTag = mth.isUnionTypeNeedsTag(loc, inUnionType, baseType);
             if (!needTag)
@@ -996,7 +996,7 @@ class CastLogicHelper
 
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(inType))
         {
-            MLIRTypeHelper mth(unionType.getContext());
+            MLIRTypeHelper mth(unionType.getContext(), compileOptions);
             mlir::Type baseType;
             bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
             if (needTag)
@@ -1034,7 +1034,7 @@ class CastLogicHelper
 
     mlir::Value castToOpaqueType(mlir::Value in, mlir::Type inLLVMType)
     {
-        MLIRTypeHelper mth(rewriter.getContext());
+        MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
         auto variableOp = mth.GetReferenceOfLoadOp(in);
         if (variableOp)
         {

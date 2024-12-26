@@ -1575,7 +1575,7 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(op, rewriter);
-        MLIRTypeHelper mth(rewriter.getContext());
+        MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
 
         CastLogicHelper castLogic(op, rewriter, tch, tsLlvmContext->compileOptions);
 
@@ -1636,7 +1636,7 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(op, rewriter);
-        MLIRTypeHelper mth(rewriter.getContext());
+        MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
 
         bool needTag = mth.isUnionTypeNeedsTag(loc, cast<mlir_ts::UnionType>(op.getIn().getType()));
         if (needTag)
@@ -1684,7 +1684,7 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
 
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(op, rewriter);
-        MLIRTypeHelper mth(rewriter.getContext());
+        MLIRTypeHelper mth(rewriter.getContext(), tsLlvmContext->compileOptions);
 
         auto loc = op->getLoc();
 
@@ -5189,7 +5189,7 @@ struct UnrealizedConversionCastOpLowering : public ConvertOpToLLVMPattern<Unreal
 
 
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m,
-                                                 mlir::SmallPtrSet<mlir::Type, 32> &usedTypes)
+                                                 mlir::SmallPtrSet<mlir::Type, 32> &usedTypes, CompileOptions& compileOptions)
 {
     converter.addConversion(
         [&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(m.getContext()); });
@@ -5401,7 +5401,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion([&](mlir_ts::UnionType type) {
         TypeHelper th(m.getContext());
         LLVMTypeConverterHelper ltch(&converter);
-        MLIRTypeHelper mth(m.getContext());
+        MLIRTypeHelper mth(m.getContext(), compileOptions);
 
         mlir::Type selectedType = ltch.findMaxSizeType(type);
         bool needTag = mth.isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), type);
@@ -5649,7 +5649,7 @@ static void selectAllFuncOp(mlir::ModuleOp &module, SmallPtrSet<Operation *, 16>
     module.walk(visitorFuncOp);
 }
 
-static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter)
+static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter, CompileOptions& compileOptions)
 {
     SmallPtrSet<Operation *, 16> workSet;
     selectAllVariablesAndDebugVariables(module, workSet);
@@ -5667,7 +5667,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 LocationHelper lh(location.getContext());
                 // we don't need TypeConverter here
                 LLVMTypeConverterHelper llvmtch(&llvmTypeConverter);
-                LLVMDebugInfoHelper di(location.getContext(), llvmtch);
+                LLVMDebugInfoHelper di(location.getContext(), llvmtch, compileOptions);
 
                 auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(namedLoc);
                 auto [line, column] = lineAndColumn;
@@ -5733,7 +5733,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
     return success();
 }
 
-static LogicalResult setDISubProgramTypesToFormOp(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter)
+static LogicalResult setDISubProgramTypesToFormOp(mlir::ModuleOp &module, LLVMTypeConverter &llvmTypeConverter, CompileOptions& compileOptions)
 {
     // fixes for FuncOps, and it should be first
     SmallPtrSet<Operation *, 16> workSetFuncOps;
@@ -5749,7 +5749,7 @@ static LogicalResult setDISubProgramTypesToFormOp(mlir::ModuleOp &module, LLVMTy
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! function fix: " << funcOp.getName() << "\n");
 
-                LLVMDebugInfoHelperFixer ldif(funcOp, &llvmTypeConverter);
+                LLVMDebugInfoHelperFixer ldif(funcOp, &llvmTypeConverter, compileOptions);
                 ldif.fix();
             } else if (!hasBody) {
                 // func declaration, we do not need Debug info for it
@@ -5940,14 +5940,14 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 #endif        
 
     mlir::SmallPtrSet<mlir::Type, 32> usedTypes;
-    populateTypeScriptConversionPatterns(typeConverter, m, usedTypes);
+    populateTypeScriptConversionPatterns(typeConverter, m, usedTypes, tsContext.compileOptions);
 
     // in processing ops types will be changed by LLVM versions overtime, we need to have actual information about types 
     // when generate Debug Info
     if (tsLlvmContext.compileOptions.generateDebugInfo)
     {
-        setDISubProgramTypesToFormOp(m, typeConverter);
-        preserveTypesForDebugInfo(m, typeConverter);
+        setDISubProgramTypesToFormOp(m, typeConverter, tsContext.compileOptions);
+        preserveTypesForDebugInfo(m, typeConverter, tsContext.compileOptions);
     }
 
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << m << "\n";);

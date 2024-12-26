@@ -29,9 +29,10 @@ class MLIRTypeHelper
   public:
 
     MLIRTypeHelper(
-        mlir::MLIRContext *context)
+        mlir::MLIRContext *context,
+        CompileOptions compileOptions)
         : context(context), 
-          compileOptions(),           
+          compileOptions(compileOptions),           
           getClassInfoByFullName{},
           getGenericClassInfoByFullName{},
           getInterfaceInfoByFullName{},
@@ -485,6 +486,7 @@ class MLIRTypeHelper
         return type;
     }
 
+    // TODO: can be static;
     mlir::Type stripOptionalType(mlir::Type type)
     {
         if (auto optType = dyn_cast<mlir_ts::OptionalType>(type))
@@ -1996,7 +1998,7 @@ class MLIRTypeHelper
 
     bool isUnionTypeNeedsTag(mlir::Location location, mlir_ts::UnionType unionType, mlir::Type &baseType)
     {
-        auto storeType = getUnionTypeWithMerge(location, unionType.getTypes(), true);
+        auto storeType = getUnionTypeWithMerge(location, unionType.getTypes(), true, true, true);
         baseType = storeType;
         return isa<mlir_ts::UnionType>(storeType);
     }
@@ -3023,7 +3025,7 @@ class MLIRTypeHelper
     }
 
     // TODO: review all union merge logic
-    mlir::Type getUnionTypeMergeTypes(mlir::Location location, UnionTypeProcessContext &unionContext, bool mergeLiterals = true, bool mergeTypes = true)
+    mlir::Type getUnionTypeMergeTypes(mlir::Location location, UnionTypeProcessContext &unionContext, bool mergeLiterals = true, bool mergeTypes = true, bool disableStrickNullCheck = false)
     {
         // merge types with literal types
         for (auto literalType : unionContext.literalTypes)
@@ -3074,7 +3076,7 @@ class MLIRTypeHelper
                 return mlir_ts::OptionalType::get(resType);
             }     
 
-            if (compileOptions.strictNullChecks && unionContext.isNullable)
+            if (compileOptions.strictNullChecks && !disableStrickNullCheck && unionContext.isNullable)
             {
                 return mlir_ts::UnionType::get(context, {resType, getNullType()});             
             }
@@ -3103,7 +3105,7 @@ class MLIRTypeHelper
             return retType;
         }
 
-        if (compileOptions.strictNullChecks && unionContext.isNullable)
+        if (compileOptions.strictNullChecks && !disableStrickNullCheck && unionContext.isNullable)
         {
             typesAll.push_back(getNullType());
         }
@@ -3152,7 +3154,7 @@ class MLIRTypeHelper
         }
     }
 
-    mlir::Type getUnionTypeWithMerge(mlir::Location location, mlir::ArrayRef<mlir::Type> types, bool mergeLiterals = true, bool mergeTypes = true)
+    mlir::Type getUnionTypeWithMerge(mlir::Location location, mlir::ArrayRef<mlir::Type> types, bool mergeLiterals = true, bool mergeTypes = true, bool disableStrickNullCheck = false)
     {
         UnionTypeProcessContext unionContext = {};
 

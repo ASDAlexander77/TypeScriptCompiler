@@ -13428,7 +13428,7 @@ class MLIRGenImpl
         // TODO: review all receivers in case of generic types in generic functions, to avoid merging T with actual types
         void setReceiver(mlir::Type type, bool isReceiverGenericType)
         {
-            MLIRTypeHelper mth(nullptr);
+            MLIRTypeHelper mth(nullptr, {});
             type = mth.stripOptionalType(type);
 
             mlir::TypeSwitch<mlir::Type>(type)
