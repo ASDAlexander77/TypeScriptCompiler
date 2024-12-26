@@ -148,7 +148,7 @@ const auto LAUNCH_JSON_DATA_WIN32 = R"raw(
             "type": "cppvsdbg",
             "preLaunchTask": "build EXE (Debug)",
             "request": "launch",
-            "program": "${fileBasenameNoExtension}.exe",
+            "program": "${workspaceFolder}/${fileBasenameNoExtension}.exe",
             "args": [
             ],
             "stopAtEntry": false,
@@ -212,7 +212,7 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
             "type": "cppdbg",
             "preLaunchTask": "build EXE (Debug)",
             "request": "launch",
-            "program": "${fileBasenameNoExtension}",
+            "program": "${workspaceFolder}/${fileBasenameNoExtension}",
             "args": [
             ],
             "stopAtEntry": false,
