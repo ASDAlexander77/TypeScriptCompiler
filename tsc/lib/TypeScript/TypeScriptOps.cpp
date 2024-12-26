@@ -24,6 +24,8 @@
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
+CompileOptions& getCompileOptions();
+
 /// Default callback for IfOp builders. Inserts a yield without arguments.
 void mlir_ts::buildTerminatedBody(OpBuilder &builder, Location loc)
 {

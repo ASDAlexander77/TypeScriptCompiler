@@ -91,6 +91,11 @@ using DITableScopeT = llvm::ScopedHashTableScope<StringRef, mlir::LLVM::DIScopeA
 
 // TODO: optimize of amount of calls to detect return types and if it is was calculated before then do not run it all
 // the time
+static CompileOptions *compileOptionsPtr = nullptr;
+CompileOptions& getCompileOptions()
+{
+    return *compileOptionsPtr;
+}
 
 SourceMgrDiagnosticHandlerEx::SourceMgrDiagnosticHandlerEx(llvm::SourceMgr &mgr, mlir::MLIRContext *ctx) : mlir::SourceMgrDiagnosticHandler(mgr, ctx)
 {
@@ -140,12 +145,6 @@ enum class Stages
 
 typedef std::tuple<mlir::Type, mlir::Value, TypeProvided> TypeValueInitType;
 typedef std::function<TypeValueInitType(mlir::Location, const GenContext &)> TypeValueInitFuncType;
-
-static CompileOptions *compileOptionsPtr = nullptr;
-CompileOptions& getCompileOptions()
-{
-    return *compileOptionsPtr;
-}
 
 /// Implementation of a simple MLIR emission from the TypeScript AST.
 ///
