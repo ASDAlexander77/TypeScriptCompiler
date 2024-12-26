@@ -22,8 +22,6 @@ using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
 
-CompileOptions& getCompileOptions();
-
 namespace typescript
 {
 
@@ -31,13 +29,14 @@ class MLIRCodeLogic
 {
     mlir::MLIRContext *context;
     mlir::OpBuilder builder;
+    CompileOptions& compileOptions;
 
   public:
-    MLIRCodeLogic(mlir::MLIRContext *context) : context(context), builder(context)
+    MLIRCodeLogic(mlir::MLIRContext *context, CompileOptions& compileOptions) : context(context), builder(context), compileOptions(compileOptions)
     {
     }
 
-    MLIRCodeLogic(mlir::OpBuilder builder) : context(builder.getContext()), builder(builder)
+    MLIRCodeLogic(mlir::OpBuilder builder, CompileOptions& compileOptions) : context(builder.getContext()), builder(builder), compileOptions(compileOptions)
     {
     }
 
@@ -61,7 +60,7 @@ class MLIRCodeLogic
 
     mlir::Value GetReferenceFromValue(mlir::Location location, mlir::Value object)
     {
-        MLIRTypeHelper mth(builder.getContext(), getCompileOptions());
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
         if (auto refVal = mth.GetReferenceOfLoadOp(object))
         {
             return refVal;
@@ -222,9 +221,11 @@ class MLIRCodeLogicHelper
 {
     mlir::OpBuilder &builder;
     mlir::Location location;
+    CompileOptions& compileOptions;
 
   public:
-    MLIRCodeLogicHelper(mlir::OpBuilder &builder, mlir::Location location) : builder(builder), location(location)
+    MLIRCodeLogicHelper(mlir::OpBuilder &builder, mlir::Location location, CompileOptions& compileOptions) 
+        : builder(builder), location(location), compileOptions(compileOptions)
     {
     }
 
@@ -577,7 +578,7 @@ class MLIRCustomMethods
 
     ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
@@ -614,7 +615,7 @@ class MLIRCustomMethods
 
     ValueOrLogicalResult mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         auto thisValue = mcl.GetReferenceFromValue(location, operands.front());
         if (!thisValue)
         {
@@ -630,7 +631,7 @@ class MLIRCustomMethods
 
     ValueOrLogicalResult mlirGenArrayUnshift(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
 
@@ -667,7 +668,7 @@ class MLIRCustomMethods
 
     ValueOrLogicalResult mlirGenArrayShift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         auto thisValue = mcl.GetReferenceFromValue(location, operands.front());
         if (!thisValue)
         {
@@ -683,7 +684,7 @@ class MLIRCustomMethods
 
     ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, mlir::Value thisValue, mlir::Value startValue, mlir::Value deleteCountValue, ArrayRef<mlir::Value> values)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         if (!isa<mlir::IndexType>(startValue.getType()))
         {
@@ -730,7 +731,7 @@ class MLIRCustomMethods
 
     ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         auto indexType = builder.getIndexType();
 
@@ -872,7 +873,7 @@ class MLIRCustomMethods
 
     ValueOrLogicalResult mlirGenReferenceOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         auto refValue = mcl.GetReferenceFromValue(location, operands.front());        
         return V(refValue);
     }    
@@ -886,18 +887,19 @@ class MLIRPropertyAccessCodeLogic
     mlir::StringRef name;
     mlir::Attribute fieldId;
     mlir::Value argument;
+    CompileOptions& compileOptions;
 
   public:
-    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
+    MLIRPropertyAccessCodeLogic(CompileOptions& compileOptions, mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
                                 StringRef name)
-        : builder(builder), location(location), expression(expression), name(name)
+        : builder(builder), location(location), expression(expression), name(name), compileOptions(compileOptions)
     {
         fieldId = MLIRHelper::TupleFieldName(name, builder.getContext());
     }
 
-    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
+    MLIRPropertyAccessCodeLogic(CompileOptions& compileOptions, mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
                                 mlir::Attribute fieldId)
-        : builder(builder), location(location), expression(expression), fieldId(fieldId)
+        : builder(builder), location(location), expression(expression), fieldId(fieldId), compileOptions(compileOptions)
     {
         if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId))
         {
@@ -905,9 +907,9 @@ class MLIRPropertyAccessCodeLogic
         }
     }
 
-    MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
+    MLIRPropertyAccessCodeLogic(CompileOptions& compileOptions, mlir::OpBuilder &builder, mlir::Location location, mlir::Value expression,
                                 mlir::Attribute fieldId, mlir::Value argument)
-        : builder(builder), location(location), expression(expression), fieldId(fieldId), argument(argument)
+        : builder(builder), location(location), expression(expression), fieldId(fieldId), argument(argument), compileOptions(compileOptions)
     {
         if (auto strAttr = dyn_cast<mlir::StringAttr>(fieldId))
         {
@@ -954,8 +956,8 @@ class MLIRPropertyAccessCodeLogic
     {
         mlir::Value value;
 
-        MLIRTypeHelper mth(builder.getContext(), getCompileOptions());
-        MLIRCodeLogic mcl(builder);
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         // resolve index
         auto [fieldIndex, elementTypeForRef, accessLevel] = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
@@ -998,7 +1000,7 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> ValueOrLogicalResult TupleGetSetAccessor(T tupleType, mlir::Attribute fieldId) 
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         // check if we have getter & setter
         auto [getterIndex, setterIndex] = mcl.TupleFieldGetterAndSetter(tupleType, fieldId);
@@ -1097,8 +1099,8 @@ class MLIRPropertyAccessCodeLogic
     {
         mlir::Value value;
 
-        MLIRTypeHelper mth(builder.getContext(), getCompileOptions());
-        MLIRCodeLogic mcl(builder);
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         // resolve index
         auto [fieldIndex, elementTypeForRef, accessLevel] = mcl.TupleFieldTypeNoError(tupleType, fieldId, indexAccess);
@@ -1327,8 +1329,8 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value RefLogic(T tupleType)
     {
-        MLIRTypeHelper mth(builder.getContext(), getCompileOptions());
-        MLIRCodeLogic mcl(builder);
+        MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         // resolve index
         auto [fieldIndex, elementTypeForRef, accessLevel] = mcl.TupleFieldTypeNoError(tupleType, fieldId);
@@ -1369,7 +1371,7 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value Class(mlir_ts::ClassStorageType classStorageType, mlir_ts::AccessLevel accessingFromLevel)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
 
         // resolve index
         auto [fieldIndex, elementTypeForRef, accessLevel] = mcl.TupleFieldTypeNoError(classStorageType, fieldId);
@@ -1423,13 +1425,13 @@ class MLIRPropertyAccessCodeLogic
   private:
     mlir::Attribute getExprConstAttr()
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         return mcl.ExtractAttr(expression);
     }
 
     mlir::Value getExprLoadRefValue(mlir::Location location)
     {
-        MLIRCodeLogic mcl(builder);
+        MLIRCodeLogic mcl(builder, compileOptions);
         auto value = mcl.GetReferenceFromValue(location, expression);
         return value;
     }
