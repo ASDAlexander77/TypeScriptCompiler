@@ -243,22 +243,6 @@ std::error_code copy_from_to(const SmallVectorImpl<char>& source, const SmallVec
         return std::make_error_code(std::errc::no_such_file_or_directory);
     }
 
-    // SmallVector<std::string> files;
-    // std::error_code error_code;
-    // for (llvm::sys::fs::recursive_directory_iterator F(source, error_code), E; F != E && !error_code; F.increment(error_code))
-    //     if (llvm::sys::fs::is_regular_file(F->path()))
-    //         files.emplace_back(F->path());
-    // if (error_code)
-    // {
-    //     return error_code;
-    // }
-
-    // // we have files, copy them
-    // for (auto file : files)
-    // {
-    //     // copy        
-    // }
-
     std::string srcStr;
     srcStr.reserve(source.size());
     for (auto c : source) srcStr += c;
