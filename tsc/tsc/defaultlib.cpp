@@ -29,12 +29,14 @@ namespace cl = llvm::cl;
 namespace fs = llvm::sys::fs;
 namespace path = llvm::sys::path;
 
+extern cl::opt<std::string> installDefaultLibPath;
+
 int clone();
 int build();
 #ifdef WIN32
-int buildWin32(const SmallVectorImpl<char>&);
+int buildWin32(const SmallVectorImpl<char>&, SmallVectorImpl<char>&);
 #else
-int buildLinux(const SmallVectorImpl<char>&);
+int buildLinux(const SmallVectorImpl<char>&, SmallVectorImpl<char>&);
 #endif
 std::string getExecutablePath(const char *);
 std::string getGCLibPath();
@@ -74,18 +76,40 @@ int installDefaultLib(int argc, char **argv)
     llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
     auto driverPath = getExecutablePath(args[0]);
 
-    llvm::SmallVector<char> appPath{};
+    llvm::SmallVector<char> appPath(256);
     appPath.append(driverPath.begin(), driverPath.end());
     path::remove_filename(appPath);
 
+    llvm::SmallVector<char> builtPath(256);
     if (auto buildResult = 
 #ifdef WIN32    
-        buildWin32(appPath)
+        buildWin32(appPath, builtPath)
 #else
-        buildLinux(appPath)
+        buildLinux(appPath, builtPath)
 #endif        
     )
     {
+        return -1;
+    }
+
+    llvm::SmallVector<char> destPath(256);
+    if (!installDefaultLibPath.getValue().empty())
+    {
+        path::append(destPath, installDefaultLibPath.getValue());
+    }
+    else
+    {
+        llvm::SmallVector<char> emptyPath{};
+        auto defaultLibPath = getDefaultLibPath();
+        if (!defaultLibPath.empty())
+        {
+            path::append(destPath, defaultLibPath);
+        }
+    }
+
+    if (destPath.empty())
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "installation destination is not provided. use option --install-default-lib-path to set it or set environment variable DEFAULT_LIB_PATH\n";
         return -1;
     }
 
@@ -127,7 +151,7 @@ int clone()
 }
 
 #ifdef WIN32
-int buildWin32(const SmallVectorImpl<char>& appPath)
+int buildWin32(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& builtPath)
 {
     auto fromPath = llvm::sys::findProgramByName("cmd");
     if (!fromPath)
@@ -186,10 +210,18 @@ int buildWin32(const SmallVectorImpl<char>& appPath)
         return -1;         
     }
 
+    if (auto error_code = fs::current_path(builtPath))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open get info about current folder/directory : " << error_code.message() << "\n";
+        return -1;        
+    }
+
+    path::append(builtPath, "__build", "release");
+
     return 0;
 }
 #else
-int buildLinux(const SmallVectorImpl<char>& appPath)
+int buildLinux(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& builtPath)
 {
     // TODO:...
 }
