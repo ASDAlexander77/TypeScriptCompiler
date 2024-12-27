@@ -40,7 +40,7 @@
             "name": "(Linux) ./tsc - MLIR",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir",
@@ -688,10 +688,10 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
-            "name": "(Linux) tsc.exe - Install Default lib",
+            "name": "(Linux) tsc - Install Default lib",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "--install-default-lib"
             ],
