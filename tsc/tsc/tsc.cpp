@@ -126,8 +126,7 @@ cl::opt<bool> appendGCtorsToMethod("gctors-as-method", cl::desc("Creeate method 
 cl::opt<bool> strictNullChecks("strict-null-checks", cl::desc("Strict Null Checks"), cl::init(true), cl::cat(TypeScriptCompilerCategory)); 
 
 cl::opt<bool> newVSCodeFolder("new", cl::desc("New VS Code Project"), cl::cat(TypeScriptCompilerCategory));
-cl::opt<bool> installDefaultLibCmd("install-default-lib", cl::desc("Install Default Library"), cl::cat(TypeScriptCompilerCategory));
-cl::opt<std::string> installDefaultLibPath("install-default-lib-to-path", cl::desc("Install Default Library to folder/directory. (used in install-default-lib)"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> installDefaultLibCmd("install-default-lib", cl::desc("Install Default Library. use default-lib-path to provide path where to install the lib"), cl::cat(TypeScriptCompilerCategory));
 
 static void TscPrintVersion(llvm::raw_ostream &OS) {
   OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';

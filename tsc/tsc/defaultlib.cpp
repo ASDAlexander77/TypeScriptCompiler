@@ -20,6 +20,7 @@
 
 #include <cstdlib>
 #include <regex>
+#include <filesystem>
 
 #define DEBUG_TYPE "tsc"
 
@@ -28,8 +29,7 @@ using namespace llvm;
 namespace cl = llvm::cl;
 namespace fs = llvm::sys::fs;
 namespace path = llvm::sys::path;
-
-extern cl::opt<std::string> installDefaultLibPath;
+namespace fs_ = std::filesystem;
 
 int clone();
 int build();
@@ -44,6 +44,7 @@ std::string getLLVMLibPath();
 std::string getTscLibPath();
 std::string getDefaultLibPath();
 std::string getpath(std::string, const SmallVectorImpl<char>&);
+std::error_code copy_from_to(const SmallVectorImpl<char>&, const SmallVectorImpl<char>&);
 
 int installDefaultLib(int argc, char **argv)
 {
@@ -92,24 +93,29 @@ int installDefaultLib(int argc, char **argv)
         return -1;
     }
 
+    // get destination path
     llvm::SmallVector<char> destPath(256);
-    if (!installDefaultLibPath.getValue().empty())
+    auto defaultLibPath = getDefaultLibPath();
+    if (!defaultLibPath.empty())
     {
-        path::append(destPath, installDefaultLibPath.getValue());
-    }
-    else
-    {
-        llvm::SmallVector<char> emptyPath{};
-        auto defaultLibPath = getDefaultLibPath();
-        if (!defaultLibPath.empty())
-        {
-            path::append(destPath, defaultLibPath);
-        }
+        path::append(destPath, defaultLibPath);
     }
 
     if (destPath.empty())
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "installation destination is not provided. use option --install-default-lib-path to set it or set environment variable DEFAULT_LIB_PATH\n";
+        path::append(destPath, appPath);
+    }
+
+    if (destPath.empty())
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "installation destination is not provided. use option --default-lib-path to set it or set environment variable DEFAULT_LIB_PATH\n";
+        return -1;
+    }
+
+    // copy
+    if (auto error_code = copy_from_to(builtPath, destPath))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't copy built library into destination folder/directory : " << error_code.message() << "\n";
         return -1;
     }
 
@@ -226,6 +232,42 @@ int buildLinux(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
     // TODO:...
 }
 #endif
+
+std::error_code copy_from_to(const SmallVectorImpl<char>& source, const SmallVectorImpl<char>& dest)
+{
+    if (!llvm::sys::fs::is_directory(source))
+    {
+        return std::make_error_code(std::errc::no_such_file_or_directory);
+    }
+
+    // SmallVector<std::string> files;
+    // std::error_code error_code;
+    // for (llvm::sys::fs::recursive_directory_iterator F(source, error_code), E; F != E && !error_code; F.increment(error_code))
+    //     if (llvm::sys::fs::is_regular_file(F->path()))
+    //         files.emplace_back(F->path());
+    // if (error_code)
+    // {
+    //     return error_code;
+    // }
+
+    // // we have files, copy them
+    // for (auto file : files)
+    // {
+    //     // copy        
+    // }
+
+    std::string srcStr;
+    srcStr.reserve(source.size());
+    for (auto c : source) srcStr += c;
+
+    std::string dstStr;
+    dstStr.reserve(dest.size());
+    for (auto c : dest) dstStr += c;
+
+    fs_::copy(srcStr, dstStr, fs_::copy_options::recursive);
+
+    return {};
+}
 
 std::string getpath(std::string path, const SmallVectorImpl<char>& defaultPath)
 {
