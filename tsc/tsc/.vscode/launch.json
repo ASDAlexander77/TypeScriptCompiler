@@ -696,7 +696,7 @@
                 "--install-default-lib"
             ],
             "stopAtEntry": false,
-            "cwd": "~/dev/playground",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         }          
