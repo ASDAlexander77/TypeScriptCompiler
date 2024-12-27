@@ -686,6 +686,19 @@
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },
+        {
+            "name": "(Linux) tsc.exe - Install Default lib",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja/bin/tsc",
+            "args": [
+                "--install-default-lib"
+            ],
+            "stopAtEntry": false,
+            "cwd": "~/dev/playground",
+            "environment": [],
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         }          
     ]
 }
