@@ -95,7 +95,7 @@ std::string getDefaultLibPath()
     return "";    
 }
 
-void checkFileExistsAtPath(std::string path, std::string fileName)
+bool checkFileExistsAtPath(std::string path, std::string fileName)
 {
     llvm::SmallVector<char> destPath(0);
     destPath.reserve(256);
@@ -106,7 +106,10 @@ void checkFileExistsAtPath(std::string path, std::string fileName)
     if (!llvm::sys::fs::exists(destPath))
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "path: '" << path << "' is not pointing to file '" << fileName << "'\n";        
+        return false;
     }    
+
+    return true;
 }
 
 void checkGCLibPath(std::string path)

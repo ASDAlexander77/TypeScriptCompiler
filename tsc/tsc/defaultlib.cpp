@@ -46,6 +46,21 @@ std::string getDefaultLibPath();
 std::string getpath(std::string, const SmallVectorImpl<char>&);
 std::error_code copy_from_to(const SmallVectorImpl<char>&, const SmallVectorImpl<char>&);
 
+bool checkFileExistsAtPath(const SmallVectorImpl<char>& path, std::string sub1, std::string sub2, std::string fileName)
+{
+    llvm::SmallVector<char> destPath(0);
+    destPath.reserve(256);
+    destPath.append(path);
+
+    llvm::sys::path::append(destPath, sub1, sub2, fileName);
+    if (!llvm::sys::fs::exists(destPath))
+    {
+        return false;
+    }    
+
+    return true;
+}
+
 int installDefaultLib(int argc, char **argv)
 {
     SmallVector<char> tempFolder;
@@ -115,12 +130,33 @@ int installDefaultLib(int argc, char **argv)
         return -1;
     }
 
+    auto result = checkFileExistsAtPath(
+        builtPath, 
+        "defaultlib", 
+        "lib", 
+#ifdef WIN32        
+        "TypeScriptDefaultLib.lib"
+#else
+        "libTypeScriptDefaultLib.a"
+#endif        
+    );
+
+    if (!result)
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "It seems the compilation process has failed, try to check settings for --gc-lib-path, --llvm-lib-path and --tsc-lib-path or their environment variables GC_LIB_PATH, LLVM_LIB_PATH, TSC_LIB_PATH\n";
+        return -1;
+    }
+
     // copy
     if (auto error_code = copy_from_to(builtPath, destPath))
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "Can't copy built library into destination folder/directory : " << error_code.message() << "\n";
         return -1;
     }
+
+    // set environment variable
+    std::string defaultLibPathVar = llvm::formatv("{0}={1}", "DEFAULT_LIB_PATH", destPath);    
+    _putenv(defaultLibPathVar.data());
 
     return 0;
 }
