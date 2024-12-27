@@ -13,6 +13,7 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/WithColor.h"
 #include "llvm/CodeGen/CommandFlags.h"
 
 #include "TypeScript/DataStructs.h"
@@ -94,15 +95,61 @@ std::string getDefaultLibPath()
     return "";    
 }
 
+void checkFileExistsAtPath(std::string path, std::string fileName)
+{
+    llvm::SmallVector<char> destPath(0);
+    destPath.reserve(256);
+    destPath.append(path.begin(), path.end());
+
+    llvm::sys::path::append(destPath, fileName);
+
+    if (!llvm::sys::fs::exists(destPath))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "path: '" << path << "' is not pointing to file '" << fileName << "'\n";        
+    }    
+}
+
+void checkGCLibPath(std::string path)
+{
+#ifdef WIN32
+    const auto libName = "gcmt-lib.lib";
+#else    
+    const auto libName = "libgcmt-lib.a";
+#endif    
+    checkFileExistsAtPath(path, libName);
+}
+
+void checkLLVMLibPath(std::string path)
+{
+#ifdef WIN32
+    const auto libName = "LLVMSupport.lib";
+#else    
+    const auto libName = "libLLVMSupport.a";
+#endif    
+    checkFileExistsAtPath(path, libName);
+}
+
+void checkTscLibPath(std::string path) 
+{
+#ifdef WIN32
+    const auto libName = "TypeScriptAsyncRuntime.lib";
+#else    
+    const auto libName = "libTypeScriptAsyncRuntime.a";
+#endif    
+    checkFileExistsAtPath(path, libName);
+}
+
 std::string getGCLibPath()
 {
     if (!gclibpath.empty())
     {
+        checkGCLibPath(gclibpath);
         return gclibpath;
     }
 
     if (auto gcLibEnvValue = llvm::sys::Process::GetEnv("GC_LIB_PATH")) 
     {
+        checkGCLibPath(gcLibEnvValue.value());
         return gcLibEnvValue.value();
     }    
 
@@ -113,11 +160,13 @@ std::string getLLVMLibPath()
 {
     if (!llvmlibpath.empty())
     {
+        checkLLVMLibPath(llvmlibpath);
         return llvmlibpath;
     }
 
     if (auto llvmLibEnvValue = llvm::sys::Process::GetEnv("LLVM_LIB_PATH")) 
     {
+        checkLLVMLibPath(llvmLibEnvValue.value());
         return llvmLibEnvValue.value();
     }    
 
@@ -128,11 +177,13 @@ std::string getTscLibPath()
 {
     if (!tsclibpath.empty())
     {
+        checkTscLibPath(tsclibpath);
         return tsclibpath;
     }
 
     if (auto tscLibEnvValue = llvm::sys::Process::GetEnv("TSC_LIB_PATH")) 
     {
+        checkTscLibPath(tscLibEnvValue.value());
         return tscLibEnvValue.value();
     }   
 
