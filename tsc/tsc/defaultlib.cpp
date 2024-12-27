@@ -274,7 +274,52 @@ int buildWin32(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
 #else
 int buildLinux(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& builtPath)
 {
-    // TODO:...
+    std::optional<StringRef> redirects[] = {
+        std::nullopt, // Stdin
+        std::nullopt, // Stdout
+        std::nullopt  // Stderr
+    };
+
+    // 1, run git to get data
+
+    SmallVector<StringRef, 4> args{};
+
+    auto gcLibPath = getpath(getGCLibPath(), appPath);
+    auto llvmLibPath = getpath(getLLVMLibPath(), appPath);
+    auto tscLibPath = getpath(getTscLibPath(), appPath);
+    auto defaultLibPath = getpath(getDefaultLibPath(), appPath);
+
+    std::string appPathVar = llvm::formatv("{0}={1}", "TOOL_PATH", appPath);
+    std::string gcLibPathVar = llvm::formatv("{0}={1}", "GC_LIB_PATH", gcLibPath);
+    std::string llvmLibPathVar = llvm::formatv("{0}={1}", "LLVM_LIB_PATH", llvmLibPath);
+    std::string tscLibPathVar = llvm::formatv("{0}={1}", "TSC_LIB_PATH", tscLibPath);
+    std::string defaultLibPathVar = llvm::formatv("{0}={1}", "DEFAULT_LIB_PATH", defaultLibPath);    
+
+    PUTENV(appPathVar.data());
+    PUTENV(gcLibPathVar.data());
+    PUTENV(llvmLibPathVar.data());
+    PUTENV(tscLibPathVar.data());
+    PUTENV(defaultLibPathVar.data());
+
+    std::string errMsg;
+    auto returnCode = sys::ExecuteAndWait(
+        "build.sh", args, std::nullopt, redirects, /*SecondsToWait=*/0, /*MemoryLimit=*/0, &errMsg);
+
+    if (returnCode < 0)
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Error running build command. " << errMsg << "\n";
+        return -1;         
+    }
+
+    if (auto error_code = fs::current_path(builtPath))
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open get info about current folder/directory : " << error_code.message() << "\n";
+        return -1;        
+    }
+
+    path::append(builtPath, "__build", "release");
+
+    return 0;    
 }
 #endif
 
