@@ -24,6 +24,12 @@
 
 #define DEBUG_TYPE "tsc"
 
+#ifdef WIN32
+#define PUTENV _putenv
+#else
+#define PUTENV putenv
+#endif
+
 using namespace typescript;
 using namespace llvm;
 namespace cl = llvm::cl;
@@ -156,7 +162,7 @@ int installDefaultLib(int argc, char **argv)
 
     // set environment variable
     std::string defaultLibPathVar = llvm::formatv("{0}={1}", "DEFAULT_LIB_PATH", destPath);    
-    _putenv(defaultLibPathVar.data());
+    PUTENV(defaultLibPathVar.data());
 
     return 0;
 }
@@ -238,12 +244,12 @@ int buildWin32(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
     std::string defaultLibPathVar = llvm::formatv("{0}={1}", "DEFAULT_LIB_PATH", defaultLibPath);    
     std::string vswherePathVar = llvm::formatv("{0}={1}", "VSWHERE_PATH", vswherePath);    
 
-    _putenv(appPathVar.data());
-    _putenv(gcLibPathVar.data());
-    _putenv(llvmLibPathVar.data());
-    _putenv(tscLibPathVar.data());
-    _putenv(defaultLibPathVar.data());
-    _putenv(vswherePathVar.data());
+    PUTENV(appPathVar.data());
+    PUTENV(gcLibPathVar.data());
+    PUTENV(llvmLibPathVar.data());
+    PUTENV(tscLibPathVar.data());
+    PUTENV(defaultLibPathVar.data());
+    PUTENV(vswherePathVar.data());
 
     std::string errMsg;
     auto returnCode = sys::ExecuteAndWait(
