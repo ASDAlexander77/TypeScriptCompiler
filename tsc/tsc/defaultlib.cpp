@@ -77,11 +77,13 @@ int installDefaultLib(int argc, char **argv)
     llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
     auto driverPath = getExecutablePath(args[0]);
 
-    llvm::SmallVector<char> appPath(256);
+    llvm::SmallVector<char> appPath(0);
+    appPath.reserve(256);
     appPath.append(driverPath.begin(), driverPath.end());
     path::remove_filename(appPath);
 
-    llvm::SmallVector<char> builtPath(256);
+    llvm::SmallVector<char> builtPath(0);
+    builtPath.reserve(256);
     if (auto buildResult = 
 #ifdef WIN32    
         buildWin32(appPath, builtPath)
@@ -94,7 +96,8 @@ int installDefaultLib(int argc, char **argv)
     }
 
     // get destination path
-    llvm::SmallVector<char> destPath(256);
+    llvm::SmallVector<char> destPath(0);
+    destPath.reserve(256);
     auto defaultLibPath = getDefaultLibPath();
     if (!defaultLibPath.empty())
     {
