@@ -20446,13 +20446,13 @@ genContext);
     ValueOrLogicalResult castFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___as";
+        auto funcName = "___unbox_as";
 
         if (!existGenericFunctionMap(funcName))
         {
             // TODO: must be improved, outdated
             auto src = S("// @ts-nocheck\n\
-                function __as<T>(a: any) : T \
+                function __unbox_as<T>(a: any) : T \
                 { \
                     if (typeof a == 'number') return a; \
                     if (typeof a == 'string') return a; \
