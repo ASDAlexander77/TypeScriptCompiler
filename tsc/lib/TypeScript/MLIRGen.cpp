@@ -20456,8 +20456,39 @@ genContext);
                 { \
                     if (typeof a == 'number') return a; \
                     if (typeof a == 'string') return a; \
-                    if (typeof a == 'i32') return a; \
+                    if (typeof a == 'boolean') return a; \
                     if (typeof a == 'class') if (a instanceof T) return a; \
+                    if (typeof a == 'interface') if (a instanceof T) return a; \
+                    if (typeof a == 'object') return a; \
+                    if (typeof a == 'array') return a; \
+                    if (typeof a == 'float') return a; \
+                    if (typeof a == 'f32') return a; \
+                    if (typeof a == 'i32') return a; \
+                    if (typeof a == 'int') return a; \
+                    if (typeof a == 's32') return a; \
+                    if (typeof a == 'uint') return a; \
+                    if (typeof a == 'u32') return a; \
+                    if (typeof a == 'double') return a; \
+                    if (typeof a == 'f64') return a; \
+                    if (typeof a == 'i64') return a; \
+                    if (typeof a == 'long') return a; \
+                    if (typeof a == 's64') return a; \
+                    if (typeof a == 'ulong') return a; \
+                    if (typeof a == 'u64') return a; \
+                    if (typeof a == 'char') return a; \
+                    if (typeof a == 'index') return a; \
+                    if (typeof a == 'f128') return a; \
+                    if (typeof a == 'half') return a; \
+                    if (typeof a == 'f16') return a; \
+                    if (typeof a == 'i16') return a; \
+                    if (typeof a == 's16') return a; \
+                    if (typeof a == 'u16') return a; \
+                    if (typeof a == 'byte') return a; \
+                    if (typeof a == 'i8') return a; \
+                    if (typeof a == 'short') return a; \
+                    if (typeof a == 's8') return a; \
+                    if (typeof a == 'ushort') return a; \
+                    if (typeof a == 'u8') return a; \
                     return null; \
                 } \
                 ");

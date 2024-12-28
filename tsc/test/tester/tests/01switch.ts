@@ -23,8 +23,8 @@ function print1(fileNo: int, data: string): void {
 }
 
 const vf32: f32 = 12.00;
-//const boxed3: any = vf32;
+const boxed3: any = vf32;
 
-log(vf32/*, boxed3*/);
+log(vf32, boxed3);
 
 print("done.");
