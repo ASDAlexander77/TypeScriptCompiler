@@ -11406,8 +11406,9 @@ class MLIRGenImpl
 
         auto result = mlirGen(callExpr, genContext);
         // in case of detecting value for recursive calls we need to ignore failed calls
-        if (result.failed_or_no_value() && genContext.allowPartialResolve)
-        {
+        // last condition we need to reduce posobilities to ignore legitimate failure
+        if (result.failed_or_no_value() && genContext.allowPartialResolve && callExpr == SyntaxKind::Identifier)
+        {            
             // we need to return success to continue code traversing
             return V(builder.create<mlir_ts::UndefOp>(location, builder.getNoneType()));
         }
