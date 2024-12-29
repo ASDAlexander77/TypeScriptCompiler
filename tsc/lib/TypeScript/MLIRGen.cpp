@@ -20515,31 +20515,44 @@ genContext);
             next = true;
         }
 
-        // TODO: maybe we need conditional rule here
-        ss << "\nif (typeof a == 'number') return a;";
-        ss << "\nif (typeof a == 'string') return a;";
-        ss << "\nif (typeof a == 'boolean') return a;";
-        ss << "\nif (typeof a == 'f32') return a;";
-        ss << "\nif (typeof a == 'i32') return a;";
-        ss << "\nif (typeof a == 's32') return a;";
-        ss << "\nif (typeof a == 'u32') return a;";
-        ss << "\nif (typeof a == 'bigint') return a;";
-        ss << "\nif (typeof a == 'f64') return a;";
-        ss << "\nif (typeof a == 'i64') return a;";
-        ss << "\nif (typeof a == 's64') return a;";
-        ss << "\nif (typeof a == 'u64') return a;";
-        ss << "\nif (typeof a == 'char') return a;";
-        ss << "\nif (typeof a == 'index') return a;";
-        // TODO: we can't use it without compile_rt(fixtfsi)
-        //ss << "\nif (typeof a == 'f128') return a;";
-        // TODO: we can't use it without compile_rt(extendhfsf2)
-        //ss << "\nif (typeof a == 'f16') return a;";
-        ss << "\nif (typeof a == 'i16') return a;";
-        ss << "\nif (typeof a == 's16') return a;";
-        ss << "\nif (typeof a == 'u16') return a;";
-        ss << "\nif (typeof a == 'i8') return a;";
-        ss << "\nif (typeof a == 's8') return a;";
-        ss << "\nif (typeof a == 'u8') return a;";
+        if (isa<mlir_ts::BooleanType>(type)
+            || isa<mlir_ts::TypePredicateType>(type)
+            || isa<mlir_ts::NumberType>(type)
+            || isa<mlir_ts::StringType>(type)
+            || isa<mlir_ts::CharType>(type)
+            || isa<mlir_ts::BigIntType>(type)            
+            || isa<mlir_ts::NullType>(type)
+            || isa<mlir_ts::UndefinedType>(type)
+            || isa<mlir::IntegerType>(type)
+            || isa<mlir::FloatType>(type)
+            || isa<mlir::IndexType>(type))
+        {
+            // TODO: maybe we need conditional rule here
+            ss << "\nif (typeof a == 'number') return a;";
+            ss << "\nif (typeof a == 'string') return a;";
+            ss << "\nif (typeof a == 'boolean') return a;";
+            ss << "\nif (typeof a == 'f32') return a;";
+            ss << "\nif (typeof a == 'i32') return a;";
+            ss << "\nif (typeof a == 's32') return a;";
+            ss << "\nif (typeof a == 'u32') return a;";
+            ss << "\nif (typeof a == 'bigint') return a;";
+            ss << "\nif (typeof a == 'f64') return a;";
+            ss << "\nif (typeof a == 'i64') return a;";
+            ss << "\nif (typeof a == 's64') return a;";
+            ss << "\nif (typeof a == 'u64') return a;";
+            ss << "\nif (typeof a == 'char') return a;";
+            ss << "\nif (typeof a == 'index') return a;";
+            // TODO: we can't use it without compile_rt(fixtfsi)
+            //ss << "\nif (typeof a == 'f128') return a;";
+            // TODO: we can't use it without compile_rt(extendhfsf2)
+            //ss << "\nif (typeof a == 'f16') return a;";
+            ss << "\nif (typeof a == 'i16') return a;";
+            ss << "\nif (typeof a == 's16') return a;";
+            ss << "\nif (typeof a == 'u16') return a;";
+            ss << "\nif (typeof a == 'i8') return a;";
+            ss << "\nif (typeof a == 's8') return a;";
+            ss << "\nif (typeof a == 'u8') return a;";
+        }
 
         ss << "\nthrow \"Can't cast from any type\";\n";                    
         ss << S("}\n");
