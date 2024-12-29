@@ -20530,8 +20530,10 @@ genContext);
         ss << "\nif (typeof a == 'u64') return a;";
         ss << "\nif (typeof a == 'char') return a;";
         ss << "\nif (typeof a == 'index') return a;";
-        ss << "\nif (typeof a == 'f128') return a;";
-        ss << "\nif (typeof a == 'f16') return a;";
+        // TODO: we can't use it without compile_rt(fixtfsi)
+        //ss << "\nif (typeof a == 'f128') return a;";
+        // TODO: we can't use it without compile_rt(extendhfsf2)
+        //ss << "\nif (typeof a == 'f16') return a;";
         ss << "\nif (typeof a == 'i16') return a;";
         ss << "\nif (typeof a == 's16') return a;";
         ss << "\nif (typeof a == 'u16') return a;";
