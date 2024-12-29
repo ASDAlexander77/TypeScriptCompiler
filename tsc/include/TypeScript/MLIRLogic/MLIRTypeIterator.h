@@ -384,6 +384,9 @@ class MLIRTypeIterator
                           .Case<mlir_ts::NullType>([&](auto) {
                               return true;
                           })                                                 
+                          .Case<mlir_ts::BigIntType>([&](auto) {
+                              return true;
+                          })                                                 
                           .Case<mlir::NoneType>([&](auto) {
                               return true;
                           })                          

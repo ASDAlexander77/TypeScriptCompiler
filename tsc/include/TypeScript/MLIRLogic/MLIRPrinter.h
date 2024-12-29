@@ -351,6 +351,9 @@ class MLIRPrinter
             .template Case<mlir_ts::NullType>([&](auto) {
                 out << "null";
             })
+            .template Case<mlir_ts::BigIntType>([&](auto) {
+                out << "bigint";
+            })
             .template Case<mlir_ts::NamespaceType>([&](auto t) {
                 out << t.getName().getValue().str().c_str();
             })

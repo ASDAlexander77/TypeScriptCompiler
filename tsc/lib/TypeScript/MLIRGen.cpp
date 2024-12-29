@@ -11407,6 +11407,7 @@ class MLIRGenImpl
         auto result = mlirGen(callExpr, genContext);
         // in case of detecting value for recursive calls we need to ignore failed calls
         // last condition we need to reduce posobilities to ignore legitimate failure
+        // TODO: register dummy function declaration at the begginnning of detecting function output
         if (result.failed_or_no_value() && genContext.allowPartialResolve && 
             (callExpr == SyntaxKind::Identifier || callExpr == SyntaxKind::PropertyAccessExpression))
         {            
@@ -20471,6 +20472,7 @@ genContext);
                 if (intType_.isUnsigned()) typeOfs["u" + std::to_string(intType_.getWidth())] = true; })
             .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = true; })
             .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = true; })
+            .Case<mlir_ts::BigIntType>([&](auto _) { typeOfs["bigint"] = true; })
             .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
             .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
             .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
@@ -20512,6 +20514,30 @@ genContext);
 
             next = true;
         }
+
+        // TODO: maybe we need conditional rule here
+        ss << "\nif (typeof a == 'number') return a;";
+        ss << "\nif (typeof a == 'string') return a;";
+        ss << "\nif (typeof a == 'boolean') return a;";
+        ss << "\nif (typeof a == 'f32') return a;";
+        ss << "\nif (typeof a == 'i32') return a;";
+        ss << "\nif (typeof a == 's32') return a;";
+        ss << "\nif (typeof a == 'u32') return a;";
+        ss << "\nif (typeof a == 'bigint') return a;";
+        ss << "\nif (typeof a == 'f64') return a;";
+        ss << "\nif (typeof a == 'i64') return a;";
+        ss << "\nif (typeof a == 's64') return a;";
+        ss << "\nif (typeof a == 'u64') return a;";
+        ss << "\nif (typeof a == 'char') return a;";
+        ss << "\nif (typeof a == 'index') return a;";
+        ss << "\nif (typeof a == 'f128') return a;";
+        ss << "\nif (typeof a == 'f16') return a;";
+        ss << "\nif (typeof a == 'i16') return a;";
+        ss << "\nif (typeof a == 's16') return a;";
+        ss << "\nif (typeof a == 'u16') return a;";
+        ss << "\nif (typeof a == 'i8') return a;";
+        ss << "\nif (typeof a == 's8') return a;";
+        ss << "\nif (typeof a == 'u8') return a;";
 
         ss << "\nthrow \"Can't cast from any type\";\n";                    
         ss << S("}\n");
@@ -20594,6 +20620,7 @@ genContext);
                             if (intType_.isUnsigned()) typeOfs["u" + std::to_string(intType_.getWidth())] = true; })
                         .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = true; })
                         .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = true; })
+                        .Case<mlir_ts::BigIntType>([&](auto _) { typeOfs["bigint"] = true; })
                         .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
                         .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
