@@ -20337,12 +20337,12 @@ genContext);
             if (isa<mlir_ts::NumberType>(type) 
                 || isa<mlir_ts::BooleanType>(type)
                 || isa<mlir_ts::StringType>(type)
+                || isa<mlir_ts::BigIntType>(type)
                 || isa<mlir::IntegerType>(type)
-                || isa<mlir::Float32Type>(type)
-                || isa<mlir::Float64Type>(type)
+                || isa<mlir::FloatType>(type)
                 || isa<mlir_ts::ClassType>(type))
             {
-                return castFromAny(location, type, value, genContext);
+                return castPrimitiveTypeFromAny(location, type, value, genContext);
             }
         }
 
@@ -20445,7 +20445,7 @@ genContext);
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
 
-    ValueOrLogicalResult castFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
+    ValueOrLogicalResult castPrimitiveTypeFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         // info, we add "_" extra as scanner append "_" in front of "__";
         auto funcName = "___unbox";
