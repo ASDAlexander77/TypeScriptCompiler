@@ -52,11 +52,30 @@ function iface_any()
     assert(unboxed.i == iface.i);    
 }
 
+function object_any()
+{
+    const c = {
+        i: 10,
+        show() {
+            print(this.i);
+        }
+    };
+
+    const box = c as any;
+
+    const unboxed = box as typeof c;
+
+    assert(unboxed.i == c.i);
+
+    unboxed.show();    
+}
+
 function main() {
 
     class_any();
     array_any();
     iface_any();
+    object_any();
 
     print("done.");
 }
