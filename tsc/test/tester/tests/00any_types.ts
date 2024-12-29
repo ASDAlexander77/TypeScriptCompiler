@@ -8,6 +8,11 @@ class Cls1 extends SuperCls1
     public i: int;
 }
 
+interface IFce1
+{
+    i: int;
+}
+
 function class_any()
 {
     const a = new Cls1();
@@ -32,10 +37,26 @@ function array_any()
     assert(unboxed.length == a.length);
 }
 
+function iface_any()
+{
+    const c = new Cls1();
+    c.i = 11;
+
+    const iface = c as IFce1;
+
+    const box = iface as any;
+
+    const unboxed = box as IFce1;
+
+    assert(unboxed.i == c.i);
+    assert(unboxed.i == iface.i);    
+}
+
 function main() {
 
     class_any();
     array_any();
+    iface_any();
 
     print("done.");
 }
