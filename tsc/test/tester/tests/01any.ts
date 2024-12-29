@@ -4,6 +4,8 @@ function cast<T>(a: any) : T
 	if (typeof a == "number") return <T>a;
 	if (typeof a == "string") return <T>a;
 	if (typeof a == "i32") return <T>a;
+	if (typeof a == "s32") return <T>a;
+	if (typeof a == "u32") return <T>a;
 	if (typeof a == "class") if (a instanceof T) return <T>a;
 	return <T>null;
 }
