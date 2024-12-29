@@ -20446,61 +20446,85 @@ genContext);
     ValueOrLogicalResult castFromAny(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         // info, we add "_" extra as scanner append "_" in front of "__";
-        auto funcName = "___unbox_as";
+        auto funcName = "___unbox";
 
-        if (!existGenericFunctionMap(funcName))
+        // we need to remove current implementation as we have different implementation per union type
+        removeGenericFunctionMap(funcName);
+        
+        // TODO: must be improved
+        stringstream ss;
+
+        StringMap<boolean> typeOfs;
+        SmallVector<mlir::Type> classInstances;
+        ss << S("function __unbox<T>(a: any) : T {\n");
+        auto subType = type;
+        mlir::TypeSwitch<mlir::Type>(subType)
+            .Case<mlir_ts::BooleanType>([&](auto _) { typeOfs["boolean"] = true; })
+            .Case<mlir_ts::TypePredicateType>([&](auto _) { typeOfs["boolean"] = true; })
+            .Case<mlir_ts::NumberType>([&](auto _) { typeOfs["number"] = true; })
+            .Case<mlir_ts::StringType>([&](auto _) { typeOfs["string"] = true; })
+            .Case<mlir_ts::CharType>([&](auto _) { typeOfs["char"] = true; })
+            .Case<mlir::IntegerType>([&](auto intType_) {
+                if (intType_.isSignless()) typeOfs["i" + std::to_string(intType_.getWidth())] = true; else
+                if (intType_.isSigned()) typeOfs["s" + std::to_string(intType_.getWidth())] = true; else
+                if (intType_.isUnsigned()) typeOfs["u" + std::to_string(intType_.getWidth())] = true; })
+            .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = true; })
+            .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = true; })
+            .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
+            .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
+            .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
+            // TODO: we can't use null type here and undefined otherwise code will be cycling 
+            // due to issue with TypeOf == 'null' as it should denounce UnionType into Single Type
+            // review code to use null in "TypeGuard"
+            .Case<mlir_ts::NullType>([&](auto _) { /* TODO: uncomment when finish with TypeGuard and null */ /*typeOfs["null"] = true;*/ })
+            .Case<mlir_ts::UndefinedType>([&](auto _) { /* TODO: I don't think we need any code here */ /*typeOfs["undefined"] = true;*/ })
+            .Default([&](auto type) { 
+                LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
+                llvm_unreachable("not implemented yet"); 
+            });                                   
+
+        auto next = false;
+        for (auto& pair : typeOfs)
         {
-            // TODO: must be improved, outdated
-            auto src = S("// @ts-nocheck\n\
-                function __unbox_as<T>(a: any) : T \
-                { \
-                    if (typeof a == 'number') return a; \
-                    if (typeof a == 'string') return a; \
-                    if (typeof a == 'boolean') return a; \
-                    if (typeof a == 'class') if (a instanceof T) return a; \
-                    if (typeof a == 'interface') if (a instanceof T) return a; \
-                    if (typeof a == 'object') return a; \
-                    if (typeof a == 'array') return a; \
-                    if (typeof a == 'float') return a; \
-                    if (typeof a == 'f32') return a; \
-                    if (typeof a == 'i32') return a; \
-                    if (typeof a == 'int') return a; \
-                    if (typeof a == 's32') return a; \
-                    if (typeof a == 'uint') return a; \
-                    if (typeof a == 'u32') return a; \
-                    if (typeof a == 'double') return a; \
-                    if (typeof a == 'f64') return a; \
-                    if (typeof a == 'i64') return a; \
-                    if (typeof a == 'long') return a; \
-                    if (typeof a == 's64') return a; \
-                    if (typeof a == 'ulong') return a; \
-                    if (typeof a == 'u64') return a; \
-                    if (typeof a == 'char') return a; \
-                    if (typeof a == 'index') return a; \
-                    if (typeof a == 'f128') return a; \
-                    if (typeof a == 'half') return a; \
-                    if (typeof a == 'f16') return a; \
-                    if (typeof a == 'i16') return a; \
-                    if (typeof a == 's16') return a; \
-                    if (typeof a == 'u16') return a; \
-                    if (typeof a == 'byte') return a; \
-                    if (typeof a == 'i8') return a; \
-                    if (typeof a == 'short') return a; \
-                    if (typeof a == 's8') return a; \
-                    if (typeof a == 'ushort') return a; \
-                    if (typeof a == 'u8') return a; \
-                    return null; \
-                } \
-                ");
+            if (next) ss << S(" else ");
 
+            ss << S("if (typeof a == '");
+            ss << stows(pair.getKey().str());
+            ss << S("') ");
+            if (pair.getKey() == "class")
             {
-                MLIRLocationGuard vgLoc(overwriteLoc); 
-                overwriteLoc = location;
-                if (mlir::failed(parsePartialStatements(src)))
+                ss << S("{ \n");
+
+                for (auto [index, _] : enumerate(classInstances))
                 {
-                    assert(false);
-                    return mlir::failure();
+                    ss << S("if (a instanceof TYPE_INST_ALIAS");
+                    ss << index;
+                    ss << S(") return a;\n");
                 }
+
+                ss << S(" }\n");
+            }
+            else
+            {
+                ss << S("return a;\n");
+            }
+
+            next = true;
+        }
+
+        ss << "\nthrow \"Can't cast from any type\";\n";                    
+        ss << S("}\n");
+
+        auto src = ss.str();
+
+        {
+            MLIRLocationGuard vgLoc(overwriteLoc); 
+            overwriteLoc = location;
+
+            if (mlir::failed(parsePartialStatements(src)))
+            {
+                assert(false);
+                return mlir::failure();
             }
         }
 
@@ -20509,16 +20533,25 @@ genContext);
         assert(funcResult);
 
         GenContext funcCallGenContext(genContext);
-        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS", type});
+        funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_T", type});
+
+        for (auto [index, instanceOfType] : enumerate(classInstances))
+        {
+            funcCallGenContext.typeAliasMap.insert({"TYPE_INST_ALIAS" + std::to_string(index), instanceOfType});
+        }
 
         SmallVector<mlir::Value, 4> operands;
         operands.push_back(value);
 
         NodeFactory nf(NodeFactoryFlags::None);
-
-        MLIRValueGuard<bool> vgStrictNullCheck(compileOptions.strictNullChecks);
-        compileOptions.strictNullChecks = false;
-        return mlirGenCallExpression(location, funcResult, { nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS")).as<Node>()) }, operands, funcCallGenContext);
+        return mlirGenCallExpression(
+            location, 
+            funcResult, 
+            { 
+                nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_T")).as<Node>()), 
+            }, 
+            operands, 
+            funcCallGenContext);
     }
 
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
