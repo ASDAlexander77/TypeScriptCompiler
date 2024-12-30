@@ -2855,11 +2855,11 @@ class MLIRGenImpl
         }
 
         // special case: Array<T>
-        if (fullNameGenericClassTypeName == "Array" && typeArguments.size() == 1)
-        {
-            auto arraySpecType = getEmbeddedTypeWithParam(fullNameGenericClassTypeName, typeArguments, genContext);
-            return {mlir::success(), arraySpecType};
-        }
+        // if (fullNameGenericClassTypeName == "Array" && typeArguments.size() == 1)
+        // {
+        //     auto arraySpecType = getEmbeddedTypeWithParam(fullNameGenericClassTypeName, typeArguments, genContext);
+        //     return {mlir::success(), arraySpecType};
+        // }
 
         // can't find generic instance
         return {mlir::success(), mlir::Type()};
@@ -21600,8 +21600,8 @@ genContext);
             {"Promise", true },
 #endif            
             {"NonNullable", true },
-            {"Array", true },
-            {"ReadonlyArray", true },
+            //{"Array", true },
+            //{"ReadonlyArray", true },
             {"ReturnType", true },
             {"Parameters", true },
             {"ConstructorParameters", true },
@@ -21687,7 +21687,7 @@ genContext);
             {"Awaited", true },
             {"Promise", true },
 #endif            
-            {"Array", true }
+            //{"Array", true }
         };
 
         auto type = embeddedTypes[name];
@@ -21859,14 +21859,14 @@ genContext);
                 auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 return NonNullableTypes(elemnentType);
             })
-            .Case("Array", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return getArrayType(elemnentType);
-            })
-            .Case("ReadonlyArray", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return getArrayType(elemnentType);
-            })
+            // .Case("Array", [&] (auto typeArguments, auto genContext) {
+            //     auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+            //     return getArrayType(elemnentType);
+            // })
+            // .Case("ReadonlyArray", [&] (auto typeArguments, auto genContext) {
+            //     auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+            //     return getArrayType(elemnentType);
+            // })
             .Case("ReturnType", [&] (auto typeArguments, auto genContext) {
                 auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 if (genContext.allowPartialResolve && !elementType)
@@ -21964,10 +21964,10 @@ genContext);
                 return mlir_ts::RefType::get(type);
             })
             .Case("ThisType", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-            .Case("Array", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return getArrayType(elemnentType);
-            })
+            // .Case("Array", [&] (auto typeArguments, auto genContext) {
+            //     auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+            //     return getArrayType(elemnentType);
+            // })
             .Default([] (auto, auto) {
                 return mlir::Type();
             });
