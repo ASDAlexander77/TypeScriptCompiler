@@ -4961,6 +4961,11 @@ class MLIRGenImpl
             && !funcProto->getIsGeneric();
         if (detectReturnType)
         {
+            // register function to be able to call it if used in recursive call
+            // auto funcTypeTemp = getFunctionType(argTypes, builder.getNoneType(), funcProto->isMultiArgs());
+            // auto funcOpTemp = mlir_ts::FuncOp::create(location, fullName, funcTypeTemp, {});
+            // registerFunctionOp(funcProto, funcOpTemp);        
+
             if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName,
                                                                           argTypes, funcProto, funcProtoGenContext)))
             {
