@@ -12127,7 +12127,8 @@ class MLIRGenImpl
     struct OperandsProcessingInfo
     {
         OperandsProcessingInfo(mlir::Type funcType, SmallVector<mlir::Value, 4> &operands, int offsetArgs, bool noReceiverTypesForGenericCall, MLIRTypeHelper &mth, bool disableSpreadParam) 
-            : operands{operands}, lastArgIndex{-1}, hasType{false}, hasVarArgs{false}, currentParameter{offsetArgs}, noReceiverTypesForGenericCall{noReceiverTypesForGenericCall}, mth{mth}
+            : operands{operands}, lastArgIndex{-1}, hasType{false}, hasVarArgs{false}, currentParameter{offsetArgs}, 
+              noReceiverTypesForGenericCall{noReceiverTypesForGenericCall}, noCastNeeded{false}, mth{mth}
         {
             detectVarArgTypeInfo(funcType, disableSpreadParam);
         }
@@ -12156,6 +12157,7 @@ class MLIRGenImpl
                         // in case of generics which are not defined yet, array will be identified later in generic method call
                         varArgType = mlir::Type();
                         hasVarArgs = false;
+                        noCastNeeded = true;
                     }
                 }
                 else
@@ -12164,6 +12166,7 @@ class MLIRGenImpl
                     // in case of generics which are not defined yet, array will be identified later in generic method call
                     varArgType = mlir::Type();
                     hasVarArgs = false;
+                    noCastNeeded = true;
                 }
             }
         }
@@ -12208,8 +12211,13 @@ class MLIRGenImpl
 
         mlir::Type isCastNeeded(mlir::Type type, bool isOptionalUnwrap = false)
         {
+            if (noCastNeeded)
+            {
+                return mlir::Type();
+            }
+
             auto receiverType = getReceiverType();
-            if (isOptionalUnwrap) 
+            if (isOptionalUnwrap && receiverType) 
             {
                 receiverType = mth.stripOptionalType(receiverType);
             }
@@ -12253,6 +12261,7 @@ class MLIRGenImpl
         bool hasVarArgs;
         int currentParameter;
         bool noReceiverTypesForGenericCall;
+        bool noCastNeeded;
         MLIRTypeHelper &mth;
     };
 
