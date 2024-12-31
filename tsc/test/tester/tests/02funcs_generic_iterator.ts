@@ -1,3 +1,5 @@
+type Array<T> = T[];
+
 function ForEach<T>(this: Array<T>, callbackfn: (value: T, index?: number, array?: Array<T>) => void, thisArg?: any): void 
 {
     let index = 0;

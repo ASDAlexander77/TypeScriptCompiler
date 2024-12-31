@@ -6,7 +6,8 @@ function test_int() {
 }
 
 function test_array() {
-    const a = new Array<number>(10);
+    let a: number[] = [];
+    a.length = 10;
     a[0] = 1;
     print(a[0]);
 

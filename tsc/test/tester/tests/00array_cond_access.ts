@@ -1,4 +1,7 @@
 // @strict-null false
+
+type Array<T> = T[];
+
 function getArray() : Array<string>
 {
 	return null;

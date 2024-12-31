@@ -5,6 +5,8 @@ class Base { private p; }
 class Derived1 extends Base { private m };
 class Derived2 extends Base { private n };
 
+type Array<T> = T[];
+
 function main() {
     // Empty array literal with no contextual type has type Undefined[]
     let arr1 = [[], [1], ['']];
