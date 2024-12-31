@@ -14787,13 +14787,12 @@ class MLIRGenImpl
         if (getTypeAliasMap().count(name))
         {
             auto typeAliasInfo = getTypeAliasMap().lookup(name);
-            assert(typeAliasInfo.second);
-
             if (typeAliasInfo.first)
             {
                 return typeAliasInfo.first;
             }
 
+            assert(typeAliasInfo.second);
             GenContext typeAliasGenContext(genContext);
             auto type = getType(typeAliasInfo.second, typeAliasGenContext);
             if (!type)
