@@ -21859,14 +21859,16 @@ genContext);
                 auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 return NonNullableTypes(elemnentType);
             })
-            // .Case("Array", [&] (auto typeArguments, auto genContext) {
-            //     auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-            //     return getArrayType(elemnentType);
-            // })
-            // .Case("ReadonlyArray", [&] (auto typeArguments, auto genContext) {
-            //     auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-            //     return getArrayType(elemnentType);
-            // })
+#ifdef ARRAY_TYPE_AS_ARRAY_CLASS            
+            .Case("Array", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return getArrayType(elemnentType);
+            })
+#endif            
+            .Case("ReadonlyArray", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return getArrayType(elemnentType);
+            })
             .Case("ReturnType", [&] (auto typeArguments, auto genContext) {
                 auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 if (genContext.allowPartialResolve && !elementType)
@@ -21964,10 +21966,12 @@ genContext);
                 return mlir_ts::RefType::get(type);
             })
             .Case("ThisType", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-            // .Case("Array", [&] (auto typeArguments, auto genContext) {
-            //     auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-            //     return getArrayType(elemnentType);
-            // })
+#ifdef ARRAY_TYPE_AS_ARRAY_CLASS            
+            .Case("Array", [&] (auto typeArguments, auto genContext) {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                return getArrayType(elemnentType);
+            })
+#endif            
             .Default([] (auto, auto) {
                 return mlir::Type();
             });
