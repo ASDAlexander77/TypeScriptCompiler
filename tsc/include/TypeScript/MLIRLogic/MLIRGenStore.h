@@ -981,7 +981,7 @@ struct NamespaceInfo
 
     llvm::StringMap<llvm::SmallVector<mlir::typescript::FieldInfo>> localVarsInThisContextMap;
 
-    llvm::StringMap<mlir::Type> typeAliasMap;
+    llvm::StringMap<std::pair<mlir::Type, TypeNode>> typeAliasMap;
 
     llvm::StringMap<std::pair<llvm::SmallVector<TypeParameterDOM::TypePtr>, TypeNode>> genericTypeAliasMap;
 

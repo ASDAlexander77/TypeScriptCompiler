@@ -14787,8 +14787,21 @@ class MLIRGenImpl
         if (getTypeAliasMap().count(name))
         {
             auto typeAliasInfo = getTypeAliasMap().lookup(name);
-            assert(typeAliasInfo);
-            return typeAliasInfo;
+            assert(typeAliasInfo.second);
+
+            if (typeAliasInfo.first)
+            {
+                return typeAliasInfo.first;
+            }
+
+            GenContext typeAliasGenContext(genContext);
+            auto type = getType(typeAliasInfo.second, typeAliasGenContext);
+            if (!type)
+            {
+                typeAliasInfo.first = type;
+            }
+
+            return type;
         }
 
         if (getClassesMap().count(name))
@@ -15345,18 +15358,19 @@ class MLIRGenImpl
             }
             else
             {
-                GenContext typeAliasGenContext(genContext);
-                auto type = getType(typeAliasDeclarationAST->type, typeAliasGenContext);
-                if (!type)
-                {
-                    return mlir::failure();
-                }
-
-                getTypeAliasMap().insert({namePtr, type});
-
                 if (hasExportModifier)
                 {
-                    addTypeDeclarationToExport(namePtr, currentNamespace, type);
+                    GenContext typeAliasGenContext(genContext);
+                    auto type = getType(typeAliasDeclarationAST->type, typeAliasGenContext);
+                    if (type)
+                    {
+                        getTypeAliasMap().insert({ namePtr, { type, undefined } });
+                        addTypeDeclarationToExport(namePtr, currentNamespace, type);
+                    }
+                }
+                else
+                {
+                    getTypeAliasMap().insert({ namePtr, { mlir::Type(), typeAliasDeclarationAST->type } });
                 }
             }
 
@@ -16419,7 +16433,7 @@ class MLIRGenImpl
                     fieldTypeAlias += MLIRHelper::getName(name);
                     type = nf.createTypeReferenceNode(nf.createIdentifier(stows(fieldTypeAlias)), undefined);    
 
-                    getTypeAliasMap().insert({fieldTypeAlias, typeIfNotProvided});
+                    getTypeAliasMap().insert({fieldTypeAlias, { typeIfNotProvided, undefined }});
                 }
 
                 if (!type)
@@ -24724,7 +24738,7 @@ genContext);
         return currentNamespace->enumsMap;
     }
 
-    auto getTypeAliasMap() -> llvm::StringMap<mlir::Type> &
+    auto getTypeAliasMap() -> llvm::StringMap<std::pair<mlir::Type, TypeNode>> &
     {
         return currentNamespace->typeAliasMap;
     }
