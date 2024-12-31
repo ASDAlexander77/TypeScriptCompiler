@@ -4927,6 +4927,57 @@ class MLIRGenImpl
         return funcAttrs[name];        
     }
 
+    void processFunctionAttributes(SmallVector<mlir::NamedAttribute> &attrs, const GenContext &genContext)
+    {
+        if (genContext.specialization)
+        {
+            attrs.push_back({mlir::StringAttr::get(builder.getContext(), "specialization"), mlir::UnitAttr::get(builder.getContext())});
+        }
+    }
+
+    bool processFunctionAttributes(mlir::Location location, StringRef fullName,
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, SmallVector<mlir::NamedAttribute> &attrs, const GenContext &genContext)
+    {
+#ifdef ADD_GC_ATTRIBUTE
+        attrs.push_back({builder.getIdentifier(TS_GC_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
+#endif
+        // add decorations, "noinline, optnone"
+
+        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, [&](std::string name, SmallVector<std::string> args) {
+            if (isFuncAttr(name))
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
+            }
+
+            if (name == "varargs") 
+            {
+                attrs.push_back({mlir::StringAttr::get(builder.getContext(), "func.varargs"), mlir::BoolAttr::get(builder.getContext(), true)});
+            }
+
+            if (name == "used") {
+                builder.create<mlir_ts::AppendToUsedOp>(location, fullName);
+            }
+        });
+
+        // add modifiers
+        auto dllExport = getExportModifier(functionLikeDeclarationBaseAST)
+            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport);
+        if (dllExport)
+        {
+            attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
+        }
+
+        auto dllImport = ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllImport) == InternalFlags::DllImport);
+        if (dllImport)
+        {
+            attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
+        }
+
+        processFunctionAttributes(attrs, genContext);
+
+        return dllExport;
+    }
+
     std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, mlir::LogicalResult, bool> mlirGenFunctionPrototype(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
@@ -5026,45 +5077,7 @@ class MLIRGenImpl
         }
 
         SmallVector<mlir::NamedAttribute> attrs;
-#ifdef ADD_GC_ATTRIBUTE
-        attrs.push_back({builder.getIdentifier(TS_GC_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
-#endif
-        // add decorations, "noinline, optnone"
-
-        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, [&](std::string name, SmallVector<std::string> args) {
-            if (isFuncAttr(name))
-            {
-                attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
-            }
-
-            if (name == "varargs") 
-            {
-                attrs.push_back({mlir::StringAttr::get(builder.getContext(), "func.varargs"), mlir::BoolAttr::get(builder.getContext(), true)});
-            }
-
-            if (name == "used") {
-                builder.create<mlir_ts::AppendToUsedOp>(location, funcProto->getName());
-            }
-        });
-
-        // add modifiers
-        auto dllExport = getExportModifier(functionLikeDeclarationBaseAST)
-            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport);
-        if (dllExport)
-        {
-            attrs.push_back({mlir::StringAttr::get(builder.getContext(), "export"), mlir::UnitAttr::get(builder.getContext())});
-        }
-
-        auto dllImport = ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllImport) == InternalFlags::DllImport);
-        if (dllImport)
-        {
-            attrs.push_back({mlir::StringAttr::get(builder.getContext(), "import"), mlir::UnitAttr::get(builder.getContext())});
-        }
-
-        if (funcProtoGenContext.specialization)
-        {
-            attrs.push_back({mlir::StringAttr::get(builder.getContext(), "specialization"), mlir::UnitAttr::get(builder.getContext())});
-        }
+        auto dllExport = processFunctionAttributes(location, fullName, functionLikeDeclarationBaseAST, attrs, funcProtoGenContext);
             
         if (funcType)
         {
@@ -6309,7 +6322,10 @@ class MLIRGenImpl
 
         SymbolTableScopeT varScope(symbolTable);
 
-        auto funcOp = mlir_ts::FuncOp::create(location, fullFuncName, funcType);
+        SmallVector<mlir::NamedAttribute> attrs;
+        processFunctionAttributes(attrs, genContext);
+
+        auto funcOp = mlir_ts::FuncOp::create(location, fullFuncName, funcType, attrs);
 
         // Debug Info
         DITableScopeT debugFuncScope(debugScope);
