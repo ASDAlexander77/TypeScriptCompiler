@@ -3803,9 +3803,10 @@ class MLIRGenImpl
 
         if (!variableDeclarationInfo.isGlobal)
         {
-            if (variableDeclarationInfo.isConst)
-                variableDeclarationInfo.processConstRef(location, builder, genContext);
-            else if (mlir::failed(createLocalVariable(location, variableDeclarationInfo, genContext)))
+            if (variableDeclarationInfo.isConst) {
+                if (mlir::failed(variableDeclarationInfo.processConstRef(location, builder, genContext)))
+                    return mlir::Type();
+            } else if (mlir::failed(createLocalVariable(location, variableDeclarationInfo, genContext)))
                 return mlir::Type();
         }
         else
