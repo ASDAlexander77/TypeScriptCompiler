@@ -21609,10 +21609,6 @@ genContext);
             {"Partial", true },
             {"Required", true },
             {"ThisType", true },
-#ifdef ENABLE_JS_BUILTIN_TYPES
-            {"Awaited", true },
-            {"Promise", true },
-#endif            
             {"NonNullable", true },
             //{"Array", true },
             //{"ReadonlyArray", true },
@@ -21697,10 +21693,6 @@ genContext);
             {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
             {"ThisType", true },
-#ifdef ENABLE_JS_BUILTIN_TYPES
-            {"Awaited", true },
-            {"Promise", true },
-#endif            
             //{"Array", true }
         };
 
@@ -21865,10 +21857,6 @@ genContext);
             .Case("Partial", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
             .Case("Required", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
             .Case("ThisType", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-#ifdef ENABLE_JS_BUILTIN_TYPES
-            .Case("Awaited", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-            .Case("Promise", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
-#endif            
             .Case("NonNullable", [&] (auto typeArguments, auto genContext) {
                 auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 return NonNullableTypes(elemnentType);
