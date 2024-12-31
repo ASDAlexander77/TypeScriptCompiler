@@ -15789,12 +15789,14 @@ class MLIRGenImpl
 
         if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
+            setProcessingState(newClassPtr, ProcessingStages::ErrorInMembers, genContext);
             return {mlir::failure(), ""};
         }
 
         // generate vtable for interfaces in base class
         if (mlir::failed(mlirGenClassBaseInterfaces(location, newClassPtr, classGenContext)))
         {
+            setProcessingState(newClassPtr, ProcessingStages::ErrorInBaseInterfaces, genContext);
             return {mlir::failure(), ""};
         }
 
@@ -15804,6 +15806,7 @@ class MLIRGenImpl
             if (mlir::failed(mlirGenClassHeritageClauseImplements(classDeclarationAST, newClassPtr, heritageClause,
                                                                   classGenContext)))
             {
+                setProcessingState(newClassPtr, ProcessingStages::ErrorInHeritageClauseImplements, genContext);
                 return {mlir::failure(), ""};
             }
         }
@@ -15812,6 +15815,7 @@ class MLIRGenImpl
         {
             if (mlir::failed(mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext)))
             {
+                setProcessingState(newClassPtr, ProcessingStages::ErrorInVTable, genContext);
                 return {mlir::failure(), ""};
             }
         }
