@@ -35,6 +35,7 @@ struct GenericFunctionInfo
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
     SourceFile sourceFile;
+    StringRef fileName;
 
     bool processing;
     bool processed;
@@ -543,6 +544,7 @@ struct GenericInterfaceInfo
     InterfaceDeclaration interfaceDeclaration;
 
     SourceFile sourceFile;
+    StringRef fileName;
 
     GenericInterfaceInfo()
     {
@@ -958,6 +960,7 @@ struct GenericClassInfo
     ClassLikeDeclaration classDeclaration;
 
     SourceFile sourceFile;
+    StringRef fileName;
 
     GenericClassInfo()
     {

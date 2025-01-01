@@ -700,7 +700,7 @@ class MLIRGenImpl
         {
             MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
             auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
-            mainSourceFileName = fileNameUtf8;
+            mainSourceFileName = StringRef(fileNameUtf8).copy(stringAllocator);
 
             MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
             sourceFile = includeFile;
@@ -761,7 +761,7 @@ class MLIRGenImpl
         {
             MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
             auto fileNameUtf8 = convertWideToUTF8(includeFile->fileName);
-            mainSourceFileName = fileNameUtf8;
+            mainSourceFileName = StringRef(fileNameUtf8).copy(stringAllocator);;
 
             MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
             sourceFile = includeFile;
@@ -2173,6 +2173,9 @@ class MLIRGenImpl
             MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
             sourceFile = functionGenericTypeInfo->sourceFile;
 
+            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
+            mainSourceFileName = functionGenericTypeInfo->fileName;
+
             return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration,
                                                             recieverType, discoverReturnType, genContext);
         }
@@ -2255,6 +2258,9 @@ class MLIRGenImpl
             
             MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
             sourceFile = functionGenericTypeInfo->sourceFile;
+
+            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
+            mainSourceFileName = functionGenericTypeInfo->fileName;
 
             auto [result, specFuncOp, specFuncName, isGeneric] =
                 mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, funcGenContext);
@@ -2607,6 +2613,9 @@ class MLIRGenImpl
             MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
             sourceFile = functionGenericTypeInfo->sourceFile;
 
+            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
+            mainSourceFileName = functionGenericTypeInfo->fileName;
+
             auto anyNamedGenericType = IsGeneric::False;
 
             // step 1, add type arguments first
@@ -2832,6 +2841,9 @@ class MLIRGenImpl
             MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
             sourceFile = genericClassInfo->sourceFile;
 
+            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
+            mainSourceFileName = genericClassInfo->fileName;
+
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
             auto typeParams = genericClassInfo->typeParams;
@@ -2892,6 +2904,9 @@ class MLIRGenImpl
 
             MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
             sourceFile = genericClassInfo->sourceFile;
+
+            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
+            mainSourceFileName = genericClassInfo->fileName;
 
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
@@ -2963,6 +2978,9 @@ class MLIRGenImpl
 
             MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
             sourceFile = genericInterfaceInfo->sourceFile;
+
+            MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
+            mainSourceFileName = genericInterfaceInfo->fileName;
 
             GenContext genericTypeGenContext(genContext);
             auto typeParams = genericInterfaceInfo->typeParams;
@@ -5568,6 +5586,7 @@ class MLIRGenImpl
         newGenericFunctionPtr->elementNamespace = currentNamespace;
         newGenericFunctionPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
         newGenericFunctionPtr->sourceFile = sourceFile;
+        newGenericFunctionPtr->fileName = mainSourceFileName;
 
         // TODO: review it, ignore in case of ArrowFunction,
         if (!ignoreFunctionArgsDetection)
@@ -15645,6 +15664,7 @@ class MLIRGenImpl
             newGenericClassPtr->classDeclaration = classDeclarationAST;
             newGenericClassPtr->elementNamespace = currentNamespace;
             newGenericClassPtr->sourceFile = sourceFile;
+            newGenericClassPtr->fileName = mainSourceFileName;
 
             mlirGenClassType(newGenericClassPtr, genContext);
 
@@ -18663,6 +18683,7 @@ genContext);
             newGenericInterfacePtr->typeParams = typeParameters;
             newGenericInterfacePtr->interfaceDeclaration = interfaceDeclarationAST;
             newGenericInterfacePtr->sourceFile = sourceFile;
+            newGenericInterfacePtr->fileName = mainSourceFileName;
 
             mlirGenInterfaceType(newGenericInterfacePtr, genContext);
 
@@ -24852,9 +24873,9 @@ genContext);
             return begin;
         }
 
-        auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
-        auto end = mlir::FileLineColLoc::get(builder.getContext(), fileId, 
-            endLineChar.line + 1, endLineChar.character + 1);
+        // auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
+        // auto end = mlir::FileLineColLoc::get(builder.getContext(), fileId, 
+        //     endLineChar.line + 1, endLineChar.character + 1);
         //return mlir::FusedLoc::get(builder.getContext(), {begin, end});
         return begin;
     }
@@ -24870,9 +24891,9 @@ genContext);
             return begin;
         }
 
-        auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
-        auto end = mlir::FileLineColLoc::get(builder.getContext(), 
-            fileId, endLineChar.line + 1, endLineChar.character + 1);
+        // auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
+        // auto end = mlir::FileLineColLoc::get(builder.getContext(), 
+        //     fileId, endLineChar.line + 1, endLineChar.character + 1);
         //return mlir::FusedLoc::get(builder.getContext(), {begin, end});
         //return mlir::FusedLoc::get(builder.getContext(), {begin}, end);
         // TODO: why u did this way? because of loosing "column" info due to merging fused locations?
