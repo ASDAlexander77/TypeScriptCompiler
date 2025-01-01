@@ -5549,6 +5549,7 @@ class MLIRGenImpl
         newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
         newGenericFunctionPtr->elementNamespace = currentNamespace;
         newGenericFunctionPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
+        newGenericFunctionPtr->sourceFile = sourceFile;
 
         // TODO: review it, ignore in case of ArrowFunction,
         if (!ignoreFunctionArgsDetection)
@@ -15625,6 +15626,7 @@ class MLIRGenImpl
             newGenericClassPtr->typeParams = typeParameters;
             newGenericClassPtr->classDeclaration = classDeclarationAST;
             newGenericClassPtr->elementNamespace = currentNamespace;
+            newGenericClassPtr->sourceFile = sourceFile;
 
             mlirGenClassType(newGenericClassPtr, genContext);
 
@@ -18642,6 +18644,7 @@ genContext);
             newGenericInterfacePtr->elementNamespace = currentNamespace;
             newGenericInterfacePtr->typeParams = typeParameters;
             newGenericInterfacePtr->interfaceDeclaration = interfaceDeclarationAST;
+            newGenericInterfacePtr->sourceFile = sourceFile;
 
             mlirGenInterfaceType(newGenericInterfacePtr, genContext);
 
