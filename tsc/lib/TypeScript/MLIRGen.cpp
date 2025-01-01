@@ -2170,6 +2170,9 @@ class MLIRGenImpl
             MLIRNamespaceGuard nsGuard(currentNamespace);
             currentNamespace = functionGenericTypeInfo->elementNamespace;
 
+            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+            sourceFile = functionGenericTypeInfo->sourceFile;
+
             return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration,
                                                             recieverType, discoverReturnType, genContext);
         }
@@ -2249,6 +2252,9 @@ class MLIRGenImpl
 
             MLIRNamespaceGuard nsGuard(currentNamespace);
             currentNamespace = functionGenericTypeInfo->elementNamespace;
+            
+            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+            sourceFile = functionGenericTypeInfo->sourceFile;
 
             auto [result, specFuncOp, specFuncName, isGeneric] =
                 mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, funcGenContext);
@@ -2598,6 +2604,9 @@ class MLIRGenImpl
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = functionGenericTypeInfo->elementNamespace;
 
+            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+            sourceFile = functionGenericTypeInfo->sourceFile;
+
             auto anyNamedGenericType = IsGeneric::False;
 
             // step 1, add type arguments first
@@ -2820,6 +2829,9 @@ class MLIRGenImpl
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = genericClassInfo->elementNamespace;
 
+            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+            sourceFile = genericClassInfo->sourceFile;
+
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
             auto typeParams = genericClassInfo->typeParams;
@@ -2877,6 +2889,9 @@ class MLIRGenImpl
         {
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = genericClassInfo->elementNamespace;
+
+            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+            sourceFile = genericClassInfo->sourceFile;
 
             GenContext genericTypeGenContext(genContext);
             genericTypeGenContext.instantiateSpecializedFunction = false;
@@ -2945,6 +2960,9 @@ class MLIRGenImpl
         {
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = genericInterfaceInfo->elementNamespace;
+
+            MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+            sourceFile = genericInterfaceInfo->sourceFile;
 
             GenContext genericTypeGenContext(genContext);
             auto typeParams = genericInterfaceInfo->typeParams;
