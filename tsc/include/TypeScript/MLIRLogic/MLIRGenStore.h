@@ -34,6 +34,9 @@ struct GenericFunctionInfo
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
+    SourceFile sourceFile;
+    StringRef fileName;
+
     bool processing;
     bool processed;
 
@@ -540,6 +543,9 @@ struct GenericInterfaceInfo
 
     InterfaceDeclaration interfaceDeclaration;
 
+    SourceFile sourceFile;
+    StringRef fileName;
+
     GenericInterfaceInfo()
     {
     }
@@ -555,12 +561,16 @@ struct ImplementInfo
 enum class ProcessingStages : int {
     NotSet = 0,
     ErrorInStorageClass = 1,
-    Processing = 2,
-    ProcessingStorageClass = 3,
-    ProcessedStorageClass = 4,
-    ProcessingBody = 5,
-    ProcessedBody = 6,
-    Processed = 7,
+    ErrorInMembers = 2,
+    ErrorInBaseInterfaces = 3,
+    ErrorInHeritageClauseImplements = 4,
+    ErrorInVTable = 5,
+    Processing = 6,
+    ProcessingStorageClass = 7,
+    ProcessedStorageClass = 8,
+    ProcessingBody = 9,
+    ProcessedBody = 10,
+    Processed = 11,
 };
 
 struct EnumInfo
@@ -949,6 +959,9 @@ struct GenericClassInfo
 
     ClassLikeDeclaration classDeclaration;
 
+    SourceFile sourceFile;
+    StringRef fileName;
+
     GenericClassInfo()
     {
     }
@@ -977,7 +990,7 @@ struct NamespaceInfo
 
     llvm::StringMap<llvm::SmallVector<mlir::typescript::FieldInfo>> localVarsInThisContextMap;
 
-    llvm::StringMap<mlir::Type> typeAliasMap;
+    llvm::StringMap<std::pair<mlir::Type, TypeNode>> typeAliasMap;
 
     llvm::StringMap<std::pair<llvm::SmallVector<TypeParameterDOM::TypePtr>, TypeNode>> genericTypeAliasMap;
 

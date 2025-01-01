@@ -5,7 +5,7 @@ function main() {
     [...[1, 2, "Hello"]].forEach(
         x => {
             if (typeof x == "string") { print(x); count++; }
-            if (typeof x == "i32") { print(x); count++; }
+            if (typeof x == "s32") { print(x); count++; }
         }
     );
 

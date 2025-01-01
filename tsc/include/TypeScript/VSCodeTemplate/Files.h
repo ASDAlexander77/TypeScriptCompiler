@@ -25,9 +25,36 @@ const auto TSCONFIG_JSON_DATA = R"raw(
 )raw";
 
 const auto TSNC_INDEX_D_TS = R"raw(
-declare function print(...args: (string | number)[]) : void;
+declare function print(...args: any[]) : void;
 declare function assert(cond: boolean, msg?: string) : void;
+declare type byte = any;
+declare type short = any;
+declare type ushort = any;
 declare type int = any;
+declare type uint = any;
+declare type index = any;
+declare type long = any;
+declare type ulong = any;
+declare type char = any;
+declare type i8 = any;
+declare type i16 = any;
+declare type i32 = any;
+declare type i64 = any;
+declare type u8 = any;
+declare type u16 = any;
+declare type u32 = any;
+declare type u64 = any;
+declare type s8 = any;
+declare type s16 = any;
+declare type s32 = any;
+declare type s64 = any;
+declare type f16 = any;
+declare type f32 = any;
+declare type f64 = any;
+declare type f128 = any;
+declare type half = any;
+declare type float = any;
+declare type double = any;
 )raw";
 
 const auto TASKS_JSON_DATA = R"raw(
@@ -148,7 +175,7 @@ const auto LAUNCH_JSON_DATA_WIN32 = R"raw(
             "type": "cppvsdbg",
             "preLaunchTask": "build EXE (Debug)",
             "request": "launch",
-            "program": "${fileBasenameNoExtension}.exe",
+            "program": "${workspaceFolder}/${fileBasenameNoExtension}.exe",
             "args": [
             ],
             "stopAtEntry": false,
@@ -212,7 +239,7 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
             "type": "cppdbg",
             "preLaunchTask": "build EXE (Debug)",
             "request": "launch",
-            "program": "${fileBasenameNoExtension}",
+            "program": "${workspaceFolder}/${fileBasenameNoExtension}",
             "args": [
             ],
             "stopAtEntry": false,

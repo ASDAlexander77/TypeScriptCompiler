@@ -255,7 +255,13 @@ class MLIRTypeHelper
         }
         else if (typeIn.isIntOrIndex())
         {
-            return mlir::StringAttr::get(context, std::string("i") + std::to_string(typeIn.getIntOrFloatBitWidth()));
+            return mlir::StringAttr::get(
+                context, 
+                std::string((typeIn.isSignlessInteger() 
+                    ? "i" 
+                    : typeIn.isSignedInteger() 
+                        ? "s" 
+                        : "u")) + std::to_string(typeIn.getIntOrFloatBitWidth()));
         }
         else if (typeIn.isIntOrFloat())
         {

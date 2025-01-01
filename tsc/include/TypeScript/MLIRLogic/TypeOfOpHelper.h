@@ -37,7 +37,7 @@ class TypeOfOpHelper
         if (type.isIntOrIndex() && !type.isIndex())
         {
             std::stringstream val;
-            val << "i" << type.getIntOrFloatBitWidth();
+            val << (type.isSignlessInteger() ? "i" : type.isSignedInteger() ? "s" : "u") << type.getIntOrFloatBitWidth();
             auto typeOfValue = strValue(loc, val.str());
             return typeOfValue;
         }

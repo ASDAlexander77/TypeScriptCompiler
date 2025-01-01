@@ -46,6 +46,7 @@ function main() {
     //TODO: array is type, we can't find it as identifier, do we need to improve it?
     //interface myArray extends Array<Number> { }
     //interface myArray2 extends Array<Number | String> { }
+    type Array<T> = T[];
     type myArray = Array<Number>;
     type myArray2 = Array<Number | String>;
     let d0 = [1, true, ...temp,];  // has type (string|number|boolean)[]

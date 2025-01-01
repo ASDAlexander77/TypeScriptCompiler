@@ -1,3 +1,5 @@
+type Array<T> = T[];
+
 function foo<T>(...args: T[]): T[]
 {
 	return args;
