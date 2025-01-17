@@ -80,6 +80,17 @@ LogicalResult BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, Pattern
     return success();
 }
 
+template <typename T>
+std::string to_print(mlir::Type type)
+{
+    SmallString<128> exportType;
+    raw_svector_ostream rso(exportType);        
+
+    MLIRPrinter mp{};
+    mp.printType<raw_svector_ostream>(rso, type);
+    return exportType.str().str();      
+}
+
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
 mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Type leftType, mlir::Value right, mlir::Type rightType,
                     PatternRewriter &builder, const LLVMTypeConverter &typeConverter, CompileOptions &compileOptions)
@@ -139,8 +150,8 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         return value;
     }
-    else if (isa<mlir_ts::AnyType>(leftType) || isa<mlir_ts::ClassType>(leftType) ||
- isa<mlir_ts::OpaqueType>(leftType) || isa<mlir_ts::NullType>(leftType))
+    else if (isa<mlir_ts::AnyType>(leftType) || isa<mlir_ts::ClassType>(leftType) || 
+                isa<mlir_ts::OpaqueType>(leftType) || isa<mlir_ts::NullType>(leftType))
     {
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
@@ -208,14 +219,25 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightArrayPtrValueAsLLVMType);
 
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
-        return value;
+        return value;        
     }    
+    else if (auto unionType = dyn_cast<mlir_ts::UnionType>(leftType))
+    {
+        ::typescript::MLIRTypeHelper mth(builder.getContext(), compileOptions);
+        mlir::Type baseType;
+        if (!mth.isUnionTypeNeedsTag(loc, unionType, baseType))
+        {
+            emitError(loc, "Not applicable logical operator for type: '") << to_print<int>(leftType) << "'";
+        }
+
+        return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, left, baseType, right, rightType, builder, typeConverter, compileOptions);
+    }
     else if (auto leftTupleType = dyn_cast<mlir_ts::TupleType>(leftType))
     {        
         // TODO: finish comparing 2 the same tuples
     }
 
-    emitWarning(loc, "Not applicable logical operator for type: '") << leftType << "'";
+    emitWarning(loc, "Not applicable logical operator for type: '") << to_print<int>(leftType) << "'";
     // false by default
     CodeLogicHelper clh(binOp, builder);
     return clh.createI1ConstantOf(false);            
