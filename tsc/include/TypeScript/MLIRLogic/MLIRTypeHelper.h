@@ -8,6 +8,7 @@
 #include "TypeScript/MLIRLogic/MLIRTypeIterator.h"
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
 #include "TypeScript/MLIRLogic/MLIRPrinter.h"
+#include "TypeScript/MLIRLogic/MLIRTypeCore.h"
 
 #include "llvm/Support/Debug.h"
 #include "llvm/ADT/APSInt.h"
@@ -190,8 +191,8 @@ class MLIRTypeHelper
     bool isValueType(mlir::Type typeIn)
     {
         auto type = getBaseType(typeIn);
-        return type && (type.isIntOrIndexOrFloat() || isa<mlir_ts::NumberType>(type) || isa<mlir_ts::BooleanType>(type) ||
- isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type) || isa<mlir_ts::ConstArrayType>(type));
+        return type && (type.isIntOrIndexOrFloat() || isa<mlir_ts::NumberType>(type) || isa<mlir_ts::BooleanType>(type) || isa<mlir_ts::CharType>(type) ||
+            isa<mlir_ts::TupleType>(type) || isa<mlir_ts::ConstTupleType>(type) || isa<mlir_ts::ConstArrayType>(type));
     }
 
     bool isNumericType(mlir::Type type)
@@ -215,31 +216,6 @@ class MLIRTypeHelper
 
         isBound = false;
         return elementType;
-    }
-
-    bool isNullableOrOptionalType(mlir::Type typeIn)
-    {
-        if (isa<mlir_ts::NullType>(typeIn) 
-            || isa<mlir_ts::UndefinedType>(typeIn) 
-            || isa<mlir_ts::StringType>(typeIn) 
-            || isa<mlir_ts::ObjectType>(typeIn) 
-            || isa<mlir_ts::ClassType>(typeIn) 
-            || isa<mlir_ts::InterfaceType>(typeIn)
-            || isa<mlir_ts::OptionalType>(typeIn)
-            || isa<mlir_ts::AnyType>(typeIn)
-            || isa<mlir_ts::UnknownType>(typeIn)
-            || isa<mlir_ts::RefType>(typeIn)
-            || isa<mlir_ts::ValueRefType>(typeIn))
-        {
-            return true;            
-        }
-
-        if (auto unionType = dyn_cast<mlir_ts::UnionType>(typeIn))
-        {
-            return llvm::any_of(unionType.getTypes(), [&](mlir::Type t) { return isNullableOrOptionalType(t); });
-        }
-
-        return false;
     }
 
     mlir::Type getElementTypeOrSelf(mlir::Type type)

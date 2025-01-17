@@ -518,7 +518,6 @@ class CastLogicHelper
             {
                 // nothing to do
                 LLVM_DEBUG(llvm::dbgs() << "\n\t cast union type to union type: " << inType << "->" << resType << "\n";);
-                llvm_unreachable("not implemented, must be processed at MLIR pass");
             }
             else
             {
@@ -549,6 +548,7 @@ class CastLogicHelper
             }
 
             // skip to next steps
+            llvm_unreachable("union to union cast is not implemented");
         }       
 
         if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(inType))

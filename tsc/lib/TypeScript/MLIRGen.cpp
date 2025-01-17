@@ -10091,7 +10091,7 @@ class MLIRGenImpl
                                                               bool isConditional, MLIRPropertyAccessCodeLogic &cl,
                                                               const GenContext &genContext)
     {
-        if (isConditional && mth.isNullableOrOptionalType(objectValue.getType()))
+        if (isConditional && MLIRTypeCore::isNullableOrOptionalType(objectValue.getType()))
         {
             // TODO: replace with one op "Optional <has_value>, <value>"
             CAST_A(condValue, location, getBooleanType(), objectValue, genContext);
@@ -20382,7 +20382,7 @@ genContext);
             }
         }
 
-        if (auto constType = dyn_cast<mlir_ts::ConstType>(type))
+         if (auto constType = dyn_cast<mlir_ts::ConstType>(type))
         {
             // TODO: we can't convert array to const array
 
