@@ -225,7 +225,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     {
         ::typescript::MLIRTypeHelper mth(builder.getContext(), compileOptions);
         mlir::Type baseType;
-        if (!mth.isUnionTypeNeedsTag(loc, unionType, baseType))
+        if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
         {
             emitError(loc, "Not applicable logical operator for type: '") << to_print<int>(leftType) << "'";
         }

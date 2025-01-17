@@ -7515,6 +7515,11 @@ class MLIRGenImpl
 
         // body
         builder.setInsertionPointToStart(&whileOp.getBody().front());
+
+        // check if we do safe-cast here
+        SymbolTableScopeT varScopeBody(symbolTable);
+        checkSafeCast(whileStatementAST->expression, conditionValue, nullptr, genContext);
+
         auto result2 = mlirGen(whileStatementAST->statement, genContext);
         EXIT_IF_FAILED(result2)
         builder.create<mlir_ts::ResultOp>(location);
