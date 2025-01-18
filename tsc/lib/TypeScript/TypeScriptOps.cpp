@@ -651,6 +651,14 @@ LogicalResult mlir_ts::CastOp::verify()
 
         if (!inUnionType && resUnionType)
         {
+            ::typescript::MLIRTypeHelper mth(getContext(), getCompileOptions());
+            mlir::Type baseType;
+            if (!mth.isUnionTypeNeedsTag(getLoc(), resUnionType, baseType)/* && mth.canCastFromTo(baseType, resType)*/)
+            {
+                // we need to ignore this case, for example if union<int, int, int> -> string, we need cast int to string
+                return success();
+            }
+
             // TODO: review using "undefined", use proper union type
             auto effectiveInType = mth.stripOptionalType(inType);
 
