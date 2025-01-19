@@ -203,6 +203,12 @@ class TypeOfOpHelper
             return typeOfValue;
         }        
 
+        if (isa<mlir_ts::CharType>(type))
+        {
+            auto typeOfValue = strValue(loc, "char");
+            return typeOfValue;
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "TypeOf: " << type << "\n");
 
         llvm_unreachable("not implemented");
