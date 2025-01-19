@@ -7236,6 +7236,7 @@ class MLIRGenImpl
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCast: condition: " << conditionValue << "\n");
 
+            // TODO: check if we need to do samething for SafeCastOp
             mlir_ts::TypePredicateType propertyType;
             if (auto loadOp = conditionValue.getDefiningOp<mlir_ts::LoadOp>())
             {
@@ -9311,6 +9312,12 @@ class MLIRGenImpl
                 savingValue = cast(location, destType, savingValue, genContext);
             }
         };
+
+        // TODO: logic to support safe cast
+        if (auto safeCastOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::SafeCastOp>())
+        {
+            leftExpressionValueBeforeCast = safeCastOp.getValue();
+        }
 
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
         if (auto loadOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LoadOp>())
