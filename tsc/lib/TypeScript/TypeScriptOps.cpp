@@ -284,6 +284,17 @@ OpFoldResult mlir_ts::ConstantOp::fold(FoldAdaptor adaptor)
     return getValue();
 }
 
+//===----------------------------------------------------------------------===//
+// SafeCastOp
+//===----------------------------------------------------------------------===//
+OpFoldResult mlir_ts::SafeCastOp::fold(FoldAdaptor adaptor)
+{
+    ArrayRef<Attribute> operands = adaptor.getOperands();
+    assert(operands.empty() && "safeCast has no operands");
+    return getSafe();
+}
+
+
 namespace
 {
 template <typename T> struct RemoveUnused : public OpRewritePattern<T>
@@ -827,6 +838,25 @@ bool mlir_ts::DialectCastOp::areCastCompatible(TypeRange inputs, TypeRange outpu
 
     // for now all are true
     return true;
+}
+
+//===----------------------------------------------------------------------===//
+// SafeCastOp
+//===----------------------------------------------------------------------===//
+
+/// Returns true if the given set of input and result types are compatible with
+/// this cast operation. This is required by the `CastOpInterface` to verify
+/// this operation and provide other additional utilities.
+bool mlir_ts::SafeCastOp::areCastCompatible(TypeRange inputs, TypeRange outputs)
+{
+    if (inputs.size() != 2 || outputs.size() != 1)
+    {
+        // not supporting N->N cast
+        return false;
+    }
+
+    // for now all are true
+    return inputs.front() == outputs.front();
 }
 
 //===----------------------------------------------------------------------===//

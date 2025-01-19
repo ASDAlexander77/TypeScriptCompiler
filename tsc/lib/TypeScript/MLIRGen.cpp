@@ -6967,12 +6967,15 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type: [" << parameterName << "] is [" << safeType << "]\n");
 
+        // we need to create dummy op to be able to use both values with cast and without cast
+        auto wrappedValue = builder.create<mlir_ts::SafeCastOp>(location, castedValue.getType(), castedValue, exprValue);
+
         return 
             !!registerVariable(
                 location, parameterName, false, VariableType::Const,
                 [&](mlir::Location, const GenContext &) -> TypeValueInitType
                 {
-                    return {safeType, castedValue, TypeProvided::Yes};
+                    return {safeType, wrappedValue, TypeProvided::Yes};
                 },
                 genContext) ? mlir::success() : mlir::failure();        
     }    

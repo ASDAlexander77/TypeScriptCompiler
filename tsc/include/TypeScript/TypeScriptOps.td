@@ -44,8 +44,6 @@ def ConstantOp : TypeScript_Op<"Constant",
   ];
 
   let hasFolder = 1;
-
-  
 }
 
 def SymbolRefOp : TypeScript_Op<"SymbolRef", 
@@ -1493,6 +1491,20 @@ def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpI
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
+}
+
+def TypeScript_SafeCastOp : TypeScript_Op<"SafeCast", [
+    DeclareOpInterfaceMethods<CastOpInterface>, 
+    AllTypesMatch<["safe", "res"]>,
+    Pure]> {
+  let description = [{
+    Example:
+      ts.safe_cast %v : i32 to f16
+  }];
+  let arguments = (ins AnyType:$safe, AnyType:$value);
+  let results = (outs AnyType:$res);
+
+  let hasFolder = 1;
 }
 
 def TypeScript_BoxOp : TypeScript_Op<"Box", [Pure]> {
