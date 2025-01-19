@@ -20746,8 +20746,8 @@ genContext);
                         .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
                         .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
-                        .Case<mlir_ts::ConstTupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(mth.removeConstType(tuple_)); })
-                        .Case<mlir_ts::TupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(tuple_); })
+                        //.Case<mlir_ts::ConstTupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(mth.removeConstType(tuple_)); })
+                        //.Case<mlir_ts::TupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(tuple_); })
                         .Case<mlir_ts::ArrayType>([&](auto _) { typeOfs["array"] = true; })
                         .Case<mlir_ts::ConstArrayType>([&](auto _) { typeOfs["array"] = true; })
                         .Case<mlir_ts::OpaqueType>([&](auto _) { typeOfs["object"] = true; })
@@ -20784,22 +20784,22 @@ genContext);
 
                         ss << S(" }\n");
                     }
-                    else if (pair.getKey() == "tuple")
-                    {
-                        ss << S("{ \n");
+                    // else if (pair.getKey() == "tuple")
+                    // {
+                    //     ss << S("{ \n");
 
-                        for (auto [index, _] : enumerate(tupleTypes))
-                        {
-                            ss << S("return <TYPE_TUPLE_ALIAS");
-                            ss << index;
-                            ss << S(">t;\n");
+                    //     for (auto [index, _] : enumerate(tupleTypes))
+                    //     {
+                    //         ss << S("return <TYPE_TUPLE_ALIAS");
+                    //         ss << index;
+                    //         ss << S(">t;\n");
 
-                            // TODO: temp hack
-                            break;
-                        }
+                    //         // TODO: temp hack
+                    //         break;
+                    //     }
 
-                        ss << S(" }\n");
-                    }
+                    //     ss << S(" }\n");
+                    // }
                     else
                     {
                         ss << S("return t;\n");
