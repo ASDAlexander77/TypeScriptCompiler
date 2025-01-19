@@ -20701,6 +20701,7 @@ genContext);
             funcCallGenContext);
     }
 
+    // TODO: remove using typeof for Union types as it can't handle types such as 2 tuples in union etc
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(value.getType()))
@@ -20718,6 +20719,7 @@ genContext);
 
                 StringMap<boolean> typeOfs;
                 SmallVector<mlir::Type> classInstances;
+                SmallVector<mlir::Type> tupleTypes;
                 ss << S("function __cast<T, U>(t: T) : U {\n");
                 for (auto subType : normalizedUnion.getTypes())
                 {
@@ -20744,6 +20746,12 @@ genContext);
                         .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
                         .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
+                        .Case<mlir_ts::ConstTupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(mth.removeConstType(tuple_)); })
+                        .Case<mlir_ts::TupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(tuple_); })
+                        .Case<mlir_ts::ArrayType>([&](auto _) { typeOfs["array"] = true; })
+                        .Case<mlir_ts::ConstArrayType>([&](auto _) { typeOfs["array"] = true; })
+                        .Case<mlir_ts::OpaqueType>([&](auto _) { typeOfs["object"] = true; })
+                        .Case<mlir_ts::ObjectType>([&](auto _) { typeOfs["object"] = true; })
                         // TODO: we can't use null type here and undefined otherwise code will be cycling 
                         // due to issue with TypeOf == 'null' as it should denounce UnionType into Single Type
                         // review code to use null in "TypeGuard"
@@ -20772,6 +20780,22 @@ genContext);
                             ss << S("if (t instanceof TYPE_INST_ALIAS");
                             ss << index;
                             ss << S(") return t;\n");
+                        }
+
+                        ss << S(" }\n");
+                    }
+                    else if (pair.getKey() == "tuple")
+                    {
+                        ss << S("{ \n");
+
+                        for (auto [index, _] : enumerate(tupleTypes))
+                        {
+                            ss << S("return <TYPE_TUPLE_ALIAS");
+                            ss << index;
+                            ss << S(">t;\n");
+
+                            // TODO: temp hack
+                            break;
                         }
 
                         ss << S(" }\n");
@@ -20811,6 +20835,11 @@ genContext);
                 for (auto [index, instanceOfType] : enumerate(classInstances))
                 {
                     funcCallGenContext.typeAliasMap.insert({"TYPE_INST_ALIAS" + std::to_string(index), instanceOfType});
+                }
+
+                for (auto [index, tupleType] : enumerate(tupleTypes))
+                {
+                    funcCallGenContext.typeAliasMap.insert({"TYPE_TUPLE_ALIAS" + std::to_string(index), tupleType});
                 }
 
                 SmallVector<mlir::Value, 4> operands;
