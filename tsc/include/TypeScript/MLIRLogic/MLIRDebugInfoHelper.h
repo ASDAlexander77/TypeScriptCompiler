@@ -124,7 +124,7 @@ class MLIRDebugInfoHelper
 
         if (auto file = dyn_cast_or_null<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE)))
         {
-            unsigned sourceLanguage = llvm::dwarf::DW_LANG_C_plus_plus; 
+            unsigned sourceLanguage = llvm::dwarf::DW_LANG_Assembly; 
             auto producer = builder.getStringAttr(producerName);
             auto emissionKind = mlir::LLVM::DIEmissionKind::Full;
             auto namedTable = mlir::LLVM::DINameTableKind::Default;
