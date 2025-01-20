@@ -7024,6 +7024,14 @@ class MLIRGenImpl
                     auto typeTokenElement = nf.createTypeReferenceNode(nf.createIdentifier(S("Opaque")));
                     typeToken = nf.createArrayTypeNode(typeTokenElement);
                 }
+                else if (text == S("null"))
+                {
+                    typeToken = nf.createToken(SyntaxKind::NullKeyword);
+                }                
+                else if (text == S("undefined"))
+                {
+                    typeToken = nf.createToken(SyntaxKind::UndefinedKeyword);
+                }                
                 else if (isEmbededTypeWithBuiltins(wstos(text)))
                 {
                     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(text));
@@ -20752,11 +20760,8 @@ genContext);
                         .Case<mlir_ts::ConstArrayType>([&](auto _) { typeOfs["array"] = true; })
                         .Case<mlir_ts::OpaqueType>([&](auto _) { typeOfs["object"] = true; })
                         .Case<mlir_ts::ObjectType>([&](auto _) { typeOfs["object"] = true; })
-                        // TODO: we can't use null type here and undefined otherwise code will be cycling 
-                        // due to issue with TypeOf == 'null' as it should denounce UnionType into Single Type
-                        // review code to use null in "TypeGuard"
-                        .Case<mlir_ts::NullType>([&](auto _) { /* TODO: uncomment when finish with TypeGuard and null */ /*typeOfs["null"] = true;*/ })
-                        .Case<mlir_ts::UndefinedType>([&](auto _) { /* TODO: I don't think we need any code here */ /*typeOfs["undefined"] = true;*/ })
+                        .Case<mlir_ts::NullType>([&](auto _) { typeOfs["null"] = true; })
+                        .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = true; })
                         .Default([&](auto type) { 
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
                             llvm_unreachable("not implemented yet"); 
@@ -21050,6 +21055,10 @@ genContext);
         else if (kind == SyntaxKind::UndefinedKeyword)
         {
             return getUndefinedType();
+        }
+        else if (kind == SyntaxKind::NullKeyword)
+        {
+            return getNullType();
         }
         else if (kind == SyntaxKind::TypePredicate)
         {
