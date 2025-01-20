@@ -253,6 +253,9 @@ class MLIRGenImpl
             stows(sourceBuf->getBuffer().str()), 
             ScriptTarget::Latest);
 
+        SmallString<256> dirName(mainSourceFileName);
+        sys::path::remove_filename(dirName);
+
         // add default lib
         if (isMain)
         {
@@ -287,7 +290,14 @@ class MLIRGenImpl
         {
             string includeFileName = filesToProcess.back();
             SmallString<256> fullPath;
+
             auto includeFileNameUtf8 = convertWideToUTF8(includeFileName);
+
+            if (!sys::path::has_root_path(includeFileNameUtf8))
+            {
+                sys::path::append(fullPath, dirName);
+            }
+
             sys::path::append(fullPath, includeFileNameUtf8);
 
             filesToProcess.pop_back();
@@ -24939,10 +24949,10 @@ genContext);
         auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start);
         auto begin = mlir::FileLineColLoc::get(builder.getContext(), fileId, 
             posLineChar.line + 1, posLineChar.character + 1);
-        if (length <= 1)
-        {
-            return begin;
-        }
+        // if (length <= 1)
+        // {
+        //     return begin;
+        // }
 
         // auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
         // auto end = mlir::FileLineColLoc::get(builder.getContext(), 
@@ -24966,14 +24976,14 @@ genContext);
         return mdi.combineWithCurrentScope(location);
     }
 
-    mlir::Location combine(mlir::Location parenLocation, mlir::Location location) 
+    mlir::Location combine(mlir::Location parentLocation, mlir::Location location) 
     {
-        if (isa<mlir::UnknownLoc>(parenLocation))
+        if (isa<mlir::UnknownLoc>(parentLocation))
         {
             return location;
         }
 
-        return mlir::FusedLoc::get(builder.getContext(), {parenLocation, location});  
+        return mlir::FusedLoc::get(builder.getContext(), {parentLocation, location});  
     }
 
     mlir::Location stripMetadata(mlir::Location location)
