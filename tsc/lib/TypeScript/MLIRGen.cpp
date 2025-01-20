@@ -247,14 +247,21 @@ class MLIRGenImpl
         std::vector<SourceFile> includeFiles;
         std::vector<string> filesToProcess;
 
+        LocationHelper lh(builder.getContext());
+
+        auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(location);
+        auto dirName = file.getDirectory();
+        auto sourceFileName = file.getName();
+
+        SmallString<256> fullPath;
+        sys::path::append(fullPath, dirName.getValue());
+        sys::path::append(fullPath, sourceFileName.getValue());
+
         Parser parser;
         auto sourceFile = parser.parseSourceFile(
-            stows(mainSourceFileName.str()), 
+            stows(fullPath.str().str()), 
             stows(sourceBuf->getBuffer().str()), 
             ScriptTarget::Latest);
-
-        SmallString<256> dirName(mainSourceFileName);
-        sys::path::remove_filename(dirName);
 
         // add default lib
         if (isMain)
@@ -295,7 +302,7 @@ class MLIRGenImpl
 
             if (!sys::path::has_root_path(includeFileNameUtf8))
             {
-                sys::path::append(fullPath, dirName);
+                sys::path::append(fullPath, dirName.getValue());
             }
 
             sys::path::append(fullPath, includeFileNameUtf8);
@@ -314,7 +321,10 @@ class MLIRGenImpl
 
             Parser parser;
             auto includeFile =
-                parser.parseSourceFile(convertUTF8toWide(actualFilePath), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
+                parser.parseSourceFile(
+                    convertUTF8toWide(actualFilePath), 
+                    stows(sourceBuf->getBuffer().str()), 
+                    ScriptTarget::Latest);
             for (auto refFile : includeFile->referencedFiles)
             {
                 filesToProcess.push_back(refFile.fileName);
@@ -953,6 +963,14 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }          
+
+        // we need to override filename to track it in DBG info
+        MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
+        auto fileNameUtf8 = convertWideToUTF8(importSource->fileName);
+        mainSourceFileName = StringRef(fileNameUtf8).copy(stringAllocator);
+
+        MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+        sourceFile = importSource;
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
             mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false)))
@@ -25064,12 +25082,29 @@ genContext);
     // TODO: fix issue with cercular reference of include files
     std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(mlir::Location location, StringRef fileName)
     {
-        SmallString<256> fullPath;
-        sys::path::append(fullPath, fileName);
-        if (sys::path::extension(fullPath) == "")
+        SmallString<256> fileNameStr(fileName);
+
+        if (fileNameStr.starts_with("./"))
         {
-            fullPath += ".ts";
+            auto subStr = fileNameStr.substr(2);
+            fileNameStr.clear();
+            fileNameStr.append(subStr);
         }
+
+        if (sys::path::extension(fileName) == "")
+        {
+            fileNameStr += ".ts";
+        }
+
+        SmallString<256> fullPath;
+
+        if (!sys::path::has_root_path(fileNameStr)) {
+            // get dir from mainSourceFileName
+            auto directory = sys::path::parent_path(mainSourceFileName);
+            sys::path::append(fullPath, directory);
+        }
+
+        sys::path::append(fullPath, fileNameStr);
 
         std::string ignored;
         auto id = sourceMgr.AddIncludeFile(std::string(fullPath), SMLoc(), ignored);
@@ -25080,7 +25115,9 @@ genContext);
         }
 
         const auto *sourceBuf = sourceMgr.getMemoryBuffer(id);
-        return loadSourceBuf(location, sourceBuf);
+        auto sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
+                    sourceBuf->getBufferIdentifier(), /*line=*/0, /*column=*/0);        
+        return loadSourceBuf(sourceFileLoc, sourceBuf);
     }
 
     /// The builder is a helper class to create IR inside a function. The builder
