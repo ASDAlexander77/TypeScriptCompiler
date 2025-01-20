@@ -124,7 +124,7 @@ class MLIRDebugInfoHelper
 
         if (auto file = dyn_cast_or_null<mlir::LLVM::DIFileAttr>(debugScope.lookup(FILE_DEBUG_SCOPE)))
         {
-            unsigned sourceLanguage = llvm::dwarf::DW_LANG_C_plus_plus; 
+            unsigned sourceLanguage = llvm::dwarf::DW_LANG_Assembly; 
             auto producer = builder.getStringAttr(producerName);
             auto emissionKind = mlir::LLVM::DIEmissionKind::Full;
             auto namedTable = mlir::LLVM::DINameTableKind::Default;
@@ -146,8 +146,11 @@ class MLIRDebugInfoHelper
         {
             if (auto scopeAttr = dyn_cast_or_null<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE)))
             {
-                auto [line, column] = LocationHelper::getLineAndColumn(functionLocation);
-                auto [scopeLine, scopeColumn] = LocationHelper::getLineAndColumn(functionBlockLocation);
+                LocationHelper lh(builder.getContext());
+                auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(functionLocation);
+                auto [line, column] = lineAndColumn;
+                auto [scopeFile, scopeLineAndColumn] = lh.getLineAndColumnAndFile(functionBlockLocation);
+                auto [scopeLine, scopeColumn] = scopeLineAndColumn;
 
                 // if (isa<mlir::LLVM::DILexicalBlockAttr>(scopeAttr))
                 // {
@@ -178,7 +181,7 @@ class MLIRDebugInfoHelper
                 auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
                     builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), compileUnitAttr, scopeAttr, 
                     funcNameAttr, linkageNameAttr, 
-                    compileUnitAttr.getFile(), line, scopeLine, subprogramFlags, type);   
+                    file/*compileUnitAttr.getFile()*/, line, scopeLine, subprogramFlags, type);   
 
                 debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
                 debugScope.insert(DEBUG_SCOPE, subprogramAttr);

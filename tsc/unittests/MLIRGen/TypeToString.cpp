@@ -24,7 +24,7 @@ public:
         context.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
     }
 
-    StringRef getTypeString(mlir::Type type)
+    SmallString<128> getTypeString(mlir::Type type)
     {
         SmallString<128> exportType;
         raw_svector_ostream rso(exportType);        

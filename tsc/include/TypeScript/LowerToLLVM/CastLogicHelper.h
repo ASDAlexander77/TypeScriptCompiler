@@ -517,6 +517,7 @@ class CastLogicHelper
             if (auto inUnionType = dyn_cast<mlir_ts::UnionType>(inType))
             {
                 // nothing to do
+                LLVM_DEBUG(llvm::dbgs() << "\n\t cast union type to union type: " << inType << "->" << resType << "\n";);
             }
             else
             {
@@ -546,7 +547,22 @@ class CastLogicHelper
                 return cast(in, baseType, tch.convertType(baseType), resType, resLLVMType);
             }
 
-            // skip to next steps
+            if (auto resUnionType = dyn_cast<mlir_ts::UnionType>(resType))
+            {
+                mlir::Type baseTypeRes;
+                bool needTagRes = mth.isUnionTypeNeedsTag(loc, resUnionType, baseTypeRes);
+                if (needTagRes)
+                {
+                    LLVMTypeConverterHelper ltch((const LLVMTypeConverter *)tch.typeConverter);
+                    auto maxStoreType = ltch.findMaxSizeType(inUnionType);
+                    auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxStoreType, in);
+                    auto typeOfValue = rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+                    auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resType, value, typeOfValue);
+                    return unionValue;
+                }
+            }
+
+            // fall into default case
         }       
 
         if (auto undefType = dyn_cast<mlir_ts::UndefinedType>(inType))

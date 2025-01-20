@@ -247,9 +247,19 @@ class MLIRGenImpl
         std::vector<SourceFile> includeFiles;
         std::vector<string> filesToProcess;
 
+        LocationHelper lh(builder.getContext());
+
+        auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(location);
+        auto dirName = file.getDirectory();
+        auto sourceFileName = file.getName();
+
+        SmallString<256> fullPath;
+        sys::path::append(fullPath, dirName.getValue());
+        sys::path::append(fullPath, sourceFileName.getValue());
+
         Parser parser;
         auto sourceFile = parser.parseSourceFile(
-            stows(mainSourceFileName.str()), 
+            stows(fullPath.str().str()), 
             stows(sourceBuf->getBuffer().str()), 
             ScriptTarget::Latest);
 
@@ -287,7 +297,14 @@ class MLIRGenImpl
         {
             string includeFileName = filesToProcess.back();
             SmallString<256> fullPath;
+
             auto includeFileNameUtf8 = convertWideToUTF8(includeFileName);
+
+            if (!sys::path::has_root_path(includeFileNameUtf8))
+            {
+                sys::path::append(fullPath, dirName.getValue());
+            }
+
             sys::path::append(fullPath, includeFileNameUtf8);
 
             filesToProcess.pop_back();
@@ -304,7 +321,10 @@ class MLIRGenImpl
 
             Parser parser;
             auto includeFile =
-                parser.parseSourceFile(convertUTF8toWide(actualFilePath), stows(sourceBuf->getBuffer().str()), ScriptTarget::Latest);
+                parser.parseSourceFile(
+                    convertUTF8toWide(actualFilePath), 
+                    stows(sourceBuf->getBuffer().str()), 
+                    ScriptTarget::Latest);
             for (auto refFile : includeFile->referencedFiles)
             {
                 filesToProcess.push_back(refFile.fileName);
@@ -943,6 +963,14 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }          
+
+        // we need to override filename to track it in DBG info
+        MLIRValueGuard<llvm::StringRef> vgFileName(mainSourceFileName); 
+        auto fileNameUtf8 = convertWideToUTF8(importSource->fileName);
+        mainSourceFileName = StringRef(fileNameUtf8).copy(stringAllocator);
+
+        MLIRValueGuard<ts::SourceFile> vgSourceFile(sourceFile);
+        sourceFile = importSource;
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(importSource, importIncludeFiles)) &&
             mlir::succeeded(mlirCodeGenModule(importSource, importIncludeFiles, false, false)))
@@ -6967,12 +6995,15 @@ class MLIRGenImpl
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type: [" << parameterName << "] is [" << safeType << "]\n");
 
+        // we need to create dummy op to be able to use both values with cast and without cast
+        auto wrappedValue = builder.create<mlir_ts::SafeCastOp>(location, castedValue.getType(), castedValue, exprValue);
+
         return 
             !!registerVariable(
                 location, parameterName, false, VariableType::Const,
                 [&](mlir::Location, const GenContext &) -> TypeValueInitType
                 {
-                    return {safeType, castedValue, TypeProvided::Yes};
+                    return {safeType, wrappedValue, TypeProvided::Yes};
                 },
                 genContext) ? mlir::success() : mlir::failure();        
     }    
@@ -7021,6 +7052,14 @@ class MLIRGenImpl
                     auto typeTokenElement = nf.createTypeReferenceNode(nf.createIdentifier(S("Opaque")));
                     typeToken = nf.createArrayTypeNode(typeTokenElement);
                 }
+                else if (text == S("null"))
+                {
+                    typeToken = nf.createToken(SyntaxKind::NullKeyword);
+                }                
+                else if (text == S("undefined"))
+                {
+                    typeToken = nf.createToken(SyntaxKind::UndefinedKeyword);
+                }                
                 else if (isEmbededTypeWithBuiltins(wstos(text)))
                 {
                     typeToken = nf.createTypeReferenceNode(nf.createIdentifier(text));
@@ -7233,6 +7272,7 @@ class MLIRGenImpl
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCast: condition: " << conditionValue << "\n");
 
+            // TODO: check if we need to do samething for SafeCastOp
             mlir_ts::TypePredicateType propertyType;
             if (auto loadOp = conditionValue.getDefiningOp<mlir_ts::LoadOp>())
             {
@@ -7515,6 +7555,11 @@ class MLIRGenImpl
 
         // body
         builder.setInsertionPointToStart(&whileOp.getBody().front());
+
+        // check if we do safe-cast here
+        SymbolTableScopeT varScopeBody(symbolTable);
+        checkSafeCast(whileStatementAST->expression, conditionValue, nullptr, genContext);
+
         auto result2 = mlirGen(whileStatementAST->statement, genContext);
         EXIT_IF_FAILED(result2)
         builder.create<mlir_ts::ResultOp>(location);
@@ -9304,6 +9349,12 @@ class MLIRGenImpl
             }
         };
 
+        // TODO: logic to support safe cast
+        if (auto safeCastOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::SafeCastOp>())
+        {
+            leftExpressionValueBeforeCast = safeCastOp.getValue();
+        }
+
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
         if (auto loadOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LoadOp>())
         {
@@ -10086,7 +10137,7 @@ class MLIRGenImpl
                                                               bool isConditional, MLIRPropertyAccessCodeLogic &cl,
                                                               const GenContext &genContext)
     {
-        if (isConditional && mth.isNullableOrOptionalType(objectValue.getType()))
+        if (isConditional && MLIRTypeCore::isNullableOrOptionalType(objectValue.getType()))
         {
             // TODO: replace with one op "Optional <has_value>, <value>"
             CAST_A(condValue, location, getBooleanType(), objectValue, genContext);
@@ -20377,7 +20428,7 @@ genContext);
             }
         }
 
-        if (auto constType = dyn_cast<mlir_ts::ConstType>(type))
+         if (auto constType = dyn_cast<mlir_ts::ConstType>(type))
         {
             // TODO: we can't convert array to const array
 
@@ -20686,6 +20737,7 @@ genContext);
             funcCallGenContext);
     }
 
+    // TODO: remove using typeof for Union types as it can't handle types such as 2 tuples in union etc
     ValueOrLogicalResult castFromUnion(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(value.getType()))
@@ -20703,6 +20755,7 @@ genContext);
 
                 StringMap<boolean> typeOfs;
                 SmallVector<mlir::Type> classInstances;
+                SmallVector<mlir::Type> tupleTypes;
                 ss << S("function __cast<T, U>(t: T) : U {\n");
                 for (auto subType : normalizedUnion.getTypes())
                 {
@@ -20729,11 +20782,14 @@ genContext);
                         .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
                         .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
-                        // TODO: we can't use null type here and undefined otherwise code will be cycling 
-                        // due to issue with TypeOf == 'null' as it should denounce UnionType into Single Type
-                        // review code to use null in "TypeGuard"
-                        .Case<mlir_ts::NullType>([&](auto _) { /* TODO: uncomment when finish with TypeGuard and null */ /*typeOfs["null"] = true;*/ })
-                        .Case<mlir_ts::UndefinedType>([&](auto _) { /* TODO: I don't think we need any code here */ /*typeOfs["undefined"] = true;*/ })
+                        //.Case<mlir_ts::ConstTupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(mth.removeConstType(tuple_)); })
+                        //.Case<mlir_ts::TupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(tuple_); })
+                        .Case<mlir_ts::ArrayType>([&](auto _) { typeOfs["array"] = true; })
+                        .Case<mlir_ts::ConstArrayType>([&](auto _) { typeOfs["array"] = true; })
+                        .Case<mlir_ts::OpaqueType>([&](auto _) { typeOfs["object"] = true; })
+                        .Case<mlir_ts::ObjectType>([&](auto _) { typeOfs["object"] = true; })
+                        .Case<mlir_ts::NullType>([&](auto _) { typeOfs["null"] = true; })
+                        .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = true; })
                         .Default([&](auto type) { 
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
                             llvm_unreachable("not implemented yet"); 
@@ -20761,6 +20817,22 @@ genContext);
 
                         ss << S(" }\n");
                     }
+                    // else if (pair.getKey() == "tuple")
+                    // {
+                    //     ss << S("{ \n");
+
+                    //     for (auto [index, _] : enumerate(tupleTypes))
+                    //     {
+                    //         ss << S("return <TYPE_TUPLE_ALIAS");
+                    //         ss << index;
+                    //         ss << S(">t;\n");
+
+                    //         // TODO: temp hack
+                    //         break;
+                    //     }
+
+                    //     ss << S(" }\n");
+                    // }
                     else
                     {
                         ss << S("return t;\n");
@@ -20796,6 +20868,11 @@ genContext);
                 for (auto [index, instanceOfType] : enumerate(classInstances))
                 {
                     funcCallGenContext.typeAliasMap.insert({"TYPE_INST_ALIAS" + std::to_string(index), instanceOfType});
+                }
+
+                for (auto [index, tupleType] : enumerate(tupleTypes))
+                {
+                    funcCallGenContext.typeAliasMap.insert({"TYPE_TUPLE_ALIAS" + std::to_string(index), tupleType});
                 }
 
                 SmallVector<mlir::Value, 4> operands;
@@ -21006,6 +21083,10 @@ genContext);
         else if (kind == SyntaxKind::UndefinedKeyword)
         {
             return getUndefinedType();
+        }
+        else if (kind == SyntaxKind::NullKeyword)
+        {
+            return getNullType();
         }
         else if (kind == SyntaxKind::TypePredicate)
         {
@@ -24886,10 +24967,10 @@ genContext);
         auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start);
         auto begin = mlir::FileLineColLoc::get(builder.getContext(), fileId, 
             posLineChar.line + 1, posLineChar.character + 1);
-        if (length <= 1)
-        {
-            return begin;
-        }
+        // if (length <= 1)
+        // {
+        //     return begin;
+        // }
 
         // auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, start + length - 1);
         // auto end = mlir::FileLineColLoc::get(builder.getContext(), 
@@ -24913,14 +24994,14 @@ genContext);
         return mdi.combineWithCurrentScope(location);
     }
 
-    mlir::Location combine(mlir::Location parenLocation, mlir::Location location) 
+    mlir::Location combine(mlir::Location parentLocation, mlir::Location location) 
     {
-        if (isa<mlir::UnknownLoc>(parenLocation))
+        if (isa<mlir::UnknownLoc>(parentLocation))
         {
             return location;
         }
 
-        return mlir::FusedLoc::get(builder.getContext(), {parenLocation, location});  
+        return mlir::FusedLoc::get(builder.getContext(), {parentLocation, location});  
     }
 
     mlir::Location stripMetadata(mlir::Location location)
@@ -25001,12 +25082,29 @@ genContext);
     // TODO: fix issue with cercular reference of include files
     std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(mlir::Location location, StringRef fileName)
     {
-        SmallString<256> fullPath;
-        sys::path::append(fullPath, fileName);
-        if (sys::path::extension(fullPath) == "")
+        SmallString<256> fileNameStr(fileName);
+
+        if (fileNameStr.starts_with("./"))
         {
-            fullPath += ".ts";
+            auto subStr = fileNameStr.substr(2);
+            fileNameStr.clear();
+            fileNameStr.append(subStr);
         }
+
+        if (sys::path::extension(fileName) == "")
+        {
+            fileNameStr += ".ts";
+        }
+
+        SmallString<256> fullPath;
+
+        if (!sys::path::has_root_path(fileNameStr)) {
+            // get dir from mainSourceFileName
+            auto directory = sys::path::parent_path(mainSourceFileName);
+            sys::path::append(fullPath, directory);
+        }
+
+        sys::path::append(fullPath, fileNameStr);
 
         std::string ignored;
         auto id = sourceMgr.AddIncludeFile(std::string(fullPath), SMLoc(), ignored);
@@ -25017,7 +25115,9 @@ genContext);
         }
 
         const auto *sourceBuf = sourceMgr.getMemoryBuffer(id);
-        return loadSourceBuf(location, sourceBuf);
+        auto sourceFileLoc = mlir::FileLineColLoc::get(builder.getContext(),
+                    sourceBuf->getBufferIdentifier(), /*line=*/0, /*column=*/0);        
+        return loadSourceBuf(sourceFileLoc, sourceBuf);
     }
 
     /// The builder is a helper class to create IR inside a function. The builder
