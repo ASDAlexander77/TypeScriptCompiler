@@ -3316,7 +3316,7 @@ class MLIRGenImpl
             isSpecialization = true;
         }   
 
-        void detectFlags(bool isFullName_, VariableClass varClass_, const GenContext &genContext)
+        void detectFlags(bool isFullName_, VariableClass varClass_, bool forceLocalVar, const GenContext &genContext)
         {
             varClass = varClass_;
             isFullName = isFullName_;
@@ -3324,6 +3324,11 @@ class MLIRGenImpl
             if (isFullName_ || !genContext.funcOp)
             {
                 scope = VariableScope::Global;
+            }
+
+            if (forceLocalVar)
+            {
+                scope = VariableScope::Local;
             }
 
             allocateOutsideOfOperation = genContext.allocateVarsOutsideOfOperation
@@ -3854,12 +3859,12 @@ class MLIRGenImpl
     }
 
     mlir::Type registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
-                                TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false)
+                                TypeValueInitFuncType func, const GenContext &genContext, bool showWarnings = false, bool forceLocalVar = false)
     {
         struct VariableDeclarationInfo variableDeclarationInfo(
             compileOptions, func, std::bind(&MLIRGenImpl::getGlobalsFullNamespaceName, this, std::placeholders::_1));
 
-        variableDeclarationInfo.detectFlags(isFullName, varClass, genContext);
+        variableDeclarationInfo.detectFlags(isFullName, varClass, forceLocalVar, genContext);
         variableDeclarationInfo.setName(name);
 
         if (declarationMode)
@@ -7005,7 +7010,7 @@ class MLIRGenImpl
                 {
                     return {safeType, wrappedValue, TypeProvided::Yes};
                 },
-                genContext) ? mlir::success() : mlir::failure();        
+                genContext, false, true) ? mlir::success() : mlir::failure();        
     }    
 
     mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
