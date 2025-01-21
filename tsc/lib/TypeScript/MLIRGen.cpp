@@ -6896,16 +6896,22 @@ class MLIRGenImpl
     mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto location = loc(expr);
-        auto nameStr = MLIRHelper::getName(expr.as<DeclarationName>());
+        auto nameStr = MLIRHelper::getName(expr.as<Node>());
         auto result = mlirGen(expr, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! Is Safe Type the same: [" << exprValue.getType() << "] and [" << safeType << "]\n");
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Is Safe Type the same: [" << exprValue.getType() << "] and [" << safeType << "], expr: " << exprValue << "\n");
 
         if (isSafeTypeTheSameAndNoNeedToCast(exprValue.getType(), safeType))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! == Yes\n");
+            return mlir::success();
+        }
+
+        if (nameStr.empty())
+        {
+            // this is not local variable
             return mlir::success();
         }
 
@@ -10471,6 +10477,8 @@ class MLIRGenImpl
             emitError(location, "Can't resolve property '") << name << "' of type " << to_print(objectValue.getType());
             return mlir::failure();
         }
+        
+        // TODO: here - using object type + field name can be used to detect new SafeType value
 
         return value;
     }
