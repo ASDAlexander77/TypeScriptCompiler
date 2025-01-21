@@ -5957,9 +5957,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         signalPassFailure();
     }
 
-    /*
-    LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP - BEFORE CLEANUP: \n" << module << "\n";);
-    */
+    LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP - BEFORE CLEANUP: \n" << m << "\n";);
 
     cleanupUnrealizedConversionCast(m);
 

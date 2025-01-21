@@ -7096,6 +7096,17 @@ class MLIRGenImpl
         return mlir::failure();
     }    
 
+    mlir::LogicalResult checkSafeCastNull(Expression val, Expression nullVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
+    {
+        auto expr = stripParentheses(nullVal);
+        if (expr == SyntaxKind::NullKeyword)
+        {
+            return addSafeCastStatement(val, getNullType(), inverse, elseSafeCase, genContext);
+        }
+
+        return mlir::failure();
+    }     
+
     mlir::LogicalResult checkSafeCastBoolean(Expression exprVal, bool inverse, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         auto exprEval = evaluate(exprVal, genContext);
@@ -7365,7 +7376,14 @@ class MLIRGenImpl
                                 // undefined case
                                 if (mlir::failed(checkSafeCastUndefined(left, right, !inverse, elseSafeCase, genContext)))
                                 {
-                                    return checkSafeCastUndefined(right, left, !inverse, elseSafeCase, genContext);
+                                    if (mlir::failed(checkSafeCastUndefined(right, left, !inverse, elseSafeCase, genContext)))
+                                    {
+                                        // null case
+                                        if (mlir::failed(checkSafeCastNull(left, right, inverse, elseSafeCase, genContext)))
+                                        {
+                                            return checkSafeCastNull(right, left, inverse, elseSafeCase, genContext);
+                                        }
+                                    }
                                 }
                             }
                         }
