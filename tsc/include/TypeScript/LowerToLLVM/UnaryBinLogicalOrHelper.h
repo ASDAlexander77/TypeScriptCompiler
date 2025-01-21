@@ -153,6 +153,24 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     else if (isa<mlir_ts::AnyType>(leftType) || isa<mlir_ts::ClassType>(leftType) || 
                 isa<mlir_ts::OpaqueType>(leftType) || isa<mlir_ts::NullType>(leftType))
     {
+        // in case of UnionType
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(rightType))
+        {
+            ::typescript::MLIRTypeHelper mth(builder.getContext(), compileOptions);
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
+            {
+                auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()), right,
+                                    MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));                
+                auto nullStr = builder.create<mlir_ts::ConstantOp>(loc, mth.getStringType(), builder.getStringAttr("null"));
+                auto cmpOp = builder.create<mlir_ts::StringCompareOp>(
+                    loc, mth.getBooleanType(), tagValue, nullStr, builder.getI32IntegerAttr((int)op));
+                return cmpOp;
+            }
+
+            return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, left, baseType, right, rightType, builder, typeConverter, compileOptions);
+        }
+
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
 
@@ -227,6 +245,19 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         mlir::Type baseType;
         if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
         {
+            // add test to null value
+            auto isRightNullValue =
+                right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::ZeroOp>() || matchPattern(right, m_Zero());            
+            if (isRightNullValue)
+            {
+                auto tagValue = builder.create<LLVM::ExtractValueOp>(loc, llvmtch.typeConverter->convertType(mth.getStringType()), left,
+                                    MLIRHelper::getStructIndex(builder, UNION_TAG_INDEX));                
+                auto nullStr = builder.create<mlir_ts::ConstantOp>(loc, mth.getStringType(), builder.getStringAttr("null"));
+                auto cmpOp = builder.create<mlir_ts::StringCompareOp>(
+                    loc, mth.getBooleanType(), tagValue, nullStr, builder.getI32IntegerAttr((int)op));
+                return cmpOp;
+            }
+
             emitError(loc, "Not applicable logical operator for type: '") << to_print<int>(leftType) << "'";
             return mlir::Value();
         }
