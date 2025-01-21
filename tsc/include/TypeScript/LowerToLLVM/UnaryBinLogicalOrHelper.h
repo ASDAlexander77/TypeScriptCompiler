@@ -228,6 +228,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         if (mth.isUnionTypeNeedsTag(loc, unionType, baseType))
         {
             emitError(loc, "Not applicable logical operator for type: '") << to_print<int>(leftType) << "'";
+            return mlir::Value();
         }
 
         return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, left, baseType, right, rightType, builder, typeConverter, compileOptions);
