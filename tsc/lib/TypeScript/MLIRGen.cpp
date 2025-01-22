@@ -258,11 +258,14 @@ class MLIRGenImpl
         sys::path::append(fullPath, dirName.getValue());
         sys::path::append(fullPath, sourceFileName.getValue());
 
+        auto fullPathW = stows(fullPath.str().str());
+
         Parser parser;
         auto sourceFile = parser.parseSourceFile(
-            stows(fullPath.str().str()), 
+            fullPathW, 
             stows(sourceBuf->getBuffer().str()), 
             ScriptTarget::Latest);
+        sourceFile->resolvedPath = fullPathW;
 
         // add default lib
         if (isMain)
@@ -296,36 +299,38 @@ class MLIRGenImpl
 
         while (filesToProcess.size() > 0)
         {
-            string includeFileName = filesToProcess.back();
-            SmallString<256> fullPath;
-
+            auto includeFileName = filesToProcess.back();
             auto includeFileNameUtf8 = convertWideToUTF8(includeFileName);
-
-            if (!sys::path::has_root_path(includeFileNameUtf8))
-            {
-                sys::path::append(fullPath, dirName.getValue());
-            }
-
-            sys::path::append(fullPath, includeFileNameUtf8);
-
             filesToProcess.pop_back();
 
             std::string actualFilePath;
-            auto id = sourceMgr.AddIncludeFile(std::string(fullPath), SMLoc(), actualFilePath);
+            auto id = sourceMgr.AddIncludeFile(std::string(includeFileNameUtf8), SMLoc(), actualFilePath);
             if (!id)
             {
                 emitError(location, "can't open file: ") << fullPath;
                 continue;
             }
 
+            SmallString<256> fullPath;
+            if (!sys::path::has_root_path(actualFilePath))
+            {
+                sys::path::append(fullPath, dirName.getValue());
+            }
+
+            sys::path::append(fullPath, actualFilePath);
+
             const auto *sourceBuf = sourceMgr.getMemoryBuffer(id);
+
+            auto actualFilePathW = convertUTF8toWide(fullPath.str().str());
 
             Parser parser;
             auto includeFile =
                 parser.parseSourceFile(
-                    convertUTF8toWide(actualFilePath), 
+                    actualFilePathW, 
                     stows(sourceBuf->getBuffer().str()), 
                     ScriptTarget::Latest);
+            includeFile->resolvedPath = actualFilePathW;
+
             for (auto refFile : includeFile->referencedFiles)
             {
                 filesToProcess.push_back(refFile.fileName);
@@ -6935,7 +6940,13 @@ class MLIRGenImpl
         if (nameStr.empty())
         {
             isNotLocalVariable = true;
-            nameStr = ".safe_type_assoc";
+            nameStr = ".safe_cast";
+            if (expr == SyntaxKind::PropertyAccessExpression) 
+            {
+                auto propAccess = expr.as<PropertyAccessExpression>();
+                auto propNameRef = mlir::StringRef(print(propAccess)).copy(stringAllocator);
+                nameStr = propNameRef.str();
+            }
         }
 
         if (elseSafeCase)
