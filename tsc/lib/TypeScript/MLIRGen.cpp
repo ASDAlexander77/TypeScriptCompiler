@@ -6900,26 +6900,6 @@ class MLIRGenImpl
         return false;
     }
 
-    mlir::Value getObjectValue(mlir::Value propAccessValue) {
-        if (auto extractPropertyOp = propAccessValue.getDefiningOp<mlir_ts::ExtractPropertyOp>())
-            return extractPropertyOp.getObject();
-        //if (auto accessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorOp>())
-        if (auto thisAccessorOp = propAccessValue.getDefiningOp<mlir_ts::ThisAccessorOp>())
-            return thisAccessorOp.getThisVal();
-        if (auto thisAccessorIndirectOp = propAccessValue.getDefiningOp<mlir_ts::ThisIndirectAccessorOp>())
-            return thisAccessorIndirectOp.getThisVal();
-        if (auto thisIndexAccessorOp = propAccessValue.getDefiningOp<mlir_ts::ThisIndexAccessorOp>())
-            return thisIndexAccessorOp.getThisVal();
-        if (auto thisIndirectIndexAccessorOp = propAccessValue.getDefiningOp<mlir_ts::ThisIndirectIndexAccessorOp>())
-            return thisIndirectIndexAccessorOp.getThisVal();
-        if (auto boundAccessorIndirectOp = propAccessValue.getDefiningOp<mlir_ts::BoundIndirectAccessorOp>())
-            return boundAccessorIndirectOp.getValue();
-        if (auto boundIndirectIndexAccessorOp = propAccessValue.getDefiningOp<mlir_ts::BoundIndirectIndexAccessorOp>())
-            return boundIndirectIndexAccessorOp.getValue();
-
-        return mlir::Value();
-    }
-
     mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto isNotLocalVariable = false;
@@ -7294,6 +7274,37 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult checkSafeCast(Expression exprIn, mlir::Value conditionValue, ElseSafeCase *elseSafeCase, const GenContext &genContext)
+    {
+        auto expr = stripParentheses(exprIn);
+
+        if (expr == SyntaxKind::BinaryExpression)
+        {
+            auto binExpr = expr.as<BinaryExpression>();
+            auto op = (SyntaxKind)binExpr->operatorToken;
+            if (op == SyntaxKind::AmpersandAmpersandToken)
+            {
+                auto left = binExpr->left;
+                auto leftResult = checkSafeCast(left, conditionValue, elseSafeCase, genContext);
+                if (mlir::failed(leftResult))
+                {
+                    return leftResult;
+                }
+
+                auto right = binExpr->right;                
+                auto rightResult = checkSafeCast(right, conditionValue, elseSafeCase, genContext);
+                if (mlir::failed(rightResult))
+                {
+                    return rightResult;
+                }
+
+                return mlir::success();
+            }
+        }
+
+        return checkSafeCastOne(exprIn, conditionValue, elseSafeCase, genContext);
+    }
+
+    mlir::LogicalResult checkSafeCastOne(Expression exprIn, mlir::Value conditionValue, ElseSafeCase *elseSafeCase, const GenContext &genContext)
     {
         auto expr = stripParentheses(exprIn);
         if (expr == SyntaxKind::CallExpression)
