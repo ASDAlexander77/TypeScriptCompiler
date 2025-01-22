@@ -6895,6 +6895,26 @@ class MLIRGenImpl
         return false;
     }
 
+    mlir::Value getObjectValue(mlir::Value propAccessValue) {
+        if (auto extractPropertyOp = propAccessValue.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+            return extractPropertyOp.getObject();
+        //if (auto accessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorOp>())
+        if (auto thisAccessorOp = propAccessValue.getDefiningOp<mlir_ts::ThisAccessorOp>())
+            return thisAccessorOp.getThisVal();
+        if (auto thisAccessorIndirectOp = propAccessValue.getDefiningOp<mlir_ts::ThisIndirectAccessorOp>())
+            return thisAccessorIndirectOp.getThisVal();
+        if (auto thisIndexAccessorOp = propAccessValue.getDefiningOp<mlir_ts::ThisIndexAccessorOp>())
+            return thisIndexAccessorOp.getThisVal();
+        if (auto thisIndirectIndexAccessorOp = propAccessValue.getDefiningOp<mlir_ts::ThisIndirectIndexAccessorOp>())
+            return thisIndirectIndexAccessorOp.getThisVal();
+        if (auto boundAccessorIndirectOp = propAccessValue.getDefiningOp<mlir_ts::BoundIndirectAccessorOp>())
+            return boundAccessorIndirectOp.getValue();
+        if (auto boundIndirectIndexAccessorOp = propAccessValue.getDefiningOp<mlir_ts::BoundIndirectIndexAccessorOp>())
+            return boundIndirectIndexAccessorOp.getValue();
+
+        return mlir::Value();
+    }
+
     mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         auto isNotLocalVariable = false;
@@ -6928,15 +6948,18 @@ class MLIRGenImpl
         // we need to register pair type+field to associate to variable
         if (isNotLocalVariable)
         {
-            auto safeValue = resolveIdentifier(location, nameStr, genContext);
-            if (expr == SyntaxKind::PropertyAccessExpression && safeValue) 
+            if (auto safeValue = resolveIdentifier(location, nameStr, genContext))
             {
-                auto propAccess = expr.as<PropertyAccessExpression>();
-                auto propNameStr = MLIRHelper::getName(propAccess->name, stringAllocator);
-                if (auto objType = evaluate(propAccess->expression, genContext))
+                if (auto safeValueOp = safeValue.getDefiningOp<mlir_ts::SafeCastOp>())
                 {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type map for: [" << objType << "]." << propNameStr << " is [" << safeValue.getType() << "]\n");
-                    safeTypesMap.insert({ objType, propNameStr }, safeValue);
+                    if (expr == SyntaxKind::PropertyAccessExpression) 
+                    {
+                        auto propAccess = expr.as<PropertyAccessExpression>();
+                        auto objName = MLIRHelper::getName(propAccess->expression, stringAllocator);
+                        auto propNameStr = MLIRHelper::getName(propAccess->name, stringAllocator);
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type map for: " << objName << "." << propNameStr << " is [" << safeValue.getType() << "]\n");
+                        safeTypesMap.insert({ objName, propNameStr }, safeValue);
+                    }
                 }
             }
         }
@@ -10140,7 +10163,16 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expressionValue = V(result);
 
+        auto objNamePtr = MLIRHelper::getName(propertyAccessExpression->expression, stringAllocator);
         auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
+        
+        // check if we have safe type mapped value
+        auto safeTypedValue = safeTypesMap.lookup({ objNamePtr, namePtr });
+        if (safeTypedValue)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n\t...safe type fieldname: \t " << objNamePtr << "." << namePtr << " = " << safeTypedValue;);
+            return safeTypedValue;
+        }
 
         return mlirGenPropertyAccessExpression(location, expressionValue, namePtr,
                                                !!propertyAccessExpression->questionDotToken, genContext);
@@ -10501,14 +10533,6 @@ class MLIRGenImpl
         {
             emitError(location, "Can't resolve property '") << name << "' of type " << to_print(objectValue.getType());
             return mlir::failure();
-        }
-        
-        // check if we have safe type mapped value
-        auto safeTypedValue = safeTypesMap.lookup({ actualType, name });
-        if (safeTypedValue)
-        {
-            LLVM_DEBUG(llvm::dbgs() << "\n\t...safe type fieldname: \t" << name << " = " << safeTypedValue;);
-            return safeTypedValue;
         }
 
         return value;

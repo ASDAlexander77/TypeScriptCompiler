@@ -118,6 +118,16 @@ class MLIRHelper
             return getName(name.as<ts::StringLiteral>());
         }
 
+        if (kind == SyntaxKind::ThisKeyword)
+        {
+            return "this";
+        }
+
+        if (kind == SyntaxKind::SuperKeyword)
+        {
+            return "super";
+        }
+
         return nameValue;
     }
 
