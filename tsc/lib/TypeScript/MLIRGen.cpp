@@ -6955,10 +6955,11 @@ class MLIRGenImpl
                     if (expr == SyntaxKind::PropertyAccessExpression) 
                     {
                         auto propAccess = expr.as<PropertyAccessExpression>();
-                        auto objName = MLIRHelper::getName(propAccess->expression, stringAllocator);
+                        auto propAccessStrRef = mlir::StringRef(print(propAccess->expression)).copy(stringAllocator);
                         auto propNameStr = MLIRHelper::getName(propAccess->name, stringAllocator);
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type map for: " << objName << "." << propNameStr << " is [" << safeValue.getType() << "]\n");
-                        safeTypesMap.insert({ objName, propNameStr }, safeValue);
+                        auto objType = evaluate(propAccess->expression, genContext);
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type map for: " << propAccessStrRef << "." << propNameStr << " of " << objType << " is [" << safeValue.getType() << "]\n");
+                        safeTypesMap.insert({ objType, propAccessStrRef, propNameStr }, safeValue);
                     }
                 }
             }
@@ -10163,14 +10164,15 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expressionValue = V(result);
 
-        auto objNamePtr = MLIRHelper::getName(propertyAccessExpression->expression, stringAllocator);
+        auto propAccessStrRef = mlir::StringRef(print(propertyAccessExpression->expression)).copy(stringAllocator);
         auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
-        
+
         // check if we have safe type mapped value
-        auto safeTypedValue = safeTypesMap.lookup({ objNamePtr, namePtr });
+        auto safeTypedValue = safeTypesMap.lookup({ expressionValue.getType(), propAccessStrRef, namePtr });
         if (safeTypedValue)
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n\t...safe type fieldname: \t " << objNamePtr << "." << namePtr << " = " << safeTypedValue;);
+            LLVM_DEBUG(llvm::dbgs() << "\n\t...safe type fieldname: \t " 
+                << propAccessStrRef << "." << namePtr << "type: " << expressionValue.getType() << " = " << safeTypedValue;);
             return safeTypedValue;
         }
 
@@ -25164,6 +25166,14 @@ genContext);
         printer.printText("end of dump ========================================");
         printer.newLine();
     }
+
+    std::string print(ts::Node node)
+    {
+        sstream ss;
+        Printer<sstream> printer(ss);
+        printer.printNode(node);
+        return convertWideToUTF8(ss.str());
+    }    
 
     // TODO: fix issue with cercular reference of include files
     std::pair<SourceFile, std::vector<SourceFile>> loadIncludeFile(mlir::Location location, StringRef fileName)
