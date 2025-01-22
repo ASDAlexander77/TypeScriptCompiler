@@ -6924,7 +6924,7 @@ class MLIRGenImpl
     {
         auto isNotLocalVariable = false;
         auto location = loc(expr);
-        auto nameStr = MLIRHelper::getName(expr.as<Node>());
+        auto nameStr = MLIRHelper::getName(expr.as<Node>(), stringAllocator);
         auto result = mlirGen(expr, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
@@ -6943,9 +6943,7 @@ class MLIRGenImpl
             nameStr = ".safe_cast";
             if (expr == SyntaxKind::PropertyAccessExpression) 
             {
-                auto propAccess = expr.as<PropertyAccessExpression>();
-                auto propNameRef = mlir::StringRef(print(propAccess)).copy(stringAllocator);
-                nameStr = propNameRef.str();
+                nameStr = mlir::StringRef(print(expr)).copy(stringAllocator);
             }
         }
 
@@ -6966,11 +6964,9 @@ class MLIRGenImpl
                     if (expr == SyntaxKind::PropertyAccessExpression) 
                     {
                         auto propAccess = expr.as<PropertyAccessExpression>();
-                        auto propAccessStrRef = mlir::StringRef(print(propAccess->expression)).copy(stringAllocator);
-                        auto propNameStr = MLIRHelper::getName(propAccess->name, stringAllocator);
                         auto objType = evaluate(propAccess->expression, genContext);
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type map for: " << propAccessStrRef << "." << propNameStr << " of " << objType << " is [" << safeValue.getType() << "]\n");
-                        safeTypesMap.insert({ objType, propAccessStrRef, propNameStr }, safeValue);
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type map for: " << nameStr << " of " << objType << " is [" << safeValue.getType() << "]\n");
+                        safeTypesMap.insert({ objType, nameStr }, safeValue);
                     }
                 }
             }
@@ -6979,7 +6975,7 @@ class MLIRGenImpl
         return result2;
     }    
 
-    mlir::LogicalResult addSafeCastStatement(mlir::Location location, std::string parameterName, mlir::Value exprValue, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
+    mlir::LogicalResult addSafeCastStatement(mlir::Location location, StringRef parameterName, mlir::Value exprValue, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
         mlir::Value castedValue;
         if (isa<mlir_ts::AnyType>(exprValue.getType()))
@@ -10175,11 +10171,11 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto expressionValue = V(result);
 
-        auto propAccessStrRef = mlir::StringRef(print(propertyAccessExpression->expression)).copy(stringAllocator);
         auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
+        auto propAccessStrRef = mlir::StringRef(print(propertyAccessExpression)).copy(stringAllocator);
 
         // check if we have safe type mapped value
-        auto safeTypedValue = safeTypesMap.lookup({ expressionValue.getType(), propAccessStrRef, namePtr });
+        auto safeTypedValue = safeTypesMap.lookup({ expressionValue.getType(), propAccessStrRef });
         if (safeTypedValue)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n\t...safe type fieldname: \t " 
