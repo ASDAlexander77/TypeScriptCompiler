@@ -46,4 +46,7 @@
 using VariablePairT = std::pair<mlir::Value, ts::VariableDeclarationDOM::TypePtr>;
 using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 
+typedef std::pair<mlir::Type, StringRef> SafeTypeKeyType;
+using SafeTypesMapScopeT = llvm::ScopedHashTableScope<SafeTypeKeyType, mlir::Value>;
+
 #endif // MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRDEFINES_H_

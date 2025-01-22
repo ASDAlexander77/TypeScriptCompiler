@@ -71,6 +71,7 @@
 #include <iterator>
 #include <numeric>
 #include <set>
+#include <type_traits>
 
 #define DEBUG_TYPE "mlir"
 
@@ -378,6 +379,7 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
+        SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
 
         stage = Stages::Discovering;
         auto storeDebugInfo = compileOptions.generateDebugInfo;
@@ -6895,13 +6897,14 @@ class MLIRGenImpl
 
     mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
+        auto isNotLocalVariable = false;
         auto location = loc(expr);
         auto nameStr = MLIRHelper::getName(expr.as<Node>());
         auto result = mlirGen(expr, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result);
         auto exprValue = V(result);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! Is Safe Type the same: [" << exprValue.getType() << "] and [" << safeType << "], expr: " << exprValue << "\n");
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Is Safe Type the same: [" << exprValue.getType() << "] and [" << safeType << "]\n");
 
         if (isSafeTypeTheSameAndNoNeedToCast(exprValue.getType(), safeType))
         {
@@ -6911,8 +6914,8 @@ class MLIRGenImpl
 
         if (nameStr.empty())
         {
-            // this is not local variable
-            return mlir::success();
+            isNotLocalVariable = true;
+            nameStr = ".safe_type_assoc";
         }
 
         if (elseSafeCase)
@@ -6920,7 +6923,25 @@ class MLIRGenImpl
             elseSafeCase->expr = expr;
         }
 
-        return addSafeCastStatement(location, nameStr, exprValue, safeType, inverse, elseSafeCase, genContext);
+        auto result2 = addSafeCastStatement(location, nameStr, exprValue, safeType, inverse, elseSafeCase, genContext);
+
+        // we need to register pair type+field to associate to variable
+        if (isNotLocalVariable)
+        {
+            auto safeValue = resolveIdentifier(location, nameStr, genContext);
+            if (expr == SyntaxKind::PropertyAccessExpression && safeValue) 
+            {
+                auto propAccess = expr.as<PropertyAccessExpression>();
+                auto propNameStr = MLIRHelper::getName(propAccess->name, stringAllocator);
+                if (auto objType = evaluate(propAccess->expression, genContext))
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! Safe Type map for: [" << objType << "]." << propNameStr << " is [" << safeValue.getType() << "]\n");
+                    safeTypesMap.insert({ objType, propNameStr }, safeValue);
+                }
+            }
+        }
+
+        return result2;
     }    
 
     mlir::LogicalResult addSafeCastStatement(mlir::Location location, std::string parameterName, mlir::Value exprValue, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
@@ -7469,6 +7490,7 @@ class MLIRGenImpl
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
+            SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
             checkSafeCast(ifStatementAST->expression, V(result), hasElse ? &elseSafeCase : nullptr, genContext);
 
             auto processIf = !literalValue.has_value() || literalValue.value();
@@ -7587,6 +7609,7 @@ class MLIRGenImpl
 
         // check if we do safe-cast here
         SymbolTableScopeT varScopeBody(symbolTable);
+        SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
         checkSafeCast(whileStatementAST->expression, conditionValue, nullptr, genContext);
 
         auto result2 = mlirGen(whileStatementAST->statement, genContext);
@@ -8705,6 +8728,7 @@ class MLIRGenImpl
         {
             // check if we do safe-cast here
             SymbolTableScopeT varScope(symbolTable);
+            SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
             checkSafeCast(conditionalExpressionAST->condition, V(result), &elseSafeCase, genContext);
             auto result = mlirGen(whenTrueExpression, genContext);
             if (!genContext.allowPartialResolve)
@@ -8797,6 +8821,7 @@ class MLIRGenImpl
             {
                 // check if we do safe-cast here
                 SymbolTableScopeT varScope(symbolTable);
+                SafeTypesMapScopeT safeTypesMapScope(safeTypesMap);
                 checkSafeCast(leftExpression, V(result), &elseSafeCase, genContext);
 
                 auto result = mlirGen(rightExpression, genContext);
@@ -10478,7 +10503,13 @@ class MLIRGenImpl
             return mlir::failure();
         }
         
-        // TODO: here - using object type + field name can be used to detect new SafeType value
+        // check if we have safe type mapped value
+        auto safeTypedValue = safeTypesMap.lookup({ actualType, name });
+        if (safeTypedValue)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n\t...safe type fieldname: \t" << name << " = " << safeTypedValue;);
+            return safeTypedValue;
+        }
 
         return value;
     }
@@ -25197,6 +25228,8 @@ genContext);
     llvm::ScopedHashTable<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMap;
 
     llvm::ScopedHashTable<StringRef, mlir::LLVM::DIScopeAttr> debugScope;
+
+    llvm::ScopedHashTable<SafeTypeKeyType, mlir::Value> safeTypesMap;
 
     // helper to get line number
     Parser parser;
