@@ -5187,6 +5187,84 @@ struct UnrealizedConversionCastOpLowering : public ConvertOpToLLVMPattern<Unreal
     }
 };
 
+// internals
+struct AtomicRMWOpLowering : public TsLlvmPattern<mlir_ts::AtomicRMWOp>
+{
+    using TsLlvmPattern<mlir_ts::AtomicRMWOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AtomicRMWOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        // TODO: finish it
+        return failure();
+    }
+};
+
+struct AtomicCmpXchgOpLowering : public TsLlvmPattern<mlir_ts::AtomicCmpXchgOp>
+{
+    using TsLlvmPattern<mlir_ts::AtomicCmpXchgOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AtomicCmpXchgOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        // TODO: finish it
+        return failure();
+    }
+};
+
+struct FenceOpLowering : public TsLlvmPattern<mlir_ts::FenceOp>
+{
+    using TsLlvmPattern<mlir_ts::FenceOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::FenceOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        // TODO: finish it
+        return failure();
+    }
+};
+
+struct InlineAsmOpLowering : public TsLlvmPattern<mlir_ts::InlineAsmOp>
+{
+    using TsLlvmPattern<mlir_ts::InlineAsmOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::InlineAsmOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        // TODO: finish it
+        return failure();
+    }
+};
+
+struct CallIntrinsicOpLowering : public TsLlvmPattern<mlir_ts::CallIntrinsicOp>
+{
+    using TsLlvmPattern<mlir_ts::CallIntrinsicOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CallIntrinsicOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        // TODO: finish it
+        return failure();
+    }
+};
+
+struct LinkerOptionsOpLowering : public TsLlvmPattern<mlir_ts::LinkerOptionsOp>
+{
+    using TsLlvmPattern<mlir_ts::LinkerOptionsOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::LinkerOptionsOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto module = op->getParentOfType<mlir::ModuleOp>();
+        auto sp = rewriter.saveInsertionPoint();
+        rewriter.setInsertionPointToStart(module.getBody());
+        rewriter.create<LLVM::LinkerOptionsOp>(op->getLoc(), transformed.getOptions());
+        rewriter.restoreInsertionPoint(sp);
+
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
 
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m,
                                                  mlir::SmallPtrSet<mlir::Type, 32> &usedTypes, CompileOptions& compileOptions)
@@ -5912,7 +5990,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
 #endif
         ,
-        SwitchStateInternalOpLowering, LoadLibraryPermanentlyOpLowering, SearchForAddressOfSymbolOpLowering>(
+        SwitchStateInternalOpLowering, LoadLibraryPermanentlyOpLowering, SearchForAddressOfSymbolOpLowering,
+        AtomicRMWOpLowering, AtomicCmpXchgOpLowering, FenceOpLowering, InlineAsmOpLowering, CallIntrinsicOpLowering, LinkerOptionsOpLowering>(
             typeConverter, &getContext(), &tsLlvmContext);
 
     if (tsLlvmContext.compileOptions.isWindows)

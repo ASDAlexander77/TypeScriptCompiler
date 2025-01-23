@@ -306,7 +306,9 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"convertf", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true },
+            {"atomicrmw", true}, {"cmpxchg", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
+        };
         return m[functionName.str()];    
     }    
 
@@ -314,7 +316,9 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"convertf", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true },
+            {"atomicrmw", true}, {"cmpxchg", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
+        };
         return m[functionName.str()];    
     }   
 
@@ -397,6 +401,30 @@ class MLIRCustomMethods
         {
             return mlirGenReferenceOf(location, operands);
         }
+        else if (functionName == "atomicrmw")
+        {
+            return mlirGenAtomicRMW(location, operands);
+        }        
+        else if (functionName == "cmpxchg")
+        {
+            return mlirGenCmpXchg(location, operands);
+        }        
+        else if (functionName == "fence")
+        {
+            return mlirGenFence(location, operands);
+        }        
+        else if (functionName == "inline_asm")
+        {
+            return mlirGenInlineAsm(location, operands);
+        }        
+        else if (functionName == "call_intrinsic")
+        {
+            return mlirGenCallIntrinsic(location, operands);
+        }        
+        else if (functionName == "linker_options")
+        {
+            return mlirGenLinkerOptions(location, operands);
+        }        
         else if (!genContext.allowPartialResolve)
         {
             emitError(location) << "no defined function found for '" << functionName << "'";
@@ -877,6 +905,60 @@ class MLIRCustomMethods
         auto refValue = mcl.GetReferenceFromValue(location, operands.front());        
         return V(refValue);
     }    
+
+    ValueOrLogicalResult mlirGenAtomicRMW(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        // TODO: finish it
+        return mlir::failure();
+    }     
+
+    ValueOrLogicalResult mlirGenCmpXchg(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        // TODO: finish it
+        return mlir::failure();
+    }     
+
+    ValueOrLogicalResult mlirGenFence(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        // TODO: finish it
+        return mlir::failure();
+    }     
+
+    ValueOrLogicalResult mlirGenInlineAsm(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        // TODO: finish it
+        return mlir::failure();
+    }     
+
+    ValueOrLogicalResult mlirGenCallIntrinsic(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        // TODO: finish it
+        return mlir::failure();
+    }     
+
+    ValueOrLogicalResult mlirGenLinkerOptions(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        SmallVector<mlir::Attribute> strAttrs;
+        
+        for (auto oper : operands) 
+        {
+            if (auto constantOp = oper.getDefiningOp<mlir_ts::ConstantOp>()) 
+            {
+                if (auto strAttr = dyn_cast<mlir::StringAttr>(constantOp.getValue())) 
+                {
+                    strAttrs.push_back(strAttr);
+                }
+                else
+                {
+                    emitError(location) << "Linker options must be constant string";
+                    return mlir::failure();
+                }
+            }
+        }
+
+        builder.create<mlir_ts::LinkerOptionsOp>(location, builder.getArrayAttr(strAttrs));
+        return mlir::success();
+    }     
 };
 
 class MLIRPropertyAccessCodeLogic

@@ -2333,4 +2333,67 @@ def TypeScript_SearchForAddressOfSymbolOp : TypeScript_Op<"SearchForAddressOfSym
   let results = (outs TypeScript_Opaque:$addr);
 }
 
+def TypeScript_AtomicRMWOp : TypeScript_Op<"AtomicRMW"> {
+  let summary = "AtomicRMW command";
+  let description = [{
+    The "AtomicRMW" builtin operation to read/write access.
+  }];
+
+  let arguments = (ins I32:$bin_op, TypeScript_AnyRefLike:$ptr, AnyType:$value, I32:$ordering, OptionalAttr<StrAttr>:$syncscope, OptionalAttr<I64Attr>:$alignment, UnitAttr:$volatile_);
+  let results = (outs AnyType:$res);
+}
+
+def TypeScript_AtomicCmpXchgOp : TypeScript_Op<"CmpXchg"> {
+  let summary = "CmpXchg command";
+  let description = [{
+    The "CmpXchg" builtin operation to exchange values.
+  }];
+
+  let arguments = (ins TypeScript_AnyRefLike:$ptr, I32:$cmp, AnyType:$value, I32:$success_ordering, I32:$failure_ordering, OptionalAttr<StrAttr>:$syncscope, OptionalAttr<I64Attr>:$alignment, UnitAttr:$weak, UnitAttr:$volatile_);
+  let results = (outs AnyType:$res);
+}
+
+def TypeScript_FenceOp : TypeScript_Op<"Fence"> {
+  let summary = "fence command";
+  let description = [{
+    The "fence" builtin operation to sync access.
+  }];
+
+  let arguments = (ins I32:$ordering, OptionalAttr<StrAttr>:$syncscope);
+  let results = (outs );
+}
+
+def TypeScript_InlineAsmOp : TypeScript_Op<"InlineAsm"> {
+  let summary = "inline_asm command";
+  let description = [{
+    The "inline_asm" builtin operation to compile asm code.
+  }];
+
+  // asm_dialect = 0 - ATT, 1 - Intel  
+  let arguments = (ins Variadic<AnyType>:$operands, StrAttr:$asm_string, StrAttr:$constraints, UnitAttr:$has_side_effects, UnitAttr:$is_align_stack, 
+    OptionalAttr<I32Attr>:$asm_dialect, OptionalAttr<ArrayAttr>:$operand_attrs);
+  let results = (outs );
+}
+
+def TypeScript_CallIntrinsicOp : TypeScript_Op<"CallIntrinsicOp"> {
+  let summary = "Call to an LLVM intrinsic function.";
+  let description = [{
+    Call the specified llvm intrinsic. If the intrinsic is overloaded, use
+    the MLIR function type of this op to determine which intrinsic to call.
+  }];
+
+  let arguments = (ins StrAttr:$intrin, Variadic<AnyType>:$args, I32Attr:$fastmathFlags);
+  let results = (outs Optional<AnyType>:$results);
+}
+
+def TypeScript_LinkerOptionsOp : TypeScript_Op<"LinkerOptions"> {
+  let summary = "Options to pass to the linker when the object file is linked";
+  let description = [{
+    Pass the given options to the linker when the resulting object file is linked.
+  }];
+
+  let arguments = (ins StrArrayAttr:$options);
+  let results = (outs );
+}
+
 #endif // TYPESCRIPT_OPS

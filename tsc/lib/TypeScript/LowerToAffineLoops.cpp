@@ -2177,7 +2177,9 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp, mlir_ts::BoxOp, mlir_ts::UnboxOp,
         mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp, mlir_ts::GetTypeInfoFromUnionOp,
         mlir_ts::OptionalOp, mlir_ts::OptionalValueOp, mlir_ts::OptionalUndefOp,
-        mlir_ts::LoadLibraryPermanentlyOp, mlir_ts::SearchForAddressOfSymbolOp>();
+        mlir_ts::LoadLibraryPermanentlyOp, mlir_ts::SearchForAddressOfSymbolOp,
+        mlir_ts::AtomicRMWOp, mlir_ts::AtomicCmpXchgOp, mlir_ts::FenceOp, mlir_ts::InlineAsmOp, 
+        mlir_ts::CallIntrinsicOp, mlir_ts::LinkerOptionsOp>();
 #ifdef ENABLE_TYPED_GC
     target.addLegalOp<
         mlir_ts::GCMakeDescriptorOp, GCNewExplicitlyTypedOp>();
