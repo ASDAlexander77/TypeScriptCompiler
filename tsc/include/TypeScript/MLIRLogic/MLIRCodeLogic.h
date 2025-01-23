@@ -415,7 +415,7 @@ class MLIRCustomMethods
         }        
         else if (functionName == "inline_asm")
         {
-            return mlirGenInlineAsm(location, operands);
+            return mlirGenInlineAsm(location, typeArgs, operands);
         }        
         else if (functionName == "call_intrinsic")
         {
@@ -924,10 +924,36 @@ class MLIRCustomMethods
         return mlir::failure();
     }     
 
-    ValueOrLogicalResult mlirGenInlineAsm(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::StringAttr getStringAttr(mlir::Value oper)
     {
-        // TODO: finish it
-        return mlir::failure();
+        if (auto constantOp = oper.getDefiningOp<mlir_ts::ConstantOp>()) 
+        {
+            if (auto strAttr = dyn_cast<mlir::StringAttr>(constantOp.getValue())) 
+            {
+                return strAttr;
+            }
+        }        
+
+        emitError(location) << "Linker options must be constant string";
+        return mlir::StringAttr();
+    }
+
+    ValueOrLogicalResult mlirGenInlineAsm(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
+    {
+        auto asm_string = getStringAttr(operands[0]);
+        auto constraints = getStringAttr(operands[1]);
+        auto args = operands.drop_front(2);
+        if (typeArgs.size() > 0)
+        {
+            auto result = builder.create<mlir_ts::InlineAsmOp>(location, mlir::TypeRange(typeArgs), mlir::ValueRange(args), asm_string, constraints, mlir::UnitAttr(), mlir::UnitAttr(), mlir::IntegerAttr(), mlir::ArrayAttr());
+            return result.getResults();
+        }
+        else
+        {
+            builder.create<mlir_ts::InlineAsmOp>(location, mlir::TypeRange(), mlir::ValueRange(args), asm_string, constraints, mlir::UnitAttr(), mlir::UnitAttr(), mlir::IntegerAttr(), mlir::ArrayAttr());
+            // TODO: finish version with return value
+            return mlir::success();
+        }
     }     
 
     ValueOrLogicalResult mlirGenCallIntrinsic(const mlir::Location &location, ArrayRef<mlir::Value> operands)

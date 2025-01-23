@@ -2372,7 +2372,7 @@ def TypeScript_InlineAsmOp : TypeScript_Op<"InlineAsm"> {
   // asm_dialect = 0 - ATT, 1 - Intel  
   let arguments = (ins Variadic<AnyType>:$operands, StrAttr:$asm_string, StrAttr:$constraints, UnitAttr:$has_side_effects, UnitAttr:$is_align_stack, 
     OptionalAttr<I32Attr>:$asm_dialect, OptionalAttr<ArrayAttr>:$operand_attrs);
-  let results = (outs );
+  let results = (outs Optional<AnyType>:$results);
 }
 
 def TypeScript_CallIntrinsicOp : TypeScript_Op<"CallIntrinsicOp"> {

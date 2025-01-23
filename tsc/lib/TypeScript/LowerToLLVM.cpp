@@ -5231,8 +5231,18 @@ struct InlineAsmOpLowering : public TsLlvmPattern<mlir_ts::InlineAsmOp>
     LogicalResult matchAndRewrite(mlir_ts::InlineAsmOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        // TODO: finish it
-        return failure();
+        rewriter.replaceOpWithNewOp<LLVM::InlineAsmOp>(
+            op, 
+            TypeRange(op->getResultTypes()), 
+            transformed.getOperands(),
+            transformed.getAsmString(), 
+            transformed.getConstraints(), 
+            transformed.getHasSideEffects(), 
+            transformed.getIsAlignStack(),
+            LLVM::AsmDialectAttr::get(rewriter.getContext(), transformed.getAsmDialect().value_or(0) == 0 ? LLVM::AsmDialect::AD_ATT : LLVM::AsmDialect::AD_Intel), 
+            transformed.getOperandAttrsAttr());
+
+        return success();
     }
 };
 
