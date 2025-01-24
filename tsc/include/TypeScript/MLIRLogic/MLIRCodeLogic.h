@@ -906,21 +906,9 @@ class MLIRCustomMethods
         return V(refValue);
     }    
 
-    ValueOrLogicalResult mlirGenAtomicRMW(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::IntegerAttr getIntegerAttr(mlir::Value oper, int width = 32, bool isSigned = false)
     {
-        // TODO: finish it
-        return mlir::failure();
-    }     
-
-    ValueOrLogicalResult mlirGenCmpXchg(const mlir::Location &location, ArrayRef<mlir::Value> operands)
-    {
-        // TODO: finish it
-        return mlir::failure();
-    }     
-
-    mlir::IntegerAttr getI32Attr(mlir::Value oper, bool isSigned = false)
-    {
-        LLVM_DEBUG(llvm::dbgs() << "!! getI32Attr oper: " << oper << "'\n";);
+        LLVM_DEBUG(llvm::dbgs() << "!! getIntAttr oper: " << oper << "'\n";);
 
         mlir::Attribute value;
         if (auto constantOp = oper.getDefiningOp<mlir_ts::ConstantOp>()) 
@@ -934,24 +922,24 @@ class MLIRCustomMethods
 
         if (auto intAttr = dyn_cast<mlir::IntegerAttr>(value)) 
         {
-            if (intAttr.getType().isInteger(32))
+            if (intAttr.getType().isInteger(width))
             {
                 if (isSigned)
                 {
                     return mlir::IntegerAttr::get(
-                        mlir::IntegerType::get(intAttr.getContext(), 32, mlir::IntegerType::SignednessSemantics::Signed), 
+                        mlir::IntegerType::get(intAttr.getContext(), width, mlir::IntegerType::SignednessSemantics::Signed), 
                         intAttr.getValue().getSExtValue());
                 }
                 else
                 {
                     return mlir::IntegerAttr::get(
-                        mlir::IntegerType::get(intAttr.getContext(), 32, mlir::IntegerType::SignednessSemantics::Signless), 
+                        mlir::IntegerType::get(intAttr.getContext(), width, mlir::IntegerType::SignednessSemantics::Signless), 
                         intAttr.getValue().getZExtValue());
                 }
             }            
         }        
 
-        emitError(location) << "Must be constant integer(32)";
+        emitError(location) << "Must be constant integer(" << width << ")";
         return mlir::IntegerAttr();
     }
 
@@ -976,6 +964,39 @@ class MLIRCustomMethods
         return mlir::StringAttr();
     }
 
+    ValueOrLogicalResult mlirGenAtomicRMW(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        auto size = operands.size();
+        if (size < 4 || size > 6)
+        {
+            return mlir::failure();
+        }
+
+        return V(builder.create<mlir_ts::AtomicRMWOp>(location, 
+            operands[2].getType(),
+            getIntegerAttr(operands[0]), operands[1], operands[2], getIntegerAttr(operands[3]), 
+            size > 4 ? getStringAttr(operands[4]) : mlir::StringAttr(), 
+            size > 5 ? getIntegerAttr(operands[5], 64) : mlir::IntegerAttr(), 
+            mlir::UnitAttr()/*isVolatile*/));
+    }     
+
+    ValueOrLogicalResult mlirGenCmpXchg(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        auto size = operands.size();
+        if (size < 5 || size > 7)
+        {
+            return mlir::failure();
+        }
+
+        return V(builder.create<mlir_ts::AtomicCmpXchgOp>(location, 
+            operands[2].getType(), operands[0],
+            operands[1], operands[2], getIntegerAttr(operands[3]), getIntegerAttr(operands[4]), 
+            size > 5 ? getStringAttr(operands[5]) : mlir::StringAttr(), 
+            size > 6 ? getIntegerAttr(operands[6], 64) : mlir::IntegerAttr(), 
+            mlir::UnitAttr()/*Weak*/,
+            mlir::UnitAttr()/*isVolatile*/));
+    }     
+
     ValueOrLogicalResult mlirGenFence(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         auto size = operands.size();
@@ -986,11 +1007,11 @@ class MLIRCustomMethods
 
         if (size > 1)
         {
-            builder.create<mlir_ts::FenceOp>(location, getI32Attr(operands[0]), getStringAttr(operands[1]));
+            builder.create<mlir_ts::FenceOp>(location, getIntegerAttr(operands[0]), getStringAttr(operands[1]));
         }
         else
         {
-            builder.create<mlir_ts::FenceOp>(location, getI32Attr(operands[0]), mlir::StringAttr());
+            builder.create<mlir_ts::FenceOp>(location, getIntegerAttr(operands[0]), mlir::StringAttr());
         }
 
         return mlir::success();

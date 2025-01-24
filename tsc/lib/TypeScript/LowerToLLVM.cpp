@@ -5195,8 +5195,16 @@ struct AtomicRMWOpLowering : public TsLlvmPattern<mlir_ts::AtomicRMWOp>
     LogicalResult matchAndRewrite(mlir_ts::AtomicRMWOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        // TODO: finish it
-        return failure();
+        rewriter.replaceOpWithNewOp<LLVM::AtomicRMWOp>(
+            op, 
+            (LLVM::AtomicBinOp)transformed.getBinOp(), 
+            transformed.getPtr(), 
+            transformed.getValue(), 
+            (LLVM::AtomicOrdering)transformed.getOrdering(),
+            transformed.getSyncscope().value_or(StringRef()),
+            transformed.getAlignment().value_or(0),
+            transformed.getVolatile_());
+        return success();
     }
 };
 
@@ -5207,8 +5215,18 @@ struct AtomicCmpXchgOpLowering : public TsLlvmPattern<mlir_ts::AtomicCmpXchgOp>
     LogicalResult matchAndRewrite(mlir_ts::AtomicCmpXchgOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        // TODO: finish it
-        return failure();
+        rewriter.replaceOpWithNewOp<LLVM::AtomicCmpXchgOp>(
+            op, 
+            transformed.getPtr(), 
+            transformed.getCmp(), 
+            transformed.getValue(), 
+            (LLVM::AtomicOrdering)transformed.getSuccessOrdering(),
+            (LLVM::AtomicOrdering)transformed.getFailureOrdering(),
+            transformed.getSyncscope().value_or(StringRef()),
+            transformed.getAlignment().value_or(0),
+            transformed.getWeak(),
+            transformed.getVolatile_());
+        return success();
     }
 };
 

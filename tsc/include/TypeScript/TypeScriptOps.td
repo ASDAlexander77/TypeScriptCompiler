@@ -2339,7 +2339,7 @@ def TypeScript_AtomicRMWOp : TypeScript_Op<"AtomicRMW"> {
     The "AtomicRMW" builtin operation to read/write access.
   }];
 
-  let arguments = (ins I32:$bin_op, TypeScript_AnyRefLike:$ptr, AnyType:$value, I32:$ordering, OptionalAttr<StrAttr>:$syncscope, OptionalAttr<I64Attr>:$alignment, UnitAttr:$volatile_);
+  let arguments = (ins I32Attr:$bin_op, TypeScript_AnyRefLike:$ptr, AnyType:$value, I32Attr:$ordering, OptionalAttr<StrAttr>:$syncscope, OptionalAttr<I64Attr>:$alignment, UnitAttr:$volatile_);
   let results = (outs AnyType:$res);
 }
 
@@ -2349,7 +2349,7 @@ def TypeScript_AtomicCmpXchgOp : TypeScript_Op<"CmpXchg"> {
     The "CmpXchg" builtin operation to exchange values.
   }];
 
-  let arguments = (ins TypeScript_AnyRefLike:$ptr, I32:$cmp, AnyType:$value, I32:$success_ordering, I32:$failure_ordering, OptionalAttr<StrAttr>:$syncscope, OptionalAttr<I64Attr>:$alignment, UnitAttr:$weak, UnitAttr:$volatile_);
+  let arguments = (ins TypeScript_AnyRefLike:$ptr, AnyType:$cmp, AnyType:$value, I32Attr:$success_ordering, I32Attr:$failure_ordering, OptionalAttr<StrAttr>:$syncscope, OptionalAttr<I64Attr>:$alignment, UnitAttr:$weak, UnitAttr:$volatile_);
   let results = (outs AnyType:$res);
 }
 
