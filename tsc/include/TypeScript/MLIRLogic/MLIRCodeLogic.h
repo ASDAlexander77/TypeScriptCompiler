@@ -988,7 +988,7 @@ class MLIRCustomMethods
         {
             builder.create<mlir_ts::FenceOp>(location, getI32Attr(operands[0]), getStringAttr(operands[1]));
         }
-        else if (size > 0)
+        else
         {
             builder.create<mlir_ts::FenceOp>(location, getI32Attr(operands[0]), mlir::StringAttr());
         }
