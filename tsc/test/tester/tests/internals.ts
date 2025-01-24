@@ -23,8 +23,8 @@ enum MemoryOrder {
     AcquireRelease = 6,
     SequentiallyConsistent = 7,
 }
-// fence(MemoryOrder.Acquire);
-// fence(MemoryOrder.AcquireRelease, "scope1");
+fence(MemoryOrder.Acquire);
+fence(MemoryOrder.AcquireRelease, "scope1");
 
 enum AtomicBinOp {
     Xchg = 0,
@@ -34,21 +34,30 @@ enum AtomicBinOp {
     Nand = 4,
     Or = 5,
     Xor = 6,
-    Max= 7,
-    Min= 8,
-    UMax= 9,
-    UMin= 10,
-    FAdd= 11,
-    FSub= 12,
-    FMax= 13,
-    FMin= 14,
+    Max = 7,
+    Min = 8,
+    UMax = 9,
+    UMin = 10,
+    FAdd = 11,
+    FSub = 12,
+    FMax = 13,
+    FMin = 14,
     UIncWrap = 15,
     UDecWrap = 16,
 }
 
+// atomicrmw
 let a: i32 = 20;
 const r3 = atomicrmw(AtomicBinOp.Xchg, ReferenceOf(a), 11, MemoryOrder.Acquire);
 assert(r3 == 20 && a == 11)
 print(r3, a);
+
+// cmpxchg
+let b: i32 = 20;
+const desire_: i32 = 20;
+const new_: i32 = 11;
+const r4 = cmpxchg(ReferenceOf(b), desire_, new_, MemoryOrder.SequentiallyConsistent, MemoryOrder.SequentiallyConsistent);
+assert(r4[0] == 20 && r4[1] && b == 11)
+print(r4[0], r4[1], b);
 
 print("done.");

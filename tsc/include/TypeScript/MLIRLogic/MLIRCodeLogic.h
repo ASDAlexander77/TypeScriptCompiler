@@ -980,6 +980,11 @@ class MLIRCustomMethods
             mlir::UnitAttr()/*isVolatile*/));
     }     
 
+    mlir::Type getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+    {
+        return mlir_ts::TupleType::get(builder.getContext(), fieldInfos);
+    }
+
     ValueOrLogicalResult mlirGenCmpXchg(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         auto size = operands.size();
@@ -988,8 +993,27 @@ class MLIRCustomMethods
             return mlir::failure();
         }
 
+        mlir::SmallVector<mlir_ts::FieldInfo> fields;
+        fields.push_back(
+            mlir_ts::FieldInfo{
+                mlir::Attribute(),
+                operands[2].getType(),
+                false,
+                mlir_ts::AccessLevel::Public
+            });
+        
+        fields.push_back(
+            mlir_ts::FieldInfo{
+                mlir::Attribute(),
+                mlir_ts::BooleanType::get(builder.getContext()),
+                false,
+                mlir_ts::AccessLevel::Public
+            });
+
+        auto resultTuple = getTupleType(fields);
+
         return V(builder.create<mlir_ts::AtomicCmpXchgOp>(location, 
-            operands[2].getType(), operands[0],
+            resultTuple, operands[0],
             operands[1], operands[2], getIntegerAttr(operands[3]), getIntegerAttr(operands[4]), 
             size > 5 ? getStringAttr(operands[5]) : mlir::StringAttr(), 
             size > 6 ? getIntegerAttr(operands[6], 64) : mlir::IntegerAttr(), 
