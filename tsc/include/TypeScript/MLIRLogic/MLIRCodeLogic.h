@@ -419,7 +419,7 @@ class MLIRCustomMethods
         }        
         else if (functionName == "call_intrinsic")
         {
-            return mlirGenCallIntrinsic(location, operands);
+            return mlirGenCallIntrinsic(location, typeArgs, operands);
         }        
         else if (functionName == "linker_options")
         {
@@ -956,10 +956,23 @@ class MLIRCustomMethods
         }
     }     
 
-    ValueOrLogicalResult mlirGenCallIntrinsic(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenCallIntrinsic(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
     {
-        // TODO: finish it
-        return mlir::failure();
+        auto intrin_string = getStringAttr(operands[0]);
+        auto args = operands.drop_front(1);
+
+        if (typeArgs.size() > 0)
+        {
+            auto result = builder.create<mlir_ts::CallIntrinsicOp>(location, mlir::TypeRange(typeArgs), intrin_string, 
+                mlir::ValueRange(args), builder.getIntegerAttr(builder.getI32Type(), 0));
+            return result.getResults();
+        }
+        else
+        {
+            builder.create<mlir_ts::CallIntrinsicOp>(location, mlir::TypeRange(), intrin_string, 
+                mlir::ValueRange(args), builder.getIntegerAttr(builder.getI32Type(), 0));
+            return mlir::success();
+        }
     }     
 
     ValueOrLogicalResult mlirGenLinkerOptions(const mlir::Location &location, ArrayRef<mlir::Value> operands)

@@ -5260,8 +5260,20 @@ struct CallIntrinsicOpLowering : public TsLlvmPattern<mlir_ts::CallIntrinsicOp>
     LogicalResult matchAndRewrite(mlir_ts::CallIntrinsicOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        // TODO: finish it
-        return failure();
+        SmallVector<mlir::Type> convertedTypes;
+        if (failed(typeConverter->convertTypes(op->getResultTypes(), convertedTypes)))
+        {
+            return failure();
+        }
+
+        rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
+            op, 
+            TypeRange(convertedTypes), 
+            transformed.getIntrin(), 
+            transformed.getOperands(),
+            (LLVM::FastmathFlags)transformed.getFastmathFlags());
+
+        return success();
     }
 };
 
