@@ -2359,7 +2359,7 @@ def TypeScript_FenceOp : TypeScript_Op<"Fence"> {
     The "fence" builtin operation to sync access.
   }];
 
-  let arguments = (ins I32:$ordering, OptionalAttr<StrAttr>:$syncscope);
+  let arguments = (ins I32Attr:$ordering, OptionalAttr<StrAttr>:$syncscope);
   let results = (outs );
 }
 

@@ -5219,8 +5219,12 @@ struct FenceOpLowering : public TsLlvmPattern<mlir_ts::FenceOp>
     LogicalResult matchAndRewrite(mlir_ts::FenceOp op, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        // TODO: finish it
-        return failure();
+        rewriter.replaceOpWithNewOp<LLVM::FenceOp>(
+            op, 
+            (LLVM::AtomicOrdering)transformed.getOrdering(),
+            transformed.getSyncscope().value_or(StringRef())
+        );
+        return success();
     }
 };
 

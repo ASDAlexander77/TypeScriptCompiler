@@ -918,25 +918,83 @@ class MLIRCustomMethods
         return mlir::failure();
     }     
 
-    ValueOrLogicalResult mlirGenFence(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::IntegerAttr getI32Attr(mlir::Value oper, bool isSigned = false)
     {
-        // TODO: finish it
-        return mlir::failure();
-    }     
+        LLVM_DEBUG(llvm::dbgs() << "!! getI32Attr oper: " << oper << "'\n";);
+
+        mlir::Attribute value;
+        if (auto constantOp = oper.getDefiningOp<mlir_ts::ConstantOp>()) 
+        {
+            value = constantOp.getValue();
+        }        
+        else if (auto literalType = dyn_cast<mlir_ts::LiteralType>(oper.getType()))
+        {
+            value = literalType.getValue();
+        }
+
+        if (auto intAttr = dyn_cast<mlir::IntegerAttr>(value)) 
+        {
+            if (intAttr.getType().isInteger(32))
+            {
+                if (isSigned)
+                {
+                    return mlir::IntegerAttr::get(
+                        mlir::IntegerType::get(intAttr.getContext(), 32, mlir::IntegerType::SignednessSemantics::Signed), 
+                        intAttr.getValue().getSExtValue());
+                }
+                else
+                {
+                    return mlir::IntegerAttr::get(
+                        mlir::IntegerType::get(intAttr.getContext(), 32, mlir::IntegerType::SignednessSemantics::Signless), 
+                        intAttr.getValue().getZExtValue());
+                }
+            }            
+        }        
+
+        emitError(location) << "Must be constant integer(32)";
+        return mlir::IntegerAttr();
+    }
 
     mlir::StringAttr getStringAttr(mlir::Value oper)
     {
+        mlir::Attribute value;
         if (auto constantOp = oper.getDefiningOp<mlir_ts::ConstantOp>()) 
         {
-            if (auto strAttr = dyn_cast<mlir::StringAttr>(constantOp.getValue())) 
-            {
-                return strAttr;
-            }
+            value = constantOp.getValue();
         }        
+        else if (auto literalType = dyn_cast<mlir_ts::LiteralType>(oper.getType()))
+        {
+            value = literalType.getValue();       
+        }
 
-        emitError(location) << "Linker options must be constant string";
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(value)) 
+        {
+            return strAttr;
+        }      
+
+        emitError(location) << "Must be constant string";
         return mlir::StringAttr();
     }
+
+    ValueOrLogicalResult mlirGenFence(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        auto size = operands.size();
+        if (size == 0 || size > 2)
+        {
+            return mlir::failure();
+        }
+
+        if (size > 1)
+        {
+            builder.create<mlir_ts::FenceOp>(location, getI32Attr(operands[0]), getStringAttr(operands[1]));
+        }
+        else if (size > 0)
+        {
+            builder.create<mlir_ts::FenceOp>(location, getI32Attr(operands[0]), mlir::StringAttr());
+        }
+
+        return mlir::success();
+    }     
 
     ValueOrLogicalResult mlirGenInlineAsm(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
     {
