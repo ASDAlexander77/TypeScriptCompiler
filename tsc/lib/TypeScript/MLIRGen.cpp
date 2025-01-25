@@ -4485,8 +4485,17 @@ class MLIRGenImpl
 
                 if (name == "atomic") {
                     varClass.isAtomic = true;
-                    // ordering
-                    // syncscope
+                    if (args.size() > 0) 
+                    {
+                        auto ordering = 0;
+                        if (llvm::to_integer(args[0], ordering))
+                        {
+                            varClass.ordering = ordering;
+                        }
+                    }
+
+                    if (args.size() > 1)
+                        varClass.syncscope = args[1];
                 }
 
                 if (name == "volatile") {
