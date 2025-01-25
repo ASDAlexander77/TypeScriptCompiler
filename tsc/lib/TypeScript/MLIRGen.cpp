@@ -3426,6 +3426,13 @@ class MLIRGenImpl
 
             varDecl->setUsing(varClass.isUsing);
 
+            if (varClass.isAtomic)
+            {
+                varDecl->setAtomic(varClass.ordering, varClass.syncscope);
+            }
+
+            varDecl->setVolatile(varClass.isVolatile);
+
             return varDecl;
         }
 
@@ -3606,7 +3613,18 @@ class MLIRGenImpl
             && variableDeclarationInfo.initial 
             && variableDeclarationInfo.storage)
         {
-            builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, variableDeclarationInfo.storage);
+            auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, variableDeclarationInfo.storage);
+            if (variableDeclarationInfo.varClass.isAtomic)
+            {
+                storeOp->setAttr(IS_ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
+                storeOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(variableDeclarationInfo.varClass.ordering));
+                storeOp->setAttr(SYNCSCOPE_ATTR_NAME, builder.getStringAttr(variableDeclarationInfo.varClass.syncscope));
+            }
+
+            if (variableDeclarationInfo.varClass.isVolatile)
+            {
+                storeOp->setAttr(IS_VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
+            }            
         }
 
         return mlir::success();
@@ -3795,7 +3813,18 @@ class MLIRGenImpl
             // save value
             auto address = builder.create<mlir_ts::AddressOfOp>(
                 location, mlir_ts::RefType::get(variableDeclarationInfo.type), variableDeclarationInfo.fullName, mlir::IntegerAttr());
-            builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, address);
+            auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, address);
+            if (variableDeclarationInfo.varClass.isAtomic)
+            {
+                storeOp->setAttr(IS_ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
+                storeOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(variableDeclarationInfo.varClass.ordering));
+                storeOp->setAttr(SYNCSCOPE_ATTR_NAME, builder.getStringAttr(variableDeclarationInfo.varClass.syncscope));
+            }
+
+            if (variableDeclarationInfo.varClass.isVolatile)
+            {
+                storeOp->setAttr(IS_VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
+            }               
         }
 
         auto result = createGlobalVariableUndefinedInitialization(location, globalOp, variableDeclarationInfo);
@@ -9433,6 +9462,24 @@ class MLIRGenImpl
         return mlir::failure();    
     }
 
+    void cloneAtomicAttributes(mlir::Operation* opSrc, mlir::Operation* opDest)
+    {
+        // copy attrs over
+        if (auto isAtomicAttr = opSrc->getAttrOfType<mlir::BoolAttr>(IS_ATOMIC_ATTR_NAME))
+        {
+            auto orderingAttr = opSrc->getAttrOfType<mlir::IntegerAttr>(ORDERING_ATTR_NAME);
+            auto syncScopeAttr = opSrc->getAttrOfType<mlir::StringAttr>(SYNCSCOPE_ATTR_NAME);
+            opDest->setAttr(IS_ATOMIC_ATTR_NAME, isAtomicAttr);
+            opDest->setAttr(ORDERING_ATTR_NAME, orderingAttr);
+            opDest->setAttr(SYNCSCOPE_ATTR_NAME, syncScopeAttr);
+        }
+
+        if (auto isVolatileAttr = opSrc->getAttrOfType<mlir::BoolAttr>(IS_VOLATILE_ATTR_NAME))
+        {
+            opDest->setAttr(IS_VOLATILE_ATTR_NAME, isVolatileAttr);
+        }         
+    }
+
     ValueOrLogicalResult mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
                                                  mlir::Value rightExpressionValue, const GenContext &genContext)
     {
@@ -9490,7 +9537,8 @@ class MLIRGenImpl
 
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have
             // writable array
-            builder.create<mlir_ts::StoreOp>(location, savingValue, loadOp.getReference());
+            auto storeOp = builder.create<mlir_ts::StoreOp>(location, savingValue, loadOp.getReference());
+            cloneAtomicAttributes(loadOp, storeOp);
         }
         else if (auto extractPropertyOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ExtractPropertyOp>())
         {
@@ -14841,7 +14889,20 @@ class MLIRGenImpl
 
             // load value if memref
             auto valueType = mlir::cast<mlir_ts::RefType>(value.first.getType()).getElementType();
-            return builder.create<mlir_ts::LoadOp>(location, valueType, value.first);
+            auto loadOp = builder.create<mlir_ts::LoadOp>(location, valueType, value.first);
+            if (value.second->getIsAtomic())
+            {
+                loadOp->setAttr(IS_ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
+                loadOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(value.second->getOrdering()));
+                loadOp->setAttr(SYNCSCOPE_ATTR_NAME, builder.getStringAttr(value.second->getSyncScope()));
+            }
+
+            if (value.second->getIsVolatile())
+            {
+                loadOp->setAttr(IS_VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
+            }
+
+            return loadOp;
         }
 
         return mlir::Value();
@@ -15226,7 +15287,20 @@ class MLIRGenImpl
             return address;
         }
 
-        return builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
+        auto loadOp = builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
+        if (value->getIsAtomic())
+        {
+            loadOp->setAttr(IS_ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
+            loadOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(value->getOrdering()));
+            loadOp->setAttr(SYNCSCOPE_ATTR_NAME, builder.getStringAttr(value->getSyncScope()));
+        }
+
+        if (value->getIsVolatile())
+        {
+            loadOp->setAttr(IS_VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
+        }
+
+        return loadOp;
     }
 
     mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)

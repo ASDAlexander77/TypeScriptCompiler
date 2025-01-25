@@ -2901,8 +2901,6 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
     LogicalResult matchAndRewrite(mlir_ts::LoadOp loadOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(loadOp, rewriter);
@@ -2937,11 +2935,54 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             mlir::Value loadedValue;
             if (elementType)
             {
-                loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.getReference());
+                auto alignment = 0;
+                auto isVolatile = false;
+                auto isNonTemporal = false;
+                auto isInvariant = false;
+                auto ordering = LLVM::AtomicOrdering::not_atomic;
+                StringRef syncscope = {};
+
+                if (auto isAtomicAttr = loadOp->getAttrOfType<mlir::BoolAttr>(IS_ATOMIC_ATTR_NAME))
+                {
+                    if (isAtomicAttr.getValue()) 
+                    {
+                        auto orderingAttr = loadOp->getAttrOfType<mlir::IntegerAttr>(ORDERING_ATTR_NAME);
+                        auto syncScopeAttr = loadOp->getAttrOfType<mlir::StringAttr>(SYNCSCOPE_ATTR_NAME);
+                        if (orderingAttr && syncScopeAttr)
+                        {
+                            ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
+                            syncscope = syncScopeAttr.getValue();
+                        }
+                    }
+                }
+
+                if (auto isVolatileAttr = loadOp->getAttrOfType<mlir::BoolAttr>(IS_VOLATILE_ATTR_NAME))
+                {
+                    isVolatile = isVolatileAttr.getValue();
+                }
+
+                loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.getReference(), alignment, isVolatile, isNonTemporal, isInvariant, ordering, syncscope);
             }
             else if (auto boundRefType = dyn_cast<mlir_ts::BoundRefType>(elementRefType))
             {
-                loadedValue = rewriter.create<mlir_ts::LoadBoundRefOp>(loc, resultType, loadOp.getReference());
+                auto loadRoundRef = rewriter.create<mlir_ts::LoadBoundRefOp>(loc, resultType, loadOp.getReference());
+
+                // copy attrs over
+                if (auto isAtomicAttr = loadOp->getAttrOfType<mlir::BoolAttr>(IS_ATOMIC_ATTR_NAME))
+                {
+                    auto orderingAttr = loadOp->getAttrOfType<mlir::IntegerAttr>(ORDERING_ATTR_NAME);
+                    auto syncScopeAttr = loadOp->getAttrOfType<mlir::StringAttr>(SYNCSCOPE_ATTR_NAME);
+                    loadRoundRef->setAttr(IS_ATOMIC_ATTR_NAME, isAtomicAttr);
+                    loadRoundRef->setAttr(ORDERING_ATTR_NAME, orderingAttr);
+                    loadRoundRef->setAttr(SYNCSCOPE_ATTR_NAME, syncScopeAttr);
+                }
+
+                if (auto isVolatileAttr = loadOp->getAttrOfType<mlir::BoolAttr>(IS_VOLATILE_ATTR_NAME))
+                {
+                    loadRoundRef->setAttr(IS_VOLATILE_ATTR_NAME, isVolatileAttr);
+                }    
+
+                loadedValue = loadRoundRef;            
             }
 
             return loadedValue;
@@ -3005,11 +3046,54 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
     {
         if (auto boundRefType = dyn_cast<mlir_ts::BoundRefType>(storeOp.getReference().getType()))
         {
-            rewriter.replaceOpWithNewOp<mlir_ts::StoreBoundRefOp>(storeOp, storeOp.getValue(), storeOp.getReference());
+            auto storeBoundRefOp = rewriter.create<mlir_ts::StoreBoundRefOp>(storeOp->getLoc(), storeOp.getValue(), storeOp.getReference());
+
+            // copy attrs over
+            if (auto isAtomicAttr = storeOp->getAttrOfType<mlir::BoolAttr>(IS_ATOMIC_ATTR_NAME))
+            {
+                auto orderingAttr = storeOp->getAttrOfType<mlir::IntegerAttr>(ORDERING_ATTR_NAME);
+                auto syncScopeAttr = storeOp->getAttrOfType<mlir::StringAttr>(SYNCSCOPE_ATTR_NAME);
+                storeBoundRefOp->setAttr(IS_ATOMIC_ATTR_NAME, isAtomicAttr);
+                storeBoundRefOp->setAttr(ORDERING_ATTR_NAME, orderingAttr);
+                storeBoundRefOp->setAttr(SYNCSCOPE_ATTR_NAME, syncScopeAttr);
+            }
+
+            if (auto isVolatileAttr = storeOp->getAttrOfType<mlir::BoolAttr>(IS_VOLATILE_ATTR_NAME))
+            {
+                storeBoundRefOp->setAttr(IS_VOLATILE_ATTR_NAME, isVolatileAttr);
+            }    
+
+            rewriter.eraseOp(storeOp);
             return success();
         }
 
-        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference());
+        // atomic attributes
+        auto alignment = 0;
+        auto isVolatile = false;
+        auto isNonTemporal = false;
+        auto ordering = LLVM::AtomicOrdering::not_atomic;
+        StringRef syncscope = {};
+
+        if (auto isAtomicAttr = storeOp->getAttrOfType<mlir::BoolAttr>(IS_ATOMIC_ATTR_NAME))
+        {
+            if (isAtomicAttr.getValue()) 
+            {
+                auto orderingAttr = storeOp->getAttrOfType<mlir::IntegerAttr>(ORDERING_ATTR_NAME);
+                auto syncScopeAttr = storeOp->getAttrOfType<mlir::StringAttr>(SYNCSCOPE_ATTR_NAME);
+                if (orderingAttr && syncScopeAttr)
+                {
+                    ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
+                    syncscope = syncScopeAttr.getValue();
+                }
+            }
+        }
+
+        if (auto isVolatileAttr = storeOp->getAttrOfType<mlir::BoolAttr>(IS_VOLATILE_ATTR_NAME))
+        {
+            isVolatile = isVolatileAttr.getValue();
+        }        
+
+        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, transformed.getValue(), transformed.getReference(), alignment, isVolatile, isNonTemporal, ordering, syncscope);
 #ifdef DBG_INFO_ADD_VALUE_OP        
         if (tsLlvmContext->compileOptions.generateDebugInfo)
         {
@@ -4483,7 +4567,34 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
         auto valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, transformed.getReference(),
                                                                  MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
 
-        mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, llvmType, valueRefVal);
+        // atomic access attrs
+        auto alignment = 0;
+        auto isVolatile = false;
+        auto isNonTemporal = false;
+        auto isInvariant = false;
+        auto ordering = LLVM::AtomicOrdering::not_atomic;
+        StringRef syncscope = {};
+
+        if (auto isAtomicAttr = loadBoundRefOp->getAttrOfType<mlir::BoolAttr>(IS_ATOMIC_ATTR_NAME))
+        {
+            if (isAtomicAttr.getValue()) 
+            {
+                auto orderingAttr = loadBoundRefOp->getAttrOfType<mlir::IntegerAttr>(ORDERING_ATTR_NAME);
+                auto syncScopeAttr = loadBoundRefOp->getAttrOfType<mlir::StringAttr>(SYNCSCOPE_ATTR_NAME);
+                if (orderingAttr && syncScopeAttr)
+                {
+                    ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
+                    syncscope = syncScopeAttr.getValue();
+                }
+            }
+        }
+
+        if (auto isVolatileAttr = loadBoundRefOp->getAttrOfType<mlir::BoolAttr>(IS_VOLATILE_ATTR_NAME))
+        {
+            isVolatile = isVolatileAttr.getValue();
+        }
+
+        mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, llvmType, valueRefVal, alignment, isVolatile, isNonTemporal, isInvariant, ordering, syncscope);
 
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(boundRefType.getElementType()))
         {
