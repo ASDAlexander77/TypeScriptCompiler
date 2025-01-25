@@ -2951,7 +2951,14 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
                         if (orderingAttr && syncScopeAttr)
                         {
                             ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
+                            if (ordering == LLVM::AtomicOrdering::release)
+                            {
+                                ordering = LLVM::AtomicOrdering::acquire;
+                            }
+
                             syncscope = syncScopeAttr.getValue();
+                            LLVMTypeConverterHelper ltch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+                            alignment = ltch.getTypeAlignSizeInBits(elementTypeConverted);
                         }
                     }
                 }
@@ -3083,7 +3090,14 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
                 if (orderingAttr && syncScopeAttr)
                 {
                     ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
+                    if (ordering == LLVM::AtomicOrdering::acquire)
+                    {
+                        ordering = LLVM::AtomicOrdering::release;
+                    }
+
                     syncscope = syncScopeAttr.getValue();
+                    LLVMTypeConverterHelper ltch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+                    alignment = ltch.getTypeAlignSizeInBits(transformed.getValue().getType());
                 }
             }
         }
@@ -4584,7 +4598,14 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
                 if (orderingAttr && syncScopeAttr)
                 {
                     ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
+                    if (ordering == LLVM::AtomicOrdering::release)
+                    {
+                        ordering = LLVM::AtomicOrdering::acquire;
+                    }
+
                     syncscope = syncScopeAttr.getValue();
+                    LLVMTypeConverterHelper ltch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+                    alignment = ltch.getTypeAlignSizeInBits(llvmType);
                 }
             }
         }
@@ -4638,7 +4659,40 @@ struct StoreBoundRefOpLowering : public TsLlvmPattern<mlir_ts::StoreBoundRefOp>
         auto valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, transformed.getReference(),
                                                                  MLIRHelper::getStructIndex(rewriter, DATA_VALUE_INDEX));
 
-        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeBoundRefOp, transformed.getValue(), valueRefVal);
+        // atomic attributes
+        auto alignment = 0;
+        auto isVolatile = false;
+        auto isNonTemporal = false;
+        auto ordering = LLVM::AtomicOrdering::not_atomic;
+        StringRef syncscope = {};
+
+        if (auto isAtomicAttr = storeBoundRefOp->getAttrOfType<mlir::BoolAttr>(IS_ATOMIC_ATTR_NAME))
+        {
+            if (isAtomicAttr.getValue()) 
+            {
+                auto orderingAttr = storeBoundRefOp->getAttrOfType<mlir::IntegerAttr>(ORDERING_ATTR_NAME);
+                auto syncScopeAttr = storeBoundRefOp->getAttrOfType<mlir::StringAttr>(SYNCSCOPE_ATTR_NAME);
+                if (orderingAttr && syncScopeAttr)
+                {
+                    ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
+                    if (ordering == LLVM::AtomicOrdering::acquire)
+                    {
+                        ordering = LLVM::AtomicOrdering::release;
+                    }
+
+                    syncscope = syncScopeAttr.getValue();
+                    LLVMTypeConverterHelper ltch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+                    alignment = ltch.getTypeAlignSizeInBits(transformed.getValue().getType());
+                }
+            }
+        }
+
+        if (auto isVolatileAttr = storeBoundRefOp->getAttrOfType<mlir::BoolAttr>(IS_VOLATILE_ATTR_NAME))
+        {
+            isVolatile = isVolatileAttr.getValue();
+        } 
+
+        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeBoundRefOp, transformed.getValue(), valueRefVal, alignment, isVolatile, isNonTemporal, ordering, syncscope);
         return success();
     }
 };
