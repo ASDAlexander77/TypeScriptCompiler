@@ -4459,7 +4459,7 @@ class MLIRGenImpl
         {
             varClass.isPublic = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
             varClass.isExport = getExportModifier(variableDeclarationListAST->parent);
-            MLIRHelper::iterateDecorators(variableDeclarationListAST->parent, [&](std::string name, SmallVector<std::string> args) {
+            MLIRHelper::iterateDecorators(variableDeclarationListAST->parent, stringAllocator, [&](StringRef name, SmallVector<StringRef> args) {
                 if (name == DLL_EXPORT)
                 {
                     varClass.isExport = true;
@@ -4481,6 +4481,16 @@ class MLIRGenImpl
 
                 if (name == "used") {
                     varClass.isUsed = true;
+                }
+
+                if (name == "atomic") {
+                    varClass.isAtomic = true;
+                    // ordering
+                    // syncscope
+                }
+
+                if (name == "volatile") {
+                    varClass.isVolatile = true;
                 }
             });
         }
@@ -5019,7 +5029,7 @@ class MLIRGenImpl
 #endif
         // add decorations, "noinline, optnone"
 
-        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, [&](std::string name, SmallVector<std::string> args) {
+        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, stringAllocator, [&](StringRef name, SmallVector<StringRef> args) {
             if (isFuncAttr(name))
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
@@ -5733,7 +5743,7 @@ class MLIRGenImpl
 
         // check decorator for class
         auto dynamicImport = false;
-        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, [&](std::string name, SmallVector<std::string> args) {
+        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, stringAllocator, [&](StringRef name, SmallVector<StringRef> args) {
             if (name == DLL_IMPORT && args.size() > 0)
             {
                 dynamicImport = true;
@@ -16173,7 +16183,7 @@ class MLIRGenImpl
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             // check decorator for class
-            MLIRHelper::iterateDecorators(classDeclarationAST, [&](std::string name, SmallVector<std::string> args) {
+            MLIRHelper::iterateDecorators(classDeclarationAST, stringAllocator, [&](StringRef name, SmallVector<StringRef> args) {
                 if (name == DLL_EXPORT)
                 {
                     newClassPtr->isExport = true;

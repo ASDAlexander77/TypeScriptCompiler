@@ -13,7 +13,7 @@ const r2 = call_intrinsic<f32>("llvm.round", v2);
 assert(r2 == 1.0)
 print(v2, r2);
 
-// // fence test
+// fence test
 enum MemoryOrder {
     NotAtomic = 0,
     Unordered = 1,
