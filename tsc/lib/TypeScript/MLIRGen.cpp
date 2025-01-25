@@ -3432,6 +3432,8 @@ class MLIRGenImpl
             }
 
             varDecl->setVolatile(varClass.isVolatile);
+            varDecl->setNonTemporal(varClass.nonTemporal);
+            varDecl->setInvariant(varClass.invariant);
 
             return varDecl;
         }
@@ -3616,15 +3618,25 @@ class MLIRGenImpl
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, variableDeclarationInfo.storage);
             if (variableDeclarationInfo.varClass.isAtomic)
             {
-                storeOp->setAttr(IS_ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
+                storeOp->setAttr(ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
                 storeOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(variableDeclarationInfo.varClass.ordering));
                 storeOp->setAttr(SYNCSCOPE_ATTR_NAME, builder.getStringAttr(variableDeclarationInfo.varClass.syncscope));
             }
 
             if (variableDeclarationInfo.varClass.isVolatile)
             {
-                storeOp->setAttr(IS_VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
+                storeOp->setAttr(VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
             }            
+
+            if (variableDeclarationInfo.varClass.nonTemporal)
+            {
+                storeOp->setAttr(NONTEMPORAL_ATTR_NAME, builder.getBoolAttr(true));
+            }            
+
+            // if (variableDeclarationInfo.varClass.invariant)
+            // {
+            //     storeOp->setAttr(INVARIANT_ATTR_NAME, builder.getBoolAttr(true));
+            // }
         }
 
         return mlir::success();
@@ -3816,16 +3828,26 @@ class MLIRGenImpl
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, address);
             if (variableDeclarationInfo.varClass.isAtomic)
             {
-                storeOp->setAttr(IS_ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
+                storeOp->setAttr(ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
                 storeOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(variableDeclarationInfo.varClass.ordering));
                 storeOp->setAttr(SYNCSCOPE_ATTR_NAME, builder.getStringAttr(variableDeclarationInfo.varClass.syncscope));
             }
 
             if (variableDeclarationInfo.varClass.isVolatile)
             {
-                storeOp->setAttr(IS_VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
+                storeOp->setAttr(VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
             }               
-        }
+
+            if (variableDeclarationInfo.varClass.nonTemporal)
+            {
+                storeOp->setAttr(NONTEMPORAL_ATTR_NAME, builder.getBoolAttr(true));
+            }            
+
+            // if (variableDeclarationInfo.varClass.invariant)
+            // {
+            //     storeOp->setAttr(INVARIANT_ATTR_NAME, builder.getBoolAttr(true));
+            // }
+        }        
 
         auto result = createGlobalVariableUndefinedInitialization(location, globalOp, variableDeclarationInfo);
 
@@ -4529,6 +4551,14 @@ class MLIRGenImpl
 
                 if (name == "volatile") {
                     varClass.isVolatile = true;
+                }
+
+                if (name == "nontemporal") {
+                    varClass.nonTemporal = true;
+                }
+
+                if (name == "invariant") {
+                    varClass.invariant = true;
                 }
             });
         }
@@ -9465,19 +9495,29 @@ class MLIRGenImpl
     void cloneAtomicAttributes(mlir::Operation* opSrc, mlir::Operation* opDest)
     {
         // copy attrs over
-        if (auto isAtomicAttr = opSrc->getAttrOfType<mlir::BoolAttr>(IS_ATOMIC_ATTR_NAME))
+        if (auto atomicAttr = opSrc->getAttrOfType<mlir::BoolAttr>(ATOMIC_ATTR_NAME))
         {
             auto orderingAttr = opSrc->getAttrOfType<mlir::IntegerAttr>(ORDERING_ATTR_NAME);
             auto syncScopeAttr = opSrc->getAttrOfType<mlir::StringAttr>(SYNCSCOPE_ATTR_NAME);
-            opDest->setAttr(IS_ATOMIC_ATTR_NAME, isAtomicAttr);
+            opDest->setAttr(ATOMIC_ATTR_NAME, atomicAttr);
             opDest->setAttr(ORDERING_ATTR_NAME, orderingAttr);
             opDest->setAttr(SYNCSCOPE_ATTR_NAME, syncScopeAttr);
         }
 
-        if (auto isVolatileAttr = opSrc->getAttrOfType<mlir::BoolAttr>(IS_VOLATILE_ATTR_NAME))
+        if (auto volatileAttr = opSrc->getAttrOfType<mlir::BoolAttr>(VOLATILE_ATTR_NAME))
         {
-            opDest->setAttr(IS_VOLATILE_ATTR_NAME, isVolatileAttr);
-        }         
+            opDest->setAttr(VOLATILE_ATTR_NAME, volatileAttr);
+        }      
+
+        if (auto nonTemporalAttr = opSrc->getAttrOfType<mlir::BoolAttr>(NONTEMPORAL_ATTR_NAME))
+        {
+            opDest->setAttr(NONTEMPORAL_ATTR_NAME, nonTemporalAttr);
+        }            
+
+        // if (auto invariantAttr = opSrc->getAttrOfType<mlir::BoolAttr>(INVARIANT_ATTR_NAME))
+        // {
+        //     opDest->setAttr(INVARIANT_ATTR_NAME, builder.getBoolAttr(true));
+        // }
     }
 
     ValueOrLogicalResult mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue,
@@ -14890,17 +14930,27 @@ class MLIRGenImpl
             // load value if memref
             auto valueType = mlir::cast<mlir_ts::RefType>(value.first.getType()).getElementType();
             auto loadOp = builder.create<mlir_ts::LoadOp>(location, valueType, value.first);
-            if (value.second->getIsAtomic())
+            if (value.second->getAtomic())
             {
-                loadOp->setAttr(IS_ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
+                loadOp->setAttr(ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
                 loadOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(value.second->getOrdering()));
                 loadOp->setAttr(SYNCSCOPE_ATTR_NAME, builder.getStringAttr(value.second->getSyncScope()));
             }
 
-            if (value.second->getIsVolatile())
+            if (value.second->getVolatile())
             {
-                loadOp->setAttr(IS_VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
+                loadOp->setAttr(VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
             }
+
+            if (value.second->getNonTemporal())
+            {
+                loadOp->setAttr(NONTEMPORAL_ATTR_NAME, builder.getBoolAttr(true));
+            }            
+
+            if (value.second->getInvariant())
+            {
+                loadOp->setAttr(INVARIANT_ATTR_NAME, builder.getBoolAttr(true));
+            }            
 
             return loadOp;
         }
@@ -15288,17 +15338,27 @@ class MLIRGenImpl
         }
 
         auto loadOp = builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
-        if (value->getIsAtomic())
+        if (value->getAtomic())
         {
-            loadOp->setAttr(IS_ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
+            loadOp->setAttr(ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
             loadOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(value->getOrdering()));
             loadOp->setAttr(SYNCSCOPE_ATTR_NAME, builder.getStringAttr(value->getSyncScope()));
         }
 
-        if (value->getIsVolatile())
+        if (value->getVolatile())
         {
-            loadOp->setAttr(IS_VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
+            loadOp->setAttr(VOLATILE_ATTR_NAME, builder.getBoolAttr(true));
         }
+
+        if (value->getNonTemporal())
+        {
+            loadOp->setAttr(NONTEMPORAL_ATTR_NAME, builder.getBoolAttr(true));
+        }            
+
+        if (value->getInvariant())
+        {
+            loadOp->setAttr(INVARIANT_ATTR_NAME, builder.getBoolAttr(true));
+        }   
 
         return loadOp;
     }

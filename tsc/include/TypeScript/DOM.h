@@ -36,7 +36,8 @@ class VariableDeclarationDOM
 
     VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = undefined)
         : name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), _using(false), readWrite(false),
-        isAtomic(false), ordering(0), syncscope(StringRef()), isVolatile(false)
+        atomic(false), ordering(0), syncscope(StringRef()), volatile_(false),
+        nonTemporal(false), invariant(false)
     {
     }
 
@@ -106,13 +107,13 @@ class VariableDeclarationDOM
 
     void setAtomic(int ordering_, StringRef syncscope_)
     {
-        isAtomic = true;
+        atomic = true;
         ordering = ordering_;
         syncscope = syncscope_;
     }
-    bool getIsAtomic() const
+    bool getAtomic() const
     {
-        return isAtomic;
+        return atomic;
     }
     int getOrdering() const
     {
@@ -123,21 +124,41 @@ class VariableDeclarationDOM
         return syncscope;
     }
 
-    bool getIsVolatile() const
+    bool getVolatile() const
     {
-        return isVolatile;
+        return volatile_;
     }
     void setVolatile(bool value = true)
     {
-        isVolatile = value;
+        volatile_ = value;
+    };
+
+    bool getNonTemporal() const
+    {
+        return nonTemporal;
+    }
+    void setNonTemporal(bool value = true)
+    {
+        nonTemporal = value;
+    };
+
+    bool getInvariant() const
+    {
+        return invariant;
+    }
+    void setInvariant(bool value = true)
+    {
+        invariant = value;
     };
 
   protected:
     bool readWrite;
-    bool isAtomic;
+    bool atomic;
     int ordering;
     StringRef syncscope;
-    bool isVolatile;
+    bool volatile_;
+    bool nonTemporal;
+    bool invariant;
 };
 
 class FunctionParamDOM : public VariableDeclarationDOM
