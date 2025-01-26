@@ -3426,7 +3426,7 @@ class MLIRGenImpl
 
             varDecl->setUsing(varClass.isUsing);
 
-            if (varClass.isAtomic)
+            if (varClass.atomic)
             {
                 varDecl->setAtomic(varClass.ordering, varClass.syncscope);
             }
@@ -3616,7 +3616,7 @@ class MLIRGenImpl
             && variableDeclarationInfo.storage)
         {
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, variableDeclarationInfo.storage);
-            if (variableDeclarationInfo.varClass.isAtomic)
+            if (variableDeclarationInfo.varClass.atomic)
             {
                 storeOp->setAttr(ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
                 storeOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(variableDeclarationInfo.varClass.ordering));
@@ -3826,7 +3826,7 @@ class MLIRGenImpl
             auto address = builder.create<mlir_ts::AddressOfOp>(
                 location, mlir_ts::RefType::get(variableDeclarationInfo.type), variableDeclarationInfo.fullName, mlir::IntegerAttr());
             auto storeOp = builder.create<mlir_ts::StoreOp>(location, variableDeclarationInfo.initial, address);
-            if (variableDeclarationInfo.varClass.isAtomic)
+            if (variableDeclarationInfo.varClass.atomic)
             {
                 storeOp->setAttr(ATOMIC_ATTR_NAME, builder.getBoolAttr(true));
                 storeOp->setAttr(ORDERING_ATTR_NAME, builder.getI32IntegerAttr(variableDeclarationInfo.varClass.ordering));
@@ -4510,7 +4510,7 @@ class MLIRGenImpl
         {
             varClass.isPublic = hasModifier(variableDeclarationListAST->parent, SyntaxKind::ExportKeyword);
             varClass.isExport = getExportModifier(variableDeclarationListAST->parent);
-            MLIRHelper::iterateDecorators(variableDeclarationListAST->parent, stringAllocator, [&](StringRef name, SmallVector<StringRef> args) {
+            iterateDecorators(variableDeclarationListAST->parent, genContext, [&](StringRef name, SmallVector<StringRef> args) {
                 if (name == DLL_EXPORT)
                 {
                     varClass.isExport = true;
@@ -4535,7 +4535,7 @@ class MLIRGenImpl
                 }
 
                 if (name == "atomic") {
-                    varClass.isAtomic = true;
+                    varClass.atomic = true;
                     if (args.size() > 0) 
                     {
                         auto ordering = 0;
@@ -5097,7 +5097,7 @@ class MLIRGenImpl
 #endif
         // add decorations, "noinline, optnone"
 
-        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, stringAllocator, [&](StringRef name, SmallVector<StringRef> args) {
+        iterateDecorators(functionLikeDeclarationBaseAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
             if (isFuncAttr(name))
             {
                 attrs.push_back({mlir::StringAttr::get(builder.getContext(), name), mlir::UnitAttr::get(builder.getContext())});
@@ -5811,7 +5811,7 @@ class MLIRGenImpl
 
         // check decorator for class
         auto dynamicImport = false;
-        MLIRHelper::iterateDecorators(functionLikeDeclarationBaseAST, stringAllocator, [&](StringRef name, SmallVector<StringRef> args) {
+        iterateDecorators(functionLikeDeclarationBaseAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
             if (name == DLL_IMPORT && args.size() > 0)
             {
                 dynamicImport = true;
@@ -16326,7 +16326,7 @@ class MLIRGenImpl
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             // check decorator for class
-            MLIRHelper::iterateDecorators(classDeclarationAST, stringAllocator, [&](StringRef name, SmallVector<StringRef> args) {
+            iterateDecorators(classDeclarationAST, genContext, [&](StringRef name, SmallVector<StringRef> args) {
                 if (name == DLL_EXPORT)
                 {
                     newClassPtr->isExport = true;
@@ -24592,6 +24592,65 @@ genContext);
         }
 
         return mlir::success();
+    }
+
+    void iterateDecorators(Node node, const GenContext &genContext, std::function<void(StringRef, SmallVector<StringRef>)> functor)
+    {
+        for (auto decorator : node->modifiers)
+        {
+            if (decorator != SyntaxKind::Decorator)
+            {
+                continue;
+            }
+
+            SmallVector<StringRef> args;
+            auto expr = decorator.as<Decorator>()->expression;
+            if (expr == SyntaxKind::CallExpression)
+            {
+                auto callExpression = expr.as<CallExpression>();
+                expr = callExpression->expression;
+                for (auto argExpr : callExpression->arguments)
+                {
+                    if (argExpr == SyntaxKind::NumericLiteral)
+                    {
+                        auto num = argExpr.as<NumericLiteral>();
+                        args.push_back(mlir::StringRef(convertWideToUTF8(num->text)).copy(stringAllocator));
+                        continue;
+                    }
+
+                    if (argExpr == SyntaxKind::StringLiteral)
+                    {
+                        args.push_back(MLIRHelper::getName(argExpr.as<Node>(), stringAllocator));
+                        continue;
+                    }
+
+                    auto resultType = evaluate(argExpr, genContext);
+                    if (auto litType = dyn_cast<mlir_ts::LiteralType>(resultType))
+                    {
+                        mlir::Attribute value = litType.getValue();
+                        if (auto intAttr = dyn_cast<mlir::IntegerAttr>(value)) 
+                        {
+                            auto val = llvm::toString(intAttr.getValue(), 10, false);
+                            args.push_back(mlir::StringRef(val).copy(stringAllocator));
+                        }
+                        else if (auto strAttr = dyn_cast<mlir::StringAttr>(value)) 
+                        {
+                            args.push_back(strAttr.getValue());
+                        }
+
+                        continue;
+                    }
+
+                    // TODO: finish it
+                }
+            }            
+
+            if (expr == SyntaxKind::Identifier)
+            {
+                auto name = MLIRHelper::getName(expr.as<Node>(), stringAllocator);
+                functor(name, args);
+            }
+        }
     }
 
     bool isAddedToExport(mlir::Type type)

@@ -2951,7 +2951,7 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
                         if (orderingAttr && syncScopeAttr)
                         {
                             ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
-                            if (ordering == LLVM::AtomicOrdering::release)
+                            if (ordering == LLVM::AtomicOrdering::release || ordering == LLVM::AtomicOrdering::acq_rel)
                             {
                                 ordering = LLVM::AtomicOrdering::acquire;
                             }
@@ -3120,7 +3120,7 @@ struct StoreOpLowering : public TsLlvmPattern<mlir_ts::StoreOp>
                 if (orderingAttr && syncScopeAttr)
                 {
                     ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
-                    if (ordering == LLVM::AtomicOrdering::acquire)
+                    if (ordering == LLVM::AtomicOrdering::acquire || ordering == LLVM::AtomicOrdering::acq_rel)
                     {
                         ordering = LLVM::AtomicOrdering::release;
                     }
@@ -4638,7 +4638,7 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
                 if (orderingAttr && syncScopeAttr)
                 {
                     ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
-                    if (ordering == LLVM::AtomicOrdering::release)
+                    if (ordering == LLVM::AtomicOrdering::release || ordering == LLVM::AtomicOrdering::acq_rel)
                     {
                         ordering = LLVM::AtomicOrdering::acquire;
                     }
@@ -4715,7 +4715,7 @@ struct StoreBoundRefOpLowering : public TsLlvmPattern<mlir_ts::StoreBoundRefOp>
                 if (orderingAttr && syncScopeAttr)
                 {
                     ordering = (LLVM::AtomicOrdering) orderingAttr.getValue().getZExtValue();
-                    if (ordering == LLVM::AtomicOrdering::acquire)
+                    if (ordering == LLVM::AtomicOrdering::acquire || ordering == LLVM::AtomicOrdering::acq_rel)
                     {
                         ordering = LLVM::AtomicOrdering::release;
                     }

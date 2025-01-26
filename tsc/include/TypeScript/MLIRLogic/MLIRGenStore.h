@@ -70,11 +70,11 @@ enum class Select: int
 
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, isAtomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}
+    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, isAtomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}
+    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isDynamicImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}, isUsed{false}, atomic{false}, ordering{0}, syncscope{StringRef()}, isVolatile{false}, nonTemporal{false}, invariant{false}
     {
     }
 
@@ -87,7 +87,7 @@ struct VariableClass
     bool isAppendingLinkage;
     Select comdat;
     bool isUsed;
-    bool isAtomic; // atomic
+    bool atomic; // atomic
     int ordering; // atomic ordering
     StringRef syncscope; // atomic syncscope
     bool isVolatile;

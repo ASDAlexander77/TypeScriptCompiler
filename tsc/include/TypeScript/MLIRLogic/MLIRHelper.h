@@ -316,48 +316,6 @@ class MLIRHelper
         return false;
     }
 
-    static void iterateDecorators(Node node, llvm::BumpPtrAllocator &stringAllocator, std::function<void(StringRef, SmallVector<StringRef>)> functor)
-    {
-        for (auto decorator : node->modifiers)
-        {
-            if (decorator != SyntaxKind::Decorator)
-            {
-                continue;
-            }
-
-            SmallVector<StringRef> args;
-            auto expr = decorator.as<Decorator>()->expression;
-            if (expr == SyntaxKind::CallExpression)
-            {
-                auto callExpression = expr.as<CallExpression>();
-                expr = callExpression->expression;
-                for (auto argExpr : callExpression->arguments)
-                {
-                    if (argExpr == SyntaxKind::NumericLiteral)
-                    {
-                        auto num = argExpr.as<NumericLiteral>();
-                        args.push_back(mlir::StringRef(convertWideToUTF8(num->text)).copy(stringAllocator));
-                        continue;
-                    }
-
-                    if (argExpr == SyntaxKind::StringLiteral)
-                    {
-                        args.push_back(MLIRHelper::getName(argExpr.as<Node>(), stringAllocator));
-                        continue;
-                    }
-
-                    // TODO: finish it
-                }
-            }            
-
-            if (expr == SyntaxKind::Identifier)
-            {
-                auto name = MLIRHelper::getName(expr.as<Node>(), stringAllocator);
-                functor(name, args);
-            }
-        }
-    }
-
     static void addDecoratorIfNotPresent(Node node, StringRef decoratorName)
     {
         NodeFactory nf(NodeFactoryFlags::None);
