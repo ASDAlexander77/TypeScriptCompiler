@@ -169,6 +169,22 @@ std::string mergeWithDefaultLibPath(std::string defaultlibpath, std::string subP
     return str.str();
 }
 
+std::string makeAbsolutePath(std::string subPath)
+{
+    if (subPath.empty())
+    {
+        return subPath;
+    }
+
+    llvm::SmallVector<char> path(0);
+    llvm::SmallVector<char> nativePath(0);
+    llvm::sys::path::append(path, subPath);
+    llvm::sys::fs::make_absolute(path);
+    llvm::sys::path::native(path, nativePath);    
+    llvm::StringRef str(nativePath.data(), nativePath.size());
+    return str.str();
+}
+
 bool prepareDefaultLib(CompileOptions &compileOptions)
 {
     if (noDefaultLib)

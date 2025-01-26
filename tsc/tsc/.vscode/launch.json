@@ -423,7 +423,7 @@
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },
+        },     
         {
             "name": "(Windows) tsc.exe - JIT (no default)",
             "type": "cppvsdbg",
