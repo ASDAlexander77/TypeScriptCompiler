@@ -35,7 +35,9 @@ class VariableDeclarationDOM
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
     VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = undefined)
-        : name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), _using(false), readWrite(false)
+        : name(name), type(type), loc(loc), initValue(initValue), captured(false), ignoreCapturing(false), _using(false), readWrite(false),
+        atomic(false), ordering(0), syncscope(StringRef()), volatile_(false),
+        nonTemporal(false), invariant(false)
     {
     }
 
@@ -43,6 +45,7 @@ class VariableDeclarationDOM
     {
         return name;
     }
+
     const mlir::Type &getType() const
     {
         return type;
@@ -51,10 +54,12 @@ class VariableDeclarationDOM
     {
         type = type_;
     }
+
     const mlir::Location &getLoc() const
     {
         return loc;
     }
+
     const Expression &getInitValue() const
     {
         return initValue;
@@ -63,41 +68,97 @@ class VariableDeclarationDOM
     {
         return !!initValue;
     }
+
     bool getReadWriteAccess() const
     {
         return readWrite;
-    };
+    }
     void setReadWriteAccess(bool value = true)
     {
         readWrite = value;
-    };
+    }
+
     bool getCaptured() const
     {
         return captured;
-    };
+    }
     void setCaptured(bool value = true)
     {
         captured = value;
-    };
+    }
+
     bool getIgnoreCapturing()
     {
         return ignoreCapturing;
-    };
+    }
     void setIgnoreCapturing(bool value = true)
     {
         ignoreCapturing = value;
-    };
+    }
+
     bool getUsing() const
     {
         return _using;
-    };
+    }
     void setUsing(bool value = true)
     {
         _using = value;
+    }
+
+    void setAtomic(int ordering_, StringRef syncscope_)
+    {
+        atomic = true;
+        ordering = ordering_;
+        syncscope = syncscope_;
+    }
+    bool getAtomic() const
+    {
+        return atomic;
+    }
+    int getOrdering() const
+    {
+        return ordering;
+    }
+    StringRef getSyncScope() const
+    {
+        return syncscope;
+    }
+
+    bool getVolatile() const
+    {
+        return volatile_;
+    }
+    void setVolatile(bool value = true)
+    {
+        volatile_ = value;
+    };
+
+    bool getNonTemporal() const
+    {
+        return nonTemporal;
+    }
+    void setNonTemporal(bool value = true)
+    {
+        nonTemporal = value;
+    };
+
+    bool getInvariant() const
+    {
+        return invariant;
+    }
+    void setInvariant(bool value = true)
+    {
+        invariant = value;
     };
 
   protected:
     bool readWrite;
+    bool atomic;
+    int ordering;
+    StringRef syncscope;
+    bool volatile_;
+    bool nonTemporal;
+    bool invariant;
 };
 
 class FunctionParamDOM : public VariableDeclarationDOM

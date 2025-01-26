@@ -58,6 +58,65 @@ class MLIRCodeLogic
         return mlir::Attribute();
     }
 
+
+    mlir::IntegerAttr getIntegerAttr(mlir::Location location, mlir::Value oper, int width = 32, bool isSigned = false)
+    {
+        LLVM_DEBUG(llvm::dbgs() << "!! getIntAttr oper: " << oper << "'\n";);
+
+        mlir::Attribute value;
+        if (auto constantOp = oper.getDefiningOp<mlir_ts::ConstantOp>()) 
+        {
+            value = constantOp.getValue();
+        }        
+        else if (auto literalType = dyn_cast<mlir_ts::LiteralType>(oper.getType()))
+        {
+            value = literalType.getValue();
+        }
+
+        if (auto intAttr = dyn_cast<mlir::IntegerAttr>(value)) 
+        {
+            if (intAttr.getType().isInteger(width))
+            {
+                if (isSigned)
+                {
+                    return mlir::IntegerAttr::get(
+                        mlir::IntegerType::get(intAttr.getContext(), width, mlir::IntegerType::SignednessSemantics::Signed), 
+                        intAttr.getValue().getSExtValue());
+                }
+                else
+                {
+                    return mlir::IntegerAttr::get(
+                        mlir::IntegerType::get(intAttr.getContext(), width, mlir::IntegerType::SignednessSemantics::Signless), 
+                        intAttr.getValue().getZExtValue());
+                }
+            }            
+        }        
+
+        emitError(location) << "Must be constant integer(" << width << ")";
+        return mlir::IntegerAttr();
+    }
+
+    mlir::StringAttr getStringAttr(mlir::Location location, mlir::Value oper)
+    {
+        mlir::Attribute value;
+        if (auto constantOp = oper.getDefiningOp<mlir_ts::ConstantOp>()) 
+        {
+            value = constantOp.getValue();
+        }        
+        else if (auto literalType = dyn_cast<mlir_ts::LiteralType>(oper.getType()))
+        {
+            value = literalType.getValue();       
+        }
+
+        if (auto strAttr = dyn_cast<mlir::StringAttr>(value)) 
+        {
+            return strAttr;
+        }      
+
+        emitError(location) << "Must be constant string";
+        return mlir::StringAttr();
+    }
+
     mlir::Value GetReferenceFromValue(mlir::Location location, mlir::Value object)
     {
         MLIRTypeHelper mth(builder.getContext(), compileOptions);
@@ -306,7 +365,9 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"convertf", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true },
+            {"atomicrmw", true}, {"cmpxchg", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
+        };
         return m[functionName.str()];    
     }    
 
@@ -314,7 +375,9 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"convertf", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true },
+            {"atomicrmw", true}, {"cmpxchg", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
+        };
         return m[functionName.str()];    
     }   
 
@@ -397,6 +460,30 @@ class MLIRCustomMethods
         {
             return mlirGenReferenceOf(location, operands);
         }
+        else if (functionName == "atomicrmw")
+        {
+            return mlirGenAtomicRMW(location, operands);
+        }        
+        else if (functionName == "cmpxchg")
+        {
+            return mlirGenCmpXchg(location, operands);
+        }        
+        else if (functionName == "fence")
+        {
+            return mlirGenFence(location, operands);
+        }        
+        else if (functionName == "inline_asm")
+        {
+            return mlirGenInlineAsm(location, typeArgs, operands);
+        }        
+        else if (functionName == "call_intrinsic")
+        {
+            return mlirGenCallIntrinsic(location, typeArgs, operands);
+        }        
+        else if (functionName == "linker_options")
+        {
+            return mlirGenLinkerOptions(location, operands);
+        }        
         else if (!genContext.allowPartialResolve)
         {
             emitError(location) << "no defined function found for '" << functionName << "'";
@@ -877,6 +964,146 @@ class MLIRCustomMethods
         auto refValue = mcl.GetReferenceFromValue(location, operands.front());        
         return V(refValue);
     }    
+
+    ValueOrLogicalResult mlirGenAtomicRMW(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        auto size = operands.size();
+        if (size < 4 || size > 6)
+        {
+            return mlir::failure();
+        }
+
+        MLIRCodeLogic mcl(builder, compileOptions);
+        return V(builder.create<mlir_ts::AtomicRMWOp>(location, 
+            operands[2].getType(),
+            mcl.getIntegerAttr(location, operands[0]), operands[1], operands[2], mcl.getIntegerAttr(location, operands[3]), 
+            size > 4 ? mcl.getStringAttr(location, operands[4]) : mlir::StringAttr(), 
+            size > 5 ? mcl.getIntegerAttr(location, operands[5], 64) : mlir::IntegerAttr(), 
+            mlir::UnitAttr()/*isVolatile*/));
+    }     
+
+    mlir::Type getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+    {
+        return mlir_ts::TupleType::get(builder.getContext(), fieldInfos);
+    }
+
+    ValueOrLogicalResult mlirGenCmpXchg(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        auto size = operands.size();
+        if (size < 5 || size > 7)
+        {
+            return mlir::failure();
+        }
+
+        mlir::SmallVector<mlir_ts::FieldInfo> fields;
+        fields.push_back(
+            mlir_ts::FieldInfo{
+                mlir::Attribute(),
+                operands[2].getType(),
+                false,
+                mlir_ts::AccessLevel::Public
+            });
+        
+        fields.push_back(
+            mlir_ts::FieldInfo{
+                mlir::Attribute(),
+                mlir_ts::BooleanType::get(builder.getContext()),
+                false,
+                mlir_ts::AccessLevel::Public
+            });
+
+        auto resultTuple = getTupleType(fields);
+
+        MLIRCodeLogic mcl(builder, compileOptions);
+        return V(builder.create<mlir_ts::AtomicCmpXchgOp>(location, 
+            resultTuple, operands[0],
+            operands[1], operands[2], mcl.getIntegerAttr(location, operands[3]), mcl.getIntegerAttr(location, operands[4]), 
+            size > 5 ? mcl.getStringAttr(location, operands[5]) : mlir::StringAttr(), 
+            size > 6 ? mcl.getIntegerAttr(location, operands[6], 64) : mlir::IntegerAttr(), 
+            mlir::UnitAttr()/*Weak*/,
+            mlir::UnitAttr()/*isVolatile*/));
+    }     
+
+    ValueOrLogicalResult mlirGenFence(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        auto size = operands.size();
+        if (size == 0 || size > 2)
+        {
+            return mlir::failure();
+        }
+
+        MLIRCodeLogic mcl(builder, compileOptions);
+        if (size > 1)
+        {
+            builder.create<mlir_ts::FenceOp>(location, mcl.getIntegerAttr(location, operands[0]), mcl.getStringAttr(location, operands[1]));
+        }
+        else
+        {
+            builder.create<mlir_ts::FenceOp>(location, mcl.getIntegerAttr(location, operands[0]), mlir::StringAttr());
+        }
+
+        return mlir::success();
+    }     
+
+    ValueOrLogicalResult mlirGenInlineAsm(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
+    {
+        MLIRCodeLogic mcl(builder, compileOptions);
+        auto asm_string = mcl.getStringAttr(location, operands[0]);
+        auto constraints = mcl.getStringAttr(location, operands[1]);
+        auto args = operands.drop_front(2);
+        if (typeArgs.size() > 0)
+        {
+            auto result = builder.create<mlir_ts::InlineAsmOp>(location, mlir::TypeRange(typeArgs), mlir::ValueRange(args), asm_string, constraints, mlir::UnitAttr(), mlir::UnitAttr(), mlir::IntegerAttr(), mlir::ArrayAttr());
+            return result.getResults();
+        }
+        else
+        {
+            builder.create<mlir_ts::InlineAsmOp>(location, mlir::TypeRange(), mlir::ValueRange(args), asm_string, constraints, mlir::UnitAttr(), mlir::UnitAttr(), mlir::IntegerAttr(), mlir::ArrayAttr());
+            // TODO: finish version with return value
+            return mlir::success();
+        }
+    }     
+
+    ValueOrLogicalResult mlirGenCallIntrinsic(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
+    {
+        MLIRCodeLogic mcl(builder, compileOptions);
+        auto intrin_string = mcl.getStringAttr(location, operands[0]);
+        auto args = operands.drop_front(1);
+
+        if (typeArgs.size() > 0)
+        {
+            auto result = builder.create<mlir_ts::CallIntrinsicOp>(location, mlir::TypeRange(typeArgs), intrin_string, 
+                mlir::ValueRange(args), builder.getIntegerAttr(builder.getI32Type(), 0));
+            return result.getResults();
+        }
+        else
+        {
+            builder.create<mlir_ts::CallIntrinsicOp>(location, mlir::TypeRange(), intrin_string, 
+                mlir::ValueRange(args), builder.getIntegerAttr(builder.getI32Type(), 0));
+            return mlir::success();
+        }
+    }     
+
+    ValueOrLogicalResult mlirGenLinkerOptions(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        SmallVector<mlir::Attribute> strAttrs;
+        MLIRCodeLogic mcl(builder, compileOptions);
+
+        for (auto oper : operands) 
+        {
+            if (auto val = mcl.getStringAttr(location, oper))
+            {
+                strAttrs.push_back(val);
+            }
+            else
+            {
+                return mlir::failure();
+            }
+        }
+
+        builder.create<mlir_ts::LinkerOptionsOp>(location, builder.getArrayAttr(strAttrs));
+        return mlir::success();
+    }     
 };
 
 class MLIRPropertyAccessCodeLogic

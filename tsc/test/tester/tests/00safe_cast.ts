@@ -41,10 +41,28 @@ function testUndef()
         print(i);
 }
 
+function testNull()
+{
+    let i : number | null = 10;
+    if (i !== null)
+        print(i);
+}
+
+function testAmpAmp()
+{
+    let a: number | undefined | null = 2;
+
+    if (a !== undefined && a !== null) {
+        print(a + 2);
+    }
+}
+
 function main() {
     testTypeOf();
     testClass();
     testUndef();
+    testNull();
+    testAmpAmp();
 
     print("done.");
 }

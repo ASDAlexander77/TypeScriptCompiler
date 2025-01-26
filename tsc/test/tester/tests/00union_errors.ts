@@ -9,4 +9,13 @@ assert(v !== "MINUS")
 assert(v === v)
 assert(v !== v2)
 
+
+let a: number | null = 1.0;
+
+if (a !== null) {
+    let r = a + 1;
+    print (r);
+    assert(r == 2.0);
+}
+
 print("done.")

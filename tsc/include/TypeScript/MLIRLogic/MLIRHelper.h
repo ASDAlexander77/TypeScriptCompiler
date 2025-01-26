@@ -118,6 +118,16 @@ class MLIRHelper
             return getName(name.as<ts::StringLiteral>());
         }
 
+        if (kind == SyntaxKind::ThisKeyword)
+        {
+            return "this";
+        }
+
+        if (kind == SyntaxKind::SuperKeyword)
+        {
+            return "super";
+        }
+
         return nameValue;
     }
 
@@ -304,35 +314,6 @@ class MLIRHelper
         }
 
         return false;
-    }
-
-    static void iterateDecorators(Node node, std::function<void(std::string, SmallVector<std::string>)> functor)
-    {
-        for (auto decorator : node->modifiers)
-        {
-            if (decorator != SyntaxKind::Decorator)
-            {
-                continue;
-            }
-
-            SmallVector<std::string> args;
-            auto expr = decorator.as<Decorator>()->expression;
-            if (expr == SyntaxKind::CallExpression)
-            {
-                auto callExpression = expr.as<CallExpression>();
-                expr = callExpression->expression;
-                for (auto argExpr : callExpression->arguments)
-                {
-                    args.push_back(MLIRHelper::getName(argExpr.as<Node>()));
-                }
-            }            
-
-            if (expr == SyntaxKind::Identifier)
-            {
-                auto name = MLIRHelper::getName(expr.as<Node>());
-                functor(name, args);
-            }
-        }
     }
 
     static void addDecoratorIfNotPresent(Node node, StringRef decoratorName)

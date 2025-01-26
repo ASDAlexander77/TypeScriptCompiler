@@ -444,7 +444,7 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
         }
 
         rewriter.setInsertionPointToEnd(condBlock);
-        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), ifOp.getCondition());
+        auto castToI1 = rewriter.create<mlir_ts::DialectCastOp>(loc, rewriter.getI1Type(), ifOp.getCondition());
         rewriter.create<mlir::cf::CondBranchOp>(loc, castToI1, thenBlock,
                                       /*trueArgs=*/ArrayRef<mlir::Value>(), elseBlock,
                                       /*falseArgs=*/ArrayRef<mlir::Value>());
@@ -2157,6 +2157,7 @@ void AddTsAffineLegalOps(ConversionTarget &target)
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
     target.addLegalOp<
+        mlir_ts::DialectCastOp,
         mlir_ts::AddressOfOp, mlir_ts::ArithmeticBinaryOp, mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, 
         mlir_ts::ElementRefOp, mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::DefaultOp, 
         mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::ValueOrDefaultOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp,
@@ -2176,7 +2177,9 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp, mlir_ts::BoxOp, mlir_ts::UnboxOp,
         mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp, mlir_ts::GetTypeInfoFromUnionOp,
         mlir_ts::OptionalOp, mlir_ts::OptionalValueOp, mlir_ts::OptionalUndefOp,
-        mlir_ts::LoadLibraryPermanentlyOp, mlir_ts::SearchForAddressOfSymbolOp>();
+        mlir_ts::LoadLibraryPermanentlyOp, mlir_ts::SearchForAddressOfSymbolOp,
+        mlir_ts::AtomicRMWOp, mlir_ts::AtomicCmpXchgOp, mlir_ts::FenceOp, mlir_ts::InlineAsmOp, 
+        mlir_ts::CallIntrinsicOp, mlir_ts::LinkerOptionsOp>();
 #ifdef ENABLE_TYPED_GC
     target.addLegalOp<
         mlir_ts::GCMakeDescriptorOp, GCNewExplicitlyTypedOp>();
