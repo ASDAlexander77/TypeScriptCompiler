@@ -123,13 +123,15 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 #define LIB_NAME "lib"
 #define LIB_EXT "so"
 #endif
-    std::string absPathTypeScriptLib("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
+    std::string pathTypeScriptLib("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
     if (!disableGC.getValue())
     {
-        if (!llvm::sys::fs::exists(absPathTypeScriptLib))
+        auto absPath = makeAbsolutePath(pathTypeScriptLib);
+        if (absPath.empty())
         {            
-            absPathTypeScriptLib = LIB_NAME "TypeScriptRuntime." LIB_EXT;
-            if (!llvm::sys::fs::exists(absPathTypeScriptLib))
+            pathTypeScriptLib = LIB_NAME "TypeScriptRuntime." LIB_EXT;
+            auto absPath2 = makeAbsolutePath(pathTypeScriptLib);
+            if (absPath2.empty())
             {
                 /*
                 llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
@@ -139,12 +141,12 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
             }        
             else
             {
-                clSharedLibs.push_back(makeAbsolutePath(absPathTypeScriptLib));
+                clSharedLibs.push_back(absPath2);
             }
         }
         else
         {
-            clSharedLibs.push_back(makeAbsolutePath(absPathTypeScriptLib));
+            clSharedLibs.push_back(absPath);
         }
     }
 

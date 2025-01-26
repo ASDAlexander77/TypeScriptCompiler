@@ -173,7 +173,12 @@ std::string makeAbsolutePath(std::string subPath)
 {
     if (subPath.empty())
     {
-        return subPath;
+        return "";
+    }
+
+    if (!llvm::sys::fs::exists(subPath))
+    {
+        return "";
     }
 
     llvm::SmallVector<char> path(0);
@@ -182,6 +187,12 @@ std::string makeAbsolutePath(std::string subPath)
     llvm::sys::fs::make_absolute(path);
     llvm::sys::path::native(path, nativePath);    
     llvm::StringRef str(nativePath.data(), nativePath.size());
+
+    if (!llvm::sys::fs::exists(str))
+    {
+        return "";
+    }
+
     return str.str();
 }
 
