@@ -412,6 +412,7 @@ add_test(NAME test-compile-no-main COMMAND test-runner "${PROJECT_SOURCE_DIR}/te
 add_test(NAME test-compile-parser COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/parser.ts")
 add_test(NAME test-compile-internals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/internals.ts")
 add_test(NAME test-compile-load-store-decorators COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
+add_test(NAME test-compile-null-reference-bug COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00null_reference_bug.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -731,6 +732,7 @@ add_test(NAME test-jit-no-main COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/t
 add_test(NAME test-jit-parser COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/parser.ts")
 add_test(NAME test-jit-internals COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/internals.ts")
 add_test(NAME test-jit-load-store-decorators COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/load_store_decorators.ts")
+add_test(NAME test-jit-null-reference-bug COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00null_reference_bug.ts")
 
 # tesing include
 add_test(NAME test-compile-include-global-var COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/include_global_var.ts" "${PROJECT_SOURCE_DIR}/test/tester/tests/define_global_var.ts")

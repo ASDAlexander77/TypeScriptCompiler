@@ -15,7 +15,8 @@ namespace typescript
 class MLIRTypeCore
 {  
 public:    
-    static bool isNullableType(mlir::Type typeIn)
+
+    static bool isNullableTypeNoUnion(mlir::Type typeIn)
     {
         if (isa<mlir_ts::NullType>(typeIn) 
             || isa<mlir_ts::StringType>(typeIn) 
@@ -26,6 +27,16 @@ public:
             || isa<mlir_ts::UnknownType>(typeIn)
             || isa<mlir_ts::RefType>(typeIn)
             || isa<mlir_ts::ValueRefType>(typeIn))
+        {
+            return true;            
+        }
+
+        return false;
+    }
+
+    static bool isNullableType(mlir::Type typeIn)
+    {
+        if (MLIRTypeCore::isNullableTypeNoUnion(typeIn))
         {
             return true;            
         }
