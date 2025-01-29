@@ -961,7 +961,13 @@ class MLIRCustomMethods
     ValueOrLogicalResult mlirGenReferenceOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder, compileOptions);
-        auto refValue = mcl.GetReferenceFromValue(location, operands.front());        
+        auto refValue = mcl.GetReferenceFromValue(location, operands.front()); 
+        if (!refValue)       
+        {
+            emitError(location, "Are you trying to get reference of constant object or variable?");
+            return mlir::failure();
+        }
+
         return V(refValue);
     }    
 

@@ -1880,7 +1880,7 @@ class MLIRTypeHelper
                 return true;
             }
 
-            if (destIntType.getIntOrFloatBitWidth() - srcIntType.getIntOrFloatBitWidth() > 1)
+            if (destIntType.getIntOrFloatBitWidth() > srcIntType.getIntOrFloatBitWidth() && (destIntType.getIntOrFloatBitWidth() - srcIntType.getIntOrFloatBitWidth()) > 1)
             {
                 return true;
             }
