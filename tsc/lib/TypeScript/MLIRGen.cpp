@@ -5871,12 +5871,29 @@ class MLIRGenImpl
         }
 
         // set visibility index
-        auto isPublic = getExportModifier(functionLikeDeclarationBaseAST)
-            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport)
-            /* we need to forcebly set to Public to prevent SymbolDCEPass to remove unsed name */
-            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword)
+        auto isPublic = 
+            getExportModifier(functionLikeDeclarationBaseAST)
+            /* we need to forcebly set to Public to prevent SymbolDCEPass to remove unused name */
+            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword);
+
+        // force public
+        isPublic |= 
+            ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport)
             || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::IsPublic) == InternalFlags::IsPublic)
             || funcProto->getName() == MAIN_ENTRY_NAME;
+
+        // if explicit public/protected - set public visibility
+        if (hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::PublicKeyword) 
+            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ProtectedKeyword)) 
+        {
+            isPublic = true;
+        }
+
+        // if explicit private - do not set public visibility
+        if (hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::PrivateKeyword)) 
+        {
+            isPublic = false;
+        }
 
         if (isPublic)
         {
@@ -18694,7 +18711,7 @@ genContext);
             //MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
         }
 
-        if (newClassPtr->isPublic && hasModifier(classMember, SyntaxKind::PublicKeyword))
+        if (newClassPtr->isPublic && accessLevel != mlir_ts::AccessLevel::Private)
         {
             funcLikeDeclaration->internalFlags |= InternalFlags::IsPublic;
         }
