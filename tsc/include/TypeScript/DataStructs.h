@@ -22,6 +22,7 @@ struct CompileOptions
     bool isExecutable;
     bool isDLL;
     enum Exports exportOpt;
+    bool embedExportDeclarations;
     std::string outputFolder;
     bool appendGCtorsToMethod;
     bool strictNullChecks;

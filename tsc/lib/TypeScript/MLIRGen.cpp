@@ -460,7 +460,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext)
     {
-        if (!declExports.rdbuf()->in_avail())
+        if (!declExports.rdbuf()->in_avail() || !compileOptions.embedExportDeclarations)
         {
             return mlir::success();
         }

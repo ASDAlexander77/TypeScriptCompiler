@@ -111,6 +111,8 @@ cl::opt<enum Exports> exportAction("export", cl::desc("Export Symbols. (Useful t
                                        cl::values(clEnumValN(IgnoreAll, "none", "ignore all exports")),
                                        cl::cat(TypeScriptCompilerCategory));
 
+cl::opt<bool> embedExportDeclarationsAction("embed-declarations", cl::desc("Embed declarations as member __decls_lib_XXXX. (Needed in 'import' statement)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
+
 cl::opt<std::string> defaultlibpath("default-lib-path", cl::desc("JS library path. Should point to folder/directory with subfolder '" DEFAULT_LIB_DIR "' or DEFAULT_LIB_PATH environmental variable"), cl::value_desc("defaultlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gcmt-lib.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. Should point to file 'LLVMSupport.lib' and 'LLVMDemangle' in linux or LLVM_LIB_PATH environmental variable"), cl::value_desc("llvmlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
