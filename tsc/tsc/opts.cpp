@@ -26,6 +26,7 @@ extern cl::opt<bool> noDefaultLib;
 extern cl::opt<std::string> outputFilename;
 extern cl::opt<bool> appendGCtorsToMethod;
 extern cl::opt<bool> strictNullChecks; 
+extern cl::opt<bool> embedExportDeclarationsAction;
 
 // obj
 extern cl::opt<std::string> TargetTriple;
@@ -45,6 +46,7 @@ CompileOptions prepareOptions()
     compileOptions.noDefaultLib = noDefaultLib.getValue();
     compileOptions.disableWarnings = disableWarnings.getValue();
     compileOptions.exportOpt = exportAction.getValue();
+    compileOptions.embedExportDeclarations = embedExportDeclarationsAction.getValue();
     compileOptions.generateDebugInfo = generateDebugInfo.getValue();
     compileOptions.lldbDebugInfo = lldbDebugInfo.getValue();
     compileOptions.moduleTargetTriple = moduleTargetTriple;

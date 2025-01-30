@@ -460,7 +460,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult createDeclarationExportGlobalVar(const GenContext &genContext)
     {
-        if (!declExports.rdbuf()->in_avail())
+        if (!declExports.rdbuf()->in_avail() || !compileOptions.embedExportDeclarations)
         {
             return mlir::success();
         }
@@ -5871,23 +5871,35 @@ class MLIRGenImpl
         }
 
         // set visibility index
-        auto isPublic = getExportModifier(functionLikeDeclarationBaseAST)
-            || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport)
-            /* we need to forcebly set to Public to prevent SymbolDCEPass to remove unsed name */
-            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword)
+        auto isPublic = 
+            getExportModifier(functionLikeDeclarationBaseAST)
+            /* we need to forcebly set to Public to prevent SymbolDCEPass to remove unused name */
+            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword);
+
+        // force public
+        isPublic |= 
+            ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::DllExport) == InternalFlags::DllExport)
             || ((functionLikeDeclarationBaseAST->internalFlags & InternalFlags::IsPublic) == InternalFlags::IsPublic)
             || funcProto->getName() == MAIN_ENTRY_NAME;
 
-        if (isPublic)
+        // if explicit public/protected - set public visibility
+        if (hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::PublicKeyword) 
+            || hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ProtectedKeyword)) 
+        {
+            isPublic = true;
+        }
+
+        // if explicit private - do not set public visibility
+        if (hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::PrivateKeyword)) 
+        {
+            isPublic = false;
+        }
+
+        if (isPublic && !funcProto->getNoBody() && !declarationMode)
         {
             funcOp.setPublic();
         }
         else
-        {
-            funcOp.setPrivate();
-        }
-
-        if (declarationMode && !funcDeclGenContext.dummyRun && funcProto->getNoBody())
         {
             funcOp.setPrivate();
         }
@@ -18410,7 +18422,7 @@ genContext);
             isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
             auto isPrivate = hasModifier(classMember, SyntaxKind::PrivateKeyword);
             auto isProtected = hasModifier(classMember, SyntaxKind::ProtectedKeyword);
-            auto isPublic = hasModifier(classMember, SyntaxKind::PublicKeyword);
+            //auto isPublic = hasModifier(classMember, SyntaxKind::PublicKeyword);
 
             accessLevel = mlir_ts::AccessLevel::Public;
             if (isPrivate)
@@ -18422,8 +18434,8 @@ genContext);
                 accessLevel = mlir_ts::AccessLevel::Protected;
             }
 
-            isExport = newClassPtr->isExport && (isConstructor || isPublic);
-            isImport = newClassPtr->isImport && (isConstructor || isPublic);
+            isExport = newClassPtr->isExport && (isConstructor || accessLevel == mlir_ts::AccessLevel::Public);
+            isImport = newClassPtr->isImport && (isConstructor || accessLevel == mlir_ts::AccessLevel::Public);
             isForceVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
     #ifdef ALL_METHODS_VIRTUAL
             isForceVirtual |= !isConstructor;
@@ -18694,7 +18706,7 @@ genContext);
             //MLIRHelper::addDecoratorIfNotPresent(funcLikeDeclaration, DLL_IMPORT);
         }
 
-        if (newClassPtr->isPublic && hasModifier(classMember, SyntaxKind::PublicKeyword))
+        if (newClassPtr->isPublic && accessLevel != mlir_ts::AccessLevel::Private)
         {
             funcLikeDeclaration->internalFlags |= InternalFlags::IsPublic;
         }
@@ -22257,20 +22269,35 @@ genContext);
         auto translate = llvm::StringSwitch<std::function<mlir::Type(NodeArray<TypeNode> &, const GenContext &)>>(name)
             .Case("TypeOf", [&] (auto typeArguments, auto genContext) {
                 auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (!type)
+                {
+                    return mlir::Type();
+                }
+
                 type = mth.wideStorageType(type);
                 return type;
             })
             .Case("Reference", [&] (auto typeArguments, auto genContext) {
                 auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return mlir_ts::RefType::get(type);
+                if (!type)
+                {
+                    return mlir::Type();
+                }
+
+                return mlir::Type(mlir_ts::RefType::get(type));
             })
             .Case("Readonly", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
             .Case("Partial", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
             .Case("Required", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
             .Case("ThisType", std::bind(&MLIRGenImpl::getFirstTypeFromTypeArguments, this, std::placeholders::_1, std::placeholders::_2))
             .Case("NonNullable", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return NonNullableTypes(elemnentType);
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (!elementType)
+                {
+                    return mlir::Type();
+                }
+
+                return NonNullableTypes(elementType);
             })
 #ifdef ARRAY_TYPE_AS_ARRAY_CLASS            
             .Case("Array", [&] (auto typeArguments, auto genContext) {
@@ -22279,12 +22306,17 @@ genContext);
             })
 #endif            
             .Case("ReadonlyArray", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return getArrayType(elemnentType);
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (!elementType)
+                {
+                    return mlir::Type();
+                }
+
+                return getArrayType(elementType);
             })
             .Case("ReturnType", [&] (auto typeArguments, auto genContext) {
                 auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (genContext.allowPartialResolve && !elementType)
+                if (!elementType)
                 {
                     return mlir::Type();
                 }
@@ -22296,7 +22328,7 @@ genContext);
             })
             .Case("Parameters", [&] (auto typeArguments, auto genContext) {
                 auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (genContext.allowPartialResolve && !elementType)
+                if (!elementType)
                 {
                     return mlir::Type();
                 }
@@ -22308,7 +22340,7 @@ genContext);
             })
             .Case("ConstructorParameters", [&] (auto typeArguments, auto genContext) {
                 auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (genContext.allowPartialResolve && !elementType)
+                if (!elementType)
                 {
                     return mlir::Type();
                 }
@@ -22320,7 +22352,7 @@ genContext);
             })
             .Case("ThisParameterType", [&] (auto typeArguments, auto genContext) {
                 auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (genContext.allowPartialResolve && !elementType)
+                if (!elementType)
                 {
                     return mlir::Type();
                 }
@@ -22332,7 +22364,7 @@ genContext);
             })
             .Case("OmitThisParameter", [&] (auto typeArguments, auto genContext) {
                 auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                if (genContext.allowPartialResolve && !elementType)
+                if (!elementType)
                 {
                     return mlir::Type();
                 }
@@ -22343,20 +22375,40 @@ genContext);
                 return retType;
             })
             .Case("Uppercase", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return UppercaseType(elemnentType);
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (!elementType)
+                {
+                    return mlir::Type();
+                }
+
+                return UppercaseType(elementType);
             })
             .Case("Lowercase", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return LowercaseType(elemnentType);
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (!elementType)
+                {
+                    return mlir::Type();
+                }
+
+                return LowercaseType(elementType);
             })
             .Case("Capitalize", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return CapitalizeType(elemnentType);
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (!elementType)
+                {
+                    return mlir::Type();
+                }
+
+                return CapitalizeType(elementType);
             })
             .Case("Uncapitalize", [&] (auto typeArguments, auto genContext) {
-                auto elemnentType = getFirstTypeFromTypeArguments(typeArguments, genContext);
-                return UncapitalizeType(elemnentType);
+                auto elementType = getFirstTypeFromTypeArguments(typeArguments, genContext);
+                if (!elementType)
+                {
+                    return mlir::Type();
+                }
+
+                return UncapitalizeType(elementType);
             })
             .Default([] (auto, auto) {
                 return mlir::Type();

@@ -124,6 +124,7 @@ class CastLogicHelper
             return castF64ToString(in);
         }
 
+        // TODO: should be in LLVM cast?
         if (inType.isIndex())
         {
             if (resType.isSignedInteger() || isFloat(resType))
@@ -136,6 +137,7 @@ class CastLogicHelper
             }
         }
 
+        // TODO: should be in LLVM cast?
         if (inType.isSignedInteger() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
         {
             return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);

@@ -1699,7 +1699,7 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
         }
         else
         {
-            auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, baseType, transformed.getIn());
+            auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), transformed.getIn());
 
             rewriter.replaceOp(op, ValueRange{typeOfValue});
         }

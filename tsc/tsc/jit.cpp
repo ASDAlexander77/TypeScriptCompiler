@@ -32,6 +32,7 @@ extern cl::opt<std::string> TargetTriple;
 
 std::string getDefaultLibPath();
 std::string mergeWithDefaultLibPath(std::string, std::string);
+std::string makeAbsolutePath(std::string);
 
 int registerMLIRDialects(mlir::ModuleOp);
 std::function<llvm::Error(llvm::Module *)> getTransformer(bool, int, int, CompileOptions&);
@@ -83,19 +84,6 @@ int loadLibrary(mlir::SmallString<256> &libPath, llvm::StringMap<void *> &export
     return 0;
 }
 
-bool addLibFileIfExists(mlir::SmallVector<mlir::StringRef>& sharedLibs, mlir::StringRef tsLibPath)
-{
-    mlir::SmallString<256> absPathTypeScriptLib(tsLibPath.begin(), tsLibPath.end());
-    cantFail(llvm::errorCodeToError(llvm::sys::fs::make_absolute(absPathTypeScriptLib)));        
-
-    if (llvm::sys::fs::exists(absPathTypeScriptLib))
-    {
-        return true;
-    }
-
-    return false;
-}
-
 int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
     // Print a stack trace if we signal out.
@@ -127,11 +115,6 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         ));
     }      
 
-    // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
-    // the module.
-    mlir::SmallVector<mlir::StringRef> sharedLibPaths;
-    sharedLibPaths.append(begin(clSharedLibs), end(clSharedLibs));
-
     // add default libs in case they are not part of options
 #ifdef WIN32
 #define LIB_NAME ""
@@ -140,9 +123,15 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 #define LIB_NAME "lib"
 #define LIB_EXT "so"
 #endif
+    std::string pathTypeScriptLib("../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT);
     if (!disableGC.getValue())
-        if (!addLibFileIfExists(sharedLibPaths, "../lib/" LIB_NAME "TypeScriptRuntime." LIB_EXT))
-            if (!addLibFileIfExists(sharedLibPaths, LIB_NAME "TypeScriptRuntime." LIB_EXT))
+    {
+        auto absPath = makeAbsolutePath(pathTypeScriptLib);
+        if (absPath.empty())
+        {            
+            pathTypeScriptLib = LIB_NAME "TypeScriptRuntime." LIB_EXT;
+            auto absPath2 = makeAbsolutePath(pathTypeScriptLib);
+            if (absPath2.empty())
             {
                 /*
                 llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
@@ -150,6 +139,21 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
                 return -1;            
                 */
             }        
+            else
+            {
+                clSharedLibs.push_back(absPath2);
+            }
+        }
+        else
+        {
+            clSharedLibs.push_back(absPath);
+        }
+    }
+
+    // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
+    // the module.
+    mlir::SmallVector<mlir::StringRef> sharedLibPaths;
+    sharedLibPaths.append(begin(clSharedLibs), end(clSharedLibs));
 
     mlir::ExecutionEngineOptions engineOptions;
     engineOptions.transformer = optPipeline;
