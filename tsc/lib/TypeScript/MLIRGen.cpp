@@ -5895,16 +5895,11 @@ class MLIRGenImpl
             isPublic = false;
         }
 
-        if (isPublic)
+        if (isPublic && !funcProto->getNoBody() && !declarationMode)
         {
             funcOp.setPublic();
         }
         else
-        {
-            funcOp.setPrivate();
-        }
-
-        if (declarationMode && !funcDeclGenContext.dummyRun && funcProto->getNoBody())
         {
             funcOp.setPrivate();
         }
