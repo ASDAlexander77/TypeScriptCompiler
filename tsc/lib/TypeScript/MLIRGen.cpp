@@ -18427,7 +18427,7 @@ genContext);
             isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
             auto isPrivate = hasModifier(classMember, SyntaxKind::PrivateKeyword);
             auto isProtected = hasModifier(classMember, SyntaxKind::ProtectedKeyword);
-            auto isPublic = hasModifier(classMember, SyntaxKind::PublicKeyword);
+            //auto isPublic = hasModifier(classMember, SyntaxKind::PublicKeyword);
 
             accessLevel = mlir_ts::AccessLevel::Public;
             if (isPrivate)
@@ -18439,8 +18439,8 @@ genContext);
                 accessLevel = mlir_ts::AccessLevel::Protected;
             }
 
-            isExport = newClassPtr->isExport && (isConstructor || isPublic);
-            isImport = newClassPtr->isImport && (isConstructor || isPublic);
+            isExport = newClassPtr->isExport && (isConstructor || accessLevel == mlir_ts::AccessLevel::Public);
+            isImport = newClassPtr->isImport && (isConstructor || accessLevel == mlir_ts::AccessLevel::Public);
             isForceVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
     #ifdef ALL_METHODS_VIRTUAL
             isForceVirtual |= !isConstructor;
