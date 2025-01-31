@@ -177,6 +177,11 @@ class LLVMDebugInfoHelper
             return getDITypeWithFields(location, tupleType, to_print(tupleType), false, file, line, scope);
         }
 
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return getDITypeWithFields(location, optionalType, to_print(optionalType), false, file, line, scope);
+        }
+
         if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(type))
         {
             return getDIType(location, classType, file, line, scope);
@@ -377,7 +382,7 @@ class LLVMDebugInfoHelper
 
         auto diTypeAttrUnion = getDIUnionType(location, unionType, file, line, scope);
 
-        return getDIStructType(MLIRHelper::getAnonymousName(unionType, "union"), {
+        return getDIStructType(MLIRHelper::getAnonymousName(unionType, "struct"), {
             {"type", diStrType},
             {"data", diTypeAttrUnion},
         }, file, line, scope);        

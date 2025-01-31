@@ -195,8 +195,9 @@ class MLIRHelper
         std::string ssName;
         llvm::raw_string_ostream s(ssName);
         s << prefix;
-        s << '_';
+        s << '<';
         s << type;
+        s << '>';
         return ssName;
     }
 
