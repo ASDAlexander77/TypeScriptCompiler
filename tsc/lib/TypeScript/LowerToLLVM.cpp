@@ -2870,20 +2870,56 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
                                                                    rewriter);
             break;
         case SyntaxKind::GreaterThanToken:
-            value = logicOp<arith::CmpIPredicate::sgt, arith::CmpFPredicate::OGT>(logicalBinaryOp, op, op1, opType1, op2, opType2,
-                                                                    rewriter);
+
+            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            {
+                value = logicOp<arith::CmpIPredicate::ugt, arith::CmpFPredicate::OGT>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+            else
+            {
+                value = logicOp<arith::CmpIPredicate::sgt, arith::CmpFPredicate::OGT>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
             break;
         case SyntaxKind::GreaterThanEqualsToken:
-            value = logicOp<arith::CmpIPredicate::sge, arith::CmpFPredicate::OGE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
-                                                                    rewriter);
+            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            {
+                value = logicOp<arith::CmpIPredicate::uge, arith::CmpFPredicate::OGE>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+            else
+            {
+                value = logicOp<arith::CmpIPredicate::sge, arith::CmpFPredicate::OGE>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+
             break;
         case SyntaxKind::LessThanToken:
-            value = logicOp<arith::CmpIPredicate::slt, arith::CmpFPredicate::OLT>(logicalBinaryOp, op, op1, opType1, op2, opType2,
-                                                                    rewriter);
+            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            {
+                value = logicOp<arith::CmpIPredicate::ult, arith::CmpFPredicate::OLT>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+            else
+            {
+                value = logicOp<arith::CmpIPredicate::slt, arith::CmpFPredicate::OLT>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+
             break;
         case SyntaxKind::LessThanEqualsToken:
-            value = logicOp<arith::CmpIPredicate::sle, arith::CmpFPredicate::OLE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
-                                                                    rewriter);
+            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            {
+                value = logicOp<arith::CmpIPredicate::ule, arith::CmpFPredicate::OLE>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+            else
+            {
+                value = logicOp<arith::CmpIPredicate::sle, arith::CmpFPredicate::OLE>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+
             break;
         default:
             llvm_unreachable("not implemented");
