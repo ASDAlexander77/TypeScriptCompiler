@@ -113,7 +113,8 @@ namespace
 enum class IsGeneric
 {
     False,
-    True
+    True,
+    NoDefaults
 };
 
 enum class Reason
@@ -2884,6 +2885,12 @@ class MLIRGenImpl
             auto typeParams = genericClassInfo->typeParams;
             auto [result, hasAnyNamedGenericType] = zipTypeParametersWithArguments(
                 location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
+            if (mlir::failed(result) && hasAnyNamedGenericType == IsGeneric::NoDefaults)
+            {
+                // can't instantiate generic type, so check if normal type without generic types exists
+                return {mlir::success(), mlir::Type()};
+            }
+
             if (mlir::failed(result) || (hasAnyNamedGenericType == IsGeneric::True && !allowNamedGenerics))
             {
                 return {mlir::failure(), mlir::Type()};
@@ -3191,10 +3198,11 @@ class MLIRGenImpl
         auto result = mlirGen(expression, genContext);
         EXIT_IF_FAILED_OR_NO_VALUE(result)
         auto genResult = V(result);
-        if (typeArguments.size() == 0)
-        {
-            return genResult;
-        }
+        // we can't leave here, template can have all parameters as default
+        // if (typeArguments.size() == 0)
+        // {
+        //     return genResult;
+        // }
 
         auto location = loc(expression);
 
@@ -21689,6 +21697,13 @@ genContext);
                                     : mlir::Type());
             if (!type)
             {
+                if (isDefault && !typeParam->hasDefault() && argsCount == 0)
+                {
+                    // seems creating instance without TypeParams, can be used instance with the same name
+                    // scuh as Point and Point<T>
+                    return {mlir::failure(), IsGeneric::NoDefaults};    
+                }
+
                 return {mlir::failure(), anyNamedGenericType};
             }
 
