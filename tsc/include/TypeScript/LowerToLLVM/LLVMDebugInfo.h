@@ -13,6 +13,7 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
+// TODO: fix offset calculation to take in account correct align
 struct CompositeSizesTrack
 {
     CompositeSizesTrack(LLVMTypeConverterHelper &llvmtch) :
@@ -640,11 +641,11 @@ class LLVMDebugInfoHelper
         SmallVector<mlir::Type> types;
         for (auto field : fields)
         {
-            types.push_back(std::get<1>(field));
+            types.push_back(llvmtch.typeConverter->convertType(std::get<1>(field)));
         }
 
         auto structType = LLVM::LLVMStructType::getLiteral(context, types);
-        auto structLaytout = ltch.getStructLayout(structType);
+        auto structLayout = ltch.getStructLayout(structType);
 
         llvm::SmallVector<LLVM::DINodeAttr> elements;
         for (auto [index, field] : enumerate(fields))
@@ -657,7 +658,7 @@ class LLVMDebugInfoHelper
             
             sizesTrack.nextElementType(llvmElementType);
             
-            auto elementOffsetInBits = structLaytout->getElementOffsetInBits(index);
+            auto elementOffsetInBits = structLayout->getElementOffsetInBits(index);
 
             auto elementDiType = getDIType(location, llvmElementType, elementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, 

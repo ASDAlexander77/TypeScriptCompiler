@@ -59,7 +59,7 @@ class LLVMTypeConverterHelper
     {
         LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(getGlobalContext());
         auto llvmType = typeToLLVMIRTranslator.translateType(type);
-        return  typeConverter->getDataLayout().getABITypeAlign(llvmType).value() << 3;
+        return typeConverter->getDataLayout().getABITypeAlign(llvmType).value() << 3;
     }    
 
     uint64_t getStructTypeSizeNonAligned(LLVM::LLVMStructType structType)
@@ -76,6 +76,20 @@ class LLVMTypeConverterHelper
 
         return size;
     }
+
+    uint64_t getStructTypeSize(LLVM::LLVMStructType structType)
+    {
+        uint64_t size = 0;
+
+        auto structLayout = getStructLayout(structType);
+        size = structLayout->getSizeInBytes();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! struct type: " << structType 
+                        << "\n estimated size: " << size << "\n";);
+
+        return size;
+    }
+        
     
     uint64_t getTypeSizeEstimateInBits(mlir::Type llvmType)
     {
