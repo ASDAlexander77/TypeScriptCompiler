@@ -89,15 +89,21 @@ class LLVMTypeConverterHelper
             return 0;
         }
 
-        if (auto structData = dyn_cast<LLVM::LLVMStructType>(llvmType))
-        {
-            return getStructTypeSizeNonAligned(structData);
-        }        
-
         LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(getGlobalContext());
         auto type = typeToLLVMIRTranslator.translateType(llvmType);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! checking type size - LLVM: " << llvmType << " and IR: " << *type << "\n";);
+
+        if (auto structData = dyn_cast<LLVM::LLVMStructType>(llvmType))
+        {
+            auto layout = typeConverter->getDataLayout().getStructLayout(cast<llvm::StructType>(type));
+            
+            LLVM_DEBUG(llvm::dbgs() << "\n!! src type: " << llvmType
+                            << "\n size: " << layout->getSizeInBytes() << " alignment: " << layout->getAlignment().value() << "\n";);
+
+            //return getStructTypeSizeNonAligned(structData);
+            return layout->getAlignment().value();
+        }        
 
         auto typeSize = typeConverter->getDataLayout().getTypeAllocSize(type);
         
@@ -106,6 +112,14 @@ class LLVMTypeConverterHelper
 
         return typeSize;
     }
+
+    const llvm::StructLayout* getStructLayout(LLVM::LLVMStructType structData)
+    {
+        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(getGlobalContext());
+        auto type = typeToLLVMIRTranslator.translateType(structData);      
+        auto layout = typeConverter->getDataLayout().getStructLayout(cast<llvm::StructType>(type));  
+        return layout;
+    }    
 
     mlir::Type findMaxSizeType(mlir_ts::UnionType unionType)
     {
