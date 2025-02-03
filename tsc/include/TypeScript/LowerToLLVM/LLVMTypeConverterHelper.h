@@ -116,7 +116,8 @@ class LLVMTypeConverterHelper
                             << "\n size: " << layout->getSizeInBytes() << " alignment: " << layout->getAlignment().value() << "\n";);
 
             //return getStructTypeSizeNonAligned(structData);
-            return layout->getAlignment().value();
+            assert(getStructTypeSizeNonAligned(structData) == layout->getSizeInBytes());
+            return layout->getSizeInBytes();
         }        
 
         auto typeSize = typeConverter->getDataLayout().getTypeAllocSize(type);
