@@ -33,7 +33,7 @@ class AnyLogic
   protected:
     mlir::Type indexType;
     mlir::Type llvmIndexType;
-    mlir::Type valuePtrType;
+    mlir::Type ptrTy;
 
   public:
     AnyLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
@@ -41,12 +41,12 @@ class AnyLogic
     {
         indexType = th.getIndexType();
         llvmIndexType = tch.convertType(indexType);
-        valuePtrType = th.getPtrType();
+        ptrTy = th.getPtrType();
     }
 
     LLVM::LLVMStructType getStorageAnyType(mlir::Type llvmStorageType)
     {
-        return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, valuePtrType, llvmStorageType}, false);
+        return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {llvmIndexType, ptrTy, llvmStorageType}, false);
     }
 
     mlir::Value castToAny(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType)
@@ -61,7 +61,6 @@ class AnyLogic
     mlir::Value castToAny(mlir::Value in, mlir::Value typeOfValue, mlir::Type inLLVMType)
     {
         // TODO: add type id to track data type
-        auto ptrTy = th.getPtrType();
         auto llvmStorageType = inLLVMType;
         auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
@@ -71,9 +70,9 @@ class AnyLogic
         auto sizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, indexType, llvmStorageType);
         auto size = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, sizeMLIR);
 
-        auto zero = clh.createI32ConstantOf(0);
-        auto one = clh.createI32ConstantOf(1);
-        auto two = clh.createI32ConstantOf(2);
+        auto zero = clh.createI32ConstantOf(ANY_SIZE);
+        auto one = clh.createI32ConstantOf(ANY_TYPE);
+        auto two = clh.createI32ConstantOf(ANY_DATA);
 
         auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, memValue, ValueRange{zero, zero});
         rewriter.create<LLVM::StoreOp>(loc, size, ptrSize);
@@ -92,15 +91,14 @@ class AnyLogic
     {
         // TODO: add type id to track data type
         // TODO: add data size check
-        auto ptrTy = th.getPtrType();
         auto llvmStorageType = resLLVMType;
         auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
         auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
 
-        auto zero = clh.createI32ConstantOf(0);
-        // auto one = clh.createI32ConstantOf(1);
-        auto two = clh.createI32ConstantOf(2);
+        auto zero = clh.createI32ConstantOf(ANY_SIZE);
+        //auto one = clh.createI32ConstantOf(ANY_TYPE);
+        auto two = clh.createI32ConstantOf(ANY_DATA);
 
         // set actual value
         auto ptrValue =
@@ -113,21 +111,60 @@ class AnyLogic
         // TODO: add type id to track data type
         // TODO: add data size check
         // any random type
-        auto ptrTy = th.getPtrType();
         auto llvmStorageType = th.getI8Type();
         auto dataWithSizeType = getStorageAnyType(llvmStorageType);
 
         auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
 
-        auto zero = clh.createI32ConstantOf(0);
-        auto one = clh.createI32ConstantOf(1);
-        // auto two = clh.createI32ConstantOf(2);
+        auto zero = clh.createI32ConstantOf(ANY_SIZE);
+        auto one = clh.createI32ConstantOf(ANY_TYPE);
+        //auto two = clh.createI32ConstantOf(ANY_DATA);
 
         // set actual value
         auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue,
                                                      ValueRange{zero, one});
-        return rewriter.create<LLVM::LoadOp>(loc, valuePtrType, ptrValue);
+        return rewriter.create<LLVM::LoadOp>(loc, ptrTy, ptrValue);
     }
+
+    mlir::Value getDataSizeOfAny(mlir::Value in)
+    {
+        // TODO: add type id to track data type
+        // TODO: add data size check
+        // any random type
+        auto llvmStorageType = th.getI8Type();
+        auto dataWithSizeType = getStorageAnyType(llvmStorageType);
+
+        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
+
+        auto zero = clh.createI32ConstantOf(ANY_SIZE);
+        //auto one = clh.createI32ConstantOf(ANY_TYPE);
+        //auto two = clh.createI32ConstantOf(ANY_DATA);
+
+        // set actual value
+        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue,
+                                                     ValueRange{zero, zero});
+        return rewriter.create<LLVM::LoadOp>(loc, llvmIndexType, ptrValue);
+    }    
+
+    mlir::Value getDataPtrOfAny(mlir::Value in)
+    {
+        // TODO: add type id to track data type
+        // TODO: add data size check
+        // any random type
+        auto llvmStorageType = th.getI8Type();
+        auto dataWithSizeType = getStorageAnyType(llvmStorageType);
+
+        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, ptrTy, in);
+
+        auto zero = clh.createI32ConstantOf(ANY_SIZE);
+        //auto one = clh.createI32ConstantOf(ANY_TYPE);
+        auto two = clh.createI32ConstantOf(ANY_DATA);
+
+        // set actual value
+        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue,
+                                                     ValueRange{zero, two});
+        return rewriter.create<LLVM::LoadOp>(loc, ptrTy, ptrValue);
+    }    
 };
 } // namespace typescript
 

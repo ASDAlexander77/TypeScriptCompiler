@@ -22,8 +22,6 @@ public:
             || isa<mlir_ts::StringType>(typeIn) 
             || isa<mlir_ts::ObjectType>(typeIn) 
             || isa<mlir_ts::ClassType>(typeIn) 
-            || isa<mlir_ts::InterfaceType>(typeIn)
-            || isa<mlir_ts::AnyType>(typeIn)
             || isa<mlir_ts::UnknownType>(typeIn)
             || isa<mlir_ts::RefType>(typeIn)
             || isa<mlir_ts::ValueRefType>(typeIn))

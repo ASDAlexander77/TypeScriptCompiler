@@ -2242,6 +2242,11 @@ def TypeScript_StringCompareOp : TypeScript_Op<"StringCompare"> {
   let results = (outs TypeScript_Boolean:$result);
 }
 
+def TypeScript_AnyCompareOp : TypeScript_Op<"AnyCompare"> {
+  let arguments = (ins TypeScript_Any:$op1, TypeScript_Any:$op2, I32Attr:$code);
+  let results = (outs TypeScript_Boolean:$result);
+}
+
 def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
   let arguments = (ins TypeScript_Char:$op);
   let results = (outs TypeScript_String:$result);

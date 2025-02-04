@@ -697,6 +697,98 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
     }
 };
 
+class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::AnyCompareOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AnyCompareOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(op, rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
+        LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+
+        auto loc = op->getLoc();
+
+        AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
+        //auto result = al.castToAny(in, transformed.getTypeInfo(), in.getType());
+
+        auto i8PtrTy = th.getPtrType();
+        auto llvmIndexType = llvmtch.typeConverter->convertType(th.getIndexType());
+
+        // compare bodies
+        auto memcmpFuncOp = ch.getOrInsertFunction("memcmp", th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy, llvmIndexType}));
+
+        // compare sizes of Any first
+        // TODO: finish it
+
+        auto sizeAny1 = al.getDataSizeOfAny(transformed.getOp1());
+        auto sizeAny2 = al.getDataSizeOfAny(transformed.getOp2());
+
+        auto ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, sizeAny1, sizeAny2);
+
+        auto dataPtr1 = al.getDataPtrOfAny(transformed.getOp1());
+        auto dataPtr2 = al.getDataPtrOfAny(transformed.getOp2());
+
+        auto result = clh.conditionalExpressionLowering(
+            loc, th.getBooleanType(), ptrCmpResult,
+            [&](OpBuilder &builder, Location loc) {
+                auto const0 = clh.createI32ConstantOf(0);
+                // sizeAny1 equals sizeAny2
+                auto compareResult =
+                    rewriter.create<LLVM::CallOp>(loc, memcmpFuncOp, ValueRange{dataPtr1, dataPtr2, sizeAny1});
+
+                // else compare body
+                mlir::Value bodyCmpResult;
+                switch ((SyntaxKind)op.getCode())
+                {
+                case SyntaxKind::EqualsEqualsToken:
+                case SyntaxKind::EqualsEqualsEqualsToken:
+                    bodyCmpResult =
+                        rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::ExclamationEqualsToken:
+                case SyntaxKind::ExclamationEqualsEqualsToken:
+                    bodyCmpResult =
+                        rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::GreaterThanToken:
+                    bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt,
+                                                                  compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::GreaterThanEqualsToken:
+                    bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge,
+                                                                  compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::LessThanToken:
+                    bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt,
+                                                                  compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::LessThanEqualsToken:
+                    bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle,
+                                                                  compareResult.getResult(), const0);
+                    break;
+                default:
+                    llvm_unreachable("not implemented");
+                }
+
+                return bodyCmpResult;
+            },
+            [&](OpBuilder &builder, Location loc) {
+                return ptrCmpResult;
+            });
+
+        rewriter.replaceOp(op, result);
+
+        return success();
+    }
+};
+
 class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
 {
   public:
@@ -6268,7 +6360,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
-        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
+        StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 
