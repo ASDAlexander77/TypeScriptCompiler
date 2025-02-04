@@ -163,7 +163,7 @@ class AnyLogic
         // set actual value
         auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, ptrTy, dataWithSizeType, inDataWithSizeTypedValue,
                                                      ValueRange{zero, two});
-        return rewriter.create<LLVM::LoadOp>(loc, ptrTy, ptrValue);
+        return ptrValue;
     }    
 };
 } // namespace typescript
