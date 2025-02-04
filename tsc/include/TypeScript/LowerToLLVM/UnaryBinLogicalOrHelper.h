@@ -166,8 +166,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         return value;
     }    
-    else if (MLIRTypeCore::isNullableTypeNoUnion(leftType) 
-            && !isa<mlir_ts::StringType>(leftType))
+    else if (MLIRTypeCore::isNullableTypeNoUnion(leftType))
     {
         // in case of UnionType
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(rightType))
