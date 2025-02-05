@@ -150,9 +150,23 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         return value;
     }
-    else if (MLIRTypeCore::isNullableTypeNoUnion(leftType) 
-            && !isa<mlir_ts::InterfaceType>(leftType)
-            && !isa<mlir_ts::StringType>(leftType))
+    else if (isa<mlir_ts::AnyType>(leftType))
+    {
+        if (left.getType() != right.getType())
+        {
+            right = builder.create<mlir_ts::CastOp>(loc, left.getType(), right);
+        }
+
+        auto boolType = mlir_ts::BooleanType::get(builder.getContext());
+        auto llvmBoolType = typeConverter.convertType(boolType);
+        mlir::Value value = builder.create<mlir_ts::AnyCompareOp>(loc, boolType, left, right,
+                                                              builder.getI32IntegerAttr((int)op));
+
+        value = builder.create<mlir_ts::DialectCastOp>(loc, llvmBoolType, value);
+
+        return value;
+    }    
+    else if (MLIRTypeCore::isNullableTypeNoUnion(leftType))
     {
         // in case of UnionType
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(rightType))

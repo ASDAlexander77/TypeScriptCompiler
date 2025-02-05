@@ -89,6 +89,10 @@
 #define UNION_TAG_INDEX 0
 #define UNION_VALUE_INDEX 1
 
+#define ANY_SIZE 0
+#define ANY_TYPE 1
+#define ANY_DATA 2
+
 #define DEFAULT_LIB_DIR "defaultlib"
 #define DEFAULT_LIB_NAME "TypeScriptDefaultLib"
 

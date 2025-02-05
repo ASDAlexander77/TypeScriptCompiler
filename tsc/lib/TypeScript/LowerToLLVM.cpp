@@ -697,6 +697,98 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
     }
 };
 
+class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::AnyCompareOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AnyCompareOp op, Adaptor transformed,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(op, rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
+        TypeConverterHelper tch(getTypeConverter());
+        LLVMTypeConverterHelper llvmtch(static_cast<const LLVMTypeConverter *>(getTypeConverter()));
+
+        auto loc = op->getLoc();
+
+        AnyLogic al(op, rewriter, tch, loc, tsLlvmContext->compileOptions);
+        //auto result = al.castToAny(in, transformed.getTypeInfo(), in.getType());
+
+        auto i8PtrTy = th.getPtrType();
+        auto llvmIndexType = llvmtch.typeConverter->convertType(th.getIndexType());
+
+        // compare bodies
+        auto memcmpFuncOp = ch.getOrInsertFunction("memcmp", th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy, llvmIndexType}));
+
+        // compare sizes of Any first
+        // TODO: finish it
+
+        auto sizeAny1 = al.getDataSizeOfAny(transformed.getOp1());
+        auto sizeAny2 = al.getDataSizeOfAny(transformed.getOp2());
+
+        auto ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, sizeAny1, sizeAny2);
+
+        auto dataPtr1 = al.getDataPtrOfAny(transformed.getOp1());
+        auto dataPtr2 = al.getDataPtrOfAny(transformed.getOp2());
+
+        auto result = clh.conditionalExpressionLowering(
+            loc, th.getBooleanType(), ptrCmpResult,
+            [&](OpBuilder &builder, Location loc) {
+                auto const0 = clh.createI32ConstantOf(0);
+                // sizeAny1 equals sizeAny2
+                auto compareResult =
+                    rewriter.create<LLVM::CallOp>(loc, memcmpFuncOp, ValueRange{dataPtr1, dataPtr2, sizeAny1});
+
+                // else compare body
+                mlir::Value bodyCmpResult;
+                switch ((SyntaxKind)op.getCode())
+                {
+                case SyntaxKind::EqualsEqualsToken:
+                case SyntaxKind::EqualsEqualsEqualsToken:
+                    bodyCmpResult =
+                        rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::ExclamationEqualsToken:
+                case SyntaxKind::ExclamationEqualsEqualsToken:
+                    bodyCmpResult =
+                        rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::GreaterThanToken:
+                    bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt,
+                                                                  compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::GreaterThanEqualsToken:
+                    bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge,
+                                                                  compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::LessThanToken:
+                    bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt,
+                                                                  compareResult.getResult(), const0);
+                    break;
+                case SyntaxKind::LessThanEqualsToken:
+                    bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle,
+                                                                  compareResult.getResult(), const0);
+                    break;
+                default:
+                    llvm_unreachable("not implemented");
+                }
+
+                return bodyCmpResult;
+            },
+            [&](OpBuilder &builder, Location loc) {
+                return ptrCmpResult;
+            });
+
+        rewriter.replaceOp(op, result);
+
+        return success();
+    }
+};
+
 class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
 {
   public:
@@ -2634,7 +2726,6 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
-        auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         // TODO: add size check !!!
@@ -2642,7 +2733,7 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto arrayPtr = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(),
                 transformed.getOp(), MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
 
-        auto arrayOffset = ch.GetAddressOfPointerOffset(llvmElementType, arrayPtr, transformed.getOffset());
+        auto arrayOffset = ch.GetAddressOfPointerOffset(elementType, arrayPtr, transformed.getOffset());
         // create array type
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue, arrayOffset,
@@ -2870,20 +2961,56 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
                                                                    rewriter);
             break;
         case SyntaxKind::GreaterThanToken:
-            value = logicOp<arith::CmpIPredicate::sgt, arith::CmpFPredicate::OGT>(logicalBinaryOp, op, op1, opType1, op2, opType2,
-                                                                    rewriter);
+
+            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            {
+                value = logicOp<arith::CmpIPredicate::ugt, arith::CmpFPredicate::OGT>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+            else
+            {
+                value = logicOp<arith::CmpIPredicate::sgt, arith::CmpFPredicate::OGT>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
             break;
         case SyntaxKind::GreaterThanEqualsToken:
-            value = logicOp<arith::CmpIPredicate::sge, arith::CmpFPredicate::OGE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
-                                                                    rewriter);
+            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            {
+                value = logicOp<arith::CmpIPredicate::uge, arith::CmpFPredicate::OGE>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+            else
+            {
+                value = logicOp<arith::CmpIPredicate::sge, arith::CmpFPredicate::OGE>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+
             break;
         case SyntaxKind::LessThanToken:
-            value = logicOp<arith::CmpIPredicate::slt, arith::CmpFPredicate::OLT>(logicalBinaryOp, op, op1, opType1, op2, opType2,
-                                                                    rewriter);
+            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            {
+                value = logicOp<arith::CmpIPredicate::ult, arith::CmpFPredicate::OLT>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+            else
+            {
+                value = logicOp<arith::CmpIPredicate::slt, arith::CmpFPredicate::OLT>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+
             break;
         case SyntaxKind::LessThanEqualsToken:
-            value = logicOp<arith::CmpIPredicate::sle, arith::CmpFPredicate::OLE>(logicalBinaryOp, op, op1, opType1, op2, opType2,
-                                                                    rewriter);
+            if (opType1.isUnsignedInteger() && opType2.isUnsignedInteger())
+            {
+                value = logicOp<arith::CmpIPredicate::ule, arith::CmpFPredicate::OLE>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+            else
+            {
+                value = logicOp<arith::CmpIPredicate::sle, arith::CmpFPredicate::OLE>(
+                    logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
+            }
+
             break;
         default:
             llvm_unreachable("not implemented");
@@ -3189,7 +3316,7 @@ struct PointerOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::PointerOffsetR
     {
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        auto addr = ch.GetAddressOfPointerOffset(elementOp.getResult().getType(), 
+        auto addr = ch.GetAddressOfPointerOffset(elementOp.getResult().getType().getElementType(), 
             transformed.getRef(), transformed.getIndex());
         rewriter.replaceOp(elementOp, addr);
         return success();
@@ -6232,7 +6359,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ArrayPopOpLowering, ArrayUnshiftOpLowering, ArrayShiftOpLowering, ArraySpliceOpLowering, ArrayViewOpLowering, DeleteOpLowering, 
         ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, ConvertFOpLowering, StoreOpLowering, SizeOfOpLowering, 
         InsertPropertyOpLowering, LengthOfOpLowering, SetLengthOfOpLowering, StringLengthOpLowering, SetStringLengthOpLowering, StringConcatOpLowering, 
-        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
+        StringCompareOpLowering, AnyCompareOpLowering, CharToStringOpLowering, UndefOpLowering, CopyStructOpLowering, MemoryCopyOpLowering, MemoryMoveOpLowering, 
         LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, VariableOpLowering, DebugVariableOpLowering, AllocaOpLowering, InvokeOpLowering, 
         InvokeHybridOpLowering, VirtualSymbolRefOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, 
         NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, 

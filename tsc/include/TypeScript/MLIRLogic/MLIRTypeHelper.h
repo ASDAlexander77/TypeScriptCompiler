@@ -2515,27 +2515,6 @@ class MLIRTypeHelper
             return ExtendsResult::True;
         }
 
-        if (auto neverType = dyn_cast<mlir_ts::NeverType>(extendType))
-        {
-            return ExtendsResult::False;
-        }        
-
-        if (auto unknownType = dyn_cast<mlir_ts::UnknownType>(extendType))
-        {
-            return ExtendsResult::True;
-        }
-
-        if (auto anyType = dyn_cast<mlir_ts::AnyType>(extendType))
-        {
-            return ExtendsResult::True;
-        }
-
-        auto isOptional = false;
-        if (auto optType = dyn_cast_or_null<mlir_ts::OptionalType>(srcType)) {
-            isOptional = true;
-            srcType = optType.getElementType();
-        }
-
         if (auto anyType = dyn_cast_or_null<mlir_ts::AnyType>(srcType))
         {
             SmallVector<mlir_ts::InferType> inferTypes;
@@ -2561,6 +2540,27 @@ class MLIRTypeHelper
             // TODO: add all infer types in extends to "never"
             return ExtendsResult::Never;
         }        
+
+        if (auto neverType = dyn_cast<mlir_ts::NeverType>(extendType))
+        {
+            return ExtendsResult::False;
+        }        
+
+        if (auto unknownType = dyn_cast<mlir_ts::UnknownType>(extendType))
+        {
+            return ExtendsResult::True;
+        }
+
+        if (auto anyType = dyn_cast<mlir_ts::AnyType>(extendType))
+        {
+            return ExtendsResult::True;
+        }
+
+        auto isOptional = false;
+        if (auto optType = dyn_cast_or_null<mlir_ts::OptionalType>(srcType)) {
+            isOptional = true;
+            srcType = optType.getElementType();
+        }
 
         // to support infer types
         if (auto inferType = dyn_cast<mlir_ts::InferType>(extendType))

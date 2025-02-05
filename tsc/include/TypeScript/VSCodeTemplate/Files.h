@@ -55,6 +55,14 @@ declare type f128 = any;
 declare type half = any;
 declare type float = any;
 declare type double = any;
+declare type Opaque = any;
+
+type Reference<T> = any
+
+declare function ReferenceOf<T>(r: T): Reference<T>;
+declare function LoadReference<T>(r: Reference<T>): T;
+
+declare function sizeof<T>(v?: T): index;
 )raw";
 
 const auto TASKS_JSON_DATA = R"raw(

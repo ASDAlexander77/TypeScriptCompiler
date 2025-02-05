@@ -13,6 +13,7 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
+// TODO: fix offset calculation to take in account correct align
 struct CompositeSizesTrack
 {
     CompositeSizesTrack(LLVMTypeConverterHelper &llvmtch) :
@@ -177,6 +178,11 @@ class LLVMDebugInfoHelper
             return getDITypeWithFields(location, tupleType, to_print(tupleType), false, file, line, scope);
         }
 
+        if (auto optionalType = dyn_cast<mlir_ts::OptionalType>(type))
+        {
+            return getDITypeWithFields(location, optionalType, to_print(optionalType), false, file, line, scope);
+        }
+
         if (auto classType = dyn_cast_or_null<mlir_ts::ClassType>(type))
         {
             return getDIType(location, classType, file, line, scope);
@@ -235,20 +241,48 @@ class LLVMDebugInfoHelper
                     typeCode = dwarf::DW_ATE_boolean;
                     size = 8;
                 }
-                else if (size == 8)
+                else
                 {
-                    // TODO: review it
-                    //diTypeAttr = LLVM::DIVoidResultTypeAttr::get(context);
-                    //return;
+                    typeCode = (intType.isSigned() || intType.isSignless()) ? dwarf::DW_ATE_signed : dwarf::DW_ATE_unsigned;
+                    if (intType.isSigned())
+                    {
+                        switch (size) {
+                            case 8: typeName = "s8"; break;
+                            case 16: typeName = "s16"; break;
+                            case 32: typeName = "s32"; break;
+                            case 64: typeName = "s64"; break;
+                        }
+                    }
+                    else if (intType.isUnsigned())
+                    {
+                        switch (size) {
+                            case 8: typeName = "u8"; break;
+                            case 16: typeName = "u16"; break;
+                            case 32: typeName = "u32"; break;
+                            case 64: typeName = "u64"; break;
+                        }
+                    }
+                    else
+                    {
+                        switch (size) {
+                            case 8: typeName = "i8"; break;
+                            case 16: typeName = "i16"; break;
+                            case 32: typeName = "i32"; break;
+                            case 64: typeName = "i64"; break;
+                        }
+                    }
                 }                
 
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), size, typeCode);
             })
             .Case<mlir::FloatType>([&](auto floatType) {  
                 StringRef typeName =  "double";                
-                if (floatType.getIntOrFloatBitWidth() <= 32)
+                if (floatType.getIntOrFloatBitWidth() == 32)
                 {
                     typeName =  "float";                
+                }
+                else if (floatType.getIntOrFloatBitWidth() == 16) {
+                    typeName =  "half";                
                 }
 
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), floatType.getIntOrFloatBitWidth(), dwarf::DW_ATE_float);
@@ -274,7 +308,7 @@ class LLVMDebugInfoHelper
 
         mlir::TypeSwitch<mlir::Type>(llvmType)
             .Case<mlir::IntegerType>([&](auto intType) {  
-                auto typeCode = intType.isSigned() ? dwarf::DW_ATE_signed : dwarf::DW_ATE_unsigned;
+                auto typeCode = (intType.isSigned() || intType.isSignless()) ? dwarf::DW_ATE_signed : dwarf::DW_ATE_unsigned;
                 StringRef typeName = "int";
                 auto size = intType.getIntOrFloatBitWidth(); 
                 if (size == 1)
@@ -287,7 +321,37 @@ class LLVMDebugInfoHelper
                 {
                     typeName = "char";
                     typeCode = dwarf::DW_ATE_signed_char;
-                }                
+                }   
+                else
+                {             
+                    if (intType.isSigned())
+                    {
+                        switch (size) {
+                            case 8: typeName = "s8"; break;
+                            case 16: typeName = "s16"; break;
+                            case 32: typeName = "s32"; break;
+                            case 64: typeName = "s64"; break;
+                        }
+                    }
+                    else if (intType.isUnsigned())
+                    {
+                        switch (size) {
+                            case 8: typeName = "u8"; break;
+                            case 16: typeName = "u16"; break;
+                            case 32: typeName = "u32"; break;
+                            case 64: typeName = "u64"; break;
+                        }
+                    }
+                    else
+                    {
+                        switch (size) {
+                            case 8: typeName = "i8"; break;
+                            case 16: typeName = "i16"; break;
+                            case 32: typeName = "i32"; break;
+                            case 64: typeName = "i64"; break;
+                        }
+                    }
+                }
 
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), size, typeCode);
             })
@@ -296,6 +360,9 @@ class LLVMDebugInfoHelper
                 if (floatType.getIntOrFloatBitWidth() <= 32)
                 {
                     typeName =  "float";                
+                }
+                else if (floatType.getIntOrFloatBitWidth() == 16) {
+                    typeName =  "half";                
                 }
 
                 diTypeAttr = LLVM::DIBasicTypeAttr::get(context, dwarf::DW_TAG_base_type, StringAttr::get(context, typeName), floatType.getIntOrFloatBitWidth(), dwarf::DW_ATE_float);
@@ -377,7 +444,7 @@ class LLVMDebugInfoHelper
 
         auto diTypeAttrUnion = getDIUnionType(location, unionType, file, line, scope);
 
-        return getDIStructType(MLIRHelper::getAnonymousName(unionType, "union"), {
+        return getDIStructType(MLIRHelper::getAnonymousName(unionType, "struct"), {
             {"type", diStrType},
             {"data", diTypeAttrUnion},
         }, file, line, scope);        
@@ -392,27 +459,6 @@ class LLVMDebugInfoHelper
     LLVM::DITypeAttr getDIType(mlir::Location location, mlir_ts::EnumType enumType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
     {
         auto diBaseType = getDITypeScriptType(location, enumType.getElementType(), file, line, scope);
-
-        //auto enumName = MLIRHelper::getAnonymousName(enumType, "enum");
-
-        // llvm::SmallVector<LLVM::DINodeAttr> elements;
-        // auto dictVal = enumType.getValues();
-        // for (auto [index, enumValue] : enumerate(dictVal))
-        // {
-        //     // name
-        //     auto name = enumValue.getName();
-
-        //     auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_enumeration_type, name, diBaseType, 
-        //         0, 0, 0);
-        //     elements.push_back(wrapperDiType);
-        // }
-
-        // auto compositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_enumeration_type, 
-        //     StringAttr::get(context, enumName), 
-        //     file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, 0, 0, {});
-
-        // return compositeType;
-
         return diBaseType;
     }
 
@@ -444,6 +490,12 @@ class LLVMDebugInfoHelper
 
         CompositeSizesTrack sizesTrack(llvmtch);
 
+        // make struct
+        auto tupleType = mlir_ts::TupleType::get(context, destTupleFields);
+        auto structType = llvmtch.typeConverter->convertType(tupleType);
+        LLVMTypeConverterHelper ltch(llvmtch.typeConverter);        
+        auto structLaytout = ltch.getStructLayout(mlir::cast<LLVM::LLVMStructType>(structType));        
+
         llvm::SmallVector<LLVM::DINodeAttr> elements;
         for (auto [index, fieldInfo] : enumerate(destTupleFields))
         {
@@ -462,9 +514,11 @@ class LLVMDebugInfoHelper
                 }
             }
 
+            auto elementOffsetInBits = structLaytout->getElementOffsetInBits(index);
+
             auto elementDiType = getDITypeScriptType(location, elementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, 
-                sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits, {}, {});
+                sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, elementOffsetInBits/*sizesTrack.offsetInBits*/, {}, {});
             elements.push_back(wrapperDiType);
         }
 
@@ -539,7 +593,11 @@ class LLVMDebugInfoHelper
         }
 
         MLIRTypeHelper mth(context, compileOptions);
+        
         CompositeSizesTrack sizesTrack(llvmtch);
+        
+        LLVMTypeConverterHelper ltch(llvmtch.typeConverter);       
+        auto structLaytout = ltch.getStructLayout(structType);
 
         // now we can resolve recursive types
         llvm::SmallVector<LLVM::DINodeAttr> elements;
@@ -549,9 +607,11 @@ class LLVMDebugInfoHelper
 
             StringAttr elementName = StringAttr::get(context, std::to_string(index));
 
+            auto elementOffsetInBits = structLaytout->getElementOffsetInBits(index);
+
             auto elementDiType = getDILLVMType(location, llvmElementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, 
-                elementName, elementDiType, sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits, {}, {});
+                elementName, elementDiType, sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, elementOffsetInBits/*sizesTrack.offsetInBits*/, {}, {});
                 elements.push_back(wrapperDiType);  
         }
 
@@ -575,9 +635,20 @@ class LLVMDebugInfoHelper
         MLIRTypeHelper mth(context, compileOptions);
 
         CompositeSizesTrack sizesTrack(llvmtch);
+        
+        LLVMTypeConverterHelper ltch(llvmtch.typeConverter);       
+
+        SmallVector<mlir::Type> types;
+        for (auto field : fields)
+        {
+            types.push_back(llvmtch.typeConverter->convertType(std::get<1>(field)));
+        }
+
+        auto structType = LLVM::LLVMStructType::getLiteral(context, types);
+        auto structLayout = ltch.getStructLayout(structType);
 
         llvm::SmallVector<LLVM::DINodeAttr> elements;
-        for (auto field : fields)
+        for (auto [index, field] : enumerate(fields))
         {
             // name
             StringAttr name = StringAttr::get(context, std::get<0>(field));
@@ -587,9 +658,11 @@ class LLVMDebugInfoHelper
             
             sizesTrack.nextElementType(llvmElementType);
             
+            auto elementOffsetInBits = structLayout->getElementOffsetInBits(index);
+
             auto elementDiType = getDIType(location, llvmElementType, elementType, file, line, scope);
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, 
-                sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits, {}, {});
+                sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, elementOffsetInBits/*sizesTrack.offsetInBits*/, {}, {});
             elements.push_back(wrapperDiType);
         }
 
@@ -606,7 +679,7 @@ class LLVMDebugInfoHelper
         CompositeSizesTrack sizesTrack(llvmtch);
 
         llvm::SmallVector<LLVM::DINodeAttr> elements;
-        for (auto field : fields)
+        for (auto [index, field] : enumerate(fields))
         {
             // name
             StringAttr name = StringAttr::get(context, std::get<0>(field));
@@ -614,7 +687,7 @@ class LLVMDebugInfoHelper
             auto elementDiType = std::get<1>(field);
 
             sizesTrack.nextElementType(elementDiType);
-            
+
             auto wrapperDiType = LLVM::DIDerivedTypeAttr::get(context, dwarf::DW_TAG_member, name, elementDiType, 
                 sizesTrack.elementSizeInBits, sizesTrack.elementAlignInBits, sizesTrack.offsetInBits, {}, {});
             elements.push_back(wrapperDiType);
