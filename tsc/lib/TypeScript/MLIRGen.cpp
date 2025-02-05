@@ -11715,6 +11715,8 @@ class MLIRGenImpl
         {
             CAST_A(index, location, mth.getIndexType(), argumentExpression, genContext);
 
+            LLVM_DEBUG(llvm::dbgs() << "\n!! ref type: " << refType << " index value: " << index << "\n";);
+
             auto elemRef = builder.create<mlir_ts::PointerOffsetRefOp>(
                 location, refType, expression, index);            
 

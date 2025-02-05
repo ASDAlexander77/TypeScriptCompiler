@@ -2726,7 +2726,6 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto elementType = arrayType.getElementType();
 
         auto llvmArrayType = tch.convertType(arrayType);
-        auto llvmElementType = tch.convertType(elementType);
         auto llvmIndexType = tch.convertType(th.getIndexType());
 
         // TODO: add size check !!!
@@ -2734,7 +2733,7 @@ struct ArrayViewOpLowering : public TsLlvmPattern<mlir_ts::ArrayViewOp>
         auto arrayPtr = rewriter.create<LLVM::ExtractValueOp>(loc, th.getPtrType(),
                 transformed.getOp(), MLIRHelper::getStructIndex(rewriter, ARRAY_DATA_INDEX));
 
-        auto arrayOffset = ch.GetAddressOfPointerOffset(llvmElementType, arrayPtr, transformed.getOffset());
+        auto arrayOffset = ch.GetAddressOfPointerOffset(elementType, arrayPtr, transformed.getOffset());
         // create array type
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
         auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmArrayType, structValue, arrayOffset,
@@ -3317,7 +3316,7 @@ struct PointerOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::PointerOffsetR
     {
         LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter(), tsLlvmContext->compileOptions);
 
-        auto addr = ch.GetAddressOfPointerOffset(elementOp.getResult().getType(), 
+        auto addr = ch.GetAddressOfPointerOffset(elementOp.getResult().getType().getElementType(), 
             transformed.getRef(), transformed.getIndex());
         rewriter.replaceOp(elementOp, addr);
         return success();
