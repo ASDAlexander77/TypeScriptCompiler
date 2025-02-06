@@ -20992,6 +20992,11 @@ genContext);
             ss << "\nif (typeof a == 'i8') return a;";
             ss << "\nif (typeof a == 's8') return a;";
             ss << "\nif (typeof a == 'u8') return a;";
+
+            if (mlir::isa<mlir_ts::StringType>(type)) {
+                ss << "\nif (typeof a == 'undefined') return 'undefined';";
+                ss << "\nif (typeof a == 'null') return 'null';";
+            }
         }
 
         ss << "\nthrow \"Can't cast from any type\";\n";                    
@@ -21456,6 +21461,14 @@ genContext);
     mlir::Type getInferType(mlir::Location location, InferTypeNode inferTypeNodeAST, const GenContext &genContext)
     {
         auto type = getType(inferTypeNodeAST->typeParameter, genContext);
+        if (!mlir::isa<mlir_ts::NamedGenericType>(type))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! resolved infer type [" << type << "]\n";);
+            // seems type has been resolved already in context
+            return type;
+        }
+
+
         auto inferType = getInferType(type);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! infer type [" << inferType << "]\n";);
