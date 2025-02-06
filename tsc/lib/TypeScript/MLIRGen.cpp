@@ -10717,6 +10717,24 @@ class MLIRGenImpl
             }
             else
             {
+                // TODO: add checking constraint
+                auto funcName = symbolOp.getIdentifierAttr().getValue();
+                auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(funcName);
+                auto first = functionGenericTypeInfo->typeParams.front();
+                if (first->hasConstraint())
+                {
+                    if (auto constraintType = getType(first->getConstraint(), genContext))
+                    {
+                        llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> pairs{};
+                        auto extendsResult = mth.extendsType(location, thisValue.getType(), constraintType, pairs);
+                        if (extendsResult == ExtendsResult::False || extendsResult == ExtendsResult::Never)
+                        {
+                            // failed due to generic type constraints
+                            return mlir::Value();
+                        }
+                    }                    
+                }
+
                 // TODO: finish it
                 // it is generic function
                 StringMap<mlir::Type> inferredTypes;
