@@ -2515,6 +2515,12 @@ class MLIRTypeHelper
             return ExtendsResult::True;
         }
 
+        // to support infer types
+        if (auto inferType = dyn_cast<mlir_ts::InferType>(extendType))
+        {
+            return appendInferTypeToContext(location, srcType, inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
+        }
+
         if (auto anyType = dyn_cast_or_null<mlir_ts::AnyType>(srcType))
         {
             SmallVector<mlir_ts::InferType> inferTypes;
@@ -2560,12 +2566,6 @@ class MLIRTypeHelper
         if (auto optType = dyn_cast_or_null<mlir_ts::OptionalType>(srcType)) {
             isOptional = true;
             srcType = optType.getElementType();
-        }
-
-        // to support infer types
-        if (auto inferType = dyn_cast<mlir_ts::InferType>(extendType))
-        {
-            return appendInferTypeToContext(location, srcType, inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
         }
 
         if (!srcType)
