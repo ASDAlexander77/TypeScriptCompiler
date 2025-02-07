@@ -647,7 +647,13 @@ class MLIRGenImpl
                             // patch VariableStatement
                             auto variableStatement = statement.as<VariableStatement>();
                             variableStatement->declarationList->flags &= ~NodeFlags::Let;
-                            variableStatement->declarationList->flags &= ~NodeFlags::Const;                        
+                            auto hasArrowDeclaration = llvm::any_of(
+                                variableStatement->declarationList->declarations, 
+                                [](auto decl) { return decl->initializer == SyntaxKind::ArrowFunction; });
+                            if (!hasArrowDeclaration)
+                            {
+                                variableStatement->declarationList->flags &= ~NodeFlags::Const;                        
+                            }
                         }
 
                         if (failed(mlirGen(statement, genContext)))
