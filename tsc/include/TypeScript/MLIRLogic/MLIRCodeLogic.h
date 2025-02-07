@@ -288,33 +288,33 @@ class MLIRCodeLogicHelper
     {
     }
 
-    mlir::Value conditionalExpression(mlir::Type type, mlir::Value condition,
-                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> thenBuilder,
-                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> elseBuilder)
+    ValueOrLogicalResult conditionalValue(mlir::Value condValue, 
+        std::function<ValueOrLogicalResult()> trueValue, 
+        std::function<ValueOrLogicalResult(mlir::Type trueValueType)> falseValue)
     {
-        // ts.if
-        auto ifOp = builder.create<mlir_ts::IfOp>(location, type, condition, true);
+        // type will be set later
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, builder.getNoneType(), condValue, true);
 
-        // then block
-        auto &thenRegion = ifOp.getThenRegion();
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
-        builder.setInsertionPointToStart(&thenRegion.back());
+        // value if true
+        auto trueResult = trueValue();
+        EXIT_IF_FAILED_OR_NO_VALUE(trueResult)
+        ifOp.getResults().front().setType(trueResult.value.getType());
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{trueResult});
 
-        mlir::Value value = thenBuilder(builder, location);
-        builder.create<mlir_ts::ResultOp>(location, value);
+        // else
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
 
-        // else block
-        auto &elseRegion = ifOp.getElseRegion();
-
-        builder.setInsertionPointToStart(&elseRegion.back());
-
-        mlir::Value elseValue = elseBuilder(builder, location);
-        builder.create<mlir_ts::ResultOp>(location, elseValue);
+        // value if false
+        auto falseResult = falseValue(trueResult.value.getType());
+        EXIT_IF_FAILED_OR_NO_VALUE(falseResult)
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{falseResult});
 
         builder.setInsertionPointAfter(ifOp);
 
-        return ifOp.getResults().front();
-    }
+        return ValueOrLogicalResult(ifOp.getResults().front());        
+    }        
 
     template <typename T>
     void seekLastOp(mlir::Block *block)

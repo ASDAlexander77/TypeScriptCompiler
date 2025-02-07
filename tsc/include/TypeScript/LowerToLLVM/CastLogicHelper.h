@@ -7,6 +7,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
@@ -441,8 +442,24 @@ class CastLogicHelper
 
         if (auto optType = dyn_cast<mlir_ts::OptionalType>(inType))
         {
-            auto val = rewriter.create<mlir_ts::ValueOrDefaultOp>(loc, optType.getElementType(), in);
-            return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
+            if (optType.getElementType() == resType)
+            {
+                return rewriter.create<mlir_ts::ValueOrDefaultOp>(loc, optType.getElementType(), in);
+            }
+
+            auto hasValue = rewriter.create<mlir_ts::HasValueOp>(loc, mlir_ts::BooleanType::get(rewriter.getContext()), in);
+            
+            MLIRCodeLogicHelper mclh(rewriter, loc, compileOptions);
+            return mclh.conditionalValue(hasValue, 
+                [&]() { 
+                    auto castedValue = cast(in, in.getType(), tch.convertType(in.getType()), resType, resLLVMType);
+                    return ValueOrLogicalResult(castedValue); 
+                }, 
+                [&](mlir::Type trueValueType) {
+                    auto undefValue = rewriter.create<mlir_ts::UndefOp>(loc, mlir_ts::UndefinedType::get(rewriter.getContext()));
+                    auto castedUndefValue = cast(undefValue, undefValue.getType(), tch.convertType(undefValue.getType()), resType, resLLVMType);
+                    return ValueOrLogicalResult(castedUndefValue); 
+                });
         }
 
         if (isa<mlir_ts::UndefinedType>(inType))
