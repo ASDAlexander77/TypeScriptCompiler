@@ -187,6 +187,7 @@ struct GenContext
     bool specialization;
     // TODO: special hack to detect initializing specialized class and see that generic methods are not initialized at the same time
     bool instantiateSpecializedFunction;
+    llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> *inferTypes;
 };
 
 struct ValueOrLogicalResult 
