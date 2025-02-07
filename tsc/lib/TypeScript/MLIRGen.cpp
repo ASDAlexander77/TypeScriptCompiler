@@ -67,6 +67,8 @@
 //#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/WithColor.h"
 
+#include "TypeScript/MLIRLogic/MLIRGenContextDefines.h"
+
 #include <algorithm>
 #include <iterator>
 #include <numeric>

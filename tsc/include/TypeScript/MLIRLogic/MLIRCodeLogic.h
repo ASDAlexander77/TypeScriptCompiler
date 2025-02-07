@@ -12,6 +12,8 @@
 #include "llvm/ADT/APSInt.h"
 #include "llvm/Support/Debug.h"
 
+#include "TypeScript/MLIRLogic/MLIRGenContextDefines.h"
+
 #include "parser_types.h"
 
 #include <numeric>
@@ -1751,5 +1753,6 @@ class MLIRLogicHelper
 } // namespace typescript
 
 #undef DEBUG_TYPE
+#undef V
 
 #endif // MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRCODELOGIC_H_
