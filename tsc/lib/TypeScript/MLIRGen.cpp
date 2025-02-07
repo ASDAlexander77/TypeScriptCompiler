@@ -4330,6 +4330,17 @@ class MLIRGenImpl
         {
             GenContext genContextWithTypeReceiver(genContext);
             genContextWithTypeReceiver.clearReceiverTypes();
+            
+            // in case we have receiver but next function is not arrow declaration, we need to remove receiver to stop cofusion with next nested level
+            // so if arrow is part of call, it will be considered as receiver of initialization which is wrong,
+            // example: const seq = f( (x) => x + 1 ); 
+            // seq will become name of function
+            if (initializer != SyntaxKind::ArrowFunction) 
+            {
+                genContextWithTypeReceiver.receiverName = StringRef();
+                genContextWithTypeReceiver.isGlobalVarReceiver = false;
+            }
+
             if (type)
             {
                 genContextWithTypeReceiver.receiverType = type;
