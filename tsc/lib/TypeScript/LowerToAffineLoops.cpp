@@ -1684,6 +1684,7 @@ struct CatchOpLowering : public TsPattern<mlir_ts::CatchOp>
         else
         {
             llvm_unreachable("missing catch data.");
+            return failure();
         }
 
         rewriter.eraseOp(catchOp);

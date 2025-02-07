@@ -306,11 +306,13 @@ class CastLogicHelper
             if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
+                return mlir::Value();
             }
 
             if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
+                return mlir::Value();
             }
         }
 
@@ -319,11 +321,13 @@ class CastLogicHelper
             if (auto tupleTypeIn = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
+                return mlir::Value();
             }
 
             if (auto tupleTypeIn = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
+                return mlir::Value();
             }
         }
 
@@ -424,6 +428,7 @@ class CastLogicHelper
                 {
                     // TODO: finish it, union type has RTTI field, test it first
                     llvm_unreachable("not implemented");
+                    return mlir::Value();
                 }
             }
         }
@@ -447,24 +452,8 @@ class CastLogicHelper
                 return rewriter.create<mlir_ts::ValueOrDefaultOp>(loc, optType.getElementType(), in);
             }
 
-            auto hasValue = rewriter.create<mlir_ts::HasValueOp>(loc, mlir_ts::BooleanType::get(rewriter.getContext()), in);
-            auto hasValueAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(hasValue.getType()), hasValue);
-            
-            CodeLogicHelper clh(op, rewriter);
-            auto castedVal = clh.conditionalExpressionLowering(loc, resLLVMType, hasValueAdapt, 
-                [&](OpBuilder &builder, Location loc) { 
-                    auto optValue = builder.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
-                    auto castedValue = cast(optValue, optValue.getType(), tch.convertType(optValue.getType()), resType, resLLVMType);
-                    auto hasValueAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(castedValue.getType()), castedValue);
-                    return hasValueAdapt; 
-                }, 
-                [&](OpBuilder &builder, Location loc) {
-                    auto undefValue = builder.create<mlir_ts::UndefOp>(loc, mlir_ts::UndefinedType::get(rewriter.getContext()));
-                    auto castedUndefValue = cast(undefValue, undefValue.getType(), tch.convertType(undefValue.getType()), resType, resLLVMType);
-                    auto castedUndefValueAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(castedUndefValue.getType()), castedUndefValue);
-                    return castedUndefValueAdapt; 
-                });
-            return castedVal;
+            llvm_unreachable("not implemented, must be processed at MLIR pass");
+            return mlir::Value();
         }
 
         if (isa<mlir_ts::UndefinedType>(inType))

@@ -20758,6 +20758,21 @@ genContext);
                 CAST_A(unwrappedValue, location, type, val, genContext);            
                 return unwrappedValue;
             }
+
+            // optional to value cast(when we change types)
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, mlir_ts::BooleanType::get(builder.getContext()), value);
+            
+            MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+            auto castedVal = mclh.conditionalValue(hasValue, 
+                [&]() { 
+                    auto optValue = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), value);
+                    return cast(location, type, optValue, genContext); 
+                }, 
+                [&](mlir::Type trueType) {
+                    auto undefValue = builder.create<mlir_ts::UndefOp>(location, mlir_ts::UndefinedType::get(builder.getContext()));
+                    return cast(location, type, undefValue, genContext); 
+                });
+            return castedVal;            
         }        
 
         // unboxing
