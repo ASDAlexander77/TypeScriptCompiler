@@ -448,18 +448,23 @@ class CastLogicHelper
             }
 
             auto hasValue = rewriter.create<mlir_ts::HasValueOp>(loc, mlir_ts::BooleanType::get(rewriter.getContext()), in);
+            auto hasValueAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(hasValue.getType()), hasValue);
             
-            MLIRCodeLogicHelper mclh(rewriter, loc, compileOptions);
-            return mclh.conditionalValue(hasValue, 
-                [&]() { 
-                    auto castedValue = cast(in, in.getType(), tch.convertType(in.getType()), resType, resLLVMType);
-                    return ValueOrLogicalResult(castedValue); 
+            CodeLogicHelper clh(op, rewriter);
+            auto castedVal = clh.conditionalExpressionLowering(loc, resLLVMType, hasValueAdapt, 
+                [&](OpBuilder &builder, Location loc) { 
+                    auto optValue = builder.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
+                    auto castedValue = cast(optValue, optValue.getType(), tch.convertType(optValue.getType()), resType, resLLVMType);
+                    auto hasValueAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(castedValue.getType()), castedValue);
+                    return hasValueAdapt; 
                 }, 
-                [&](mlir::Type trueValueType) {
-                    auto undefValue = rewriter.create<mlir_ts::UndefOp>(loc, mlir_ts::UndefinedType::get(rewriter.getContext()));
+                [&](OpBuilder &builder, Location loc) {
+                    auto undefValue = builder.create<mlir_ts::UndefOp>(loc, mlir_ts::UndefinedType::get(rewriter.getContext()));
                     auto castedUndefValue = cast(undefValue, undefValue.getType(), tch.convertType(undefValue.getType()), resType, resLLVMType);
-                    return ValueOrLogicalResult(castedUndefValue); 
+                    auto castedUndefValueAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(castedUndefValue.getType()), castedUndefValue);
+                    return castedUndefValueAdapt; 
                 });
+            return castedVal;
         }
 
         if (isa<mlir_ts::UndefinedType>(inType))
