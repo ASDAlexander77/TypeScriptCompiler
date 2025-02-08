@@ -10536,7 +10536,11 @@ class MLIRGenImpl
                     //     return classAccess(classInfo->classType);
                     // }
 
-                    if (auto value = cl.Array(arrayType, compileOptions))
+                    if (auto value = cl.Array(
+                            arrayType, 
+                            compileOptions,
+                            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+                            genContext))
                     {
                         return value;
                     }
@@ -10578,7 +10582,11 @@ class MLIRGenImpl
                     //     return classAccess(classInfo->classType);
                     // }
 
-                    if (auto value = cl.Array(arrayType, compileOptions))
+                    if (auto value = cl.Array(
+                            arrayType, 
+                            compileOptions,
+                            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+                            genContext))
                     {
                         return value;
                     }
@@ -14304,7 +14312,12 @@ class MLIRGenImpl
                 
                 assert(vals.size() > 0);
 
-                cm.mlirGenArrayPush(location, loadedVarArray, vals);
+                cm.mlirGenArrayPush(
+                    location, 
+                    loadedVarArray, 
+                    vals,
+                    std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+                    genContext);
             }
         }
 
@@ -20774,6 +20787,12 @@ genContext);
                         auto undefValue = builder.create<mlir_ts::UndefOp>(location, mlir_ts::UndefinedType::get(builder.getContext()));
                         return V(cast(location, type, undefValue, genContext)); 
                     }
+
+                    if (auto destOptType = mlir::isa<mlir_ts::OptionalType>(type))
+                    {
+                        auto destOptValue = builder.create<mlir_ts::OptionalUndefOp>(location, type);
+                        return V(destOptValue);                         
+                    }                    
 
                     auto defValue = builder.create<mlir_ts::DefaultOp>(location, type);
                     return V(defValue); 

@@ -452,6 +452,8 @@ class CastLogicHelper
                 return rewriter.create<mlir_ts::ValueOrDefaultOp>(loc, optType.getElementType(), in);
             }
 
+            LLVM_DEBUG(llvm::dbgs() << "\n\t opt cast: " << inType << "->" << resType << "\n";);
+
             llvm_unreachable("not implemented, must be processed at MLIR pass");
             return mlir::Value();
         }
