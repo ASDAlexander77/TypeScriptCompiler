@@ -766,7 +766,7 @@ class MLIRTypeHelper
 
         funcType = stripOptionalType(funcType);    
 
-        auto f = [&](auto calledFuncType) { return calledFuncType.getInputs().front(); };
+        auto f = [&](auto calledFuncType) { return calledFuncType.getInputs().size() > 0 ? calledFuncType.getInputs().front() : mlir::Type(); };
 
         mlir::TypeSwitch<mlir::Type>(funcType)
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
@@ -2515,6 +2515,12 @@ class MLIRTypeHelper
             return ExtendsResult::True;
         }
 
+        // to support infer types
+        if (auto inferType = dyn_cast<mlir_ts::InferType>(extendType))
+        {
+            return appendInferTypeToContext(location, srcType, inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
+        }
+
         if (auto anyType = dyn_cast_or_null<mlir_ts::AnyType>(srcType))
         {
             SmallVector<mlir_ts::InferType> inferTypes;
@@ -2560,12 +2566,6 @@ class MLIRTypeHelper
         if (auto optType = dyn_cast_or_null<mlir_ts::OptionalType>(srcType)) {
             isOptional = true;
             srcType = optType.getElementType();
-        }
-
-        // to support infer types
-        if (auto inferType = dyn_cast<mlir_ts::InferType>(extendType))
-        {
-            return appendInferTypeToContext(location, srcType, inferType, typeParamsWithArgs, useTupleWhenMergeTypes);
         }
 
         if (!srcType)
@@ -2783,7 +2783,14 @@ class MLIRTypeHelper
 
         if (isAnyFunctionType(srcType) && isAnyFunctionType(extendType))
         {
-            return extendsTypeFuncTypes(location, srcType, extendType, typeParamsWithArgs);
+            auto thisType = getFirstParamFromFuncRef(srcType);
+            auto skipFirst = thisType && (mlir::isa<mlir_ts::OpaqueType>(thisType) 
+                || mlir::isa<mlir_ts::ClassType>(thisType) 
+                || mlir::isa<mlir_ts::ClassStorageType>(thisType) 
+                || mlir::isa<mlir_ts::ObjectType>(thisType) 
+                || mlir::isa<mlir_ts::ObjectStorageType>(thisType));
+
+            return extendsTypeFuncTypes(location, srcType, extendType, typeParamsWithArgs, skipFirst ? 1 : 0);
         }
 
         if (auto constructType = dyn_cast<mlir_ts::ConstructFunctionType>(extendType))

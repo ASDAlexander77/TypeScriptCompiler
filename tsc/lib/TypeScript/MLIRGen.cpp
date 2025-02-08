@@ -67,6 +67,8 @@
 //#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/Support/WithColor.h"
 
+#include "TypeScript/MLIRLogic/MLIRGenContextDefines.h"
+
 #include <algorithm>
 #include <iterator>
 #include <numeric>
@@ -647,7 +649,13 @@ class MLIRGenImpl
                             // patch VariableStatement
                             auto variableStatement = statement.as<VariableStatement>();
                             variableStatement->declarationList->flags &= ~NodeFlags::Let;
-                            variableStatement->declarationList->flags &= ~NodeFlags::Const;                        
+                            auto hasArrowDeclaration = llvm::any_of(
+                                variableStatement->declarationList->declarations, 
+                                [](auto decl) { return decl->initializer == SyntaxKind::ArrowFunction; });
+                            if (!hasArrowDeclaration)
+                            {
+                                variableStatement->declarationList->flags &= ~NodeFlags::Const;                        
+                            }
                         }
 
                         if (failed(mlirGen(statement, genContext)))
@@ -4330,6 +4338,17 @@ class MLIRGenImpl
         {
             GenContext genContextWithTypeReceiver(genContext);
             genContextWithTypeReceiver.clearReceiverTypes();
+            
+            // in case we have receiver but next function is not arrow declaration, we need to remove receiver to stop cofusion with next nested level
+            // so if arrow is part of call, it will be considered as receiver of initialization which is wrong,
+            // example: const seq = f( (x) => x + 1 ); 
+            // seq will become name of function
+            if (initializer != SyntaxKind::ArrowFunction) 
+            {
+                genContextWithTypeReceiver.receiverName = StringRef();
+                genContextWithTypeReceiver.isGlobalVarReceiver = false;
+            }
+
             if (type)
             {
                 genContextWithTypeReceiver.receiverType = type;
@@ -6093,18 +6112,16 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    // TODO: put into MLIRCodeLogicHelper
     ValueOrLogicalResult optionalValueOrUndefinedExpression(mlir::Location location, mlir::Value condValue, Expression expression, const GenContext &genContext)
     {
         return optionalValueOrUndefined(location, condValue, [&](auto genContext) { return mlirGen(expression, genContext); }, genContext);
     }
 
-    // TODO: put into MLIRCodeLogicHelper
     ValueOrLogicalResult optionalValueOrUndefined(mlir::Location location, mlir::Value condValue, 
         std::function<ValueOrLogicalResult(const GenContext &)> exprFunc, const GenContext &genContext)
     {
         return conditionalValue(location, condValue, 
-            [&](auto genContext) { 
+            [&]() { 
                 auto result = exprFunc(genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto value = V(result);
@@ -6114,65 +6131,38 @@ class MLIRGenImpl
                         : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
                 return ValueOrLogicalResult(optValue); 
             }, 
-            [&](mlir::Type trueValueType, auto genContext) { 
+            [&](mlir::Type trueValueType) { 
                 auto optUndefValue = builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType);
                 return ValueOrLogicalResult(optUndefValue); 
-            }, 
-            genContext);
+            });
     }
 
-    // TODO: put into MLIRCodeLogicHelper
     ValueOrLogicalResult anyOrUndefined(mlir::Location location, mlir::Value condValue, 
         std::function<ValueOrLogicalResult(const GenContext &)> exprFunc, const GenContext &genContext)
     {
         return conditionalValue(location, condValue, 
-            [&](auto genContext) { 
+            [&]() { 
                 auto result = exprFunc(genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 auto value = V(result);
                 auto anyValue = V(builder.create<mlir_ts::CastOp>(location, getAnyType(), value));
                 return ValueOrLogicalResult(anyValue); 
             }, 
-            [&](mlir::Type trueValueType, auto genContext) {
+            [&](mlir::Type trueValueType) {
                 auto undefValue = builder.create<mlir_ts::UndefOp>(location, getUndefinedType());
                 auto anyUndefValue = V(builder.create<mlir_ts::CastOp>(location, trueValueType, undefValue));
                 return ValueOrLogicalResult(anyUndefValue); 
-            }, 
-            genContext);
+            });
     }
 
-    // TODO: put into MLIRCodeLogicHelper
-    // TODO: we have a lot of IfOp - create 1 logic for conditional values
     ValueOrLogicalResult conditionalValue(mlir::Location location, mlir::Value condValue, 
-        std::function<ValueOrLogicalResult(const GenContext &)> trueValue, 
-        std::function<ValueOrLogicalResult(mlir::Type trueValueType, const GenContext &)> falseValue, 
-        const GenContext &genContext)
+        std::function<ValueOrLogicalResult()> trueValue, 
+        std::function<ValueOrLogicalResult(mlir::Type trueValueType)> falseValue)
     {
-        // type will be set later
-        auto ifOp = builder.create<mlir_ts::IfOp>(location, builder.getNoneType(), condValue, true);
-
-        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
-
-        // value if true
-        auto trueResult = trueValue(genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(trueResult)
-        ifOp.getResults().front().setType(trueResult.value.getType());
-        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{trueResult});
-
-        // else
-        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
-
-        // value if false
-        auto falseResult = falseValue(trueResult.value.getType(), genContext);
-        EXIT_IF_FAILED_OR_NO_VALUE(falseResult)
-        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{falseResult});
-
-        builder.setInsertionPointAfter(ifOp);
-
-        return ValueOrLogicalResult(ifOp.getResults().front());        
+        MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+        return mclh.conditionalValue(condValue, trueValue, falseValue);
     }    
 
-    // TODO: put into MLIRCodeLogicHelper
     ValueOrLogicalResult optionalValueOrDefault(mlir::Location location, mlir::Type dataType, mlir::Value value, Expression defaultExpr, const GenContext &genContext)
     {
         auto optionalValueOrDefaultOp = builder.create<mlir_ts::OptionalValueOrDefaultOp>(
@@ -9324,17 +9314,17 @@ class MLIRGenImpl
                     builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
 
                 MLIRCodeLogicHelper mclh(builder, location, compileOptions);
-                auto returnValue = mclh.conditionalExpression(
-                    getBooleanType(), cmpResult,
-                    [&](mlir::OpBuilder &builder, mlir::Location location) {
+                auto returnValue = mclh.conditionalValue(
+                    cmpResult,
+                    [&]() {
                         // TODO: test cast value
                         auto thisPtrValue = cast(location, getOpaqueType(), resultLeftValue, genContext);
                         return mlirGenInstanceOfOpaque(location, thisPtrValue, resultRightValue, genContext);
                     },
-                    [&](mlir::OpBuilder &builder, mlir::Location location) { // default false value
+                    [&](mlir::Type trueType) { // default false value
                                                                              // compare typeOfValue
-                        return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(),
-                                                                   builder.getBoolAttr(false));
+                        return ValueOrLogicalResult(builder.create<mlir_ts::ConstantOp>(location, getBooleanType(),
+                                                                   builder.getBoolAttr(false)));
                     });
 
                 return returnValue;
@@ -10546,7 +10536,11 @@ class MLIRGenImpl
                     //     return classAccess(classInfo->classType);
                     // }
 
-                    if (auto value = cl.Array(arrayType, compileOptions))
+                    if (auto value = cl.Array(
+                            arrayType, 
+                            compileOptions,
+                            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+                            genContext))
                     {
                         return value;
                     }
@@ -10588,7 +10582,11 @@ class MLIRGenImpl
                     //     return classAccess(classInfo->classType);
                     // }
 
-                    if (auto value = cl.Array(arrayType, compileOptions))
+                    if (auto value = cl.Array(
+                            arrayType, 
+                            compileOptions,
+                            std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+                            genContext))
                     {
                         return value;
                     }
@@ -10717,6 +10715,24 @@ class MLIRGenImpl
             }
             else
             {
+                // TODO: add checking constraint
+                auto funcName = symbolOp.getIdentifierAttr().getValue();
+                auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(funcName);
+                auto first = functionGenericTypeInfo->typeParams.front();
+                if (first->hasConstraint())
+                {
+                    if (auto constraintType = getType(first->getConstraint(), genContext))
+                    {
+                        llvm::StringMap<std::pair<ts::TypeParameterDOM::TypePtr,mlir::Type>> pairs{};
+                        auto extendsResult = mth.extendsType(location, thisValue.getType(), constraintType, pairs);
+                        if (extendsResult == ExtendsResult::False || extendsResult == ExtendsResult::Never)
+                        {
+                            // failed due to generic type constraints
+                            return mlir::Value();
+                        }
+                    }                    
+                }
+
                 // TODO: finish it
                 // it is generic function
                 StringMap<mlir::Type> inferredTypes;
@@ -11581,7 +11597,7 @@ class MLIRGenImpl
         // <array>?.[index] access
         CAST_A(condValue, location, getBooleanType(), expression, genContext);
         return conditionalValue(location, condValue, 
-            [&](auto genContext) { 
+            [&]() { 
                 auto result2 = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result2)
                 auto argumentExpression = V(result2);
@@ -11597,11 +11613,10 @@ class MLIRGenImpl
                         : builder.create<mlir_ts::OptionalValueOp>(location, getOptionalType(value.getType()), value);
                 return ValueOrLogicalResult(optValue); 
             }, 
-            [&](mlir::Type trueValueType, auto genContext) { 
+            [&](mlir::Type trueValueType) { 
                 auto optUndefValue = builder.create<mlir_ts::OptionalUndefOp>(location, trueValueType);
                 return ValueOrLogicalResult(optUndefValue); 
-            }, 
-            genContext);
+            });
     }
 
     ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext)
@@ -14297,7 +14312,12 @@ class MLIRGenImpl
                 
                 assert(vals.size() > 0);
 
-                cm.mlirGenArrayPush(location, loadedVarArray, vals);
+                cm.mlirGenArrayPush(
+                    location, 
+                    loadedVarArray, 
+                    vals,
+                    std::bind(&MLIRGenImpl::cast, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5), 
+                    genContext);
             }
         }
 
@@ -20751,6 +20771,33 @@ genContext);
                 CAST_A(unwrappedValue, location, type, val, genContext);            
                 return unwrappedValue;
             }
+
+            // optional to value cast(when we change types)
+            auto hasValue = builder.create<mlir_ts::HasValueOp>(location, mlir_ts::BooleanType::get(builder.getContext()), value);
+            
+            MLIRCodeLogicHelper mclh(builder, location, compileOptions);
+            auto castedVal = mclh.conditionalValue(hasValue, 
+                [&]() { 
+                    auto optValue = builder.create<mlir_ts::ValueOp>(location, optType.getElementType(), value);
+                    return cast(location, type, optValue, genContext); 
+                }, 
+                [&](mlir::Type trueType) {
+                    if (mlir::isa<mlir_ts::StringType>(type))
+                    {
+                        auto undefValue = builder.create<mlir_ts::UndefOp>(location, mlir_ts::UndefinedType::get(builder.getContext()));
+                        return V(cast(location, type, undefValue, genContext)); 
+                    }
+
+                    if (auto destOptType = mlir::isa<mlir_ts::OptionalType>(type))
+                    {
+                        auto destOptValue = builder.create<mlir_ts::OptionalUndefOp>(location, type);
+                        return V(destOptValue);                         
+                    }                    
+
+                    auto defValue = builder.create<mlir_ts::DefaultOp>(location, type);
+                    return V(defValue); 
+                });
+            return castedVal;            
         }        
 
         // unboxing
@@ -20974,6 +21021,11 @@ genContext);
             ss << "\nif (typeof a == 'i8') return a;";
             ss << "\nif (typeof a == 's8') return a;";
             ss << "\nif (typeof a == 'u8') return a;";
+
+            if (mlir::isa<mlir_ts::StringType>(type)) {
+                ss << "\nif (typeof a == 'undefined') return 'undefined';";
+                ss << "\nif (typeof a == 'null') return 'null';";
+            }
         }
 
         ss << "\nthrow \"Can't cast from any type\";\n";                    
@@ -21438,12 +21490,26 @@ genContext);
     mlir::Type getInferType(mlir::Location location, InferTypeNode inferTypeNodeAST, const GenContext &genContext)
     {
         auto type = getType(inferTypeNodeAST->typeParameter, genContext);
+        if (!mlir::isa<mlir_ts::NamedGenericType>(type))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! resolved infer type [" << type << "]\n";);
+            // seems type has been resolved already in context
+            return type;
+        }
+
         auto inferType = getInferType(type);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! infer type [" << inferType << "]\n";);
 
         // TODO: review function 'extends' in MLIRTypeHelper with the same logic adding infer types to context
-        auto &typeParamsWithArgs = const_cast<GenContext &>(genContext).typeParamsWithArgs;
+
+        if (genContext.inferTypes == nullptr)
+        {
+            emitError(location, "infer can be used in Conditional Type only");
+            return mlir::Type();
+        }
+
+        auto &typeParamsWithArgs = *(const_cast<GenContext &>(genContext).inferTypes);
         mth.appendInferTypeToContext(location, type, inferType, typeParamsWithArgs);
 
         return inferType;
@@ -22885,8 +22951,11 @@ genContext);
 
     mlir::Type getConditionalType(ConditionalTypeNode conditionalTypeNode, const GenContext &genContext)
     {
-        auto checkType = getType(conditionalTypeNode->checkType, genContext);
-        auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
+        GenContext condTypeGenContext(genContext);
+        condTypeGenContext.inferTypes = &const_cast<GenContext &>(condTypeGenContext).typeParamsWithArgs;
+
+        auto checkType = getType(conditionalTypeNode->checkType, condTypeGenContext);
+        auto extendsType = getType(conditionalTypeNode->extendsType, condTypeGenContext);
         if (!checkType || !extendsType)
         {
             return mlir::Type();
@@ -22897,8 +22966,8 @@ genContext);
         if (isa<mlir_ts::NamedGenericType>(checkType) || isa<mlir_ts::NamedGenericType>(extendsType))
         {
             // we do not need to resolve it, it is generic
-            auto trueType = getType(conditionalTypeNode->trueType, genContext);
-            auto falseType = getType(conditionalTypeNode->falseType, genContext);
+            auto trueType = getType(conditionalTypeNode->trueType, condTypeGenContext);
+            auto falseType = getType(conditionalTypeNode->falseType, condTypeGenContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! condition type, check: " << checkType << " extends: " << extendsType << " true: " << trueType << " false: " << falseType << " \n";);
 
@@ -22908,7 +22977,7 @@ genContext);
         if (auto unionType = dyn_cast<mlir_ts::UnionType>(checkType))
         {
             // we need to have original type to infer types from union
-            GenContext noTypeArgsContext(genContext);
+            GenContext noTypeArgsContext(condTypeGenContext);
             llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsOnly;
             for (auto &pair : noTypeArgsContext.typeParamsWithArgs)
             {
@@ -22924,7 +22993,7 @@ genContext);
             SmallVector<mlir::Type> results;
             for (auto subType : unionType.getTypes())
             {
-                auto resSubType = processConditionalForType(conditionalTypeNode, subType, extendsType, originalCheckType, genContext);
+                auto resSubType = processConditionalForType(conditionalTypeNode, subType, extendsType, originalCheckType, condTypeGenContext);
                 if (!resSubType)
                 {
                     return mlir::Type();
@@ -22939,7 +23008,7 @@ genContext);
             return getUnionType(results);
         }
 
-        return processConditionalForType(conditionalTypeNode, checkType, extendsType, mlir::Type(), genContext);
+        return processConditionalForType(conditionalTypeNode, checkType, extendsType, mlir::Type(), condTypeGenContext);
     }
 
     mlir::Type getKeyOf(TypeOperatorNode typeOperatorNode, const GenContext &genContext)

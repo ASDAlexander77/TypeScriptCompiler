@@ -7,6 +7,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
@@ -305,11 +306,13 @@ class CastLogicHelper
             if (auto constArrayType = dyn_cast<mlir_ts::ConstArrayType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
+                return mlir::Value();
             }
 
             if (auto arrayType = dyn_cast<mlir_ts::ArrayType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
+                return mlir::Value();
             }
         }
 
@@ -318,11 +321,13 @@ class CastLogicHelper
             if (auto tupleTypeIn = dyn_cast<mlir_ts::ConstTupleType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
+                return mlir::Value();
             }
 
             if (auto tupleTypeIn = dyn_cast<mlir_ts::TupleType>(inType))
             {
                 llvm_unreachable("not implemented, must be processed at MLIR pass");
+                return mlir::Value();
             }
         }
 
@@ -423,6 +428,7 @@ class CastLogicHelper
                 {
                     // TODO: finish it, union type has RTTI field, test it first
                     llvm_unreachable("not implemented");
+                    return mlir::Value();
                 }
             }
         }
@@ -441,8 +447,15 @@ class CastLogicHelper
 
         if (auto optType = dyn_cast<mlir_ts::OptionalType>(inType))
         {
-            auto val = rewriter.create<mlir_ts::ValueOrDefaultOp>(loc, optType.getElementType(), in);
-            return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
+            if (optType.getElementType() == resType)
+            {
+                return rewriter.create<mlir_ts::ValueOrDefaultOp>(loc, optType.getElementType(), in);
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n\t opt cast: " << inType << "->" << resType << "\n";);
+
+            llvm_unreachable("not implemented, must be processed at MLIR pass");
+            return mlir::Value();
         }
 
         if (isa<mlir_ts::UndefinedType>(inType))

@@ -12,6 +12,8 @@
 #include "llvm/ADT/APSInt.h"
 #include "llvm/Support/Debug.h"
 
+#include "TypeScript/MLIRLogic/MLIRGenContextDefines.h"
+
 #include "parser_types.h"
 
 #include <numeric>
@@ -288,33 +290,33 @@ class MLIRCodeLogicHelper
     {
     }
 
-    mlir::Value conditionalExpression(mlir::Type type, mlir::Value condition,
-                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> thenBuilder,
-                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> elseBuilder)
+    ValueOrLogicalResult conditionalValue(mlir::Value condValue, 
+        std::function<ValueOrLogicalResult()> trueValue, 
+        std::function<ValueOrLogicalResult(mlir::Type trueValueType)> falseValue)
     {
-        // ts.if
-        auto ifOp = builder.create<mlir_ts::IfOp>(location, type, condition, true);
+        // type will be set later
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, builder.getNoneType(), condValue, true);
 
-        // then block
-        auto &thenRegion = ifOp.getThenRegion();
+        builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
 
-        builder.setInsertionPointToStart(&thenRegion.back());
+        // value if true
+        auto trueResult = trueValue();
+        EXIT_IF_FAILED_OR_NO_VALUE(trueResult)
+        ifOp.getResults().front().setType(trueResult.value.getType());
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{trueResult});
 
-        mlir::Value value = thenBuilder(builder, location);
-        builder.create<mlir_ts::ResultOp>(location, value);
+        // else
+        builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
 
-        // else block
-        auto &elseRegion = ifOp.getElseRegion();
-
-        builder.setInsertionPointToStart(&elseRegion.back());
-
-        mlir::Value elseValue = elseBuilder(builder, location);
-        builder.create<mlir_ts::ResultOp>(location, elseValue);
+        // value if false
+        auto falseResult = falseValue(trueResult.value.getType());
+        EXIT_IF_FAILED_OR_NO_VALUE(falseResult)
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{falseResult});
 
         builder.setInsertionPointAfter(ifOp);
 
-        return ifOp.getResults().front();
-    }
+        return ValueOrLogicalResult(ifOp.getResults().front());        
+    }        
 
     template <typename T>
     void seekLastOp(mlir::Block *block)
@@ -396,20 +398,20 @@ class MLIRCustomMethods
         else if (functionName == "assert")
         {
             // assert - internal command;
-            return mlirGenAssert(location, operands);
+            return mlirGenAssert(location, operands, castFn, genContext);
         }
         else if (compileOptions.enableBuiltins && functionName == "parseInt")
         {
             // assert - internal command;
-            return mlirGenParseInt(location, operands);
+            return mlirGenParseInt(location, operands, castFn, genContext);
         }
         else if (compileOptions.enableBuiltins && functionName == "parseFloat")
         {
-            return mlirGenParseFloat(location, operands);
+            return mlirGenParseFloat(location, operands, castFn, genContext);
         }
         else if (compileOptions.enableBuiltins && functionName == "isNaN")
         {
-            return mlirGenIsNaN(location, operands);
+            return mlirGenIsNaN(location, operands, castFn, genContext);
         }
         else if (functionName == "sizeof")
         {
@@ -417,7 +419,7 @@ class MLIRCustomMethods
         }
         else if (functionName == "__array_push")
         {
-            return mlirGenArrayPush(location, operands);
+            return mlirGenArrayPush(location, operands, castFn, genContext);
         }
         else if (functionName == "__array_pop")
         {
@@ -425,7 +427,7 @@ class MLIRCustomMethods
         }
         else if (functionName == "__array_unshift")
         {
-            return mlirGenArrayUnshift(location, operands);
+            return mlirGenArrayUnshift(location, operands, castFn, genContext);
         }        
         else if (functionName == "__array_shift")
         {
@@ -433,28 +435,28 @@ class MLIRCustomMethods
         }
         else if (functionName == "__array_splice")
         {
-            return mlirGenArraySplice(location, operands);
+            return mlirGenArraySplice(location, operands, castFn, genContext);
         }        
         else if (functionName == "__array_view")
         {
-            return mlirGenArrayView(location, operands);
+            return mlirGenArrayView(location, operands, castFn, genContext);
         }
         else if (functionName == GENERATOR_SWITCHSTATE)
         {
             // switchstate - internal command;
-            return mlirGenSwitchState(location, operands, genContext);
+            return mlirGenSwitchState(location, operands, castFn, genContext);
         }
         else if (functionName == "LoadLibraryPermanently")
         {
-            return mlirGenLoadLibraryPermanently(location, operands);
+            return mlirGenLoadLibraryPermanently(location, operands, castFn, genContext);
         }
         else if (functionName == "SearchForAddressOfSymbol")
         {
-            return mlirGenSearchForAddressOfSymbol(location, operands);
+            return mlirGenSearchForAddressOfSymbol(location, operands, castFn, genContext);
         }
         else if (functionName == "LoadReference")
         {
-            return mlirGenLoadReference(location, operands);
+            return mlirGenLoadReference(location, operands, castFn, genContext);
         }
         else if (functionName == "ReferenceOf")
         {
@@ -518,7 +520,8 @@ class MLIRCustomMethods
         return mlir::success();
     }
 
-    ValueOrLogicalResult mlirGenConvertF(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
+    ValueOrLogicalResult mlirGenConvertF(const mlir::Location &location, ArrayRef<mlir::Value> operands, 
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         mlir::Value bufferSize;
         mlir::Value format;
@@ -551,7 +554,8 @@ class MLIRCustomMethods
         return V(convertFOp);
     }
 
-    mlir::LogicalResult mlirGenAssert(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::LogicalResult mlirGenAssert(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         if (operands.size() == 0)
         {
@@ -586,7 +590,7 @@ class MLIRCustomMethods
         auto op = operands.front();
         if (!isa<mlir_ts::BooleanType>(op.getType()))
         {
-            op = builder.create<mlir_ts::CastOp>(location, mlir_ts::BooleanType::get(builder.getContext()), op);
+            op = castFn(location, mlir_ts::BooleanType::get(builder.getContext()), op, genContext, false);
         }
 
         auto assertOp =
@@ -595,7 +599,8 @@ class MLIRCustomMethods
         return mlir::success();
     }
 
-    mlir::Value mlirGenParseInt(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::Value mlirGenParseInt(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         auto hasTwoOps = operands.size() == 2;
         auto op = operands.front();
@@ -603,7 +608,7 @@ class MLIRCustomMethods
 
         if (!isa<mlir_ts::StringType>(op.getType()))
         {
-            op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
+            op = castFn(location, mlir_ts::StringType::get(builder.getContext()), op, genContext, false);
         }
 
         if (hasTwoOps)
@@ -611,7 +616,7 @@ class MLIRCustomMethods
             op2 = operands[1];
             if (!isa<mlir::IntegerType>(op2.getType()))
             {
-                op2 = builder.create<mlir_ts::CastOp>(location, mlir::IntegerType::get(builder.getContext(), 32), op2);
+                op2 = castFn(location, mlir::IntegerType::get(builder.getContext(), 32), op2, genContext, false);
             }
         }
 
@@ -621,12 +626,13 @@ class MLIRCustomMethods
         return parseIntOp;
     }
 
-    mlir::Value mlirGenParseFloat(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::Value mlirGenParseFloat(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         auto op = operands.front();
         if (!isa<mlir_ts::StringType>(op.getType()))
         {
-            op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
+            op = castFn(location, mlir_ts::StringType::get(builder.getContext()), op, genContext, false);
         }
 
         auto parseFloatOp =
@@ -635,12 +641,13 @@ class MLIRCustomMethods
         return parseFloatOp;
     }
 
-    mlir::Value mlirGenIsNaN(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::Value mlirGenIsNaN(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         auto op = operands.front();
         if (!isa<mlir_ts::NumberType>(op.getType()))
         {
-            op = builder.create<mlir_ts::CastOp>(location, mlir_ts::NumberType::get(builder.getContext()), op);
+            op = castFn(location, mlir_ts::NumberType::get(builder.getContext()), op, genContext, false);
         }
 
         auto isNaNOp = builder.create<mlir_ts::IsNaNOp>(location, mlir_ts::BooleanType::get(builder.getContext()), op);
@@ -663,7 +670,8 @@ class MLIRCustomMethods
         return mlir::Value();
     }
 
-    ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
+    ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder, compileOptions);
 
@@ -674,7 +682,7 @@ class MLIRCustomMethods
         {
             if (value.getType() != arrayElement)
             {
-                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, arrayElement, value));
+                castedValues.push_back(castFn(location, arrayElement, value, genContext, false));
             }
             else
             {
@@ -695,9 +703,10 @@ class MLIRCustomMethods
         return sizeOfValue;
     }    
 
-    ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
-        return mlirGenArrayPush(location, operands.front(), operands.slice(1));
+        return mlirGenArrayPush(location, operands.front(), operands.slice(1), castFn, genContext);
     }
 
     ValueOrLogicalResult mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
@@ -716,7 +725,8 @@ class MLIRCustomMethods
         return value;
     }
 
-    ValueOrLogicalResult mlirGenArrayUnshift(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
+    ValueOrLogicalResult mlirGenArrayUnshift(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder, compileOptions);
 
@@ -727,7 +737,7 @@ class MLIRCustomMethods
         {
             if (value.getType() != arrayElement)
             {
-                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, arrayElement, value));
+                castedValues.push_back(castFn(location, arrayElement, value, genContext, false));
             }
             else
             {
@@ -748,9 +758,10 @@ class MLIRCustomMethods
         return sizeOfValue;
     }    
 
-    ValueOrLogicalResult mlirGenArrayUnshift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenArrayUnshift(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
-        return mlirGenArrayUnshift(location, operands.front(), operands.slice(1));
+        return mlirGenArrayUnshift(location, operands.front(), operands.slice(1), castFn, genContext);
     }
 
     ValueOrLogicalResult mlirGenArrayShift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
@@ -769,18 +780,19 @@ class MLIRCustomMethods
         return value;
     }    
 
-    ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, mlir::Value thisValue, mlir::Value startValue, mlir::Value deleteCountValue, ArrayRef<mlir::Value> values)
+    ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, mlir::Value thisValue, mlir::Value startValue, mlir::Value deleteCountValue, ArrayRef<mlir::Value> values,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder, compileOptions);
 
         if (!isa<mlir::IndexType>(startValue.getType()))
         {
-            startValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), startValue);
+            startValue = castFn(location, mlir::IndexType::get(builder.getContext()), startValue, genContext, false);
         }
 
         if (!isa<mlir::IndexType>(deleteCountValue.getType()))
         {
-            deleteCountValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), deleteCountValue);
+            deleteCountValue = castFn(location, mlir::IndexType::get(builder.getContext()), deleteCountValue, genContext, false);
         }
 
         auto arrayElement = cast<mlir_ts::ArrayType>(thisValue.getType()).getElementType();
@@ -790,7 +802,7 @@ class MLIRCustomMethods
         {
             if (value.getType() != arrayElement)
             {
-                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, arrayElement, value));
+                castedValues.push_back(castFn(location, arrayElement, value, genContext, false));
             }
             else
             {
@@ -811,12 +823,14 @@ class MLIRCustomMethods
         return sizeOfValue;
     }    
 
-    ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
-        return mlirGenArraySplice(location, operands.front(), operands[1], operands[2], operands.slice(3));
+        return mlirGenArraySplice(location, operands.front(), operands[1], operands[2], operands.slice(3), castFn, genContext);
     }    
 
-    ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
+    ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder, compileOptions);
 
@@ -827,7 +841,7 @@ class MLIRCustomMethods
         {
             if (value.getType() != indexType)
             {
-                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, indexType, value));
+                castedValues.push_back(castFn(location, indexType, value, genContext, false));
             }
             else
             {
@@ -846,20 +860,21 @@ class MLIRCustomMethods
         return arrayViewValue;
     }    
 
-    ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, ArrayRef<mlir::Value> operands, 
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
-        return mlirGenArrayView(location, operands.front(), operands.slice(1));
+        return mlirGenArrayView(location, operands.front(), operands.slice(1), castFn, genContext);
     }    
 
     mlir::LogicalResult mlirGenSwitchState(const mlir::Location &location, ArrayRef<mlir::Value> operands,
-                                           const GenContext &genContext)
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         auto op = operands.front();
 
         auto int32Type = mlir::IntegerType::get(op.getType().getContext(), 32);
         if (op.getType() != int32Type)
         {
-            op = builder.create<mlir_ts::CastOp>(location, int32Type, op);
+            op = castFn(location, int32Type, op, genContext, false);
         }
 
         auto switchStateOp =
@@ -874,7 +889,8 @@ class MLIRCustomMethods
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenLoadLibraryPermanently(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::LogicalResult mlirGenLoadLibraryPermanently(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         mlir::Value fileNameValue;
         for (auto &oper : operands)
@@ -882,7 +898,7 @@ class MLIRCustomMethods
             if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast =
-                    builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
+                    castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext, false);
                 fileNameValue = strCast;
             }
             else
@@ -901,7 +917,8 @@ class MLIRCustomMethods
         return mlir::success();
     }   
 
-    ValueOrLogicalResult mlirGenSearchForAddressOfSymbol(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenSearchForAddressOfSymbol(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         mlir::Value symbolNameValue;
         for (auto &oper : operands)
@@ -909,7 +926,7 @@ class MLIRCustomMethods
             if (!isa<mlir_ts::StringType>(oper.getType()))
             {
                 auto strCast =
-                    builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
+                    castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext, false);
                 symbolNameValue = strCast;
             }
             else
@@ -930,7 +947,8 @@ class MLIRCustomMethods
         return V(loadLibraryPermanentlyOp);
     }     
 
-    ValueOrLogicalResult mlirGenLoadReference(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    ValueOrLogicalResult mlirGenLoadReference(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         mlir::Value refValue;
         for (auto &oper : operands)
@@ -938,7 +956,7 @@ class MLIRCustomMethods
             if (isa<mlir_ts::OpaqueType>(oper.getType()))
             {
                 auto opaqueCast =
-                    builder.create<mlir_ts::CastOp>(location, mlir_ts::RefType::get(builder.getContext(), oper.getType()), oper);
+                    castFn(location, mlir_ts::RefType::get(builder.getContext(), oper.getType()), oper, genContext, false);
                 refValue = opaqueCast;
             }
             else
@@ -1426,7 +1444,8 @@ class MLIRPropertyAccessCodeLogic
         return nullptr;
     }
 
-    template <typename T> mlir::Value Array(T arrayType, CompileOptions& compileOptions)
+    template <typename T> mlir::Value Array(T arrayType, CompileOptions& compileOptions,
+        std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &, bool)> castFn, const GenContext &genContext)
     {
         SmallVector<mlir::NamedAttribute> customAttrs;
         // customAttrs.push_back({MLIR_IDENT("__virtual"), MLIR_ATTR("true")});
@@ -1478,7 +1497,7 @@ class MLIRPropertyAccessCodeLogic
 
                     MLIRTypeHelper mth(builder.getContext(), compileOptions);
                     auto nonConstArray = mth.convertConstArrayTypeToArrayType(expression.getType());
-                    expression = builder.create<mlir_ts::CastOp>(location, nonConstArray, expression);
+                    expression = castFn(location, nonConstArray, expression, genContext, false);
                 }
                 else
                 {
@@ -1751,5 +1770,6 @@ class MLIRLogicHelper
 } // namespace typescript
 
 #undef DEBUG_TYPE
+#undef V
 
 #endif // MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRCODELOGIC_H_

@@ -649,6 +649,7 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
                     break;
                 default:
                     llvm_unreachable("not implemented");
+                    return mlir::Value();
                 }
 
                 return bodyCmpResult;
@@ -686,6 +687,7 @@ class StringCompareOpLowering : public TsLlvmPattern<mlir_ts::StringCompareOp>
                     break;
                 default:
                     llvm_unreachable("not implemented");
+                    return mlir::Value();
                 }
 
                 return ptrCmpResult;
@@ -775,6 +777,7 @@ class AnyCompareOpLowering : public TsLlvmPattern<mlir_ts::AnyCompareOp>
                     break;
                 default:
                     llvm_unreachable("not implemented");
+                    return mlir::Value();
                 }
 
                 return bodyCmpResult;
@@ -2174,6 +2177,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
             {
                 // effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, llvmElementType, item);
                 llvm_unreachable("type mismatch");
+                return failure();
             }
 
             auto save = rewriter.create<LLVM::StoreOp>(loc, effectiveItem, offset);
@@ -2357,6 +2361,7 @@ struct ArrayPushOpLowering : public TsLlvmPattern<mlir_ts::ArrayPushOp>
                                         << " value type: " << item.getType() << "\n";);
                 llvm_unreachable("cast must happen earlier");
                 // effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, elementType, item);
+                return failure();
             }
 
             auto save = rewriter.create<LLVM::StoreOp>(loc, effectiveItem, offset);
@@ -2501,6 +2506,7 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
                                         << " value type: " << item.getType() << "\n";);
                 llvm_unreachable("cast must happen earlier");
                 // effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, elementType, item);
+                return failure();
             }
 
             auto save = rewriter.create<LLVM::StoreOp>(loc, effectiveItem, offset);
@@ -2691,6 +2697,7 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
                                         << " value type: " << item.getType() << "\n";);
                 llvm_unreachable("cast must happen earlier");
                 // effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, elementType, item);
+                return failure();
             }
 
             auto save = rewriter.create<LLVM::StoreOp>(loc, effectiveItem, offset);
@@ -2844,6 +2851,7 @@ struct ArithmeticUnaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticUnary
             return success();
         default:
             llvm_unreachable("not implemented");
+            return failure();
         }
     }
 };
@@ -2918,6 +2926,7 @@ struct ArithmeticBinaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticBina
 
         default:
             llvm_unreachable("not implemented");
+            return failure();
         }
     }
 };
@@ -3014,6 +3023,7 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
             break;
         default:
             llvm_unreachable("not implemented");
+            return failure();
         }
 
         rewriter.replaceOp(logicalBinaryOp, value);
@@ -4504,6 +4514,7 @@ struct VirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::VirtualSymbolR
         else
         {
             llvm_unreachable("not implemented");
+            return failure();
         }
 
         return success();
@@ -4543,6 +4554,7 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
         else
         {
             llvm_unreachable("not implemented");
+            return failure();
         }
 
         return success();
@@ -5002,6 +5014,7 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
             LLVM_DEBUG(llvm::dbgs() << "\n!! GetMethodOp: " << getMethodOp << " result type: " << getMethodOp.getType()
                                     << "\n");
             llvm_unreachable("not implemented");
+            return failure();
         }
 
         mlir::Value methodVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmMethodType, transformed.getBoundFunc(),
