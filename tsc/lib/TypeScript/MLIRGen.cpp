@@ -20769,8 +20769,14 @@ genContext);
                     return cast(location, type, optValue, genContext); 
                 }, 
                 [&](mlir::Type trueType) {
-                    auto undefValue = builder.create<mlir_ts::UndefOp>(location, mlir_ts::UndefinedType::get(builder.getContext()));
-                    return cast(location, type, undefValue, genContext); 
+                    if (mlir::isa<mlir_ts::StringType>(type))
+                    {
+                        auto undefValue = builder.create<mlir_ts::UndefOp>(location, mlir_ts::UndefinedType::get(builder.getContext()));
+                        return V(cast(location, type, undefValue, genContext)); 
+                    }
+
+                    auto defValue = builder.create<mlir_ts::DefaultOp>(location, type);
+                    return V(defValue); 
                 });
             return castedVal;            
         }        
