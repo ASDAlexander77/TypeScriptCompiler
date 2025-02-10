@@ -21950,6 +21950,87 @@ genContext);
         return mlir::Type();      
     }
 
+    mlir::Type resolveGenericTypeInNamespace(mlir::Location location, StringRef name, TypeReferenceNode typeReferenceAST, const GenContext &genContext)
+    {
+        // try to resolve from type alias first
+        auto genericTypeAliasInfo = lookupGenericTypeAliasMap(name);
+        if (!is_default(genericTypeAliasInfo))
+        {
+            GenContext genericTypeGenContext(genContext);
+
+            auto typeParams = std::get<0>(genericTypeAliasInfo);
+            auto typeNode = std::get<1>(genericTypeAliasInfo);
+
+            auto [result, hasAnyNamedGenericType] =
+                zipTypeParametersWithArguments(location, typeParams, typeReferenceAST->typeArguments,
+                                            genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
+
+            if (mlir::failed(result))
+            {
+                return mlir::Type();
+            }
+
+            if (hasAnyNamedGenericType == IsGeneric::True)
+            {
+                return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
+            }
+
+            return getType(typeNode, genericTypeGenContext);
+        }
+
+        if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
+        {
+            auto classType = genericClassTypeInfo->classType;
+            auto [result, specType] = instantiateSpecializedClassType(location, classType,
+                                                                    typeReferenceAST->typeArguments, genContext, true);
+            if (mlir::succeeded(result))
+            {
+                return specType;
+            }
+
+            return classType;
+        }
+
+        if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
+        {
+            auto interfaceType = genericInterfaceTypeInfo->interfaceType;
+            auto [result, specType] = instantiateSpecializedInterfaceType(location, interfaceType,
+                                                                        typeReferenceAST->typeArguments, genContext, true);
+            if (mlir::succeeded(result))
+            {
+                return specType;
+            }
+
+            return interfaceType;
+        }
+
+        return mlir::Type();
+    }
+
+    mlir::Type resolveGenericType(mlir::Location location, StringRef name, TypeReferenceNode typeReferenceAST, const GenContext &genContext) 
+    {
+        MLIRNamespaceGuard ng(currentNamespace);
+
+        // search in outer namespaces
+        while (currentNamespace->isFunctionNamespace)
+        {
+            currentNamespace = currentNamespace->parentNamespace;
+            if (auto type = resolveGenericTypeInNamespace(location, name, typeReferenceAST, genContext))
+            {
+                return type;
+            }
+        }
+
+        // search in root namespace
+        currentNamespace = rootNamespace;
+        if (auto type = resolveGenericTypeInNamespace(location, name, typeReferenceAST, genContext))
+        {
+            return type;
+        }
+
+        return mlir::Type();
+    }
+
     mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
         auto location = loc(typeReferenceAST);
@@ -21959,56 +22040,14 @@ genContext);
 
         if (typeReferenceAST->typeArguments.size())
         {
-            // try to resolve from type alias first
-            auto genericTypeAliasInfo = lookupGenericTypeAliasMap(name);
-            if (!is_default(genericTypeAliasInfo))
+            if (auto type = resolveGenericTypeInNamespace(location, name, typeReferenceAST, genContext))
             {
-                GenContext genericTypeGenContext(genContext);
-
-                auto typeParams = std::get<0>(genericTypeAliasInfo);
-                auto typeNode = std::get<1>(genericTypeAliasInfo);
-
-                auto [result, hasAnyNamedGenericType] =
-                    zipTypeParametersWithArguments(location, typeParams, typeReferenceAST->typeArguments,
-                                                genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
-
-                if (mlir::failed(result))
-                {
-                    return mlir::Type();
-                }
-
-                if (hasAnyNamedGenericType == IsGeneric::True)
-                {
-                    return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
-                }
-
-                return getType(typeNode, genericTypeGenContext);
+                return type;
             }
 
-            if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
+            if (auto type = resolveGenericType(location, name, typeReferenceAST, genContext))
             {
-                auto classType = genericClassTypeInfo->classType;
-                auto [result, specType] = instantiateSpecializedClassType(location, classType,
-                                                                        typeReferenceAST->typeArguments, genContext, true);
-                if (mlir::succeeded(result))
-                {
-                    return specType;
-                }
-
-                return classType;
-            }
-
-            if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
-            {
-                auto interfaceType = genericInterfaceTypeInfo->interfaceType;
-                auto [result, specType] = instantiateSpecializedInterfaceType(location, interfaceType,
-                                                                            typeReferenceAST->typeArguments, genContext, true);
-                if (mlir::succeeded(result))
-                {
-                    return specType;
-                }
-
-                return interfaceType;
+                return type;
             }
 
             if (auto embedType = findEmbeddedType(location, name, typeReferenceAST->typeArguments, genContext))
