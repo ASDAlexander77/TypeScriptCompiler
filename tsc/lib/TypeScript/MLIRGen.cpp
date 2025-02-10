@@ -5688,7 +5688,7 @@ class MLIRGenImpl
             funcOp->pos = functionLikeDeclarationBaseAST->pos;
             funcOp->_end = functionLikeDeclarationBaseAST->_end;        
 
-            //LLVM_DEBUG(printDebug(funcOp););
+            LLVM_DEBUG(printDebug(funcOp););
 
             auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
             return genFuncOp;
@@ -22015,6 +22015,9 @@ genContext);
             {
                 return embedType;
             }
+
+            emitError(location, "generic type ") << name << " can't be found";
+            return mlir::Type();
         }
 
         if (auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext))
