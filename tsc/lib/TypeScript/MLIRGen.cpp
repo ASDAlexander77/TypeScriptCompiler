@@ -13655,10 +13655,20 @@ class MLIRGenImpl
 
         auto regName = nf.createIdentifier(S("RegExp"));
 
+        auto begin = regularExpressionLiteral->text.find_first_of('/');
+        auto end = regularExpressionLiteral->text.find_last_of('/');
+        auto text = regularExpressionLiteral->text.substr(begin + 1, end - 1);
+        auto flags = regularExpressionLiteral->text.substr(end + 1);
+
         NodeArray<Expression> argumentsArray;
         argumentsArray.push_back(
             nf.createStringLiteral(
-                regularExpressionLiteral->text, 
+                text, 
+                false, 
+                regularExpressionLiteral->hasExtendedUnicodeEscape));
+        argumentsArray.push_back(
+            nf.createStringLiteral(
+                flags, 
                 false, 
                 regularExpressionLiteral->hasExtendedUnicodeEscape));
 
