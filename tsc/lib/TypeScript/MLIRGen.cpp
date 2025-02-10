@@ -6405,6 +6405,9 @@ class MLIRGenImpl
         // new location withing FunctionScope
         location = loc(functionLikeDeclarationBaseAST->body);
 
+        GenContext funcGenContext(genContext);
+        funcGenContext.funcOp = funcOp;
+
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;
 
@@ -6414,62 +6417,62 @@ class MLIRGenImpl
         auto firstIndex = 0;
 
         // add exit code
-        if (failed(mlirGenFunctionEntry(location, funcProto, genContext)))
+        if (failed(mlirGenFunctionEntry(location, funcProto, funcGenContext)))
         {
             return mlir::failure();
         }
 
         // register this if lambda function
-        if (failed(mlirGenFunctionCapturedParam(location, firstIndex, funcProto, arguments, genContext)))
+        if (failed(mlirGenFunctionCapturedParam(location, firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
         }
 
         // allocate function parameters as variable
-        if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, genContext)))
+        if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionParamsBindings(firstIndex, funcProto, arguments, genContext)))
+        if (failed(mlirGenFunctionParamsBindings(firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionCapturedParamIfObject(location, firstIndex, funcProto, arguments, genContext)))
+        if (failed(mlirGenFunctionCapturedParamIfObject(location, firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionCaptures(location, funcProto, genContext)))
+        if (failed(mlirGenFunctionCaptures(location, funcProto, funcGenContext)))
         {
             return mlir::failure();
         }
 
         // if we need params only we do not need to process body
-        auto discoverParamsOnly = genContext.allowPartialResolve && genContext.discoverParamsOnly;
+        auto discoverParamsOnly = funcGenContext.allowPartialResolve && funcGenContext.discoverParamsOnly;
         if (!discoverParamsOnly)
         {
             // we need it to skip lexical block
             functionLikeDeclarationBaseAST->body->parent = functionLikeDeclarationBaseAST->body;
-            if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, genContext)))
+            if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, funcGenContext)))
             {
                 return mlir::failure();
             }
         }
 
         // add exit code
-        if (failed(mlirGenFunctionExit(location, genContext)))
+        if (failed(mlirGenFunctionExit(location, funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (genContext.dummyRun && genContext.cleanUps)
+        if (funcGenContext.dummyRun && funcGenContext.cleanUps)
         {
-            genContext.cleanUps->push_back(blockPtr);
+            funcGenContext.cleanUps->push_back(blockPtr);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ " << (funcGenContext.dummyRun ? "dummy run" : "") <<  (funcGenContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         return mlir::success();
     }
@@ -8499,7 +8502,8 @@ class MLIRGenImpl
             }
         }
 
-        const_cast<GenContext &>(genContext).funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+        if (genContext.funcOp)
+            const_cast<GenContext &>(genContext).funcOp.setPersonalityAttr(builder.getBoolAttr(true));
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
 
