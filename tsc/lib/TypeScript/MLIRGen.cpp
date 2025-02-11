@@ -22038,25 +22038,60 @@ genContext);
         // check utility types
         auto name = MLIRHelper::getName(typeReferenceAST->typeName);
 
-        if (typeReferenceAST->typeArguments.size())
         {
-            if (auto type = resolveGenericTypeInNamespace(location, name, typeReferenceAST, genContext))
+            MLIRNamespaceGuard ng(currentNamespace);
+            if (typeReferenceAST->typeName == SyntaxKind::QualifiedName)
             {
-                return type;
+                auto qualifiedName = typeReferenceAST->typeName.as<QualifiedName>();
+                auto location = loc(qualifiedName);
+
+                auto expression = qualifiedName->left;
+                auto result = mlirGenModuleReference(expression, genContext);
+                if (result.failed_or_no_value())
+                {
+                    return mlir::Type();
+                }
+
+                auto expressionValue = V(result);
+
+                if (auto namespaceOp = expressionValue.getDefiningOp<mlir_ts::NamespaceRefOp>())
+                {
+                    auto namespaceType = mlir::cast<mlir_ts::NamespaceType>(namespaceOp.getType());
+                    
+                    auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
+                    assert(namespaceInfo);
+
+                    currentNamespace = namespaceInfo;            
+                }
+                else
+                {
+                    emitError(location, "QualifiedName ") << print(qualifiedName) << " is not namespace";
+                    return mlir::Type();
+                }
+
+                name = MLIRHelper::getName(qualifiedName->right);
             }
 
-            if (auto type = resolveGenericType(location, name, typeReferenceAST, genContext))
+            if (typeReferenceAST->typeArguments.size())
             {
-                return type;
-            }
+                if (auto type = resolveGenericTypeInNamespace(location, name, typeReferenceAST, genContext))
+                {
+                    return type;
+                }
 
-            if (auto embedType = findEmbeddedType(location, name, typeReferenceAST->typeArguments, genContext))
-            {
-                return embedType;
-            }
+                if (auto type = resolveGenericType(location, name, typeReferenceAST, genContext))
+                {
+                    return type;
+                }
 
-            emitError(location, "generic type ") << name << " can't be found";
-            return mlir::Type();
+                if (auto embedType = findEmbeddedType(location, name, typeReferenceAST->typeArguments, genContext))
+                {
+                    return embedType;
+                }
+
+                emitError(location, "generic type ") << name << " can't be found";
+                return mlir::Type();
+            }
         }
 
         if (auto type = getTypeByTypeName(typeReferenceAST->typeName, genContext))
