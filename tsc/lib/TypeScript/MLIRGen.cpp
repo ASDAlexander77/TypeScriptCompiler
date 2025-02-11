@@ -14037,18 +14037,6 @@ class MLIRGenImpl
                 return mlir::success();    
             }
         }                             
-        
-        // ArrayLike
-        if (auto indexAccessType = evaluateElementAccess(location, itemValue, false, genContext))
-        {
-            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, [number] type is: " << indexAccessType << "\n";);
-
-            values.push_back({itemValue, true, true});
-
-            accumulateArrayItemType(location, indexAccessType, arrayInfo);
-
-            return mlir::success();            
-        }
 
         // DO NOT PUT before xxx.next() property otherwise ""..."" for Iterator will not work
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(type))
@@ -14084,6 +14072,18 @@ class MLIRGenImpl
 
             return mlir::success();
         }                           
+
+        // ArrayLike, do not put it before Tuple & Const Tuple, otherwise [xxx] will return wrong type
+        if (auto indexAccessType = evaluateElementAccess(location, itemValue, false, genContext))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, [number] type is: " << indexAccessType << "\n";);
+
+            values.push_back({itemValue, true, true});
+
+            accumulateArrayItemType(location, indexAccessType, arrayInfo);
+
+            return mlir::success();            
+        }
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! spread element type: " << type << "\n";);
         emitError(location, "can't estimate element of array");
