@@ -10465,6 +10465,17 @@ class MLIRGenImpl
             }
         }
 
+        // collapse union type
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(actualType)) 
+        {
+            mlir::Type baseType;
+            if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! mlirGenPropertyAccessExpressionBaseLogic: union type " << baseType << "\n";);
+                actualType = baseType;
+            }
+        }        
+
         // class member access
         auto classAccessWithObject = [&](mlir_ts::ClassType classType, mlir::Value objectValue) {
 
@@ -11626,6 +11637,18 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext)
     {
         auto arrayType = expression.getType();
+
+        // collapse union type
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(expression.getType())) 
+        {
+            mlir::Type baseType;
+            if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: union type " << baseType << "\n";);
+                arrayType = baseType;
+            }
+        }
+
         if (isa<mlir_ts::LiteralType>(arrayType))
         {
             arrayType = mth.stripLiteralType(arrayType);
@@ -13982,13 +14005,11 @@ class MLIRGenImpl
             return mlir::success();
         }        
 
-        auto nextPropertyType = evaluateProperty(location, itemValue, ITERATOR_NEXT, genContext);
-        if (nextPropertyType)
+        if (auto nextPropertyType = evaluateProperty(location, itemValue, ITERATOR_NEXT, genContext))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
 
-            auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
-            if (returnType)
+            if (auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType))
             {
                 // as tuple or const_tuple
                 ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
@@ -14015,7 +14036,19 @@ class MLIRGenImpl
 
                 return mlir::success();    
             }
-        }                                        
+        }                             
+        
+        // ArrayLike
+        if (auto indexAccessType = evaluateElementAccess(location, itemValue, false, genContext))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, [number] type is: " << indexAccessType << "\n";);
+
+            values.push_back({itemValue, true, true});
+
+            accumulateArrayItemType(location, indexAccessType, arrayInfo);
+
+            return mlir::success();            
+        }
 
         // DO NOT PUT before xxx.next() property otherwise ""..."" for Iterator will not work
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(type))
@@ -14053,8 +14086,9 @@ class MLIRGenImpl
         }                           
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! spread element type: " << type << "\n";);
+        emitError(location, "can't estimate element of array");
 
-        return mlir::success();
+        return mlir::failure();
     }
     
     mlir::LogicalResult processArrayElementForValues(Expression item, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
