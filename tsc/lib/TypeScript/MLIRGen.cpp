@@ -6991,8 +6991,10 @@ class MLIRGenImpl
         return false;
     }
 
-    mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
+    mlir::LogicalResult addSafeCastStatement(Expression exprIn, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
+        auto expr = stripParenthesesAndUntangleEquals(exprIn);
+
         auto isNotLocalVariable = false;
         auto location = loc(expr);
         auto nameStr = MLIRHelper::getName(expr.as<Node>(), stringAllocator);
@@ -7262,6 +7264,31 @@ class MLIRGenImpl
 
         return expr;
     }
+
+    Expression stripParenthesesAndUntangleEquals(Expression exprVal)
+    {
+        auto expr = exprVal;
+        while (expr == SyntaxKind::ParenthesizedExpression || expr == SyntaxKind::BinaryExpression)
+        {
+            if (expr == SyntaxKind::ParenthesizedExpression)
+            {
+                expr = expr.as<ParenthesizedExpression>()->expression;
+                continue;
+            }
+
+            if (expr == SyntaxKind::BinaryExpression)
+            {
+                auto binExpr = expr.as<BinaryExpression>();
+                auto op = (SyntaxKind)binExpr->operatorToken;
+                if (op == SyntaxKind::EqualsToken)
+                {
+                    expr = binExpr->left;
+                }
+            }
+        }
+
+        return expr;
+    }    
 
     mlir::LogicalResult checkSafeCastPropertyAccessLogic(TextRange textRange, Expression objAccessExpression,
                                                          mlir::Type typeOfObject, Node name, mlir::Value constVal,
