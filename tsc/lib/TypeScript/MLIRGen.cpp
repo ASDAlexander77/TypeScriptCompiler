@@ -7268,7 +7268,7 @@ class MLIRGenImpl
     Expression stripParenthesesAndUntangleEquals(Expression exprVal)
     {
         auto expr = exprVal;
-        while (expr == SyntaxKind::ParenthesizedExpression || expr == SyntaxKind::BinaryExpression)
+        while (expr == SyntaxKind::ParenthesizedExpression || expr == SyntaxKind::BinaryExpression || expr == SyntaxKind::CommaExpression)
         {
             if (expr == SyntaxKind::ParenthesizedExpression)
             {
@@ -7284,6 +7284,12 @@ class MLIRGenImpl
                 {
                     expr = binExpr->left;
                 }
+            }
+
+            if (expr == SyntaxKind::CommaExpression)
+            {
+                auto commaExpr = expr.as<CommaExpression>();
+                expr = commaExpr->right;
             }
         }
 
