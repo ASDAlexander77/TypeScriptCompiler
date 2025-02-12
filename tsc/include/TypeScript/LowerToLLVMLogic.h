@@ -19,7 +19,7 @@
 #include "TypeScript/LowerToLLVM/CastLogicHelper.h"
 #include "TypeScript/LowerToLLVM/OptionalLogicHelper.h"
 #include "TypeScript/LowerToLLVM/UndefLogicHelper.h"
-#include "TypeScript/LowerToLLVM/TypeOfOpHelper.h"
+#include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 #include "TypeScript/LowerToLLVM/ThrowLogic.h"
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_H_

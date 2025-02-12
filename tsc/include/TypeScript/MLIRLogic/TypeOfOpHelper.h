@@ -214,7 +214,7 @@ class TypeOfOpHelper
         llvm_unreachable("not implemented");
     }
 
-    mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value, mlir::Type origType)
+    mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value, mlir::Type origType, CompileOptions& compileOptions)
     {
         if (isa<mlir_ts::AnyType>(origType))
         {
@@ -223,9 +223,18 @@ class TypeOfOpHelper
             return rewriter.create<mlir_ts::TypeOfAnyOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
         }
 
-        if (isa<mlir_ts::UnionType>(origType))
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(origType))
         {
-            return rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
+            MLIRTypeHelper mth(rewriter.getContext(), compileOptions);
+
+            mlir::Type baseType;
+            bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
+            if (needTag)
+            {
+                return rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
+            }
+
+            origType = baseType;
         }
 
         if (auto subType = dyn_cast<mlir_ts::OptionalType>(origType))
@@ -243,7 +252,7 @@ class TypeOfOpHelper
             rewriter.setInsertionPointToStart(&thenRegion.back());
 
             mlir::Value valueOfOpt = rewriter.create<mlir_ts::ValueOp>(loc, subType.getElementType(), value);
-            auto typeOfValue = typeOfLogic(loc, valueOfOpt, valueOfOpt.getType());
+            auto typeOfValue = typeOfLogic(loc, valueOfOpt, valueOfOpt.getType(), compileOptions);
             rewriter.create<mlir_ts::ResultOp>(loc, typeOfValue);
 
             // else block

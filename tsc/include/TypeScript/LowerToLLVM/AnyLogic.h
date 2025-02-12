@@ -12,7 +12,7 @@
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
-#include "TypeScript/LowerToLLVM/TypeOfOpHelper.h"
+#include "TypeScript/MLIRLogic/TypeOfOpHelper.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -29,6 +29,7 @@ class AnyLogic
     LLVMCodeHelperBase ch;
     CodeLogicHelper clh;
     Location loc;
+    CompileOptions &compileOptions;
 
   protected:
     mlir::Type indexType;
@@ -37,7 +38,7 @@ class AnyLogic
 
   public:
     AnyLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc, CompileOptions &compileOptions)
-        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc)
+        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, tch.typeConverter, compileOptions), clh(op, rewriter), loc(loc), compileOptions(compileOptions)
     {
         indexType = th.getIndexType();
         llvmIndexType = tch.convertType(indexType);
@@ -54,7 +55,7 @@ class AnyLogic
         // get typeof value
         // auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
         TypeOfOpHelper toh(rewriter);
-        auto typeOfValue = toh.typeOfLogic(loc, in, inType);
+        auto typeOfValue = toh.typeOfLogic(loc, in, inType, compileOptions);
         return castToAny(in, typeOfValue, inLLVMType);
     }
 

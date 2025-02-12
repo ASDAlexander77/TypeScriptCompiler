@@ -13413,7 +13413,7 @@ class MLIRGenImpl
 
         // needed to use optimizers
         TypeOfOpHelper toh(builder);
-        auto typeOfValue = toh.typeOfLogic(location, resultValue, resultValue.getType());
+        auto typeOfValue = toh.typeOfLogic(location, resultValue, resultValue.getType(), compileOptions);
         return typeOfValue;
     }
 
