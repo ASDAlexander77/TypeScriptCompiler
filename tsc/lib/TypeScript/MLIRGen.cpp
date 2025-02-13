@@ -10076,7 +10076,8 @@ class MLIRGenImpl
 
         if (isLeftUnion && isRightUnion)
         {
-            emitError(location, "Binary Operation") << "can't be applied to different union types. Apply type cast before usage";
+            // TODO: finish cast between unions
+            emitError(location, "Binary Operation") << "can't be applied to different union types. Apply type cast before usage";            
             return mlir::failure();
         }
 
@@ -12395,6 +12396,12 @@ class MLIRGenImpl
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext, bool onStack = false)
     {
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (onStack && classInfo->hasVirtualTable)
+        {
+            emitError(location, "") << "can't instantiate new instance of " << to_print(classType) << " which has 'virtual table' on stack";
+            return mlir::failure();
+        }
+
         auto newOp = onStack 
             ? NewClassInstanceLogicAsOp(location, classType, onStack, genContext)
             : ValueOrLogicalResult(NewClassInstanceAsMethodCallOp(location, classInfo, true, genContext));
