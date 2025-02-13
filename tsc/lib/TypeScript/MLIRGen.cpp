@@ -2667,6 +2667,7 @@ class MLIRGenImpl
             genericTypeGenContext.specialization = true;
             genericTypeGenContext.instantiateSpecializedFunction = true;
             genericTypeGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
+            genericTypeGenContext.thisType = functionGenericTypeInfo->thisType; // to support methods
             auto typeParams = functionGenericTypeInfo->typeParams;
             if (typeArguments && typeParams.size() == typeArguments.size())
             {
@@ -5730,6 +5731,7 @@ class MLIRGenImpl
         newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
         newGenericFunctionPtr->elementNamespace = currentNamespace;
         newGenericFunctionPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
+        newGenericFunctionPtr->thisType = genContext.thisType;
         newGenericFunctionPtr->sourceFile = sourceFile;
         newGenericFunctionPtr->fileName = mainSourceFileName;
 
