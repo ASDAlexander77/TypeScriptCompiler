@@ -654,6 +654,8 @@
             "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
             "args": [
                 "-emit=obj",
+                "--export=none", 
+                "--no-default-lib",
                 "-debug-only=mlir,llvm",
                 "-mlir-disable-threading",                
                 "-o=~/dev/playground/lib.obj",
