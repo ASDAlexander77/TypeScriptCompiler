@@ -10051,8 +10051,51 @@ class MLIRGenImpl
 
         return mlir::success();
     }
+    
+    ValueOrLogicalResult syncUnionTypes(mlir::Location location, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext) 
+    {
+        auto isLeftUnion = false;
+        if (auto leftUnionType = dyn_cast<mlir_ts::UnionType>(leftExpressionValue.getType()))
+        {
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(location, leftUnionType, baseType))
+            {
+                isLeftUnion = true;
+            }
+        }
 
-    bool syncTypes(mlir::Location location, mlir::Type type, mlir::Value & leftExpressionValue, mlir::Value & rightExpressionValue, const GenContext &genContext)
+        auto isRightUnion = false;
+        if (auto rightUnionType = dyn_cast<mlir_ts::UnionType>(rightExpressionValue.getType()))
+        {
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(location, rightUnionType, baseType))
+            {
+                isRightUnion = true;
+            }
+        }
+
+        if (isLeftUnion == isRightUnion)
+        {
+            emitError(location, "Binary Operation") << "can't be applied to different union types. Apply type cast before usage";
+            return mlir::failure();
+        }
+
+        if (isLeftUnion)
+        {
+            CAST(leftExpressionValue, location, rightExpressionValue.getType(), leftExpressionValue, genContext);
+            return leftExpressionValue;
+        }
+
+        if (isRightUnion)
+        {
+            CAST(rightExpressionValue, location, leftExpressionValue.getType(), rightExpressionValue, genContext);
+            return rightExpressionValue;
+        }
+
+        return mlir::success();
+    }
+
+    bool syncTypes(mlir::Location location, mlir::Type type, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         auto hasType = leftExpressionValue.getType() == type ||
                             rightExpressionValue.getType() == type;
@@ -10150,7 +10193,20 @@ class MLIRGenImpl
                     getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
                     builder.getF32Type(), SInt(32), builder.getI32Type(), 
                     builder.getF16Type(), SInt(16), builder.getI16Type(), 
-                    SInt(8), builder.getI8Type()};
+                    SInt(8), builder.getI8Type()
+                };
+
+                auto r = syncUnionTypes(location, leftExpressionValue, rightExpressionValue, genContext);
+                if (r.value)
+                {                    
+                    break;
+                }
+
+                if (mlir::failed(r.result))
+                {
+                    return mlir::failure();
+                }
+                
                 for (auto type : types)
                 {
                     if (syncTypes(location, type, leftExpressionValue, rightExpressionValue, genContext))
