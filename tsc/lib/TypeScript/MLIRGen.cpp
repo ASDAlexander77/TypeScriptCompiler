@@ -10074,7 +10074,7 @@ class MLIRGenImpl
             }
         }
 
-        if (isLeftUnion == isRightUnion)
+        if (isLeftUnion && isRightUnion)
         {
             emitError(location, "Binary Operation") << "can't be applied to different union types. Apply type cast before usage";
             return mlir::failure();
