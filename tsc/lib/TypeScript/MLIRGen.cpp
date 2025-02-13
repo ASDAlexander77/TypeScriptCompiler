@@ -21221,6 +21221,8 @@ genContext);
                 // TODO: must be improved
                 stringstream ss;
 
+                auto isNullDest = isa<mlir_ts::NullType>(type);
+
                 StringMap<boolean> typeOfs;
                 SmallVector<mlir::Type> classInstances;
                 SmallVector<mlir::Type> tupleTypes;
@@ -21234,79 +21236,103 @@ genContext);
                         if (typeof a == 'class') if (a instanceof U) return a; \
                         return null; \"
                 */
+
+                    // true is nullable, false is not
                     mlir::TypeSwitch<mlir::Type>(subType)
-                        .Case<mlir_ts::BooleanType>([&](auto _) { typeOfs["boolean"] = true; })
-                        .Case<mlir_ts::TypePredicateType>([&](auto _) { typeOfs["boolean"] = true; })
-                        .Case<mlir_ts::NumberType>([&](auto _) { typeOfs["number"] = true; })
+                        .Case<mlir_ts::BooleanType>([&](auto _) { typeOfs["boolean"] = false; })
+                        .Case<mlir_ts::TypePredicateType>([&](auto _) { typeOfs["boolean"] = false; })
+                        .Case<mlir_ts::NumberType>([&](auto _) { typeOfs["number"] = false; })
                         .Case<mlir_ts::StringType>([&](auto _) { typeOfs["string"] = true; })
-                        .Case<mlir_ts::CharType>([&](auto _) { typeOfs["char"] = true; })
+                        .Case<mlir_ts::CharType>([&](auto _) { typeOfs["char"] = false; })
                         .Case<mlir::IntegerType>([&](auto intType_) {
-                            if (intType_.isSignless()) typeOfs["i" + std::to_string(intType_.getWidth())] = true; else
-                            if (intType_.isSigned()) typeOfs["s" + std::to_string(intType_.getWidth())] = true; else
-                            if (intType_.isUnsigned()) typeOfs["u" + std::to_string(intType_.getWidth())] = true; })
-                        .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = true; })
-                        .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = true; })
-                        .Case<mlir_ts::BigIntType>([&](auto _) { typeOfs["bigint"] = true; })
+                            if (intType_.isSignless()) typeOfs["i" + std::to_string(intType_.getWidth())] = false; else
+                            if (intType_.isSigned()) typeOfs["s" + std::to_string(intType_.getWidth())] = false; else
+                            if (intType_.isUnsigned()) typeOfs["u" + std::to_string(intType_.getWidth())] = false; })
+                        .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = false; })
+                        .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = false; })
+                        .Case<mlir_ts::BigIntType>([&](auto _) { typeOfs["bigint"] = false; })
                         .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
                         .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
-                        //.Case<mlir_ts::ConstTupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(mth.removeConstType(tuple_)); })
-                        //.Case<mlir_ts::TupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(tuple_); })
                         .Case<mlir_ts::ArrayType>([&](auto _) { typeOfs["array"] = true; })
                         .Case<mlir_ts::ConstArrayType>([&](auto _) { typeOfs["array"] = true; })
                         .Case<mlir_ts::OpaqueType>([&](auto _) { typeOfs["object"] = true; })
                         .Case<mlir_ts::ObjectType>([&](auto _) { typeOfs["object"] = true; })
                         .Case<mlir_ts::NullType>([&](auto _) { typeOfs["null"] = true; })
-                        .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = true; })
+                        .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = false; })
                         .Default([&](auto type) { 
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
                             llvm_unreachable("not implemented yet"); 
                         });                                   
                 }
 
-                auto next = false;
-                for (auto& pair : typeOfs)
+                if (isNullDest)
                 {
-                    if (next) ss << S(" else ");
-
-                    ss << S("if (typeof t == '");
-                    ss << stows(pair.getKey().str());
-                    ss << S("') ");
-                    if (pair.getKey() == "class")
+                    // to null
+                    auto next = false;
+                    for (auto& pair : typeOfs)
                     {
-                        ss << S("{ \n");
+                        auto isNullable = pair.getValue();
+                        if (next) ss << S(" else ");
 
-                        for (auto [index, _] : enumerate(classInstances))
+                        ss << S("if (typeof t == '");
+                        ss << stows(pair.getKey().str());
+                        ss << S("') ");
+                        if (pair.getKey() == "class")
                         {
-                            ss << S("if (t instanceof TYPE_INST_ALIAS");
-                            ss << index;
-                            ss << S(") return t;\n");
+                            ss << S("{ \n");
+
+                            for (auto [index, _] : enumerate(classInstances))
+                            {
+                                ss << S("if (t instanceof TYPE_INST_ALIAS");
+                                ss << index;
+                                ss << S(") return t;\n");
+                            }
+
+                            ss << S(" }\n");
+                        }
+                        else
+                        {
+                            if (isNullable)
+                                ss << S("return t;\n");
+                            else
+                                ss << S("return -1;\n");
                         }
 
-                        ss << S(" }\n");
-                    }
-                    // else if (pair.getKey() == "tuple")
-                    // {
-                    //     ss << S("{ \n");
-
-                    //     for (auto [index, _] : enumerate(tupleTypes))
-                    //     {
-                    //         ss << S("return <TYPE_TUPLE_ALIAS");
-                    //         ss << index;
-                    //         ss << S(">t;\n");
-
-                    //         // TODO: temp hack
-                    //         break;
-                    //     }
-
-                    //     ss << S(" }\n");
-                    // }
-                    else
+                        next = true;
+                    }                   
+                }
+                else
+                {
+                    // default
+                    auto next = false;
+                    for (auto& pair : typeOfs)
                     {
-                        ss << S("return t;\n");
-                    }
+                        if (next) ss << S(" else ");
 
-                    next = true;
+                        ss << S("if (typeof t == '");
+                        ss << stows(pair.getKey().str());
+                        ss << S("') ");
+                        if (pair.getKey() == "class")
+                        {
+                            ss << S("{ \n");
+
+                            for (auto [index, _] : enumerate(classInstances))
+                            {
+                                ss << S("if (t instanceof TYPE_INST_ALIAS");
+                                ss << index;
+                                ss << S(") return t;\n");
+                            }
+
+                            ss << S(" }\n");
+                        }
+                        else
+                        {
+                            ss << S("return t;\n");
+                        }
+
+                        next = true;
+                    }
                 }
 
                 ss << "\nthrow \"Can't cast from union type\";\n";                    
