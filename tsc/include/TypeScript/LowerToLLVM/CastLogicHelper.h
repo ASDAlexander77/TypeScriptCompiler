@@ -23,6 +23,9 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 
+#ifdef DEBUG_TYPE
+#undef DEBUG_TYPE
+#endif
 #define DEBUG_TYPE "llvm"
 
 using namespace mlir;
@@ -1032,7 +1035,7 @@ class CastLogicHelper
             bool needTag = mth.isUnionTypeNeedsTag(loc, unionType, baseType);
             if (needTag)
             {
-                typeOfValue = toh.typeOfLogic(loc, valueForBoxing, unionType);
+                typeOfValue = toh.typeOfLogic(loc, valueForBoxing, unionType, compileOptions);
 
                 LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
                 // so we need to get biggest value from Union

@@ -34,6 +34,9 @@ struct GenericFunctionInfo
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
+    mlir::Type thisType;
+    mlir_ts::ClassType thisClassType;
+
     SourceFile sourceFile;
     StringRef fileName;
 

@@ -5038,10 +5038,8 @@ struct TypeOfOpLowering : public TsLlvmPattern<mlir_ts::TypeOfOp>
     LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, Adaptor transformed,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        
-
         TypeOfOpHelper toh(rewriter);
-        auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), transformed.getValue(), typeOfOp.getValue().getType());
+        auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), transformed.getValue(), typeOfOp.getValue().getType(), tsLlvmContext->compileOptions);
 
         rewriter.replaceOp(typeOfOp, ValueRange{typeOfValue});
         return success();

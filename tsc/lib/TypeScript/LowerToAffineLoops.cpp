@@ -1904,7 +1904,7 @@ struct TypeOfOpLowering : public TsPattern<mlir_ts::TypeOfOp>
     LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, PatternRewriter &rewriter) const final
     {
         TypeOfOpHelper toh(rewriter);
-        auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), typeOfOp.getValue(), typeOfOp.getValue().getType());
+        auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), typeOfOp.getValue(), typeOfOp.getValue().getType(), tsContext->compileOptions);
 
         rewriter.replaceOp(typeOfOp, ValueRange{typeOfValue});
         return success();

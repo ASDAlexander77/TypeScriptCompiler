@@ -2667,6 +2667,9 @@ class MLIRGenImpl
             genericTypeGenContext.specialization = true;
             genericTypeGenContext.instantiateSpecializedFunction = true;
             genericTypeGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
+            genericTypeGenContext.thisType = functionGenericTypeInfo->thisType; // to support methods
+            genericTypeGenContext.thisClassType = functionGenericTypeInfo->thisClassType; // to support methods
+
             auto typeParams = functionGenericTypeInfo->typeParams;
             if (typeArguments && typeParams.size() == typeArguments.size())
             {
@@ -5688,7 +5691,7 @@ class MLIRGenImpl
             funcOp->pos = functionLikeDeclarationBaseAST->pos;
             funcOp->_end = functionLikeDeclarationBaseAST->_end;        
 
-            //LLVM_DEBUG(printDebug(funcOp););
+            LLVM_DEBUG(printDebug(funcOp););
 
             auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
             return genFuncOp;
@@ -5730,6 +5733,8 @@ class MLIRGenImpl
         newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
         newGenericFunctionPtr->elementNamespace = currentNamespace;
         newGenericFunctionPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
+        newGenericFunctionPtr->thisType = genContext.thisType;
+        newGenericFunctionPtr->thisClassType = genContext.thisClassType;
         newGenericFunctionPtr->sourceFile = sourceFile;
         newGenericFunctionPtr->fileName = mainSourceFileName;
 
@@ -6405,6 +6410,9 @@ class MLIRGenImpl
         // new location withing FunctionScope
         location = loc(functionLikeDeclarationBaseAST->body);
 
+        GenContext funcGenContext(genContext);
+        funcGenContext.funcOp = funcOp;
+
         auto *blockPtr = funcOp.addEntryBlock();
         auto &entryBlock = *blockPtr;
 
@@ -6414,62 +6422,62 @@ class MLIRGenImpl
         auto firstIndex = 0;
 
         // add exit code
-        if (failed(mlirGenFunctionEntry(location, funcProto, genContext)))
+        if (failed(mlirGenFunctionEntry(location, funcProto, funcGenContext)))
         {
             return mlir::failure();
         }
 
         // register this if lambda function
-        if (failed(mlirGenFunctionCapturedParam(location, firstIndex, funcProto, arguments, genContext)))
+        if (failed(mlirGenFunctionCapturedParam(location, firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
         }
 
         // allocate function parameters as variable
-        if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, genContext)))
+        if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionParamsBindings(firstIndex, funcProto, arguments, genContext)))
+        if (failed(mlirGenFunctionParamsBindings(firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionCapturedParamIfObject(location, firstIndex, funcProto, arguments, genContext)))
+        if (failed(mlirGenFunctionCapturedParamIfObject(location, firstIndex, funcProto, arguments, funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (failed(mlirGenFunctionCaptures(location, funcProto, genContext)))
+        if (failed(mlirGenFunctionCaptures(location, funcProto, funcGenContext)))
         {
             return mlir::failure();
         }
 
         // if we need params only we do not need to process body
-        auto discoverParamsOnly = genContext.allowPartialResolve && genContext.discoverParamsOnly;
+        auto discoverParamsOnly = funcGenContext.allowPartialResolve && funcGenContext.discoverParamsOnly;
         if (!discoverParamsOnly)
         {
             // we need it to skip lexical block
             functionLikeDeclarationBaseAST->body->parent = functionLikeDeclarationBaseAST->body;
-            if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, genContext)))
+            if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, funcGenContext)))
             {
                 return mlir::failure();
             }
         }
 
         // add exit code
-        if (failed(mlirGenFunctionExit(location, genContext)))
+        if (failed(mlirGenFunctionExit(location, funcGenContext)))
         {
             return mlir::failure();
         }
 
-        if (genContext.dummyRun && genContext.cleanUps)
+        if (funcGenContext.dummyRun && funcGenContext.cleanUps)
         {
-            genContext.cleanUps->push_back(blockPtr);
+            funcGenContext.cleanUps->push_back(blockPtr);
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ " << (genContext.dummyRun ? "dummy run" : "") <<  (genContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! >>>> FUNCTION (SUCCESS END): '" << funcProto->getName() << "' ~~~ " << (funcGenContext.dummyRun ? "dummy run" : "") <<  (funcGenContext.allowPartialResolve ? " allowed partial resolve" : "") << "\n";);
 
         return mlir::success();
     }
@@ -6988,8 +6996,10 @@ class MLIRGenImpl
         return false;
     }
 
-    mlir::LogicalResult addSafeCastStatement(Expression expr, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
+    mlir::LogicalResult addSafeCastStatement(Expression exprIn, mlir::Type safeType, bool inverse, ElseSafeCase* elseSafeCase, const GenContext &genContext)
     {
+        auto expr = stripParenthesesAndUntangleEquals(exprIn);
+
         auto isNotLocalVariable = false;
         auto location = loc(expr);
         auto nameStr = MLIRHelper::getName(expr.as<Node>(), stringAllocator);
@@ -7259,6 +7269,35 @@ class MLIRGenImpl
 
         return expr;
     }
+
+    Expression stripParenthesesAndUntangleEquals(Expression exprVal)
+    {
+        auto expr = exprVal;
+        while (expr == SyntaxKind::ParenthesizedExpression || expr == SyntaxKind::BinaryExpression)
+        {
+            if (expr == SyntaxKind::ParenthesizedExpression)
+            {
+                expr = expr.as<ParenthesizedExpression>()->expression;
+                continue;
+            }
+
+            if (expr == SyntaxKind::BinaryExpression)
+            {
+                auto binExpr = expr.as<BinaryExpression>();
+                auto op = (SyntaxKind)binExpr->operatorToken;
+                if (op == SyntaxKind::EqualsToken)
+                {
+                    expr = binExpr->left;
+                }
+                else if (op == SyntaxKind::CommaToken)
+                {
+                    expr = binExpr->right;
+                }
+            }
+        }
+
+        return expr;
+    }    
 
     mlir::LogicalResult checkSafeCastPropertyAccessLogic(TextRange textRange, Expression objAccessExpression,
                                                          mlir::Type typeOfObject, Node name, mlir::Value constVal,
@@ -8499,7 +8538,8 @@ class MLIRGenImpl
             }
         }
 
-        const_cast<GenContext &>(genContext).funcOp.setPersonalityAttr(builder.getBoolAttr(true));
+        if (genContext.funcOp)
+            const_cast<GenContext &>(genContext).funcOp.setPersonalityAttr(builder.getBoolAttr(true));
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
 
@@ -10016,8 +10056,52 @@ class MLIRGenImpl
 
         return mlir::success();
     }
+    
+    ValueOrLogicalResult syncUnionTypes(mlir::Location location, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext) 
+    {
+        auto isLeftUnion = false;
+        if (auto leftUnionType = dyn_cast<mlir_ts::UnionType>(leftExpressionValue.getType()))
+        {
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(location, leftUnionType, baseType))
+            {
+                isLeftUnion = true;
+            }
+        }
 
-    bool syncTypes(mlir::Location location, mlir::Type type, mlir::Value & leftExpressionValue, mlir::Value & rightExpressionValue, const GenContext &genContext)
+        auto isRightUnion = false;
+        if (auto rightUnionType = dyn_cast<mlir_ts::UnionType>(rightExpressionValue.getType()))
+        {
+            mlir::Type baseType;
+            if (mth.isUnionTypeNeedsTag(location, rightUnionType, baseType))
+            {
+                isRightUnion = true;
+            }
+        }
+
+        if (isLeftUnion && isRightUnion)
+        {
+            // TODO: finish cast between unions
+            emitError(location, "Binary Operation") << "can't be applied to different union types. Apply type cast before usage";            
+            return mlir::failure();
+        }
+
+        if (isLeftUnion)
+        {
+            CAST(leftExpressionValue, location, rightExpressionValue.getType(), leftExpressionValue, genContext);
+            return leftExpressionValue;
+        }
+
+        if (isRightUnion)
+        {
+            CAST(rightExpressionValue, location, leftExpressionValue.getType(), rightExpressionValue, genContext);
+            return rightExpressionValue;
+        }
+
+        return mlir::success();
+    }
+
+    bool syncTypes(mlir::Location location, mlir::Type type, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         auto hasType = leftExpressionValue.getType() == type ||
                             rightExpressionValue.getType() == type;
@@ -10115,7 +10199,20 @@ class MLIRGenImpl
                     getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
                     builder.getF32Type(), SInt(32), builder.getI32Type(), 
                     builder.getF16Type(), SInt(16), builder.getI16Type(), 
-                    SInt(8), builder.getI8Type()};
+                    SInt(8), builder.getI8Type()
+                };
+
+                auto r = syncUnionTypes(location, leftExpressionValue, rightExpressionValue, genContext);
+                if (r.value)
+                {                    
+                    break;
+                }
+
+                if (mlir::failed(r.result))
+                {
+                    return mlir::failure();
+                }
+                
                 for (auto type : types)
                 {
                     if (syncTypes(location, type, leftExpressionValue, rightExpressionValue, genContext))
@@ -10460,6 +10557,17 @@ class MLIRGenImpl
                 actualType = objectValue.getType();
             }
         }
+
+        // collapse union type
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(actualType)) 
+        {
+            mlir::Type baseType;
+            if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! mlirGenPropertyAccessExpressionBaseLogic: union type " << baseType << "\n";);
+                actualType = baseType;
+            }
+        }        
 
         // class member access
         auto classAccessWithObject = [&](mlir_ts::ClassType classType, mlir::Value objectValue) {
@@ -11622,6 +11730,18 @@ class MLIRGenImpl
     ValueOrLogicalResult mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, bool isConditionalAccess, const GenContext &genContext)
     {
         auto arrayType = expression.getType();
+
+        // collapse union type
+        if (auto unionType = dyn_cast<mlir_ts::UnionType>(expression.getType())) 
+        {
+            mlir::Type baseType;
+            if (!mth.isUnionTypeNeedsTag(location, unionType, baseType))
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementAccessExpression: union type " << baseType << "\n";);
+                arrayType = baseType;
+            }
+        }
+
         if (isa<mlir_ts::LiteralType>(arrayType))
         {
             arrayType = mth.stripLiteralType(arrayType);
@@ -12281,6 +12401,12 @@ class MLIRGenImpl
                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext, bool onStack = false)
     {
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+        if (onStack && classInfo->hasVirtualTable)
+        {
+            emitError(location, "") << "can't instantiate new instance of " << to_print(classType) << " which has 'virtual table' on stack";
+            return mlir::failure();
+        }
+
         auto newOp = onStack 
             ? NewClassInstanceLogicAsOp(location, classType, onStack, genContext)
             : ValueOrLogicalResult(NewClassInstanceAsMethodCallOp(location, classInfo, true, genContext));
@@ -13386,7 +13512,7 @@ class MLIRGenImpl
 
         // needed to use optimizers
         TypeOfOpHelper toh(builder);
-        auto typeOfValue = toh.typeOfLogic(location, resultValue, resultValue.getType());
+        auto typeOfValue = toh.typeOfLogic(location, resultValue, resultValue.getType(), compileOptions);
         return typeOfValue;
     }
 
@@ -13651,10 +13777,20 @@ class MLIRGenImpl
 
         auto regName = nf.createIdentifier(S("RegExp"));
 
+        auto begin = regularExpressionLiteral->text.find_first_of('/');
+        auto end = regularExpressionLiteral->text.find_last_of('/');
+        auto text = regularExpressionLiteral->text.substr(begin + 1, end - 1);
+        auto flags = regularExpressionLiteral->text.substr(end + 1);
+
         NodeArray<Expression> argumentsArray;
         argumentsArray.push_back(
             nf.createStringLiteral(
-                regularExpressionLiteral->text, 
+                text, 
+                false, 
+                regularExpressionLiteral->hasExtendedUnicodeEscape));
+        argumentsArray.push_back(
+            nf.createStringLiteral(
+                flags, 
                 false, 
                 regularExpressionLiteral->hasExtendedUnicodeEscape));
 
@@ -13968,13 +14104,11 @@ class MLIRGenImpl
             return mlir::success();
         }        
 
-        auto nextPropertyType = evaluateProperty(location, itemValue, ITERATOR_NEXT, genContext);
-        if (nextPropertyType)
+        if (auto nextPropertyType = evaluateProperty(location, itemValue, ITERATOR_NEXT, genContext))
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, next type is: " << nextPropertyType << "\n";);
 
-            auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType);
-            if (returnType)
+            if (auto returnType = mth.getReturnTypeFromFuncRef(nextPropertyType))
             {
                 // as tuple or const_tuple
                 ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
@@ -14001,7 +14135,7 @@ class MLIRGenImpl
 
                 return mlir::success();    
             }
-        }                                        
+        }                             
 
         // DO NOT PUT before xxx.next() property otherwise ""..."" for Iterator will not work
         if (auto constTuple = dyn_cast<mlir_ts::ConstTupleType>(type))
@@ -14038,9 +14172,22 @@ class MLIRGenImpl
             return mlir::success();
         }                           
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! spread element type: " << type << "\n";);
+        // ArrayLike, do not put it before Tuple & Const Tuple, otherwise [xxx] will return wrong type
+        if (auto indexAccessType = evaluateElementAccess(location, itemValue, false, genContext))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadElement, [number] type is: " << indexAccessType << "\n";);
 
-        return mlir::success();
+            values.push_back({itemValue, true, true});
+
+            accumulateArrayItemType(location, indexAccessType, arrayInfo);
+
+            return mlir::success();            
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! spread element type: " << type << "\n";);
+        emitError(location, "can't estimate element of array");
+
+        return mlir::failure();
     }
     
     mlir::LogicalResult processArrayElementForValues(Expression item, SmallVector<ArrayElement> &values, struct ArrayInfo &arrayInfo, const GenContext &genContext)
@@ -21086,6 +21233,8 @@ genContext);
                 // TODO: must be improved
                 stringstream ss;
 
+                auto isNullDest = isa<mlir_ts::NullType>(type);
+
                 StringMap<boolean> typeOfs;
                 SmallVector<mlir::Type> classInstances;
                 SmallVector<mlir::Type> tupleTypes;
@@ -21099,79 +21248,103 @@ genContext);
                         if (typeof a == 'class') if (a instanceof U) return a; \
                         return null; \"
                 */
+
+                    // true is nullable, false is not
                     mlir::TypeSwitch<mlir::Type>(subType)
-                        .Case<mlir_ts::BooleanType>([&](auto _) { typeOfs["boolean"] = true; })
-                        .Case<mlir_ts::TypePredicateType>([&](auto _) { typeOfs["boolean"] = true; })
-                        .Case<mlir_ts::NumberType>([&](auto _) { typeOfs["number"] = true; })
+                        .Case<mlir_ts::BooleanType>([&](auto _) { typeOfs["boolean"] = false; })
+                        .Case<mlir_ts::TypePredicateType>([&](auto _) { typeOfs["boolean"] = false; })
+                        .Case<mlir_ts::NumberType>([&](auto _) { typeOfs["number"] = false; })
                         .Case<mlir_ts::StringType>([&](auto _) { typeOfs["string"] = true; })
-                        .Case<mlir_ts::CharType>([&](auto _) { typeOfs["char"] = true; })
+                        .Case<mlir_ts::CharType>([&](auto _) { typeOfs["char"] = false; })
                         .Case<mlir::IntegerType>([&](auto intType_) {
-                            if (intType_.isSignless()) typeOfs["i" + std::to_string(intType_.getWidth())] = true; else
-                            if (intType_.isSigned()) typeOfs["s" + std::to_string(intType_.getWidth())] = true; else
-                            if (intType_.isUnsigned()) typeOfs["u" + std::to_string(intType_.getWidth())] = true; })
-                        .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = true; })
-                        .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = true; })
-                        .Case<mlir_ts::BigIntType>([&](auto _) { typeOfs["bigint"] = true; })
+                            if (intType_.isSignless()) typeOfs["i" + std::to_string(intType_.getWidth())] = false; else
+                            if (intType_.isSigned()) typeOfs["s" + std::to_string(intType_.getWidth())] = false; else
+                            if (intType_.isUnsigned()) typeOfs["u" + std::to_string(intType_.getWidth())] = false; })
+                        .Case<mlir::FloatType>([&](auto floatType_) { typeOfs["f" + std::to_string(floatType_.getWidth())] = false; })
+                        .Case<mlir::IndexType>([&](auto _) { typeOfs["index"] = false; })
+                        .Case<mlir_ts::BigIntType>([&](auto _) { typeOfs["bigint"] = false; })
                         .Case<mlir_ts::HybridFunctionType>([&](auto _) { typeOfs["function"] = true; })
                         .Case<mlir_ts::ClassType>([&](auto classType_) { typeOfs["class"] = true; classInstances.push_back(classType_); })
                         .Case<mlir_ts::InterfaceType>([&](auto _) { typeOfs["interface"] = true; })
-                        //.Case<mlir_ts::ConstTupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(mth.removeConstType(tuple_)); })
-                        //.Case<mlir_ts::TupleType>([&](auto tuple_) { typeOfs["tuple"] = true; tupleTypes.push_back(tuple_); })
                         .Case<mlir_ts::ArrayType>([&](auto _) { typeOfs["array"] = true; })
                         .Case<mlir_ts::ConstArrayType>([&](auto _) { typeOfs["array"] = true; })
                         .Case<mlir_ts::OpaqueType>([&](auto _) { typeOfs["object"] = true; })
                         .Case<mlir_ts::ObjectType>([&](auto _) { typeOfs["object"] = true; })
                         .Case<mlir_ts::NullType>([&](auto _) { typeOfs["null"] = true; })
-                        .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = true; })
+                        .Case<mlir_ts::UndefinedType>([&](auto _) { typeOfs["undefined"] = false; })
                         .Default([&](auto type) { 
                             LLVM_DEBUG(llvm::dbgs() << "\n\t TypeOf NOT IMPLEMENTED for Type: " << type << "\n";);
                             llvm_unreachable("not implemented yet"); 
                         });                                   
                 }
 
-                auto next = false;
-                for (auto& pair : typeOfs)
+                if (isNullDest)
                 {
-                    if (next) ss << S(" else ");
-
-                    ss << S("if (typeof t == '");
-                    ss << stows(pair.getKey().str());
-                    ss << S("') ");
-                    if (pair.getKey() == "class")
+                    // to null
+                    auto next = false;
+                    for (auto& pair : typeOfs)
                     {
-                        ss << S("{ \n");
+                        auto isNullable = pair.getValue();
+                        if (next) ss << S(" else ");
 
-                        for (auto [index, _] : enumerate(classInstances))
+                        ss << S("if (typeof t == '");
+                        ss << stows(pair.getKey().str());
+                        ss << S("') ");
+                        if (pair.getKey() == "class")
                         {
-                            ss << S("if (t instanceof TYPE_INST_ALIAS");
-                            ss << index;
-                            ss << S(") return t;\n");
+                            ss << S("{ \n");
+
+                            for (auto [index, _] : enumerate(classInstances))
+                            {
+                                ss << S("if (t instanceof TYPE_INST_ALIAS");
+                                ss << index;
+                                ss << S(") return t;\n");
+                            }
+
+                            ss << S(" }\n");
+                        }
+                        else
+                        {
+                            if (isNullable)
+                                ss << S("return t;\n");
+                            else
+                                ss << S("return -1;\n");
                         }
 
-                        ss << S(" }\n");
-                    }
-                    // else if (pair.getKey() == "tuple")
-                    // {
-                    //     ss << S("{ \n");
-
-                    //     for (auto [index, _] : enumerate(tupleTypes))
-                    //     {
-                    //         ss << S("return <TYPE_TUPLE_ALIAS");
-                    //         ss << index;
-                    //         ss << S(">t;\n");
-
-                    //         // TODO: temp hack
-                    //         break;
-                    //     }
-
-                    //     ss << S(" }\n");
-                    // }
-                    else
+                        next = true;
+                    }                   
+                }
+                else
+                {
+                    // default
+                    auto next = false;
+                    for (auto& pair : typeOfs)
                     {
-                        ss << S("return t;\n");
-                    }
+                        if (next) ss << S(" else ");
 
-                    next = true;
+                        ss << S("if (typeof t == '");
+                        ss << stows(pair.getKey().str());
+                        ss << S("') ");
+                        if (pair.getKey() == "class")
+                        {
+                            ss << S("{ \n");
+
+                            for (auto [index, _] : enumerate(classInstances))
+                            {
+                                ss << S("if (t instanceof TYPE_INST_ALIAS");
+                                ss << index;
+                                ss << S(") return t;\n");
+                            }
+
+                            ss << S(" }\n");
+                        }
+                        else
+                        {
+                            ss << S("return t;\n");
+                        }
+
+                        next = true;
+                    }
                 }
 
                 ss << "\nthrow \"Can't cast from union type\";\n";                    
@@ -21936,6 +22109,87 @@ genContext);
         return mlir::Type();      
     }
 
+    mlir::Type resolveGenericTypeInNamespace(mlir::Location location, StringRef name, TypeReferenceNode typeReferenceAST, const GenContext &genContext)
+    {
+        // try to resolve from type alias first
+        auto genericTypeAliasInfo = lookupGenericTypeAliasMap(name);
+        if (!is_default(genericTypeAliasInfo))
+        {
+            GenContext genericTypeGenContext(genContext);
+
+            auto typeParams = std::get<0>(genericTypeAliasInfo);
+            auto typeNode = std::get<1>(genericTypeAliasInfo);
+
+            auto [result, hasAnyNamedGenericType] =
+                zipTypeParametersWithArguments(location, typeParams, typeReferenceAST->typeArguments,
+                                            genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
+
+            if (mlir::failed(result))
+            {
+                return mlir::Type();
+            }
+
+            if (hasAnyNamedGenericType == IsGeneric::True)
+            {
+                return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
+            }
+
+            return getType(typeNode, genericTypeGenContext);
+        }
+
+        if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
+        {
+            auto classType = genericClassTypeInfo->classType;
+            auto [result, specType] = instantiateSpecializedClassType(location, classType,
+                                                                    typeReferenceAST->typeArguments, genContext, true);
+            if (mlir::succeeded(result))
+            {
+                return specType;
+            }
+
+            return classType;
+        }
+
+        if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
+        {
+            auto interfaceType = genericInterfaceTypeInfo->interfaceType;
+            auto [result, specType] = instantiateSpecializedInterfaceType(location, interfaceType,
+                                                                        typeReferenceAST->typeArguments, genContext, true);
+            if (mlir::succeeded(result))
+            {
+                return specType;
+            }
+
+            return interfaceType;
+        }
+
+        return mlir::Type();
+    }
+
+    mlir::Type resolveGenericType(mlir::Location location, StringRef name, TypeReferenceNode typeReferenceAST, const GenContext &genContext) 
+    {
+        MLIRNamespaceGuard ng(currentNamespace);
+
+        // search in outer namespaces
+        while (currentNamespace->isFunctionNamespace)
+        {
+            currentNamespace = currentNamespace->parentNamespace;
+            if (auto type = resolveGenericTypeInNamespace(location, name, typeReferenceAST, genContext))
+            {
+                return type;
+            }
+        }
+
+        // search in root namespace
+        currentNamespace = rootNamespace;
+        if (auto type = resolveGenericTypeInNamespace(location, name, typeReferenceAST, genContext))
+        {
+            return type;
+        }
+
+        return mlir::Type();
+    }
+
     mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
         auto location = loc(typeReferenceAST);
@@ -21943,63 +22197,59 @@ genContext);
         // check utility types
         auto name = MLIRHelper::getName(typeReferenceAST->typeName);
 
-        if (typeReferenceAST->typeArguments.size())
         {
-            // try to resolve from type alias first
-            auto genericTypeAliasInfo = lookupGenericTypeAliasMap(name);
-            if (!is_default(genericTypeAliasInfo))
+            MLIRNamespaceGuard ng(currentNamespace);
+            if (typeReferenceAST->typeName == SyntaxKind::QualifiedName)
             {
-                GenContext genericTypeGenContext(genContext);
+                auto qualifiedName = typeReferenceAST->typeName.as<QualifiedName>();
+                auto location = loc(qualifiedName);
 
-                auto typeParams = std::get<0>(genericTypeAliasInfo);
-                auto typeNode = std::get<1>(genericTypeAliasInfo);
-
-                auto [result, hasAnyNamedGenericType] =
-                    zipTypeParametersWithArguments(location, typeParams, typeReferenceAST->typeArguments,
-                                                genericTypeGenContext.typeParamsWithArgs, genericTypeGenContext);
-
-                if (mlir::failed(result))
+                auto expression = qualifiedName->left;
+                auto result = mlirGenModuleReference(expression, genContext);
+                if (result.failed_or_no_value())
                 {
                     return mlir::Type();
                 }
 
-                if (hasAnyNamedGenericType == IsGeneric::True)
+                auto expressionValue = V(result);
+
+                if (auto namespaceOp = expressionValue.getDefiningOp<mlir_ts::NamespaceRefOp>())
                 {
-                    return createTypeReferenceType(typeReferenceAST, genericTypeGenContext);
+                    auto namespaceType = mlir::cast<mlir_ts::NamespaceType>(namespaceOp.getType());
+                    
+                    auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
+                    assert(namespaceInfo);
+
+                    currentNamespace = namespaceInfo;            
+                }
+                else
+                {
+                    emitError(location, "QualifiedName ") << print(qualifiedName) << " is not namespace";
+                    return mlir::Type();
                 }
 
-                return getType(typeNode, genericTypeGenContext);
+                name = MLIRHelper::getName(qualifiedName->right);
             }
 
-            if (auto genericClassTypeInfo = lookupGenericClassesMap(name))
+            if (typeReferenceAST->typeArguments.size())
             {
-                auto classType = genericClassTypeInfo->classType;
-                auto [result, specType] = instantiateSpecializedClassType(location, classType,
-                                                                        typeReferenceAST->typeArguments, genContext, true);
-                if (mlir::succeeded(result))
+                if (auto type = resolveGenericTypeInNamespace(location, name, typeReferenceAST, genContext))
                 {
-                    return specType;
+                    return type;
                 }
 
-                return classType;
-            }
-
-            if (auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name))
-            {
-                auto interfaceType = genericInterfaceTypeInfo->interfaceType;
-                auto [result, specType] = instantiateSpecializedInterfaceType(location, interfaceType,
-                                                                            typeReferenceAST->typeArguments, genContext, true);
-                if (mlir::succeeded(result))
+                if (auto type = resolveGenericType(location, name, typeReferenceAST, genContext))
                 {
-                    return specType;
+                    return type;
                 }
 
-                return interfaceType;
-            }
+                if (auto embedType = findEmbeddedType(location, name, typeReferenceAST->typeArguments, genContext))
+                {
+                    return embedType;
+                }
 
-            if (auto embedType = findEmbeddedType(location, name, typeReferenceAST->typeArguments, genContext))
-            {
-                return embedType;
+                emitError(location, "generic type ") << name << " can't be found";
+                return mlir::Type();
             }
         }
 
