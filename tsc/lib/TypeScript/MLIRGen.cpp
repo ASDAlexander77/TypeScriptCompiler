@@ -11799,7 +11799,7 @@ class MLIRGenImpl
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.getValue();
-                if (attr.isa<mlir::StringAttr>())
+                if (isa<mlir::StringAttr>(attr))
                 {
                     // TODO: implement '[string]' access here
                     return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
@@ -11826,7 +11826,7 @@ class MLIRGenImpl
             if (auto fieldName = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 auto attr = fieldName.getValue();
-                if (attr.isa<mlir::StringAttr>())
+                if (isa<mlir::StringAttr>(attr))
                 {
                     return mlirGenPropertyAccessExpression(location, expression, attr, isConditionalAccess, genContext);
                 }

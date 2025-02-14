@@ -216,7 +216,7 @@ struct VirtualMethodOrFieldInfo
     {
     }
 
-    VirtualMethodOrFieldInfo(MethodInfo VirtualMethodOrFieldInfo, bool isMissing)
+    VirtualMethodOrFieldInfo(MethodInfo methodInfo, bool isMissing)
         : methodInfo(methodInfo), fieldInfo(), isField(false), isMissing(isMissing)
     {
     }
