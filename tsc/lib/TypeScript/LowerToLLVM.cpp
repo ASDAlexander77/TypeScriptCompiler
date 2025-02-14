@@ -5879,7 +5879,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         bool needTag = mth.isUnionTypeNeedsTag(mlir::UnknownLoc::get(type.getContext()), type);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! max size type in union: " << selectedType
-                                << "\n size: " << ltch.getTypeSizeEstimateInBytes(selectedType) << "\n Tag: " << (needTag ? "yes" : "no")
+                                << "\n size: " << ltch.getTypeAllocSizeInBytes(selectedType) << "\n Tag: " << (needTag ? "yes" : "no")
                                 << "\n union type: " << type << "\n";);
 
         SmallVector<mlir::Type> convertedTypes;

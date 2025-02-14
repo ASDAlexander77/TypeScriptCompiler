@@ -731,8 +731,8 @@ class CastLogicHelper
         if (isa<LLVM::LLVMStructType>(inLLVMType) && isa<LLVM::LLVMStructType>(resLLVMType))
         {
             LLVMTypeConverterHelper llvmtch((const LLVMTypeConverter *)tch.typeConverter);
-            auto srcSize = llvmtch.getTypeSizeEstimateInBytes(inLLVMType);
-            auto dstSize = llvmtch.getTypeSizeEstimateInBytes(resLLVMType);
+            auto srcSize = llvmtch.getTypeAllocSizeInBytes(inLLVMType);
+            auto dstSize = llvmtch.getTypeAllocSizeInBytes(resLLVMType);
 
             if (srcSize != dstSize)
             {
