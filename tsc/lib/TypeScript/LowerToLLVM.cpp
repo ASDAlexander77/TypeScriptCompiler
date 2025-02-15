@@ -2476,7 +2476,9 @@ struct ArrayUnshiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayUnshiftOp>
         // realloc
         auto offset0 = allocated;
         auto offsetN = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, allocated, ValueRange{incSize});
-        rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetN, offset0, newCountAsIndexType);
+
+        auto newCountAsIndexTypeAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, th.getIndexType(), newCountAsIndexType);
+        rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetN, offset0, newCountAsIndexTypeAdapt);
 
         mlir::Value index = clh.createIndexConstantOf(llvmIndexType, 0);
         auto next = false;
@@ -2572,7 +2574,8 @@ struct ArrayShiftOpLowering : public TsLlvmPattern<mlir_ts::ArrayShiftOp>
         auto multSizeOfTypeValue =
             rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        rewriter.create<mlir_ts::MemoryMoveOp>(loc, offset0, offset1, newCountAsIndexType);
+        auto newCountAsIndexTypeAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, th.getIndexType(), newCountAsIndexType);
+        rewriter.create<mlir_ts::MemoryMoveOp>(loc, offset0, offset1, newCountAsIndexTypeAdapt);
 
         auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
 
@@ -2644,7 +2647,8 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
             auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, allocated, ValueRange{startIndexAsLLVMType});
             auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{decSizeAsLLVMType});
             auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{incSizeAsIndexType});
-            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexType);
+            auto moveCountAsIndexTypeAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, th.getIndexType(), moveCountAsIndexType);
+            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexTypeAdapt);
 
             return allocated;
         };
@@ -2660,7 +2664,9 @@ struct ArraySpliceOpLowering : public TsLlvmPattern<mlir_ts::ArraySpliceOp>
             auto offsetStart = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, currentPtr, ValueRange{startIndexAsLLVMType});
             auto offsetFrom = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{decSizeAsLLVMType});
             auto offsetTo = rewriter.create<LLVM::GEPOp>(loc, th.getPtrType(), llvmElementType, offsetStart, ValueRange{incSizeAsIndexType});
-            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexType);
+
+            auto moveCountAsIndexTypeAdapt = rewriter.create<mlir_ts::DialectCastOp>(loc, th.getIndexType(), moveCountAsIndexType);
+            rewriter.create<mlir_ts::MemoryMoveOp>(loc, offsetTo, offsetFrom, moveCountAsIndexTypeAdapt);
 
             auto allocated = ch.MemoryRealloc(currentPtr, multSizeOfTypeValue);
             return allocated;
@@ -3993,8 +3999,9 @@ struct MemoryMoveOpLowering : public TsLlvmPattern<mlir_ts::MemoryMoveOp>
         auto llvmSrcType = tch.convertType(memoryMoveOp.getSrc().getType());
         auto srcSizeMLIR = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), transformed.getSrc().getType());
         auto srcSize = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, srcSizeMLIR);
+        auto countAsIndexLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, llvmIndexType, countAsIndexType);
         auto multSizeOfTypeValue =
-            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{srcSize, countAsIndexType});
+            rewriter.create<LLVM::MulOp>(loc, llvmIndexType, ValueRange{srcSize, countAsIndexLLVMType});
 
         values.push_back(multSizeOfTypeValue);
 
