@@ -154,7 +154,9 @@
             "__verbose_abort": "cpp",
             "print": "cpp",
             "__tree": "cpp",
-            "any": "cpp"
+            "any": "cpp",
+            "__locale": "cpp",
+            "execution": "cpp"
         },
         "cmake.sourceDirectory": "${workspaceFolder}/..",
         "cmake.useCMakePresets": "always",

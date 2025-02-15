@@ -511,6 +511,7 @@
             "args": [
                 "-emit=exe",
                 "--di",
+                "-debug-only=mlir,llvm",
                 "${workspaceFolder}/../../../playground/1.ts"
             ],
             "stopAtEntry": false,
@@ -518,7 +519,8 @@
             "environment": [
                 { "name": "GC_LIB_PATH", "value": "${workspaceFolder}/../../__build/gc/ninja/debug" },
                 { "name": "LLVM_LIB_PATH", "value": "${workspaceFolder}/../../__build/llvm/ninja/debug/lib" },
-                { "name": "TSC_LIB_PATH", "value": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib" }
+                { "name": "TSC_LIB_PATH", "value": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib" },
+                { "name": "DEFAULT_LIB_PATH", "value": "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build/release" },
             ],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
@@ -656,9 +658,10 @@
                 "-emit=obj",
                 "--export=none", 
                 "--no-default-lib",
-                "-debug-only=mlir,llvm",
+                "--di",
+                "--opt_level=0",
                 "-mlir-disable-threading",                
-                "-o=~/dev/playground/lib.obj",
+                "-o=/home/alex/dev/playground/lib.obj",
                 "${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/src/lib.ts"
             ],
             "stopAtEntry": false,
