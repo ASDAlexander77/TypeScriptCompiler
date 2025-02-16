@@ -6400,8 +6400,7 @@ class MLIRGenImpl
                     funcOp.getName(), 
                     functionLikeDeclarationBaseAST->body 
                         ? loc(functionLikeDeclarationBaseAST->body) 
-                        : location,
-                    genContext.instantiateSpecializedFunction);
+                        : location);
 
             LLVM_DEBUG(llvm::dbgs() << "Location of func: " << locWithDI << "\n");
 
@@ -6512,8 +6511,7 @@ class MLIRGenImpl
                     location, 
                     funcName,
                     fullFuncName, 
-                    location,
-                    genContext.instantiateSpecializedFunction);
+                    location);
             funcOp->setLoc(locWithDI);
 
             // new location withing FunctionScope
