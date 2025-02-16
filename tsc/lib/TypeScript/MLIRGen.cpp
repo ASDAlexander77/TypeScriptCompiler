@@ -10279,6 +10279,119 @@ class MLIRGenImpl
         return result;
     }
 
+    std::string opName(SyntaxKind opCode) 
+    {
+        switch (opCode)
+        {
+            case SyntaxKind::PlusToken: return "plus";
+            case SyntaxKind::MinusToken: return "minus";
+            case SyntaxKind::AsteriskToken: return "multiply";
+            case SyntaxKind::LessThanLessThanToken: return "leftShift";
+            case SyntaxKind::GreaterThanGreaterThanToken: return "rightShift";
+            case SyntaxKind::GreaterThanGreaterThanGreaterThanToken: return "rightShiftUnsigned";
+            case SyntaxKind::AmpersandToken: return "and";
+            case SyntaxKind::BarToken: return "or";
+            case SyntaxKind::CaretToken: return "xor";
+            case SyntaxKind::EqualsToken: return "equals";
+            case SyntaxKind::EqualsEqualsToken: return "equals";
+            case SyntaxKind::EqualsEqualsEqualsToken: return "equals";
+            case SyntaxKind::ExclamationEqualsToken: return "notEquals";
+            case SyntaxKind::ExclamationEqualsEqualsToken: return "notEquals";
+            case SyntaxKind::GreaterThanToken: return "greaterThan";
+            case SyntaxKind::GreaterThanEqualsToken: return "greaterThanOrEquals";
+            case SyntaxKind::LessThanToken: return "lessThan";
+            case SyntaxKind::LessThanEqualsToken: return "lessThanOrEquals";
+        default:
+            return std::to_string((int)opCode);
+            break;
+        }
+    }   
+
+    ValueOrLogicalResult binaryOpLogicForUnions(mlir::Location location, SyntaxKind opCode, mlir::Value leftExpressionValue,
+        mlir::Value rightExpressionValue, const GenContext &genContext)
+    {
+        if (leftExpressionValue && rightExpressionValue)
+            if (auto leftUnionType = dyn_cast<mlir_ts::UnionType>(leftExpressionValue.getType()))
+            {
+                if (auto rightUnionType = dyn_cast<mlir_ts::UnionType>(rightExpressionValue.getType()))
+                {
+                    mlir::Type baseTypeLeft;
+                    if (mth.isUnionTypeNeedsTag(location, leftUnionType, baseTypeLeft))
+                    {
+                        mlir::Type baseTypeRight;
+                        if (mth.isUnionTypeNeedsTag(location, rightUnionType, baseTypeRight))
+                        {
+                            // info, we add "_" extra as scanner append "_" in front of "__";
+                            auto funcName = "___bin_op_" + opName(opCode);
+
+                            // we need to remove current implementation as we have different implementation per union type
+                            removeGenericFunctionMap(funcName);
+                            
+                            // TODO: must be improved
+                            stringstream ss;
+
+                            ss << S("function __bin_op_") << stows(opName(opCode)) << S("<L, R>(l: L, r: R) {\n");
+
+                            TypeOfOpHelper toh(builder);
+                            for (auto leftSubType : leftUnionType.getTypes())
+                            {
+                                ss << S("if (typeof(l) == \"") << stows(toh.typeOfAsString(leftSubType)) << S("\") {\n");
+                                for (auto rightSubType : rightUnionType.getTypes())
+                                {
+                                    ss << S("if (typeof(r) == \"") << stows(toh.typeOfAsString(rightSubType)) << S("\") ");
+                                    ss << S("return ") << S("l ") << Scanner::tokenStrings[opCode] << S(" r;\n");
+                                }
+
+                                ss << S("}\n");
+                            }
+
+                            ss << "\nthrow \"Can't perform Binary Op for union types\";\n";                    
+                            ss << S("}\n");
+
+                            auto src = ss.str();
+
+                            {
+                                MLIRLocationGuard vgLoc(overwriteLoc); 
+                                overwriteLoc = location;
+
+                                if (mlir::failed(parsePartialStatements(src)))
+                                {
+                                    assert(false);
+                                    return mlir::failure();
+                                }
+                            }
+
+                            auto funcResult = resolveIdentifier(location, funcName, genContext);
+
+                            assert(funcResult);
+
+                            GenContext funcCallGenContext(genContext);
+                            funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_L", leftUnionType});
+                            funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_R", rightUnionType});
+
+                            SmallVector<mlir::Value, 4> operands;
+                            operands.push_back(leftExpressionValue);
+                            operands.push_back(rightExpressionValue);
+
+                            NodeFactory nf(NodeFactoryFlags::None);
+                            return mlirGenCallExpression(
+                                location, 
+                                funcResult, 
+                                { 
+                                    nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_L")).as<Node>()), 
+                                    nf.createTypeReferenceNode(nf.createIdentifier(S(".TYPE_ALIAS_R")).as<Node>()) 
+                                }, 
+                                operands, 
+                                funcCallGenContext);
+
+                        }
+                    }
+                }
+            }
+
+        return mlir::success();
+    }
+
     ValueOrLogicalResult mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
@@ -10319,7 +10432,7 @@ class MLIRGenImpl
         auto result = mlirGen(leftExpression, genContext);
         if (opCode == SyntaxKind::CommaToken)
         {
-            //in case of "commad" op the result of left op can be "nothing"
+            //in case of "comma" op the result of left op can be "nothing"
             EXIT_IF_FAILED(result)
         }
         else
@@ -10344,6 +10457,13 @@ class MLIRGenImpl
                 // try to evaluate
                 return evaluateBinaryOp(location, opCode, leftConstOp, rightConstOp, genContext);
             }
+        }
+
+        auto resultReturnUnions = 
+            binaryOpLogicForUnions(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
+        if (resultReturnUnions.value || resultReturnUnions.failed())
+        {
+            return resultReturnUnions;
         }
 
         auto leftExpressionValueBeforeCast = leftExpressionValue;
