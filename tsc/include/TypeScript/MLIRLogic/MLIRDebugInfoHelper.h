@@ -140,7 +140,7 @@ class MLIRDebugInfoHelper
         return location;
     }
 
-    mlir::Location getSubprogram(mlir::Location functionLocation, StringRef functionName, StringRef linkageName, mlir::Location functionBlockLocation) {
+    mlir::Location getSubprogram(mlir::Location functionLocation, StringRef functionName, StringRef linkageName, mlir::Location functionBlockLocation, bool cuScope) {
 
         if (auto compileUnitAttr = dyn_cast_or_null<mlir::LLVM::DICompileUnitAttr>(debugScope.lookup(CU_DEBUG_SCOPE)))
         {
@@ -179,7 +179,7 @@ class MLIRDebugInfoHelper
                 auto funcNameAttr = builder.getStringAttr(functionName);
                 auto linkageNameAttr = builder.getStringAttr(linkageName);
                 auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-                    builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), compileUnitAttr, scopeAttr, 
+                    builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), compileUnitAttr, cuScope ? compileUnitAttr : scopeAttr, 
                     funcNameAttr, linkageNameAttr, 
                     file/*compileUnitAttr.getFile()*/, line, scopeLine, subprogramFlags, type);   
 
