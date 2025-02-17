@@ -3998,8 +3998,27 @@ class MLIRGenImpl
                 .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { 
                     if (isDotDotDot)
                     {
-                        emitError(location) << "can't use '...' with const tuple type";
-                        return mlir::Value();
+                        SmallVector<mlir::Value> arrayValues;
+                        SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
+                        SmallVector<mlir_ts::FieldInfo> srcFieldInfos;
+                        if (mlir::failed(mth.getFields(constTupleType, srcFieldInfos)))
+                        {
+                            return mlir::Value();
+                        }
+
+                        for (auto indexSpread = index; indexSpread < srcFieldInfos.size(); indexSpread++)                        
+                        {
+                            MLIRPropertyAccessCodeLogic cl(
+                                compileOptions, builder, location, init, builder.getI32IntegerAttr(indexSpread));
+                            auto value = cl.Tuple(constTupleType, true);
+
+                            //fieldInfos.push_back({mlir::Attribute(), value.getType(), false, mlir_ts::AccessLevel::Public});
+                            fieldInfos.push_back(srcFieldInfos[indexSpread]);
+                            arrayValues.push_back(value);
+                        }
+                
+                        return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
                     }
 
                     return cl.Tuple(constTupleType, true); 
@@ -4007,8 +4026,27 @@ class MLIRGenImpl
                 .template Case<mlir_ts::TupleType>([&](auto tupleType) { 
                     if (isDotDotDot)
                     {
-                        emitError(location) << "can't use '...' with tuple type";
-                        return mlir::Value();
+                        SmallVector<mlir::Value> arrayValues;
+                        SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
+                        SmallVector<mlir_ts::FieldInfo> srcFieldInfos;
+                        if (mlir::failed(mth.getFields(tupleType, srcFieldInfos)))
+                        {
+                            return mlir::Value();
+                        }
+
+                        for (auto indexSpread = index; indexSpread < srcFieldInfos.size(); indexSpread++)                        
+                        {
+                            MLIRPropertyAccessCodeLogic cl(
+                                compileOptions, builder, location, init, builder.getI32IntegerAttr(indexSpread));
+                            auto value = cl.Tuple(tupleType, true);
+
+                            //fieldInfos.push_back({mlir::Attribute(), value.getType(), false, mlir_ts::AccessLevel::Public});
+                            fieldInfos.push_back(srcFieldInfos[indexSpread]);
+                            arrayValues.push_back(value);
+                        }
+                
+                        return V(builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues));
                     }
 
                     return cl.Tuple(tupleType, true); 
@@ -4106,8 +4144,14 @@ class MLIRGenImpl
 
         for (auto [index, element] : enumerate(arrayBindingPattern->elements))
         {
+            if (element == SyntaxKind::OmittedExpression)
+            {
+                continue;
+            }
+
             if (element != SyntaxKind::BindingElement)
             {
+                emitError(location) << "Array Binding Pattern: unsupported element";
                 return mlir::failure();
             }
 
@@ -20543,7 +20587,7 @@ genContext);
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! processing #" << index << " field [" << fieldInfo.id << "]\n";);           
 
-            if (index > 1) 
+            if (index > 0) 
             {
                 // text
                 strs.push_back(spanValue);

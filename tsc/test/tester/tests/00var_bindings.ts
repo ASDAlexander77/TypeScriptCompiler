@@ -24,7 +24,35 @@ function testArray() {
     print(rest.length, rest[0], rest[1]);
 }
 
+function testConstTuple() {
+    const a = [1, 2, "asd", true];
+
+    const [a0, ...aa] = a;
+    
+    print(a0, aa);
+    
+    assert(a0 == 1);
+    assert(aa[0] == 2);
+    assert(aa[1] == "asd");
+    assert(aa[2]);
+}
+
+function testTuple() {
+    let a = [1, 2, "asd", true];
+
+    const [a0, ...aa] = a;
+    
+    print(a0, aa);
+    
+    assert(a0 == 1);
+    assert(aa[0] == 2);
+    assert(aa[1] == "asd");
+    assert(aa[2]);
+}
+
 testConstArray();
 testArray();
+testConstTuple();
+testTuple();
 
 print("done.")
