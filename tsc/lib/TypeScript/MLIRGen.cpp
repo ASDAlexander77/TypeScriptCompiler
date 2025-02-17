@@ -1515,6 +1515,8 @@ class MLIRGenImpl
                 // try to process it again
                 if (processedDeclStatements == 0 || failed(mlirGen(statement, genContext)))
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! failed: " << print(statement) << "\n";);
+
                     return mlir::failure();
                 }
             }
@@ -9654,6 +9656,7 @@ class MLIRGenImpl
             auto propRef = mcl.GetReferenceFromValue(location, leftExpressionValueBeforeCast);
             if (!propRef)
             {
+                emitError(location, "saving to constant object");
                 return mlir::failure();
             }
 
