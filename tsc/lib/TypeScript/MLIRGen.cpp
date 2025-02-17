@@ -4015,9 +4015,34 @@ class MLIRGenImpl
                 })
                 .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
                     if (isDotDotDot)
-                    {
-                        emitError(location) << "can't use '...' with const array";
-                        return mlir::Value();
+                    {   
+                        auto indexType = builder.getIndexType();
+
+                        auto arrayType = mth.removeConstType(constArrayType);
+
+                        auto arrayValue = cast(location, arrayType, init, genContext);
+                        if (!arrayValue)
+                        {
+                            return mlir::Value();
+                        }
+
+                        auto constIndex = builder.create<mlir_ts::ConstantOp>(
+                            location, indexType, builder.getIndexAttr(index));
+
+                        auto length = builder.create<mlir_ts::LengthOfOp>(location, indexType, arrayValue);
+
+                        auto count = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                            location, indexType, builder.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)), length, constIndex);
+
+                        mlir::Value arrayViewValue =
+                            builder.create<mlir_ts::ArrayViewOp>(
+                                location, 
+                                arrayType, 
+                                arrayValue, 
+                                constIndex, 
+                                count);                        
+
+                        return arrayViewValue;
                     }
 
                     // TODO: unify it with ElementAccess
