@@ -27,6 +27,8 @@ class TypeOfOpHelper
 
     mlir::Value strValue(mlir::Location loc, std::string value)
     {
+        if (value.empty()) return mlir::Value();
+
         auto strType = mlir_ts::StringType::get(rewriter.getContext());
         auto typeOfValue = rewriter.create<mlir_ts::ConstantOp>(loc, strType, rewriter.getStringAttr(value));
         return typeOfValue;
@@ -186,7 +188,7 @@ class TypeOfOpHelper
 
         LLVM_DEBUG(llvm::dbgs() << "TypeOf: " << type << "\n");
 
-        llvm_unreachable("not implemented");
+        return "";
     }    
 
     mlir::Value typeOfLogic(mlir::Location loc, mlir::Type type)

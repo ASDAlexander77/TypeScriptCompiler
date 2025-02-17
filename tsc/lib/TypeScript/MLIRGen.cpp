@@ -8826,6 +8826,16 @@ class MLIRGenImpl
                                                                     builder.getI32IntegerAttr((int)opCode), boolValue));
             }
         case SyntaxKind::TildeToken:
+            {
+                auto numberValue = expressionValue;
+                if (!expressionValue.getType().isIntOrIndexOrFloat())
+                {
+                    CAST(numberValue, location, builder.getI32Type(), expressionValue, genContext);
+                }
+
+                return V(builder.create<mlir_ts::ArithmeticUnaryOp>(
+                    location, numberValue.getType(), builder.getI32IntegerAttr((int)opCode), numberValue));
+            }
         case SyntaxKind::PlusToken:
         case SyntaxKind::MinusToken:
             {
@@ -12636,7 +12646,7 @@ class MLIRGenImpl
                 auto toIndex = operands.size();
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! isVarArg type (array), type: " << varArgsType << "\n";);
-                LLVM_DEBUG(llvm::dbgs() << "\t last value = " << operands.back() << "\n";);
+                //LLVM_DEBUG(llvm::dbgs() << "\t last value = " << operands.back() << "\n";);
 
                 // check if vararg is prepared earlier
                 auto isVarArgPreparedAlready = (toIndex - fromIndex) == 1 && (operands.back().getType() == varArgsType)
@@ -15277,6 +15287,10 @@ class MLIRGenImpl
         {
             auto result = mlirGen(location, item.first(), genContext);
             auto varValue = V(result);
+            if (!varValue)
+            {
+                return mlir::failure();
+            }
 
             // review capturing by ref.  it should match storage type
             auto refValue = mcl.GetReferenceFromValue(location, varValue);

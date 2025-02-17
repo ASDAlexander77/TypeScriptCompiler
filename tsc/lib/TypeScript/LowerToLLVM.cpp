@@ -2781,7 +2781,7 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
     }
 };
 
-void NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value oper, mlir::PatternRewriter &builder)
+LogicalResult NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value oper, mlir::PatternRewriter &builder)
 {
     CodeLogicHelper clh(unaryOp, builder);
 
@@ -2789,19 +2789,23 @@ void NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value oper, mlir
     if (type.isIntOrIndex())
     {
         builder.replaceOpWithNewOp<arith::SubIOp>(unaryOp, type, clh.createIConstantOf(type.getIntOrFloatBitWidth(), 0), oper);
+        return mlir::success();
     }
     else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
     {
         builder.replaceOpWithNewOp<arith::SubFOp>(unaryOp, type, clh.createFConstantOf(type.getIntOrFloatBitWidth(), 0.0),
                                            oper);
+        return mlir::success();
     }
     else
     {
         llvm_unreachable("not implemented");
     }
+
+    return mlir::failure();
 }
 
-void NegativeOpBin(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value oper, mlir::PatternRewriter &builder)
+LogicalResult NegativeOpBin(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value oper, mlir::PatternRewriter &builder)
 {
     CodeLogicHelper clh(unaryOp, builder);
 
@@ -2820,15 +2824,14 @@ void NegativeOpBin(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::Value oper, mlir::
         }
 
         builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, type, oper, lhs);
-    }
-    else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
-    {
-        builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, oper);
+        return mlir::success();
     }
     else
     {
         llvm_unreachable("not implemented");
     }
+
+    return mlir::failure();
 }
 
 struct ArithmeticUnaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticUnaryOp>
@@ -2844,17 +2847,14 @@ struct ArithmeticUnaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticUnary
         switch (opCode)
         {
         case SyntaxKind::ExclamationToken:
-            NegativeOpBin(arithmeticUnaryOp, transformed.getOperand1(), rewriter);
-            return success();
+            return NegativeOpBin(arithmeticUnaryOp, transformed.getOperand1(), rewriter);
         case SyntaxKind::PlusToken:
             rewriter.replaceOp(arithmeticUnaryOp, transformed.getOperand1());
             return success();
         case SyntaxKind::MinusToken:
-            NegativeOpValue(arithmeticUnaryOp, transformed.getOperand1(), rewriter);
-            return success();
+            return NegativeOpValue(arithmeticUnaryOp, transformed.getOperand1(), rewriter);
         case SyntaxKind::TildeToken:
-            NegativeOpBin(arithmeticUnaryOp, transformed.getOperand1(), rewriter);
-            return success();
+            return NegativeOpBin(arithmeticUnaryOp, transformed.getOperand1(), rewriter);
         default:
             llvm_unreachable("not implemented");
             return failure();

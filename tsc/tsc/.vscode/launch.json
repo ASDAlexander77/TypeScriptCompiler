@@ -222,6 +222,7 @@
                 "-emit=exe",
                 "-di",
                 "-mlir-disable-threading",
+                "-debug-only=mlir",
                 "-mtriple=x86_64-pc-windows-msvc",
                 "I:/Playground/1.ts",
             ],
