@@ -181,8 +181,10 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
             values.push_back(item);
         }
 
-        if (values.size() > 1)
+        auto size = values.size();
+        if (size > 1)
         {
+            // TODO: review, why we need stack recovery here
             auto stack = rewriter.create<LLVM::StackSaveOp>(loc, i8PtrType);
 
             mlir::Value result =
@@ -194,6 +196,12 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
             rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsPtr);
 
             rewriter.create<LLVM::StackRestoreOp>(loc, stack);
+        }
+        else if (size == 0)
+        {
+            mlir::Value valueAsPtr = rewriter.create<mlir_ts::ConstantOp>(loc, strType, rewriter.getStringAttr(""));
+            mlir::Value valueAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(strType), valueAsPtr);
+            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, valueAsLLVMType);
         }
         else
         {
