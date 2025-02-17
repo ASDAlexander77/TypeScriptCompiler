@@ -3990,29 +3990,74 @@ class MLIRGenImpl
     }
 
     // TODO: to support '...' u need to use 'processOperandSpreadElement' and instead of "index" param use "next" logic
-    ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(mlir::Location location, int index, mlir::Type type, mlir::Value init, const GenContext &genContext)
+    ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(mlir::Location location, int index, mlir::Type type, mlir::Value init, bool isDotDotDot, const GenContext &genContext)
     {
         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, init, builder.getI32IntegerAttr(index));
         mlir::Value subInit =
             mlir::TypeSwitch<mlir::Type, mlir::Value>(type)
-                .template Case<mlir_ts::ConstTupleType>(
-                    [&](auto constTupleType) { return cl.Tuple(constTupleType, true); })
-                .template Case<mlir_ts::TupleType>([&](auto tupleType) { return cl.Tuple(tupleType, true); })
+                .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { 
+                    if (isDotDotDot)
+                    {
+                        emitError(location) << "can't use '...' with const tuple type";
+                        return mlir::Value();
+                    }
+
+                    return cl.Tuple(constTupleType, true); 
+                })
+                .template Case<mlir_ts::TupleType>([&](auto tupleType) { 
+                    if (isDotDotDot)
+                    {
+                        emitError(location) << "can't use '...' with tuple type";
+                        return mlir::Value();
+                    }
+
+                    return cl.Tuple(tupleType, true); 
+                })
                 .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
+                    if (isDotDotDot)
+                    {
+                        emitError(location) << "can't use '...' with const array";
+                        return mlir::Value();
+                    }
+
                     // TODO: unify it with ElementAccess
                     auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
                                                                         builder.getI32IntegerAttr(index));
                     auto elemRef = builder.create<mlir_ts::ElementRefOp>(
                         location, mlir_ts::RefType::get(constArrayType.getElementType()), init, constIndex);
-                    return builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef);
+                    return V(builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef));
                 })
                 .template Case<mlir_ts::ArrayType>([&](auto arrayType) {
+
+                    if (isDotDotDot)
+                    {   
+                        auto indexType = builder.getIndexType();
+
+                        auto constIndex = builder.create<mlir_ts::ConstantOp>(
+                            location, indexType, builder.getIndexAttr(index));
+
+                        auto length = builder.create<mlir_ts::LengthOfOp>(location, indexType, init);
+
+                        auto count = builder.create<mlir_ts::ArithmeticBinaryOp>(
+                            location, indexType, builder.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)), length, constIndex);
+
+                        mlir::Value arrayViewValue =
+                            builder.create<mlir_ts::ArrayViewOp>(
+                                location, 
+                                arrayType, 
+                                init, 
+                                constIndex, 
+                                count);                        
+
+                        return arrayViewValue;
+                    }
+
                     // TODO: unify it with ElementAccess
                     auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(),
                                                                         builder.getI32IntegerAttr(index));
                     auto elemRef = builder.create<mlir_ts::ElementRefOp>(
                         location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
-                    return builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef);
+                    return V(builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef));
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); return mlir::Value(); });
 
@@ -4034,10 +4079,17 @@ class MLIRGenImpl
         mlir::Value init = initRef;
         //TypeProvided typeProvided = typeProvidedRef;
 
-        for (auto [index, arrayBindingElement] : enumerate(arrayBindingPattern->elements))
+        for (auto [index, element] : enumerate(arrayBindingPattern->elements))
         {
+            if (element != SyntaxKind::BindingElement)
+            {
+                return mlir::failure();
+            }
+
+            auto arrayBindingElement = element.as<BindingElement>();
+
             auto subValueFunc = [&](mlir::Location location, const GenContext &genContext) { 
-                auto result = processDeclarationArrayBindingPatternSubPath(location, index, type, init, genContext);
+                auto result = processDeclarationArrayBindingPatternSubPath(location, index, type, init, !!arrayBindingElement->dotDotDotToken, genContext);
                 if (result.failed_or_no_value()) 
                 {
                     return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No); 
@@ -4047,8 +4099,8 @@ class MLIRGenImpl
                 return std::make_tuple(value.getType(), value, TypeProvided::No); 
             };
 
-            if (arrayBindingElement == SyntaxKind::BindingElement && mlir::failed(processDeclaration(
-                    arrayBindingElement.as<BindingElement>(), varClass, subValueFunc, genContext)))
+            if (mlir::failed(processDeclaration(
+                    arrayBindingElement, varClass, subValueFunc, genContext)))
             {
                 return mlir::failure();
             }
