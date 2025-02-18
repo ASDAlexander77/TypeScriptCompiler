@@ -50,9 +50,17 @@ function testTuple() {
     assert(aa[2]);
 }
 
+function testBindings() {
+    const [a2, b2, c2, d2] = "abc";
+    assert(<string>a2 == "a");
+    assert(<string>c2 == "c");
+    assert(d2 == undefined);
+}
+
 testConstArray();
 testArray();
 testConstTuple();
 testTuple();
+testBindings();
 
 print("done.")

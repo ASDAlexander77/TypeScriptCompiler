@@ -3990,7 +3990,9 @@ class MLIRGenImpl
     }
 
     // TODO: to support '...' u need to use 'processOperandSpreadElement' and instead of "index" param use "next" logic
-    ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(mlir::Location location, int index, mlir::Type type, mlir::Value init, bool isDotDotDot, const GenContext &genContext)
+    ValueOrLogicalResult processDeclarationArrayBindingPatternSubPath(
+        mlir::Location location, int index, mlir::Type type, mlir::Value init, 
+        bool isDotDotDot, bool isIterator, bool isArrayLike, mlir::Value arrayLikeLengthValue, mlir::Type arrayLikeElementType, const GenContext &genContext)
     {
         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, init, builder.getI32IntegerAttr(index));
         mlir::Value subInit =
@@ -4122,7 +4124,52 @@ class MLIRGenImpl
                         location, mlir_ts::RefType::get(arrayType.getElementType()), init, constIndex);
                     return V(builder.create<mlir_ts::LoadOp>(location, arrayType.getElementType(), elemRef));
                 })
-                .Default([&](auto type) { llvm_unreachable("not implemented"); return mlir::Value(); });
+                .Default([&](auto type) { 
+
+                    if (isDotDotDot)
+                    {
+                        emitError(location) << "Array Binding Pattern: spread is not implemented for type: " << to_print(type);
+                        return mlir::Value();  
+                    }
+
+                    if (isIterator)
+                    {
+                        // seems it is "iterator"
+                        auto nextProperty = init;
+                        auto result = callIteratorNext(location, nextProperty, nullptr, genContext);
+                        return V(result);
+                    }
+
+                    // add array like access
+                    if (isArrayLike)
+                    {
+                        auto valueFactory =
+                        (isa<mlir_ts::AnyType>(arrayLikeElementType))
+                            ? std::bind(&MLIRGenImpl::anyOrUndefined, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4)
+                            : std::bind(&MLIRGenImpl::optionalValueOrUndefined, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4);
+            
+                        auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(),
+                                                            mth.getIndexAttrValue(index));
+        
+                        // conditional expr: length > "spreadIndex" ? value[index] : undefined
+                        auto inBoundsValue = V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                            builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanToken), 
+                            arrayLikeLengthValue,
+                            indexVal));
+        
+                        auto spreadValue = valueFactory(location, inBoundsValue, 
+                            [&](auto genContext) { 
+                                auto result = mlirGenElementAccess(location, init, indexVal, false, genContext); 
+                                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                                return result;
+                            }, genContext);
+                        //EXIT_IF_FAILED_OR_NO_VALUE(spreadValue)
+                        return V(spreadValue);
+                    }
+
+                    emitError(location) << "Array Binding Pattern: not implemented for type: " << to_print(type);
+                    return mlir::Value(); 
+                });
 
         if (!subInit)
         {
@@ -4142,6 +4189,68 @@ class MLIRGenImpl
         mlir::Value init = initRef;
         //TypeProvided typeProvided = typeProvidedRef;
 
+        if (!init)
+        {
+            return mlir::failure();
+        }
+
+        mlir::Value arrayLikeLengthValue;
+        mlir::Type arrayLikeElementType;
+        auto isIterator = false;
+        auto isSourceArrayLike = false;
+        auto isArrayOrTuple = isa<mlir_ts::ArrayType>(typeRef)
+            || isa<mlir_ts::TupleType>(typeRef)
+            || isa<mlir_ts::ConstArrayType>(typeRef)
+            || isa<mlir_ts::ConstTupleType>(typeRef);
+        if (!isArrayOrTuple)
+        {
+            if (auto iteratorType = evaluateProperty(location, init, SYMBOL_ITERATOR, genContext))
+            {
+                if (auto iteratorResult = mlirGenCallThisMethod(location, init, SYMBOL_ITERATOR, undefined, undefined, genContext))
+                {
+                    auto iteratorValue = V(iteratorResult);
+
+                    // request iterator
+                    auto nextProperty = mlirGenPropertyAccessExpression(
+                        location, iteratorValue, ITERATOR_NEXT, false, genContext);
+                    if (nextProperty)
+                    {
+                        init = V(nextProperty);
+                        isIterator = true;
+                    }                    
+                }
+            }
+            else if (hasIterator(location, init, genContext))
+            {
+                // request iterator
+                auto nextProperty = mlirGenPropertyAccessExpression(
+                    location, init, ITERATOR_NEXT, false, genContext);
+                if (nextProperty)
+                {
+                    init = V(nextProperty);
+                    isIterator = true;
+                }
+            }
+            else if (isArrayLike(location, init, genContext))
+            {
+                auto lengthValue = mlirGenPropertyAccessExpression(location, init, LENGTH_FIELD_NAME, false, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(lengthValue)
+                arrayLikeLengthValue = V(lengthValue);
+                CAST(arrayLikeLengthValue, location, builder.getIndexType(), arrayLikeLengthValue, genContext);
+                auto elementType = evaluateElementAccess(location, init, false, genContext);
+                if (elementType)
+                {
+                    isSourceArrayLike = true;
+                    arrayLikeElementType = elementType;
+                }
+            }            
+            else
+            {
+                emitError(location) << "Array Binding Pattern: unsupported source of array data";
+                return mlir::failure();
+            }
+        }        
+
         for (auto [index, element] : enumerate(arrayBindingPattern->elements))
         {
             if (element == SyntaxKind::OmittedExpression)
@@ -4158,7 +4267,8 @@ class MLIRGenImpl
             auto arrayBindingElement = element.as<BindingElement>();
 
             auto subValueFunc = [&](mlir::Location location, const GenContext &genContext) { 
-                auto result = processDeclarationArrayBindingPatternSubPath(location, index, type, init, !!arrayBindingElement->dotDotDotToken, genContext);
+                auto result = processDeclarationArrayBindingPatternSubPath(
+                    location, index, type, init, !!arrayBindingElement->dotDotDotToken, isIterator, isSourceArrayLike, arrayLikeLengthValue, arrayLikeElementType, genContext);
                 if (result.failed_or_no_value()) 
                 {
                     return std::make_tuple(mlir::Type(), mlir::Value(), TypeProvided::No); 
@@ -13000,10 +13110,43 @@ class MLIRGenImpl
         MLIRTypeHelper &mth;
     };
 
-    mlir::LogicalResult processOperandSpreadElement(mlir::Location location, mlir::Value source, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext)
+    ValueOrLogicalResult callIteratorNext(mlir::Location location, mlir::Value nextProperty, 
+        OperandsProcessingInfo* operandsProcessingInfo, const GenContext &genContext) 
     {
-        auto count = operandsProcessingInfo.restCount();
+        // call nextProperty
+        SmallVector<mlir::Value, 4> callOperands;
+        auto callResult = mlirGenCall(location, nextProperty, callOperands, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(callResult)
 
+        // load property "value"
+        auto doneProperty = mlirGenPropertyAccessExpression(location, callResult, "done", false, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(doneProperty)
+
+        auto valueProperty = mlirGenPropertyAccessExpression(location, callResult, "value", false, genContext);
+        EXIT_IF_FAILED_OR_NO_VALUE(valueProperty)
+
+        auto valueProp = V(valueProperty);
+
+        if (operandsProcessingInfo != nullptr)
+        {
+            if (auto receiverType = operandsProcessingInfo->isCastNeededWithOptionalUnwrap(valueProp.getType()))
+            {
+                CAST(valueProp, location, receiverType, valueProp, genContext);
+            }
+        }                        
+
+        // conditional expr:  done ? undefined : value
+        auto doneInvValue =  V(builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(),
+            builder.getI32IntegerAttr((int)SyntaxKind::ExclamationToken), doneProperty));
+
+        mlir::Value condValue = builder.create<mlir_ts::OptionalOp>(
+            location, getOptionalType(valueProp.getType()), valueProp, doneInvValue);
+
+        return condValue;
+    }
+
+    bool hasIterator(mlir::Location location, mlir::Value source, const GenContext &genContext) 
+    {
         auto nextPropertyType = evaluateProperty(location, source, ITERATOR_NEXT, genContext);
         if (nextPropertyType)
         {
@@ -13015,70 +13158,62 @@ class MLIRGenImpl
                 // as tuple or const_tuple
                 ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
                 mlir::TypeSwitch<mlir::Type>(returnType)
-                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
-                    .template Case<mlir_ts::ConstTupleType>(
-                        [&](auto constTupleType) { fields = constTupleType.getFields(); })
+                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { 
+                        fields = tupleType.getFields(); 
+                    })
+                    .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { 
+                        fields = constTupleType.getFields(); 
+                    })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
                 auto propValue = mlir::StringAttr::get(builder.getContext(), "value");
                 if (std::any_of(fields.begin(), fields.end(), [&] (auto field) { return field.id == propValue; }))
                 {
-                    // treat it as <???>.next().value structure
-                    // property
-                    auto nextProperty = mlirGenPropertyAccessExpression(location, source, ITERATOR_NEXT, false, genContext);
-
-                    for (auto spreadIndex = 0;  spreadIndex < count; spreadIndex++)
-                    {
-                        // call nextProperty
-                        SmallVector<mlir::Value, 4> callOperands;
-                        auto callResult = mlirGenCall(location, nextProperty, callOperands, genContext);
-                        EXIT_IF_FAILED_OR_NO_VALUE(callResult)
-
-                        // load property "value"
-                        auto doneProperty = mlirGenPropertyAccessExpression(location, callResult, "done", false, genContext);
-                        EXIT_IF_FAILED_OR_NO_VALUE(doneProperty)
-
-                        auto valueProperty = mlirGenPropertyAccessExpression(location, callResult, "value", false, genContext);
-                        EXIT_IF_FAILED_OR_NO_VALUE(valueProperty)
-
-                        auto valueProp = V(valueProperty);
-
-                        if (auto receiverType = operandsProcessingInfo.isCastNeededWithOptionalUnwrap(valueProp.getType()))
-                        {
-                            CAST(valueProp, location, receiverType, valueProp, genContext);
-                        }                        
-
-                        // conditional expr:  done ? undefined : value
-                        auto doneInvValue =  V(builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(),
-                            builder.getI32IntegerAttr((int)SyntaxKind::ExclamationToken), doneProperty));
-
-                        mlir::Value condValue;
-                        // if (isa<mlir_ts::AnyType>(valueProp.getType()))
-                        // {
-                        //     condValue = anyOrUndefined(location, doneInvValue, [&](auto genContext) { return valueProp; }, genContext);
-                        // }
-                        // else
-                        // {
-                            condValue = builder.create<mlir_ts::OptionalOp>(location, getOptionalType(valueProp.getType()), valueProp, doneInvValue);
-                        // }
-
-                        operandsProcessingInfo.addOperandAndMoveToNextParameter(condValue);
-                    }
+                    return true;
                 }
-                else
-                {
-                    llvm_unreachable("not implemented");
-                }
-
-                return mlir::success();    
             }
-        }                                        
+        }     
+        
+        return false;
+    }
 
+    bool isArrayLike(mlir::Location location, mlir::Value source, const GenContext &genContext) 
+    {
         if (auto lengthPropertyType = evaluateProperty(location, source, LENGTH_FIELD_NAME, genContext))
         {
+            return true;
+        }
+
+        return false;
+    }
+
+    mlir::LogicalResult processOperandSpreadElement(mlir::Location location, mlir::Value source, OperandsProcessingInfo &operandsProcessingInfo, const GenContext &genContext)
+    {
+        auto count = operandsProcessingInfo.restCount();
+
+        if (hasIterator(location, source, genContext))
+        {
+            // treat it as <???>.next().value structure
+            // property
+            auto nextProperty = mlirGenPropertyAccessExpression(
+                location, source, ITERATOR_NEXT, false, genContext);
+
+            for (auto spreadIndex = 0; spreadIndex < count; spreadIndex++)
+            {
+                auto result = callIteratorNext(location, nextProperty, &operandsProcessingInfo, genContext);
+                EXIT_IF_FAILED_OR_NO_VALUE(result)
+                operandsProcessingInfo.addOperandAndMoveToNextParameter(V(result));
+            }
+
+            return mlir::success();    
+        }                                        
+
+        if (isArrayLike(location, source, genContext))
+        {
             // treat it as <???>[index] structure
-            auto lengthProperty = mlirGenPropertyAccessExpression(location, source, LENGTH_FIELD_NAME, false, genContext);
-            EXIT_IF_FAILED_OR_NO_VALUE(lengthProperty)
+            auto lengthValue = mlirGenPropertyAccessExpression(location, source, LENGTH_FIELD_NAME, false, genContext);
+            EXIT_IF_FAILED_OR_NO_VALUE(lengthValue)
+            CAST(lengthValue, location, builder.getIndexType(), lengthValue, genContext);
 
             auto elementType = evaluateElementAccess(location, source, false, genContext);
             if (genContext.receiverType && genContext.receiverType != elementType)
@@ -13096,10 +13231,10 @@ class MLIRGenImpl
                 auto indexVal = builder.create<mlir_ts::ConstantOp>(location, mth.getIndexType(),
                                                     mth.getIndexAttrValue(spreadIndex));
 
-                // conditional expr:  length > "spreadIndex" ? value[index] : undefined
-                auto inBoundsValue =  V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                // conditional expr: length > "spreadIndex" ? value[index] : undefined
+                auto inBoundsValue = V(builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
                     builder.getI32IntegerAttr((int)SyntaxKind::GreaterThanToken), 
-                    lengthProperty,
+                    lengthValue,
                     indexVal));
 
                 auto spreadValue = valueFactory(location, inBoundsValue, 
