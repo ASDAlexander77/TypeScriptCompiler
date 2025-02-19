@@ -107,6 +107,7 @@ class MLIRDebugInfoHelper
     void clearDebugScope() 
     {
         debugScope.insert(DEBUG_SCOPE, mlir::LLVM::DIScopeAttr());
+        debugScope.insert(DEBUG_SCOPE_FOR_SUBPROGRAM, mlir::LLVM::DIScopeAttr());
     }
 
     void setFile(StringRef fileName) {
@@ -117,6 +118,7 @@ class MLIRDebugInfoHelper
         auto file = mlir::LLVM::DIFileAttr::get(builder.getContext(), sys::path::filename(fileName), FullName);
 
         debugScope.insert(FILE_DEBUG_SCOPE, file);
+        debugScope.insert(DEBUG_SCOPE_FOR_SUBPROGRAM, file);
         debugScope.insert(DEBUG_SCOPE, file);
     }
 
@@ -133,6 +135,7 @@ class MLIRDebugInfoHelper
         
             debugScope.insert(CU_DEBUG_SCOPE, compileUnit);
             debugScope.insert(DEBUG_SCOPE, compileUnit);
+            debugScope.insert(DEBUG_SCOPE_FOR_SUBPROGRAM, compileUnit);
 
             return combine(location, compileUnit);
         }
@@ -140,11 +143,20 @@ class MLIRDebugInfoHelper
         return location;
     }
 
+    bool isAcceptableSubProgramScope(mlir::LLVM::DIScopeAttr scope) {
+        return scope && (isa<mlir::LLVM::DIFileAttr>(scope) 
+            || isa<mlir::LLVM::DICompileUnitAttr>(scope) 
+            || isa<mlir::LLVM::DITypeAttr>(scope) 
+            || isa<mlir::LLVM::DINamespaceAttr>(scope)
+            || isa<mlir::LLVM::DISubprogramAttr>(scope)
+            || isa<mlir::LLVM::DIModuleAttr>(scope));
+    }
+
     mlir::Location getSubprogram(mlir::Location functionLocation, StringRef functionName, StringRef linkageName, mlir::Location functionBlockLocation) {
 
         if (auto compileUnitAttr = dyn_cast_or_null<mlir::LLVM::DICompileUnitAttr>(debugScope.lookup(CU_DEBUG_SCOPE)))
         {
-            if (auto scopeAttr = dyn_cast_or_null<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE)))
+            if (auto scopeAttr = dyn_cast_or_null<mlir::LLVM::DIScopeAttr>(debugScope.lookup(DEBUG_SCOPE_FOR_SUBPROGRAM)))
             {
                 LocationHelper lh(builder.getContext());
                 auto [file, lineAndColumn] = lh.getLineAndColumnAndFile(functionLocation);
@@ -179,12 +191,13 @@ class MLIRDebugInfoHelper
                 auto funcNameAttr = builder.getStringAttr(functionName);
                 auto linkageNameAttr = builder.getStringAttr(linkageName);
                 auto subprogramAttr = mlir::LLVM::DISubprogramAttr::get(
-                    builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), compileUnitAttr, scopeAttr, 
+                    builder.getContext(), DistinctAttr::create(builder.getUnitAttr()), compileUnitAttr, isAcceptableSubProgramScope(scopeAttr) ? scopeAttr : compileUnitAttr, 
                     funcNameAttr, linkageNameAttr, 
                     file/*compileUnitAttr.getFile()*/, line, scopeLine, subprogramFlags, type);   
 
                 debugScope.insert(SUBPROGRAM_DEBUG_SCOPE, subprogramAttr);
                 debugScope.insert(DEBUG_SCOPE, subprogramAttr);
+                debugScope.insert(DEBUG_SCOPE_FOR_SUBPROGRAM, subprogramAttr);
 
                 return combine(functionLocation, subprogramAttr);
             }
@@ -211,6 +224,7 @@ class MLIRDebugInfoHelper
 
                 debugScope.insert(BLOCK_DEBUG_SCOPE, lexicalBlockAttr);
                 debugScope.insert(DEBUG_SCOPE, lexicalBlockAttr);
+                // no scope for subprogram
             }
         }
     }    
@@ -223,6 +237,7 @@ class MLIRDebugInfoHelper
 
             debugScope.insert(NAMESPACE_DEBUG_SCOPE, namespaceAttr);
             debugScope.insert(DEBUG_SCOPE, namespaceAttr);
+            debugScope.insert(DEBUG_SCOPE_FOR_SUBPROGRAM, namespaceAttr);
         }
     }
 

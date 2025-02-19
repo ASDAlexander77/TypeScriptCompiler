@@ -2409,7 +2409,15 @@ class MLIRTypeHelper
             for (auto &item : unionType.getTypes())
             {
                 auto fieldType = getFieldTypeByFieldName(item, fieldName);
-                types.push_back(fieldType);
+                if (fieldType)
+                {
+                    types.push_back(fieldType);
+                }
+            }
+
+            if (types.size() == 0)
+            {
+                return mlir::Type();
             }
 
             return mlir_ts::UnionType::get(context, types);
@@ -2434,7 +2442,7 @@ class MLIRTypeHelper
             return mlir::Type();
         }          
 
-        llvm_unreachable("not implemented");
+        return mlir::Type();
     }
 
     ExtendsResult extendsTypeFuncTypes(mlir::Location location, mlir::Type srcType, mlir::Type extendType,

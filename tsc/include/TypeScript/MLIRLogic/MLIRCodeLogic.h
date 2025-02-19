@@ -849,13 +849,22 @@ class MLIRCustomMethods
             }
         }
 
+        auto count = builder.create<mlir_ts::ArithmeticBinaryOp>(
+            location, indexType, builder.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::MinusToken)), castedValues[1], castedValues[0]);
+        
+        auto oneIndex = builder.create<mlir_ts::ConstantOp>(
+            location, indexType, builder.getIndexAttr(1));
+
+        auto countPlusOne = builder.create<mlir_ts::ArithmeticBinaryOp>(
+            location, indexType, builder.getI32IntegerAttr(static_cast<int32_t>(SyntaxKind::PlusToken)), count, oneIndex);
+    
         mlir::Value arrayViewValue =
             builder.create<mlir_ts::ArrayViewOp>(
                 location, 
                 cast<mlir_ts::ArrayType>(thisValue.getType()), 
                 thisValue, 
                 castedValues[0], 
-                castedValues[1]);
+                countPlusOne);
 
         return arrayViewValue;
     }    

@@ -375,9 +375,9 @@ class MLIRPrinter
             .template Case<mlir::IndexType>([&](auto) {
                 out << "index";
             })
-            .Default([](mlir::Type t) { 
+            .Default([&](mlir::Type t) { 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Type print is not implemented for : " << t << "\n";);
-                llvm_unreachable("not implemented");
+                out << t;
             });
     }
 };

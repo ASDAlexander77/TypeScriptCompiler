@@ -62,21 +62,6 @@ class LLVMTypeConverterHelper
         return typeConverter->getDataLayout().getABITypeAlign(llvmType).value() << 3;
     }    
 
-    uint64_t getStructTypeSizeNonAligned(LLVM::LLVMStructType structType)
-    {
-        uint64_t size = 0;
-
-        for (auto subType : structType.getBody())
-        {
-            size += getTypeSizeEstimateInBytes(subType);
-        }
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! struct type: " << structType 
-                        << "\n estimated size: " << size << "\n";);
-
-        return size;
-    }
-
     uint64_t getStructTypeSize(LLVM::LLVMStructType structType)
     {
         uint64_t size = 0;
@@ -91,12 +76,12 @@ class LLVMTypeConverterHelper
     }
         
     
-    uint64_t getTypeSizeEstimateInBits(mlir::Type llvmType)
+    uint64_t TypeAllocSizeInBits(mlir::Type llvmType)
     {
-        return getTypeSizeEstimateInBytes(llvmType) << 3;
+        return getTypeAllocSizeInBytes(llvmType) << 3;
     }
 
-    uint64_t getTypeSizeEstimateInBytes(mlir::Type llvmType)
+    uint64_t getTypeAllocSizeInBytes(mlir::Type llvmType)
     {
         if (llvmType == LLVM::LLVMVoidType::get(llvmType.getContext()))
         {
@@ -108,17 +93,16 @@ class LLVMTypeConverterHelper
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! checking type size - LLVM: " << llvmType << " and IR: " << *type << "\n";);
 
-        if (auto structData = dyn_cast<LLVM::LLVMStructType>(llvmType))
-        {
-            auto layout = typeConverter->getDataLayout().getStructLayout(cast<llvm::StructType>(type));
+        // if (auto structData = dyn_cast<LLVM::LLVMStructType>(llvmType))
+        // {
+        //     auto layout = typeConverter->getDataLayout().getStructLayout(cast<llvm::StructType>(type));
             
-            LLVM_DEBUG(llvm::dbgs() << "\n!! src type: " << llvmType
-                            << "\n size: " << layout->getSizeInBytes() << " alignment: " << layout->getAlignment().value() << "\n";);
+        //     LLVM_DEBUG(llvm::dbgs() << "\n!! src type: " << llvmType
+        //                     << "\n size: " << layout->getSizeInBytes() << " alignment: " << layout->getAlignment().value() << "\n";);
 
-            //return getStructTypeSizeNonAligned(structData);
-            assert(getStructTypeSizeNonAligned(structData) == layout->getSizeInBytes());
-            return layout->getSizeInBytes();
-        }        
+        //     assert(typeConverter->getDataLayout().getTypeAllocSize(type) == layout->getSizeInBytes());
+        //     return layout->getSizeInBytes();
+        // }        
 
         auto typeSize = typeConverter->getDataLayout().getTypeAllocSize(type);
         
@@ -143,7 +127,7 @@ class LLVMTypeConverterHelper
         for (auto subType : unionType.getTypes())
         {
             auto converted = typeConverter->convertType(subType);
-            auto typeSize = getTypeSizeEstimateInBytes(converted);
+            auto typeSize = getTypeAllocSizeInBytes(converted);
             if (typeSize > currentSize)
             {
                 selectedType = converted;

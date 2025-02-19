@@ -27,191 +27,173 @@ class TypeOfOpHelper
 
     mlir::Value strValue(mlir::Location loc, std::string value)
     {
+        if (value.empty()) return mlir::Value();
+
         auto strType = mlir_ts::StringType::get(rewriter.getContext());
         auto typeOfValue = rewriter.create<mlir_ts::ConstantOp>(loc, strType, rewriter.getStringAttr(value));
         return typeOfValue;
     }
 
-    mlir::Value typeOfLogic(mlir::Location loc, mlir::Type type)
+    std::string typeOfAsString(mlir::Type type)
     {
         if (type.isIntOrIndex() && !type.isIndex())
         {
             std::stringstream val;
             val << (type.isSignlessInteger() ? "i" : type.isSignedInteger() ? "s" : "u") << type.getIntOrFloatBitWidth();
-            auto typeOfValue = strValue(loc, val.str());
-            return typeOfValue;
+            return val.str();
         }
 
         if (type.isIntOrFloat() && !type.isIntOrIndex())
         {
             std::stringstream val;
             val << "f" << type.getIntOrFloatBitWidth();
-            auto typeOfValue = strValue(loc, val.str());
-            return typeOfValue;
+            return val.str();
         }
 
         if (type.isIndex())
         {
-            auto typeOfValue = strValue(loc, "index");
-            return typeOfValue;
+            return "index";
         }
 
         if (isa<mlir_ts::BooleanType>(type))
         {
-            auto typeOfValue = strValue(loc, "boolean");
-            return typeOfValue;
+            return "boolean";
         }
 
         // special case
         if (isa<mlir_ts::TypePredicateType>(type))
         {
-            auto typeOfValue = strValue(loc, "boolean");
-            return typeOfValue;
+            return "boolean";
         }        
 
         if (isa<mlir_ts::NumberType>(type))
         {
-            auto typeOfValue = strValue(loc, "number");
-            return typeOfValue;
+            return "number";
         }
 
         if (isa<mlir_ts::StringType>(type))
         {
-            auto typeOfValue = strValue(loc, "string");
-            return typeOfValue;
+            return "string";
         }
 
         if (isa<mlir_ts::ArrayType>(type))
         {
-            auto typeOfValue = strValue(loc, "array");
-            return typeOfValue;
+            return "array";
         }
 
         if (isa<mlir_ts::FunctionType>(type))
         {
-            auto typeOfValue = strValue(loc, "function");
-            return typeOfValue;
+            return "function";
         }
 
         if (isa<mlir_ts::HybridFunctionType>(type))
         {
-            auto typeOfValue = strValue(loc, "function");
-            return typeOfValue;
+            return "function";
         }
 
         if (isa<mlir_ts::BoundFunctionType>(type))
         {
-            auto typeOfValue = strValue(loc, "function");
-            return typeOfValue;
+            return "function";
         }
 
         if (isa<mlir_ts::ClassType>(type))
         {
-            auto typeOfValue = strValue(loc, "class");
-            return typeOfValue;
+            return "class";
         }
 
         if (isa<mlir_ts::ClassStorageType>(type))
         {
-            auto typeOfValue = strValue(loc, "class");
-            return typeOfValue;
+            return "class";
         }
 
         if (isa<mlir_ts::ObjectType>(type))
         {
-            auto typeOfValue = strValue(loc, "object");
-            return typeOfValue;
+            return "object";
         }
 
         if (isa<mlir_ts::InterfaceType>(type))
         {
-            auto typeOfValue = strValue(loc, "interface");
-            return typeOfValue;
+            return "interface";
         }
 
         if (isa<mlir_ts::OpaqueType>(type))
         {
-            auto typeOfValue = strValue(loc, "object");
-            return typeOfValue;
+            return "object";
         }
 
         if (isa<mlir_ts::SymbolType>(type))
         {
-            auto typeOfValue = strValue(loc, "symbol");
-            return typeOfValue;
+            return "symbol";
         }
 
         if (isa<mlir_ts::UndefinedType>(type))
         {
-            auto typeOfValue = strValue(loc, UNDEFINED_NAME);
-            return typeOfValue;
+            return UNDEFINED_NAME;
         }
 
         if (isa<mlir_ts::UnknownType>(type))
         {
-            auto typeOfValue = strValue(loc, "unknown");
-            return typeOfValue;
+            return "unknown";
         }
 
         if (isa<mlir_ts::ConstTupleType>(type))
         {
-            auto typeOfValue = strValue(loc, "tuple");
-            return typeOfValue;
+            return "tuple";
         }
 
         if (isa<mlir_ts::TupleType>(type))
         {
-            auto typeOfValue = strValue(loc, "tuple");
-            return typeOfValue;
+            return "tuple";
         }
 
         if (isa<mlir_ts::ArrayType>(type))
         {
-            auto typeOfValue = strValue(loc, "array");
-            return typeOfValue;
+            return "array";
         }
 
         if (isa<mlir_ts::ConstArrayType>(type))
         {
-            auto typeOfValue = strValue(loc, "array");
-            return typeOfValue;
+            return "array";
         }
 
         if (auto subType = dyn_cast<mlir_ts::RefType>(type))
         {
-            return typeOfLogic(loc, subType.getElementType());
+            return typeOfAsString(subType.getElementType());
         }
 
         if (auto subType = dyn_cast<mlir_ts::ValueRefType>(type))
         {
-            return typeOfLogic(loc, subType.getElementType());
+            return typeOfAsString(subType.getElementType());
         }
 
         if (auto subType = dyn_cast<mlir_ts::OptionalType>(type))
         {
-            return typeOfLogic(loc, subType.getElementType());
+            return typeOfAsString(subType.getElementType());
         }
 
         if (auto literalType = dyn_cast<mlir_ts::LiteralType>(type))
         {
-            return typeOfLogic(loc, literalType.getElementType());
+            return typeOfAsString(literalType.getElementType());
         }
 
         if (isa<mlir_ts::NullType>(type))
         {
-            auto typeOfValue = strValue(loc, "null");
-            return typeOfValue;
+            return "null";
         }        
 
         if (isa<mlir_ts::CharType>(type))
         {
-            auto typeOfValue = strValue(loc, "char");
-            return typeOfValue;
+            return "char";
         }
 
         LLVM_DEBUG(llvm::dbgs() << "TypeOf: " << type << "\n");
 
-        llvm_unreachable("not implemented");
+        return "";
+    }    
+
+    mlir::Value typeOfLogic(mlir::Location loc, mlir::Type type)
+    {
+        return strValue(loc, typeOfAsString(type));
     }
 
     mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value, mlir::Type origType, CompileOptions& compileOptions)
