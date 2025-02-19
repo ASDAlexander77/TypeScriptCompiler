@@ -19,6 +19,7 @@
 #define CONSTRUCTOR_TEMPVAR_NAME ".ctor"
 #define VTABLE_NAME ".vtbl"
 #define RTTI_NAME ".rtti"
+#define SIZE_NAME ".size"
 #define INSTANCEOF_NAME ".instanceOf"
 #define INSTANCEOF_PARAM_NAME "rttiParam"
 #define MAIN_ENTRY_NAME "main"
@@ -72,10 +73,17 @@
 #define OPTIONAL_VALUE_INDEX 0
 #define OPTIONAL_HASVALUE_INDEX 1
 
-#define UNION_TAG_VALUE_INDEX 0
+#define UNION_TAG_INDEX 0
 #define UNION_VALUE_INDEX 1
 
 #define DEFAULT_LIB_DIR "defaultlib"
 #define DEFAULT_LIB_NAME "TypeScriptDefaultLib"
+
+#define DEBUG_SCOPE "current"
+#define CU_DEBUG_SCOPE "compileUnit"
+#define FILE_DEBUG_SCOPE "file"
+#define SUBPROGRAM_DEBUG_SCOPE "function"
+#define BLOCK_DEBUG_SCOPE "block"
+#define NAMESPACE_DEBUG_SCOPE "block"
 
 #endif // DEFINES_H_

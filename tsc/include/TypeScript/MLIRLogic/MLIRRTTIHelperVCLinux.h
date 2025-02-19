@@ -17,6 +17,8 @@
 #include <functional>
 #include <sstream>
 
+#define DEBUG_TYPE "mlir"
+
 using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
@@ -91,19 +93,23 @@ class MLIRRTTIHelperVCLinux
     {
         auto first = true;
         auto countM1 = names.size() - 1;
-        auto index = 0;
-        for (auto name : names)
+        for (auto [index, name] : enumerate(names))
         {
             if (first)
             {
                 types.push_back({name.str(), TypeInfo::Pointer_TypeInfo, 1});
             }
 
-            types.push_back({name.str(), index < countM1 ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo,
-                             index < countM1 ? index + 2 : -1});
+            if (index < countM1)
+            {
+                types.push_back({ name.str(), TypeInfo::SingleInheritance_ClassTypeInfo, (int)index + 2 });
+            }
+            else
+            {
+                types.push_back({ name.str(), TypeInfo::ClassTypeInfo, -1 });
+            }
 
             first = false;
-            index++;
         }
     }
 
@@ -253,7 +259,6 @@ class MLIRRTTIHelperVCLinux
         seekLast(parentModule.getBody());
 
         // _ZTId
-        auto index = 0;
         for (auto type : types)
         {
             switch (type.infoType)
@@ -275,8 +280,6 @@ class MLIRRTTIHelperVCLinux
                 typeInfoValue(loc, type.typeName);
                 break;
             }
-
-            index++;
         }
 
         return true;
@@ -544,5 +547,7 @@ class MLIRRTTIHelperVCLinux
     }
 };
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_MLIRRTTIHELPERVCLINUX_H_

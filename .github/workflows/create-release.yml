@@ -21,28 +21,28 @@ jobs:
     runs-on: windows-2022
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Build project # This would actually build your project, using zip for an example artifact
         run: echo 'SELECTED_COLOR=green Build project (Windows)' >> "$GITHUB_OUTPUT"
 
       - name: Cache Build 3rd Party
         id: cache-3rd-party
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: __build/llvm
           key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
       - name: Cache 3rd Party binaries
         id: cache-3rd-party-binary
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: 3rdParty
           key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
       - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
         id: cache-3rd-party-binary-llvm-release
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: llvm_${{ env.LLVM_VERSION }}_release.zip
           key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
@@ -140,7 +140,7 @@ jobs:
         working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
         # Execute tests defined by the CMake configuration.  
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-        run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+        run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         shell: pwsh
 
       - name: Create Zip of Windows Asset
@@ -149,7 +149,7 @@ jobs:
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: tsc-windows-asset
           path: tsc.zip
@@ -165,25 +165,25 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Cache Build 3rd Party
         id: cache-3rd-party
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: __build/llvm/ninja
           key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
       - name: Cache 3rd Party binaries
         id: cache-3rd-party-binary
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: 3rdParty
           key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
       - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
         id: cache-3rd-party-binary-llvm-release
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: llvm_${{ env.LLVM_VERSION }}_release.tgz
           key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
@@ -293,7 +293,7 @@ jobs:
         shell: sh
         # Execute tests defined by the CMake configuration.  
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-        run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+        run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
@@ -301,7 +301,7 @@ jobs:
         run: tar -czvhf ../tsc.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgcmt-lib.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a
 
       - name: Archive Tar.GZ of Linux Asset
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: tsc-linux-asset
           path: tsc.tar.gz
@@ -317,25 +317,25 @@ jobs:
     runs-on: ubuntu-20.04
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Cache Build 3rd Party
         id: cache-3rd-party
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: __build/llvm/ninja
           key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-ub20-${{ env.CACHE_VERSION }}
 
       - name: Cache 3rd Party binaries
         id: cache-3rd-party-binary
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: 3rdParty
           key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-ub20-${{ env.CACHE_VERSION }}
 
       - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
         id: cache-3rd-party-binary-llvm-release
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: llvm_${{ env.LLVM_VERSION }}_release_UB20.tgz
           key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-ub20-${{ env.CACHE_VERSION }}
@@ -445,7 +445,7 @@ jobs:
         shell: sh
         # Execute tests defined by the CMake configuration.  
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
-        run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
+        run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
@@ -453,7 +453,7 @@ jobs:
         run: tar -czvhf ../tsc-ub20.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgcmt-lib.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a 
 
       - name: Archive Tar.GZ of Linux Asset
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: tsc-linux-asset-ub20
           path: tsc-ub20.tar.gz
@@ -483,7 +483,7 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Download Release Asset from Store
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: tsc-windows-asset
 
@@ -504,7 +504,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Release Asset from Store
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: tsc-linux-asset
 
@@ -525,7 +525,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download Release Asset from Store
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: tsc-linux-asset-ub20
 

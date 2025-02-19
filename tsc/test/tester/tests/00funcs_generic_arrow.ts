@@ -1,8 +1,7 @@
 function some<T>(arr: T[], f: (it: T) => boolean)
 {
-	let r = false;
-	for (const v of arr) if (r ||= f(v)) break;
-	return r;
+	for (const v of arr) if (f(v)) return true;
+	return false;
 }
 
 function map<T, R>(a: T[], f:(i: T) => R)

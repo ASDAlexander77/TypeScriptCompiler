@@ -12,6 +12,8 @@
 
 #include <functional>
 
+#define DEBUG_TYPE "mlir"
+
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
@@ -153,7 +155,7 @@ class MLIRTypeHelper
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
         for (auto type : types)
         {
-            fields.push_back(mlir_ts::FieldInfo{nullptr, type});
+            fields.push_back(mlir_ts::FieldInfo{nullptr, type, false});
         }
 
         return mlir_ts::TupleType::get(context, fields);
@@ -280,7 +282,11 @@ class MLIRTypeHelper
 
     mlir::StringAttr getLabelName(mlir::Type typeIn)
     {
-        if (typeIn.isIntOrIndex())
+        if (typeIn.isIndex())
+        {
+            return mlir::StringAttr::get(context, std::string("index"));
+        }
+        else if (typeIn.isIntOrIndex())
         {
             return mlir::StringAttr::get(context, std::string("i") + std::to_string(typeIn.getIntOrFloatBitWidth()));
         }
@@ -467,8 +473,6 @@ class MLIRTypeHelper
 
     mlir::Type wideStorageType(mlir::Type type)
     {
-        LLVM_DEBUG(llvm::dbgs() << "\n!! widening type: " << type << "\n";);        
-
         auto actualType = type;
         if (actualType)
         {
@@ -477,8 +481,6 @@ class MLIRTypeHelper
             actualType = stripLiteralType(actualType);
             actualType = removeConstType(actualType);
         }
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! wide type: " << actualType << "\n";);        
 
         return actualType;
     }    
@@ -526,6 +528,16 @@ class MLIRTypeHelper
 
         return type;
     }    
+
+    mlir::Type stripRefType(mlir::Type type)
+    {
+        if (auto refType = type.dyn_cast<mlir_ts::RefType>())
+        {
+            return refType.getElementType();
+        }
+
+        return type;
+    }   
 
     mlir::Type convertConstArrayTypeToArrayType(mlir::Type type)
     {
@@ -629,6 +641,21 @@ class MLIRTypeHelper
         return !type || type.isa<mlir::NoneType>();
     }
 
+    bool isEmptyTuple(mlir::Type type)
+    {
+        if (auto tupleType = dyn_cast<mlir_ts::TupleType>(type))
+        {
+            return tupleType.getFields().size() == 0;
+        }
+
+        if (auto constTupleType = dyn_cast<mlir_ts::ConstTupleType>(type))
+        {
+            return constTupleType.getFields().size() == 0;
+        }
+
+        return false;
+    }
+
     bool isVirtualFunctionType(mlir::Value actualFuncRefValue) 
     {
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
@@ -662,9 +689,13 @@ class MLIRTypeHelper
         return mlir_ts::FunctionType::get(context, {mlir_ts::NumberType::get(context)}, {elementType}, false);
     }
 
-    bool isAnyFunctionType(mlir::Type funcType)
+    bool isAnyFunctionType(mlir::Type funcType, bool stripRefTypeOpt = false)
     {
         funcType = stripOptionalType(funcType);    
+        if (stripRefTypeOpt)
+        {
+            funcType = stripRefType(funcType);    
+        }
 
         bool isFuncType = true;
         mlir::TypeSwitch<mlir::Type>(funcType)
@@ -677,8 +708,7 @@ class MLIRTypeHelper
                 isFuncType = false;
             });
 
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! isAnyFunctionType for " << funcType << " = " << isFuncType << "\n";);
+        //LLVM_DEBUG(llvm::dbgs() << "\n!! isAnyFunctionType for " << funcType << " = " << isFuncType << "\n";);
 
         return isFuncType;
     }
@@ -813,7 +843,7 @@ class MLIRTypeHelper
             SmallVector<mlir_ts::FieldInfo> fieldInfos;
             for (auto param : calledFuncType.getInputs())
             {
-                fieldInfos.push_back({mlir::Attribute(), param});
+                fieldInfos.push_back({mlir::Attribute(), param, false});
             }
 
             return getTupleType(fieldInfos);
@@ -1081,6 +1111,7 @@ class MLIRTypeHelper
         return {MatchResultType::Match, 0};
     }
 
+    // it has different code to MLIRCodeLogic - GetReferenceOfLoadOp
     mlir::Value GetReferenceOfLoadOp(mlir::Value value)
     {
         if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(value.getDefiningOp()))
@@ -1092,7 +1123,7 @@ class MLIRTypeHelper
 
         return mlir::Value();
     }
-
+    
     template <typename T1, typename T2> bool canCastFromToLogic(T1 type, T2 matchType)
     {
         if (type.getFields().size() != matchType.getFields().size())
@@ -1490,6 +1521,29 @@ class MLIRTypeHelper
             }
         }
 
+        // we should not treat boolean as integer
+        // if (srcType.isa<mlir_ts::BooleanType>())
+        // {
+        //     if (dstType.isa<mlir::IntegerType>() && dstType.getIntOrFloatBitWidth() > 0)
+        //     {
+        //         return true;
+        //     }
+
+        //     if (dstType.isa<mlir_ts::NumberType>())
+        //     {
+        //         return true;
+        //     }
+        // }
+
+        // but we can't cast TypePredicate to boolean as we will lose the information about type
+        if (srcType.isa<mlir_ts::BooleanType>())
+        {
+            if (dstType.isa<mlir_ts::TypePredicateType>())
+            {
+                return true;
+            }
+        }        
+
         if (auto dstEnumType = dstType.dyn_cast<mlir_ts::EnumType>())
         {
             if (dstEnumType.getElementType() == srcType)
@@ -1542,7 +1596,7 @@ class MLIRTypeHelper
         {
             if (auto srcIntType = srcType.dyn_cast<mlir::IntegerType>())
             {
-                if (srcIntType.getSignedness() == destIntType.getSignedness()
+                if ((srcIntType.getSignedness() == destIntType.getSignedness() || srcIntType.isSignless() || destIntType.isSignless())
                     && srcIntType.getIntOrFloatBitWidth() <= destIntType.getIntOrFloatBitWidth())
                 {
                     return true;
@@ -1683,10 +1737,10 @@ class MLIRTypeHelper
                     }
                     else
                     {
-                        fieldInfos.push_back({mlir::Attribute(), existType.second});    
+                        fieldInfos.push_back({mlir::Attribute(), existType.second, false});    
                     }
 
-                    fieldInfos.push_back({mlir::Attribute(), currentType});
+                    fieldInfos.push_back({mlir::Attribute(), currentType, false});
 
                     currentType = getTupleType(fieldInfos);                    
                 }
@@ -1777,7 +1831,7 @@ class MLIRTypeHelper
         return getUnionType(literalTypes);    
     }
 
-    mlir::Type getFieldTypeByIndex(mlir::Type srcType, mlir::Type index)
+    mlir::Type getFieldTypeByIndexType(mlir::Type srcType, mlir::Type index)
     { 
         llvm::SmallVector<mlir_ts::FieldInfo> destTupleFields;
         if (mlir::failed(getFields(srcType, destTupleFields)))
@@ -1860,16 +1914,16 @@ class MLIRTypeHelper
         else if (srcType.dyn_cast<mlir_ts::ArrayType>() || srcType.dyn_cast<mlir_ts::ConstArrayType>() || srcType.dyn_cast<mlir_ts::StringType>())
         {
             // TODO: do not break the order as it is used in Debug info
-            destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context) });
-            destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir_ts::StringType::get(context) });
-            //destTupleFields.push_back({ MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context), mlir_ts::NumberType::get(context) });
+            destTupleFields.push_back({ mlir::Attribute(), mlir_ts::NumberType::get(context), false });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName(LENGTH_FIELD_NAME, context), mlir_ts::StringType::get(context), false });
+            //destTupleFields.push_back({ MLIRHelper::TupleFieldName(INDEX_ACCESS_FIELD_NAME, context), mlir_ts::NumberType::get(context), false });
             return mlir::success();
         }
         else if (auto optType = srcType.dyn_cast<mlir_ts::OptionalType>())
         {
             // TODO: do not break the order as it is used in Debug info
-            destTupleFields.push_back({ MLIRHelper::TupleFieldName("value", context), optType.getElementType() });
-            destTupleFields.push_back({ MLIRHelper::TupleFieldName("hasValue", context), mlir_ts::BooleanType::get(context) });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName("value", context), optType.getElementType(), false });
+            destTupleFields.push_back({ MLIRHelper::TupleFieldName("hasValue", context), mlir_ts::BooleanType::get(context), false });
             return mlir::success();
         }
 
@@ -2697,7 +2751,7 @@ class MLIRTypeHelper
         // check if type is nullable or undefinable
         for (auto type : types)
         {
-            if (type.isa<mlir_ts::UndefinedType>())
+            if (type.isa<mlir_ts::UndefinedType>() || type.isa<mlir_ts::OptionalType>())
             {
                 unionContext.isUndefined = true;
                 continue;
@@ -2756,7 +2810,9 @@ class MLIRTypeHelper
     {
         if (types.size() == 0)
         {
-            return mlir_ts::NeverType::get(context);
+            // TODO:? should it be empty tuple or never type?
+            //return mlir_ts::NeverType::get(context);
+            return mlir_ts::TupleType::get(context, {});
         }
 
         if (types.size() == 1)
@@ -2776,6 +2832,13 @@ class MLIRTypeHelper
             if (type.isa<mlir_ts::UndefinedType>())
             {
                 isUndefined = true; 
+                continue;
+            }
+
+            if (auto optType = dyn_cast<mlir_ts::OptionalType>(type))
+            {
+                isUndefined = true; 
+                normalizedTypes.insert(optType.getElementType());
                 continue;
             }
 
@@ -2871,10 +2934,8 @@ class MLIRTypeHelper
             }
 
             auto found = false;
-            for (auto index = 0; index < mergedTypes.size(); index++)
+            for (auto [index, mergedType] : enumerate(mergedTypes))
             {
-                auto mergedType = mergedTypes[index];
-
                 auto merged = false;
                 auto resultType = mergeType(mergedType, typeItem, merged);
                 if (merged)
@@ -2948,7 +3009,7 @@ class MLIRTypeHelper
             auto mergedType = mergeType(existingIt->type, currentIt->type, merged);
             if (mergedType)
             {
-                resultFields.push_back({ existingIt->id, mergedType });
+                resultFields.push_back({ existingIt->id, mergedType, false });
             }
         }
 
@@ -2959,7 +3020,7 @@ class MLIRTypeHelper
     mlir::Type mergeType(mlir::Type existType, mlir::Type currentType, bool& merged)
     {
         merged = false;
-        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing type: \n\t" << existType << " with \n\t" << currentType << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! merging existing \n\ttype: \t" << existType << "\n\twith \t" << currentType << "\n";);
 
         if (existType == currentType)
         {
@@ -3359,5 +3420,7 @@ protected:
 };
 
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_COMMONGENLOGIC_MLIRTYPEHELPER_H_

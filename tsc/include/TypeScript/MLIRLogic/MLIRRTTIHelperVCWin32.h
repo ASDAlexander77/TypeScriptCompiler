@@ -17,6 +17,8 @@
 #include <sstream>
 #include <functional>
 
+#define DEBUG_TYPE "mlir"
+
 using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
@@ -528,10 +530,9 @@ class MLIRRTTIHelperVCWin32
             // make array
             mlir::Value arrayVal = rewriter.create<mlir_ts::UndefOp>(loc, mth.getConstArrayValueType(mth.getI32Type(), arraySize));
 
-            auto index = 0;
-            for (auto value : values)
+            for (auto [index, value] : enumerate(values))
             {
-                setStructValue(loc, arrayVal, value, index++);
+                setStructValue(loc, arrayVal, value, index);
             }
 
             // [size, {values...}]
@@ -681,5 +682,7 @@ class MLIRRTTIHelperVCWin32
     }
 };
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMRTTIHELPERVCWIN32_H_

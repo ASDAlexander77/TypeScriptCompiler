@@ -6,6 +6,8 @@
 
 #include "llvm/Support/Debug.h"
 
+#define DEBUG_TYPE "mlir"
+
 using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
@@ -56,21 +58,33 @@ enum class VariableScope
     Global
 };
 
+enum class Select: int
+{
+    NotSet = -1, 
+    Any = 0, 	        //The linker may choose any COMDAT.
+    ExactMatch = 1,     //The data referenced by the COMDAT must be the same.
+    Largest = 2, 	    //The linker will choose the largest COMDAT.
+    NoDeduplicate = 3,  //No deduplication is performed.
+    SameSize = 4, 	    //The data referenced by the COMDAT must be the same size.
+};
+
 struct VariableClass
 {
-    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isUsing{false}, isAppendingLinkage{false}
+    VariableClass() : type{VariableType::Const}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}
     {
     }
 
-    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isUsing{false}, isAppendingLinkage{false}
+    VariableClass(VariableType type_) : type{type_}, isExport{false}, isImport{false}, isPublic{false}, isUsing{false}, isAppendingLinkage{false}, comdat{Select::NotSet}
     {
     }
 
     VariableType type;
     bool isExport;
     bool isImport;
+    bool isPublic;
     bool isUsing;
     bool isAppendingLinkage;
+    Select comdat;
 
     inline VariableClass& operator=(VariableType type_) { type = type_; return *this; }
 
@@ -96,6 +110,7 @@ struct MethodInfo
     bool isVirtual;
     bool isAbstract;
     int virtualIndex;
+    int orderWeight;
 };
 
 struct GenericMethodInfo
@@ -216,12 +231,12 @@ struct InterfaceInfo
 
         for (auto &method : methods)
         {
-            tupleFields.push_back({MLIRHelper::TupleFieldName(method.name, context), method.funcType});
+            tupleFields.push_back({MLIRHelper::TupleFieldName(method.name, context), method.funcType, false});
         }
 
         for (auto &field : fields)
         {
-            tupleFields.push_back({field.id, field.type});
+            tupleFields.push_back({field.id, field.type, false});
         }
 
         return mlir::success();
@@ -271,9 +286,7 @@ struct InterfaceInfo
             {
                 if (field.isConditional)
                 {
-                    mlir_ts::FieldInfo missingField;
-                    missingField.id = field.id;
-                    missingField.type = field.type;
+                    mlir_ts::FieldInfo missingField{field.id, field.type};
                     vtable.push_back({missingField, true});
                 }
                 else
@@ -409,6 +422,17 @@ struct ImplementInfo
     bool processed;
 };
 
+enum class ProcessingStages : int {
+    NotSet = 0,
+    ErrorInStorageClass = 1,
+    Processing = 2,
+    ProcessingStorageClass = 3,
+    ProcessedStorageClass = 4,
+    ProcessingBody = 5,
+    ProcessedBody = 6,
+    Processed = 7,
+};
+
 struct ClassInfo
 {
   public:
@@ -450,19 +474,17 @@ struct ClassInfo
     bool isAbstract;
     bool isExport;
     bool isImport;
+    bool isPublic;
     bool isDynamicImport;
     bool hasRTTI;
-    bool fullyProcessedAtEvaluation;
-    bool fullyProcessed;
-    bool processingStorageClass;
-    bool processedStorageClass;
-    bool enteredProcessingStorageClass;
+    ProcessingStages processingAtEvaluation;
+    ProcessingStages processing;
 
     ClassInfo()
         : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
-          hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), isDynamicImport(false), hasRTTI(false),
-          fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false),
-          processedStorageClass(false), enteredProcessingStorageClass(false)
+          hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), isExport(false), isImport(false), 
+          isPublic(false), isDynamicImport(false), hasRTTI(false),
+          processingAtEvaluation(ProcessingStages::NotSet), processing(ProcessingStages::NotSet)
     {
     }
 
@@ -581,6 +603,10 @@ struct ClassInfo
         }
 
         // methods
+        std::sort(methods.begin(), methods.end(), [&] (auto &method1, auto &method2) {
+            return method1.orderWeight < method2.orderWeight;
+        });
+
         for (auto &method : methods)
         {
 #ifndef ADD_STATIC_MEMBERS_TO_VTABLE            
@@ -630,7 +656,6 @@ struct ClassInfo
     {
         auto dist = std::distance(
             methods.begin(), std::find_if(methods.begin(), methods.end(), [&](auto methodInfo) {
-                LLVM_DEBUG(dbgs() << "\nmatching method: " << name << " to " << methodInfo.name << "\n\n";);
                 return name == methodInfo.name;
             }));
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
@@ -640,7 +665,6 @@ struct ClassInfo
     {
         auto dist = std::distance(
             staticGenericMethods.begin(), std::find_if(staticGenericMethods.begin(), staticGenericMethods.end(), [&](auto staticGenericMethodInfo) {
-                LLVM_DEBUG(dbgs() << "\nmatching static generic method: " << name << " to " << staticGenericMethodInfo.name << "\n\n";);
                 return name == staticGenericMethodInfo.name;
             }));
         return (signed)dist >= (signed)staticGenericMethods.size() ? -1 : dist;
@@ -795,5 +819,7 @@ struct NamespaceInfo
 };
 
 } // namespace
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_MLIRGENSTORE_H_

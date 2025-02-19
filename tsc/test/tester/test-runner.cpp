@@ -81,38 +81,46 @@
 auto jitRun = false;
 auto sharedLibCompiler = false;
 auto sharedLibCompileTypeCompiler = false;
+#ifndef COMPILE_DEBUG
 auto opt = true;
+auto tsc_opt = "--opt --opt_level=3";
+#define JIT_NAME "jit"
+#define COMPILE_NAME "compile"
+#else
+auto opt = false;
+auto tsc_opt = "--di --opt_level=0";
+#define JIT_NAME "jitd"
+#define COMPILE_NAME "compiled"
+#endif
 
 void createJitBatchFile()
 {
 #ifdef WIN32    
-    if (exists("jit.bat"))
+    if (exists(JIT_NAME BAT_NAME))
     {
         return;
     }
 
-    std::ofstream batFile("jit.bat");
+    std::ofstream batFile(JIT_NAME BAT_NAME);
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set FILEPATH=%2" << std::endl;
-    batFile << "set TSC_OPTS=%3" << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "echo on" << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit %TSC_OPTS% --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll %FILEPATH% 1> %FILENAME%.txt 2> %FILENAME%.err"
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll %FILEPATH% 1> %FILENAME%.txt 2> %FILENAME%.err"
             << std::endl;
     batFile.close();
 #else
-    if (exists("jit.sh"))
+    if (exists(JIT_NAME BAT_NAME))
     {
         return;
     }
 
-    std::ofstream batFile("jit.sh");
+    std::ofstream batFile(JIT_NAME BAT_NAME);
     batFile << "FILENAME=$1" << std::endl;
     batFile << "FILEPATH=$2" << std::endl;
-    batFile << "TSC_OPTS=$3" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit $TSC_OPTS --shared-libs=../../lib/libTypeScriptRuntime.so $FILEPATH 1> $FILENAME.txt 2> $FILENAME.err"
+    batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so $FILEPATH 1> $FILENAME.txt 2> $FILENAME.err"
             << std::endl;
     batFile.close();    
 #endif    
@@ -121,17 +129,16 @@ void createJitBatchFile()
 void createCompileBatchFile()
 {
 #ifdef WIN32     
-    if (exists("compile.bat"))
+    if (exists(COMPILE_NAME BAT_NAME))
     {
         return;
     }
 
-    std::ofstream batFile("compile.bat");
+    std::ofstream batFile(COMPILE_NAME BAT_NAME);
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set FILEPATH=%2" << std::endl;
-    batFile << "set TSC_OPTS=%3" << std::endl;
-    batFile << "set LINKER_OPTS=%4" << std::endl;
+    batFile << "set LINKER_OPTS=%3" << std::endl;
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
@@ -140,7 +147,7 @@ void createCompileBatchFile()
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj %TSC_OPTS% %FILEPATH% -o=%FILENAME%.obj" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " 
             << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
             << " /libpath:%GCLIBPATH% /libpath:%LLVMLIBPATH% /libpath:%TSCLIBPATH%" 
@@ -148,30 +155,32 @@ void createCompileBatchFile()
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "del %FILENAME%.exe" << std::endl;
+    batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
+    batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;        
     batFile << "echo on" << std::endl;
     batFile.close();
 #else
-    if (exists("compile.sh"))
+    if (exists(COMPILE_NAME BAT_NAME))
     {
         return;
     }
 
-    std::ofstream batFile("compile.sh");
+    std::ofstream batFile(COMPILE_NAME BAT_NAME);
     batFile << "FILENAME=$1" << std::endl;
     batFile << "FILEPATH=$2" << std::endl;
-    batFile << "TSC_OPTS=$3" << std::endl;
-    batFile << "LINKER_OPTS=$4" << std::endl;
+    batFile << "LINKER_OPTS=$3" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=obj $TSC_OPTS $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
     batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH $FILENAME.o " 
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
-    batFile << "rm $FILENAME.o" << std::endl;
-    batFile << "rm $FILENAME" << std::endl;
+    batFile << "rm -f $FILENAME.o" << std::endl;
+    batFile << "rm -f $FILENAME" << std::endl;
     batFile.close();    
 #endif    
 }
@@ -190,14 +199,12 @@ void createBatchFile()
 
 void buildJitExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
-    ss << RUN_CMD << "jit" << BAT_NAME << " " << fileNameNoExt << " " << file;
-    ss << " " << (opt ? "--opt" : "--opt_level=0");
+    ss << RUN_CMD << JIT_NAME BAT_NAME << " " << fileNameNoExt << " " << file;
 }
 
 void buildCompileExecCommand(std::stringstream &ss, std::string fileNameNoExt, std::string file)
 {
-    ss << RUN_CMD << "compile" << BAT_NAME << " " << fileNameNoExt << " " << file;
-    ss << " " << (opt ? "--opt" : "--opt_level=0");
+    ss << RUN_CMD << COMPILE_NAME BAT_NAME << " " << fileNameNoExt << " " << file;
     if (sharedLibCompiler)
     {
         ss << SHARED_LIB_OPT;
@@ -223,9 +230,9 @@ void deleteFiles(std::string tempOutputFileNameNoExt)
 {
     std::stringstream mask;
 #if WIN32
-    mask << "del " << tempOutputFileNameNoExt << ".*";
+    mask << "del " << tempOutputFileNameNoExt << ".bat " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << ".exe " << tempOutputFileNameNoExt << ".obj";
 #else
-    mask << "rm " << tempOutputFileNameNoExt << ".*";
+    mask << "rm -f " << tempOutputFileNameNoExt << ".sh " << tempOutputFileNameNoExt << ".txt " << tempOutputFileNameNoExt << ".err " << tempOutputFileNameNoExt << " " << tempOutputFileNameNoExt << ".o";
 #endif
 
     auto delCmd = mask.str();
@@ -261,7 +268,7 @@ std::string getTempOutputFileNameNoExt(std::string file)
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 
     std::string fileNameNoExt = fs::path(file).stem().string();
-    auto fileNameNoExtWithMs = fileNameNoExt + std::to_string(ms.count());
+    auto fileNameNoExtWithMs = fileNameNoExt + "-" + std::to_string(ms.count()) + "-" + std::to_string(rand());
 
     std::cout << "Test file: " << fileNameNoExtWithMs << " path: " << file << std::endl;
 
@@ -309,8 +316,6 @@ void testFile(std::string file)
 
 void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vector<std::string> &files)
 {
-    auto tsc_opt = opt ? "--opt" : "--opt_level=0";
-
 #ifdef WIN32
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
     batFile << "echo off" << std::endl;
@@ -340,6 +345,9 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 
     batFile << "del " << objs.str() << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "del %FILENAME%.exe" << std::endl;
+    batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
+    batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;    
     batFile << "echo on" << std::endl;
     batFile.close();
 #else
@@ -364,15 +372,15 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     
-    batFile << "rm " << objs.str() << std::endl;
-    batFile << "rm $FILENAME" << std::endl;
+    batFile << "rm -f " << objs.str() << std::endl;
+    batFile << "rm -f $FILENAME" << std::endl;
+    batFile << "rm -f lib$FILENAME.so" << std::endl;    
     batFile.close();    
 #endif    
 }
 
 void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector<std::string> &files)
 {
-    auto tsc_opt = opt ? "--opt" : "--opt_level=0";
     auto linker_opt = SHARED_LIB_OPT;
 
 #ifdef WIN32
@@ -390,6 +398,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     auto first = true;
     std::stringstream shared_objs;
+    std::stringstream shared_libs;
+    std::stringstream shared_dlls;
     std::stringstream exec_objs;
     std::string shared_filenameNoExt;
     std::stringstream execBat;
@@ -422,6 +432,9 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
 
+    shared_libs << shared_filenameNoExt << ".lib ";
+    shared_dlls << shared_filenameNoExt << ".dll ";
+
     batFile << "del " << shared_objs.str() << std::endl;
     batFile << "echo on" << std::endl;
 
@@ -429,6 +442,9 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     {
         batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll " << *files.begin() << " 1> %FILENAME%.txt 2> %FILENAME%.err"
                 << std::endl;
+
+        batFile << "del " << shared_libs.str() << std::endl;
+        batFile << "del " << shared_dlls.str() << std::endl;
     }
     else
     {
@@ -447,6 +463,15 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << "del " << exec_objs.str() << std::endl;
 
         batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+
+        batFile << "echo off" << std::endl;
+        batFile << "del " << shared_libs.str() << std::endl;
+        batFile << "del " << shared_dlls.str() << std::endl;
+
+        batFile << "del %FILENAME%.exe" << std::endl;
+        batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
+        batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;
+        batFile << "echo on" << std::endl;
     }
 
     batFile.close();
@@ -490,12 +515,13 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << TEST_COMPILER << " " << linker_opt << " -o lib" << shared_filenameNoExt << ".so " << shared_objs.str() 
             << "-L$LLVM_LIBPATH -L$GCLIBPATH -L$TSCLIBPATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
-    batFile << "rm " << shared_objs.str() << std::endl;
+    batFile << "rm -f " << shared_objs.str() << std::endl;
 
     if (jitRun)
     {
         batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so " << *files.begin() << " 1> $FILENAME.txt 2> $FILENAME.err"
                 << std::endl;
+        batFile << "rm -f lib$FILENAME.so" << std::endl;
     }
     else
     {
@@ -510,10 +536,12 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
         batFile << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
 
+        batFile << "rm -f " << exec_objs.str() << std::endl;
+
         batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
 
-        batFile << "rm " << exec_objs.str() << std::endl;
-        batFile << "rm $FILENAME" << std::endl;
+        batFile << "rm -f $FILENAME" << std::endl;
+        batFile << "rm -f lib$FILENAME.so" << std::endl;
     }
 
     batFile.close();    
@@ -580,7 +608,7 @@ void readParams(int argc, char **argv, std::vector<std::string> &files)
         }
         else
         {
-            std::string msg = "unknown param";
+            std::string msg = "unknown param or file does not exist: ";
             msg.append(argv[index]);
             throw msg.c_str();
         }

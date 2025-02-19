@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "affine"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Passes.h"
@@ -33,7 +31,6 @@ namespace mlir_ts = mlir::typescript;
 
 #define ENABLE_SWITCH_STATE_PASS 1
 
-#undef DEBUG_TYPE
 #define DEBUG_TYPE "affine"
 
 namespace
@@ -58,8 +55,8 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
         {
             auto result = op.getResult(0);
             returnType = result.getType();
-            allocValue =
-                rewriter.create<mlir_ts::VariableOp>(location, returnType, mlir::Value(), rewriter.getBoolAttr(false));
+            allocValue = rewriter.create<mlir_ts::VariableOp>(
+                location, returnType, mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
         }
 
         // create return block
@@ -71,13 +68,13 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
         if (anyResult)
         {
             auto loadedValue = rewriter.create<mlir_ts::LoadOp>(
-                op.getLoc(), returnType.cast<mlir_ts::RefType>().getElementType(), allocValue);
-            rewriter.create<mlir_ts::ReturnInternalOp>(op.getLoc(), mlir::ValueRange{loadedValue});
+                location, returnType.cast<mlir_ts::RefType>().getElementType(), allocValue);
+            rewriter.create<mlir_ts::ReturnInternalOp>(location, mlir::ValueRange{loadedValue});
             rewriter.replaceOp(op, allocValue);
         }
         else
         {
-            rewriter.create<mlir_ts::ReturnInternalOp>(op.getLoc(), mlir::ValueRange{});
+            rewriter.create<mlir_ts::ReturnInternalOp>(location, mlir::ValueRange{});
             rewriter.eraseOp(op);
         }
 
@@ -189,7 +186,62 @@ struct ParamOpLowering : public TsPattern<mlir_ts::ParamOp>
     LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
     {
         rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.getArgValue(),
-                                                         paramOp.getCapturedAttr());
+                                                         paramOp.getCapturedAttr(), paramOp.getDiArgNumberAttr());
+        return success();
+    }
+};
+
+struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
+{
+    using TsPattern<mlir_ts::ParamOptionalOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+
+        auto location = paramOp.getLoc();
+
+        auto dataTypeIn = paramOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto storeType = paramOp.getType().cast<mlir_ts::RefType>().getElementType();
+
+        // ts.if
+        auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.getArgValue());
+        auto ifOp = rewriter.create<mlir_ts::IfOp>(location, storeType, hasValue, true);
+
+        // then block
+        auto &thenRegion = ifOp.getThenRegion();
+
+        rewriter.setInsertionPointToStart(&thenRegion.back());
+
+        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, storeType, paramOp.getArgValue());
+        rewriter.create<mlir_ts::ResultOp>(location, value);
+
+        // else block
+        auto &elseRegion = ifOp.getElseRegion();
+
+        rewriter.setInsertionPointToStart(&elseRegion.back());
+
+        rewriter.inlineRegionBefore(paramOp.getDefaultValueRegion(), &ifOp.getElseRegion().back());
+        // TODO: do I need next line?
+        rewriter.eraseBlock(&ifOp.getElseRegion().back());
+
+        rewriter.setInsertionPointAfter(ifOp);
+
+        auto variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.getResults().front(),
+                                                             paramOp.getCapturedAttr(), paramOp.getDiArgNumberAttr());
+        rewriter.replaceOp(paramOp, mlir::Value(variable));
+
+        return success();
+    }
+};
+
+struct ParamDefaultValueOpLowering : public TsPattern<mlir_ts::ParamDefaultValueOp>
+{
+    using TsPattern<mlir_ts::ParamDefaultValueOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<mlir_ts::ResultOp>(op, op.getResults());
         return success();
     }
 };
@@ -232,61 +284,6 @@ struct OptionalValueOrDefaultOpLowering : public TsPattern<mlir_ts::OptionalValu
 
         rewriter.replaceOp(optionalValueOrDefaultOp, ifOp.getResults().front());
 
-        return success();
-    }
-};
-
-struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
-{
-    using TsPattern<mlir_ts::ParamOptionalOp>::TsPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
-    {
-        TypeHelper th(rewriter);
-
-        auto location = paramOp.getLoc();
-
-        auto dataTypeIn = paramOp.getArgValue().getType().cast<mlir_ts::OptionalType>().getElementType();
-        auto storeType = paramOp.getType().cast<mlir_ts::RefType>().getElementType();
-
-        // ts.if
-        auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.getArgValue());
-        auto ifOp = rewriter.create<mlir_ts::IfOp>(location, storeType, hasValue, true);
-
-        // then block
-        auto &thenRegion = ifOp.getThenRegion();
-
-        rewriter.setInsertionPointToStart(&thenRegion.back());
-
-        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, storeType, paramOp.getArgValue());
-        rewriter.create<mlir_ts::ResultOp>(location, value);
-
-        // else block
-        auto &elseRegion = ifOp.getElseRegion();
-
-        rewriter.setInsertionPointToStart(&elseRegion.back());
-
-        rewriter.inlineRegionBefore(paramOp.getDefaultValueRegion(), &ifOp.getElseRegion().back());
-        // TODO: do I need next line?
-        rewriter.eraseBlock(&ifOp.getElseRegion().back());
-
-        rewriter.setInsertionPointAfter(ifOp);
-
-        auto variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.getResults().front(),
-                                                                    paramOp.getCapturedAttr());
-        rewriter.replaceOp(paramOp, mlir::Value(variable));
-
-        return success();
-    }
-};
-
-struct ParamDefaultValueOpLowering : public TsPattern<mlir_ts::ParamDefaultValueOp>
-{
-    using TsPattern<mlir_ts::ParamDefaultValueOp>::TsPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
-    {
-        rewriter.replaceOpWithNewOp<mlir_ts::ResultOp>(op, op.getResults());
         return success();
     }
 };
@@ -1639,11 +1636,10 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
 #else
         auto inHeapMemory = false;
 #endif
-        mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value(),
-                                                                            rewriter.getBoolAttr(inHeapMemory));
+        mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(
+            location, captureRefType, mlir::Value(), rewriter.getBoolAttr(inHeapMemory), rewriter.getIndexAttr(0));
 
-        auto index = 0;
-        for (auto val : captureOp.getCaptured())
+        for (auto [index, val] : enumerate(captureOp.getCaptured()))
         {
             auto thisStoreFieldType = captureStoreType.getType(index);
             auto thisStoreFieldTypeRef = mlir_ts::RefType::get(thisStoreFieldType);
@@ -1667,8 +1663,6 @@ struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
             assert(val.getType() == fieldRef.getType().cast<mlir_ts::RefType>().getElementType());
 
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
-
-            index++;
         }
 
         rewriter.replaceOp(captureOp, allocTempStorage);
@@ -1868,15 +1862,15 @@ void AddTsAffineLegalOps(ConversionTarget &target)
         mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp,
         mlir_ts::PointerOffsetRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp,
         mlir_ts::ValueOp, mlir_ts::ValueOrDefaultOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp,
-        mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
-        mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
+        mlir_ts::PrintOp, mlir_ts::ConvertFOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::SetLengthOfOp,
+        mlir_ts::StringLengthOp, mlir_ts::SetStringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
         mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp,
-        mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp,
-        mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::AllocaOp,
-        mlir_ts::InvokeOp, /*mlir_ts::ResultOp,*/ mlir_ts::VirtualSymbolRefOp,
-        mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::ExtractInterfaceThisOp,
-        mlir_ts::ExtractInterfaceVTableOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::ArrayViewOp, mlir_ts::NewInterfaceOp,
-        mlir_ts::VTableOffsetRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp,
+        mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, 
+        mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::DebugVariableOp, mlir_ts::AllocaOp, mlir_ts::InvokeOp, 
+        /*mlir_ts::ResultOp,*/ mlir_ts::VirtualSymbolRefOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, 
+        mlir_ts::ExtractInterfaceThisOp, mlir_ts::ExtractInterfaceVTableOp, mlir_ts::ArrayPushOp, mlir_ts::ArrayPopOp, 
+        mlir_ts::ArrayUnshiftOp, mlir_ts::ArrayShiftOp, mlir_ts::ArraySpliceOp, mlir_ts::ArrayViewOp, 
+        mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp,
         mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
         mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp,
         mlir_ts::ThrowCallOp, mlir_ts::SymbolCallInternalOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp,

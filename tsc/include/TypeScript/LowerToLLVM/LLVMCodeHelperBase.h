@@ -248,6 +248,33 @@ class LLVMCodeHelperBase
         return _MemoryFree<int>(ptrValue);
     }
 
+    mlir::Value Alloca(mlir::Type llvmReferenceType, int count, bool inalloca = false)
+    {
+        auto location = op->getLoc();
+
+        mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+
+        // put all allocs at 'func' top
+        auto parentFuncOp = op->getParentOfType<LLVM::LLVMFuncOp>();
+        if (parentFuncOp)
+        {
+            // if inside function (not in global op)
+            rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
+        }
+
+        CodeLogicHelper clh(op, rewriter);
+        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(count), inalloca);
+        return allocated;
+    }
+
+    mlir::Value Alloca(mlir::Type llvmReferenceType, mlir::Value count, bool inalloca = false)
+    {
+        auto location = op->getLoc();
+        CodeLogicHelper clh(op, rewriter);
+        auto allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, count, inalloca);
+        return allocated;
+    }
+
     template <typename T> mlir::Value _MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet memAllocMode)
     {
         TypeHelper th(rewriter);

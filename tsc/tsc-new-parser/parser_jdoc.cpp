@@ -281,7 +281,7 @@ struct ParseJSDocCommentClass
         return tag;
     }
 
-    auto parseTrailingTagComments(number pos, number end, number margin, string indentText) {
+    auto parseTrailingTagComments(pos_type pos, number end, number margin, string indentText) {
         // some tags, like typedef and callback, have already parsed their comments earlier
         if (!indentText.empty()) {
             margin += end - pos;

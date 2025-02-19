@@ -1,10 +1,6 @@
 #ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMTYPECONVERTERHELPER_H_
 #define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMTYPECONVERTERHELPER_H_
 
-#ifndef DEBUG_TYPE
-#define DEBUG_TYPE "llvm"
-#endif
-
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/Passes.h"
@@ -15,6 +11,8 @@
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Target/LLVMIR/TypeToLLVM.h"
+
+#define DEBUG_TYPE "llvm"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -133,5 +131,7 @@ class LLVMTypeConverterHelper
     LLVMTypeConverter &typeConverter;
 };
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMTYPECONVERTERHELPER_H_

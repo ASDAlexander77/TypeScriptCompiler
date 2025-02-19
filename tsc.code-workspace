@@ -145,7 +145,15 @@
             "memory_resource": "cpp",
             "string_view": "cpp",
             "numbers": "cpp",
-            "semaphore": "cpp"
+            "semaphore": "cpp",
+            "__bit_reference": "cpp",
+            "__hash_table": "cpp",
+            "__node_handle": "cpp",
+            "__split_buffer": "cpp",
+            "__threading_support": "cpp",
+            "__verbose_abort": "cpp",
+            "print": "cpp",
+            "__tree": "cpp"
         },
         "cmake.sourceDirectory": "${workspaceFolder}/..",
         "cmake.useCMakePresets": "always",

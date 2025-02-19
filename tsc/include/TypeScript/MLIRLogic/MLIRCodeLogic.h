@@ -16,6 +16,8 @@
 
 #include <numeric>
 
+#define DEBUG_TYPE "mlir"
+
 using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
@@ -26,13 +28,14 @@ namespace typescript
 class MLIRCodeLogic
 {
     mlir::MLIRContext *context;
+    mlir::OpBuilder builder;
 
   public:
-    MLIRCodeLogic(mlir::MLIRContext *context) : context(context)
+    MLIRCodeLogic(mlir::MLIRContext *context) : context(context), builder(context)
     {
     }
 
-    MLIRCodeLogic(mlir::OpBuilder builder) : context(builder.getContext())
+    MLIRCodeLogic(mlir::OpBuilder builder) : context(builder.getContext()), builder(builder)
     {
     }
 
@@ -54,14 +57,36 @@ class MLIRCodeLogic
         return mlir::Attribute();
     }
 
-    mlir::Value GetReferenceOfLoadOp(mlir::Value value)
+    mlir::Value GetReferenceFromValue(mlir::Location location, mlir::Value object)
     {
-        // TODO: sync with Common Logic
-        if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(value.getDefiningOp()))
+        MLIRTypeHelper mth(builder.getContext());
+        if (auto refVal = mth.GetReferenceOfLoadOp(object))
         {
-            // this LoadOp will be removed later as unused
-            auto refValue = loadOp.getReference();
-            return refValue;
+            return refVal;
+        }        
+
+        if (auto valueOp = object.getDefiningOp<mlir_ts::ValueOp>())
+        {
+            if (auto nestedRef = GetReferenceFromValue(location, valueOp.getIn()))
+            {
+                return builder.create<mlir_ts::PropertyRefOp>(
+                    location, 
+                    mlir_ts::RefType::get(valueOp.getType()), 
+                    nestedRef, 
+                    OPTIONAL_VALUE_INDEX);
+            }
+        }
+
+        if (auto extractPropertyOp = object.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+        {
+            if (auto nestedRef = GetReferenceFromValue(location, extractPropertyOp.getObject()))
+            {
+                return builder.create<mlir_ts::PropertyRefOp>(
+                    location, 
+                    mlir_ts::RefType::get(extractPropertyOp.getType()), 
+                    nestedRef, 
+                    extractPropertyOp.getPosition().front());
+            }
         }
 
         return mlir::Value();
@@ -109,7 +134,6 @@ class MLIRCodeLogic
 
         if (fieldIndex < 0 || fieldIndex >= tupleType.size())
         {
-            LLVM_DEBUG(dbgs() << "\n!! looking for field: " << fieldId << " tuple: " << tupleType << "\n");
             return std::make_pair<>(-1, mlir::Type());
         }
 
@@ -220,7 +244,7 @@ class MLIRCustomMethods
     static bool isInternalFunctionNameBuiltin (StringRef functionName)
     {
         static std::map<std::string, bool> m { 
-            {"print", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
+            {"print", true}, {"convertf", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
             {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
         return m[functionName.str()];    
     }    
@@ -228,17 +252,22 @@ class MLIRCustomMethods
     static bool isInternalFunctionNameNoBuiltin (StringRef functionName)
     {
         static std::map<std::string, bool> m { 
-            {"print", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
+            {"print", true}, {"convertf", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
             {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }};
         return m[functionName.str()];    
     }   
 
-    ValueOrLogicalResult callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
+    ValueOrLogicalResult callMethod(StringRef functionName, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
     {
         if (functionName == "print")
         {
             // print - internal command;
             return mlirGenPrint(location, operands, castFn, genContext);
+        }
+        else if (functionName == "convertf")
+        {
+            // print - internal command;
+            return mlirGenConvertF(location, operands, castFn, genContext);
         }
         else if (functionName == "assert")
         {
@@ -260,7 +289,7 @@ class MLIRCustomMethods
         }
         else if (functionName == "sizeof")
         {
-            return mlirGenSizeOf(location, operands);
+            return mlirGenSizeOf(location, typeArgs, operands);
         }
         else if (functionName == "__array_push")
         {
@@ -270,6 +299,18 @@ class MLIRCustomMethods
         {
             return mlirGenArrayPop(location, operands);
         }
+        else if (functionName == "__array_unshift")
+        {
+            return mlirGenArrayUnshift(location, operands);
+        }        
+        else if (functionName == "__array_shift")
+        {
+            return mlirGenArrayShift(location, operands);
+        }
+        else if (functionName == "__array_splice")
+        {
+            return mlirGenArraySplice(location, operands);
+        }        
         else if (functionName == "__array_view")
         {
             return mlirGenArrayView(location, operands);
@@ -310,29 +351,8 @@ class MLIRCustomMethods
         {
             if (!oper.getType().isa<mlir_ts::StringType>())
             {
-                if (oper.getType().isa<mlir_ts::OptionalType>())
-                {
-                    auto hasValue = builder.create<mlir_ts::HasValueOp>(location, mlir_ts::BooleanType::get(builder.getContext()), oper);
-                    MLIRCodeLogicHelper mclh(builder, location);
-
-                    auto strType = mlir_ts::StringType::get(builder.getContext());
-                    auto optValue = mclh.conditionalExpression(
-                        strType, hasValue,
-                        [&](mlir::OpBuilder &builder, mlir::Location location) {
-                            return builder.create<mlir_ts::CastOp>(location, strType, oper);
-                        },
-                        [&](mlir::OpBuilder &builder, mlir::Location location) {
-                            return builder.create<mlir_ts::ConstantOp>(
-                                location, strType, builder.getStringAttr(UNDEFINED_NAME));
-                        });
-
-                    vals.push_back(optValue);
-                }
-                else
-                {
-                    auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
-                    vals.push_back(strCast);
-                }
+                auto strCast = castFn(location, mlir_ts::StringType::get(builder.getContext()), oper, genContext);
+                vals.push_back(strCast);
             }
             else
             {
@@ -343,6 +363,39 @@ class MLIRCustomMethods
         auto printOp = builder.create<mlir_ts::PrintOp>(location, vals);
 
         return mlir::success();
+    }
+
+    ValueOrLogicalResult mlirGenConvertF(const mlir::Location &location, ArrayRef<mlir::Value> operands, std::function<ValueOrLogicalResult(mlir::Location, mlir::Type, mlir::Value, const GenContext &)> castFn, const GenContext &genContext)
+    {
+        mlir::Value bufferSize;
+        mlir::Value format;
+
+        if (operands.size() < 3) {
+            return mlir::failure();
+        }
+
+        bufferSize = operands[0];
+        if (!bufferSize.getType().isa<mlir::IndexType>())
+        {
+            bufferSize = castFn(location, mlir::IndexType::get(builder.getContext()), bufferSize, genContext);
+        }
+
+        auto stringType = mlir_ts::StringType::get(builder.getContext());
+        format = operands[1];
+        if (!format.getType().isa<mlir_ts::StringType>())
+        {
+            format = castFn(location, stringType, format, genContext);
+        }
+
+        SmallVector<mlir::Value> vals;
+        for (auto &oper : operands.take_back(operands.size() - 2))
+        {
+            vals.push_back(oper);
+        }
+
+        auto convertFOp = builder.create<mlir_ts::ConvertFOp>(location, stringType, bufferSize, format, vals);
+
+        return V(convertFOp);
     }
 
     mlir::LogicalResult mlirGenAssert(const mlir::Location &location, ArrayRef<mlir::Value> operands)
@@ -442,12 +495,19 @@ class MLIRCustomMethods
         return isNaNOp;
     }
 
-    mlir::Value mlirGenSizeOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::Value mlirGenSizeOf(const mlir::Location &location, mlir::SmallVector<mlir::Type> typeArgs, ArrayRef<mlir::Value> operands)
     {
-        auto sizeOfValue = builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(),
-                                                             mlir::TypeAttr::get(operands.front().getType()));
+        if (typeArgs.size() > 0)
+        {
+            return builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(), mlir::TypeAttr::get(typeArgs.front()));
+        }
 
-        return sizeOfValue;
+        if (operands.size() > 0)
+        {
+            return builder.create<mlir_ts::SizeOfOp>(location, builder.getIndexType(), mlir::TypeAttr::get(operands.front().getType()));
+        }
+
+        return mlir::Value();
     }
 
     ValueOrLogicalResult mlirGenArrayPush(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
@@ -469,7 +529,7 @@ class MLIRCustomMethods
             }
         }
 
-        auto thisValueLoaded = mcl.GetReferenceOfLoadOp(thisValue);
+        auto thisValueLoaded = mcl.GetReferenceFromValue(location, thisValue);
         if (!thisValueLoaded)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
@@ -477,7 +537,7 @@ class MLIRCustomMethods
         }
 
         mlir::Value sizeOfValue =
-            builder.create<mlir_ts::PushOp>(location, builder.getI32Type(), thisValueLoaded, mlir::ValueRange{castedValues});
+            builder.create<mlir_ts::ArrayPushOp>(location, builder.getI32Type(), thisValueLoaded, mlir::ValueRange{castedValues});
 
         return sizeOfValue;
     }    
@@ -490,18 +550,118 @@ class MLIRCustomMethods
     ValueOrLogicalResult mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder);
-        auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
+        auto thisValue = mcl.GetReferenceFromValue(location, operands.front());
         if (!thisValue)
         {
             emitError(location) << "Can't get reference of the array, ensure const array is not used";
             return mlir::failure();
         }
 
-        mlir::Value value = builder.create<mlir_ts::PopOp>(
+        mlir::Value value = builder.create<mlir_ts::ArrayPopOp>(
             location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
 
         return value;
     }
+
+    ValueOrLogicalResult mlirGenArrayUnshift(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+
+        SmallVector<mlir::Value> castedValues;
+        for (auto value : values)
+        {
+            if (value.getType() != arrayElement)
+            {
+                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, arrayElement, value));
+            }
+            else
+            {
+                castedValues.push_back(value);
+            }
+        }
+
+        auto thisValueLoaded = mcl.GetReferenceFromValue(location, thisValue);
+        if (!thisValueLoaded)
+        {
+            emitError(location) << "Can't get reference of the array, ensure const array is not used";
+            return mlir::failure();
+        }
+
+        mlir::Value sizeOfValue =
+            builder.create<mlir_ts::ArrayUnshiftOp>(location, builder.getI32Type(), thisValueLoaded, mlir::ValueRange{castedValues});
+
+        return sizeOfValue;
+    }    
+
+    ValueOrLogicalResult mlirGenArrayUnshift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        return mlirGenArrayUnshift(location, operands.front(), operands.slice(1));
+    }
+
+    ValueOrLogicalResult mlirGenArrayShift(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        MLIRCodeLogic mcl(builder);
+        auto thisValue = mcl.GetReferenceFromValue(location, operands.front());
+        if (!thisValue)
+        {
+            emitError(location) << "Can't get reference of the array, ensure const array is not used";
+            return mlir::failure();
+        }
+
+        mlir::Value value = builder.create<mlir_ts::ArrayShiftOp>(
+            location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
+
+        return value;
+    }    
+
+    ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, mlir::Value thisValue, mlir::Value startValue, mlir::Value deleteCountValue, ArrayRef<mlir::Value> values)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        if (!startValue.getType().isa<mlir::IndexType>())
+        {
+            startValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), startValue);
+        }
+
+        if (!deleteCountValue.getType().isa<mlir::IndexType>())
+        {
+            deleteCountValue = builder.create<mlir_ts::CastOp>(location, mlir::IndexType::get(builder.getContext()), deleteCountValue);
+        }
+
+        auto arrayElement = thisValue.getType().cast<mlir_ts::ArrayType>().getElementType();
+
+        SmallVector<mlir::Value> castedValues;
+        for (auto value : values)
+        {
+            if (value.getType() != arrayElement)
+            {
+                castedValues.push_back(builder.create<mlir_ts::CastOp>(location, arrayElement, value));
+            }
+            else
+            {
+                castedValues.push_back(value);
+            }
+        }
+
+        auto thisValueLoaded = mcl.GetReferenceFromValue(location, thisValue);
+        if (!thisValueLoaded)
+        {
+            emitError(location) << "Can't get reference of the array, ensure const array is not used";
+            return mlir::failure();
+        }
+
+        mlir::Value sizeOfValue =
+            builder.create<mlir_ts::ArraySpliceOp>(location, builder.getI32Type(), thisValueLoaded, startValue, deleteCountValue, mlir::ValueRange{castedValues});
+
+        return sizeOfValue;
+    }    
+
+    ValueOrLogicalResult mlirGenArraySplice(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        return mlirGenArraySplice(location, operands.front(), operands[1], operands[2], operands.slice(3));
+    }    
 
     ValueOrLogicalResult mlirGenArrayView(const mlir::Location &location, mlir::Value thisValue, ArrayRef<mlir::Value> values)
     {
@@ -648,7 +808,7 @@ class MLIRCustomMethods
     ValueOrLogicalResult mlirGenReferenceOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder);
-        auto refValue = mcl.GetReferenceOfLoadOp(operands.front());        
+        auto refValue = mcl.GetReferenceFromValue(location, operands.front());        
         return V(refValue);
     }    
 };
@@ -733,7 +893,7 @@ class MLIRPropertyAccessCodeLogic
         auto elementTypeForRef = pair.second;
         auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
-        auto refValue = getExprLoadRefValue();
+        auto refValue = getExprLoadRefValue(location);
         if (isBoundRef && !refValue)
         {
             // allocate in stack
@@ -774,7 +934,7 @@ class MLIRPropertyAccessCodeLogic
         auto elementTypeForRef = pair.second;
         auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
-        auto refValue = getExprLoadRefValue();
+        auto refValue = getExprLoadRefValue(location);
         if (isBoundRef && !refValue)
         {
             // allocate in stack
@@ -921,7 +1081,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
         
-        if (propName == "push" || propName == "pop" || propName == "view")
+        if (propName == "push" || propName == "pop" || propName == "unshift" || propName == "shift" || propName == "splice" || propName == "view")
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
@@ -1122,10 +1282,10 @@ class MLIRPropertyAccessCodeLogic
         return mcl.ExtractAttr(expression);
     }
 
-    mlir::Value getExprLoadRefValue()
+    mlir::Value getExprLoadRefValue(mlir::Location location)
     {
         MLIRCodeLogic mcl(builder);
-        auto value = mcl.GetReferenceOfLoadOp(expression);
+        auto value = mcl.GetReferenceFromValue(location, expression);
         return value;
     }
 };
@@ -1209,5 +1369,7 @@ class MLIRLogicHelper
     }
 };
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRCODELOGIC_H_

@@ -59,4 +59,6 @@
 // seems we can't use appending logic at all
 //#define SHARED_LIB_DECLARATION_INFO_IS_APPENDABLE true
 
+//#define DBG_INFO_ADD_VALUE_OP true
+
 #endif // CONFIG_H_

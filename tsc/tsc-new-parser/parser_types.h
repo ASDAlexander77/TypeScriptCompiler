@@ -224,7 +224,7 @@ struct Node : TextRange
     }
 
     Node() = default;
-    Node(SyntaxKind kind, number pos, number end) : TextRange{pos, end}, _kind(kind)
+    Node(SyntaxKind kind, pos_type pos, number end) : TextRange{pos, end}, _kind(kind)
     {
     }
 
@@ -412,7 +412,7 @@ struct ComputedPropertyName : Node
 struct PrivateIdentifier : Node
 {
     PrivateIdentifier() = default;
-    PrivateIdentifier(SyntaxKind kind, number pos, number end) : Node{kind, pos, end}
+    PrivateIdentifier(SyntaxKind kind, pos_type pos, number end) : Node{kind, pos, end}
     {
     }
 
@@ -926,7 +926,7 @@ struct StringLiteral : LiteralExpression
 struct Identifier : LiteralLikeNode
 {
     Identifier() = default;
-    Identifier(SyntaxKind kind_, number pos_, number end_)
+    Identifier(SyntaxKind kind_, pos_type pos_, number end_)
     {
         _kind = kind_;
         pos = pos_;
@@ -1997,7 +1997,7 @@ using CommentKind = SyntaxKind; // SyntaxKind::SingleLineCommentTrivia | SyntaxK
 
 struct CommentRange : TextRange
 {
-    CommentRange(number pos, number end, boolean hasTrailingNewLine, CommentKind kind)
+    CommentRange(pos_type pos, number end, boolean hasTrailingNewLine, CommentKind kind)
         : TextRange{pos, end}, hasTrailingNewLine(hasTrailingNewLine), kind(kind)
     {
     }
@@ -2009,7 +2009,7 @@ struct CommentRange : TextRange
 struct SynthesizedComment : CommentRange
 {
     string text;
-    number pos;
+    pos_type pos;
     number end;
     boolean hasLeadingNewline;
 };
@@ -2251,7 +2251,7 @@ struct AmdDependency
 /* @internal */
 struct CommentDirective
 {
-    CommentDirective(number pos, number end, CommentDirectiveType type) : range{pos, end}, type(type)
+    CommentDirective(pos_type pos, number end, CommentDirectiveType type) : range{pos, end}, type(type)
     {
     }
 
@@ -2421,7 +2421,7 @@ struct PatternAmbientModule
 struct SourceFile : SourceFileLike
 {
     SourceFile() = default;
-    SourceFile(SyntaxKind kind_, number pos_, number end_)
+    SourceFile(SyntaxKind kind_, pos_type pos_, number end_)
     {
         _kind = kind_;
         pos = pos_;

@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "test"
-
 #include "enums.h"
 #include "dump.h"
 
@@ -14,6 +12,8 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include "gmock/gmock.h"
+
+#define DEBUG_TYPE "test"
 
 namespace mlir_ts = mlir::typescript;
 
@@ -140,17 +140,17 @@ TEST_F(TypeToNameTest, array_name) {
 TEST_F(TypeToNameTest, tuple_name) {
 
     SmallVector<::mlir::typescript::FieldInfo> fields;
-    fields.push_back({ mlir::Attribute(), get<mlir_ts::NumberType>() });
-    fields.push_back({ mlir::Attribute(), get<mlir_ts::StringType>() });
+    fields.push_back({ mlir::Attribute(), get<mlir_ts::NumberType>(), false });
+    fields.push_back({ mlir::Attribute(), get<mlir_ts::StringType>(), false });
     test(getTuple(fields), "[number, string]");
 }
 
 TEST_F(TypeToNameTest, tuple_with_names) {
 
     SmallVector<::mlir::typescript::FieldInfo> fields;
-    fields.push_back({ mlir::IntegerAttr::get(mlir::IntegerType::get(getContext(), 32), 1), get<mlir_ts::NumberType>() });
-    fields.push_back({ mlir::StringAttr::get(getContext(), "size"), get<mlir_ts::NumberType>() });
-    fields.push_back({ mlir::StringAttr::get(getContext(), "name"), get<mlir_ts::StringType>() });
+    fields.push_back({ mlir::IntegerAttr::get(mlir::IntegerType::get(getContext(), 32), 1), get<mlir_ts::NumberType>(), false });
+    fields.push_back({ mlir::StringAttr::get(getContext(), "size"), get<mlir_ts::NumberType>(), false });
+    fields.push_back({ mlir::StringAttr::get(getContext(), "name"), get<mlir_ts::StringType>(), false });
     test(getTuple(fields), "[1:number, size:number, name:string]");
 }
 

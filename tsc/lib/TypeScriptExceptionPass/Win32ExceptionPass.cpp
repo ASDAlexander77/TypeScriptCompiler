@@ -77,7 +77,6 @@ struct Win32ExceptionPassCode
         LLVM_DEBUG(llvm::dbgs() << "\n!! Dump Before: ...\n" << F << "\n";);
 
         CatchRegion *catchRegion = nullptr;
-        auto beginOfCatch = false;
         auto endOfCatch = false;
         auto endOfCatchIfResume = false;
         llvm::SmallVector<llvm::Instruction *> toRemoveWorkSet;
@@ -90,7 +89,6 @@ struct Win32ExceptionPassCode
 
                 catchRegion->landingPad = LPI;
 
-                beginOfCatch = false;
                 endOfCatch = false;
                 continue;
             }
@@ -146,7 +144,6 @@ struct Win32ExceptionPassCode
                         auto extractOp = cast<llvm::ExtractValueInst>(CI->getOperand(0));
                         toRemoveWorkSet.push_back(extractOp);
                         catchRegion->cxaBeginCatch = &I;
-                        beginOfCatch = true;
                         continue;
                     }
 
@@ -679,7 +676,7 @@ struct Win32ExceptionPassCode
                 if (regionBlock.hasNPredecessors(0))
                 {
                     auto count = std::distance(regionBlock.begin(), regionBlock.end());
-                    if (count == 0 || count == 1 && (isa<BranchInst>(regionBlock.begin()) || isa<UnreachableInst>(regionBlock.begin())))
+                    if (count == 0 || (count == 1 && (isa<BranchInst>(regionBlock.begin()) || isa<UnreachableInst>(regionBlock.begin()))))
                     {
                         LLVM_DEBUG(llvm::dbgs() << "\n!! REMOVING EMPTY BLOCK: ..." << regionBlock << "\n";);
                         workSet.insert(&regionBlock);

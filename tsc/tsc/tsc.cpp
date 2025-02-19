@@ -89,9 +89,13 @@ cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dy
 cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called (default=main)"), cl::value_desc("function name"), cl::init("main"), cl::cat(TypeScriptCompilerCategory)};
 
 cl::opt<bool> dumpObjectFile{"dump-object-file", cl::Hidden, cl::desc("Dump JITted-compiled object to file specified with "
-                                                                 "-object-filename (<input file>.o by default)."), cl::cat(TypeScriptCompilerDebugCategory)};
+        "-object-filename (<input file>.o by default)."), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 
 cl::opt<std::string> objectFilename{"object-filename", cl::Hidden, cl::desc("Dump JITted-compiled object to file <input file>.o"), cl::cat(TypeScriptCompilerDebugCategory)};
+
+cl::opt<bool> verbose{"verbose", cl::Hidden, cl::desc("Verbose output"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
+cl::opt<bool> printOp{"print-op", cl::Hidden, cl::desc("Print Op on Diagnostic"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
+cl::opt<bool> printStackTrace{"print-stack-trace", cl::Hidden, cl::desc("Print stack trace on Diagnostic"), cl::init(false), cl::cat(TypeScriptCompilerDebugCategory)};
 
 // cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
@@ -110,6 +114,7 @@ cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. S
 cl::opt<std::string> tsclibpath("tsc-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'TypeScriptAsyncRuntime.lib' or TSC_LIB_PATH environmental variable"), cl::value_desc("tsclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> emsdksysrootpath("emsdk-sysroot-path", cl::desc("TypeScript Compiler Runtime library path. Should point to dir '<...>/emsdk/upstream/emscripten/cache/sysroot' or EMSDK_SYSROOT_PATH environmental variable. (used when '-mtriple=wasm32-pc-emscripten')"), cl::value_desc("emsdksysrootpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::list<std::string> libs{"lib", cl::desc("Libraries to link statically. (used in --emit=exe)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
+cl::list<std::string> objs{"obj", cl::desc("Object files to link statically. (used in --emit=exe and --emit=dll)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
 
 cl::opt<bool> noDefaultLib("no-default-lib", cl::desc("Disable loading default lib"), cl::init(false), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> enableBuiltins("builtins", cl::desc("Builtin functionality (needed if Default lib is not provided)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
@@ -157,10 +162,16 @@ std::string mergeWithDefaultLibPath(std::string defaultlibpath, std::string subP
 
 bool prepareDefaultLib(CompileOptions &compileOptions)
 {
+    if (noDefaultLib)
+    {
+        return true;
+    }
+
     // TODO: temp hack
-    auto fullPath = mergeWithDefaultLibPath(getDefaultLibPath(), DEFAULT_LIB_DIR "/");
+    auto defaultLibPathVariable = getDefaultLibPath();
+    auto fullPath = mergeWithDefaultLibPath(defaultLibPathVariable, DEFAULT_LIB_DIR "/");
     auto isDir = llvm::sys::fs::is_directory(fullPath);
-    if (!defaultlibpath.empty() && !isDir) 
+    if (!defaultLibPathVariable.empty() && !isDir) 
     {
         llvm::WithColor::error(llvm::errs(), "tsc") << "Default lib path: " << fullPath
                                     << " does not exist or is not a directory\n";
@@ -244,6 +255,7 @@ int main(int argc, char **argv)
     mlirContext.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
     mlirContext.getOrLoadDialect<mlir::arith::ArithDialect>();
     mlirContext.getOrLoadDialect<mlir::math::MathDialect>();
+    mlirContext.getOrLoadDialect<mlir::index::IndexDialect>();
     mlirContext.getOrLoadDialect<mlir::cf::ControlFlowDialect>();
     mlirContext.getOrLoadDialect<mlir::func::FuncDialect>();
     mlirContext.getOrLoadDialect<mlir::DLTIDialect>();
@@ -252,11 +264,8 @@ int main(int argc, char **argv)
     mlirContext.getOrLoadDialect<mlir::async::AsyncDialect>();
 #endif
 
-#ifdef NDEBUG
-    mlirContext.printOpOnDiagnostic(false);
-#else 
-    mlirContext.printStackTraceOnDiagnostic(true);
-#endif
+    mlirContext.printOpOnDiagnostic(printOp.getValue());
+    mlirContext.printStackTraceOnDiagnostic(printStackTrace.getValue());
 
     auto compileOptions = prepareOptions();
 

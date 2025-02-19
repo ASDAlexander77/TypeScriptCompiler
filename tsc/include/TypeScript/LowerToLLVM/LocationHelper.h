@@ -16,150 +16,124 @@ class LocationHelper
     {
     }
 
-    std::pair<LLVM::DIFileAttr, size_t> getLineAndFile(mlir::FileLineColLoc location)
+    std::pair<LLVM::DIFileAttr, std::tuple<size_t, size_t>> getLineAndColumnAndFile(mlir::FileLineColLoc location)
     {
         SmallString<256> FullName(location.getFilename());
         sys::path::remove_filename(FullName);
         auto file = mlir::LLVM::DIFileAttr::get(context, sys::path::filename(location.getFilename()), FullName);        
 
-        return std::make_pair(file, location.getLine());
+        return {file, {location.getLine(), location.getColumn()}};
     }
 
-    std::pair<LLVM::DIFileAttr, size_t> getLineAndFile(mlir::FusedLoc location)
-    {
-        auto locs = location.getLocations();
-        if (locs.size() > 0)
-        {
-            if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
-            {
-                return getLineAndFile(fileLineColLoc);
-            }
-        }
-            
-        return std::make_pair(LLVM::DIFileAttr(), 0);
-    }
-
-    std::pair<LLVM::DIFileAttr, size_t> getLineAndFile(mlir::Location location)
+    std::pair<LLVM::DIFileAttr, std::tuple<size_t, size_t>> getLineAndColumnAndFile(mlir::Location location)
     {
         if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(location))
         {
-            return getLineAndFile(fusedLoc);
+            return getLineAndColumnAndFile(fusedLoc.getLocations().front());
         }
-            
-        return std::make_pair(LLVM::DIFileAttr(), 0);
+        else if (auto namedLoc = dyn_cast<mlir::NameLoc>(location))
+        {
+            return getLineAndColumnAndFile(namedLoc.getChildLoc());
+        }
+        else if (auto fileLineColLoc = dyn_cast<mlir::FileLineColLoc>(location))
+        {
+            return getLineAndColumnAndFile(fileLineColLoc);
+        }
+        else if (auto opaqueLoc = dyn_cast<mlir::OpaqueLoc>(location))
+        {
+            return getLineAndColumnAndFile(opaqueLoc.getFallbackLocation());
+        }
+
+        return {LLVM::DIFileAttr(), {0, 0}};
     }    
 
-    static size_t getLine(mlir::FileLineColLoc location)
+    static std::tuple<size_t, size_t> getLineAndColumn(mlir::FileLineColLoc location)
     {
-        return location.getLine();
+        return {location.getLine(), location.getColumn()};
     }
 
-    static size_t getLine(mlir::FusedLoc location)
+    static std::tuple<size_t, size_t> getLineAndColumn(mlir::Location location)
     {
-        auto line = 0;
-
-        auto locs = location.getLocations();
-        if (locs.size() > 0)
+        if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(location))
         {
-            if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
-            {
-                line = getLine(fileLineColLoc);
-            }
+            return getLineAndColumn(fusedLoc.getLocations().front());
         }
-            
-        return line;
-    }
+        else if (auto namedLoc = dyn_cast<mlir::NameLoc>(location))
+        {
+            return getLineAndColumn(namedLoc.getChildLoc());
+        }
+        else if (auto fileLineColLoc = dyn_cast<mlir::FileLineColLoc>(location))
+        {
+            return getLineAndColumn(fileLineColLoc);
+        }
+        else if (auto opaqueLoc = dyn_cast<mlir::OpaqueLoc>(location))
+        {
+            return getLineAndColumn(opaqueLoc.getFallbackLocation());
+        }
 
-    static size_t getLine(mlir::Location location)
+        return {0, 0};
+    }  
+
+    static std::tuple<size_t, size_t> getSpan(mlir::Location location)
     {
-        auto line = 0;
+        if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(location))
+        {
+            auto [l1, c1] = getLineAndColumn(fusedLoc.getLocations().front());
+            auto [l2, c2] = getLineAndColumn(fusedLoc.getLocations().take_front(2).back());
+            return {l1 + c1 * 255, l2 + c2 * 255 + 1};
+        }
+        else if (auto namedLoc = dyn_cast<mlir::NameLoc>(location))
+        {
+            return getSpan(namedLoc.getChildLoc());
+        }
+        else if (auto fileLineColLoc = dyn_cast<mlir::FileLineColLoc>(location))
+        {
+            auto [l1, c1] = getLineAndColumn(fileLineColLoc);
+            return {l1 + c1 * 255, l1 + c1 * 255 + 1};
+        }
+        else if (auto opaqueLoc = dyn_cast<mlir::OpaqueLoc>(location))
+        {
+            return getSpan(opaqueLoc.getFallbackLocation());
+        }
 
-        mlir::TypeSwitch<mlir::LocationAttr>(location)
-            .Case<mlir::FusedLoc>([&](auto locParam) {
-                line = getLine(locParam);
-            }
-        );       
-            
-        return line;
-    }
+        return {0, 0};
+    }  
+
 
   private:
     MLIRContext *context;    
 };
 
+
 class LLVMLocationHelper
 {
   public:
-    LLVMLocationHelper()
+    static std::pair<StringRef, std::tuple<size_t, size_t>> getLineAndColumnAndFileName(mlir::FileLineColLoc location)
     {
+        return {location.getFilename(), {location.getLine(), location.getColumn()}};
     }
 
-    std::pair<StringRef, size_t> getLineAndFile(mlir::FileLineColLoc location)
-    {
-        SmallString<256> FullName(location.getFilename());
-        sys::path::remove_filename(FullName);
-        auto file = sys::path::filename(location.getFilename());        
-
-        return std::make_pair(file, location.getLine());
-    }
-
-    std::pair<StringRef, size_t> getLineAndFile(mlir::FusedLoc location)
-    {
-        auto locs = location.getLocations();
-        if (locs.size() > 0)
-        {
-            if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
-            {
-                return getLineAndFile(fileLineColLoc);
-            }
-        }
-            
-        return std::make_pair(StringRef(""), 0);
-    }
-
-    std::pair<StringRef, size_t> getLineAndFile(mlir::Location location)
+    static std::pair<StringRef, std::tuple<size_t, size_t>> getLineAndColumnAndFileName(mlir::Location location)
     {
         if (auto fusedLoc = dyn_cast<mlir::FusedLoc>(location))
         {
-            return getLineAndFile(fusedLoc);
+            return getLineAndColumnAndFileName(fusedLoc.getLocations().front());
         }
-            
-        return std::make_pair(StringRef(""), 0);
-    }    
-
-    static size_t getLine(mlir::FileLineColLoc location)
-    {
-        return location.getLine();
-    }
-
-    static size_t getLine(mlir::FusedLoc location)
-    {
-        auto line = 0;
-
-        auto locs = location.getLocations();
-        if (locs.size() > 0)
+        else if (auto namedLoc = dyn_cast<mlir::NameLoc>(location))
         {
-            if (auto fileLineColLoc = locs[0].dyn_cast<mlir::FileLineColLoc>())
-            {
-                line = getLine(fileLineColLoc);
-            }
+            return getLineAndColumnAndFileName(namedLoc.getChildLoc());
         }
-            
-        return line;
-    }
+        else if (auto fileLineColLoc = dyn_cast<mlir::FileLineColLoc>(location))
+        {
+            return getLineAndColumnAndFileName(fileLineColLoc);
+        }
+        else if (auto opaqueLoc = dyn_cast<mlir::OpaqueLoc>(location))
+        {
+            return getLineAndColumnAndFileName(opaqueLoc.getFallbackLocation());
+        }
 
-    static size_t getLine(mlir::Location location)
-    {
-        auto line = 0;
-
-        mlir::TypeSwitch<mlir::LocationAttr>(location)
-            .Case<mlir::FusedLoc>([&](auto locParam) {
-                line = getLine(locParam);
-            }
-        );       
-            
-        return line;
-    }
+        return {"", {0, 0}};
+    }     
 };
 
 }

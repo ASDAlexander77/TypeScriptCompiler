@@ -77,7 +77,8 @@ class ThrowLogic
             }
 
             value =
-                rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(exceptionType), mlir::Value(), rewriter.getBoolAttr(false));
+                rewriter.create<mlir_ts::VariableOp>(
+                    loc, mlir_ts::RefType::get(exceptionType), mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
             // to resolve unrealized_conversion_cast
             value = rewriter.create<mlir_ts::DialectCastOp>(loc, typeConverter.convertType(value.getType()), value);

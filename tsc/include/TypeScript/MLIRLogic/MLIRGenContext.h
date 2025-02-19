@@ -168,6 +168,7 @@ struct GenContext
     mlir::Type receiverFuncType;
     mlir::Type receiverType;
     mlir::StringRef receiverName;
+    bool isGlobalVarReceiver;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
     mlir::SmallVector<mlir::Operation *> *cleanUpOps;
@@ -185,14 +186,12 @@ struct GenContext
     mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages;
     bool specialization;
     // TODO: special hack to detect initializing specialized class and see that generic methods are not initialized at the same time
-    bool instantiateSpecializedClass;
-    bool instantiateSpecializedInterface;
     bool instantiateSpecializedFunction;
 };
 
 struct ValueOrLogicalResult 
 {
-    ValueOrLogicalResult() = default;
+    ValueOrLogicalResult() : result(mlir::success()), value(mlir::Value()) {};
     ValueOrLogicalResult(mlir::LogicalResult result) : result(result) {};
     ValueOrLogicalResult(mlir::Value value) : result(mlir::success()), value(value) {};
 

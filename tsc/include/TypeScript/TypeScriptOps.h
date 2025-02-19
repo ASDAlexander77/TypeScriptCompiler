@@ -31,11 +31,15 @@ struct FieldInfo
     Type type;
     bool isConditional;
 
+    FieldInfo() = default;
+    FieldInfo(Attribute id, Type type) : id{id}, type{type}, isConditional{false} {};
+    FieldInfo(Attribute id, Type type, bool isConditional) : id{id}, type{type}, isConditional{isConditional} {};
+
     // Custom allocation called from generated constructor code
     FieldInfo allocateInto(TypeStorageAllocator &alloc) const
     {
         // return FieldInfo{alloc.copyInto(name), type};
-        return FieldInfo{id, type};
+        return FieldInfo{id, type, false};
     }
 };
 

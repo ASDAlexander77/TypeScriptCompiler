@@ -69,7 +69,7 @@ function main() {
     // support discarding parameters, then you would have to
     // include every option to make the functions match up:
 
-    [createBall(1), createBall(2)].forEach((ball, _index, _balls) => {
+    [createBall(1), createBall(2)].forEach((ball) => {
         print(ball.diameter);
     });
 

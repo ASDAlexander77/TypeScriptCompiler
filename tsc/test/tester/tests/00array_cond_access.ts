@@ -12,5 +12,11 @@ function main()
 	assert(!m);
 	assert(m === null);
 
+    let arr2 : number[] | undefined;
+
+    let r = arr2?.[10];
+
+    assert (typeof r == "undefined");
+
     print("done.");
 }

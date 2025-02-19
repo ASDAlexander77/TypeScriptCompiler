@@ -8,6 +8,8 @@
 
 #include <functional>
 
+#define DEBUG_TYPE "mlir"
+
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
@@ -361,6 +363,9 @@ class MLIRTypeIterator
                           .Case<mlir_ts::SymbolType>([&](auto) {
                               return true;
                           })                          
+                          .Case<mlir_ts::NullType>([&](auto) {
+                              return true;
+                          })                                                 
                           .Case<mlir::NoneType>([&](auto) {
                               return true;
                           })                          
@@ -372,7 +377,7 @@ class MLIRTypeIterator
                           })                          
                           .Case<mlir::IndexType>([&](auto) {
                               return true;
-                          })                          
+                          })     
                           .Default([](mlir::Type t) { 
                             LLVM_DEBUG(llvm::dbgs() << "\n!! Type Iteration is not implemented for : " << t << "\n";);
                             llvm_unreachable("not implemented");
@@ -449,5 +454,7 @@ protected:
 };
 
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_COMMONGENLOGIC_MLIRTYPEITERATOR_H_

@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "mlir"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -14,6 +12,8 @@
 #include "llvm/ADT/SmallPtrSet.h"
 
 #include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "mlir"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -87,7 +87,7 @@ Type mlir_ts::ConstTupleType::parse(AsmParser &parser)
             return Type();
         if (parser.parseRBrace())
             return Type();
-        parameters.push_back(FieldInfo{id, type});
+        parameters.push_back(FieldInfo{id, type, false});
         if (parser.parseOptionalComma())
             break;
     }
@@ -192,7 +192,7 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
 
     bool isLegalToInline(Region *dest, Region *src, bool wouldBeCloned, IRMapping &valueMapping) const final
     {
-        if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(src->getParentOp()))
+        if (auto funcOp = src->getParentOfType<mlir_ts::FuncOp>())
         {
             if (funcOp->getAttr("noinline"))
             {
@@ -201,7 +201,7 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
             }
         }
 
-        if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(dest->getParentOp()))
+        if (auto funcOp = src->getParentOfType<mlir_ts::FuncOp>())
         {
             auto condition = !(funcOp.getPersonality().has_value() && funcOp.getPersonality().value());
             LLVM_DEBUG(llvm::dbgs() << "!! is Legal To Inline (region): " << (condition ? "TRUE" : "FALSE") << " " << funcOp << " = "

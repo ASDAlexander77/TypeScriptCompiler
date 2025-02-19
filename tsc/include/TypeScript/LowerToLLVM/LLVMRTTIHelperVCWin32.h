@@ -406,10 +406,9 @@ class LLVMRTTIHelperVCWin32
             // make array
             mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, th.getArrayType(th.getI32Type(), arraySize));
 
-            auto index = 0;
-            for (auto value : values)
+            for (auto [index, value] : enumerate(values))
             {
-                ch.setStructValue(loc, arrayVal, value, index++);
+                ch.setStructValue(loc, arrayVal, value, index);
             }
 
             // [size, {values...}]

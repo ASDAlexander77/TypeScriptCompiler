@@ -98,6 +98,10 @@ set(LLVM_ENABLE_RTTI "ON")
 set(LLVM_REQUIRES_RTTI "ON")
 set(LLVM_ENABLE_PIC "ON")
 
+# clang fix
+set(CMAKE_BUILD_WITH_INSTALL_RPATH "ON")
+
+
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${CLANG_CMAKE_DIR}")
@@ -115,7 +119,11 @@ include_directories(${PROJECT_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
-add_definitions(-D_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
+if (WIN32)
+else()
+	# linux
+	add_definitions(-D_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
+endif()
 
 # enabling testing
 enable_testing()

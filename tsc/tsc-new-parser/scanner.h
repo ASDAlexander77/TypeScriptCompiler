@@ -100,7 +100,7 @@ static void error(string msg)
     std::wcerr << msg;
 }
 
-template <typename T, typename U> using cb_type = std::function<U(number, number, SyntaxKind, boolean, T, U)>;
+template <typename T, typename U> using cb_type = std::function<U(pos_type, number, SyntaxKind, boolean, T, U)>;
 
 using ErrorCallback = std::function<void(DiagnosticMessage, number, string)>;
 
@@ -389,9 +389,10 @@ class Scanner
      *      return value of the callback.
      */
     template <typename T, typename U>
-    auto iterateCommentRanges(boolean reduce, safe_string text, number pos, boolean trailing, cb_type<T, U> cb, T state, U initial = U())
+    auto iterateCommentRanges(boolean reduce, safe_string text, pos_type posAdv, boolean trailing, cb_type<T, U> cb, T state, U initial = U())
         -> U
     {
+        number pos = posAdv;
         number pendingPos = 0;
         number pendingEnd = 0;
         SyntaxKind pendingKind = SyntaxKind::Unknown;
@@ -520,32 +521,32 @@ class Scanner
         return accumulator;
     }
 
-    template <typename T, typename U> auto forEachLeadingCommentRange(string &text, number pos, cb_type<T, U> cb, T state = T()) -> U
+    template <typename T, typename U> auto forEachLeadingCommentRange(string &text, pos_type pos, cb_type<T, U> cb, T state = T()) -> U
     {
         return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ false, cb, state);
     }
 
-    template <typename T, typename U> auto forEachTrailingCommentRange(string &text, number pos, cb_type<T, U> cb, T state = T()) -> U
+    template <typename T, typename U> auto forEachTrailingCommentRange(string &text, pos_type pos, cb_type<T, U> cb, T state = T()) -> U
     {
         return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ true, cb, state);
     }
 
-    template <typename T, typename U> auto reduceEachLeadingCommentRange(string &text, number pos, cb_type<T, U> cb, T state, U initial)
+    template <typename T, typename U> auto reduceEachLeadingCommentRange(string &text, pos_type pos, cb_type<T, U> cb, T state, U initial)
     {
         return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ false, cb, state, initial);
     }
 
-    template <typename T, typename U> auto reduceEachTrailingCommentRange(string &text, number pos, cb_type<T, U> cb, T state, U initial)
+    template <typename T, typename U> auto reduceEachTrailingCommentRange(string &text, pos_type pos, cb_type<T, U> cb, T state, U initial)
     {
         return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ true, cb, state, initial);
     }
 
-    auto appendCommentRange(number pos, number end, SyntaxKind kind, boolean hasTrailingNewLine, number state,
+    auto appendCommentRange(pos_type pos, number end, SyntaxKind kind, boolean hasTrailingNewLine, number state,
                             std::vector<CommentRange> comments) -> std::vector<CommentRange>;
 
-    auto getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>;
+    auto getLeadingCommentRanges(string &text, pos_type pos) -> std::vector<CommentRange>;
 
-    auto getTrailingCommentRanges(string &text, number pos) -> std::vector<CommentRange>;
+    auto getTrailingCommentRanges(string &text, pos_type pos) -> std::vector<CommentRange>;
 
     /** Optionally, get the shebang */
     auto getShebang(string &text) -> string;
@@ -629,7 +630,7 @@ class Scanner
     auto reScanSlashToken() -> SyntaxKind;
 
     auto appendIfCommentDirective(std::vector<CommentDirective> commentDirectives, string text, regex commentDirectiveRegEx,
-                                  number lineStart) -> std::vector<CommentDirective>;
+                                  pos_type lineStart) -> std::vector<CommentDirective>;
 
     auto getDirectiveFromComment(string &text, regex commentDirectiveRegEx) -> CommentDirectiveType;
 

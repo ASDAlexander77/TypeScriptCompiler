@@ -1,5 +1,3 @@
-#define DEBUG_TYPE "mlir"
-
 #include "TypeScript/Config.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Defines.h"
@@ -20,6 +18,8 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/Support/Debug.h"
+
+#define DEBUG_TYPE "mlir"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -564,17 +564,17 @@ LogicalResult mlir_ts::CastOp::verify()
                 return cmpTypes(item, resType); 
             };
             auto types = inUnionType.getTypes();
-            if (std::find_if(types.begin(), types.end(), pred) == types.end())
+            if (!std::all_of(types.begin(), types.end(), pred))
             {
                 ::typescript::MLIRTypeHelper mth(getContext());
                 mlir::Type baseType;
-                if (!mth.isUnionTypeNeedsTag(inUnionType, baseType))
+                if (!mth.isUnionTypeNeedsTag(inUnionType, baseType)/* && mth.canCastFromTo(baseType, resType)*/)
                 {
                     // we need to ignore this case, for example if union<int, int, int> -> string, we need cast int to string
                     return success();
                 }
 
-                return emitOpError("type [") << inUnionType << "] does not have [" << resType << "] type";
+                return emitOpError("not all types in [") << inUnionType << "] can be casted to [" << resType << "] type";
             }
 
             return success();
@@ -593,6 +593,8 @@ LogicalResult mlir_ts::CastOp::verify()
                 auto types = resUnionType.getTypes();
                 if (std::find_if(types.begin(), types.end(), pred) == types.end())
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "!! Location of CastOp: " << getLoc() << "\n";);
+
                     return emitOpError("type [") << inType << "] can't be stored in [" << resUnionType << "]";
                 }
             }
@@ -690,6 +692,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
+        // TODO: review it, if you still need it as we are should be using "safeCast"
         if (inUnionType && !resUnionType)
         {
             ::typescript::MLIRTypeHelper mth(rewriter.getContext());
@@ -995,9 +998,16 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
 
     // Verify that the operand and result types match the callee.
     auto fnType = fn.getFunctionType();
+    auto isVarArgAttr = fn->getAttrOfType<BoolAttr>("func.varargs");
+    auto isVarArg = (isVarArgAttr) ? isVarArgAttr.getValue() : false;
 
-    auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
-    for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
+    if (!isVarArg && fnType.getNumInputs() != getNumOperands())
+    {
+        return emitOpError("Expected ") << fnType.getNumInputs() << " arguments, but got " << getNumOperands() << ".";
+    }
+
+    auto e = (int) fnType.getNumInputs();
+    for (auto i = 0; i < e; ++i)
     {
         if (getOperand(i).getType() != fnType.getInput(i))
         {
@@ -1006,7 +1016,8 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
         }
     }
 
-    for (unsigned i = 0, e = fnType.getNumResults(); i != e; ++i)
+    e = fnType.getNumResults();
+    for (auto i = 0; i < e; ++i)
     {
         if (getResult(i).getType() != fnType.getResult(i))
         {
@@ -1038,8 +1049,8 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
         results = hybridFuncType.getResults();
     }
 
-    auto optionalFromValue = (int)input.size() - (int)getNumOperands();
-    for (unsigned i = 0, e = optionalFromValue == -1 ? (int)input.size() : getOperands().size(); i != e; ++i)
+    auto e = (int)input.size(); 
+    for (auto i = 0; i < e; ++i)
     {
         if (getOperand(i + 1).getType() != input[i])
         {
@@ -1048,13 +1059,16 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
         }
     }
 
-    for (unsigned i = 0, e = results.size(); i != e; ++i)
+    // it is matched in TypesMatchWith in .td file
+    /*
+    for (auto i = 0, e = results.size(); i != e; ++i)
     {
         if (getResult(i).getType() != results[i])
         {
             return emitOpError("result type mismatch");
         }
     }
+    */
 
     return success();
 }
@@ -1123,12 +1137,12 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                     rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.getIdentifierAttr(), indirectCall.getResultTypes(),
                                                                  args);
 
-                    LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
+                    // LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
 
-                    LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
-                    LLVM_DEBUG(
-                        for (auto &use
-                             : createBoundFunctionOp->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
+                    // LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
+                    // LLVM_DEBUG(
+                    //     for (auto &use
+                    //          : createBoundFunctionOp->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
 
                     if (getMethodOp.use_empty())
                     {
@@ -1164,11 +1178,11 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                 rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRef.getIdentifierAttr(), indirectCall.getResultTypes(),
                                                              args);
 
-                LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
+                // LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
 
-                LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
-                LLVM_DEBUG(for (auto &use
-                                : thisSymbolRef->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
+                // LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
+                // LLVM_DEBUG(for (auto &use
+                //                 : thisSymbolRef->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
 
                 if (getMethodOp.use_empty())
                 {
@@ -1521,6 +1535,8 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
 
     LogicalResult matchAndRewrite(mlir_ts::IfOp op, PatternRewriter &rewriter) const override
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n\n\t IfOp RemoveStaticCondition: \n\n" << op << "'\n";);
+
         auto constant = op.getCondition().getDefiningOp<mlir_ts::ConstantOp>();
         if (!constant)
         {
@@ -1548,6 +1564,100 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
 void mlir_ts::IfOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
 {
     results.insert</*RemoveUnusedResults,*/ RemoveStaticCondition>(context);
+}
+
+namespace
+{
+
+struct SimplifyStaticExpression : public OpRewritePattern<mlir_ts::LogicalBinaryOp>
+{
+    using OpRewritePattern<mlir_ts::LogicalBinaryOp>::OpRewritePattern;
+
+    mlir::Attribute UnwrapConstant(mlir::Value op1) const
+    {
+        mlir::Value opConst = op1;
+        while (opConst && opConst.getDefiningOp() && llvm::isa<mlir_ts::CastOp>(opConst.getDefiningOp())) 
+        {
+            opConst = opConst.getDefiningOp<mlir_ts::CastOp>().getOperand();
+        }
+
+        if (!opConst || !opConst.getDefiningOp())
+        {
+            return mlir::Attribute();
+        }
+
+        if (auto constOp = opConst.getDefiningOp<mlir_ts::ConstantOp>())
+        {
+            return constOp.getValue();
+        }
+
+        return mlir::Attribute();
+    }
+
+    // TODO: complete it
+    std::optional<bool> logicalOpResultOfConstants(unsigned int opCode, mlir::Attribute op1, mlir::Attribute op2) const {
+
+        auto op1Typed = op1.dyn_cast<mlir::TypedAttr>();
+        auto op2Typed = op2.dyn_cast<mlir::TypedAttr>();
+        if (!op1Typed || !op2Typed)
+        {
+            return {};
+        }
+        
+        if (op1Typed.getType() != op2Typed.getType())
+        {
+            return {};
+        }
+
+        // strings
+        if (op1Typed.isa<mlir::StringAttr>())
+        {
+            switch ((SyntaxKind)opCode)
+            {
+            case SyntaxKind::EqualsEqualsToken:
+            case SyntaxKind::EqualsEqualsEqualsToken:
+                return op1Typed.cast<mlir::StringAttr>().getValue().equals(op2Typed.cast<mlir::StringAttr>().getValue());
+            case SyntaxKind::ExclamationEqualsToken:
+            case SyntaxKind::ExclamationEqualsEqualsToken:
+                return !op1Typed.cast<mlir::StringAttr>().getValue().equals(op2Typed.cast<mlir::StringAttr>().getValue());
+            }
+        }
+
+        return {};
+    }
+
+    LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp op, PatternRewriter &rewriter) const override
+    {
+        auto op1 = op.getOperand1();
+        auto op2 = op.getOperand2();
+        
+        auto attrVal1 = UnwrapConstant(op1);
+        if (!attrVal1)
+        {
+            return mlir::failure();
+        }
+
+        auto attrVal2 = UnwrapConstant(op2);
+        if (!attrVal2)
+        {
+            return mlir::failure();
+        }
+
+        auto result = logicalOpResultOfConstants(op.getOpCode(), attrVal1, attrVal2);
+        if (result.has_value())
+        {
+            rewriter.replaceOpWithNewOp<mlir_ts::ConstantOp>(op, mlir_ts::BooleanType::get(rewriter.getContext()), rewriter.getBoolAttr(result.value()));
+            return mlir::success();
+        }
+
+        return mlir::failure();        
+    }
+};
+} // namespace
+
+void mlir_ts::LogicalBinaryOp::getCanonicalizationPatterns(RewritePatternSet &results, MLIRContext *context)
+{
+    results.insert<SimplifyStaticExpression>(context);
 }
 
 void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, Attribute value,

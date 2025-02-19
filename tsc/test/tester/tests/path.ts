@@ -42,9 +42,11 @@ function main() {
     for (let x of pathArray) {
         if (typeof x == "string") {
             assert(x == "path");
+            print(x);
         }
 
-        print(x);
+        // TODO: finish cast union type to single type
+        //print(x);
     }
 
     print("done.");

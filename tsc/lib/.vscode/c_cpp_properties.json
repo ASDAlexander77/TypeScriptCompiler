@@ -26,7 +26,7 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
                 "${workspaceFolder}/../../3rdParty/llvm/debug/include",
-                "${workspaceFolder}/../../__build/tsc/linux-ninja/include",
+                "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/include",
                 "${workspaceFolder}/../tsc-new-parser"
             ],
             "defines": [

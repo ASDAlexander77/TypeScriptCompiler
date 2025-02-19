@@ -18,7 +18,11 @@
 #include "TypeScript/LowerToLLVM/AnyLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
+#include "mlir/Dialect/Index/IR/IndexDialect.h"
+#include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+
+#define DEBUG_TYPE "llvm"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -92,14 +96,14 @@ class CastLogicHelper
             return castBoolToString(in);
         }
 
-        if (inType.isa<mlir::IndexType>() && isResString)
+        if (inType.isIndex() && isResString)
         {
-            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), false);
+            return castIntToString(in, tch.getIndexTypeBitwidth(), false);
         }
 
-        if (inLLVMType.isIntOrIndex() && inType.isa<mlir::IntegerType>() && isResString)
+        if (inType.isa<mlir::IntegerType>() && isResString)
         {
-            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.cast<mlir::IntegerType>().isSignedInteger());
+            return castIntToString(in, inLLVMType.getIntOrFloatBitWidth(), inType.isSignedInteger());
         }
 
         if ((inLLVMType.isF16() || inLLVMType.isF32() || inLLVMType.isF64() || inLLVMType.isF128()) && isResString)
@@ -120,7 +124,19 @@ class CastLogicHelper
             return castF64ToString(in);
         }
 
-        if (inType.isIntOrIndex() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
+        if (inType.isIndex())
+        {
+            if (resType.isSignedInteger())
+            {
+                return rewriter.create<mlir::index::CastSOp>(loc, resLLVMType, in);
+            }
+            else
+            {
+                return rewriter.create<mlir::index::CastUOp>(loc, resLLVMType, in);
+            }
+        }
+
+        if (inType.isSignedInteger() && resType.isSignedInteger() && resType.getIntOrFloatBitWidth() > inType.getIntOrFloatBitWidth())
         {
             return rewriter.create<LLVM::SExtOp>(loc, resLLVMType, in);
         }        
@@ -680,10 +696,19 @@ class CastLogicHelper
                     << inLLVMType << " size of #" << srcSize << ",\n " << resLLVMType << " size of #" << dstSize;
             }
 
-            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
-            auto dstAddr =
-                rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), mlir::Value(), rewriter.getBoolAttr(false));
-            rewriter.create<mlir_ts::MemoryCopyOp>(loc, dstAddr, srcAddr);
+            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(
+                loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
+            auto dstAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), 
+                mlir::Value(), rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
+            if (srcSize <= 8 && dstSize <= 8)
+            {
+                rewriter.create<mlir_ts::LoadSaveOp>(loc, dstAddr, srcAddr);
+            }
+            else
+            {
+                rewriter.create<mlir_ts::CopyStructOp>(loc, dstAddr, srcAddr);
+            }
+
             auto val = rewriter.create<mlir_ts::LoadOp>(loc, resType, dstAddr);
             return val;
         }
@@ -694,17 +719,19 @@ class CastLogicHelper
             if (destPtr.getElementType() == inLLVMType)
             {
                 // alloc and return address
-                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
+                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
+                    loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
                 return valueAddr;
             }
         }
 
         LLVM_DEBUG(llvm::dbgs() << "invalid cast operator type 1: '" << inLLVMType << "', type 2: '" << resLLVMType << "'\n";);
 
-        emitError(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
-        //llvm_unreachable("not implemented");
-
-        return mlir::Value();
+        // TODO: we return undef bacause if "conditional compiling" we can have non compilable code with "cast" to bypass it we need to retun precompiled value
+        emitWarning(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
+        return rewriter.create<LLVM::UndefOp>(loc, resLLVMType);
+        //emitError(loc, "invalid cast from ") << inLLVMType << " to " << resLLVMType;
+        //return mlir::Value();
     }
 
     mlir::Value castTupleToTuple(mlir::Value in, ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, mlir_ts::TupleType tupleTypeRes)
@@ -741,7 +768,6 @@ class CastLogicHelper
         };
 
         // map values
-        auto count = fields.size();
         auto dstIndex = -1;
         for (auto destField : tupleTypeRes.getFields())
         {
@@ -761,9 +787,8 @@ class CastLogicHelper
 
             auto found = false;
             auto anyFieldWithName = false;
-            for (auto index = 0; index < count; index++)
+            for (auto [index, srcField] : enumerate(fields))
             {
-                auto srcField = fields[index];
                 if (!srcField.id)
                 {
                     continue;
@@ -921,13 +946,12 @@ class CastLogicHelper
         {
             auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
             // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
-            // auto copyAllocated = rewriter.create<LLVM::AllocaOp>(loc, arrayPtrType, bytesSize);
+            // auto copyAllocated = ch.Alloca(arrayPtrType, bytesSize);
             auto copyAllocated = ch.MemoryAllocBitcast(arrayPtrType, bytesSize);
 
             auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
             auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
-            rewriter.create<mlir_ts::LoadSaveOp>(loc, ptrToArrayDst, ptrToArraySrc);
-            // rewriter.create<mlir_ts::MemoryCopyOp>(loc, ptrToArrayDst, ptrToArraySrc);
+            rewriter.create<mlir_ts::CopyStructOp>(loc, ptrToArrayDst, ptrToArraySrc);
 
             arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, llvmDestArray, copyAllocated);
         }
@@ -1002,7 +1026,8 @@ class CastLogicHelper
             return clh.castToI8Ptr(variableOp);
         }
 
-        auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false));
+        auto valueAddr = rewriter.create<mlir_ts::VariableOp>(
+            loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false), rewriter.getIndexAttr(0));
 
         mlir::Value valueAddrAsLLVMType = rewriter.create<mlir_ts::DialectCastOp>(loc, tch.convertType(valueAddr.getType()), valueAddr);
 
@@ -1085,5 +1110,7 @@ mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op
 }
 
 } // namespace typescript
+
+#undef DEBUG_TYPE
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_CASTLOGICHELPER_H_

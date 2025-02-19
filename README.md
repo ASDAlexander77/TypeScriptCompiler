@@ -9,10 +9,34 @@
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
 # What's new 
+- improved ```generating debug information``` more info here: [Wiki:How-To](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/How-To#compile-and-debug-with-visual-studio-code)
+```cmd
+tsc --di --opt_level=0 --emit=exe example.ts
+```
+
+- cast from Union Types
+```TypeScript
+let a: string | number = 5;
+let b: string = a; // b is "5"
+```
+
+- All functions without types are generics
+```TypeScript
+static class Array {
+    public of(...arg) {
+        return arg;
+    }
+
+    public from(arrayLike) {
+        return [...arrayLike];
+    }       
+}
+```
+
 - Native types aliases
 ```TypeScript
 // byte, short, ushort, int, uint, long, ulong, char, i8, i16, i32, i64,
-// u8, u16, u32, u64, s8, s16, s32, s64, f16, f32, f64, f128, half, float, double
+// u8, u16, u32, u64, s8, s16, s32, s64, f16, f32, f64, f128, half, float, double, index
 
 const s1: s8 = -1;
 const s2: u16 = 2;

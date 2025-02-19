@@ -202,12 +202,15 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }    
-    else
-    {
-        LLVM_DEBUG(llvm::dbgs() << loc << "\n!! Not implemented operator for type: " << leftType<< "\n";);
-        emitError(loc, "Not implemented operator for type 1: '") << leftType << "'";
-        llvm_unreachable("not implemented");
+    else if (auto leftTupleType = leftType.dyn_cast<mlir_ts::TupleType>())
+    {        
+        // TODO: finish comparing 2 the same tuples
     }
+
+    emitWarning(loc, "Not applicable logical operator for type: '") << leftType << "'";
+    // false by default
+    CodeLogicHelper clh(binOp, builder);
+    return clh.createI1ConstantOf(false);            
 }
 } // namespace typescript
 
