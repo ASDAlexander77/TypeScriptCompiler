@@ -23552,9 +23552,11 @@ genContext);
         {
             if (inferType)
             {
-                auto namedGenType = mlir::cast<mlir_ts::NamedGenericType>(inferType);
-                auto typeParam = std::make_shared<TypeParameterDOM>(namedGenType.getName().getValue().str());
-                zipTypeParameterWithArgument(location, typeParamsWithArgs, typeParam, checkType, false, genContext, false);
+                if (auto namedGenType = mlir::dyn_cast<mlir_ts::NamedGenericType>(inferType))
+                {
+                    auto typeParam = std::make_shared<TypeParameterDOM>(namedGenType.getName().getValue().str());
+                    zipTypeParameterWithArgument(location, typeParamsWithArgs, typeParam, checkType, false, genContext, false);
+                }
             }
 
             resType = getType(conditionalTypeNode->trueType, genContext);
