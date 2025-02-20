@@ -11245,24 +11245,35 @@ class MLIRGenImpl
         {
             MLIRNamespaceGuard ng(currentNamespace);
 
-            // search in outer namespaces
-            while (currentNamespace->isFunctionNamespace)
-            {
-                currentNamespace = currentNamespace->parentNamespace;
-            }
+            auto selectedNamespace = currentNamespace;
 
-            auto &currentNamespacesMap = currentNamespace->namespacesMap;
-            for (auto &selectedNamespace : currentNamespacesMap)
+            while (selectedNamespace)
             {
-                currentNamespace = selectedNamespace.getValue();
-                if (auto funcRef = resolveIdentifierInNamespace(location, name, genContext))
+                // search in outer namespaces
+                while (selectedNamespace->isFunctionNamespace)
                 {
-                    auto result = extensionFunctionLogic(location, funcRef, thisValue, name, genContext);
-                    if (result)
+                    selectedNamespace = selectedNamespace->parentNamespace;
+                }
+
+                for (auto &selectedNamespace : selectedNamespace->namespacesMap)
+                {
+                    if (selectedNamespace.getValue()->isFunctionNamespace)
                     {
-                        return result;
+                        continue;
+                    }
+
+                    currentNamespace = selectedNamespace.getValue();
+                    if (auto funcRef = resolveIdentifierInNamespace(location, name, genContext))
+                    {
+                        auto result = extensionFunctionLogic(location, funcRef, thisValue, name, genContext);
+                        if (result)
+                        {
+                            return result;
+                        }
                     }
                 }
+
+                selectedNamespace = selectedNamespace->parentNamespace;
             }
         }        
 
