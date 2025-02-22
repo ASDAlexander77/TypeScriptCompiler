@@ -5731,6 +5731,7 @@ class MLIRGenImpl
         std::string funcName;
         bool isGeneric;
 
+
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
             builder.setInsertionPointToStart(theModule.getBody());
@@ -6019,11 +6020,13 @@ class MLIRGenImpl
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
         auto funcDeclGenContext = GenContext(genContext);
+
+        auto instantiateSpecializedFunction = funcDeclGenContext.instantiateSpecializedFunction;
                 
         auto isGenericFunction = 
             functionLikeDeclarationBaseAST->typeParameters.size() > 0 
             || !genContext.isGlobalVarReceiver && isGenericParameters(functionLikeDeclarationBaseAST, genContext);
-        if (isGenericFunction && !funcDeclGenContext.instantiateSpecializedFunction)
+        if (isGenericFunction && !instantiateSpecializedFunction)
         {
             auto [result, name] = registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, funcDeclGenContext);
             return {result, mlir_ts::FuncOp(), name, false};
@@ -6036,8 +6039,12 @@ class MLIRGenImpl
             return mlirGenFunctionGenerator(functionLikeDeclarationBaseAST, funcDeclGenContext);
         }
 
+        // we need to clear instantiateSpecializedFunction otherwise nested generics will be 
+        // instantiated as well by mistake
+        funcDeclGenContext.instantiateSpecializedFunction = false;
+
         // do not process generic functions more then 1 time
-        auto checkIfCreated = isGenericFunction && funcDeclGenContext.instantiateSpecializedFunction;
+        auto checkIfCreated = isGenericFunction && instantiateSpecializedFunction;
         if (checkIfCreated)
         {
             auto [fullFunctionName, functionName] = getNameOfFunction(functionLikeDeclarationBaseAST, funcDeclGenContext);
