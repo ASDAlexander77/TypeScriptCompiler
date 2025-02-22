@@ -15647,9 +15647,7 @@ class MLIRGenImpl
             auto captureType = mcl.CaptureType(captureVars->getValue());
             auto result = mlirGenCreateCapture(location, captureType, capturedValues, genContext);
             auto captured = V(result);
-            CAST_A(opaqueTypeValue, location, getOpaqueType(), captured, genContext);
-            return builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
-                                                                  opaqueTypeValue, funcSymbolOp);
+            return builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), captured, funcSymbolOp);
         }
 
         if (thisValue)
