@@ -6592,18 +6592,16 @@ class MLIRGenImpl
             auto result = mlirGen(_captured_name, genContext);
             EXIT_IF_FAILED_OR_NO_VALUE(result)
             auto capturedVarValue = V(result);
-            auto variableRefType = mlir_ts::RefType::get(variableInfo->getType());
 
             auto capturedParam =
-                std::make_shared<VariableDeclarationDOM>(name, variableRefType, variableInfo->getLoc());
-            assert(capturedVarValue);
+                std::make_shared<VariableDeclarationDOM>(name, variableInfo->getType(), variableInfo->getLoc());
             if (isa<mlir_ts::RefType>(capturedVarValue.getType()))
             {
                 capturedParam->setReadWriteAccess();
             }
 
             LLVM_DEBUG(dbgs() << "\n!! captured '\".captured\"->" << name << "' [ " << capturedVarValue
-                              << " ] ref val type: [ " << variableRefType << " ]");
+                              << " ] captured type: " << capturedVarValue.getType() << "\n";);
 
             DECLARE(capturedParam, capturedVarValue);
         }
@@ -15505,6 +15503,9 @@ class MLIRGenImpl
                 LLVM_DEBUG(dbgs() << "\n!! capturing var: [" << value.second->getName()
                                   << "] \n\tvalue pair: " << value.first << " \n\ttype: " << value.second->getType()
                                   << " \n\treadwrite: " << value.second->getReadWriteAccess() << "";);
+
+                // debug ref of ref
+                assert(!isa<mlir_ts::RefType>(value.second->getType()));
 
                 // valueRegion->viewGraph();
                 // const_cast<GenContext &>(genContext).funcOpVarScope.getCallableRegion()->viewGraph();
