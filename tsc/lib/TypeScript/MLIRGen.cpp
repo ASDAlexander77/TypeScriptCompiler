@@ -10396,19 +10396,21 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-
-        if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()) 
-            && MLIRTypeCore::canHaveToPrimitiveMethod(rightExpressionValue.getType()))
+        if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
         {
-            auto type = getNumberType();
-            {
-                CAST(leftExpressionValue, location, type, leftExpressionValue, genContext);
-            }
-            {
-                CAST(rightExpressionValue, location, type, rightExpressionValue, genContext);
-            }
+            auto type = isa<mlir_ts::StringType>(rightExpressionValue.getType()) 
+                ? static_cast<mlir::Type>(getStringType()) 
+                : static_cast<mlir::Type>(getNumberType());
+            CAST(leftExpressionValue, location, type, leftExpressionValue, genContext);
         }
 
+        if (MLIRTypeCore::canHaveToPrimitiveMethod(rightExpressionValue.getType()))
+        {
+            auto type = isa<mlir_ts::StringType>(leftExpressionValue.getType()) 
+                ? static_cast<mlir::Type>(getStringType()) 
+                : static_cast<mlir::Type>(getNumberType());
+            CAST(rightExpressionValue, location, type, rightExpressionValue, genContext);
+        }
 
         // cast step
         switch (opCode)
@@ -10425,21 +10427,11 @@ class MLIRGenImpl
             // cast to int
             if (leftExpressionValue.getType() != builder.getI32Type())
             {
-                if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
-                {
-                    CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
-                }
-
                 CAST(leftExpressionValue, location, builder.getI32Type(), leftExpressionValue, genContext);
             }
 
             if (rightExpressionValue.getType() != builder.getI32Type())
             {
-                if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
-                {
-                    CAST(rightExpressionValue, location, getNumberType(), rightExpressionValue, genContext);
-                }
-
                 CAST(rightExpressionValue, location, builder.getI32Type(), rightExpressionValue, genContext);
             }
 
@@ -10520,32 +10512,9 @@ class MLIRGenImpl
                     CAST(leftExpressionValue, location, leftType, leftExpressionValue, genContext);
                 }
             }
-            else if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
-            {
-                if (MLIRTypeCore::shouldCastToNumber(rightExpressionValue.getType()))
-                {
-                    leftType = getNumberType();
-                }
-                else
-                {
-                    leftType = rightExpressionValue.getType();
-                }
-                
-                if (leftType != leftExpressionValue.getType())
-                {
-                    CAST(leftExpressionValue, location, leftType, leftExpressionValue, genContext);
-                }
-            }
             
             // sync right type to left type
             auto rightType = rightExpressionValue.getType(); 
-            if (MLIRTypeCore::canHaveToPrimitiveMethod(rightType) 
-                && MLIRTypeCore::shouldCastToNumber(leftType))
-            {
-                rightType = getNumberType();
-                CAST(rightExpressionValue, location, rightType, rightExpressionValue, genContext);
-            }
-
             if (leftType != rightType)
             {
                 CAST(rightExpressionValue, location, leftType, rightExpressionValue, genContext);
