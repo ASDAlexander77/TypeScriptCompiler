@@ -10396,6 +10396,20 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+
+        if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()) 
+            && MLIRTypeCore::canHaveToPrimitiveMethod(rightExpressionValue.getType()))
+        {
+            auto type = getNumberType();
+            {
+                CAST(leftExpressionValue, location, type, leftExpressionValue, genContext);
+            }
+            {
+                CAST(rightExpressionValue, location, type, rightExpressionValue, genContext);
+            }
+        }
+
+
         // cast step
         switch (opCode)
         {
@@ -10496,20 +10510,6 @@ class MLIRGenImpl
             break;
         default:
             auto leftType = leftExpressionValue.getType();
-
-            if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()) 
-                && MLIRTypeCore::canHaveToPrimitiveMethod(rightExpressionValue.getType()))
-            {
-                leftType = getNumberType();
-                {
-                    CAST(leftExpressionValue, location, leftType, leftExpressionValue, genContext);
-                }
-                {
-                    CAST(rightExpressionValue, location, leftType, rightExpressionValue, genContext);
-                }
-                
-                return mlir::success();
-            }
 
             // adjust left type
             if (isa<mlir_ts::StringType>(rightExpressionValue.getType()))
