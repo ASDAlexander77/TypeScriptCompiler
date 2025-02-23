@@ -10497,6 +10497,20 @@ class MLIRGenImpl
         default:
             auto leftType = leftExpressionValue.getType();
 
+            if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()) 
+                && MLIRTypeCore::canHaveToPrimitiveMethod(rightExpressionValue.getType()))
+            {
+                leftType = getNumberType();
+                {
+                    CAST(leftExpressionValue, location, leftType, leftExpressionValue, genContext);
+                }
+                {
+                    CAST(rightExpressionValue, location, leftType, rightExpressionValue, genContext);
+                }
+                
+                return mlir::success();
+            }
+
             // adjust left type
             if (isa<mlir_ts::StringType>(rightExpressionValue.getType()))
             {
@@ -10624,20 +10638,72 @@ class MLIRGenImpl
 
                             // we need to remove current implementation as we have different implementation per union type
                             removeGenericFunctionMap(funcName);
+
+                            SmallVector<mlir::Type> classInstancesLeft;
+                            for (auto subType : leftUnionType.getTypes())
+                            {
+                                mlir::TypeSwitch<mlir::Type>(subType)
+                                    .Case<mlir_ts::ClassType>([&](auto classType_) { classInstancesLeft.push_back(classType_); })
+                                    .Default([&](auto type) { 
+                                    });                                   
+                            }                            
+
+                            SmallVector<mlir::Type> classInstancesRight;
+                            for (auto subType : rightUnionType.getTypes())
+                            {
+                                mlir::TypeSwitch<mlir::Type>(subType)
+                                    .Case<mlir_ts::ClassType>([&](auto classType_) { classInstancesRight.push_back(classType_); })
+                                    .Default([&](auto type) { 
+                                    });                                   
+                            }                            
+
+                            TypeOfOpHelper toh(builder);
                             
                             // TODO: must be improved
                             stringstream ss;
 
                             ss << S("function __bin_op_") << stows(opName(opCode)) << S("<L, R>(l: L, r: R) {\n");
 
-                            TypeOfOpHelper toh(builder);
-                            for (auto leftSubType : leftUnionType.getTypes())
-                            {
-                                ss << S("if (typeof(l) == \"") << stows(toh.typeOfAsString(leftSubType)) << S("\") {\n");
+                            auto printRightPart = [&] () {
                                 for (auto rightSubType : rightUnionType.getTypes())
                                 {
-                                    ss << S("if (typeof(r) == \"") << stows(toh.typeOfAsString(rightSubType)) << S("\") ");
-                                    ss << S("return ") << S("l ") << Scanner::tokenStrings[opCode] << S(" r;\n");
+                                    auto typeOfNameRight = toh.typeOfAsString(rightSubType);
+                                    ss << S("if (typeof(r) == \"") << stows(typeOfNameRight) << S("\") ");
+
+                                    if (typeOfNameRight == "class")
+                                    {
+                                        ss << S("{\n");
+                                        for (auto [index, _] : enumerate(classInstancesRight))
+                                        {
+                                            ss << S("if (r instanceof TYPE_INST_RIGHT_ALIAS");
+                                            ss << index;
+                                            ss << S(") return ") << S("l ") << Scanner::tokenStrings[opCode] << S(" r;\n");
+                                        }                                        
+                                        ss << S("}\n");
+                                    }
+                                    else
+                                        ss << S("return ") << S("l ") << Scanner::tokenStrings[opCode] << S(" r;\n");
+                                }
+                            };
+
+                            for (auto leftSubType : leftUnionType.getTypes())
+                            {
+                                auto typeOfNameLeft = toh.typeOfAsString(leftSubType);
+                                ss << S("if (typeof(l) == \"") << stows(typeOfNameLeft) << S("\") {\n");
+                                if (typeOfNameLeft == "class")
+                                {
+                                    for (auto [index, _] : enumerate(classInstancesLeft))
+                                    {
+                                        ss << S("if (l instanceof TYPE_INST_LEFT_ALIAS");
+                                        ss << index;
+                                        ss << S(") {\n");
+                                        printRightPart();
+                                        ss << S("}\n");
+                                    }                                        
+                                }
+                                else
+                                {
+                                    printRightPart();
                                 }
 
                                 ss << S("}\n");
@@ -10666,6 +10732,16 @@ class MLIRGenImpl
                             GenContext funcCallGenContext(genContext);
                             funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_L", leftUnionType});
                             funcCallGenContext.typeAliasMap.insert({".TYPE_ALIAS_R", rightUnionType});
+
+                            for (auto [index, instanceOfType] : enumerate(classInstancesLeft))
+                            {
+                                funcCallGenContext.typeAliasMap.insert({"TYPE_INST_LEFT_ALIAS" + std::to_string(index), instanceOfType});
+                            }
+
+                            for (auto [index, instanceOfType] : enumerate(classInstancesRight))
+                            {
+                                funcCallGenContext.typeAliasMap.insert({"TYPE_INST_RIGHT_ALIAS" + std::to_string(index), instanceOfType});
+                            }
 
                             SmallVector<mlir::Value, 4> operands;
                             operands.push_back(leftExpressionValue);
