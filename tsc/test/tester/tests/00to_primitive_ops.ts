@@ -15,5 +15,6 @@ class Val
 const v = new Val(1);
 assert((v + 1) == 2);
 assert((1 + v) == 2);
+assert((v + v) == 2);
 
 print("done.");
