@@ -10358,11 +10358,21 @@ class MLIRGenImpl
         {
             if (leftExpressionValue.getType() != type)
             {
+                if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
+                {
+                    CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
+                }
+
                 CAST(leftExpressionValue, location, type, leftExpressionValue, genContext);
             }
 
             if (rightExpressionValue.getType() != type)
             {
+                if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
+                {
+                    CAST(rightExpressionValue, location, getNumberType(), rightExpressionValue, genContext);
+                }
+
                 CAST(rightExpressionValue, location, type, rightExpressionValue, genContext);
             }
 
@@ -10401,11 +10411,21 @@ class MLIRGenImpl
             // cast to int
             if (leftExpressionValue.getType() != builder.getI32Type())
             {
+                if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
+                {
+                    CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
+                }
+
                 CAST(leftExpressionValue, location, builder.getI32Type(), leftExpressionValue, genContext);
             }
 
             if (rightExpressionValue.getType() != builder.getI32Type())
             {
+                if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
+                {
+                    CAST(rightExpressionValue, location, getNumberType(), rightExpressionValue, genContext);
+                }
+
                 CAST(rightExpressionValue, location, builder.getI32Type(), rightExpressionValue, genContext);
             }
 
@@ -10414,6 +10434,7 @@ class MLIRGenImpl
         case SyntaxKind::PercentToken:
         case SyntaxKind::AsteriskAsteriskToken:
 
+            // TODO: should it be int type especially PercentToken?
             if (leftExpressionValue.getType() != getNumberType())
             {
                 CAST(leftExpressionValue, location, getNumberType(), leftExpressionValue, genContext);
@@ -10443,6 +10464,7 @@ class MLIRGenImpl
 
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
+                // TODO: do we need to sync type for all Ops?
                 static SmallVector<mlir::Type> types = {
                     builder.getF128Type(), 
                     getNumberType(), builder.getF64Type(), builder.getI64Type(), SInt(64), builder.getIndexType(),
@@ -10473,19 +10495,46 @@ class MLIRGenImpl
 
             break;
         default:
-            auto resultType = leftExpressionValue.getType();
+            auto leftType = leftExpressionValue.getType();
+
+            // adjust left type
             if (isa<mlir_ts::StringType>(rightExpressionValue.getType()))
             {
-                resultType = getStringType();
-                if (resultType != leftExpressionValue.getType())
+                leftType = rightExpressionValue.getType();
+                if (leftType != leftExpressionValue.getType())
                 {
-                    CAST(leftExpressionValue, location, resultType, leftExpressionValue, genContext);
+                    CAST(leftExpressionValue, location, leftType, leftExpressionValue, genContext);
                 }
             }
-
-            if (resultType != rightExpressionValue.getType())
+            else if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
             {
-                CAST(rightExpressionValue, location, resultType, rightExpressionValue, genContext);
+                if (MLIRTypeCore::shouldCastToNumber(rightExpressionValue.getType()))
+                {
+                    leftType = getNumberType();
+                }
+                else
+                {
+                    leftType = rightExpressionValue.getType();
+                }
+                
+                if (leftType != leftExpressionValue.getType())
+                {
+                    CAST(leftExpressionValue, location, leftType, leftExpressionValue, genContext);
+                }
+            }
+            
+            // sync right type to left type
+            auto rightType = rightExpressionValue.getType(); 
+            if (MLIRTypeCore::canHaveToPrimitiveMethod(rightType) 
+                && MLIRTypeCore::shouldCastToNumber(leftType))
+            {
+                rightType = getNumberType();
+                CAST(rightExpressionValue, location, rightType, rightExpressionValue, genContext);
+            }
+
+            if (leftType != rightType)
+            {
+                CAST(rightExpressionValue, location, leftType, rightExpressionValue, genContext);
             }
 
             break;
@@ -10718,9 +10767,15 @@ class MLIRGenImpl
         auto leftExpressionValueBeforeCast = leftExpressionValue;
         auto rightExpressionValueBeforeCast = rightExpressionValue;
 
-        unwrapForBinaryOp(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
+        if (mlir::failed(unwrapForBinaryOp(location, opCode, leftExpressionValue, rightExpressionValue, genContext)))
+        {
+            return mlir::failure();
+        }
 
-        adjustTypesForBinaryOp(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
+        if (mlir::failed(adjustTypesForBinaryOp(location, opCode, leftExpressionValue, rightExpressionValue, genContext)))
+        {
+            return mlir::failure();
+        }
 
         auto resultReturn = binaryOpLogic(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
 
@@ -21467,6 +21522,20 @@ genContext);
                 }
             }
         }
+
+        if (isa<mlir_ts::ClassType>(type) || isa<mlir_ts::InterfaceType>(type))
+        {
+            if (isa<mlir_ts::NumberType>(valueType) 
+                || isa<mlir_ts::BooleanType>(valueType)
+                || isa<mlir_ts::StringType>(valueType)
+                || isa<mlir_ts::BigIntType>(valueType)
+                || isa<mlir::IntegerType>(valueType)
+                || isa<mlir::FloatType>(valueType))
+            {
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
+                return mlir::failure();
+            }
+        }        
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
