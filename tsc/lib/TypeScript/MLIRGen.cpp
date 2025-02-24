@@ -16157,16 +16157,31 @@ class MLIRGenImpl
 
         if (genContext.thisType && name == SUPER_NAME)
         {
+            mlir::Value thisValue;
+            auto thisType = genContext.thisType;
             if (!isa<mlir_ts::ClassType>(genContext.thisType) && !isa<mlir_ts::ClassStorageType>(genContext.thisType))
             {
-                return mlir::Value();
+                auto result = mlirGen(location, THIS_ALIAS, genContext);
+                if (result.failed_or_no_value()) {
+                    return mlir::Value();
+                }
+
+                thisValue = V(result);
+                thisType = thisValue.getType();
+                if (!isa<mlir_ts::ClassType>(thisType) && !isa<mlir_ts::ClassStorageType>(thisType)) {
+                    return mlir::Value();
+                }
+            }
+            else
+            {
+                auto result = mlirGen(location, THIS_NAME, genContext);
+                thisValue = V(result);
             }
 
-            auto result = mlirGen(location, THIS_NAME, genContext);
-            auto thisValue = V(result);
-
-            auto classInfo =
-                getClassInfoByFullName(mlir::cast<mlir_ts::ClassType>(genContext.thisType).getName().getValue());
+            auto fullName = isa<mlir_ts::ClassStorageType>(thisType) 
+                ? mlir::cast<mlir_ts::ClassStorageType>(thisType).getName().getValue() 
+                : mlir::cast<mlir_ts::ClassType>(thisType).getName().getValue();
+            auto classInfo = getClassInfoByFullName(fullName);
             auto baseClassInfo = classInfo->baseClasses.front();
 
             // this is access to static base class
