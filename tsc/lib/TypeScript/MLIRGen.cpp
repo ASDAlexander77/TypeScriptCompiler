@@ -10396,7 +10396,10 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType()))
+        if (MLIRTypeCore::canHaveToPrimitiveMethod(leftExpressionValue.getType())
+            && evaluateProperty(location, leftExpressionValue, SYMBOL_TO_PRIMITIVE, genContext)
+            && !isa<mlir_ts::UndefinedType>(rightExpressionValue.getType())
+            && !isa<mlir_ts::NullType>(rightExpressionValue.getType()))
         {
             auto type = isa<mlir_ts::StringType>(rightExpressionValue.getType()) 
                 ? static_cast<mlir::Type>(getStringType()) 
@@ -10404,7 +10407,10 @@ class MLIRGenImpl
             CAST(leftExpressionValue, location, type, leftExpressionValue, genContext);
         }
 
-        if (MLIRTypeCore::canHaveToPrimitiveMethod(rightExpressionValue.getType()))
+        if (MLIRTypeCore::canHaveToPrimitiveMethod(rightExpressionValue.getType())
+            && evaluateProperty(location, rightExpressionValue, SYMBOL_TO_PRIMITIVE, genContext)
+            && !isa<mlir_ts::UndefinedType>(leftExpressionValue.getType())
+            && !isa<mlir_ts::NullType>(leftExpressionValue.getType()))
         {
             auto type = isa<mlir_ts::StringType>(leftExpressionValue.getType()) 
                 ? static_cast<mlir::Type>(getStringType()) 
@@ -21424,7 +21430,7 @@ genContext);
             }
         }
 
-         if (auto constType = dyn_cast<mlir_ts::ConstType>(type))
+        if (auto constType = dyn_cast<mlir_ts::ConstType>(type))
         {
             // TODO: we can't convert array to const array
 
@@ -21619,6 +21625,18 @@ genContext);
                 return mlir::failure();
             }
         }        
+
+        if (isa<mlir_ts::ClassType>(valueType) || isa<mlir_ts::InterfaceType>(valueType))
+        {
+            if (isa<mlir_ts::NumberType>(type) 
+                || isa<mlir_ts::BigIntType>(type)
+                || isa<mlir::IntegerType>(type)
+                || isa<mlir::FloatType>(type))
+            {
+                emitError(location, "invalid cast from ") << to_print(valueType) << " to " << to_print(type);
+                return mlir::failure();
+            }
+        }             
 
         return V(builder.create<mlir_ts::CastOp>(location, type, value));
     }
