@@ -2253,6 +2253,12 @@ class MLIRGenImpl
         return funcOp->getFuncType();
     }
 
+    void rollbackPostponedErrorMessages(mlir::SmallVector<std::unique_ptr<mlir::Diagnostic>> *postponedMessages, size_t size)
+    {
+        while (size < postponedMessages->size())
+            postponedMessages->pop_back();
+    }
+
     ValueOrLogicalResult instantiateSpecializedFunction(mlir::Location location,
         mlir::Value functionRefValue, mlir::Type recieverType, const GenContext &genContext)
     {
@@ -2288,12 +2294,16 @@ class MLIRGenImpl
         funcGenContext.instantiateSpecializedFunction = true;
         funcGenContext.typeParamsWithArgs = functionGenericTypeInfo->typeParamsWithArgs;
 
+        auto savedErrorMessagesCount = funcGenContext.postponedMessages->size();
+
         if (mlir::failed(processTypeArgumentsFromFunctionParameters(
             functionGenericTypeInfo->functionDeclaration, funcGenContext)))
         {
             emitError(location) << "can't instantiate specialized function from function parameters.";
             return mlir::failure();
         }
+
+        rollbackPostponedErrorMessages(funcGenContext.postponedMessages, savedErrorMessagesCount);
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -7190,7 +7200,7 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
-            emitError(location) << "can't find return variable";
+            emitError(location) << "can't find return variable, seems your function type has 'void' return type.";
             return mlir::failure();
         }
 
@@ -10741,6 +10751,34 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult instantiateGenericsForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
+        mlir::Value &rightExpressionValue, const GenContext &genContext)
+    {
+        if (isGenericFunctionReference(rightExpressionValue))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate function from generic: "
+                                    << rightExpressionValue.getType() << " to match " << leftExpressionValue.getType() << "\n";);
+            auto result = instantiateSpecializedFunction(
+                location, rightExpressionValue, leftExpressionValue.getType(), genContext);
+            if (mlir::failed(result))
+            {
+                return result;
+            }
+
+            auto resultValue = V(result);
+            if (resultValue)
+            {
+                rightExpressionValue = resultValue;
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! instantiated function: "
+                                    << rightExpressionValue << "\n";);
+
+        }      
+        
+        return mlir::success();
+    }
+
     ValueOrLogicalResult mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
@@ -10819,6 +10857,11 @@ class MLIRGenImpl
         auto rightExpressionValueBeforeCast = rightExpressionValue;
 
         if (mlir::failed(unwrapForBinaryOp(location, opCode, leftExpressionValue, rightExpressionValue, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        if (mlir::failed(instantiateGenericsForBinaryOp(location, opCode, leftExpressionValue, rightExpressionValue, genContext))) 
         {
             return mlir::failure();
         }
