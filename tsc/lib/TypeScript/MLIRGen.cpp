@@ -15085,7 +15085,7 @@ class MLIRGenImpl
         auto objThis = getObjectType(objectStorageType);
         
         auto addFuncFieldInfo = [&](mlir::Attribute fieldId, const std::string &funcName,
-                                    mlir_ts::FunctionType funcType) {
+                                    mlir_ts::FunctionType funcType) -> auto {
             auto type = funcType;
 
             values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
@@ -15099,14 +15099,18 @@ class MLIRGenImpl
             {
                 methodInfos.push_back(fieldInfos.size() - 1);
             }
+
+            return mlir::success();
         };
 
-        auto addFieldInfoToArrays = [&](mlir::Attribute fieldId, mlir::Type type) {
+        auto addFieldInfoToArrays = [&](mlir::Attribute fieldId, mlir::Type type) -> auto {
             values.push_back(builder.getUnitAttr());
             fieldInfos.push_back({fieldId, type, false, mlir_ts::AccessLevel::Public});
+
+            return mlir::success();
         };
 
-        auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue, mlir::Type receiverElementType) {
+        auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue, mlir::Type receiverElementType) -> auto {
             mlir::Type type;
             mlir::Attribute value;
             auto isConstValue = true;
@@ -15155,9 +15159,11 @@ class MLIRGenImpl
             {
                 fieldsToSet.push_back({fieldId, itemValue});
             }
+
+            return mlir::success();
         };
 
-        auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) {
+        auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) -> auto {
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.clearReceiverTypes();
@@ -15168,7 +15174,7 @@ class MLIRGenImpl
             auto [funcOp, funcProto, result, isGeneric] = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
             if (mlir::failed(result) || !funcOp)
             {
-                return;
+                return mlir::failure();
             }
 
             // fix this parameter type (taking in account that first type can be captured type)
@@ -15189,10 +15195,10 @@ class MLIRGenImpl
                 }
             }
 
-            addFuncFieldInfo(fieldId, funcName, funcType);
+            return addFuncFieldInfo(fieldId, funcName, funcType);
         };
 
-        auto processFunctionLike = [&](mlir_ts::ObjectType objThis, FunctionLikeDeclarationBase &funcLikeDecl) {
+        auto processFunctionLike = [&](mlir_ts::ObjectType objThis, FunctionLikeDeclarationBase &funcLikeDecl) -> auto {
             auto funcGenContext = GenContext(genContext);
             funcGenContext.clearScopeVars();
             funcGenContext.clearReceiverTypes();
@@ -15203,7 +15209,8 @@ class MLIRGenImpl
             funcLikeDecl->parent = objectLiteral;
 
             mlir::OpBuilder::InsertionGuard guard(builder);
-            mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
+            auto [result, funcOp, funcName, isGeneric] = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
+            return result;
         };
 
         // add all fields
@@ -15290,7 +15297,7 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment value: " << tupleValue << "\n";);
 
-                auto tupleFields = [&] (::llvm::ArrayRef<mlir_ts::FieldInfo> fields) {
+                auto tupleFields = [&] (::llvm::ArrayRef<mlir_ts::FieldInfo> fields) -> auto {
                     SmallVector<mlir::Type> types;
                     for (auto &field : fields)
                     {
@@ -15303,19 +15310,23 @@ class MLIRGenImpl
                     // read all fields
                     for (auto pair : llvm::zip(fields, res.getResults()))
                     {
-                        addFieldInfo(
+                        if (mlir::failed(addFieldInfo(
                             std::get<0>(pair).id, 
                             std::get<1>(pair), 
                             receiverType 
                                 ? getTypeByFieldNameFromReceiverType(std::get<0>(pair).id, receiverType) 
-                                : mlir::Type());
+                                : mlir::Type()))) {
+                            return mlir::failure();
+                        }
                     }
+
+                    return mlir::success();
                 };
 
-                mlir::TypeSwitch<mlir::Type>(tupleValue.getType())
-                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { tupleFields(tupleType.getFields()); })
+                auto resultForTuple = mlir::TypeSwitch<mlir::Type, mlir::LogicalResult>(tupleValue.getType())
+                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { return tupleFields(tupleType.getFields()); })
                     .template Case<mlir_ts::ConstTupleType>(
-                        [&](auto constTupleType) { tupleFields(constTupleType.getFields()); })
+                        [&](auto constTupleType) { return tupleFields(constTupleType.getFields()); })
                     .template Case<mlir_ts::InterfaceType>(
                         [&](auto interfaceType) { 
                             mlir::SmallVector<mlir_ts::FieldInfo> destFields;
@@ -15330,10 +15341,14 @@ class MLIRGenImpl
                                         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, tupleValue, fieldInfo.id);
                                         // TODO: implemenet conditional
                                         mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, interfaceFieldInfo->isConditional, cl, genContext); 
-                                        addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType);
+                                        if (mlir::failed(addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType))) {
+                                            return mlir::failure();
+                                        }
                                     }
                                 }
                             }
+
+                            return mlir::success();
                         })
                     .template Case<mlir_ts::ClassType>(
                         [&](auto classType) { 
@@ -15350,15 +15365,24 @@ class MLIRGenImpl
                                         MLIRPropertyAccessCodeLogic cl(compileOptions, builder, location, tupleValue, fieldInfo.id);
                                         // TODO: implemenet conditional
                                         mlir::Value propertyAccess = mlirGenPropertyAccessExpressionLogic(location, tupleValue, false, cl, genContext); 
-                                        addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType);
+                                        if (mlir::failed(addFieldInfo(fieldInfo.id, propertyAccess, receiverElementType))) {
+                                            return mlir::failure();
+                                        }
                                     }
                                 }
                             }
+
+                            return mlir::success();
                         })                        
                     .Default([&](auto type) { 
                         LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment not implemented for type: " << type << "\n";);
                         llvm_unreachable("not implemented"); 
+                        return mlir::failure();
                     });
+
+                if (mlir::failed(resultForTuple)) {
+                    return resultForTuple;
+                }
 
                 continue;
             }
@@ -15369,7 +15393,9 @@ class MLIRGenImpl
 
             assert(genContext.allowPartialResolve || itemValue);
 
-            addFieldInfo(fieldId, itemValue, receiverElementType);
+            if (mlir::failed(addFieldInfo(fieldId, itemValue, receiverElementType))) {
+                return mlir::failure();
+            }
         }
 
         // update after processing all fields
@@ -15390,7 +15416,9 @@ class MLIRGenImpl
 
                 auto funcLikeDecl = propertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
                 fieldId = TupleFieldName(propertyAssignment->name, genContext);
-                processFunctionLikeProto(fieldId, funcLikeDecl);
+                if (mlir::failed(processFunctionLikeProto(fieldId, funcLikeDecl))) {
+                    return mlir::failure();
+                }
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
@@ -15403,7 +15431,9 @@ class MLIRGenImpl
 
                 auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
                 fieldId = TupleFieldName(shorthandPropertyAssignment->name, genContext);
-                processFunctionLikeProto(fieldId, funcLikeDecl);
+                if (mlir::failed(processFunctionLikeProto(fieldId, funcLikeDecl))) {
+                    return mlir::failure();
+                }
             }
             else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
@@ -15420,7 +15450,9 @@ class MLIRGenImpl
                     fieldId = mlir::StringAttr::get(builder.getContext(), mlir::StringRef(newField).copy(stringAllocator));                    
                 }
 
-                processFunctionLikeProto(fieldId, funcLikeDecl);
+                if (mlir::failed(processFunctionLikeProto(fieldId, funcLikeDecl))) {
+                    return mlir::failure();
+                }
             }          
         }
 
@@ -15460,15 +15492,15 @@ class MLIRGenImpl
         {
             // add all captured
             SmallVector<mlir::Value> accumulatedCapturedValues;
-            if (mlir::failed(mlirGenResolveCapturedVars(location, accumulatedCaptureVars, accumulatedCapturedValues,
-                                                        genContext)))
-            {
+            if (mlir::failed(mlirGenResolveCapturedVars(location, accumulatedCaptureVars, accumulatedCapturedValues, genContext))) {
                 return mlir::failure();
             }
 
             auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars),
                                                       accumulatedCapturedValues, genContext);
-            addFieldInfo(MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue, mlir::Type());
+            if (mlir::failed(addFieldInfo(MLIRHelper::TupleFieldName(CAPTURED_NAME, builder.getContext()), capturedValue, mlir::Type()))) {
+                return mlir::failure();
+            }
         }
 
         // final type, update
@@ -15487,7 +15519,9 @@ class MLIRGenImpl
                 }
 
                 auto funcLikeDecl = propertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
-                processFunctionLike(objThis, funcLikeDecl);
+                if (mlir::failed(processFunctionLike(objThis, funcLikeDecl))) {
+                    return mlir::failure();
+                }
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
@@ -15499,12 +15533,16 @@ class MLIRGenImpl
                 }
 
                 auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
-                processFunctionLike(objThis, funcLikeDecl);
+                if (mlir::failed(processFunctionLike(objThis, funcLikeDecl))) {
+                    return mlir::failure();
+                }
             }
             else if (item == SyntaxKind::MethodDeclaration || item == SyntaxKind::GetAccessor || item == SyntaxKind::SetAccessor)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
-                processFunctionLike(objThis, funcLikeDecl);
+                if (mlir::failed(processFunctionLike(objThis, funcLikeDecl))) {
+                    return mlir::failure();
+                }
             }
         }
 
