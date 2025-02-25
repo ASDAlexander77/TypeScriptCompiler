@@ -253,7 +253,7 @@ class MLIRCodeLogic
 
     mlir::Type CaptureTypeStorage(llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> &capturedVars)
     {
-        SmallVector<mlir_ts::FieldInfo> fields;
+        SmallVector<mlir_ts::FieldInfo> fields; 
         for (auto &varInfo : capturedVars)
         {
             auto &value = varInfo.getValue();

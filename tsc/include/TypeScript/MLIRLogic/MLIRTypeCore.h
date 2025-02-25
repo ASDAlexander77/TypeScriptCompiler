@@ -16,6 +16,21 @@ class MLIRTypeCore
 {  
 public:    
 
+    static bool canHaveToPrimitiveMethod(mlir::Type type)
+    {
+        return isa<mlir_ts::ClassType>(type) 
+                || isa<mlir_ts::InterfaceType>(type)
+                || isa<mlir_ts::ObjectType>(type)
+                || isa<mlir_ts::TupleType>(type)
+                || isa<mlir_ts::ConstTupleType>(type);
+    }
+
+    static bool shouldCastToNumber(mlir::Type type)
+    {
+        return isa<mlir::IntegerType>(type) 
+            || isa<mlir::FloatType>(type);
+    }
+
     static bool isNullableTypeNoUnion(mlir::Type typeIn)
     {
         if (isa<mlir_ts::NullType>(typeIn) 

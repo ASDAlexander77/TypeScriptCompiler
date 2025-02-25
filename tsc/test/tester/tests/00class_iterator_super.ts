@@ -7,3 +7,5 @@ class C9 extends B9 {
         super.g();
     }
 }
+
+print("done.");

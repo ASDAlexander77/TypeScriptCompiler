@@ -1,7 +1,7 @@
 function render(screenWidth, screenHeight) {
     const getPoint = (x, y) => {
-        const recenterX = x => (x - (screenWidth / 2.0)) / 2.0 / screenWidth;
-        const recenterY = y => -(y - (screenHeight / 2.0)) / 2.0 / screenHeight;
+        const recenterX = x1 => (x1 - (screenWidth / 2.0)) / 2.0 / screenWidth;
+        const recenterY = y1 => -(y1 - (screenHeight / 2.0)) / 2.0 / screenHeight;
         return recenterX(x) + recenterY(y);
     }
 
@@ -21,4 +21,4 @@ function render(screenWidth, screenHeight) {
 
 render(1024, 768);
 
-print('done');
+print("done.");
