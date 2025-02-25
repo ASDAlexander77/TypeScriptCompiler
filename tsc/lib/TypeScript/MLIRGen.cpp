@@ -9255,6 +9255,11 @@ class MLIRGenImpl
                 auto result = mlirGen(rightExpression, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 resultTrue = V(result);
+
+                if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, resultTrue, genContext))) 
+                {
+                    return mlir::failure();
+                }
             }
             else
             {
@@ -9293,6 +9298,11 @@ class MLIRGenImpl
                 auto result = mlirGen(rightExpression, genContext);
                 EXIT_IF_FAILED_OR_NO_VALUE(result)
                 resultFalse = V(result);
+
+                if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, resultFalse, genContext))) 
+                {
+                    return mlir::failure();
+                }                
             }
 
             if (!andOp)
@@ -9394,6 +9404,11 @@ class MLIRGenImpl
         EXIT_IF_FAILED_OR_NO_VALUE(result2)
         auto resultTrue = V(result2);
 
+        if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, resultTrue, genContext))) 
+        {
+            return mlir::failure();
+        }        
+
         // sync left part
         if (resultType != resultTrue.getType())
         {
@@ -9404,6 +9419,11 @@ class MLIRGenImpl
 
         builder.setInsertionPointToStart(&ifOp.getElseRegion().front());
         auto resultFalse = leftExpressionValue;
+
+        if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, resultFalse, genContext))) 
+        {
+            return mlir::failure();
+        }
 
         // sync right part
         if (resultType != resultFalse.getType())
@@ -10751,7 +10771,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult instantiateGenericsForBinaryOp(mlir::Location location, SyntaxKind opCode, mlir::Value &leftExpressionValue,
+    mlir::LogicalResult instantiateGenericsForBinaryOp(mlir::Location location, mlir::Value &leftExpressionValue,
         mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         if (isGenericFunctionReference(rightExpressionValue))
@@ -10861,7 +10881,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        if (mlir::failed(instantiateGenericsForBinaryOp(location, opCode, leftExpressionValue, rightExpressionValue, genContext))) 
+        if (mlir::failed(instantiateGenericsForBinaryOp(location, leftExpressionValue, rightExpressionValue, genContext))) 
         {
             return mlir::failure();
         }
