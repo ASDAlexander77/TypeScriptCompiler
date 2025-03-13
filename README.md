@@ -412,7 +412,9 @@ build_tsc_release.bat
 ### On Linux (Ubuntu 20.04 and 22.04)
 #### Requirements:
 
-- ``GCC`` or ``Clang``
+- `gcc` or `clang`
+- `cmake`
+- `ninja-build`
 - 512GB of free space on disk
 - sudo apt-get install ``libtinfo-dev``
 
