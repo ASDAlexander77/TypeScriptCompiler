@@ -30,7 +30,7 @@ jobs:
 #      run: Get-PSDrive
 #      shell: pwsh
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Cache Build 3rd Party
       id: cache-3rd-party
