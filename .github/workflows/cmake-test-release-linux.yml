@@ -34,21 +34,21 @@ jobs:
 
     - name: Cache Build 3rd Party
       id: cache-3rd-party
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: __build/llvm/ninja
         key: ${{ runner.os }}-build-llvm-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
     - name: Cache 3rd Party binaries
       id: cache-3rd-party-binary
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: 3rdParty
         key: ${{ runner.os }}-3rd-party-${{ env.LLVM_VERSION }}-${{ env.CACHE_VERSION }}
 
     - name: Cache 3rd Party binaries - LLVM ${{ env.LLVM_VERSION }} Release
       id: cache-3rd-party-binary-llvm-release
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: llvm_${{ env.LLVM_VERSION }}_release.tgz
         key: ${{ runner.os }}-3rd-party-llvm-${{ env.LLVM_VERSION }}-release-${{ env.CACHE_VERSION }}
