@@ -12,7 +12,7 @@ IF EXIST ".\3rdParty\llvm\x64\%BUILD%\bin" (
 ) ELSE (
   cd %p%
   echo "Downloading LLVM"
-  git submodule update --init --recursive
+  git submodule update --init --recursive --progress
   rem copy /Y .\docs\fix\AddCompilerRT.cmake .\3rdParty\llvm-project\compiler-rt\cmake\Modules\
   echo "Configuring LLVM (%BUILD%)"
   cd %p%

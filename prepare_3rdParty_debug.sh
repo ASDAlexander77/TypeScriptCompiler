@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Downloading LLVM"
-git submodule update --init --recursive
+git submodule update --init --recursive --progress
 echo "Configuring LLVM (Debug)"
 ./scripts/config_llvm_debug.sh
 echo "Building LLVM (Debug)"
