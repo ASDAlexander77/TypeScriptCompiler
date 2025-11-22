@@ -21,9 +21,9 @@
             "name": "windows-msbuild",
             "hidden": true,
             "inherits": "default",
-            "generator": "Visual Studio 17 2022",
-            "displayName": "Visual Studio Professional 2022 - x86_amd64",
-            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
+            "generator": "Visual Studio 18 2026",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64",
+            "description": "Using compilers for Visual Studio 18 2026 (x86_x64 architecture)",
             "toolset": "host=x64",
             "architecture": "x64",
             "cacheVariables": {
@@ -45,8 +45,8 @@
         },
         {
             "name": "windows-msbuild-debug",
-            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Debug",
-            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64 - Debug",
+            "description": "Using compilers for Visual Studio 18 2026 (x86_x64 architecture)",
             "inherits": "windows-msbuild",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
@@ -54,8 +54,8 @@
         },
         {
             "name": "windows-msbuild-release",
-            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Release",
-            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64 - Release",
+            "description": "Using compilers for Visual Studio 18 2026 (x86_x64 architecture)",
             "inherits": "windows-msbuild",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
@@ -139,13 +139,13 @@
     "buildPresets": [
         {
             "name": "build-windows-msbuild-debug",
-            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Debug",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64 - Debug",
             "configurePreset": "windows-msbuild-debug",
             "configuration": "Debug"
         },
         {
             "name": "build-windows-msbuild-release",
-            "displayName": "Visual Studio Professional 2022 - x86_amd64 - Release",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64 - Release",
             "configurePreset": "windows-msbuild-release",
             "configuration": "Release"
         },
