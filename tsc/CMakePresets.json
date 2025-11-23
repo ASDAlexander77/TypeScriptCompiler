@@ -62,6 +62,62 @@
             }
         },
         {
+            "name": "windows-ninja",
+            "hidden": true,
+            "inherits": "default",
+            "generator": "Ninja Multi-Config",
+            "displayName": "Ninja Multi-Config",
+            "description": "Clang++ (current) x86_64-win32-gnu",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "1"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "windows-ninja-debug",
+            "hidden": true,
+            "inherits": "windows-ninja",
+            "displayName": "Ninja Multi-Config - Debug",
+            "description": "Ninja Multi-Config - Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "windows-ninja-release",
+            "hidden": true,
+            "inherits": "windows-ninja",
+            "displayName": "Ninja Multi-Config - Release",
+            "description": "Ninja Multi-Config - Release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "windows-ninja-clang-debug",
+            "inherits": "windows-ninja-debug",
+            "displayName": "Clang (current) Debug",
+            "description": "Using compilers: C = clang, CXX = clang++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "windows-ninja-clang-release",
+            "inherits": "windows-ninja-release",
+            "displayName": "Clang (current) Release",
+            "description": "Using compilers: C = clang, CXX = clang++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
             "name": "linux-ninja",
             "hidden": true,
             "inherits": "default",
