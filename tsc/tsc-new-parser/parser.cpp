@@ -7731,13 +7731,13 @@ struct Parser
 
         // parse leading decorators
         if (allowDecorators && token() == SyntaxKind::AtToken) {
-            while (decorator = tryParseDecorator()) {
+            while ((decorator = tryParseDecorator())) {
                 list = append(list, decorator);
             }
         }
 
         // parse leading modifiers
-        while (modifier = tryParseModifier(hasSeenStaticModifier, permitConstAsModifier, stopOnStartOfClassStaticBlock)) {
+        while ((modifier = tryParseModifier(hasSeenStaticModifier, permitConstAsModifier, stopOnStartOfClassStaticBlock))) {
             if (modifier == SyntaxKind::StaticKeyword) hasSeenStaticModifier = true;
             list = append(list, modifier);
             hasLeadingModifier = true;
@@ -7745,7 +7745,7 @@ struct Parser
 
         // parse trailing decorators, but only if we parsed any leading modifiers
         if (hasLeadingModifier && allowDecorators && token() == SyntaxKind::AtToken) {
-            while (decorator = tryParseDecorator()) {
+            while ((decorator = tryParseDecorator())) {
                 list = append(list, decorator);
                 hasTrailingDecorator = true;
             }
@@ -7753,7 +7753,7 @@ struct Parser
 
         // parse trailing modifiers, but only if we parsed any trailing decorators
         if (hasTrailingDecorator) {
-            while (modifier = tryParseModifier(hasSeenStaticModifier, permitConstAsModifier, stopOnStartOfClassStaticBlock)) {
+            while ((modifier = tryParseModifier(hasSeenStaticModifier, permitConstAsModifier, stopOnStartOfClassStaticBlock))) {
                 if (modifier == SyntaxKind::StaticKeyword) hasSeenStaticModifier = true;
                 list = append(list, modifier);
             }
