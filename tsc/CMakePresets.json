@@ -98,6 +98,26 @@
             }
         },
         {
+            "name": "windows-ninja-clangcl-debug",
+            "inherits": "windows-ninja-debug",
+            "displayName": "ClangCL (current) Debug",
+            "description": "Using compilers: C = clang-cl, CXX = clang-cl",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang-cl",
+                "CMAKE_CXX_COMPILER": "clang-cl"
+            }
+        },
+        {
+            "name": "windows-ninja-clangcl-release",
+            "inherits": "windows-ninja-release",
+            "displayName": "ClangCL (current) Release",
+            "description": "Using compilers: C = clang-cl, CXX = clang-cl",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang-cl",
+                "CMAKE_CXX_COMPILER": "clang-cl"
+            }
+        },
+        {
             "name": "windows-ninja-clang-debug",
             "inherits": "windows-ninja-debug",
             "displayName": "Clang (current) Debug",
