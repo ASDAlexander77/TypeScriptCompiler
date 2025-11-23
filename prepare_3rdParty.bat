@@ -5,6 +5,9 @@ if not "%1"=="" (
 	set BUILD=%1
 )
 
+set GC_VER=8.2.8
+set LIBATOMIC_OPS_VER=7.8.2
+
 set p=%cd%
 
 IF EXIST ".\3rdParty\llvm\x64\%BUILD%\bin" (
@@ -27,17 +30,15 @@ IF EXIST ".\3rdParty\gc\x64\%BUILD%\gc-lib.lib" (
 ) ELSE (
   cd %p%
   echo "Downloading BDWGC"
-  curl -o gc-8.0.4.tar.gz https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz
+  curl -o gc-%GC_VER%.tar.gz https://www.hboehm.info/gc/gc_source/gc-%GC_VER%.tar.gz
   echo "Opening TAR.GZ BDWGC"  
-  tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
+  tar -xvzf gc-%GC_VER%.tar.gz -C ./3rdParty/
   echo "Downloading Libatomic_ops"
-  curl -o libatomic_ops-7.6.10.tar.gz https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz
+  curl -o libatomic_ops-%LIBATOMIC_OPS_VER%.tar.gz https://www.hboehm.info/gc/gc_source/libatomic_ops-%LIBATOMIC_OPS_VER%.tar.gz
   echo "Opening TAR.GZ Libatomic_ops"  
-  tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
-  echo "Copy to gc-<ver>/libatomic_ops"  
-  xcopy  /E /H /C /I /Y .\3rdParty\libatomic_ops-7.6.10\ .\3rdParty\gc-8.0.4\libatomic_ops\
-  echo "Copy fixes"  
-  xcopy  /E /H /C /I /Y .\docs\fix\gc\ .\3rdParty\gc-8.0.4\
+  tar -xvzf libatomic_ops-%LIBATOMIC_OPS_VER%.tar.gz -C ./3rdParty/
+  echo "Copy to gc-%GC_VER%/libatomic_ops"  
+  xcopy  /E /H /C /I /Y .\3rdParty\libatomic_ops-%LIBATOMIC_OPS_VER%\ .\3rdParty\gc-%GC_VER%\libatomic_ops\
   cd %p%
   @call scripts\build_gc_%BUILD%_%TOOL%.bat
   cd %p%

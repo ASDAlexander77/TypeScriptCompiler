@@ -115,9 +115,9 @@ bool checkFileExistsAtPath(std::string path, std::string fileName)
 void checkGCLibPath(std::string path)
 {
 #ifdef WIN32
-    const auto libName = "gcmt-lib.lib";
+    const auto libName = "gc.lib";
 #else    
-    const auto libName = "libgcmt-lib.a";
+    const auto libName = "libgc.a";
 #endif    
     checkFileExistsAtPath(path, libName);
 }
@@ -465,7 +465,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     // tsc libs
     if (!disableGC)
     {    
-        args.push_back("-lgcmt-lib");
+        args.push_back("-lgc");
     }
 
     if (isTscLibNeeded)

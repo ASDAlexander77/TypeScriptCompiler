@@ -1,4 +1,4 @@
-include_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc-8.0.4/include/")
+include_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc-8.2.8/include/")
 
 string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
 if(MSVC)
@@ -25,5 +25,5 @@ add_mlir_library(TypeScriptRuntime
   EXCLUDE_FROM_LIBMLIR
 
   LINK_LIBS PRIVATE
-  gcmt-lib
+  gc
 )

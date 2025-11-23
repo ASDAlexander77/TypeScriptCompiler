@@ -1,9 +1,9 @@
 #include "helper.h"
 
 #if WIN32
-#define GC_LIB "gcmt-lib.lib "
+#define GC_LIB "gc.lib "
 #else
-#define GC_LIB "-lgcmt-lib "
+#define GC_LIB "-lgc "
 #endif
 #ifdef WIN32
 #define TYPESCRIPT_LIB "TypeScriptAsyncRuntime.lib "
