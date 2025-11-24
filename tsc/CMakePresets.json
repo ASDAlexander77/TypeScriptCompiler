@@ -98,7 +98,7 @@
             "inherits": "default",
             "generator": "Ninja Multi-Config",
             "displayName": "Ninja Multi-Config",
-            "description": "Clang++ (current) x86_64-win32-gnu",
+            "description": "Clang++ (current) x86_64-pc-windows-msvc",
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "1"
             },
