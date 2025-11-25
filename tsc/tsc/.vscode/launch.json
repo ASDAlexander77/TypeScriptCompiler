@@ -503,7 +503,7 @@
             "name": "(Windows) tsc.exe - JIT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=jit",
                 "I:/Playground/1.ts",
@@ -511,7 +511,7 @@
                 "-mlir-disable-threading",
                 "-di",
                 "--default-lib-path=I:/TypeScriptCompilerDefaultLib/__build/debug",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll",
+                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll",
                 "--shared-libs=I:/Playground/export_enum.dll"
             ],
             "stopAtEntry": false,
@@ -524,7 +524,7 @@
             "name": "(Windows) tsc.exe - JIT (no default)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=jit",
                 "I:/Playground/1.ts",
@@ -532,7 +532,7 @@
                 "-mlir-disable-threading",
                 "-di",
                 "--no-default-lib",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/TypeScriptRuntime.dll"
+                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,
             "cwd": "I:/Playground",
