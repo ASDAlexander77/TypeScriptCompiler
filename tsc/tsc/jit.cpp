@@ -92,9 +92,6 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
 #endif    
 
-    // TODO: remove it
-    _CrtDumpMemoryLeaks();
-
     llvm::PrettyStackTraceProgram X(argc, argv);
     llvm::setBugReportMsg("PLEASE submit a bug report to https://github.com/ASDAlexander77/TypeScriptCompiler/issues and include the crash backtrace.");
 
