@@ -97,6 +97,8 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
 
     llvm::llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
 
+    // No leaks until here
+
     registerMLIRDialects(module);
 
     // Initialize LLVM targets.
@@ -104,9 +106,6 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     llvm::InitializeNativeTargetAsmPrinter();
 
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
-
-    // TODO: remove it
-    //_CrtDumpMemoryLeaks();
 
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
