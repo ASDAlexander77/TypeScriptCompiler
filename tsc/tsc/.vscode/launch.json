@@ -511,8 +511,7 @@
                 "-mlir-disable-threading",
                 "-di",
                 "--default-lib-path=I:/TypeScriptCompilerDefaultLib/__build/debug",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll",
-                "--shared-libs=I:/Playground/export_enum.dll"
+                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
