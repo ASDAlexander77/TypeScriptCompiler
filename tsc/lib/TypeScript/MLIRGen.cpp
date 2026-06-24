@@ -22593,19 +22593,30 @@ genContext);
         for (auto [index, typeParam] : enumerate(typeParams))
         {
             auto isDefault = false;
-            auto type = index < argsCount
-                            ? getType(typeArgs[index], genContext)
-                            : (isDefault = true, typeParam->hasDefault() 
-                                ? getType(typeParam->getDefault(), genContext) 
-                                : typeParam->hasConstraint() 
-                                    ? getType(typeParam->getConstraint(), genContext) 
-                                    : mlir::Type());
+            mlir::Type type;
+            if (index < argsCount)
+            {
+                type = getType(typeArgs[index], genContext);
+            }
+            else
+            {
+                isDefault = true;
+                if (typeParam->hasDefault())
+                {
+                    type = getType(typeParam->getDefault(), genContext);
+                }
+                else if (typeParam->hasConstraint())
+                {
+                    type = getType(typeParam->getConstraint(), genContext);
+                }
+            }
+
             if (!type)
             {
                 if (isDefault && !typeParam->hasDefault() && argsCount == 0)
                 {
                     // seems creating instance without TypeParams, can be used instance with the same name
-                    // scuh as Point and Point<T>
+                    // such as Point and Point<T>
                     return {mlir::failure(), IsGeneric::NoDefaults};    
                 }
 

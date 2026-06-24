@@ -8,7 +8,7 @@
             "name": "(Windows) tsc.exe - DUMP",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=ast",
                 "C:/temp/1.ts"
@@ -23,7 +23,7 @@
             "name": "(Windows) tsc.exe - MLIR",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir",
@@ -59,7 +59,7 @@
             "name": "(Windows) tsc.exe - MLIR-AFFINE",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=mlir-affine",
                 "--opt",
@@ -95,7 +95,7 @@
             "name": "(Windows) tsc.exe - MLIR-LLVM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=mlir-llvm",
                 "-debug-only=affine,llvm",
@@ -127,7 +127,7 @@
             "name": "(Windows) tsc.exe - LLVM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=llvm",
                 "-mlir-disable-threading",
@@ -163,7 +163,7 @@
             "name": "(Windows) tsc.exe - BC",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=bc",
                 "-opt",
@@ -198,7 +198,7 @@
             "name": "(Windows) tsc.exe - ASM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=asm",
                 "-opt",
@@ -217,7 +217,7 @@
             "name": "(Windows) tsc.exe - EXE",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=exe",
                 "-di",
@@ -243,7 +243,7 @@
                 },
                 {
                     "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/lib"
+                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
@@ -280,7 +280,7 @@
                 },
                 {
                     "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/lib"
+                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
@@ -292,7 +292,7 @@
             "name": "(Windows) tsc.exe - EXE(DI) - NO DEFAULT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=exe",
                 "--di",
@@ -317,7 +317,7 @@
                 },
                 {
                     "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/lib"
+                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
@@ -327,7 +327,7 @@
             "name": "(Windows) tsc.exe - EXE(OPT) - NO DEFAULT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=exe",
                 "--opt",
@@ -396,7 +396,7 @@
             "name": "(Windows) tsc.exe - LLVM - NO DEFAULT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=llvm",
                 "-di",
@@ -420,7 +420,7 @@
                 },
                 {
                     "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/lib"
+                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
@@ -430,7 +430,7 @@
             "name": "(Windows) tsc.exe - DLL",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=dll",
                 "-opt",
@@ -453,7 +453,7 @@
                 },
                 {
                     "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/lib"
+                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
@@ -463,7 +463,7 @@
             "name": "(Windows) tsc.exe - WASM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=exe",
                 "-opt",
@@ -482,7 +482,7 @@
             "name": "(Windows) tsc.exe - WASM - emscripten",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=exe",
                 "-mlir-disable-threading",
@@ -543,7 +543,7 @@
             "name": "(Windows) tsc.exe - JIT-OBJ",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=jit",
                 "-nogc",
@@ -705,7 +705,7 @@
             "name": "(Windows) tsc.exe - DefaultLib Compile (DLL)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=dll",
                 "-debug-only=mlir,llvm",
@@ -724,7 +724,7 @@
             "name": "(Windows) tsc.exe - DefaultLib Compile (MLIR)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir,llvm",
@@ -743,7 +743,7 @@
             "name": "(Windows) tsc.exe - DefaultLib Compile (DI) (OBJ)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=obj",
                 "-debug-only=mlir,llvm",
@@ -763,7 +763,7 @@
             "name": "(Windows) tsc.exe - DefaultLib Compile (opt) (OBJ)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "-emit=obj",
                 "-debug-only=mlir,llvm",
@@ -821,7 +821,7 @@
             "name": "(Windows) tsc.exe - new VSCode project",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "--new",
                 "Test1"
@@ -836,7 +836,7 @@
             "name": "(Windows) tsc.exe - Install Default lib",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
             "args": [
                 "--install-default-lib"
             ],
