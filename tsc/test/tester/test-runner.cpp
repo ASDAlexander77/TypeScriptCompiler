@@ -66,7 +66,7 @@
 #endif
 
 #if WIN32
-#define RUN_CMD ""
+#define RUN_CMD ".\\"
 #define BAT_NAME ".bat"
 #else
 #define RUN_CMD "/bin/sh -f ./"
