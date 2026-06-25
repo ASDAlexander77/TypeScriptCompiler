@@ -27,3 +27,11 @@ add_mlir_library(TypeScriptRuntime
   LINK_LIBS PRIVATE
   gc
 )
+
+if(MSVC)
+  # Export the runtime symbols under the names JIT-compiled code expects so the
+  # MLIR ExecutionEngine resolves them via the JITDylib path (no init callback,
+  # no cross-heap free of the symbol StringMap). See TypeScriptRuntime.def.
+  target_link_options(TypeScriptRuntime PRIVATE
+    "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/TypeScriptRuntime.def")
+endif()
