@@ -375,7 +375,8 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     auto isFirst = true;
     for (auto &file : files)
     {
-        auto fileNameWithoutExt = fs::path(file).stem().string();
+        // prefix with the unique temp name so parallel tests reusing the same source files don't stomp each other's object files
+        auto fileNameWithoutExt = tempOutputFileNameNoExt + "_" + fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".o ";
         batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (isFirst ? "" : tsc_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
         isFirst = false;
@@ -511,7 +512,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     std::stringstream sharedBat;    
     for (auto &file : files)
     {
-        auto fileNameWithoutExt = fs::path(file).stem().string();
+        // prefix with the unique temp name so parallel tests reusing the same source files don't stomp each other's object/shared-lib files
+        auto fileNameWithoutExt = tempOutputFileNameNoExt + "_" + fs::path(file).stem().string();
         if (first)
         {
             exec_objs << fileNameWithoutExt << ".o ";
@@ -540,7 +542,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     {
         batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so " << *files.begin() << " 1> $FILENAME.txt 2> $FILENAME.err"
                 << std::endl;
-        batFile << "rm -f lib$FILENAME.so" << std::endl;
+        batFile << "rm -f lib" << shared_filenameNoExt << ".so" << std::endl;
     }
     else
     {
@@ -560,7 +562,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
 
         batFile << "rm -f $FILENAME" << std::endl;
-        batFile << "rm -f lib$FILENAME.so" << std::endl;
+        batFile << "rm -f lib" << shared_filenameNoExt << ".so" << std::endl;
     }
 
     batFile.close();    
