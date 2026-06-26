@@ -1075,9 +1075,17 @@ class MLIRGenImpl
             builder.setInsertionPointToStart(parentModule.getBody());
             mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
 
-            // priority is lowest to load as first dependencies
+            // The shared-lib load + symbol resolution call into LLVM's
+            // sys::DynamicLibrary, which uses std::vector. In debug builds STL
+            // iterators take a global lock that the CRT only initializes via its
+            // own '_Init_locks'/'initlocks' dynamic initializer (in .CRT$XCU).
+            // FIRST_GLOBAL_CONSTRUCTOR_PRIORITY (100) places this ctor BEFORE that
+            // CRT init -> entering an uninitialized CRITICAL_SECTION -> crash.
+            // Use the same band as the per-symbol __cctors (LAST) so it runs after
+            // 'initlocks'; it is emitted before them, so it still loads the library
+            // before any LLVMSearchForAddressOfSymbol runs.
             builder.create<mlir_ts::GlobalConstructorOp>(
-                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(FIRST_GLOBAL_CONSTRUCTOR_PRIORITY));
+                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
         }
 
         for (auto declSymbol : symbols)
