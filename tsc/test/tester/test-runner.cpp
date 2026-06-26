@@ -9,7 +9,8 @@
 #define TYPESCRIPT_LIB "TypeScriptAsyncRuntime.lib "
 #define LLVM_LIBS "LLVMSupport.lib "
 //#define LIBS "msvcrt" _D_ ".lib ucrt" _D_ ".lib "
-#define LIBS "msvcrt" _D_ ".lib ucrt" _D_ ".lib ntdll.lib "
+// static CRT (/MT[d]) to match LLVM/TypeScript runtime libs and gc.lib; mixing static+dynamic CRT crashes at startup
+#define LIBS "libcmt" _D_ ".lib libvcruntime" _D_ ".lib libucrt" _D_ ".lib ntdll.lib "
 #else
 // for Ubuntu 20.04 add -ldl and optionally -rdynamic 
 #define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm -ltinfo"
