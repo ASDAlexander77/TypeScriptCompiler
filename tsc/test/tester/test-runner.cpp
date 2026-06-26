@@ -1,5 +1,9 @@
 #include "helper.h"
 
+#ifndef WIN32
+#include <unistd.h> // for getpid
+#endif
+
 #if WIN32
 #define GC_LIB "gc.lib "
 #else
@@ -273,7 +277,15 @@ std::string getTempOutputFileNameNoExt(std::string file)
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 
     std::string fileNameNoExt = fs::path(file).stem().string();
-    auto fileNameNoExtWithMs = fileNameNoExt + "-" + std::to_string(ms.count()) + "-" + std::to_string(rand());
+    // include the process id: rand() is never seeded, so every test-runner process yields the same first value and
+    // uniqueness would otherwise rely solely on the millisecond timestamp - same-stem tests (e.g. compile + jit
+    // variants) launched within the same millisecond under parallel ctest would collide on temp file names.
+#ifdef WIN32
+    auto pid = static_cast<long long>(GetCurrentProcessId());
+#else
+    auto pid = static_cast<long long>(getpid());
+#endif
+    auto fileNameNoExtWithMs = fileNameNoExt + "-" + std::to_string(ms.count()) + "-" + std::to_string(pid) + "-" + std::to_string(rand());
 
     std::cout << "Test file: " << fileNameNoExtWithMs << " path: " << file << std::endl;
 
@@ -375,7 +387,8 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     auto isFirst = true;
     for (auto &file : files)
     {
-        auto fileNameWithoutExt = fs::path(file).stem().string();
+        // prefix with the unique temp name so parallel tests reusing the same source files don't stomp each other's object files
+        auto fileNameWithoutExt = tempOutputFileNameNoExt + "_" + fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".o ";
         batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (isFirst ? "" : tsc_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
         isFirst = false;
@@ -511,7 +524,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     std::stringstream sharedBat;    
     for (auto &file : files)
     {
-        auto fileNameWithoutExt = fs::path(file).stem().string();
+        // prefix with the unique temp name so parallel tests reusing the same source files don't stomp each other's object/shared-lib files
+        auto fileNameWithoutExt = tempOutputFileNameNoExt + "_" + fs::path(file).stem().string();
         if (first)
         {
             exec_objs << fileNameWithoutExt << ".o ";
@@ -540,7 +554,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     {
         batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so " << *files.begin() << " 1> $FILENAME.txt 2> $FILENAME.err"
                 << std::endl;
-        batFile << "rm -f lib$FILENAME.so" << std::endl;
+        batFile << "rm -f lib" << shared_filenameNoExt << ".so" << std::endl;
     }
     else
     {
@@ -560,7 +574,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
 
         batFile << "rm -f $FILENAME" << std::endl;
-        batFile << "rm -f lib$FILENAME.so" << std::endl;
+        batFile << "rm -f lib" << shared_filenameNoExt << ".so" << std::endl;
     }
 
     batFile.close();    
