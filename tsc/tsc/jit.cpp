@@ -3,9 +3,7 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinOps.h"
 
-#include "llvm/ExecutionEngine/Orc/Core.h"
-#include "llvm/ExecutionEngine/Orc/Mangling.h"
-#include "llvm/ExecutionEngine/Orc/Shared/ExecutorSymbolDef.h"
+#include "llvm/Support/DynamicLibrary.h"
 
 #include <cstdio>
 #ifdef _WIN32
@@ -178,6 +176,34 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         engineOptions.jitCodeGenOptLevel = (llvm::CodeGenOptLevel) optLevel.getValue();
     }
 
+#ifdef _WIN32
+    // tsc.exe links the CRT statically (/MT[d]), so its libc symbols are not in
+    // any DLL export table. The JIT's process-symbol resolver would otherwise bind
+    // libc calls (puts/printf/malloc/...) to a *different* CRT instance loaded as a
+    // DLL (ucrtbase.dll), giving JIT'd code a separate stdout buffer and heap from
+    // tsc.exe. That mismatch loses output and corrupts state on teardown.
+    //
+    // Add our own CRT entry points to the process symbol table *before* creating
+    // the engine: the JIT's GetForCurrentProcess generator consults this table
+    // (SearchForAddressOfSymbol checks explicitly-added symbols first) only for
+    // unresolved symbols, so it overrides ucrtbase without an ORC JITDylib
+    // "duplicate definition" conflict, and it is in place before create() eagerly
+    // materializes any global constructors that reference these symbols.
+    {
+        auto addSym = [](const char *name, void *addr) {
+            llvm::sys::DynamicLibrary::AddSymbol(name, addr);
+        };
+        addSym("puts", (void*)&puts);
+        addSym("printf", (void*)&printf);
+        addSym("malloc", (void*)&malloc);
+        addSym("free", (void*)&free);
+        addSym("realloc", (void*)&realloc);
+        addSym("calloc", (void*)&calloc);
+        addSym("memset", (void*)&memset);
+        addSym("memcpy", (void*)&memcpy);
+    }
+#endif
+
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
     if (!maybeEngine)
     {
@@ -185,31 +211,6 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return -1;
     }
     auto &engine = maybeEngine.get();
-
-#ifdef _WIN32
-    // tsc.exe links the CRT statically (/MT[d]), so its libc symbols are not in
-    // any DLL export table. The JIT's process-symbol resolver would otherwise bind
-    // libc calls (puts/printf/malloc/...) to a *different* CRT instance loaded as a
-    // DLL (ucrtbase.dll), giving JIT'd code a separate stdout buffer and heap from
-    // tsc.exe. That mismatch loses output and corrupts state on teardown. Bind these
-    // to this module's own CRT so JIT'd code shares our stdout/heap.
-    engine->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
-        llvm::orc::SymbolMap symbolMap;
-        auto add = [&](const char *name, void *addr) {
-            symbolMap[interner(name)] = { llvm::orc::ExecutorAddr::fromPtr(addr),
-                                          llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute };
-        };
-        add("puts", (void*)&puts);
-        add("printf", (void*)&printf);
-        add("malloc", (void*)&malloc);
-        add("free", (void*)&free);
-        add("realloc", (void*)&realloc);
-        add("calloc", (void*)&calloc);
-        add("memset", (void*)&memset);
-        add("memcpy", (void*)&memcpy);
-        return symbolMap;
-    });
-#endif
 
     if (dumpObjectFile)
     {
