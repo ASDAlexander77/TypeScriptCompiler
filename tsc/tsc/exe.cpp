@@ -465,7 +465,14 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     // tsc libs
     if (!disableGC)
     {    
-        args.push_back("-lgc");
+        if (!win && !wasm)
+        {
+            args.push_back("-lgc-lib");
+        }
+        else
+        {        
+            args.push_back("-lgc");
+        }
     }
 
     if (isTscLibNeeded)
