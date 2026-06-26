@@ -13,6 +13,12 @@ else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
 endif()
 
+if(MSVC)
+  set(GC_LIB "${GC_LIB} gc")
+else()
+  set(GC_LIB "${GC_LIB} gc-lib")
+endif()
+
 add_mlir_library(TypeScriptRuntime
   SHARED
   TypeScriptGC.cpp
@@ -25,7 +31,7 @@ add_mlir_library(TypeScriptRuntime
   EXCLUDE_FROM_LIBMLIR
 
   LINK_LIBS PRIVATE
-  gc
+  ${GC_LIB}
 )
 
 if(MSVC)
