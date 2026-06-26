@@ -3,6 +3,15 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinOps.h"
 
+#include "llvm/ExecutionEngine/Orc/Core.h"
+#include "llvm/ExecutionEngine/Orc/Mangling.h"
+#include "llvm/ExecutionEngine/Orc/Shared/ExecutorSymbolDef.h"
+
+#include <cstdio>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "llvm/TargetParser/Host.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetSelect.h"
@@ -170,8 +179,37 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-    assert(maybeEngine && "failed to construct an execution engine");
+    if (!maybeEngine)
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "failed to construct an execution engine, error: " << maybeEngine.takeError() << "\n";
+        return -1;
+    }
     auto &engine = maybeEngine.get();
+
+#ifdef _WIN32
+    // tsc.exe links the CRT statically (/MT[d]), so its libc symbols are not in
+    // any DLL export table. The JIT's process-symbol resolver would otherwise bind
+    // libc calls (puts/printf/malloc/...) to a *different* CRT instance loaded as a
+    // DLL (ucrtbase.dll), giving JIT'd code a separate stdout buffer and heap from
+    // tsc.exe. That mismatch loses output and corrupts state on teardown. Bind these
+    // to this module's own CRT so JIT'd code shares our stdout/heap.
+    engine->registerSymbols([&](llvm::orc::MangleAndInterner interner) {
+        llvm::orc::SymbolMap symbolMap;
+        auto add = [&](const char *name, void *addr) {
+            symbolMap[interner(name)] = { llvm::orc::ExecutorAddr::fromPtr(addr),
+                                          llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute };
+        };
+        add("puts", (void*)&puts);
+        add("printf", (void*)&printf);
+        add("malloc", (void*)&malloc);
+        add("free", (void*)&free);
+        add("realloc", (void*)&realloc);
+        add("calloc", (void*)&calloc);
+        add("memset", (void*)&memset);
+        add("memcpy", (void*)&memcpy);
+        return symbolMap;
+    });
+#endif
 
     if (dumpObjectFile)
     {
@@ -215,5 +253,14 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return -1;
     }
 
+    // The JIT program has finished. On Windows/COFF the MLIR/ORC LLJIT platform
+    // registers process-level atexit glue that faults during teardown, so the
+    // normal CRT exit path crashes after a successful run. Flush stdio and exit
+    // the process directly, bypassing the CRT atexit handlers.
+    fflush(stdout);
+    fflush(stderr);
+#ifdef _WIN32
+    ExitProcess(0);
+#endif
     return 0;
 }
