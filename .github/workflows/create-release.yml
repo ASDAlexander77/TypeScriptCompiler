@@ -106,7 +106,7 @@ jobs:
       - name: Configure GC
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
-        run: cmake ../../../../../3rdParty/gc-${{ env.GC_VERSION }} -G "Visual Studio 18 2026" -A x64 -Wno-dev -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/3rdParty/gc/x64/release -DBUILD_SHARED_LIBS=OFF -Denable_threads=ON -Denable_cplusplus=OFF -Denable_docs=OFF
+        run: cmake ../../../../../3rdParty/gc-${{ env.GC_VERSION }} -G "Visual Studio 18 2026" -A x64 -Wno-dev -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/3rdParty/gc/x64/release -DBUILD_SHARED_LIBS=OFF -Denable_threads=ON -Denable_cplusplus=OFF -Denable_docs=OFF -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
         shell: pwsh
 
       - name: Build GC
