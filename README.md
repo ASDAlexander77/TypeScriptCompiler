@@ -3,33 +3,54 @@
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=BBJ4SQYLA6D2L)
 
-# Build
+A native ahead-of-time (AOT) and JIT compiler for **TypeScript**, built on **LLVM/MLIR**.
+It compiles `.ts` files directly to native executables, WebAssembly, or runs them
+on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
+
+## CI Status
 
 [![Test Build (Windows)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-win.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-win.yml)
 [![Test Build (Linux)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml/badge.svg)](https://github.com/ASDAlexander77/TypeScriptCompiler/actions/workflows/cmake-test-release-linux.yml)
 
-# What's new
+## Contents
+
+- [What's new](#whats-new)
+- [Roadmap](#roadmap)
+- [Demo](#demo)
+- [Try it online](#try-it)
+- [Example](#example)
+- [Running your code](#run-as-jit)
+  - [As JIT](#run-as-jit)
+  - [As a native executable](#compile-as-binary-executable)
+  - [As WebAssembly](#compiling-as-wasm)
+- [Building from source](#build)
+- [Community](#chat-room)
+- [License](#license)
+
+## What's new
+
+- Migrated to **Visual Studio 2026** (Windows build chain)
 - JavaScript Built-in objects library [[Default Library repo](https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib/)]
 
 - Visual Studio Code project
-```cmd
+```bat
 tsc --new Test1
 ```
 
 - Strict null checks
-```TypeScript
+```typescript
 let sn: string | null = null; // Ok
 let s: string = null; // error
 ```
 
-- improved `Template Literal Types`
-```TypeScript
+- Improved `Template Literal Types`
+```typescript
 type Color = "red" | "green" | "blue";
 type HexColor<T extends Color> = `#${string}`;
 ```
 
 - Public, private, and protected modifiers
-```TypeScript
+```typescript
 class Point {
     private x: number;
     #y: number;
@@ -41,7 +62,7 @@ p.#y // error
 ```
 
 - Class from Tuple
-```TypeScript
+```typescript
 class Point {
     x: number;
     y: number;
@@ -55,7 +76,7 @@ const l = new Line({ x: 0, y: 1 }, { x: 1.0, y: 2.0 });
 ```
 
 - Compile-time `if`s
-```TypeScript
+```typescript
 function isArray<T extends unknown[]>(value: T): value is T {
     return true;
 }
@@ -76,38 +97,41 @@ const v2 = gen<string[]>([]); // result: 0
 
 - Migrated to LLVM 19.1.3
 
-- improved ```generating debug information``` more info here: [Wiki:How-To](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/How-To#compile-and-debug-with-visual-studio-code)
-```cmd
+- Improved `generating debug information` — more info here: [Wiki:How-To](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/How-To#compile-and-debug-with-visual-studio-code)
+```bat
 tsc --di --opt_level=0 --emit=exe example.ts
 ```
 - [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
-# Planning
+## Roadmap
+
 - [x] Migrating to LLVM 19.1.3
 - [x] Shared libraries
-- [ ] JavaScript Built-in classes library
+- [x] JavaScript Built-in classes library
 
-# Demo 
+## Demo
+
 [(click here)](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
 
 [![Demo](https://raw.githubusercontent.com/ASDAlexander77/ASDAlexander77.github.io/main/img/tsc_emit.gif)](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
 
 
-# Try it 
+## Try it
+
 [(click here)](https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYgDkAjF%2BTXRMiAZVQtGIHgA4BQogFUAztgAKAD24AGfgCsp5eiyagiATwAO2JalIELRcisaoiBIdWaYAwunoBXNiYQACZyLwAZAiZsADlAgCNsUhAAZh5yC3QlYncmXwCg0Mzs3KEomPi2JJT0p2wXNyERIhZSIgLA4LDnbFc8lraiCrjE5LSMpVb2zqKe6eHo0erx9IBKJ3R/UlROLhYEqdIWVwBqVCMlJVOAEWwLIY5hU4BSAHYAIRetAEFT//OQiO/lcZAgFn8CXoBFQp1YHBApyO0WAa1en3eN2%2BP2xANOFjswli7GwEDWiIAbugCJh0V9fni8QTokQIC8QiE7g92k8iHCSYj2SFXiEPqciEgCEoAHTw7BrF6pel/AGY7G4gEHI4nPnM4QAWWw2DcJjJlOpmEVYoA9NbTmx/FNTklTgQ2BZGLzsLToqccHYKd7zpcVEp1W8sb9sRcWFdTj9UBh/MIUVzHsw%2Bdh1EQvNc0zyM3SNf8MExgaDSGSiwzGf8lP4rJWhQmkymTKdjLSfv5CCbgEKFUrTrbAWWiKQQSRSNdff6CIHaTGrtZ7Y6%2BeJ6PQkQ3kmTi%2BjIzia/89URDcaUWbTlSadWVbXT2yOQAVJDYeOJrZt4C3e7p54cMa1zYCcSCnPqQiYCwZgdnyPBaOw0oDla%2B5qlGx6nMAzDJCwOYAEr3GQRBKFeN60u8yq1iehKskKADi2HHH2HafsmzGkIR7QytKSEcoOlGqhG4aHtiNDJv0Qj2iw0RVhR%2B6MHyODckQvKIvmKkZlaw52ugADW4roOcHG4e%2BLCnBxNDJMwuwGR2TAdoc446uKljYPuSn/nyio3HC2AAO4fq2fbqbye5DiOem2bYIE5nZtKxjkwD2WZTBCAAtFqTlnPWCRLmGGEeQWwjSqexIcGFAn/IVGnFae559hV%2B62tVvLSlhMRMdgBFZFxFXaacySkGQiItYWUpwugfLoDQLlWIFX7BX%2BRWOOcxipXyJy7HG7U4fhnHEcJXAbPQ3AAKz8MEXA6OQ6DcM%2BrliHYDinMSbiBkiWw7O%2B7LpPwRDaEdGy6WkqTSqk4MQ5DkMAGyGNwAAs/BsCAbzw2DqTSJjqTw/DbzQ1oWjw%2BQl3XbdXD8EoIBaOQ/1XUd5BwLAKBZn0/hTpQ1BtMASiqMYDQiEg6B%2BZdfDkBg7oMLheS8zE9AC0LJP8OLFgMOMxGoAA%2BloWsa6kp0a8AqBi%2BgEuMKQZV7ErJsq2bADybPy8LAPhOofQ/KQ3PcPwLOoC0hCXfwgjCGIEicDwRNB4oKgaM7%2BgZEYJggOYVg2E9jjQoc8AbOgDh5JT5M3YGpB2DglOQBsSifbsBhTP7Mv84LTu8PwfnHBY3B8MdZ0Xc7ZO4K7qBs2Qpz3VYj32Hyr3zu%2Bvim8kpxaNKi8EtgeunAAUgAks%2BpwQHR3hohAo/YOPz1T4G5CnPgxDDz9PBrH9ANrBsb4sP61Bd1wiPkMjISndK0NoY8GAdDU6p0QipAAJyQKAcTXuXsnBUxpk/IGaR/4Yz1uAngeNIHYLeG8OGXBUg9zpjdBBtMdAbEZsgNA1tVYUCoBAZW9Ck42B1trPWBsjY4ApDCbAAA1Ag/lbZWBFoHBgOZpzUASM7BI0Q2hmA7vwORrBSBmFtgkXQfRaai3FryW2TB6CKNITgBI/hgDeAkPQfOoscBsGMMASQJiCAcX6IGfO10fZsz2KLFkDRnYZ2OGo3wOBnbjjdEojYNAjDc0EcI0RSi5DBw3GHCO8hlBqE0KQuOhgHFJ1cqnCehgCCZ3LjdXOQIEHoCLiXawWd6iNDyJ4JgPg/BdAMJEJYVQagGCyDkJo%2BQ2lFAyH0soTARjdPGJMBo2iBgLFmMEaZjTmgLAmWMFIkx5lDMWU4VZXT1lSArlXMOn9zpwNIWTEeD1bATxelLd6s8bbz0XsvDia8t47z3gfXe18pwinWI/Omz9yCv3fmScgwN0jShCNIdI4d4bSEgajRFWhZAnS/iQ0mCDKbUwofTahEAUAuI5kwuhZsLZ3WuWnO5b0Z5kueUvEqbzTob23rvfeD9wi9jIDSAwkcQ6SHDkkqOmTY41xmRJYIEAvALI6S0tZKwNklH6XkWVIzSgDIVT0pZsyVlDDVQ03VTBBjtC1VM3Z%2Brtk1z2ZUA598aYcWwLyrQpzMX8DJhECI/D9SnE3nhU4cS/Lz2PqfSe9y6Vz1IAvRlK93lsq%2BYfX5t8IEZFOI8%2Bh/z76Asoag8G6MoYFtSIQ7%2BisyEFxxcgoFn8QhurLdmwG5Ai45A8PDIAA%3D%3D)
 
 [![Compiler Explorer](https://asdalexander77.github.io/img/god_bolt_tsc_native.jpg)](https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYgDkAjF%2BTXRMiAZVQtGIHgA4BQogFUAztgAKAD24AGfgCsp5eiyagiATwAO2JalIELRcisaoiBIdWaYAwunoBXNiYQACZyLwAZAiZsADlAgCNsUhAAZh5yC3QlYncmXwCg0Mzs3KEomPi2JJT0p2wXNyERIhZSIgLA4LDnbFc8lraiCrjE5LSMpVb2zqKe6eHo0erx9IBKJ3R/UlROLhYEqdIWVwBqVCMlJVOAEWwLIY5hU4BSAHYAIRetAEFT//OQiO/lcZAgFn8CXoBFQp1YHBApyO0WAa1en3eN2%2BP2xANOFjswli7GwEDWiIAbugCJh0V9fni8QTokQIC8QiE7g92k8iHCSYj2SFXiEPqciEgCEoAHTw7BrF6pel/AGY7G4gEHI4nPnM4QAWWw2DcJjJlOpmEVYoA9NbTmx/FNTklTgQ2BZGLzsLToqccHYKd7zpcVEp1W8sb9sRcWFdTj9UBh/MIUVzHsw%2Bdh1EQvNc0zyM3SNf8MExgaDSGSiwzGf8lP4rJWhQmkymTKdjLSfv5CCbgEKFUrTrbAWWiKQQSRSNdff6CIHaTGrtZ7Y6%2BeJ6PQkQ3kmTi%2BjIzia/89URDcaUWbTlSadWVbXT2yOQAVJDYeOJrZt4C3e7p54cMa1zYCcSCnPqQiYCwZgdnyPBaOw0oDla%2B5qlGx6nMAzDJCwOYAEr3GQRBKFeN60u8yq1iehKskKADi2HHH2HafsmzGkIR7QytKSEcoOlGqhG4aHtiNDJv0Qj2iw0RVhR%2B6MHyODckQvKIvmKkZlaw52ugADW4roOcHG4e%2BLCnBxNDJMwuwGR2TAdoc446uKljYPuSn/nyio3HC2AAO4fq2fbqbye5DiOem2bYIE5nZtKxjkwD2WZTBCAAtFqTlnPWCRLmGGEeQWwjSqexIcGFAn/IVGnFae559hV%2B62tVvLSlhMRMdgBFZFxFXaacySkGQiItYWUpwugfLoDQLlWIFX7BX%2BRWOOcxipXyJy7HG7U4fhnHEcJXAbPQ3AAKz8MEXA6OQ6DcM%2BrliHYDinMSbiBkiWw7O%2B7LpPwRDaEdGy6WkqTSqk4MQ5DkMAGyGNwAAs/BsCAbzw2DqTSJjqTw/DbzQ1oWjw%2BQl3XbdXD8EoIBaOQ/1XUd5BwLAKBZn0/hTpQ1BtMASiqMYDQiEg6B%2BZdfDkBg7oMLheS8zE9AC0LJP8OLFgMOMxGoAA%2BloWsa6kp0a8AqBi%2BgEuMKQZV7ErJsq2bADybPy8LAPhOofQ/KQ3PcPwLOoC0hCXfwgjCGIEicDwRNB4oKgaM7%2BgZEYJggOYVg2E9jjQoc8AbOgDh5JT5M3YGpB2DglOQBsSifbsBhTP7Mv84LTu8PwfnHBY3B8MdZ0Xc7ZO4K7qBs2Qpz3VYj32Hyr3zu%2Bvim8kpxaNKi8EtgeunAAUgAks%2BpwQHR3hohAo/YOPz1T4G5CnPgxDDz9PBrH9ANrBsb4sP61Bd1wiPkMjISndK0NoY8GAdDU6p0QipAAJyQKAcTXuXsnBUxpk/IGaR/4Yz1uAngeNIHYLeG8OGXBUg9zpjdBBtMdAbEZsgNA1tVYUCoBAZW9Ck42B1trPWBsjY4ApDCbAAA1Ag/lbZWBFoHBgOZpzUASM7BI0Q2hmA7vwORrBSBmFtgkXQfRaai3FryW2TB6CKNITgBI/hgDeAkPQfOoscBsGMMASQJiCAcX6IGfO10fZsz2KLFkDRnYZ2OGo3wOBnbjjdEojYNAjDc0EcI0RSi5DBw3GHCO8hlBqE0KQuOhgHFJ1cqnCehgCCZ3LjdXOQIEHoCLiXawWd6iNDyJ4JgPg/BdAMJEJYVQagGCyDkJo%2BQ2lFAyH0soTARjdPGJMBo2iBgLFmMEaZjTmgLAmWMFIkx5lDMWU4VZXT1lSArlXMOn9zpwNIWTEeD1bATxelLd6s8bbz0XsvDia8t47z3gfXe18pwinWI/Omz9yCv3fmScgwN0jShCNIdI4d4bSEgajRFWhZAnS/iQ0mCDKbUwofTahEAUAuI5kwuhZsLZ3WuWnO5b0Z5kueUvEqbzTob23rvfeD9wi9jIDSAwkcQ6SHDkkqOmTY41xmRJYIEAvALI6S0tZKwNklH6XkWVIzSgDIVT0pZsyVlDDVQ03VTBBjtC1VM3Z%2Brtk1z2ZUA598aYcWwLyrQpzMX8DJhECI/D9SnE3nhU4cS/Lz2PqfSe9y6Vz1IAvRlK93lsq%2BYfX5t8IEZFOI8%2Bh/z76Asoag8G6MoYFtSIQ7%2BisyEFxxcgoFn8QhurLdmwG5Ai45A8PDIAA%3D%3D)
 
-Chat Room
----------
+## Chat Room
 
 Want to chat with other members of the TypeScriptCompiler community?
 
-[![Join the chat at https://gitter.im/ASDAlexander77/TypeScriptCompiler](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ASDAlexander77/TypeScriptCompiler?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+- [GitHub Discussions](https://github.com/ASDAlexander77/TypeScriptCompiler/discussions) (preferred)
+- [![Join the chat at https://gitter.im/ASDAlexander77/TypeScriptCompiler](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ASDAlexander77/TypeScriptCompiler?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge) (legacy)
 
-# Example
+## Example
 
-```TypeScript
+```typescript
 abstract class Department {
     constructor(public name: string) {}
 
@@ -142,12 +166,14 @@ function main() {
 ```
 
 Run
-```cmd
+
+```bat
 tsc --emit=jit --opt --shared-libs=TypeScriptRuntime.dll example.ts
 ```
 
 Result
-```
+
+```text
 Department name: Accounting and Auditing
 The Accounting Department meets each Monday at 10am.
 ```
@@ -155,33 +181,51 @@ The Accounting Department meets each Monday at 10am.
 ## Run as JIT
 
 - with Garbage collection
-```cmd
+
+```bat
 tsc --emit=jit --opt --shared-libs=TypeScriptRuntime.dll hello.ts
 ```
 
 - without Garbage collection
-```cmd
+
+```bat
 tsc --emit=jit --nogc hello.ts
 ```
 
 File ``hello.ts``
 
-```TypeScript
+```typescript
 function main() {
     print("Hello World!");
 }
 ```
+
 Result
-```
+
+```text
 Hello World!
 ```
 
 ## Compile as Binary Executable
 
+> Make sure you have [built `tsc` from source](#build) first.
+
+The compile scripts below set a few environment variables so the linker can find the
+runtime libraries, then invoke `tsc` with `--emit=exe`. **Edit the paths to match your
+checkout** — the `C:\dev\...` / `~/dev/...` values are only examples.
+
+| Variable | Points to |
+| --- | --- |
+| `GC_LIB_PATH` | Boehm GC library (the garbage collector) |
+| `LLVM_LIB_PATH` | LLVM/MLIR libraries |
+| `TSC_LIB_PATH` | TSC runtime library |
+| `TSCEXEPATH` | Folder containing the `tsc` executable |
+
 ### On Windows
 
 File ``tsc-compile.bat``
-```cmd
+
+```bat
 set FILENAME=%1
 set GC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\release\Release
 set LLVM_LIB_PATH=C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\release\Release\lib
@@ -189,24 +233,29 @@ set TSC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\l
 set TSCEXEPATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\bin
 %TSCEXEPATH%\tsc.exe --opt --emit=exe %FILENAME%.ts
 ```
-Compile 
-```cmd
+
+Compile
+
+```bat
 tsc-compile.bat hello
 ```
 
 Run
-```
+
+```text
 hello.exe
 ```
 
 Result
-```
+
+```text
 Hello World!
 ```
 
 ### On Linux (Ubuntu 20.04 and 22.04)
 
 File ``tsc-compile.sh``
+
 ```bash
 FILENAME=$1
 export TSC_LIB_PATH=~/dev/TypeScriptCompiler/__build/tsc/linux-ninja-gcc-release/lib
@@ -215,37 +264,49 @@ export GC_LIB_PATH=~/dev/TypeScriptCompiler/3rdParty/gc/release
 TSCEXEPATH=~/dev/TypeScriptCompiler/__build/tsc/linux-ninja-gcc-release/bin
 $TSCEXEPATH/tsc --emit=exe $FILENAME.ts --relocation-model=pic
 ```
-Compile 
+
+Compile
+
 ```bash
 sh -f tsc-compile.sh hello
 ```
 
 Run
-```
+
+```text
 ./hello
 ```
 
 Result
-```
+
+```text
 Hello World!
 ```
 
-### Compiling as WASM
+## Compiling as WASM
+
 ### On Windows
+
 File ``tsc-compile-wasm.bat``
-```cmd
+
+```bat
 set FILENAME=%1
 set GC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\release\Release
 set LLVM_LIB_PATH=C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\release\Release\lib
 set TSC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\lib
 C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\bin\tsc.exe --emit=exe --nogc -mtriple=wasm32-unknown-unknown %FILENAME%.ts
 ```
-Compile 
-```cmd
+Compile
+
+```bat
 tsc-compile-wasm.bat hello
 ```
 
 Run ``run.html``
+
+<details>
+<summary>Click to expand the full <code>run.html</code> WebAssembly loader</summary>
+
 ```html
 <!DOCTYPE html>
 <html>
@@ -384,38 +445,42 @@ Run ``run.html``
 </html>
 ```
 
+</details>
+
 ## Build
 
 ### On Windows
 
 #### Requirements:
 
-- ``Visual Studio 2022``
-- 512GB of free space on disk
+- ``Visual Studio 2026``
+- ~50 GB of free disk space (LLVM/MLIR build dominates this)
 
+> The hardcoded `C:\dev\...` paths in the scripts below are examples — adjust them to your checkout location.
 
 First, precompile dependencies
 
-```cmd
+```bat
 cd TypeScriptCompiler
-prepare_3rdParty.bat 
+prepare_3rdParty.bat
 ```
 
 To build ``TSC`` binaries:
 
-```cmd
+```bat
 cd TypeScriptCompiler\tsc
 config_tsc_release.bat
 build_tsc_release.bat
 ```
 
 ### On Linux (Ubuntu 20.04 and 22.04)
+
 #### Requirements:
 
 - `gcc` or `clang`
 - `cmake`
 - `ninja-build`
-- 512GB of free space on disk
+- ~50 GB of free disk space (LLVM/MLIR build dominates this)
 - sudo apt-get install ``libtinfo-dev``
 
 First, precompile dependencies
@@ -434,3 +499,13 @@ chmod +x *.sh
 ./config_tsc_release.sh
 ./build_tsc_release.sh
 ```
+
+## License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Issues and pull requests are welcome. See the
+[Wiki](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki) for documentation,
+build notes, and how-to guides.
