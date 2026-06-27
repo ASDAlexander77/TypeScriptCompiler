@@ -546,22 +546,29 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         first = false;
     }
 
+    // run everything inside a unique per-test working directory: the shared lib must keep its
+    // real name (lib<stem>.so) for `import './<stem>'` to resolve, but that name is not unique
+    // across tests reusing the same source file - isolating the cwd avoids parallel collisions.
+    // Output (.txt/.err) is written to the parent dir where the runner reads it from.
+    batFile << "WORKDIR=" << tempOutputFileNameNoExt << "_wd" << std::endl;
+    batFile << "rm -rf $WORKDIR && mkdir -p $WORKDIR && cd $WORKDIR" << std::endl;
+
     batFile << sharedBat.str();
-    batFile << TEST_COMPILER << " " << linker_opt << " -o lib" << shared_filenameNoExt << ".so " << shared_objs.str() 
+    batFile << TEST_COMPILER << " " << linker_opt << " -o lib" << shared_filenameNoExt << ".so " << shared_objs.str()
             << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "rm -f " << shared_objs.str() << std::endl;
 
     if (jitRun)
     {
-        batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so --shared-libs=./lib" << shared_filenameNoExt << ".so " << *files.begin() << " 1> $FILENAME.txt 2> $FILENAME.err"
+        // one extra "../" because we run from the per-test working directory
+        batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../../lib/libTypeScriptRuntime.so --shared-libs=./lib" << shared_filenameNoExt << ".so " << *files.begin() << " 1> ../$FILENAME.txt 2> ../$FILENAME.err"
                 << std::endl;
-        batFile << "rm -f lib" << shared_filenameNoExt << ".so" << std::endl;
     }
     else
     {
         batFile << execBat.str();
-        batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " "; 
+        batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " ";
         batFile << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH ";
         if (sharedLib)
         {
@@ -574,11 +581,11 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
         batFile << "rm -f " << exec_objs.str() << std::endl;
 
-        batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
-
-        batFile << "rm -f $FILENAME" << std::endl;
-        batFile << "rm -f lib" << shared_filenameNoExt << ".so" << std::endl;
+        batFile << "./$FILENAME 1> ../$FILENAME.txt 2> ../$FILENAME.err" << std::endl;
     }
+
+    // leave and remove the per-test working directory (with the shared lib, exe, etc.)
+    batFile << "cd .. && rm -rf $WORKDIR" << std::endl;
 
     batFile.close();    
 #endif    
