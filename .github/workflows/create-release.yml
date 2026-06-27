@@ -9,7 +9,7 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v8
+  CACHE_VERSION: v9
   LLVM_VERSION: 19
   LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/map5fet7x19bm8ztsr4ma/llvm_19_1_3_release_vs2026.zip?rlkey=iwae4mz45lf7nycawa7d61g3r&st=4ee1dfug&dl=1"
   LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/l9xrfupdbwqbnckr5g36p/llvm_19_1_3_release.tgz?rlkey=xubw01vl6ey3xszbph32xqfip&st=okz2ghqx&dl=1"
