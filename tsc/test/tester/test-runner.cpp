@@ -552,7 +552,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     if (jitRun)
     {
-        batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so " << *files.begin() << " 1> $FILENAME.txt 2> $FILENAME.err"
+        batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so --shared-libs=./lib" << shared_filenameNoExt << ".so " << *files.begin() << " 1> $FILENAME.txt 2> $FILENAME.err"
                 << std::endl;
         batFile << "rm -f lib" << shared_filenameNoExt << ".so" << std::endl;
     }
@@ -561,11 +561,12 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << execBat.str();
         batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " "; 
         batFile << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH ";
-        if (sharedLibCompileTime)
+        if (sharedLib)
         {
+            // dynamics and compile-time shared modes both link the produced shared lib;
             // we need "-Wl,-rpath=" to embed path for compiled shared lib path
             batFile << "-L`pwd` -Wl,-rpath=`pwd` -l" << shared_filenameNoExt << " ";
-        }        
+        }
 
         batFile << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
 
