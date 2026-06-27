@@ -119,7 +119,7 @@ jobs:
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/ninja/release
       shell: sh
-      run: cmake ../../../../3rdParty/gc-${{ env.GC_VERSION }} -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../../../3rdParty/gc/release -DBUILD_SHARED_LIBS=OFF -Denable_threads=ON -Denable_cplusplus=OFF -Denable_docs=OFF
+      run: cmake ../../../../3rdParty/gc-${{ env.GC_VERSION }} -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/3rdParty/gc/release -DBUILD_SHARED_LIBS=OFF -Denable_threads=ON -Denable_cplusplus=OFF -Denable_docs=OFF
 
     - name: Build GC
       continue-on-error: false
