@@ -25,7 +25,7 @@ IF EXIST ".\3rdParty\llvm\x64\%BUILD%\bin" (
   @call scripts\build_llvm_%BUILD%_%TOOL%.bat
 )
 
-IF EXIST ".\3rdParty\gc\x64\%BUILD%\gc-lib.lib" (
+IF EXIST ".\3rdParty\gc\x64\%BUILD%\lib\gc.lib" (
   echo "No need to build GC (%BUILD%)"
 ) ELSE (
   cd %p%
@@ -41,7 +41,6 @@ IF EXIST ".\3rdParty\gc\x64\%BUILD%\gc-lib.lib" (
   xcopy  /E /H /C /I /Y .\3rdParty\libatomic_ops-%LIBATOMIC_OPS_VER%\ .\3rdParty\gc-%GC_VER%\libatomic_ops\
   cd %p%
   @call scripts\build_gc_%BUILD%_%TOOL%.bat
-  cd %p%
-  if "%BUILD%"=="debug" ( xcopy  /E /H /C /I /Y .\__build\gc\msbuild\x64\%BUILD%\Debug\ .\3rdParty\gc\x64\debug\ )
-  if "%BUILD%"=="release" ( xcopy  /E /H /C /I /Y .\__build\gc\msbuild\x64\%BUILD%\Release\ .\3rdParty\gc\x64\release\ )
+  rem build_gc_*_vs.bat runs "cmake --install" which installs the libs to
+  rem 3rdParty\gc\x64\%BUILD%\lib (where tsc now links from) - no extra copy needed
 )
