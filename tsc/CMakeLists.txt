@@ -103,11 +103,18 @@ set(CMAKE_BUILD_WITH_INSTALL_RPATH "ON")
 
 if(MSVC)
   # FIXME: In fact, sanitizers should support both /MT and /MD, see PR20214.
-if ("${CMAKE_BUILD_TYPE}" STREQUAL "Release")
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
-else()
-  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDebug")
-endif()
+  # Use the static CRT (/MT, /MTd) to match the prebuilt static LLVM/MLIR libs.
+  # Use a generator expression so it is correct for multi-config generators
+  # (e.g. Visual Studio), where CMAKE_BUILD_TYPE is not meaningful at configure time.
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
+  # HandleLLVMOptions (included below) otherwise forces the dynamic CRT default and
+  # would override CMAKE_MSVC_RUNTIME_LIBRARY. These tell it to select the static CRT
+  # for every configuration so all targets (including unittests/gtest) match.
+  set(LLVM_USE_CRT_DEBUG MTd)
+  set(LLVM_USE_CRT_RELEASE MT)
+  set(LLVM_USE_CRT_RELWITHDEBINFO MT)
+  set(LLVM_USE_CRT_MINSIZEREL MT)
 
   message(STATUS "CMAKE_MSVC_RUNTIME_LIBRARY is ${CMAKE_MSVC_RUNTIME_LIBRARY}")
 endif()
