@@ -20,7 +20,7 @@ env:
 jobs:
   build_on_windows:
     name: Create/Upload Release Asset (Windows)
-    runs-on: windows-2022
+    runs-on: windows-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -111,7 +111,7 @@ jobs:
       - name: Configure GC
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
-        run: cmake ../../../../../3rdParty/gc-${{ env.GC_VERSION }} -G "Visual Studio 17 2022" -A x64 -Wno-dev -DCMAKE_INSTALL_PREFIX=../../../../../3rdParty/gc/x64/release -Denable_threads=ON -Denable_cplusplus=OFF -Denable_docs=OFF
+        run: cmake ../../../../../3rdParty/gc-${{ env.GC_VERSION }} -G "Visual Studio 18 2026" -A x64 -Wno-dev -DCMAKE_INSTALL_PREFIX=../../../../../3rdParty/gc/x64/release -Denable_threads=ON -Denable_cplusplus=OFF -Denable_docs=OFF
         shell: pwsh
 
       - name: Build GC
