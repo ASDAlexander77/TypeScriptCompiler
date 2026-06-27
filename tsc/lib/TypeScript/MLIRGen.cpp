@@ -23044,6 +23044,7 @@ genContext);
             {"TypeOf", true },
             {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
+            {"Ref", true }, // alias of Reference
             {"Readonly", true },
             {"Partial", true },
             {"Required", true },
@@ -23131,6 +23132,7 @@ genContext);
             {"TypeOf", true },
             {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
+            {"Ref", true }, // alias of Reference
             {"ThisType", true },
             //{"Array", true }
         };
@@ -23293,7 +23295,7 @@ genContext);
                 type = mth.wideStorageType(type);
                 return type;
             })
-            .Case("Reference", [&] (auto typeArguments, auto genContext) {
+            .Cases("Reference", "Ref", [&] (auto typeArguments, auto genContext) {
                 auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 if (!type)
                 {
@@ -23442,7 +23444,7 @@ genContext);
                 type = mth.wideStorageType(type);
                 return type;
             })
-            .Case("Reference", [&] (auto typeArguments, auto genContext) {
+            .Cases("Reference", "Ref", [&] (auto typeArguments, auto genContext) {
                 auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 return mlir_ts::RefType::get(type);
             })

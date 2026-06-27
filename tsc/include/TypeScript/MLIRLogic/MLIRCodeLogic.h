@@ -367,17 +367,17 @@ class MLIRCustomMethods
     {
         static std::map<std::string, bool> m { 
             {"print", true}, {"convertf", true}, {"assert", true}, {"parseInt", true}, {"parseFloat", true}, {"isNaN", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true },
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }, { "Deref", true }, { "Ref", true },
             {"atomicrmw", true}, {"cmpxchg", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
         };
-        return m[functionName.str()];    
-    }    
+        return m[functionName.str()];
+    }
 
     static bool isInternalFunctionNameNoBuiltin (StringRef functionName)
     {
-        static std::map<std::string, bool> m { 
-            {"print", true}, {"convertf", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true}, 
-            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true },
+        static std::map<std::string, bool> m {
+            {"print", true}, {"convertf", true}, {"assert", true}, {"sizeof", true}, {GENERATOR_SWITCHSTATE, true},
+            {"LoadLibraryPermanently", true}, { "SearchForAddressOfSymbol", true }, { "LoadReference", true }, { "ReferenceOf", true }, { "Deref", true }, { "Ref", true },
             {"atomicrmw", true}, {"cmpxchg", true}, {"fence", true}, {"inline_asm", true}, {"call_intrinsic", true}, {"linker_options", true}
         };
         return m[functionName.str()];    
@@ -454,11 +454,11 @@ class MLIRCustomMethods
         {
             return mlirGenSearchForAddressOfSymbol(location, operands, castFn, genContext);
         }
-        else if (functionName == "LoadReference")
+        else if (functionName == "LoadReference" || functionName == "Deref")
         {
             return mlirGenLoadReference(location, operands, castFn, genContext);
         }
-        else if (functionName == "ReferenceOf")
+        else if (functionName == "ReferenceOf" || functionName == "Ref")
         {
             return mlirGenReferenceOf(location, operands);
         }
