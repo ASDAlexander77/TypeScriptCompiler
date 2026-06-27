@@ -535,11 +535,13 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             shared_objs << fileNameWithoutExt << ".o ";
             if (shared_filenameNoExt.empty())
             {
-                shared_filenameNoExt = fileNameWithoutExt;
+                // the shared lib must keep its real (unprefixed) stem so that `import './<stem>'`
+                // resolves to lib<stem>.so instead of falling back to recompiling the source
+                shared_filenameNoExt = fs::path(file).stem().string();
             }
         }
 
-        (first ? execBat : sharedBat) << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (first ? "" : tsc_opt) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        (first ? execBat : sharedBat) << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (first ? "" : tsc_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
 
         first = false;
     }
