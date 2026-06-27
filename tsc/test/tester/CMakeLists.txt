@@ -76,18 +76,20 @@ endif()
 add_executable(test-runner test-runner.cpp)
 target_link_libraries(test-runner PRIVATE ${LIBS})
 string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
+# GC lib dir derived from the BDWgc package (BDWgc_DIR=<prefix>/lib/cmake/bdwgc)
+get_filename_component(TEST_GC_LIBDIR "${BDWgc_DIR}/../.." ABSOLUTE)
 if (WIN32)
     target_compile_definitions(test-runner PUBLIC "TEST_LIBPATH=\"${VC_LIB_DIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_SDKPATH=\"${WINDOWS_KITS_DIR_LIB}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_UCRTPATH=\"${WINDOWS_KITS_DIR_UCRT_LIB}\"")
     target_compile_definitions(test-runner PUBLIC "CMAKE_C_STANDARD_LIBRARIES=\"${CMAKE_C_STANDARD_LIBRARIES}\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/gc/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${TEST_GC_LIBDIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSC_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSC_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_LIBPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib\"")
 else()
-    target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/gc/${CMAKE_BUILD_TYPE_LOWERCASE}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${TEST_GC_LIBDIR}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSC_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSC_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE_LOWERCASE}/bin\"")
@@ -95,7 +97,17 @@ else()
     target_compile_definitions(test-runner PUBLIC "TEST_COMPILER=\"${CMAKE_CXX_COMPILER}\"")
 endif()
 
-######## enable testing ############                  
+# test-runner caches the per-mode link scripts (compile/jit[d].bat|.sh) via an
+# exists() guard and reuses them across runs, so they retain stale lib paths
+# (e.g. GC_LIB_PATH) after a path-affecting reconfigure. Remove them on every
+# (re)configure so they regenerate with the current TEST_* definitions above.
+file(REMOVE
+    "${CMAKE_CURRENT_BINARY_DIR}/compile.bat"  "${CMAKE_CURRENT_BINARY_DIR}/jit.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiled.bat" "${CMAKE_CURRENT_BINARY_DIR}/jitd.bat"
+    "${CMAKE_CURRENT_BINARY_DIR}/compile.sh"   "${CMAKE_CURRENT_BINARY_DIR}/jit.sh"
+    "${CMAKE_CURRENT_BINARY_DIR}/compiled.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitd.sh")
+
+######## enable testing ############
 # open __build\tsc   
 # ctest.exe -j4 -C Release -T test --output-on-failure
 add_test(NAME test-compile-00-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")

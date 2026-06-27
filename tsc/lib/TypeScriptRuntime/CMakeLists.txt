@@ -1,15 +1,8 @@
-include_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc-8.2.8/include/")
-
-string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
+# Include dir + lib location come from the BDWgc::gc imported target (find_package
+# in the top-level CMakeLists), so no hardcoded include_directories/link_directories.
 if(MSVC)
-  message(STATUS "Using GC Lib: ${PROJECT_SOURCE_DIR}/../3rdParty/gc/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib/")
-
-  link_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib/")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR")
 else()
-  message(STATUS "Using GC Lib: ${PROJECT_SOURCE_DIR}/../3rdParty/gc/${CMAKE_BUILD_TYPE_LOWERCASE}/lib/")
-
-  link_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc/${CMAKE_BUILD_TYPE_LOWERCASE}/lib/")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
 endif()
 
@@ -25,7 +18,7 @@ add_mlir_library(TypeScriptRuntime
   EXCLUDE_FROM_LIBMLIR
 
   LINK_LIBS PRIVATE
-  gc
+  BDWgc::gc
 )
 
 if(MSVC)

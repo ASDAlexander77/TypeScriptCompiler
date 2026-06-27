@@ -68,6 +68,16 @@ if ("${Clang_DIR}" STREQUAL "" OR "${Clang_DIR}" STREQUAL "Clang_DIR-NOTFOUND")
 endif()
 message(STATUS "Clang_DIR is ${Clang_DIR}")
 
+if ("${BDWgc_DIR}" STREQUAL "" OR "${BDWgc_DIR}" STREQUAL "BDWgc_DIR-NOTFOUND")
+  string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
+  if (MSVC OR WIN32)
+    get_filename_component(BDWgc_DIR "${CMAKE_SOURCE_DIR}/../3rdParty/gc/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib/cmake/bdwgc" REALPATH BASE_DIR "${CMAKE_SOURCE_DIR}")
+  else()
+    get_filename_component(BDWgc_DIR "${CMAKE_SOURCE_DIR}/../3rdParty/gc/${CMAKE_BUILD_TYPE_LOWERCASE}/lib/cmake/bdwgc" REALPATH BASE_DIR "${CMAKE_SOURCE_DIR}")
+  endif()
+endif()
+message(STATUS "BDWgc_DIR is ${BDWgc_DIR}")
+
 if ("${PYTHON_EXECUTABLE}" STREQUAL "" OR "${PYTHON_EXECUTABLE}" STREQUAL "PYTHON_EXECUTABLE-NOTFOUND")
 set(PYTHON_EXECUTABLE "python.exe")
 endif()
@@ -83,6 +93,13 @@ endif()
 find_package(Clang REQUIRED PATHS "${CLANG_DIR_ABSOLUTE}" NO_DEFAULT_PATH)
 if (NOT Clang_FOUND)
     message(FATAL_ERROR "Failed to find Clang")
+endif()
+
+# bdwgc ships a CMake package (BDWgc::gc / BDWgc::cord imported targets) that
+# carries the include dir and the per-config static lib location.
+find_package(BDWgc REQUIRED CONFIG)
+if (NOT BDWgc_FOUND)
+    message(FATAL_ERROR "Failed to find BDWgc (garbage collector)")
 endif()
 
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_CMAKE_DIR}")
