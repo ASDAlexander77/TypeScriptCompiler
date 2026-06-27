@@ -240,6 +240,14 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         // TODO: finish it
         auto newFuncOp = rewriter.create<mlir::func::FuncOp>(
             location, name, mlir::FunctionType::get(rewriter.getContext(), llvm::ArrayRef<mlir::Type>(), llvm::ArrayRef<mlir::Type>()));
+        // the per-symbol "__cctor" is only ever called from this module's own global ctors / __mlir_gctors.
+        // keep it internal so it is not exported - otherwise an executable and a shared lib that both
+        // define e.g. "A.Origin__cctor" interpose each other (ELF gives the executable's copy priority),
+        // and the shared lib's __mlir_gctors ends up calling the executable's cctor, leaving the shared
+        // lib's globals uninitialized (null deref at runtime in -shared/-gctors-as-method builds).
+        newFuncOp.setPrivate();
+        newFuncOp->setAttr("llvm.linkage",
+                           LLVM::LinkageAttr::get(rewriter.getContext(), LLVM::Linkage::Internal));
         if (!initRegion.empty())
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);

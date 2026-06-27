@@ -6167,6 +6167,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 mlir::Type dataType;
                 auto argIndex = 0;
                 auto isGlobal = false;
+                auto isGlobalDefined = true;
                 mlir::StringAttr linkageNameAttr;
                 if (auto variableOp = dyn_cast<mlir_ts::VariableOp>(op))
                 {
@@ -6183,6 +6184,22 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                     dataType = globalOp.getType();
                     linkageNameAttr = globalOp.getSymNameAttr();
                     isGlobal = true;
+                    // an external declaration (no initializer value and empty initializer region) is not
+                    // defined here - marking it as defined makes the debug info emit a dangling address
+                    // relocation to a symbol that never gets emitted (e.g. static members of a class
+                    // expression used only as a default-parameter type).
+                    auto &initRegion = globalOp.getInitializerRegion();
+                    isGlobalDefined = globalOp.getValueAttr() != nullptr ||
+                                      (!initRegion.empty() && !initRegion.front().empty());
+
+                    // skip debug info for external declarations - attaching a global-variable
+                    // expression to a declaration global makes LLVM emit a DW_OP_addr relocation to
+                    // a symbol that never gets defined (link error). This happens for static members
+                    // of a class expression used only as a default-parameter type.
+                    if (!isGlobalDefined)
+                    {
+                        continue;
+                    }
                 }
 
                 // TODO: finish the DI logic
@@ -6203,8 +6220,8 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 {
                     // recreate globalVar later to set correct LinkageAttr and isDefined
                     auto varInfo = LLVM::DIGlobalVariableAttr::get(
-                        location.getContext(), scope, name, linkageNameAttr, 
-                        file, line, diType, false, true, alignInBits);
+                        location.getContext(), scope, name, linkageNameAttr,
+                        file, line, diType, false, isGlobalDefined, alignInBits);
                     op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
                 }
                 else
