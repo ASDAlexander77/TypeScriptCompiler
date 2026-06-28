@@ -5,8 +5,8 @@ if not "%1"=="" (
 	set BUILD=%1
 )
 
-set GC_VER=8.2.8
-set LIBATOMIC_OPS_VER=7.8.2
+set GC_VER=8.2.12
+set LIBATOMIC_OPS_VER=7.10.0
 
 set p=%cd%
 
@@ -29,11 +29,11 @@ IF EXIST ".\3rdParty\gc\x64\%BUILD%\lib\gc.lib" (
 ) ELSE (
   cd %p%
   echo "Downloading BDWGC"
-  curl -o gc-%GC_VER%.tar.gz https://www.hboehm.info/gc/gc_source/gc-%GC_VER%.tar.gz
+  curl -o gc-%GC_VER%.tar.gz https://github.com/bdwgc/bdwgc/releases/download/v%GC_VER%/gc-%GC_VER%.tar.gz
   echo "Opening TAR.GZ BDWGC"  
   tar -xvzf gc-%GC_VER%.tar.gz -C ./3rdParty/
   echo "Downloading Libatomic_ops"
-  curl -o libatomic_ops-%LIBATOMIC_OPS_VER%.tar.gz https://www.hboehm.info/gc/gc_source/libatomic_ops-%LIBATOMIC_OPS_VER%.tar.gz
+  curl -o libatomic_ops-%LIBATOMIC_OPS_VER%.tar.gz https://github.com/bdwgc/libatomic_ops/releases/download/v%LIBATOMIC_OPS_VER%/libatomic_ops-%LIBATOMIC_OPS_VER%.tar.gz
   echo "Opening TAR.GZ Libatomic_ops"  
   tar -xvzf libatomic_ops-%LIBATOMIC_OPS_VER%.tar.gz -C ./3rdParty/
   echo "Copy to gc-%GC_VER%/libatomic_ops"  
