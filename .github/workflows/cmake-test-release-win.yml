@@ -77,12 +77,12 @@ jobs:
     - name: Download 3rd party source - GC
       continue-on-error: true
       shell: pwsh
-      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/gc-${{ env.GC_VERSION }}.tar.gz" -OutFile "gc-${{ env.GC_VERSION }}.tar.gz"
+      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://github.com/bdwgc/bdwgc/releases/download/v${{ env.GC_VERSION }}/gc-${{ env.GC_VERSION }}.tar.gz" -OutFile "gc-${{ env.GC_VERSION }}.tar.gz"
 
     - name: Download 3rd party source - GC:Atomic_ops
       continue-on-error: true
       shell: pwsh
-      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz" -OutFile "libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz"
+      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://github.com/bdwgc/libatomic_ops/releases/download/v${{ env.LIBATOMIC_OPS_VERSION }}/libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz" -OutFile "libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz"
 
     - name: UnZip 3rd party source - GC
       continue-on-error: false
