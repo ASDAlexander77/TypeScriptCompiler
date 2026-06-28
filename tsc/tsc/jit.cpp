@@ -3,6 +3,13 @@
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/IR/BuiltinOps.h"
 
+#include "llvm/Support/DynamicLibrary.h"
+
+#include <cstdio>
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include "llvm/TargetParser/Host.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/TargetSelect.h"
@@ -86,12 +93,16 @@ int loadLibrary(mlir::SmallString<256> &libPath, llvm::StringMap<void *> &export
 
 int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compileOptions)
 {
+    // to avoid false positive memory leak reports in release builds
     // Print a stack trace if we signal out.
     llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
+
     llvm::PrettyStackTraceProgram X(argc, argv);
     llvm::setBugReportMsg("PLEASE submit a bug report to https://github.com/ASDAlexander77/TypeScriptCompiler/issues and include the crash backtrace.");
 
     llvm::llvm_shutdown_obj Y; // Call llvm_shutdown() on exit.
+
+    // No leaks until here
 
     registerMLIRDialects(module);
 
@@ -165,8 +176,40 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         engineOptions.jitCodeGenOptLevel = (llvm::CodeGenOptLevel) optLevel.getValue();
     }
 
+#ifdef _WIN32
+    // tsc.exe links the CRT statically (/MT[d]), so its libc symbols are not in
+    // any DLL export table. The JIT's process-symbol resolver would otherwise bind
+    // libc calls (puts/printf/malloc/...) to a *different* CRT instance loaded as a
+    // DLL (ucrtbase.dll), giving JIT'd code a separate stdout buffer and heap from
+    // tsc.exe. That mismatch loses output and corrupts state on teardown.
+    //
+    // Add our own CRT entry points to the process symbol table *before* creating
+    // the engine: the JIT's GetForCurrentProcess generator consults this table
+    // (SearchForAddressOfSymbol checks explicitly-added symbols first) only for
+    // unresolved symbols, so it overrides ucrtbase without an ORC JITDylib
+    // "duplicate definition" conflict, and it is in place before create() eagerly
+    // materializes any global constructors that reference these symbols.
+    {
+        auto addSym = [](const char *name, void *addr) {
+            llvm::sys::DynamicLibrary::AddSymbol(name, addr);
+        };
+        addSym("puts", (void*)&puts);
+        addSym("printf", (void*)&printf);
+        addSym("malloc", (void*)&malloc);
+        addSym("free", (void*)&free);
+        addSym("realloc", (void*)&realloc);
+        addSym("calloc", (void*)&calloc);
+        addSym("memset", (void*)&memset);
+        addSym("memcpy", (void*)&memcpy);
+    }
+#endif
+
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
-    assert(maybeEngine && "failed to construct an execution engine");
+    if (!maybeEngine)
+    {
+        llvm::WithColor::error(llvm::errs(), "tsc") << "failed to construct an execution engine, error: " << maybeEngine.takeError() << "\n";
+        return -1;
+    }
     auto &engine = maybeEngine.get();
 
     if (dumpObjectFile)
@@ -211,5 +254,14 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         return -1;
     }
 
+    // The JIT program has finished. On Windows/COFF the MLIR/ORC LLJIT platform
+    // registers process-level atexit glue that faults during teardown, so the
+    // normal CRT exit path crashes after a successful run. Flush stdio and exit
+    // the process directly, bypassing the CRT atexit handlers.
+    fflush(stdout);
+    fflush(stderr);
+#ifdef _WIN32
+    ExitProcess(0);
+#endif
     return 0;
 }

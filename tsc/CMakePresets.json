@@ -21,9 +21,6 @@
             "name": "windows-msbuild",
             "hidden": true,
             "inherits": "default",
-            "generator": "Visual Studio 17 2022",
-            "displayName": "Visual Studio Professional 2022 - x86_amd64",
-            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
             "toolset": "host=x64",
             "architecture": "x64",
             "cacheVariables": {
@@ -44,21 +41,131 @@
             }
         },
         {
-            "name": "windows-msbuild-debug",
+            "name": "windows-msbuild-2022",
+            "hidden": true,
+            "inherits": "windows-msbuild",
+            "generator": "Visual Studio 17 2022",
+            "displayName": "Visual Studio Professional 2022 - x86_amd64",
+            "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)"
+        },        
+        {
+            "name": "windows-msbuild-2022-debug",
             "displayName": "Visual Studio Professional 2022 - x86_amd64 - Debug",
             "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
-            "inherits": "windows-msbuild",
+            "inherits": "windows-msbuild-2022",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Debug"
             }
         },
         {
-            "name": "windows-msbuild-release",
+            "name": "windows-msbuild-2022-release",
             "displayName": "Visual Studio Professional 2022 - x86_amd64 - Release",
             "description": "Using compilers for Visual Studio 17 2022 (x86_x64 architecture)",
-            "inherits": "windows-msbuild",
+            "inherits": "windows-msbuild-2022",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
+            }
+        },        
+        {
+            "name": "windows-msbuild-2026",
+            "hidden": true,
+            "inherits": "windows-msbuild",
+            "generator": "Visual Studio 18 2026",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64",
+            "description": "Using compilers for Visual Studio 18 2026 (x86_x64 architecture)"
+        },        
+        {
+            "name": "windows-msbuild-2026-debug",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64 - Debug",
+            "description": "Using compilers for Visual Studio 18 2026 (x86_x64 architecture)",
+            "inherits": "windows-msbuild-2026",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "windows-msbuild-2026-release",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64 - Release",
+            "description": "Using compilers for Visual Studio 18 2026 (x86_x64 architecture)",
+            "inherits": "windows-msbuild-2026",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "windows-ninja",
+            "hidden": true,
+            "inherits": "default",
+            "generator": "Ninja Multi-Config",
+            "displayName": "Ninja Multi-Config",
+            "description": "Clang++ (current) x86_64-pc-windows-msvc",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "1"
+            },
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Windows"
+            }
+        },
+        {
+            "name": "windows-ninja-debug",
+            "hidden": true,
+            "inherits": "windows-ninja",
+            "displayName": "Ninja Multi-Config - Debug",
+            "description": "Ninja Multi-Config - Debug",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "windows-ninja-release",
+            "hidden": true,
+            "inherits": "windows-ninja",
+            "displayName": "Ninja Multi-Config - Release",
+            "description": "Ninja Multi-Config - Release",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "windows-ninja-clangcl-debug",
+            "inherits": "windows-ninja-debug",
+            "displayName": "ClangCL (current) Debug",
+            "description": "Using compilers: C = clang-cl, CXX = clang-cl",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang-cl",
+                "CMAKE_CXX_COMPILER": "clang-cl"
+            }
+        },
+        {
+            "name": "windows-ninja-clangcl-release",
+            "inherits": "windows-ninja-release",
+            "displayName": "ClangCL (current) Release",
+            "description": "Using compilers: C = clang-cl, CXX = clang-cl",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang-cl",
+                "CMAKE_CXX_COMPILER": "clang-cl"
+            }
+        },
+        {
+            "name": "windows-ninja-clang-debug",
+            "inherits": "windows-ninja-debug",
+            "displayName": "Clang (current) Debug",
+            "description": "Using compilers: C = clang, CXX = clang++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
+            }
+        },
+        {
+            "name": "windows-ninja-clang-release",
+            "inherits": "windows-ninja-release",
+            "displayName": "Clang (current) Release",
+            "description": "Using compilers: C = clang, CXX = clang++",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++"
             }
         },
         {
@@ -138,15 +245,27 @@
     ],
     "buildPresets": [
         {
-            "name": "build-windows-msbuild-debug",
+            "name": "build-windows-msbuild-2022-debug",
             "displayName": "Visual Studio Professional 2022 - x86_amd64 - Debug",
-            "configurePreset": "windows-msbuild-debug",
+            "configurePreset": "windows-msbuild-2022-debug",
             "configuration": "Debug"
         },
         {
-            "name": "build-windows-msbuild-release",
+            "name": "build-windows-msbuild-2022-release",
             "displayName": "Visual Studio Professional 2022 - x86_amd64 - Release",
-            "configurePreset": "windows-msbuild-release",
+            "configurePreset": "windows-msbuild-2022-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "build-windows-msbuild-2026-debug",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64 - Debug",
+            "configurePreset": "windows-msbuild-2026-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "build-windows-msbuild-2026-release",
+            "displayName": "Visual Studio Professional 2026 - x86_amd64 - Release",
+            "configurePreset": "windows-msbuild-2026-release",
             "configuration": "Release"
         },
         {
@@ -200,14 +319,26 @@
             }
         },
         {
-            "name": "test-windows-msbuild-debug",
-            "configurePreset": "windows-msbuild-debug",
+            "name": "test-windows-msbuild-2022-debug",
+            "configurePreset": "windows-msbuild-2022-debug",
             "configuration": "Debug",
             "inherits": "test-default"
         },
         {
-            "name": "test-windows-msbuild-release",
-            "configurePreset": "windows-msbuild-release",
+            "name": "test-windows-msbuild-2022-release",
+            "configurePreset": "windows-msbuild-2022-release",
+            "configuration": "Release",
+            "inherits": "test-default"
+        },
+        {
+            "name": "test-windows-msbuild-2026-debug",
+            "configurePreset": "windows-msbuild-2026-debug",
+            "configuration": "Debug",
+            "inherits": "test-default"
+        },
+        {
+            "name": "test-windows-msbuild-2026-release",
+            "configurePreset": "windows-msbuild-2026-release",
             "configuration": "Release",
             "inherits": "test-default"
         },

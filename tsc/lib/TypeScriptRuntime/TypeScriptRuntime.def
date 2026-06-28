@@ -1,0 +1,56 @@
+; Exports for TypeScriptRuntime.dll under the names JIT-compiled code expects.
+; The MLIR ExecutionEngine resolves these directly from the DLL export table
+; (JITDylib path) instead of through the '__mlir_execution_engine_init' hook,
+; which avoids a cross-heap free of the symbol StringMap under the static CRT.
+;
+; Syntax 'EXPORTNAME=internal_symbol' re-exports an internal symbol under the
+; name the generated code calls.
+
+EXPORTS
+    ; --- GC runtime (gc.cpp, extern "C" via gcwrapper.h) ---
+    GC_init=_mlir__GC_init
+    GC_malloc=_mlir__GC_malloc
+    GC_malloc_atomic=_mlir__GC_malloc_atomic
+    GC_memalign=_mlir__GC_memalign
+    GC_realloc=_mlir__GC_realloc
+    GC_free=_mlir__GC_free
+    GC_get_heap_size=_mlir__GC_get_heap_size
+    GC_malloc_explicitly_typed=_mlir__GC_malloc_explicitly_typed
+    GC_make_descriptor=_mlir__GC_make_descriptor
+
+    ; --- memory runtime (MemRuntime.cpp, extern "C") ---
+    _mlir_alloc=Alloc
+    _mlir_aligned_alloc=AlignedAlloc
+    _mlir_free=Free
+    _mlir_aligned_free=AlignedFree
+    aligned_alloc=AlignedAlloc
+    aligned_free=AlignedFree
+
+    ; --- dynamic-library runtime (DynamicRuntime.cpp, extern "C") ---
+    LLVMLoadLibraryPermanently=LoadLibraryPermanently
+    LLVMSearchForAddressOfSymbol=SearchForAddressOfSymbol
+
+    ; --- async runtime (AsyncRuntime.cpp, extern "C", names already match) ---
+    mlirAsyncRuntimeAddRef
+    mlirAsyncRuntimeDropRef
+    mlirAsyncRuntimeExecute
+    mlirAsyncRuntimeGetValueStorage
+    mlirAsyncRuntimeCreateToken
+    mlirAsyncRuntimeCreateValue
+    mlirAsyncRuntimeEmplaceToken
+    mlirAsyncRuntimeEmplaceValue
+    mlirAsyncRuntimeSetTokenError
+    mlirAsyncRuntimeSetValueError
+    mlirAsyncRuntimeIsTokenError
+    mlirAsyncRuntimeIsValueError
+    mlirAsyncRuntimeIsGroupError
+    mlirAsyncRuntimeAwaitToken
+    mlirAsyncRuntimeAwaitValue
+    mlirAsyncRuntimeAwaitTokenAndExecute
+    mlirAsyncRuntimeAwaitValueAndExecute
+    mlirAsyncRuntimeCreateGroup
+    mlirAsyncRuntimeAddTokenToGroup
+    mlirAsyncRuntimeAwaitAllInGroup
+    mlirAsyncRuntimeAwaitAllInGroupAndExecute
+    mlirAsyncRuntimGetNumWorkerThreads
+    mlirAsyncRuntimePrintCurrentThreadId

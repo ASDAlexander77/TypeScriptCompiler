@@ -1075,9 +1075,17 @@ class MLIRGenImpl
             builder.setInsertionPointToStart(parentModule.getBody());
             mclh.seekLastOp<mlir_ts::GlobalConstructorOp>(parentModule.getBody());            
 
-            // priority is lowest to load as first dependencies
+            // The shared-lib load + symbol resolution call into LLVM's
+            // sys::DynamicLibrary, which uses std::vector. In debug builds STL
+            // iterators take a global lock that the CRT only initializes via its
+            // own '_Init_locks'/'initlocks' dynamic initializer (in .CRT$XCU).
+            // FIRST_GLOBAL_CONSTRUCTOR_PRIORITY (100) places this ctor BEFORE that
+            // CRT init -> entering an uninitialized CRITICAL_SECTION -> crash.
+            // Use the same band as the per-symbol __cctors (LAST) so it runs after
+            // 'initlocks'; it is emitted before them, so it still loads the library
+            // before any LLVMSearchForAddressOfSymbol runs.
             builder.create<mlir_ts::GlobalConstructorOp>(
-                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(FIRST_GLOBAL_CONSTRUCTOR_PRIORITY));
+                location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullInitGlobalFuncName), builder.getIndexAttr(LAST_GLOBAL_CONSTRUCTOR_PRIORITY));
         }
 
         for (auto declSymbol : symbols)
@@ -22593,19 +22601,30 @@ genContext);
         for (auto [index, typeParam] : enumerate(typeParams))
         {
             auto isDefault = false;
-            auto type = index < argsCount
-                            ? getType(typeArgs[index], genContext)
-                            : (isDefault = true, typeParam->hasDefault() 
-                                ? getType(typeParam->getDefault(), genContext) 
-                                : typeParam->hasConstraint() 
-                                    ? getType(typeParam->getConstraint(), genContext) 
-                                    : mlir::Type());
+            mlir::Type type;
+            if (index < argsCount)
+            {
+                type = getType(typeArgs[index], genContext);
+            }
+            else
+            {
+                isDefault = true;
+                if (typeParam->hasDefault())
+                {
+                    type = getType(typeParam->getDefault(), genContext);
+                }
+                else if (typeParam->hasConstraint())
+                {
+                    type = getType(typeParam->getConstraint(), genContext);
+                }
+            }
+
             if (!type)
             {
                 if (isDefault && !typeParam->hasDefault() && argsCount == 0)
                 {
                     // seems creating instance without TypeParams, can be used instance with the same name
-                    // scuh as Point and Point<T>
+                    // such as Point and Point<T>
                     return {mlir::failure(), IsGeneric::NoDefaults};    
                 }
 
@@ -23025,6 +23044,7 @@ genContext);
             {"TypeOf", true },
             {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
+            {"Ref", true }, // alias of Reference
             {"Readonly", true },
             {"Partial", true },
             {"Required", true },
@@ -23112,6 +23132,7 @@ genContext);
             {"TypeOf", true },
             {"Opaque", true }, // to support void*
             {"Reference", true }, // to support dll import
+            {"Ref", true }, // alias of Reference
             {"ThisType", true },
             //{"Array", true }
         };
@@ -23274,7 +23295,7 @@ genContext);
                 type = mth.wideStorageType(type);
                 return type;
             })
-            .Case("Reference", [&] (auto typeArguments, auto genContext) {
+            .Cases("Reference", "Ref", [&] (auto typeArguments, auto genContext) {
                 auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 if (!type)
                 {
@@ -23423,7 +23444,7 @@ genContext);
                 type = mth.wideStorageType(type);
                 return type;
             })
-            .Case("Reference", [&] (auto typeArguments, auto genContext) {
+            .Cases("Reference", "Ref", [&] (auto typeArguments, auto genContext) {
                 auto type = getFirstTypeFromTypeArguments(typeArguments, genContext);
                 return mlir_ts::RefType::get(type);
             })

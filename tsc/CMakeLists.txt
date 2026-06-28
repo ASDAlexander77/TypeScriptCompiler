@@ -45,7 +45,7 @@ set(CMAKE_BUILD_TYPE "Debug")
 endif()
 
 if ("${MLIR_DIR}" STREQUAL "" OR "${MLIR_DIR}" STREQUAL "MLIR_DIR-NOTFOUND")
-  if (MSVC)
+  if (MSVC OR WIN32)
     #file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE}/lib/cmake/mlir" MLIR_DIR)
     get_filename_component(MLIR_DIR "${CMAKE_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE}/lib/cmake/mlir" REALPATH BASE_DIR "${CMAKE_SOURCE_DIR}")
   else()
@@ -57,7 +57,7 @@ endif()
 message(STATUS "MLIR_DIR is ${MLIR_DIR}")
 
 if ("${Clang_DIR}" STREQUAL "" OR "${Clang_DIR}" STREQUAL "Clang_DIR-NOTFOUND")
-  if (MSVC)
+  if (MSVC OR WIN32)
     #file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE}/lib/cmake/clang" Clang_DIR)
     get_filename_component(Clang_DIR "${CMAKE_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE}/lib/cmake/clang" REALPATH BASE_DIR "${CMAKE_SOURCE_DIR}")
   else()
@@ -68,11 +68,21 @@ if ("${Clang_DIR}" STREQUAL "" OR "${Clang_DIR}" STREQUAL "Clang_DIR-NOTFOUND")
 endif()
 message(STATUS "Clang_DIR is ${Clang_DIR}")
 
+if ("${BDWgc_DIR}" STREQUAL "" OR "${BDWgc_DIR}" STREQUAL "BDWgc_DIR-NOTFOUND")
+  string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
+  if (MSVC OR WIN32)
+    get_filename_component(BDWgc_DIR "${CMAKE_SOURCE_DIR}/../3rdParty/gc/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib/cmake/bdwgc" REALPATH BASE_DIR "${CMAKE_SOURCE_DIR}")
+  else()
+    get_filename_component(BDWgc_DIR "${CMAKE_SOURCE_DIR}/../3rdParty/gc/${CMAKE_BUILD_TYPE_LOWERCASE}/lib/cmake/bdwgc" REALPATH BASE_DIR "${CMAKE_SOURCE_DIR}")
+  endif()
+endif()
+message(STATUS "BDWgc_DIR is ${BDWgc_DIR}")
+
 if ("${PYTHON_EXECUTABLE}" STREQUAL "" OR "${PYTHON_EXECUTABLE}" STREQUAL "PYTHON_EXECUTABLE-NOTFOUND")
 set(PYTHON_EXECUTABLE "python.exe")
 endif()
 
-message(STATUS "CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE was ${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE} and set to x64")
+message(STATUS "CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE was [${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}], set to x64")
 set(CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE "x64")
 
 find_package(MLIR REQUIRED CONFIG)
@@ -83,6 +93,13 @@ endif()
 find_package(Clang REQUIRED PATHS "${CLANG_DIR_ABSOLUTE}" NO_DEFAULT_PATH)
 if (NOT Clang_FOUND)
     message(FATAL_ERROR "Failed to find Clang")
+endif()
+
+# bdwgc ships a CMake package (BDWgc::gc / BDWgc::cord imported targets) that
+# carries the include dir and the per-config static lib location.
+find_package(BDWgc REQUIRED CONFIG)
+if (NOT BDWgc_FOUND)
+    message(FATAL_ERROR "Failed to find BDWgc (garbage collector)")
 endif()
 
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_CMAKE_DIR}")
@@ -101,6 +118,23 @@ set(LLVM_ENABLE_PIC "ON")
 # clang fix
 set(CMAKE_BUILD_WITH_INSTALL_RPATH "ON")
 
+if(MSVC)
+  # FIXME: In fact, sanitizers should support both /MT and /MD, see PR20214.
+  # Use the static CRT (/MT, /MTd) to match the prebuilt static LLVM/MLIR libs.
+  # Use a generator expression so it is correct for multi-config generators
+  # (e.g. Visual Studio), where CMAKE_BUILD_TYPE is not meaningful at configure time.
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
+  # HandleLLVMOptions (included below) otherwise forces the dynamic CRT default and
+  # would override CMAKE_MSVC_RUNTIME_LIBRARY. These tell it to select the static CRT
+  # for every configuration so all targets (including unittests/gtest) match.
+  set(LLVM_USE_CRT_DEBUG MTd)
+  set(LLVM_USE_CRT_RELEASE MT)
+  set(LLVM_USE_CRT_RELWITHDEBINFO MT)
+  set(LLVM_USE_CRT_MINSIZEREL MT)
+
+  message(STATUS "CMAKE_MSVC_RUNTIME_LIBRARY is ${CMAKE_MSVC_RUNTIME_LIBRARY}")
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")

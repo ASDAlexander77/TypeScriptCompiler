@@ -57,10 +57,15 @@ declare type float = any;
 declare type double = any;
 declare type Opaque = any;
 
-type Reference<T> = any
+type Ref<T> = any
+type Reference<T> = Ref<T> // deprecated alias of Ref
 
-declare function ReferenceOf<T>(r: T): Reference<T>;
-declare function LoadReference<T>(r: Reference<T>): T;
+declare function Ref<T>(r: T): Ref<T>;
+declare function Deref<T>(r: Ref<T>): T;
+
+// deprecated aliases of Ref / Deref
+declare function ReferenceOf<T>(r: T): Ref<T>;
+declare function LoadReference<T>(r: Ref<T>): T;
 
 declare function sizeof<T>(v?: T): index;
 )raw";

@@ -1,15 +1,20 @@
 #include "helper.h"
 
+#ifndef WIN32
+#include <unistd.h> // for getpid
+#endif
+
 #if WIN32
-#define GC_LIB "gcmt-lib.lib "
+#define GC_LIB "gc.lib "
 #else
-#define GC_LIB "-lgcmt-lib "
+#define GC_LIB "-lgc "
 #endif
 #ifdef WIN32
 #define TYPESCRIPT_LIB "TypeScriptAsyncRuntime.lib "
 #define LLVM_LIBS "LLVMSupport.lib "
 //#define LIBS "msvcrt" _D_ ".lib ucrt" _D_ ".lib "
-#define LIBS "msvcrt" _D_ ".lib ucrt" _D_ ".lib ntdll.lib "
+// static CRT (/MT[d]) to match LLVM/TypeScript runtime libs and gc.lib; mixing static+dynamic CRT crashes at startup
+#define LIBS "libcmt" _D_ ".lib libvcruntime" _D_ ".lib libucrt" _D_ ".lib ntdll.lib "
 #else
 // for Ubuntu 20.04 add -ldl and optionally -rdynamic 
 #define LIBS "-frtti -fexceptions -lstdc++ -lrt -ldl -lpthread -lm -ltinfo"
@@ -66,7 +71,7 @@
 #endif
 
 #if WIN32
-#define RUN_CMD ""
+#define RUN_CMD ".\\"
 #define BAT_NAME ".bat"
 #else
 #define RUN_CMD "/bin/sh -f ./"
@@ -158,7 +163,7 @@ void createCompileBatchFile()
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
-    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
     batFile << "del %FILENAME%.exe" << std::endl;
     batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
     batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;        
@@ -272,7 +277,15 @@ std::string getTempOutputFileNameNoExt(std::string file)
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 
     std::string fileNameNoExt = fs::path(file).stem().string();
-    auto fileNameNoExtWithMs = fileNameNoExt + "-" + std::to_string(ms.count()) + "-" + std::to_string(rand());
+    // include the process id: rand() is never seeded, so every test-runner process yields the same first value and
+    // uniqueness would otherwise rely solely on the millisecond timestamp - same-stem tests (e.g. compile + jit
+    // variants) launched within the same millisecond under parallel ctest would collide on temp file names.
+#ifdef WIN32
+    auto pid = static_cast<long long>(GetCurrentProcessId());
+#else
+    auto pid = static_cast<long long>(getpid());
+#endif
+    auto fileNameNoExtWithMs = fileNameNoExt + "-" + std::to_string(ms.count()) + "-" + std::to_string(pid) + "-" + std::to_string(rand());
 
     std::cout << "Test file: " << fileNameNoExtWithMs << " path: " << file << std::endl;
 
@@ -355,7 +368,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
             << std::endl;
 
     batFile << "del " << objs.str() << std::endl;
-    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
     batFile << "del %FILENAME%.exe" << std::endl;
     batFile << "if exist %FILENAME%.lib (del %FILENAME%.lib)" << std::endl;
     batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;    
@@ -374,7 +387,8 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     auto isFirst = true;
     for (auto &file : files)
     {
-        auto fileNameWithoutExt = fs::path(file).stem().string();
+        // prefix with the unique temp name so parallel tests reusing the same source files don't stomp each other's object files
+        auto fileNameWithoutExt = tempOutputFileNameNoExt + "_" + fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".o ";
         batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (isFirst ? "" : tsc_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
         isFirst = false;
@@ -480,7 +494,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
         batFile << "del " << exec_objs.str() << std::endl;
 
-        batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+        batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
 
         batFile << "echo off" << std::endl;
         batFile << "del " << shared_libs.str() << std::endl;
@@ -510,7 +524,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     std::stringstream sharedBat;    
     for (auto &file : files)
     {
-        auto fileNameWithoutExt = fs::path(file).stem().string();
+        // prefix with the unique temp name so parallel tests reusing the same source files don't stomp each other's object/shared-lib files
+        auto fileNameWithoutExt = tempOutputFileNameNoExt + "_" + fs::path(file).stem().string();
         if (first)
         {
             exec_objs << fileNameWithoutExt << ".o ";
@@ -520,47 +535,57 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             shared_objs << fileNameWithoutExt << ".o ";
             if (shared_filenameNoExt.empty())
             {
-                shared_filenameNoExt = fileNameWithoutExt;
+                // the shared lib must keep its real (unprefixed) stem so that `import './<stem>'`
+                // resolves to lib<stem>.so instead of falling back to recompiling the source
+                shared_filenameNoExt = fs::path(file).stem().string();
             }
         }
 
-        (first ? execBat : sharedBat) << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (first ? "" : tsc_opt) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        (first ? execBat : sharedBat) << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (first ? "" : tsc_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
 
         first = false;
     }
 
+    // run everything inside a unique per-test working directory: the shared lib must keep its
+    // real name (lib<stem>.so) for `import './<stem>'` to resolve, but that name is not unique
+    // across tests reusing the same source file - isolating the cwd avoids parallel collisions.
+    // Output (.txt/.err) is written to the parent dir where the runner reads it from.
+    batFile << "WORKDIR=" << tempOutputFileNameNoExt << "_wd" << std::endl;
+    batFile << "rm -rf $WORKDIR && mkdir -p $WORKDIR && cd $WORKDIR" << std::endl;
+
     batFile << sharedBat.str();
-    batFile << TEST_COMPILER << " " << linker_opt << " -o lib" << shared_filenameNoExt << ".so " << shared_objs.str() 
+    batFile << TEST_COMPILER << " " << linker_opt << " -o lib" << shared_filenameNoExt << ".so " << shared_objs.str()
             << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "rm -f " << shared_objs.str() << std::endl;
 
     if (jitRun)
     {
-        batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../lib/libTypeScriptRuntime.so " << *files.begin() << " 1> $FILENAME.txt 2> $FILENAME.err"
+        // one extra "../" because we run from the per-test working directory
+        batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../../lib/libTypeScriptRuntime.so --shared-libs=./lib" << shared_filenameNoExt << ".so " << *files.begin() << " 1> ../$FILENAME.txt 2> ../$FILENAME.err"
                 << std::endl;
-        batFile << "rm -f lib$FILENAME.so" << std::endl;
     }
     else
     {
         batFile << execBat.str();
-        batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " "; 
+        batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " ";
         batFile << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH ";
-        if (sharedLibCompileTime)
+        if (sharedLib)
         {
+            // dynamics and compile-time shared modes both link the produced shared lib;
             // we need "-Wl,-rpath=" to embed path for compiled shared lib path
             batFile << "-L`pwd` -Wl,-rpath=`pwd` -l" << shared_filenameNoExt << " ";
-        }        
+        }
 
         batFile << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
 
         batFile << "rm -f " << exec_objs.str() << std::endl;
 
-        batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
-
-        batFile << "rm -f $FILENAME" << std::endl;
-        batFile << "rm -f lib$FILENAME.so" << std::endl;
+        batFile << "./$FILENAME 1> ../$FILENAME.txt 2> ../$FILENAME.err" << std::endl;
     }
+
+    // leave and remove the per-test working directory (with the shared lib, exe, etc.)
+    batFile << "cd .. && rm -rf $WORKDIR" << std::endl;
 
     batFile.close();    
 #endif    

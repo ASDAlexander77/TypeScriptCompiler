@@ -13,9 +13,11 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v8
+  CACHE_VERSION: v9
   LLVM_VERSION: 19
   LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/l9xrfupdbwqbnckr5g36p/llvm_19_1_3_release.tgz?rlkey=xubw01vl6ey3xszbph32xqfip&st=okz2ghqx&dl=1"
+  GC_VERSION: "8.2.8"
+  LIBATOMIC_OPS_VERSION: "7.8.2"
 
 jobs:
   build:
@@ -81,32 +83,27 @@ jobs:
     - name: Download 3rd party source - GC
       continue-on-error: true
       shell: sh
-      run: curl --insecure -L https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
+      run: curl --insecure -L https://www.hboehm.info/gc/gc_source/gc-${{ env.GC_VERSION }}.tar.gz --output gc-${{ env.GC_VERSION }}.tar.gz
 
     - name: Download 3rd party source - GC:Atomic_ops
       continue-on-error: true
       shell: sh
-      run: curl --insecure -L https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz --output libatomic_ops-7.6.10.tar.gz
+      run: curl --insecure -L https://www.hboehm.info/gc/gc_source/libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz --output libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz
 
     - name: UnZip 3rd party source - GC
       continue-on-error: false
       shell: sh
-      run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
+      run: tar -xvzf gc-${{ env.GC_VERSION }}.tar.gz -C ./3rdParty/
 
     - name: UnZip 3rd party source - GC:Atomic_ops
       continue-on-error: false
       shell: sh
-      run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
+      run: tar -xvzf libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz -C ./3rdParty/
 
     - name: Copy Atomic_ops to GC
       continue-on-error: false
       shell: sh
-      run:  cp -a ./3rdParty/libatomic_ops-7.6.10/ ./3rdParty/gc-8.0.4/libatomic_ops/
-
-    - name: Copy fixes to GC
-      continue-on-error: false
-      shell: sh
-      run: cp -ar ./docs/fix/gc/* ./3rdParty/gc-8.0.4/
+      run:  cp -a ./3rdParty/libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}/ ./3rdParty/gc-${{ env.GC_VERSION }}/libatomic_ops/
 
     - name: Install Ninja
       continue-on-error: false
@@ -122,7 +119,7 @@ jobs:
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/ninja/release
       shell: sh
-      run: cmake ../../../../3rdParty/gc-8.0.4 -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../../../3rdParty/gc/release -Denable_threads=ON -Denable_cplusplus=OFF
+      run: cmake ../../../../3rdParty/gc-${{ env.GC_VERSION }} -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/3rdParty/gc/release -DBUILD_SHARED_LIBS=OFF -Denable_threads=ON -Denable_cplusplus=OFF -Denable_docs=OFF
 
     - name: Build GC
       continue-on-error: false
@@ -130,11 +127,13 @@ jobs:
       shell: sh
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
 
-    - name: Copy GC
+    - name: Install GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/ninja/release
       shell: sh
-      run: mkdir -p ../../../../3rdParty/gc/release/; cp ./lib* ../../../../3rdParty/gc/release/
+      # Generates the BDWgc CMake package files (lib/cmake/bdwgc/BDWgcConfig.cmake)
+      # that the tsc build looks up via find_package(BDWgc CONFIG).
+      run: cmake --install . --config ${{ env.BUILD_TYPE }}
 
     - name: List GC files
       continue-on-error: false

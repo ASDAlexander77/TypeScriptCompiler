@@ -1,15 +1,8 @@
-include_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc-8.0.4/include/")
-
-string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
+# Include dir + lib location come from the BDWgc::gc imported target (find_package
+# in the top-level CMakeLists), so no hardcoded include_directories/link_directories.
 if(MSVC)
-  message(STATUS "Using GC Lib: ${PROJECT_SOURCE_DIR}/../3rdParty/gc/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/")
-
-  link_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /GR")
 else()
-  message(STATUS "Using GC Lib: ${PROJECT_SOURCE_DIR}/../3rdParty/gc/${CMAKE_BUILD_TYPE_LOWERCASE}/")
-
-  link_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc/${CMAKE_BUILD_TYPE_LOWERCASE}/")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -frtti")
 endif()
 
@@ -25,5 +18,13 @@ add_mlir_library(TypeScriptRuntime
   EXCLUDE_FROM_LIBMLIR
 
   LINK_LIBS PRIVATE
-  gcmt-lib
+  BDWgc::gc
 )
+
+if(MSVC)
+  # Export the runtime symbols under the names JIT-compiled code expects so the
+  # MLIR ExecutionEngine resolves them via the JITDylib path (no init callback,
+  # no cross-heap free of the symbol StringMap). See TypeScriptRuntime.def.
+  target_link_options(TypeScriptRuntime PRIVATE
+    "/DEF:${CMAKE_CURRENT_SOURCE_DIR}/TypeScriptRuntime.def")
+endif()

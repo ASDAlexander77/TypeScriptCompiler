@@ -1,45 +1,13 @@
-#include "llvm/ADT/StringMap.h"
-
 #include <typeinfo>
+
+// The runtime symbols required by JIT-compiled code are exported under their
+// JIT names via TypeScriptRuntime.def. We deliberately do NOT export the MLIR
+// '__mlir_execution_engine_init/destroy' callbacks: when those are absent, the
+// MLIR ExecutionEngine loads this library as a plain JITDylib and resolves
+// symbols directly from its export table. That avoids the cross-heap free that
+// happens when the DLL populates a StringMap owned (and later freed) by the EXE
+// while both link the static CRT (separate heaps).
 
 #ifdef _WIN32
 #pragma comment(linker, "/EXPORT:??_7type_info@@6B@")
 #endif
-
-void init_gcruntime(llvm::StringMap<void *> &exportSymbols);
-void destroy_gcruntime();
-
-void init_memruntime(llvm::StringMap<void *> &exportSymbols);
-//void destroy_memruntime();
-
-void init_asyncruntime(llvm::StringMap<void *> &exportSymbols);
-void destroy_asyncruntime();
-
-void init_dynamicruntime(llvm::StringMap<void *> &exportSymbols);
-void destroy_dynamicruntime();
-
-// Export symbols for the MLIR runner integration. All other symbols are hidden.
-#ifdef _WIN32
-#define API __declspec(dllexport)
-#else
-#define API __attribute__((visibility("default")))
-#endif
-
-extern "C" API void __mlir_execution_engine_init(llvm::StringMap<void *> &exportSymbols);
-
-// to support shared_libs
-void __mlir_execution_engine_init(llvm::StringMap<void *> &exportSymbols)
-{
-    init_gcruntime(exportSymbols);
-    init_memruntime(exportSymbols);
-    init_asyncruntime(exportSymbols);
-    init_dynamicruntime(exportSymbols);
-}
-
-extern "C" API void __mlir_execution_engine_destroy()
-{
-    destroy_gcruntime();
-    //destory_memruntime();
-    destroy_asyncruntime();
-    destroy_dynamicruntime();
-}

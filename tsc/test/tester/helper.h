@@ -145,7 +145,7 @@ std::string exec(std::string cmd)
             {
                 if (retry <= 1)
                 {
-                    std::cerr << "Error: return code is not 0, code: " << code << " cmd: " << cmd << " output: " << result << std::endl;
+                    std::cerr << "Error: return code is not 0, code: " << code << " cmd: " << cmd << " path: " << fs::current_path() << " output: " << result << std::endl;
                 }
                 else
                 {

@@ -114,7 +114,7 @@ cl::opt<enum Exports> exportAction("export", cl::desc("Export Symbols. (Useful t
 cl::opt<bool> embedExportDeclarationsAction("embed-declarations", cl::desc("Embed declarations as member __decls_lib_XXXX. (Needed in 'import' statement)"), cl::init(true), cl::cat(TypeScriptCompilerCategory));
 
 cl::opt<std::string> defaultlibpath("default-lib-path", cl::desc("JS library path. Should point to folder/directory with subfolder '" DEFAULT_LIB_DIR "' or DEFAULT_LIB_PATH environmental variable"), cl::value_desc("defaultlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
-cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gcmt-lib.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
+cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gc.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. Should point to file 'LLVMSupport.lib' and 'LLVMDemangle' in linux or LLVM_LIB_PATH environmental variable"), cl::value_desc("llvmlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> tsclibpath("tsc-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'TypeScriptAsyncRuntime.lib' or TSC_LIB_PATH environmental variable"), cl::value_desc("tsclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> emsdksysrootpath("emsdk-sysroot-path", cl::desc("TypeScript Compiler Runtime library path. Should point to dir '<...>/emsdk/upstream/emscripten/cache/sysroot' or EMSDK_SYSROOT_PATH environmental variable. (used when '-mtriple=wasm32-pc-emscripten')"), cl::value_desc("emsdksysrootpath"), cl::cat(TypeScriptCompilerBuildCategory));
@@ -227,6 +227,16 @@ bool prepareDefaultLib(CompileOptions &compileOptions)
 
 int main(int argc, char **argv)
 {
+#if _MSC_VER && _DEBUG
+    // Get current flag
+    int tmpFlag = _CrtSetDbgFlag( _CRTDBG_REPORT_FLAG );
+    tmpFlag |= _CRTDBG_LEAK_CHECK_DF;
+    // Set flag to the new value.
+    _CrtSetDbgFlag( tmpFlag );
+    //_CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_DEBUG);
+    _CrtSetReportFile( _CRT_ASSERT, _CRTDBG_FILE_STDERR );
+#endif
+
     // version printer
     cl::SetVersionPrinter(TscPrintVersion);
 

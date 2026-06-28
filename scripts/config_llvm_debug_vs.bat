@@ -1,7 +1,10 @@
 pushd
+rem capture repo root (cwd at script start) so the install prefix is absolute.
+rem a relative CMAKE_INSTALL_PREFIX is resolved to an empty path by 'cmake --install'
+rem and installs LLVM to the drive root (e.g. I:\bin, I:\lib) instead of 3rdParty.
+set "LLVM_INSTALL_ROOT=%CD%"
 mkdir __build\llvm\msbuild\x64\debug
 cd __build\llvm\msbuild\x64\debug
-if exist "C:/Program Files/Microsoft Visual Studio/2022/Professional" set EXTRA_PARAM=-DCMAKE_GENERATOR_INSTANCE="C:/Program Files/Microsoft Visual Studio/2022/Professional"
-cmake ..\..\..\..\..\3rdParty\llvm-project\llvm -G "Visual Studio 17 2022" -A x64 %EXTRA_PARAM% -DLLVM_TARGETS_TO_BUILD="host;ARM;AArch64" -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="WebAssembly" -DCMAKE_BUILD_TYPE=Debug -Thost=x64 -DCMAKE_INSTALL_PREFIX=../../../../../3rdParty/llvm/x64/debug -DLLVM_INSTALL_UTILS=ON -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_ENABLE_PLUGINS=ON -DLLVM_ENABLE_PROJECTS="clang;lld;mlir" -DLLVM_ENABLE_EH=ON -DLLVM_ENABLE_RTTI=ON -DLLVM_REQUIRES_RTTI=ON -DLLVM_ENABLE_PIC=ON -Wno-dev
+cmake ..\..\..\..\..\3rdParty\llvm-project\llvm -G "Visual Studio 18 2026" -A x64 %EXTRA_PARAM% -DLLVM_TARGETS_TO_BUILD="host;ARM;AArch64" -DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD="WebAssembly" -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreadedDebug -Thost=x64 -DCMAKE_INSTALL_PREFIX="%LLVM_INSTALL_ROOT%\3rdParty\llvm\x64\debug" -DLLVM_INSTALL_UTILS=ON -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_ENABLE_PLUGINS=ON -DLLVM_ENABLE_PROJECTS="clang;lld;mlir" -DLLVM_ENABLE_EH=ON -DLLVM_ENABLE_RTTI=ON -DLLVM_REQUIRES_RTTI=ON -DLLVM_ENABLE_PIC=ON -Wno-dev
 popd
 

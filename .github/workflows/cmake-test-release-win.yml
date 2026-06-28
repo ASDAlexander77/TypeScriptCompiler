@@ -13,9 +13,11 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  CACHE_VERSION: v8
+  CACHE_VERSION: v9
   LLVM_VERSION: 19
-  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/xdcj15hlzpod06x4wpls1/llvm_19_1_3_release.zip?rlkey=x38yiyfw3y6bv15z5j3oi84lb&st=bz3u5xkv&dl=1"
+  LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/map5fet7x19bm8ztsr4ma/llvm_19_1_3_release_vs2026.zip?rlkey=iwae4mz45lf7nycawa7d61g3r&st=4ee1dfug&dl=1"
+  GC_VERSION: "8.2.8"
+  LIBATOMIC_OPS_VERSION: "7.8.2"
   
 jobs:
   build:
@@ -23,7 +25,7 @@ jobs:
     # well on Windows or Mac.  You can convert this to a matrix build if you need
     # cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
 #    - name: check disk space
@@ -75,37 +77,32 @@ jobs:
     - name: Download 3rd party source - GC
       continue-on-error: true
       shell: pwsh
-      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
+      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/gc-${{ env.GC_VERSION }}.tar.gz" -OutFile "gc-${{ env.GC_VERSION }}.tar.gz"
 
     - name: Download 3rd party source - GC:Atomic_ops
       continue-on-error: true
       shell: pwsh
-      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-7.6.10.tar.gz" -OutFile "libatomic_ops-7.6.10.tar.gz"
+      run: Invoke-WebRequest -SkipCertificateCheck -Uri "https://www.hboehm.info/gc/gc_source/libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz" -OutFile "libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz"
 
     - name: UnZip 3rd party source - GC
       continue-on-error: false
-      run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
+      run: tar -xvzf gc-${{ env.GC_VERSION }}.tar.gz -C ./3rdParty/
       shell: pwsh
 
     - name: UnZip 3rd party source - GC:Atomic_ops
       continue-on-error: false
-      run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
+      run: tar -xvzf libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}.tar.gz -C ./3rdParty/
       shell: pwsh
 
     - name: Copy Atomic_ops to GC
       continue-on-error: false
-      run:  xcopy  /E /H /C /I /Y ".\3rdParty\libatomic_ops-7.6.10" ".\3rdParty\gc-8.0.4\libatomic_ops"
-      shell: pwsh
-
-    - name: Copy fixes to GC
-      continue-on-error: false
-      run: xcopy  /E /H /C /I /Y ".\docs\fix\gc" ".\3rdParty\gc-8.0.4"
+      run:  xcopy  /E /H /C /I /Y ".\3rdParty\libatomic_ops-${{ env.LIBATOMIC_OPS_VERSION }}" ".\3rdParty\gc-${{ env.GC_VERSION }}\libatomic_ops"
       shell: pwsh
 
     - name: Configure GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
-      run: cmake ../../../../../3rdParty/gc-8.0.4 -G "Visual Studio 17 2022" -A x64 -Wno-dev -Denable_threads=ON -Denable_cplusplus=OFF
+      run: cmake ../../../../../3rdParty/gc-${{ env.GC_VERSION }} -G "Visual Studio 18 2026" -A x64 -Wno-dev -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/3rdParty/gc/x64/release -DBUILD_SHARED_LIBS=OFF -Denable_threads=ON -Denable_cplusplus=OFF -Denable_docs=OFF -DCMAKE_POLICY_DEFAULT_CMP0091=NEW -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
       shell: pwsh
 
     - name: Build GC
@@ -114,10 +111,12 @@ jobs:
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
       shell: pwsh
 
-    - name: Copy GC
+    - name: Install GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
-      run:  xcopy /E /H /C /I /Y .\${{ env.BUILD_TYPE }}\ ..\..\..\..\..\3rdParty\gc\x64\release\
+      # Generates the BDWgc CMake package files (lib/cmake/bdwgc/BDWgcConfig.cmake)
+      # that the tsc build looks up via find_package(BDWgc CONFIG).
+      run: cmake --install . --config ${{ env.BUILD_TYPE }}
       shell: pwsh
 
     - name: List GC files
@@ -129,7 +128,7 @@ jobs:
     - name: Configure
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
-      run: cmake ../../../../../tsc -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
+      run: cmake ../../../../../tsc -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
       shell: pwsh
 
     - name: Build

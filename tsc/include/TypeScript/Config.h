@@ -5,6 +5,12 @@
 #pragma warning(disable : 4062)
 #pragma warning(disable : 4834)
 #pragma warning(disable : 4996)
+
+// CRT debug
+#ifdef _DEBUG
+   #define _CRTDBG_MAP_ALLOC
+#endif // _DEBUG    
+
 #endif
 
 //#define GC_ENABLE 1

@@ -17,7 +17,11 @@
 #endif
 
 #include "gc.h"
-#include "gc_typed.h"
+#include "gc/gc_typed.h"
+
+// give the wrappers C linkage so they are exported under clean, unmangled
+// names (see TypeScriptRuntime.def, used by the JIT to resolve runtime symbols)
+#include "TypeScript/gcwrapper.h"
 
 void _mlir__GC_init()
 {
