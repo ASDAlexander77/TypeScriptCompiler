@@ -14,8 +14,8 @@ env:
   LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/map5fet7x19bm8ztsr4ma/llvm_19_1_3_release_vs2026.zip?rlkey=iwae4mz45lf7nycawa7d61g3r&st=4ee1dfug&dl=1"
   LLVM_TARGZFILE: "https://www.dropbox.com/scl/fi/l9xrfupdbwqbnckr5g36p/llvm_19_1_3_release.tgz?rlkey=xubw01vl6ey3xszbph32xqfip&st=okz2ghqx&dl=1"
   LLVM_UB20_TARGZFILE: "https://www.dropbox.com/scl/fi/jfs77u2moymjo57ca4r0s/llvm_19_1_3_release_UB20.tgz?rlkey=tia0bdfa07gaeidepumb1e1fy&st=np5mcrox&dl=1"
-  GC_VERSION: "8.2.8"
-  LIBATOMIC_OPS_VERSION: "7.8.2"
+  GC_VERSION: "8.2.12"
+  LIBATOMIC_OPS_VERSION: "7.10.0"
 
 jobs:
   build_on_windows:
@@ -403,25 +403,4 @@ jobs:
           upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
           asset_path: ./tsc.tar.gz
           asset_name: tsc.tar.gz
-          asset_content_type: application/tar+gzip
-
-  deploy_linux_asset_ub20:
-    needs: create_release
-    name: Upload Release (Ubuntu 20.04)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Release Asset from Store
-        uses: actions/download-artifact@v4
-        with:
-          name: tsc-linux-asset-ub20
-
-      - name: Upload Release Asset (Ubuntu 20.04)
-        id: upload-release-asset-ub20 
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./tsc-ub20.tar.gz
-          asset_name: tsc-ub20.tar.gz
           asset_content_type: application/tar+gzip

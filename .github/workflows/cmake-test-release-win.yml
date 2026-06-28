@@ -16,8 +16,8 @@ env:
   CACHE_VERSION: v9
   LLVM_VERSION: 19
   LLVM_ZIPFILE: "https://www.dropbox.com/scl/fi/map5fet7x19bm8ztsr4ma/llvm_19_1_3_release_vs2026.zip?rlkey=iwae4mz45lf7nycawa7d61g3r&st=4ee1dfug&dl=1"
-  GC_VERSION: "8.2.8"
-  LIBATOMIC_OPS_VERSION: "7.8.2"
+  GC_VERSION: "8.2.12"
+  LIBATOMIC_OPS_VERSION: "7.10.0"
   
 jobs:
   build:
