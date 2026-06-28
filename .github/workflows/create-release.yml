@@ -1,6 +1,7 @@
 name: Create Release/Upload Asset
 
 on:
+  workflow_dispatch:
   push:
     # Sequence of patterns matched against refs/tags
     tags:
@@ -137,14 +138,35 @@ jobs:
 
       - name: Test
         working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
-        # Execute tests defined by the CMake configuration.  
+        # Execute tests defined by the CMake configuration.
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         shell: pwsh
 
+      # Replicates installDefaultLib() from tsc/defaultlib.cpp: clone the default
+      # library sources and build them against the tsc/gc/llvm/runtime we just built.
+      - name: Clone Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}
+        run: if (!(Test-Path -Path ".\TypeScriptCompilerDefaultLib")) { git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git }
+        shell: pwsh
+
+      - name: Build Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
+        env:
+          TOOL_PATH: ${{github.workspace}}/__build/tsc/msbuild/x64/release/bin
+          GC_LIB_PATH: ${{github.workspace}}/__build/gc/msbuild/x64/release/${{ env.BUILD_TYPE }}
+          LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/x64/release/lib
+          TSC_LIB_PATH: ${{github.workspace}}/__build/tsc/msbuild/x64/release/lib
+        run: |
+          $env:VSWHERE_PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          .\build.bat release
+        shell: pwsh
+
       - name: Create Zip of Windows Asset
         working-directory: ${{github.workspace}}/__build
-        run: Get-ChildItem -Path .\tsc\msbuild\x64\release\bin\tsc.exe, .\tsc\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tsc\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe | Compress-Archive -DestinationPath ..\tsc.zip
+        run: Get-ChildItem -Path .\tsc\msbuild\x64\release\bin\tsc.exe, .\tsc\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tsc\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build\release\* | Compress-Archive -DestinationPath ..\tsc.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
@@ -292,18 +314,37 @@ jobs:
         run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         env:
           LLVM_SYMBOLIZER_PATH: ${{github.workspace}}/3rdParty/llvm/release/bin
-        
+
+      # Replicates installDefaultLib() from tsc/defaultlib.cpp: clone the default
+      # library sources and build them against the tsc/gc/llvm/runtime we just built.
+      - name: Clone Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}
+        shell: sh
+        run: if [ ! -d "./TypeScriptCompilerDefaultLib" ]; then git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git; fi
+
+      - name: Build Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
+        shell: sh
+        env:
+          TOOL_PATH: ${{github.workspace}}/__build/tsc/ninja/release/bin
+          GC_LIB_PATH: ${{github.workspace}}/__build/gc/ninja/release
+          LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/release/lib
+          TSC_LIB_PATH: ${{github.workspace}}/__build/tsc/ninja/release/lib
+        run: chmod +x ./build.sh ./scripts/*.sh; ./build.sh release
+
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
-        run: tar -czvhf ../tsc.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgc.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a
+        run: tar -czvhf ../tsc.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgc.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a -C ../TypeScriptCompilerDefaultLib/__build/release .
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v4
         with:
           name: tsc-linux-asset
           path: tsc.tar.gz
-          retention-days: 1   
+          retention-days: 1
 
   build_on_linux_ub20:
     name: Create/Upload Release Asset (Ubuntu 20.04)
@@ -443,18 +484,37 @@ jobs:
         run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         env:
           LLVM_SYMBOLIZER_PATH: ${{github.workspace}}/3rdParty/llvm/release/bin
-        
+
+      # Replicates installDefaultLib() from tsc/defaultlib.cpp: clone the default
+      # library sources and build them against the tsc/gc/llvm/runtime we just built.
+      - name: Clone Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}
+        shell: sh
+        run: if [ ! -d "./TypeScriptCompilerDefaultLib" ]; then git clone https://github.com/ASDAlexander77/TypeScriptCompilerDefaultLib.git; fi
+
+      - name: Build Default Library
+        continue-on-error: false
+        working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
+        shell: sh
+        env:
+          TOOL_PATH: ${{github.workspace}}/__build/tsc/ninja/release/bin
+          GC_LIB_PATH: ${{github.workspace}}/__build/gc/ninja/release
+          LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/release/lib
+          TSC_LIB_PATH: ${{github.workspace}}/__build/tsc/ninja/release/lib
+        run: chmod +x ./build.sh ./scripts/*.sh; ./build.sh release
+
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
-        run: tar -czvhf ../tsc-ub20.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgc.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a 
+        run: tar -czvhf ../tsc-ub20.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgc.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a -C ../TypeScriptCompilerDefaultLib/__build/release .
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v4
         with:
           name: tsc-linux-asset-ub20
           path: tsc-ub20.tar.gz
-          retention-days: 1   
+          retention-days: 1
 
   create_release:
     needs: [build_on_windows, build_on_linux, build_on_linux_ub20]
