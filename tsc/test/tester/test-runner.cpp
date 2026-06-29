@@ -428,6 +428,16 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << "set TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
+    // run everything inside a unique per-test working directory: the shared lib must keep its
+    // real name (<stem>.dll) for `import './<stem>'` to resolve, but that name is not unique
+    // across tests reusing the same source file (e.g. decl_class.ts feeds the compile/compile-time/jit
+    // variants) - isolating the cwd avoids parallel collisions under `ctest -j`. The .txt/.err output
+    // is written to the parent dir where the runner reads it from.
+    batFile << "set WORKDIR=" << tempOutputFileNameNoExt << "_wd" << std::endl;
+    batFile << "if exist %WORKDIR% rmdir /s /q %WORKDIR%" << std::endl;
+    batFile << "mkdir %WORKDIR%" << std::endl;
+    batFile << "cd %WORKDIR%" << std::endl;
+
     auto first = true;
     std::stringstream shared_objs;
     std::stringstream shared_libs;
@@ -472,7 +482,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     if (jitRun)
     {
-        batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll " << *files.begin() << " 1> %FILENAME%.txt 2> %FILENAME%.err"
+        batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll " << *files.begin() << " 1> ..\\%FILENAME%.txt 2> ..\\%FILENAME%.err"
                 << std::endl;
 
         batFile << "del " << shared_libs.str() << std::endl;
@@ -494,7 +504,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
         batFile << "del " << exec_objs.str() << std::endl;
 
-        batFile << "call " RUN_CMD "%FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+        batFile << "call " RUN_CMD "%FILENAME%.exe 1> ..\\%FILENAME%.txt 2> ..\\%FILENAME%.err" << std::endl;
 
         batFile << "echo off" << std::endl;
         batFile << "del " << shared_libs.str() << std::endl;
@@ -505,6 +515,12 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         batFile << "if exist %FILENAME%.dll (del %FILENAME%.dll)" << std::endl;
         batFile << "echo on" << std::endl;
     }
+
+    // leave and remove the per-test working directory (with the shared lib, exe, objs, etc.)
+    batFile << "echo off" << std::endl;
+    batFile << "cd .." << std::endl;
+    batFile << "rmdir /s /q %WORKDIR%" << std::endl;
+    batFile << "echo on" << std::endl;
 
     batFile.close();
 #else
