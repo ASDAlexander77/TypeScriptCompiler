@@ -336,7 +336,20 @@ jobs:
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
-        run: tar -czvhf ../tsc.tar.gz ./tsc/ninja/release/bin/tsc ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./gc/ninja/release/libgc.a ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ../3rdParty/llvm/release/bin/wasm-ld ../3rdParty/llvm/release/lib/libLLVMSupport.a ../3rdParty/llvm/release/lib/libLLVMDemangle.a -C ../TypeScriptCompilerDefaultLib/__build/release .
+        # Match the Windows zip layout: flatten all binaries into the archive
+        # root, then add the default library release contents at the root too.
+        run: |
+          rm -rf ./__stage
+          mkdir -p ./__stage
+          cp ./tsc/ninja/release/bin/tsc ./__stage/
+          cp ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./__stage/
+          cp ./gc/ninja/release/libgc.a ./__stage/
+          cp ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ./__stage/
+          cp ../3rdParty/llvm/release/bin/wasm-ld ./__stage/
+          cp ../3rdParty/llvm/release/lib/libLLVMSupport.a ./__stage/
+          cp ../3rdParty/llvm/release/lib/libLLVMDemangle.a ./__stage/
+          cp -r ../TypeScriptCompilerDefaultLib/__build/release/. ./__stage/
+          tar -czvhf ../tsc.tar.gz -C ./__stage .
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v4
