@@ -437,29 +437,27 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     // system
     if (win)
     {
-        args.push_back("-luser32");    
+        args.push_back("-luser32");
+
+        // Link the static CRT (/MT[d]) to match the prebuilt static LLVM/MLIR libs,
+        // the TypeScript runtime libs and gc.lib. Mixing the static and dynamic CRT
+        // gives the generated program a separate heap/stdout buffer from those libs
+        // and crashes at startup/teardown (0xC0000005). The release config uses the
+        // non-debug import-name suffix; debug uses the 'd' suffix.
         if (enableOpt)
         {
-            args.push_back("-lucrt");    
+            args.push_back("-llibucrt");
+            args.push_back("-llibcmt");
+            args.push_back("-llibvcruntime");
         }
         else
         {
-            args.push_back("-lucrtd");    
+            args.push_back("-llibucrtd");
+            args.push_back("-llibcmtd");
+            args.push_back("-llibvcruntimed");
         }
 
         args.push_back("-lntdll");
-        if (shared || !disableGC)
-        {
-            // needed to resolve DLL ref
-            if (enableOpt)
-            {
-                args.push_back("-lmsvcrt");
-            }
-            else
-            {
-                args.push_back("-lmsvcrtd");
-            }
-        }
     }
 
     // tsc libs
