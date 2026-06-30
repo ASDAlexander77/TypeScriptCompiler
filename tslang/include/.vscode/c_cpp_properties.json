@@ -6,9 +6,9 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
                 "${workspaceFolder}/../../3rdParty/llvm/x64/debug/include",
-                "${workspaceFolder}/../../__build/tslang/windows-msbuild-debug/include",
-                "${workspaceFolder}/../tsc-new-parser",
-                "${workspaceFolder}"
+                "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/include",
+                "${workspaceFolder}/../ts-new-parser",
+                "${workspaceFolder}/../test/tester"
             ],
             "defines": [
                 "_DEBUG",

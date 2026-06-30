@@ -1,9 +1,5 @@
 #include "helper.h"
 
-#ifndef WIN32
-#include <unistd.h> // for getpid
-#endif
-
 #if WIN32
 #define GC_LIB "gc.lib "
 #else

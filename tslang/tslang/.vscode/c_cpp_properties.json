@@ -7,7 +7,7 @@
                 "${workspaceFolder}/../include",
                 "${workspaceFolder}/../../3rdParty/llvm/x64/debug/include",
                 "${workspaceFolder}/../../tslang/include",
-                "${workspaceFolder}/../tsc-new-parser"
+                "${workspaceFolder}/../ts-new-parser"
             ],
             "defines": [
                 "_DEBUG",

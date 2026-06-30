@@ -5,9 +5,9 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
-                "${workspaceFolder}/../../3rdParty/llvm/debug/include",
-                "${workspaceFolder}/../../__build/tslang/include",
-                "${workspaceFolder}/../tsc-new-parser"
+                "${workspaceFolder}/../../3rdParty/llvm/x64/debug/include",
+                "${workspaceFolder}/../../tslang/include",
+                "${workspaceFolder}/../ts-new-parser"
             ],
             "defines": [
                 "_DEBUG",
@@ -22,7 +22,7 @@
         },
         {
             "name": "Linux",
-            "includePath": [                
+            "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
                 "${workspaceFolder}/../../3rdParty/llvm/debug/include",
@@ -32,13 +32,13 @@
             "defines": [
                 "_DEBUG",
                 "UNICODE",
-                "_UNICODE"                
+                "_UNICODE"
             ],
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "clang-x64"
-          }
+        }
     ],
     "version": 4
 }
