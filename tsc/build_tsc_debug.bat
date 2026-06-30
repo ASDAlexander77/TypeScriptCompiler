@@ -1,4 +1,4 @@
 pushd
-cd ../__build/tsc/msbuild/x64/debug
+cd ../__build/tslang/msbuild/x64/debug
 cmake --build . --config Debug -j 24
 popd

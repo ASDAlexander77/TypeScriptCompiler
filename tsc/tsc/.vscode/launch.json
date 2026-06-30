@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(Windows) tsc.exe - DUMP",
+            "name": "(Windows) tslang.exe - DUMP",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=ast",
                 "C:/temp/1.ts"
@@ -17,13 +17,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - MLIR",
+            "name": "(Windows) tslang.exe - MLIR",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir",
@@ -34,13 +34,13 @@
             "cwd": "C:/temp/",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) ./tsc - MLIR",
+            "name": "(Linux) ./tslang - MLIR",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir",
@@ -53,13 +53,13 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - MLIR-AFFINE",
+            "name": "(Windows) tslang.exe - MLIR-AFFINE",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=mlir-affine",
                 "--opt",
@@ -71,13 +71,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) ./tsc - MLIR-AFFINE",
+            "name": "(Linux) ./tslang - MLIR-AFFINE",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=mlir-affine",
                 "-debug-only=affine",
@@ -89,13 +89,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - MLIR-LLVM",
+            "name": "(Windows) tslang.exe - MLIR-LLVM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=mlir-llvm",
                 "-debug-only=affine,llvm",
@@ -106,13 +106,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) ./tsc - MLIR-LLVM",
+            "name": "(Linux) ./tslang - MLIR-LLVM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=mlir-llvm",
                 "/mnt/c/temp/1.ts"
@@ -121,13 +121,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - LLVM",
+            "name": "(Windows) tslang.exe - LLVM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=llvm",
                 "-mlir-disable-threading",
@@ -142,13 +142,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) ./tsc - LLVM",
+            "name": "(Linux) ./tslang - LLVM",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=llvm",
                 "/mnt/c/temp/1.ts"
@@ -157,13 +157,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - BC",
+            "name": "(Windows) tslang.exe - BC",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=bc",
                 "-opt",
@@ -174,31 +174,31 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - OBJ",
+            "name": "(Windows) tslang.exe - OBJ",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-release/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-release/bin/tslang.exe",
             "args": [
                 "-emit=obj",
                 "--opt",
                 "--opt_level=3",
                 "-o=c:/temp/1.obj",
-                "I:/TypeScriptCompiler/tsc/test/tester/tests/00object_new.ts"
+                "I:/TypeScriptCompiler/tslang/test/tester/tests/00object_new.ts"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - ASM",
+            "name": "(Windows) tslang.exe - ASM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=asm",
                 "-opt",
@@ -211,13 +211,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - EXE",
+            "name": "(Windows) tslang.exe - EXE",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=exe",
                 "-di",
@@ -242,18 +242,18 @@
                     "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) (ClangCL) tsc.exe - EXE",
+            "name": "(Windows) (ClangCL) tslang.exe - EXE",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-ninja-clangcl-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-ninja-clangcl-debug/bin/tslang.exe",
             "args": [
                 "-emit=exe",
                 "-di",
@@ -279,20 +279,20 @@
                     "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis",
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis",
             "MIMode": "gdb",
             "MIDebuggerPath": "lldb.exe",
         },
         {
-            "name": "(Windows) tsc.exe - EXE(DI) - NO DEFAULT",
+            "name": "(Windows) tslang.exe - EXE(DI) - NO DEFAULT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=exe",
                 "--di",
@@ -316,18 +316,18 @@
                     "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - EXE(OPT) - NO DEFAULT",
+            "name": "(Windows) tslang.exe - EXE(OPT) - NO DEFAULT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=exe",
                 "--opt",
@@ -351,18 +351,18 @@
                     "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/release/Release/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-release/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/windows-msbuild-release/lib"
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - EXE(OPT) (Release EXE) - NO DEFAULT",
+            "name": "(Windows) tslang.exe - EXE(OPT) (Release EXE) - NO DEFAULT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-release/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-release/bin/tslang.exe",
             "args": [
                 "-emit=exe",
                 "--opt",
@@ -385,18 +385,18 @@
                     "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/release/Release/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-release/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/windows-msbuild-release/lib"
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - LLVM - NO DEFAULT",
+            "name": "(Windows) tslang.exe - LLVM - NO DEFAULT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=llvm",
                 "-di",
@@ -419,22 +419,22 @@
                     "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - DLL",
+            "name": "(Windows) tslang.exe - DLL",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=dll",
                 "-opt",
-                "-debug-only=tsc,llvm,pass",
+                "-debug-only=tslang,llvm,pass",
                 "-mlir-disable-threading",
                 "--gctors-as-method",
                 "-o=I:/Playground/export_vars.dll",
@@ -452,18 +452,18 @@
                     "value": "${workspaceFolder}/../../__build/llvm/msbuild/x64/debug/Debug/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/lib"
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - WASM",
+            "name": "(Windows) tslang.exe - WASM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=exe",
                 "-opt",
@@ -476,13 +476,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - WASM - emscripten",
+            "name": "(Windows) tslang.exe - WASM - emscripten",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=exe",
                 "-mlir-disable-threading",
@@ -497,13 +497,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - JIT",
+            "name": "(Windows) tslang.exe - JIT",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=jit",
                 "I:/Playground/1.ts",
@@ -511,19 +511,19 @@
                 "-mlir-disable-threading",
                 "-di",
                 "--default-lib-path=I:/TypeScriptCompilerDefaultLib/__build/debug",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll"
+                "--shared-libs=${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - JIT (no default)",
+            "name": "(Windows) tslang.exe - JIT (no default)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=jit",
                 "I:/Playground/1.ts",
@@ -531,19 +531,19 @@
                 "-mlir-disable-threading",
                 "-di",
                 "--no-default-lib",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll"
+                "--shared-libs=${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/TypeScriptRuntime.dll"
             ],
             "stopAtEntry": false,
             "cwd": "I:/Playground",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - JIT-OBJ",
+            "name": "(Windows) tslang.exe - JIT-OBJ",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=jit",
                 "-nogc",
@@ -555,17 +555,17 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) tsc - JIT",
+            "name": "(Linux) tslang - JIT",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=jit",
-                "-debug-only=tsc",
-                "--shared-libs=${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib/libTypeScriptRuntime.so",
+                "-debug-only=tslang",
+                "--shared-libs=${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/lib/libTypeScriptRuntime.so",
                 "--default-lib-path=${workspaceFolder}/../../../TypeScriptCompilerDefaultLib/__build/debug",
                 "${workspaceFolder}/../../../playground/1.ts"
             ],
@@ -573,13 +573,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) tsc - Compile (EXE - PIC)",
+            "name": "(Linux) tslang - Compile (EXE - PIC)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=exe",
                 "-relocation-model=pic",
@@ -599,18 +599,18 @@
                     "value": "${workspaceFolder}/../../__build/llvm/ninja/debug/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/lib"
                 }
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) tsc - Compile (EXE)",
+            "name": "(Linux) tslang - Compile (EXE)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=exe",
                 "--di",
@@ -629,8 +629,8 @@
                     "value": "${workspaceFolder}/../../__build/llvm/ninja/debug/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/lib"
                 },
                 {
                     "name": "DEFAULT_LIB_PATH",
@@ -638,13 +638,13 @@
                 },
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) tsc - Compile (DLL - PIC)",
+            "name": "(Linux) tslang - Compile (DLL - PIC)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=dll",
                 "-relocation-model=pic",
@@ -664,18 +664,18 @@
                     "value": "${workspaceFolder}/../../__build/llvm/ninja/debug/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/lib"
                 }
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) tsc - Compile (Default Lib - linux file)",
+            "name": "(Linux) tslang - Compile (Default Lib - linux file)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=dll",
                 "-relocation-model=pic",
@@ -694,18 +694,18 @@
                     "value": "${workspaceFolder}/../../__build/llvm/ninja/debug/lib"
                 },
                 {
-                    "name": "TSC_LIB_PATH",
-                    "value": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/lib"
+                    "name": "TSLANG_LIB_PATH",
+                    "value": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/lib"
                 }
             ],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - DefaultLib Compile (DLL)",
+            "name": "(Windows) tslang.exe - DefaultLib Compile (DLL)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=dll",
                 "-debug-only=mlir,llvm",
@@ -718,13 +718,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - DefaultLib Compile (MLIR)",
+            "name": "(Windows) tslang.exe - DefaultLib Compile (MLIR)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=mlir",
                 "-debug-only=mlir,llvm",
@@ -737,13 +737,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - DefaultLib Compile (DI) (OBJ)",
+            "name": "(Windows) tslang.exe - DefaultLib Compile (DI) (OBJ)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=obj",
                 "-debug-only=mlir,llvm",
@@ -757,13 +757,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - DefaultLib Compile (opt) (OBJ)",
+            "name": "(Windows) tslang.exe - DefaultLib Compile (opt) (OBJ)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "-emit=obj",
                 "-debug-only=mlir,llvm",
@@ -780,13 +780,13 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) tsc - DefaultLib Compile (OBJ)",
+            "name": "(Linux) tslang - DefaultLib Compile (OBJ)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "-emit=obj",
                 "--export=none",
@@ -801,7 +801,7 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
             "name": "(Windows-cppvsdbg) (cmake_winapp) TypeScriptApp.exe",
@@ -818,10 +818,10 @@
             },
         },
         {
-            "name": "(Windows) tsc.exe - new VSCode project",
+            "name": "(Windows) tslang.exe - new VSCode project",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "--new",
                 "Test1"
@@ -830,13 +830,13 @@
             "cwd": "I:/Playground",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Windows) tsc.exe - Install Default lib",
+            "name": "(Windows) tslang.exe - Install Default lib",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-2026-debug/bin/tsc.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-2026-debug/bin/tslang.exe",
             "args": [
                 "--install-default-lib"
             ],
@@ -844,20 +844,20 @@
             "cwd": "I:/Playground",
             "environment": [],
             "console": "externalTerminal",
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
-            "name": "(Linux) tsc - Install Default lib",
+            "name": "(Linux) tslang - Install Default lib",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/bin/tsc",
+            "program": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/bin/tslang",
             "args": [
                 "--install-default-lib"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         }
     ]
 }

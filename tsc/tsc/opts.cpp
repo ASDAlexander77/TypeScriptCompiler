@@ -9,7 +9,7 @@
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 #include "TypeScript/DataStructs.h"
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 namespace cl = llvm::cl;
 

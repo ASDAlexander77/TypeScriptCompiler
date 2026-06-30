@@ -34,7 +34,7 @@ on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
 
 - Visual Studio Code project
 ```bat
-tsc --new Test1
+tslang --new Test1
 ```
 
 - Strict null checks
@@ -99,7 +99,7 @@ const v2 = gen<string[]>([]); // result: 0
 
 - Improved `generating debug information` — more info here: [Wiki:How-To](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/How-To#compile-and-debug-with-visual-studio-code)
 ```bat
-tsc --di --opt_level=0 --emit=exe example.ts
+tslang --di --opt_level=0 --emit=exe example.ts
 ```
 - [more...](https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/What's-new)
 
@@ -113,14 +113,14 @@ tsc --di --opt_level=0 --emit=exe example.ts
 
 [(click here)](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
 
-[![Demo](https://raw.githubusercontent.com/ASDAlexander77/ASDAlexander77.github.io/main/img/tsc_emit.gif)](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
+[![Demo](https://raw.githubusercontent.com/ASDAlexander77/ASDAlexander77.github.io/main/img/tslang_emit.gif)](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
 
 
 ## Try it
 
 [(click here)](https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYgDkAjF%2BTXRMiAZVQtGIHgA4BQogFUAztgAKAD24AGfgCsp5eiyagiATwAO2JalIELRcisaoiBIdWaYAwunoBXNiYQACZyLwAZAiZsADlAgCNsUhAAZh5yC3QlYncmXwCg0Mzs3KEomPi2JJT0p2wXNyERIhZSIgLA4LDnbFc8lraiCrjE5LSMpVb2zqKe6eHo0erx9IBKJ3R/UlROLhYEqdIWVwBqVCMlJVOAEWwLIY5hU4BSAHYAIRetAEFT//OQiO/lcZAgFn8CXoBFQp1YHBApyO0WAa1en3eN2%2BP2xANOFjswli7GwEDWiIAbugCJh0V9fni8QTokQIC8QiE7g92k8iHCSYj2SFXiEPqciEgCEoAHTw7BrF6pel/AGY7G4gEHI4nPnM4QAWWw2DcJjJlOpmEVYoA9NbTmx/FNTklTgQ2BZGLzsLToqccHYKd7zpcVEp1W8sb9sRcWFdTj9UBh/MIUVzHsw%2Bdh1EQvNc0zyM3SNf8MExgaDSGSiwzGf8lP4rJWhQmkymTKdjLSfv5CCbgEKFUrTrbAWWiKQQSRSNdff6CIHaTGrtZ7Y6%2BeJ6PQkQ3kmTi%2BjIzia/89URDcaUWbTlSadWVbXT2yOQAVJDYeOJrZt4C3e7p54cMa1zYCcSCnPqQiYCwZgdnyPBaOw0oDla%2B5qlGx6nMAzDJCwOYAEr3GQRBKFeN60u8yq1iehKskKADi2HHH2HafsmzGkIR7QytKSEcoOlGqhG4aHtiNDJv0Qj2iw0RVhR%2B6MHyODckQvKIvmKkZlaw52ugADW4roOcHG4e%2BLCnBxNDJMwuwGR2TAdoc446uKljYPuSn/nyio3HC2AAO4fq2fbqbye5DiOem2bYIE5nZtKxjkwD2WZTBCAAtFqTlnPWCRLmGGEeQWwjSqexIcGFAn/IVGnFae559hV%2B62tVvLSlhMRMdgBFZFxFXaacySkGQiItYWUpwugfLoDQLlWIFX7BX%2BRWOOcxipXyJy7HG7U4fhnHEcJXAbPQ3AAKz8MEXA6OQ6DcM%2BrliHYDinMSbiBkiWw7O%2B7LpPwRDaEdGy6WkqTSqk4MQ5DkMAGyGNwAAs/BsCAbzw2DqTSJjqTw/DbzQ1oWjw%2BQl3XbdXD8EoIBaOQ/1XUd5BwLAKBZn0/hTpQ1BtMASiqMYDQiEg6B%2BZdfDkBg7oMLheS8zE9AC0LJP8OLFgMOMxGoAA%2BloWsa6kp0a8AqBi%2BgEuMKQZV7ErJsq2bADybPy8LAPhOofQ/KQ3PcPwLOoC0hCXfwgjCGIEicDwRNB4oKgaM7%2BgZEYJggOYVg2E9jjQoc8AbOgDh5JT5M3YGpB2DglOQBsSifbsBhTP7Mv84LTu8PwfnHBY3B8MdZ0Xc7ZO4K7qBs2Qpz3VYj32Hyr3zu%2Bvim8kpxaNKi8EtgeunAAUgAks%2BpwQHR3hohAo/YOPz1T4G5CnPgxDDz9PBrH9ANrBsb4sP61Bd1wiPkMjISndK0NoY8GAdDU6p0QipAAJyQKAcTXuXsnBUxpk/IGaR/4Yz1uAngeNIHYLeG8OGXBUg9zpjdBBtMdAbEZsgNA1tVYUCoBAZW9Ck42B1trPWBsjY4ApDCbAAA1Ag/lbZWBFoHBgOZpzUASM7BI0Q2hmA7vwORrBSBmFtgkXQfRaai3FryW2TB6CKNITgBI/hgDeAkPQfOoscBsGMMASQJiCAcX6IGfO10fZsz2KLFkDRnYZ2OGo3wOBnbjjdEojYNAjDc0EcI0RSi5DBw3GHCO8hlBqE0KQuOhgHFJ1cqnCehgCCZ3LjdXOQIEHoCLiXawWd6iNDyJ4JgPg/BdAMJEJYVQagGCyDkJo%2BQ2lFAyH0soTARjdPGJMBo2iBgLFmMEaZjTmgLAmWMFIkx5lDMWU4VZXT1lSArlXMOn9zpwNIWTEeD1bATxelLd6s8bbz0XsvDia8t47z3gfXe18pwinWI/Omz9yCv3fmScgwN0jShCNIdI4d4bSEgajRFWhZAnS/iQ0mCDKbUwofTahEAUAuI5kwuhZsLZ3WuWnO5b0Z5kueUvEqbzTob23rvfeD9wi9jIDSAwkcQ6SHDkkqOmTY41xmRJYIEAvALI6S0tZKwNklH6XkWVIzSgDIVT0pZsyVlDDVQ03VTBBjtC1VM3Z%2Brtk1z2ZUA598aYcWwLyrQpzMX8DJhECI/D9SnE3nhU4cS/Lz2PqfSe9y6Vz1IAvRlK93lsq%2BYfX5t8IEZFOI8%2Bh/z76Asoag8G6MoYFtSIQ7%2BisyEFxxcgoFn8QhurLdmwG5Ai45A8PDIAA%3D%3D)
 
-[![Compiler Explorer](https://asdalexander77.github.io/img/god_bolt_tsc_native.jpg)](https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYgDkAjF%2BTXRMiAZVQtGIHgA4BQogFUAztgAKAD24AGfgCsp5eiyagiATwAO2JalIELRcisaoiBIdWaYAwunoBXNiYQACZyLwAZAiZsADlAgCNsUhAAZh5yC3QlYncmXwCg0Mzs3KEomPi2JJT0p2wXNyERIhZSIgLA4LDnbFc8lraiCrjE5LSMpVb2zqKe6eHo0erx9IBKJ3R/UlROLhYEqdIWVwBqVCMlJVOAEWwLIY5hU4BSAHYAIRetAEFT//OQiO/lcZAgFn8CXoBFQp1YHBApyO0WAa1en3eN2%2BP2xANOFjswli7GwEDWiIAbugCJh0V9fni8QTokQIC8QiE7g92k8iHCSYj2SFXiEPqciEgCEoAHTw7BrF6pel/AGY7G4gEHI4nPnM4QAWWw2DcJjJlOpmEVYoA9NbTmx/FNTklTgQ2BZGLzsLToqccHYKd7zpcVEp1W8sb9sRcWFdTj9UBh/MIUVzHsw%2Bdh1EQvNc0zyM3SNf8MExgaDSGSiwzGf8lP4rJWhQmkymTKdjLSfv5CCbgEKFUrTrbAWWiKQQSRSNdff6CIHaTGrtZ7Y6%2BeJ6PQkQ3kmTi%2BjIzia/89URDcaUWbTlSadWVbXT2yOQAVJDYeOJrZt4C3e7p54cMa1zYCcSCnPqQiYCwZgdnyPBaOw0oDla%2B5qlGx6nMAzDJCwOYAEr3GQRBKFeN60u8yq1iehKskKADi2HHH2HafsmzGkIR7QytKSEcoOlGqhG4aHtiNDJv0Qj2iw0RVhR%2B6MHyODckQvKIvmKkZlaw52ugADW4roOcHG4e%2BLCnBxNDJMwuwGR2TAdoc446uKljYPuSn/nyio3HC2AAO4fq2fbqbye5DiOem2bYIE5nZtKxjkwD2WZTBCAAtFqTlnPWCRLmGGEeQWwjSqexIcGFAn/IVGnFae559hV%2B62tVvLSlhMRMdgBFZFxFXaacySkGQiItYWUpwugfLoDQLlWIFX7BX%2BRWOOcxipXyJy7HG7U4fhnHEcJXAbPQ3AAKz8MEXA6OQ6DcM%2BrliHYDinMSbiBkiWw7O%2B7LpPwRDaEdGy6WkqTSqk4MQ5DkMAGyGNwAAs/BsCAbzw2DqTSJjqTw/DbzQ1oWjw%2BQl3XbdXD8EoIBaOQ/1XUd5BwLAKBZn0/hTpQ1BtMASiqMYDQiEg6B%2BZdfDkBg7oMLheS8zE9AC0LJP8OLFgMOMxGoAA%2BloWsa6kp0a8AqBi%2BgEuMKQZV7ErJsq2bADybPy8LAPhOofQ/KQ3PcPwLOoC0hCXfwgjCGIEicDwRNB4oKgaM7%2BgZEYJggOYVg2E9jjQoc8AbOgDh5JT5M3YGpB2DglOQBsSifbsBhTP7Mv84LTu8PwfnHBY3B8MdZ0Xc7ZO4K7qBs2Qpz3VYj32Hyr3zu%2Bvim8kpxaNKi8EtgeunAAUgAks%2BpwQHR3hohAo/YOPz1T4G5CnPgxDDz9PBrH9ANrBsb4sP61Bd1wiPkMjISndK0NoY8GAdDU6p0QipAAJyQKAcTXuXsnBUxpk/IGaR/4Yz1uAngeNIHYLeG8OGXBUg9zpjdBBtMdAbEZsgNA1tVYUCoBAZW9Ck42B1trPWBsjY4ApDCbAAA1Ag/lbZWBFoHBgOZpzUASM7BI0Q2hmA7vwORrBSBmFtgkXQfRaai3FryW2TB6CKNITgBI/hgDeAkPQfOoscBsGMMASQJiCAcX6IGfO10fZsz2KLFkDRnYZ2OGo3wOBnbjjdEojYNAjDc0EcI0RSi5DBw3GHCO8hlBqE0KQuOhgHFJ1cqnCehgCCZ3LjdXOQIEHoCLiXawWd6iNDyJ4JgPg/BdAMJEJYVQagGCyDkJo%2BQ2lFAyH0soTARjdPGJMBo2iBgLFmMEaZjTmgLAmWMFIkx5lDMWU4VZXT1lSArlXMOn9zpwNIWTEeD1bATxelLd6s8bbz0XsvDia8t47z3gfXe18pwinWI/Omz9yCv3fmScgwN0jShCNIdI4d4bSEgajRFWhZAnS/iQ0mCDKbUwofTahEAUAuI5kwuhZsLZ3WuWnO5b0Z5kueUvEqbzTob23rvfeD9wi9jIDSAwkcQ6SHDkkqOmTY41xmRJYIEAvALI6S0tZKwNklH6XkWVIzSgDIVT0pZsyVlDDVQ03VTBBjtC1VM3Z%2Brtk1z2ZUA598aYcWwLyrQpzMX8DJhECI/D9SnE3nhU4cS/Lz2PqfSe9y6Vz1IAvRlK93lsq%2BYfX5t8IEZFOI8%2Bh/z76Asoag8G6MoYFtSIQ7%2BisyEFxxcgoFn8QhurLdmwG5Ai45A8PDIAA%3D%3D)
+[![Compiler Explorer](https://asdalexander77.github.io/img/god_bolt_tslang_native.jpg)](https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYgDkAjF%2BTXRMiAZVQtGIHgA4BQogFUAztgAKAD24AGfgCsp5eiyagiATwAO2JalIELRcisaoiBIdWaYAwunoBXNiYQACZyLwAZAiZsADlAgCNsUhAAZh5yC3QlYncmXwCg0Mzs3KEomPi2JJT0p2wXNyERIhZSIgLA4LDnbFc8lraiCrjE5LSMpVb2zqKe6eHo0erx9IBKJ3R/UlROLhYEqdIWVwBqVCMlJVOAEWwLIY5hU4BSAHYAIRetAEFT//OQiO/lcZAgFn8CXoBFQp1YHBApyO0WAa1en3eN2%2BP2xANOFjswli7GwEDWiIAbugCJh0V9fni8QTokQIC8QiE7g92k8iHCSYj2SFXiEPqciEgCEoAHTw7BrF6pel/AGY7G4gEHI4nPnM4QAWWw2DcJjJlOpmEVYoA9NbTmx/FNTklTgQ2BZGLzsLToqccHYKd7zpcVEp1W8sb9sRcWFdTj9UBh/MIUVzHsw%2Bdh1EQvNc0zyM3SNf8MExgaDSGSiwzGf8lP4rJWhQmkymTKdjLSfv5CCbgEKFUrTrbAWWiKQQSRSNdff6CIHaTGrtZ7Y6%2BeJ6PQkQ3kmTi%2BjIzia/89URDcaUWbTlSadWVbXT2yOQAVJDYeOJrZt4C3e7p54cMa1zYCcSCnPqQiYCwZgdnyPBaOw0oDla%2B5qlGx6nMAzDJCwOYAEr3GQRBKFeN60u8yq1iehKskKADi2HHH2HafsmzGkIR7QytKSEcoOlGqhG4aHtiNDJv0Qj2iw0RVhR%2B6MHyODckQvKIvmKkZlaw52ugADW4roOcHG4e%2BLCnBxNDJMwuwGR2TAdoc446uKljYPuSn/nyio3HC2AAO4fq2fbqbye5DiOem2bYIE5nZtKxjkwD2WZTBCAAtFqTlnPWCRLmGGEeQWwjSqexIcGFAn/IVGnFae559hV%2B62tVvLSlhMRMdgBFZFxFXaacySkGQiItYWUpwugfLoDQLlWIFX7BX%2BRWOOcxipXyJy7HG7U4fhnHEcJXAbPQ3AAKz8MEXA6OQ6DcM%2BrliHYDinMSbiBkiWw7O%2B7LpPwRDaEdGy6WkqTSqk4MQ5DkMAGyGNwAAs/BsCAbzw2DqTSJjqTw/DbzQ1oWjw%2BQl3XbdXD8EoIBaOQ/1XUd5BwLAKBZn0/hTpQ1BtMASiqMYDQiEg6B%2BZdfDkBg7oMLheS8zE9AC0LJP8OLFgMOMxGoAA%2BloWsa6kp0a8AqBi%2BgEuMKQZV7ErJsq2bADybPy8LAPhOofQ/KQ3PcPwLOoC0hCXfwgjCGIEicDwRNB4oKgaM7%2BgZEYJggOYVg2E9jjQoc8AbOgDh5JT5M3YGpB2DglOQBsSifbsBhTP7Mv84LTu8PwfnHBY3B8MdZ0Xc7ZO4K7qBs2Qpz3VYj32Hyr3zu%2Bvim8kpxaNKi8EtgeunAAUgAks%2BpwQHR3hohAo/YOPz1T4G5CnPgxDDz9PBrH9ANrBsb4sP61Bd1wiPkMjISndK0NoY8GAdDU6p0QipAAJyQKAcTXuXsnBUxpk/IGaR/4Yz1uAngeNIHYLeG8OGXBUg9zpjdBBtMdAbEZsgNA1tVYUCoBAZW9Ck42B1trPWBsjY4ApDCbAAA1Ag/lbZWBFoHBgOZpzUASM7BI0Q2hmA7vwORrBSBmFtgkXQfRaai3FryW2TB6CKNITgBI/hgDeAkPQfOoscBsGMMASQJiCAcX6IGfO10fZsz2KLFkDRnYZ2OGo3wOBnbjjdEojYNAjDc0EcI0RSi5DBw3GHCO8hlBqE0KQuOhgHFJ1cqnCehgCCZ3LjdXOQIEHoCLiXawWd6iNDyJ4JgPg/BdAMJEJYVQagGCyDkJo%2BQ2lFAyH0soTARjdPGJMBo2iBgLFmMEaZjTmgLAmWMFIkx5lDMWU4VZXT1lSArlXMOn9zpwNIWTEeD1bATxelLd6s8bbz0XsvDia8t47z3gfXe18pwinWI/Omz9yCv3fmScgwN0jShCNIdI4d4bSEgajRFWhZAnS/iQ0mCDKbUwofTahEAUAuI5kwuhZsLZ3WuWnO5b0Z5kueUvEqbzTob23rvfeD9wi9jIDSAwkcQ6SHDkkqOmTY41xmRJYIEAvALI6S0tZKwNklH6XkWVIzSgDIVT0pZsyVlDDVQ03VTBBjtC1VM3Z%2Brtk1z2ZUA598aYcWwLyrQpzMX8DJhECI/D9SnE3nhU4cS/Lz2PqfSe9y6Vz1IAvRlK93lsq%2BYfX5t8IEZFOI8%2Bh/z76Asoag8G6MoYFtSIQ7%2BisyEFxxcgoFn8QhurLdmwG5Ai45A8PDIAA%3D%3D)
 
 ## Chat Room
 
@@ -168,7 +168,7 @@ function main() {
 Run
 
 ```bat
-tsc --emit=jit --opt --shared-libs=TypeScriptRuntime.dll example.ts
+tslang --emit=jit --opt --shared-libs=TypeScriptRuntime.dll example.ts
 ```
 
 Result
@@ -183,13 +183,13 @@ The Accounting Department meets each Monday at 10am.
 - with Garbage collection
 
 ```bat
-tsc --emit=jit --opt --shared-libs=TypeScriptRuntime.dll hello.ts
+tslang --emit=jit --opt --shared-libs=TypeScriptRuntime.dll hello.ts
 ```
 
 - without Garbage collection
 
 ```bat
-tsc --emit=jit --nogc hello.ts
+tslang --emit=jit --nogc hello.ts
 ```
 
 File ``hello.ts``
@@ -208,36 +208,36 @@ Hello World!
 
 ## Compile as Binary Executable
 
-> Make sure you have [built `tsc` from source](#build) first.
+> Make sure you have [built `tslang` from source](#build) first.
 
 The compile scripts below set a few environment variables so the linker can find the
-runtime libraries, then invoke `tsc` with `--emit=exe`. **Edit the paths to match your
+runtime libraries, then invoke `tslang` with `--emit=exe`. **Edit the paths to match your
 checkout** — the `C:\dev\...` / `~/dev/...` values are only examples.
 
 | Variable | Points to |
 | --- | --- |
 | `GC_LIB_PATH` | Boehm GC library (the garbage collector) |
 | `LLVM_LIB_PATH` | LLVM/MLIR libraries |
-| `TSC_LIB_PATH` | TSC runtime library |
-| `TSCEXEPATH` | Folder containing the `tsc` executable |
+| `TSLANG_LIB_PATH` | TSLANG runtime library |
+| `TSLANGEXEPATH` | Folder containing the `tslang` executable |
 
 ### On Windows
 
-File ``tsc-compile.bat``
+File ``tslang-compile.bat``
 
 ```bat
 set FILENAME=%1
 set GC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\release\Release
 set LLVM_LIB_PATH=C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\release\Release\lib
-set TSC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\lib
-set TSCEXEPATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\bin
-%TSCEXEPATH%\tsc.exe --opt --emit=exe %FILENAME%.ts
+set TSLANG_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tslang\windows-msbuild-release\lib
+set TSLANGEXEPATH=C:\dev\TypeScriptCompiler\__build\tslang\windows-msbuild-release\bin
+%TSLANGEXEPATH%\tslang.exe --opt --emit=exe %FILENAME%.ts
 ```
 
 Compile
 
 ```bat
-tsc-compile.bat hello
+tslang-compile.bat hello
 ```
 
 Run
@@ -254,21 +254,21 @@ Hello World!
 
 ### On Linux (Ubuntu 20.04 and 22.04)
 
-File ``tsc-compile.sh``
+File ``tslang-compile.sh``
 
 ```bash
 FILENAME=$1
-export TSC_LIB_PATH=~/dev/TypeScriptCompiler/__build/tsc/linux-ninja-gcc-release/lib
+export TSLANG_LIB_PATH=~/dev/TypeScriptCompiler/__build/tslang/linux-ninja-gcc-release/lib
 export LLVM_LIB_PATH=~/dev/TypeScriptCompiler/3rdParty/llvm/release/lib
 export GC_LIB_PATH=~/dev/TypeScriptCompiler/3rdParty/gc/release
-TSCEXEPATH=~/dev/TypeScriptCompiler/__build/tsc/linux-ninja-gcc-release/bin
-$TSCEXEPATH/tsc --emit=exe $FILENAME.ts --relocation-model=pic
+TSLANGEXEPATH=~/dev/TypeScriptCompiler/__build/tslang/linux-ninja-gcc-release/bin
+$TSLANGEXEPATH/tslang --emit=exe $FILENAME.ts --relocation-model=pic
 ```
 
 Compile
 
 ```bash
-sh -f tsc-compile.sh hello
+sh -f tslang-compile.sh hello
 ```
 
 Run
@@ -287,19 +287,19 @@ Hello World!
 
 ### On Windows
 
-File ``tsc-compile-wasm.bat``
+File ``tslang-compile-wasm.bat``
 
 ```bat
 set FILENAME=%1
 set GC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\gc\msbuild\x64\release\Release
 set LLVM_LIB_PATH=C:\dev\TypeScriptCompiler\__build\llvm\msbuild\x64\release\Release\lib
-set TSC_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\lib
-C:\dev\TypeScriptCompiler\__build\tsc\windows-msbuild-release\bin\tsc.exe --emit=exe --nogc -mtriple=wasm32-unknown-unknown %FILENAME%.ts
+set TSLANG_LIB_PATH=C:\dev\TypeScriptCompiler\__build\tslang\windows-msbuild-release\lib
+C:\dev\TypeScriptCompiler\__build\tslang\windows-msbuild-release\bin\tslang.exe --emit=exe --nogc -mtriple=wasm32-unknown-unknown %FILENAME%.ts
 ```
 Compile
 
 ```bat
-tsc-compile-wasm.bat hello
+tslang-compile-wasm.bat hello
 ```
 
 Run ``run.html``
@@ -465,12 +465,12 @@ cd TypeScriptCompiler
 prepare_3rdParty.bat
 ```
 
-To build ``TSC`` binaries:
+To build ``TSLANG`` binaries:
 
 ```bat
-cd TypeScriptCompiler\tsc
-config_tsc_release.bat
-build_tsc_release.bat
+cd TypeScriptCompiler\tslang
+config_tslang_release.bat
+build_tslang_release.bat
 ```
 
 ### On Linux (Ubuntu 20.04 and 22.04)
@@ -491,13 +491,13 @@ cd ~/TypeScriptCompiler
 ./prepare_3rdParty.sh
 ```
 
-To build ``TSC`` binaries:
+To build ``TSLANG`` binaries:
 
 ```bash
-cd ~/TypeScriptCompiler/tsc
+cd ~/TypeScriptCompiler/tslang
 chmod +x *.sh
-./config_tsc_release.sh
-./build_tsc_release.sh
+./config_tslang_release.sh
+./build_tslang_release.sh
 ```
 
 ## License

@@ -29,7 +29,7 @@
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Defines.h"
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 namespace cl = llvm::cl;
 
@@ -116,7 +116,7 @@ cl::opt<bool> embedExportDeclarationsAction("embed-declarations", cl::desc("Embe
 cl::opt<std::string> defaultlibpath("default-lib-path", cl::desc("JS library path. Should point to folder/directory with subfolder '" DEFAULT_LIB_DIR "' or DEFAULT_LIB_PATH environmental variable"), cl::value_desc("defaultlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> gclibpath("gc-lib-path", cl::desc("GC library path. Should point to file 'gc.lib' or GC_LIB_PATH environmental variable"), cl::value_desc("gclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> llvmlibpath("llvm-lib-path", cl::desc("LLVM library path. Should point to file 'LLVMSupport.lib' and 'LLVMDemangle' in linux or LLVM_LIB_PATH environmental variable"), cl::value_desc("llvmlibpath"), cl::cat(TypeScriptCompilerBuildCategory));
-cl::opt<std::string> tsclibpath("tsc-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'TypeScriptAsyncRuntime.lib' or TSC_LIB_PATH environmental variable"), cl::value_desc("tsclibpath"), cl::cat(TypeScriptCompilerBuildCategory));
+cl::opt<std::string> tslanglibpath("tslang-lib-path", cl::desc("TypeScript Compiler Runtime library path. Should point to file 'TypeScriptAsyncRuntime.lib' or TSLANG_LIB_PATH environmental variable"), cl::value_desc("tslanglibpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::opt<std::string> emsdksysrootpath("emsdk-sysroot-path", cl::desc("TypeScript Compiler Runtime library path. Should point to dir '<...>/emsdk/upstream/emscripten/cache/sysroot' or EMSDK_SYSROOT_PATH environmental variable. (used when '-mtriple=wasm32-pc-emscripten')"), cl::value_desc("emsdksysrootpath"), cl::cat(TypeScriptCompilerBuildCategory));
 cl::list<std::string> libs{"lib", cl::desc("Libraries to link statically. (used in --emit=exe)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
 cl::list<std::string> objs{"obj", cl::desc("Object files to link statically. (used in --emit=exe and --emit=dll)"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated, cl::cat(TypeScriptCompilerBuildCategory)};
@@ -130,9 +130,9 @@ cl::opt<bool> strictNullChecks("strict-null-checks", cl::desc("Strict Null Check
 cl::opt<bool> newVSCodeFolder("new", cl::desc("New VS Code Project"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> installDefaultLibCmd("install-default-lib", cl::desc("Install Default Library. use default-lib-path to provide path where to install the lib"), cl::cat(TypeScriptCompilerCategory));
 
-static void TscPrintVersion(llvm::raw_ostream &OS) {
+static void TslangPrintVersion(llvm::raw_ostream &OS) {
   OS << "TypeScript Native Compiler (https://github.com/ASDAlexander77/TypeScriptCompiler):" << '\n';
-  OS << "  TySC version " << TSC_PACKAGE_VERSION << '\n' << '\n';
+  OS << "  TySC version " << TSLANG_PACKAGE_VERSION << '\n' << '\n';
 
   cl::PrintVersionMessage();
 }
@@ -211,7 +211,7 @@ bool prepareDefaultLib(CompileOptions &compileOptions)
     auto isDir = llvm::sys::fs::is_directory(fullPath);
     if (!defaultLibPathVariable.empty() && !isDir) 
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Default lib path: " << fullPath
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Default lib path: " << fullPath
                                     << " does not exist or is not a directory\n";
         return false;
     }
@@ -238,7 +238,7 @@ int main(int argc, char **argv)
 #endif
 
     // version printer
-    cl::SetVersionPrinter(TscPrintVersion);
+    cl::SetVersionPrinter(TslangPrintVersion);
 
     // Register any command line options.
     mlir::registerAsmPrinterCLOptions();
@@ -394,6 +394,6 @@ int main(int argc, char **argv)
         return runJit(argc, argv, *module, compileOptions);
     }
 
-    llvm::WithColor::error(llvm::errs(), "tsc") << "No action specified (parsing only?), use -emit=<action>\n";
+    llvm::WithColor::error(llvm::errs(), "tslang") << "No action specified (parsing only?), use -emit=<action>\n";
     return -1;
 }

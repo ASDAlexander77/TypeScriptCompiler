@@ -11,10 +11,10 @@
             "hidden": true,
             "displayName": "Default Config",
             "description": "Default build",
-            "binaryDir": "${sourceDir}/../__build/tsc/${presetName}",
+            "binaryDir": "${sourceDir}/../__build/tslang/${presetName}",
             "cacheVariables": {
                 "CMAKE_INSTALL_PREFIX": "${sourceDir}/../__build/install/${presetName}",
-                "TSC_PACKAGE_VERSION": "$env{TSC_PACKAGE_VERSION}"
+                "TSLANG_PACKAGE_VERSION": "$env{TSLANG_PACKAGE_VERSION}"
             }
         },
         {

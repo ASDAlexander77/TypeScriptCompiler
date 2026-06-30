@@ -18,7 +18,7 @@
 
 #include <regex>
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 using namespace typescript;
 using namespace llvm;
@@ -34,7 +34,7 @@ int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &r
 std::string getExecutablePath(const char *);
 std::string getGCLibPath();
 std::string getLLVMLibPath();
-std::string getTscLibPath();
+std::string getTslangLibPath();
 std::string getDefaultLibPath();
 std::string fixpath(std::string, const SmallVectorImpl<char>&);
 
@@ -42,19 +42,19 @@ int createVSCodeFolder(int argc, char **argv)
 {
     auto projectName = llvm::StringRef(inputFilename);
     if (projectName == "-") {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Name is not provided. (use file name without file extension)\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Name is not provided. (use file name without file extension)\n";
         return -1;
     }
 
     if (auto error_code = fs::create_directory(projectName))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not create project: " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not create project: " << error_code.message() << "\n";
         return -1;            
     }
 
     if (auto error_code = fs::set_current_path(projectName))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory: " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory: " << error_code.message() << "\n";
         return -1;
     }
 
@@ -85,20 +85,20 @@ int createVSCodeFolder(int argc, char **argv)
     SmallString<128> projectPath;
     if (auto error_code = fs::current_path(projectPath)) 
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't get info about current folder: " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't get info about current folder: " << error_code.message() << "\n";
         return -1;
     }
 
     // node_modules
     if (auto error_code = fs::create_directories(NODE_MODULE_TSNC_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not create folder/directory '" << NODE_MODULE_TSNC_PATH << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not create folder/directory '" << NODE_MODULE_TSNC_PATH << "' : " << error_code.message() << "\n";
         return -1;            
     }    
 
     if (auto error_code = fs::set_current_path(NODE_MODULE_TSNC_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory '" << NODE_MODULE_TSNC_PATH << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << NODE_MODULE_TSNC_PATH << "' : " << error_code.message() << "\n";
         return -1;
     }
 
@@ -110,19 +110,19 @@ int createVSCodeFolder(int argc, char **argv)
     // need to create .vscode
     if (auto error_code = fs::set_current_path(projectPath))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory '" << projectPath << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << projectPath << "' : " << error_code.message() << "\n";
         return -1;
     }    
 
     if (auto error_code = fs::create_directory(DOT_VSCODE_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not create folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not create folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
         return -1;            
     }    
 
     if (auto error_code = fs::set_current_path(DOT_VSCODE_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
         return -1;
     }     
 
@@ -140,16 +140,16 @@ int createVSCodeFolder(int argc, char **argv)
     appPath.append(driverPath.begin(), driverPath.end());
     path::remove_filename(appPath);
 
-    auto tscCmd = fixpath(driverPath, appPath);
+    auto tslangCmd = fixpath(driverPath, appPath);
     auto gcLibPath = fixpath(getGCLibPath(), appPath);
     auto llvmLibPath = fixpath(getLLVMLibPath(), appPath);
-    auto tscLibPath = fixpath(getTscLibPath(), appPath);
+    auto tslangLibPath = fixpath(getTslangLibPath(), appPath);
     auto defaultLibPath = fixpath(getDefaultLibPath(), appPath);
 
-    vals["TSC_CMD"] = tscCmd;
+    vals["TSLANG_CMD"] = tslangCmd;
     vals["GC_LIB_PATH"] = gcLibPath;
     vals["LLVM_LIB_PATH"] = llvmLibPath;
-    vals["TSC_LIB_PATH"] = tscLibPath;
+    vals["TSLANG_LIB_PATH"] = tslangLibPath;
     vals["DEFAULT_LIB_PATH"] = defaultLibPath;
 
     StringRef tasks(TASKS_JSON_DATA);

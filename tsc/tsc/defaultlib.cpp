@@ -22,7 +22,7 @@
 #include <regex>
 #include <filesystem>
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 #ifdef WIN32
 #define PUTENV _putenv
@@ -47,7 +47,7 @@ int buildLinux(const SmallVectorImpl<char>&, SmallVectorImpl<char>&);
 std::string getExecutablePath(const char *);
 std::string getGCLibPath();
 std::string getLLVMLibPath();
-std::string getTscLibPath();
+std::string getTslangLibPath();
 std::string getDefaultLibPath();
 std::string getpath(std::string, const SmallVectorImpl<char>&);
 std::error_code copy_from_to(const SmallVectorImpl<char>&, const SmallVectorImpl<char>&);
@@ -72,13 +72,13 @@ int installDefaultLib(int argc, char **argv)
     SmallVector<char> tempFolder;
     if (auto error_code = fs::createUniqueDirectory("defaultLibBuild", tempFolder))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't create Temp folder/directory '" << tempFolder << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't create Temp folder/directory '" << tempFolder << "' : " << error_code.message() << "\n";
         return -1;
     }
 
     if (auto error_code = fs::set_current_path(tempFolder))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory '" << tempFolder << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << tempFolder << "' : " << error_code.message() << "\n";
         return -1;
     }
     
@@ -90,7 +90,7 @@ int installDefaultLib(int argc, char **argv)
     // open TypeScriptCompilerDefaultLib
     if (auto error_code = fs::set_current_path("TypeScriptCompilerDefaultLib"))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open folder/directory '" << "TypeScriptCompilerDefaultLib " << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << "TypeScriptCompilerDefaultLib " << "' : " << error_code.message() << "\n";
         return -1;
     }    
 
@@ -132,7 +132,7 @@ int installDefaultLib(int argc, char **argv)
 
     if (destPath.empty())
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "installation destination is not provided. use option --default-lib-path to set it or set environment variable DEFAULT_LIB_PATH\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "installation destination is not provided. use option --default-lib-path to set it or set environment variable DEFAULT_LIB_PATH\n";
         return -1;
     }
 
@@ -149,14 +149,14 @@ int installDefaultLib(int argc, char **argv)
 
     if (!result)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "It seems the compilation process has failed, try to check settings for --gc-lib-path, --llvm-lib-path and --tsc-lib-path or their environment variables GC_LIB_PATH, LLVM_LIB_PATH, TSC_LIB_PATH\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "It seems the compilation process has failed, try to check settings for --gc-lib-path, --llvm-lib-path and --tslang-lib-path or their environment variables GC_LIB_PATH, LLVM_LIB_PATH, TSLANG_LIB_PATH\n";
         return -1;
     }
 
     // copy
     if (auto error_code = copy_from_to(builtPath, destPath))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't copy built library into destination folder/directory : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't copy built library into destination folder/directory : " << error_code.message() << "\n";
         return -1;
     }
 
@@ -172,7 +172,7 @@ int clone()
     auto fromPath = llvm::sys::findProgramByName("git");
     if (!fromPath)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "'git' not found on PATH" << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "'git' not found on PATH" << "\n";
         return -1;        
     }
 
@@ -194,7 +194,7 @@ int clone()
 
     if (returnCode < 0)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Error running git clone. " << errMsg << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Error running git clone. " << errMsg << "\n";
         return -1;         
     }
 
@@ -207,7 +207,7 @@ int buildWin32(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
     auto fromPath = llvm::sys::findProgramByName("cmd");
     if (!fromPath)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "'cmd' not found on PATH" << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "'cmd' not found on PATH" << "\n";
         return -1;        
     }
 
@@ -225,19 +225,19 @@ int buildWin32(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
 
     auto gcLibPath = getpath(getGCLibPath(), appPath);
     auto llvmLibPath = getpath(getLLVMLibPath(), appPath);
-    auto tscLibPath = getpath(getTscLibPath(), appPath);
+    auto tslangLibPath = getpath(getTslangLibPath(), appPath);
     auto defaultLibPath = getpath(getDefaultLibPath(), appPath);
 
     std::string appPathVar = llvm::formatv("{0}={1}", "TOOL_PATH", appPath);
     std::string gcLibPathVar = llvm::formatv("{0}={1}", "GC_LIB_PATH", gcLibPath);
     std::string llvmLibPathVar = llvm::formatv("{0}={1}", "LLVM_LIB_PATH", llvmLibPath);
-    std::string tscLibPathVar = llvm::formatv("{0}={1}", "TSC_LIB_PATH", tscLibPath);
+    std::string tslangLibPathVar = llvm::formatv("{0}={1}", "TSLANG_LIB_PATH", tslangLibPath);
     std::string defaultLibPathVar = llvm::formatv("{0}={1}", "DEFAULT_LIB_PATH", defaultLibPath);    
 
     PUTENV(appPathVar.data());
     PUTENV(gcLibPathVar.data());
     PUTENV(llvmLibPathVar.data());
-    PUTENV(tscLibPathVar.data());
+    PUTENV(tslangLibPathVar.data());
     PUTENV(defaultLibPathVar.data());
 
     std::string errMsg;
@@ -246,13 +246,13 @@ int buildWin32(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
 
     if (returnCode < 0)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Error running build command. " << errMsg << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Error running build command. " << errMsg << "\n";
         return -1;         
     }
 
     if (auto error_code = fs::current_path(builtPath))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open get info about current folder/directory : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open get info about current folder/directory : " << error_code.message() << "\n";
         return -1;        
     }
 
@@ -275,19 +275,19 @@ int buildLinux(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
 
     auto gcLibPath = getpath(getGCLibPath(), appPath);
     auto llvmLibPath = getpath(getLLVMLibPath(), appPath);
-    auto tscLibPath = getpath(getTscLibPath(), appPath);
+    auto tslangLibPath = getpath(getTslangLibPath(), appPath);
     auto defaultLibPath = getpath(getDefaultLibPath(), appPath);
 
     std::string appPathVar = llvm::formatv("{0}={1}", "TOOL_PATH", appPath);
     std::string gcLibPathVar = llvm::formatv("{0}={1}", "GC_LIB_PATH", gcLibPath);
     std::string llvmLibPathVar = llvm::formatv("{0}={1}", "LLVM_LIB_PATH", llvmLibPath);
-    std::string tscLibPathVar = llvm::formatv("{0}={1}", "TSC_LIB_PATH", tscLibPath);
+    std::string tslangLibPathVar = llvm::formatv("{0}={1}", "TSLANG_LIB_PATH", tslangLibPath);
     std::string defaultLibPathVar = llvm::formatv("{0}={1}", "DEFAULT_LIB_PATH", defaultLibPath);    
 
     PUTENV(appPathVar.data());
     PUTENV(gcLibPathVar.data());
     PUTENV(llvmLibPathVar.data());
-    PUTENV(tscLibPathVar.data());
+    PUTENV(tslangLibPathVar.data());
     PUTENV(defaultLibPathVar.data());
 
     std::string errMsg;
@@ -296,13 +296,13 @@ int buildLinux(const SmallVectorImpl<char>& appPath, SmallVectorImpl<char>& buil
 
     if (returnCode < 0)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Error running build command. " << errMsg << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Error running build command. " << errMsg << "\n";
         return -1;         
     }
 
     if (auto error_code = fs::current_path(builtPath))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Can't open get info about current folder/directory : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open get info about current folder/directory : " << error_code.message() << "\n";
         return -1;        
     }
 

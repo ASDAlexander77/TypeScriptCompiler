@@ -52,12 +52,12 @@
 #error TEST_LLVM_LIBPATH must be provided
 #endif
 
-#ifndef TEST_TSC_EXEPATH
-#error TEST_TSC_EXEPATH must be provided
+#ifndef TEST_TSLANG_EXEPATH
+#error TEST_TSLANG_EXEPATH must be provided
 #endif
 
-#ifndef TEST_TSC_LIBPATH
-#error TEST_TSC_LIBPATH must be provided
+#ifndef TEST_TSLANG_LIBPATH
+#error TEST_TSLANG_LIBPATH must be provided
 #endif
 
 #ifndef TEST_GCPATH
@@ -90,17 +90,17 @@ auto sharedLibCompileTime = false;
 auto gctorsAsMethod = false;
 #ifndef COMPILE_DEBUG
 auto opt = true;
-auto tsc_opt = "--opt --opt_level=3";
+auto tslang_opt = "--opt --opt_level=3";
 #define JIT_NAME "jit"
 #define COMPILE_NAME "compile"
 #else
 auto opt = false;
-auto tsc_opt = "--di --opt_level=0";
+auto tslang_opt = "--di --opt_level=0";
 #define JIT_NAME "jitd"
 #define COMPILE_NAME "compiled"
 #endif
 
-auto tsc_opt_ext = "";
+auto tslang_opt_ext = "";
 
 void createJitBatchFile()
 {
@@ -114,9 +114,9 @@ void createJitBatchFile()
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set FILEPATH=%2" << std::endl;
-    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
     batFile << "echo on" << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " " << tsc_opt_ext << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll %FILEPATH% 1> %FILENAME%.txt 2> %FILENAME%.err"
+    batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=jit " << tslang_opt << " " << tslang_opt_ext << " --shared-libs=%TSLANGEXEPATH%/TypeScriptRuntime.dll %FILEPATH% 1> %FILENAME%.txt 2> %FILENAME%.err"
             << std::endl;
     batFile.close();
 #else
@@ -128,8 +128,8 @@ void createJitBatchFile()
     std::ofstream batFile(JIT_NAME BAT_NAME);
     batFile << "FILENAME=$1" << std::endl;
     batFile << "FILEPATH=$2" << std::endl;
-    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " " << tsc_opt_ext << " --shared-libs=../../lib/libTypeScriptRuntime.so $FILEPATH 1> $FILENAME.txt 2> $FILENAME.err"
+    batFile << "TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
+    batFile << "$TSLANGEXEPATH/tslang --emit=jit " << tslang_opt << " " << tslang_opt_ext << " --shared-libs=../../lib/libTypeScriptRuntime.so $FILEPATH 1> $FILENAME.txt 2> $FILENAME.err"
             << std::endl;
     batFile.close();    
 #endif    
@@ -153,13 +153,13 @@ void createCompileBatchFile()
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
     batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "set TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
+    batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " " << tsc_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
+    batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << tslang_opt << " " << tslang_opt_ext << " %FILEPATH% -o=%FILENAME%.obj" << std::endl;
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link %FILENAME%.obj %LINKER_OPTS% " 
             << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSC_LIB_PATH%" 
+            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
     batFile << "del %FILENAME%.obj" << std::endl;
@@ -179,13 +179,13 @@ void createCompileBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "FILEPATH=$2" << std::endl;
     batFile << "LINKER_OPTS=$3" << std::endl;
-    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
+    batFile << "TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << tsc_opt_ext << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
-    batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH $FILENAME.o " 
+    batFile << "$TSLANGEXEPATH/tslang --emit=obj " << tslang_opt << " " << tslang_opt_ext << " $FILEPATH -relocation-model=pic -o=$FILENAME.o" << std::endl;
+    batFile << TEST_COMPILER << " -o $FILENAME $LINKER_OPTS -L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH $FILENAME.o " 
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm -f $FILENAME.o" << std::endl;
@@ -335,7 +335,7 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 {
     if (gctorsAsMethod)
     {
-        tsc_opt_ext = "--gctors-as-method";
+        tslang_opt_ext = "--gctors-as-method";
     }
 
 #ifdef WIN32
@@ -347,8 +347,8 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
     batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "set TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
+    batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
     std::stringstream objs;
@@ -357,13 +357,13 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
     {
         auto fileNameWithoutExt = fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".obj ";
-        batFile << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " " << (isFirst ? "" : tsc_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+        batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
         isFirst = false;
     }
 
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:%FILENAME%.exe " << objs.str() << " "
             << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSC_LIB_PATH%" 
+            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
 
@@ -377,8 +377,8 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
 #else
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
     batFile << "FILENAME=" << tempOutputFileNameNoExt << std::endl;
-    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
+    batFile << "TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
@@ -390,12 +390,12 @@ void createMultiCompileBatchFile(std::string tempOutputFileNameNoExt, std::vecto
         // prefix with the unique temp name so parallel tests reusing the same source files don't stomp each other's object files
         auto fileNameWithoutExt = tempOutputFileNameNoExt + "_" + fs::path(file).stem().string();
         objs << fileNameWithoutExt << ".o ";
-        batFile << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (isFirst ? "" : tsc_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        batFile << "$TSLANGEXEPATH/tslang --emit=obj " << tslang_opt << " " << (isFirst ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
         isFirst = false;
     }
 
     batFile << TEST_COMPILER << " -o $FILENAME " << objs.str() 
-            << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH "
+            << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     
@@ -410,7 +410,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 {
     if (gctorsAsMethod)
     {
-        tsc_opt_ext = "--gctors-as-method";
+        tslang_opt_ext = "--gctors-as-method";
     }
 
     auto linker_opt = SHARED_LIB_OPT;
@@ -424,8 +424,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
     batFile << "set LLVMEXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "set LLVM_LIB_PATH=" << TEST_LLVM_LIBPATH << std::endl;
-    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "set TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "set TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
+    batFile << "set TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "set GC_LIB_PATH=" << TEST_GCPATH << std::endl;
 
     // run everything inside a unique per-test working directory: the shared lib must keep its
@@ -462,7 +462,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             }
         }
 
-        (first ? execBat : sharedBat) << "%TSCEXEPATH%\\tsc.exe --emit=obj " << tsc_opt << " " << (first ? "" : tsc_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
+        (first ? execBat : sharedBat) << "%TSLANGEXEPATH%\\tslang.exe --emit=obj " << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -o=" << fileNameWithoutExt << ".obj" << std::endl;
 
         first = false;
     }
@@ -470,7 +470,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
     batFile << sharedBat.str();
     batFile << "%LLVMEXEPATH%\\lld.exe -flavor link /out:" << shared_filenameNoExt << ".dll " << linker_opt << " " << shared_objs.str() << " "
             <<  LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSC_LIB_PATH%" 
+            << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
             << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
             << std::endl;
 
@@ -482,7 +482,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     if (jitRun)
     {
-        batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit " << tsc_opt << " --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll " << *files.begin() << " 1> ..\\%FILENAME%.txt 2> ..\\%FILENAME%.err"
+        batFile << "%TSLANGEXEPATH%\\tslang.exe --emit=jit " << tslang_opt << " --shared-libs=%TSLANGEXEPATH%/TypeScriptRuntime.dll " << *files.begin() << " 1> ..\\%FILENAME%.txt 2> ..\\%FILENAME%.err"
                 << std::endl;
 
         batFile << "del " << shared_libs.str() << std::endl;
@@ -498,7 +498,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
         }
 
         batFile << LIBS << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << CMAKE_C_STANDARD_LIBRARIES
-                << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSC_LIB_PATH%" 
+                << " /libpath:%GC_LIB_PATH% /libpath:%LLVM_LIB_PATH% /libpath:%TSLANG_LIB_PATH%" 
                 << " /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH%"
                 << std::endl;
 
@@ -526,8 +526,8 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 #else
     std::ofstream batFile(tempOutputFileNameNoExt + BAT_NAME);
     batFile << "FILENAME=" << tempOutputFileNameNoExt << std::endl;
-    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "TSC_LIB_PATH=" << TEST_TSC_LIBPATH << std::endl;
+    batFile << "TSLANGEXEPATH=" << TEST_TSLANG_EXEPATH << std::endl;
+    batFile << "TSLANG_LIB_PATH=" << TEST_TSLANG_LIBPATH << std::endl;
     batFile << "LLVM_EXEPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "LLVM_LIBPATH=" << TEST_LLVM_LIBPATH << std::endl;
     batFile << "GC_LIB_PATH=" << TEST_GCPATH << std::endl;
@@ -557,7 +557,7 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
             }
         }
 
-        (first ? execBat : sharedBat) << "$TSCEXEPATH/tsc --emit=obj " << tsc_opt << " " << (first ? "" : tsc_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
+        (first ? execBat : sharedBat) << "$TSLANGEXEPATH/tslang --emit=obj " << tslang_opt << " " << (first ? "" : tslang_opt_ext) << " " << file << " -relocation-model=pic -o=" << fileNameWithoutExt << ".o" << std::endl;
 
         first = false;
     }
@@ -571,21 +571,21 @@ void createSharedMultiBatchFile(std::string tempOutputFileNameNoExt, std::vector
 
     batFile << sharedBat.str();
     batFile << TEST_COMPILER << " " << linker_opt << " -o lib" << shared_filenameNoExt << ".so " << shared_objs.str()
-            << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH "
+            << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH "
             << TYPESCRIPT_LIB << GC_LIB << LLVM_LIBS << LIBS << std::endl;
     batFile << "rm -f " << shared_objs.str() << std::endl;
 
     if (jitRun)
     {
         // one extra "../" because we run from the per-test working directory
-        batFile << "$TSCEXEPATH/tsc --emit=jit " << tsc_opt << " --shared-libs=../../../lib/libTypeScriptRuntime.so --shared-libs=./lib" << shared_filenameNoExt << ".so " << *files.begin() << " 1> ../$FILENAME.txt 2> ../$FILENAME.err"
+        batFile << "$TSLANGEXEPATH/tslang --emit=jit " << tslang_opt << " --shared-libs=../../../lib/libTypeScriptRuntime.so --shared-libs=./lib" << shared_filenameNoExt << ".so " << *files.begin() << " 1> ../$FILENAME.txt 2> ../$FILENAME.err"
                 << std::endl;
     }
     else
     {
         batFile << execBat.str();
         batFile << TEST_COMPILER << " -o $FILENAME " << exec_objs.str() << " ";
-        batFile << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSC_LIB_PATH ";
+        batFile << "-L$LLVM_LIBPATH -L$GC_LIB_PATH -L$TSLANG_LIB_PATH ";
         if (sharedLib)
         {
             // dynamics and compile-time shared modes both link the produced shared lib;

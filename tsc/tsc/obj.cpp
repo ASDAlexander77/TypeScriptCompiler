@@ -25,7 +25,7 @@
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 #include "TypeScript/DataStructs.h"
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 namespace cl = llvm::cl;
 
@@ -198,7 +198,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     TheTarget = llvm::TargetRegistry::lookupTarget(llvm::codegen::getMArch(), TheTriple, Error);
     if (!TheTarget) 
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << Error;
+        llvm::WithColor::error(llvm::errs(), "tslang") << Error;
         return -1;
     }
 
@@ -206,7 +206,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
       // considered a user error.
     if (TheTriple.isOSAIX() && RM && *RM != llvm::Reloc::PIC_)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "invalid relocation model, AIX only supports PIC";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "invalid relocation model, AIX only supports PIC";
         return -1;
     }
 
@@ -228,7 +228,7 @@ int setupTargetTriple(llvm::Module *llvmModule, std::unique_ptr<llvm::TargetMach
     } 
     else 
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "invalid optimization level.\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "invalid optimization level.\n";
         return 1;
     }
 
@@ -263,7 +263,7 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
     auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
     if (!llvmModule)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to emit LLVM IR\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to emit LLVM IR\n";
         return -1;
     }
 
@@ -283,7 +283,7 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
     if (auto err = optPipeline(llvmModule.get()))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to optimize LLVM IR " << err << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to optimize LLVM IR " << err << "\n";
         return -1;
     }
 
@@ -312,7 +312,7 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
         DwoOut = std::make_unique<llvm::ToolOutputFile>(SplitDwarfOutputFile, EC, llvm::sys::fs::OF_None);
         if (EC)
         {
-            llvm::WithColor::error(llvm::errs(), "tsc") << EC.message() << SplitDwarfOutputFile << "\n";
+            llvm::WithColor::error(llvm::errs(), "tslang") << EC.message() << SplitDwarfOutputFile << "\n";
             return -1;
         }
     }
@@ -327,14 +327,14 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
 
     if (!NoVerify && llvm::verifyModule(*llvmModule.get(), &llvm::errs()))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "input module cannot be verified\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "input module cannot be verified\n";
         return -1;        
     }
 
     auto fileFormat = emitAction == DumpObj ? llvm::CodeGenFileType::ObjectFile : emitAction == DumpAssembly ? llvm::CodeGenFileType::AssemblyFile : llvm::CodeGenFileType::Null;
     if (llvm::mc::getExplicitRelaxAll() && /*llvm::codegen::getFileType()*/ fileFormat != llvm::CodeGenFileType::ObjectFile)
     {
-        llvm::WithColor::warning(llvm::errs(), "tsc") << ": warning: ignoring -mc-relax-all because filetype != obj";
+        llvm::WithColor::warning(llvm::errs(), "tslang") << ": warning: ignoring -mc-relax-all because filetype != obj";
     }
 
     {
@@ -358,7 +358,7 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
                         PM, *OS, DwoOut ? &DwoOut->os() : nullptr,
                         fileFormat /*llvm::codegen::getFileType()*/, true, MMIWP)) 
         {
-            llvm::WithColor::error(llvm::errs(), "tsc") << "target does not support generation of this file type\n";
+            llvm::WithColor::error(llvm::errs(), "tslang") << "target does not support generation of this file type\n";
         }
 
         const_cast<llvm::TargetLoweringObjectFile *>(LLVMTM.getObjFileLowering())->Initialize(MMIWP->getMMI().getContext(), *Target);
@@ -371,7 +371,7 @@ int dumpObjOrAssembly(int argc, char **argv, enum Action emitAction, std::string
         auto HasError = ((const LLCDiagnosticHandler *)(Context.getDiagHandlerPtr()))->HasError;
         if (*HasError)
         {
-            llvm::WithColor::error(llvm::errs(), "tsc") << "diagnostic error(s)\n";
+            llvm::WithColor::error(llvm::errs(), "tslang") << "diagnostic error(s)\n";
             return 1;
         }
 

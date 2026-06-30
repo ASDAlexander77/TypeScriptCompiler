@@ -1,11 +1,11 @@
 compilers:
-  tsc-native:
+  tslang-native:
     type: tarballs
-    dir: tsc-{name}
-    untar_dir: tsc-ninja-release
+    dir: tslang-{name}
+    untar_dir: tslang-ninja-release
     compression: gz
-    check_exe: bin/tsc --version
-    url: https://github.com/ASDAlexander77/TypeScriptCompiler/releases/download/v{name}/tsc.tar.gz
+    check_exe: bin/tslang --version
+    url: https://github.com/ASDAlexander77/TypeScriptCompiler/releases/download/v{name}/tslang.tar.gz
     targets:
       - 0.0-pre-alpha20
 

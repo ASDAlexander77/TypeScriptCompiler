@@ -16,7 +16,7 @@
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 using namespace typescript;
 namespace cl = llvm::cl;
@@ -39,7 +39,7 @@ int dumpAST()
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
     if (std::error_code ec = fileOrErr.getError())
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << ec.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not open input file: " << ec.message() << "\n";
         return 0;
     }
 
@@ -57,7 +57,7 @@ int dumpLLVMIR(enum Action emitAction, std::string outputFile, mlir::ModuleOp mo
     auto llvmModule = mlir::translateModuleToLLVMIR(module, llvmContext);
     if (!llvmModule)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to emit LLVM IR\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to emit LLVM IR\n";
         return -1;
     }
 
@@ -79,7 +79,7 @@ int dumpLLVMIR(enum Action emitAction, std::string outputFile, mlir::ModuleOp mo
     auto optPipeline = getTransformer(enableOpt, optLevel, sizeLevel, compileOptions);
     if (auto err = optPipeline(llvmModule.get()))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Failed to optimize LLVM IR " << err << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Failed to optimize LLVM IR " << err << "\n";
         return -1;
     }
 

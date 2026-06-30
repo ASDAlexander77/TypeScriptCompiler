@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <PropertyGroup Condition="'$(TSCBeforeTargets)' == '' and '$(TSCAfterTargets)' == '' and '$(ConfigurationType)' != 'Makefile'">
-    <TSCBeforeTargets>Midl</TSCBeforeTargets>
-    <TSCAfterTargets>CustomBuild</TSCAfterTargets>
+  <PropertyGroup Condition="'$(TSLANGBeforeTargets)' == '' and '$(TSLANGAfterTargets)' == '' and '$(ConfigurationType)' != 'Makefile'">
+    <TSLANGBeforeTargets>Midl</TSLANGBeforeTargets>
+    <TSLANGAfterTargets>CustomBuild</TSLANGAfterTargets>
   </PropertyGroup>
   <ItemDefinitionGroup>
-    <TSC>
+    <TSLANG>
       <OutputFormat>$(IntDir)%(FileName).obj</OutputFormat>
-      <CommandLineTemplate>"tsc.exe" --emit=obj -o=$(IntDir)%(FileName).obj [AllOptions] [AdditionalOptions] "%(FullPath)"</CommandLineTemplate>
+      <CommandLineTemplate>"tslang.exe" --emit=obj -o=$(IntDir)%(FileName).obj [AllOptions] [AdditionalOptions] "%(FullPath)"</CommandLineTemplate>
       <ExecutionDescription>Compiling %(Filename)%(Extension)</ExecutionDescription>
-    </TSC>
+    </TSLANG>
   </ItemDefinitionGroup>
 </Project>

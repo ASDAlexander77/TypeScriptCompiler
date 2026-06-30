@@ -29,7 +29,7 @@ extern cl::opt<std::string> TargetTriple;
 extern cl::opt<std::string> defaultlibpath;
 extern cl::opt<std::string> gclibpath;
 extern cl::opt<std::string> llvmlibpath;
-extern cl::opt<std::string> tsclibpath;
+extern cl::opt<std::string> tslanglibpath;
 extern cl::opt<std::string> emsdksysrootpath;
 extern cl::opt<bool> enableOpt;
 extern cl::list<std::string> libs;
@@ -105,7 +105,7 @@ bool checkFileExistsAtPath(std::string path, std::string fileName)
 
     if (!llvm::sys::fs::exists(destPath))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "path: '" << path << "' is not pointing to file '" << fileName << "'\n";        
+        llvm::WithColor::error(llvm::errs(), "tslang") << "path: '" << path << "' is not pointing to file '" << fileName << "'\n";        
         return false;
     }    
 
@@ -132,7 +132,7 @@ void checkLLVMLibPath(std::string path)
     checkFileExistsAtPath(path, libName);
 }
 
-void checkTscLibPath(std::string path) 
+void checkTslangLibPath(std::string path) 
 {
 #ifdef WIN32
     const auto libName = "TypeScriptAsyncRuntime.lib";
@@ -176,18 +176,18 @@ std::string getLLVMLibPath()
     return "";    
 }
 
-std::string getTscLibPath()
+std::string getTslangLibPath()
 {
-    if (!tsclibpath.empty())
+    if (!tslanglibpath.empty())
     {
-        checkTscLibPath(tsclibpath);
-        return tsclibpath;
+        checkTslangLibPath(tslanglibpath);
+        return tslanglibpath;
     }
 
-    if (auto tscLibEnvValue = llvm::sys::Process::GetEnv("TSC_LIB_PATH")) 
+    if (auto tslangLibEnvValue = llvm::sys::Process::GetEnv("TSLANG_LIB_PATH")) 
     {
-        checkTscLibPath(tscLibEnvValue.value());
-        return tscLibEnvValue.value();
+        checkTslangLibPath(tslangLibEnvValue.value());
+        return tslangLibEnvValue.value();
     }   
 
     return "";    
@@ -274,7 +274,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     //llvm::SmallVector<const char *, 256> args(argv, argv + argc);
     llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
 
-    clang::driver::ParsedClangName targetAndMode("tsc", "--driver-mode=tsc");
+    clang::driver::ParsedClangName targetAndMode("tslang", "--driver-mode=tslang");
     std::string driverPath = getExecutablePath(args[0]);
 
     llvm::BumpPtrAllocator a;
@@ -290,7 +290,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         if (llvm::StringRef(args[1]).starts_with("-cc1"))
         {
             llvm::errs() << "error: unknown integrated tool '" << args[1] << "'. "
-                         << "Valid tools include '-tsc'.\n";
+                         << "Valid tools include '-tslang'.\n";
             return 1;
         }
 
@@ -314,14 +314,14 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     //args.insert(args.begin() + 1, "-fms-runtime-lib=static_dbg");
 
     std::string gcLibPathOpt;
-    std::string tscLibPathOpt;
+    std::string tslangLibPathOpt;
     std::string llvmLibPathOpt;
     std::string emsdkSysRootPathOpt;
     std::string defaultLibPathOpt;
     std::string defaultLibFileOpt;
 
     auto isLLVMLibNeeded = true;
-    auto isTscLibNeeded = true;
+    auto isTslangLibNeeded = true;
 
     auto os = TheTriple.getOS();
     auto arch = TheTriple.getArch();
@@ -335,7 +335,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     if (wasm)
     {
         isLLVMLibNeeded = false;
-        isTscLibNeeded = false;        
+        isTslangLibNeeded = false;        
     }
 
     args.push_back(objFileName.c_str());
@@ -425,12 +425,12 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         }
     }
 
-    if (isTscLibNeeded)
+    if (isTslangLibNeeded)
     {
-        tscLibPathOpt = getLibsPathOpt(getTscLibPath());
-        if (!tscLibPathOpt.empty())
+        tslangLibPathOpt = getLibsPathOpt(getTslangLibPath());
+        if (!tslangLibPathOpt.empty())
         {
-            args.push_back(tscLibPathOpt.c_str());    
+            args.push_back(tslangLibPathOpt.c_str());    
         }
     }
 
@@ -460,13 +460,13 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
         args.push_back("-lntdll");
     }
 
-    // tsc libs
+    // tslang libs
     if (!disableGC)
     {    
         args.push_back("-lgc");
     }
 
-    if (isTscLibNeeded)
+    if (isTslangLibNeeded)
     {
         args.push_back("-lTypeScriptAsyncRuntime");
     }
@@ -546,7 +546,7 @@ int buildExe(int argc, char **argv, std::string objFileName, std::string additio
     // Prepare the driver
     clang::driver::Driver theDriver(driverPath,
                                     targetTriple, diags,
-                                    "tsc LLVM compiler");
+                                    "tslang LLVM compiler");
 
     theDriver.setTargetAndMode(targetAndMode);
     std::unique_ptr<clang::driver::Compilation> c(theDriver.BuildCompilation(args));

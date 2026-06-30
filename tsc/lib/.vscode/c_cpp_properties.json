@@ -6,7 +6,7 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
                 "${workspaceFolder}/../../3rdParty/llvm/x64/debug/include",
-                "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/include",
+                "${workspaceFolder}/../../__build/tslang/windows-msbuild-debug/include",
                 "${workspaceFolder}/../tsc-new-parser"
             ],
             "defines": [
@@ -26,7 +26,7 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
                 "${workspaceFolder}/../../3rdParty/llvm/debug/include",
-                "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug/include",
+                "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug/include",
                 "${workspaceFolder}/../tsc-new-parser"
             ],
             "defines": [

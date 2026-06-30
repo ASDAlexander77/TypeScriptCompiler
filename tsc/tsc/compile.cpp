@@ -14,7 +14,7 @@
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 using namespace typescript;
 namespace cl = llvm::cl;
@@ -36,7 +36,7 @@ int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &context, llvm::StringRef fi
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(absoluteFilePath);
     if (std::error_code ec = fileOrErr.getError())
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << ec.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not open input file: " << ec.message() << "\n";
         return -1;
     }
     

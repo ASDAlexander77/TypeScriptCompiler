@@ -57,11 +57,11 @@ jobs:
 
       - name: Delete __Build TS folders
         continue-on-error: true
-        run: if (Test-Path -Path ".\__build\tsc\msbuild\x64\release") { Remove-Item -Recurse -Force ".\__build\tsc\msbuild\x64\release" }
+        run: if (Test-Path -Path ".\__build\tslang\msbuild\x64\release") { Remove-Item -Recurse -Force ".\__build\tslang\msbuild\x64\release" }
         shell: pwsh
 
       - name: Create __Build Folders
-        run: if (!(Test-Path -Path ".\__build\tsc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\llvm\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
+        run: if (!(Test-Path -Path ".\__build\tslang\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tslang\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\llvm\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
         shell: pwsh
       
       - name: Download 3rd party - LLVM
@@ -119,31 +119,31 @@ jobs:
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
         # Generates the BDWgc CMake package files (lib/cmake/bdwgc/BDWgcConfig.cmake)
-        # that the tsc build looks up via find_package(BDWgc CONFIG).
+        # that the tslang build looks up via find_package(BDWgc CONFIG).
         run: cmake --install . --config ${{ env.BUILD_TYPE }}
         shell: pwsh
 
       - name: Configure
         continue-on-error: false
-        working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
-        run: cmake ../../../../../tsc -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
+        working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
+        run: cmake ../../../../../tslang -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSLANG_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
         shell: pwsh
 
       - name: Build
         continue-on-error: false
-        working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+        working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
         run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
         shell: pwsh
 
       - name: Test
-        working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+        working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
         # Execute tests defined by the CMake configuration.
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
         shell: pwsh
 
-      # Replicates installDefaultLib() from tsc/defaultlib.cpp: clone the default
-      # library sources and build them against the tsc/gc/llvm/runtime we just built.
+      # Replicates installDefaultLib() from tslang/defaultlib.cpp: clone the default
+      # library sources and build them against the tslang/gc/llvm/runtime we just built.
       - name: Clone Default Library
         continue-on-error: false
         working-directory: ${{github.workspace}}
@@ -154,10 +154,10 @@ jobs:
         continue-on-error: false
         working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
         env:
-          TOOL_PATH: ${{github.workspace}}/__build/tsc/msbuild/x64/release/bin
+          TOOL_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/bin
           GC_LIB_PATH: ${{github.workspace}}/__build/gc/msbuild/x64/release/${{ env.BUILD_TYPE }}
           LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/x64/release/lib
-          TSC_LIB_PATH: ${{github.workspace}}/__build/tsc/msbuild/x64/release/lib
+          TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/msbuild/x64/release/lib
         run: |
           $env:VSWHERE_PATH = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           .\build.bat release
@@ -165,14 +165,14 @@ jobs:
 
       - name: Create Zip of Windows Asset
         working-directory: ${{github.workspace}}/__build
-        run: Get-ChildItem -Path .\tsc\msbuild\x64\release\bin\tsc.exe, .\tsc\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tsc\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build\release\* | Compress-Archive -DestinationPath ..\tsc.zip
+        run: Get-ChildItem -Path .\tslang\msbuild\x64\release\bin\tslang.exe, .\tslang\msbuild\x64\release\bin\TypeScriptRuntime.dll, .\gc\msbuild\x64\release\${{ env.BUILD_TYPE }}\gc.lib, .\tslang\msbuild\x64\release\lib\TypeScriptAsyncRuntime.lib, ..\3rdParty\llvm\x64\release\lib\LLVMSupport.lib, ..\3rdParty\llvm\x64\release\bin\wasm-ld.exe, ..\TypeScriptCompilerDefaultLib\__build\release\* | Compress-Archive -DestinationPath ..\tslang.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
         uses: actions/upload-artifact@v4
         with:
-          name: tsc-windows-asset
-          path: tsc.zip
+          name: tslang-windows-asset
+          path: tslang.zip
           retention-days: 1          
   
   build_on_linux:
@@ -214,11 +214,11 @@ jobs:
 
       - name: Delete __Build TS folders
         continue-on-error: true
-        run: rm -R ./__build/tsc/ninja/release
+        run: rm -R ./__build/tslang/ninja/release
         shell: sh
 
       - name: Create __Build Folders
-        run: mkdir -p ./__build/tsc/ninja/release; mkdir -p ./__build/gc/ninja/release
+        run: mkdir -p ./__build/tslang/ninja/release; mkdir -p ./__build/gc/ninja/release
         shell: sh
       
       - name: Download 3rd party - LLVM
@@ -289,24 +289,24 @@ jobs:
         working-directory: ${{github.workspace}}/__build/gc/ninja/release
         shell: sh
         # Generates the BDWgc CMake package files (lib/cmake/bdwgc/BDWgcConfig.cmake)
-        # that the tsc build looks up via find_package(BDWgc CONFIG).
+        # that the tslang build looks up via find_package(BDWgc CONFIG).
         run: cmake --install . --config ${{ env.BUILD_TYPE }}
 
       - name: Configure
         continue-on-error: false
-        working-directory: ${{github.workspace}}/__build/tsc/ninja/release
+        working-directory: ${{github.workspace}}/__build/tslang/ninja/release
         shell: sh
-        run: cmake ../../../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSC_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
+        run: cmake ../../../../tslang -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DTSLANG_PACKAGE_VERSION:STRING="${{ steps.version.outputs.TAG_NAME }}" -Wno-dev
 
       - name: Build
         continue-on-error: false
-        working-directory: ${{github.workspace}}/__build/tsc/ninja/release
+        working-directory: ${{github.workspace}}/__build/tslang/ninja/release
         shell: sh
         run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 4
 
       - name: Test
         continue-on-error: false
-        working-directory: ${{github.workspace}}/__build/tsc/ninja/release
+        working-directory: ${{github.workspace}}/__build/tslang/ninja/release
         shell: sh
         # Execute tests defined by the CMake configuration.  
         # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
@@ -314,8 +314,8 @@ jobs:
         env:
           LLVM_SYMBOLIZER_PATH: ${{github.workspace}}/3rdParty/llvm/release/bin
 
-      # Replicates installDefaultLib() from tsc/defaultlib.cpp: clone the default
-      # library sources and build them against the tsc/gc/llvm/runtime we just built.
+      # Replicates installDefaultLib() from tslang/defaultlib.cpp: clone the default
+      # library sources and build them against the tslang/gc/llvm/runtime we just built.
       - name: Clone Default Library
         continue-on-error: false
         working-directory: ${{github.workspace}}
@@ -327,10 +327,10 @@ jobs:
         working-directory: ${{github.workspace}}/TypeScriptCompilerDefaultLib
         shell: sh
         env:
-          TOOL_PATH: ${{github.workspace}}/__build/tsc/ninja/release/bin
+          TOOL_PATH: ${{github.workspace}}/__build/tslang/ninja/release/bin
           GC_LIB_PATH: ${{github.workspace}}/__build/gc/ninja/release
           LLVM_LIB_PATH: ${{github.workspace}}/3rdParty/llvm/release/lib
-          TSC_LIB_PATH: ${{github.workspace}}/__build/tsc/ninja/release/lib
+          TSLANG_LIB_PATH: ${{github.workspace}}/__build/tslang/ninja/release/lib
         run: chmod +x ./build.sh ./scripts/*.sh; ./build.sh release
 
       - name: Create Tar.GZ of Linux Asset
@@ -341,21 +341,21 @@ jobs:
         run: |
           rm -rf ./__stage
           mkdir -p ./__stage
-          cp ./tsc/ninja/release/bin/tsc ./__stage/
-          cp ./tsc/ninja/release/lib/libTypeScriptRuntime.so ./__stage/
+          cp ./tslang/ninja/release/bin/tslang ./__stage/
+          cp ./tslang/ninja/release/lib/libTypeScriptRuntime.so ./__stage/
           cp ./gc/ninja/release/libgc.a ./__stage/
-          cp ./tsc/ninja/release/lib/libTypeScriptAsyncRuntime.a ./__stage/
+          cp ./tslang/ninja/release/lib/libTypeScriptAsyncRuntime.a ./__stage/
           cp ../3rdParty/llvm/release/bin/wasm-ld ./__stage/
           cp ../3rdParty/llvm/release/lib/libLLVMSupport.a ./__stage/
           cp ../3rdParty/llvm/release/lib/libLLVMDemangle.a ./__stage/
           cp -r ../TypeScriptCompilerDefaultLib/__build/release/. ./__stage/
-          tar -czvhf ../tsc.tar.gz -C ./__stage .
+          tar -czvhf ../tslang.tar.gz -C ./__stage .
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v4
         with:
-          name: tsc-linux-asset
-          path: tsc.tar.gz
+          name: tslang-linux-asset
+          path: tslang.tar.gz
           retention-days: 1
 
   create_release:
@@ -384,7 +384,7 @@ jobs:
       - name: Download Release Asset from Store
         uses: actions/download-artifact@v4
         with:
-          name: tsc-windows-asset
+          name: tslang-windows-asset
 
       - name: Upload Release Asset (Windows)
         id: upload-release-asset 
@@ -393,8 +393,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./tsc.zip
-          asset_name: tsc.zip
+          asset_path: ./tslang.zip
+          asset_name: tslang.zip
           asset_content_type: application/zip
 
   deploy_linux_asset:
@@ -405,7 +405,7 @@ jobs:
       - name: Download Release Asset from Store
         uses: actions/download-artifact@v4
         with:
-          name: tsc-linux-asset
+          name: tslang-linux-asset
 
       - name: Upload Release Asset (Ubuntu 22.04)
         id: upload-release-asset 
@@ -414,6 +414,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./tsc.tar.gz
-          asset_name: tsc.tar.gz
+          asset_path: ./tslang.tar.gz
+          asset_name: tslang.tar.gz
           asset_content_type: application/tar+gzip

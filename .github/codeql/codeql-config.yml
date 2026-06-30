@@ -10,7 +10,7 @@ disable-default-queries: false
 
 #no uaws in cpp
 #paths:
-#  - tsc
+#  - tslang
 
 #no uaws in cpp
 #paths-ignore:

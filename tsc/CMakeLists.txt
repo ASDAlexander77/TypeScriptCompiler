@@ -17,7 +17,7 @@ if(POLICY CMP0116)
   cmake_policy(SET CMP0116 NEW)
 endif()
 
-project(tsc LANGUAGES CXX C)
+project(tslang LANGUAGES CXX C)
 
 find_program(CCACHE_FOUND ccache)
 if(CCACHE_FOUND)
@@ -162,7 +162,7 @@ enable_testing()
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(test)
-add_subdirectory(tsc)
+add_subdirectory(tslang)
 add_subdirectory(tsc-new-parser)
 
 if (NOT DEFINED TYPESCRIPT_IGNORE_UNIT_TESTS)

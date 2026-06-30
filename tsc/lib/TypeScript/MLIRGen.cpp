@@ -18195,7 +18195,7 @@ genContext);
     }
 
     // INFO: you can't use standart Static Field declarastion because of RTTI should be declared before used
-    // example: C:/dev/TypeScriptCompiler/tsc/test/tester/tests/dependencies.ts
+    // example: C:/dev/TypeScriptCompiler/tslang/test/tester/tests/dependencies.ts
     mlir::LogicalResult mlirGenCustomRTTI(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                           ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
@@ -18236,7 +18236,7 @@ genContext);
     }
 
     // INFO: you can't use standart Static Field declarastion because of RTTI should be declared before used
-    // example: C:/dev/TypeScriptCompiler/tsc/test/tester/tests/dependencies.ts
+    // example: C:/dev/TypeScriptCompiler/tslang/test/tester/tests/dependencies.ts
     mlir::LogicalResult mlirGenCustomRTTIDynamicImport(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
                                           ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {

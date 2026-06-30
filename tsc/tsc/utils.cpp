@@ -7,7 +7,7 @@
 
 #include "TypeScript/TypeScriptCompiler/Defines.h"
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 namespace cl = llvm::cl;
 
@@ -214,7 +214,7 @@ std::unique_ptr<llvm::ToolOutputFile> getOutputStream(enum Action emitAction, st
     auto FDOut = std::make_unique<llvm::ToolOutputFile>(outputFilename, EC, openFlags);
     if (EC)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << EC.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << EC.message() << "\n";
         return nullptr;
     }
 

@@ -53,7 +53,7 @@
 //  TODO: if you uncomment it you will have exception in test 00try_finally.ts error: empty block: expect at least a terminator
 // #define AFFINE_MODULE_PASS 1
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 namespace cl = llvm::cl;
 

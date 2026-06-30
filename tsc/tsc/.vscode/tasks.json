@@ -4,10 +4,10 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "config TSC",
-            "detail": "config_tsc_debug",
+            "label": "config TSLANG",
+            "detail": "config_tslang_debug",
             "type": "shell",
-            "command": "./config_tsc_debug.bat",
+            "command": "./config_tslang_debug.bat",
             "args": [],
             "problemMatcher": [],
             "options": {
@@ -15,10 +15,10 @@
             }
         },
         {
-            "label": "build TSC",
-            "detail": "build_tsc_debug",
+            "label": "build TSLANG",
+            "detail": "build_tslang_debug",
             "type": "shell",
-            "command": "./build_tsc_debug.bat",
+            "command": "./build_tslang_debug.bat",
             "args": [],
             "problemMatcher": [],
             "options": {
@@ -41,12 +41,12 @@
             },
             "windows": {
                 "options": {
-                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
+                    "cwd": "${workspaceFolder}/../../__build/tslang/windows-msbuild-debug"
                 }
             },
             "linux": {
                 "options": {
-                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug"
+                    "cwd": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug"
                 }
             }
         },
@@ -62,12 +62,12 @@
             },
             "windows": {
                 "options": {
-                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug"
+                    "cwd": "${workspaceFolder}/../../__build/tslang/windows-msbuild-debug"
                 }
             },
             "linux": {
                 "options": {
-                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-debug"
+                    "cwd": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-debug"
                 }
             }
         },
@@ -83,12 +83,12 @@
             },
             "windows": {
                 "options": {
-                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-release"
+                    "cwd": "${workspaceFolder}/../../__build/tslang/windows-msbuild-release"
                 }
             },
             "linux": {
                 "options": {
-                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-release"
+                    "cwd": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-release"
                 }
             }
         },
@@ -104,12 +104,12 @@
             },
             "windows": {
                 "options": {
-                    "cwd": "${workspaceFolder}/../../__build/tsc/windows-msbuild-release"
+                    "cwd": "${workspaceFolder}/../../__build/tslang/windows-msbuild-release"
                 }
             },
             "linux": {
                 "options": {
-                    "cwd": "${workspaceFolder}/../../__build/tsc/linux-ninja-gcc-release"
+                    "cwd": "${workspaceFolder}/../../__build/tslang/linux-ninja-gcc-release"
                 }
             }
         }        

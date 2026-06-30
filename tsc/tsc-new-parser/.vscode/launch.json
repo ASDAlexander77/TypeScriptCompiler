@@ -5,28 +5,28 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(Windows) tsc-new-scanner.exe - Launch",
+            "name": "(Windows) tslang-new-scanner.exe - Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/tsc-new-parser/Debug/tsc-new-scanner.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-debug/tsc-new-parser/Debug/tslang-new-scanner.exe",
             "args": ["C:/temp/test_scanner/1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": true,
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         },
         {
             "name": "(Windows) tsc-new-parser.exe - Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/windows-msbuild-debug/tsc-new-parser/Debug/tsc-new-parser.exe",
+            "program": "${workspaceFolder}/../../__build/tslang/windows-msbuild-debug/tsc-new-parser/Debug/tsc-new-parser.exe",
             "args": ["C:/temp/test_scanner/1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": true,
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+            "visualizerFile": "${workspaceFolder}/../tslang.natvis"
         }        
    ]
 }

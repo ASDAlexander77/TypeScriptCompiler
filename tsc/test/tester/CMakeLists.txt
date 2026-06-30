@@ -84,14 +84,14 @@ if (WIN32)
     target_compile_definitions(test-runner PUBLIC "TEST_UCRTPATH=\"${WINDOWS_KITS_DIR_UCRT_LIB}\"")
     target_compile_definitions(test-runner PUBLIC "CMAKE_C_STANDARD_LIBRARIES=\"${CMAKE_C_STANDARD_LIBRARIES}\"")
     target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${TEST_GC_LIBDIR}\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_TSC_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_TSC_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_LIBPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/x64/${CMAKE_BUILD_TYPE_LOWERCASE}/lib\"")
 else()
     target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${TEST_GC_LIBDIR}\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_TSC_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_TSC_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_TSLANG_LIBPATH=\"${CMAKE_BINARY_DIR}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_EXEPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE_LOWERCASE}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_LLVM_LIBPATH=\"${PROJECT_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE_LOWERCASE}/lib\"")
     target_compile_definitions(test-runner PUBLIC "TEST_COMPILER=\"${CMAKE_CXX_COMPILER}\"")
@@ -108,7 +108,7 @@ file(REMOVE
     "${CMAKE_CURRENT_BINARY_DIR}/compiled.sh"  "${CMAKE_CURRENT_BINARY_DIR}/jitd.sh")
 
 ######## enable testing ############
-# open __build\tsc   
+# open __build\tslang   
 # ctest.exe -j4 -C Release -T test --output-on-failure
 add_test(NAME test-compile-00-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")

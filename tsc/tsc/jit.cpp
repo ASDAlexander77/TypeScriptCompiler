@@ -20,7 +20,7 @@
 
 #include "TypeScript/Defines.h"
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 namespace cl = llvm::cl;
 
@@ -56,7 +56,7 @@ int loadLibrary(mlir::SmallString<256> &libPath, llvm::StringMap<void *> &export
 
     if (errMsg.size() > 0)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Loading error lib: " << errMsg << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Loading error lib: " << errMsg << "\n";
         return -1;
     }
 
@@ -145,7 +145,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
             if (absPath2.empty())
             {
                 /*
-                llvm::WithColor::error(llvm::errs(), "tsc") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
+                llvm::WithColor::error(llvm::errs(), "tslang") << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
                                 "'--shared-libs=" LIB_NAME "TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
                 return -1;            
                 */
@@ -177,11 +177,11 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     }
 
 #ifdef _WIN32
-    // tsc.exe links the CRT statically (/MT[d]), so its libc symbols are not in
+    // tslang.exe links the CRT statically (/MT[d]), so its libc symbols are not in
     // any DLL export table. The JIT's process-symbol resolver would otherwise bind
     // libc calls (puts/printf/malloc/...) to a *different* CRT instance loaded as a
     // DLL (ucrtbase.dll), giving JIT'd code a separate stdout buffer and heap from
-    // tsc.exe. That mismatch loses output and corrupts state on teardown.
+    // tslang.exe. That mismatch loses output and corrupts state on teardown.
     //
     // Add our own CRT entry points to the process symbol table *before* creating
     // the engine: the JIT's GetForCurrentProcess generator consults this table
@@ -207,7 +207,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     auto maybeEngine = mlir::ExecutionEngine::create(module, engineOptions);
     if (!maybeEngine)
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "failed to construct an execution engine, error: " << maybeEngine.takeError() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "failed to construct an execution engine, error: " << maybeEngine.takeError() << "\n";
         return -1;
     }
     auto &engine = maybeEngine.get();
@@ -217,7 +217,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
         auto expectedFPtr = engine->lookup(mainFuncName);
         if (!expectedFPtr)
         {
-            llvm::WithColor::error(llvm::errs(), "tsc") << expectedFPtr.takeError();
+            llvm::WithColor::error(llvm::errs(), "tslang") << expectedFPtr.takeError();
             return -1;
         }
 
@@ -242,7 +242,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     {
         if (auto gctorsResult = engine->invokePacked(MLIR_GCTORS))
         {
-            llvm::WithColor::error(llvm::errs(), "tsc") << "JIT calling global constructors failed, error: " << gctorsResult << "\n";
+            llvm::WithColor::error(llvm::errs(), "tslang") << "JIT calling global constructors failed, error: " << gctorsResult << "\n";
             return -1;
         }
     }
@@ -250,7 +250,7 @@ int runJit(int argc, char **argv, mlir::ModuleOp module, CompileOptions &compile
     // Invoke the JIT-compiled function.
     if (auto invocationResult = engine->invokePacked(mainFuncName))
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "JIT invocation failed, error: " << invocationResult << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "JIT invocation failed, error: " << invocationResult << "\n";
         return -1;
     }
 

@@ -2,27 +2,27 @@
     "folders": [
         {
             "name": "TypeScript Compiler Source (Lib)",
-            "path": "./tsc/lib"
+            "path": "./tslang/lib"
         },
         {
             "name": "TypeScript Compiler Include",
-            "path": "./tsc/include"
+            "path": "./tslang/include"
         },
         {
             "name": "TypeScript Compiler",
-            "path": "./tsc/tsc"
+            "path": "./tslang/tslang"
         },
         {
             "name": "TypeScript Compiler Tests",
-            "path": "./tsc/test"
+            "path": "./tslang/test"
         },
         {
             "name": "TypeScript Compiler Unit Tests",
-            "path": "./tsc/unittests"
+            "path": "./tslang/unittests"
         },
         {
             "name": "TypeScript New Parser",
-            "path": "./tsc/tsc-new-parser"
+            "path": "./tslang/tsc-new-parser"
         }
     ],
     "settings": {
@@ -178,7 +178,7 @@
         "[cmake]": {
             "editor.defaultFormatter": "cheshirekow.cmake-format"
         },
-        "typescript.tsc.autoDetect": "off",
+        "typescript.tslang.autoDetect": "off",
         "npm.autoDetect": "off",
         "[html]": {
             "editor.defaultFormatter": "vscode.html-language-features"

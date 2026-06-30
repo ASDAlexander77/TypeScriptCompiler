@@ -18,7 +18,7 @@
 
 #include <regex>
 
-#define DEBUG_TYPE "tsc"
+#define DEBUG_TYPE "tslang"
 
 using namespace typescript;
 namespace cl = llvm::cl;
@@ -41,7 +41,7 @@ llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> getFileDeclarationContentForO
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(path);
     if (std::error_code ec = fileOrErr.getError())
     {
-        llvm::WithColor::warning(llvm::errs(), "tsc") << "Missing declaration file '.d.ts' for obj file: " << objFileName << " error: " << ec.message() << "\n";
+        llvm::WithColor::warning(llvm::errs(), "tslang") << "Missing declaration file '.d.ts' for obj file: " << objFileName << " error: " << ec.message() << "\n";
     }
 
     return fileOrErr;
@@ -53,7 +53,7 @@ int declarationInline(int argc, char **argv, mlir::MLIRContext &context, llvm::S
     auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(tsFileName);
     if (std::error_code ec = fileOrErr.getError())
     {
-        llvm::WithColor::error(llvm::errs(), "tsc") << "Could not open input file: " << ec.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not open input file: " << ec.message() << "\n";
         return -1;
     }
 

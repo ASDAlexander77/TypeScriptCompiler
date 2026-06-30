@@ -4,10 +4,10 @@ build
 !3rdParty/llvm-project
 .vs
 .antlr
-tsc/out
-tsc/Testing
-tsc/Testing/Temporary/*
-tsc/test/tester/tests/*.d.ts
+tslang/out
+tslang/Testing
+tslang/Testing/Temporary/*
+tslang/test/tester/tests/*.d.ts
 package-lock.json
 node_modules
 gc-*

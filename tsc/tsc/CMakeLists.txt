@@ -51,8 +51,8 @@ set(LIBS
     TypeScriptMemAllocPass
     )
 
-add_llvm_executable(tsc 
-    tsc.cpp 
+add_llvm_executable(tslang 
+    tslang.cpp 
     compile.cpp 
     transform.cpp 
     dump.cpp 
@@ -67,10 +67,10 @@ add_llvm_executable(tsc
     vscode.cpp
     defaultlib.cpp)
 
-llvm_update_compile_flags(tsc)
-target_link_libraries(tsc PRIVATE ${LIBS})
-target_compile_definitions(tsc PUBLIC TSC_PACKAGE_VERSION="${TSC_PACKAGE_VERSION}")
+llvm_update_compile_flags(tslang)
+target_link_libraries(tslang PRIVATE ${LIBS})
+target_compile_definitions(tslang PUBLIC TSLANG_PACKAGE_VERSION="${TSLANG_PACKAGE_VERSION}")
 
-MESSAGE (STATUS "VERSION = " ${TSC_PACKAGE_VERSION})
+MESSAGE (STATUS "VERSION = " ${TSLANG_PACKAGE_VERSION})
 
-mlir_check_all_link_libraries(tsc)
+mlir_check_all_link_libraries(tslang)
