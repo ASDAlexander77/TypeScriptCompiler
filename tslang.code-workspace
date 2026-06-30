@@ -22,7 +22,7 @@
         },
         {
             "name": "TypeScript New Parser",
-            "path": "./tslang/tsc-new-parser"
+            "path": "./tslang/ts-new-parser"
         }
     ],
     "settings": {
