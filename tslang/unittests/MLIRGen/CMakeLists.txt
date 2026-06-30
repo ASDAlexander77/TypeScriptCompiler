@@ -5,7 +5,7 @@ get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 
 target_include_directories(MLIRGenTests
     PRIVATE
-    ${PROJECT_SOURCE_DIR}/tsc-new-parser
+    ${PROJECT_SOURCE_DIR}/ts-new-parser
     )
 
 target_link_libraries(MLIRGenTests

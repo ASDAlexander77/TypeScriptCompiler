@@ -3,11 +3,11 @@ message(STATUS ">>> lib >>> TypeScript")
 set_Options()
 
 include_directories(
-    ${PROJECT_SOURCE_DIR}/tsc-new-parser
+    ${PROJECT_SOURCE_DIR}/ts-new-parser
     )
 
 link_directories(
-    ${PROJECT_SOURCE_DIR}/tsc-new-parser
+    ${PROJECT_SOURCE_DIR}/ts-new-parser
     )
 
 add_mlir_dialect_library(MLIRTypeScript
@@ -25,12 +25,12 @@ add_mlir_dialect_library(MLIRTypeScript
     DeclarationPrinter.cpp
     
     ADDITIONAL_HEADER_DIRS
-    ${PROJECT_SOURCE_DIR}/tsc-new-parser
+    ${PROJECT_SOURCE_DIR}/ts-new-parser
 
     DEPENDS
     MLIRTypeScriptOpsIncGen
 
     LINK_LIBS PUBLIC
-    tsc-new-parser-lib
+    ts-new-parser-lib
     MLIRIR
     )
