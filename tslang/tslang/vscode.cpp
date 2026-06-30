@@ -22,39 +22,40 @@
 
 using namespace typescript;
 using namespace llvm;
+using namespace std;
 namespace cl = llvm::cl;
 namespace fs = llvm::sys::fs;
 namespace path = llvm::sys::path;
 
-extern cl::opt<std::string> inputFilename;
+extern cl::opt<string> inputFilename;
 
 int create_file_base(StringRef filepath, StringRef data);
 int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &result);
 
-std::string getExecutablePath(const char *);
-std::string getGCLibPath();
-std::string getLLVMLibPath();
-std::string getTslangLibPath();
-std::string getDefaultLibPath();
-std::string fixpath(std::string, const SmallVectorImpl<char>&);
+string getExecutablePath(const char *);
+string getGCLibPath();
+string getLLVMLibPath();
+string getTslangLibPath();
+string getDefaultLibPath();
+string fixpath(string, const SmallVectorImpl<char>&);
 
 int createVSCodeFolder(int argc, char **argv)
 {
-    auto projectName = llvm::StringRef(inputFilename);
+    auto projectName = StringRef(inputFilename);
     if (projectName == "-") {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Name is not provided. (use file name without file extension)\n";
+        WithColor::error(errs(), "tslang") << "Name is not provided. (use file name without file extension)\n";
         return -1;
     }
 
     if (auto error_code = fs::create_directory(projectName))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not create project: " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Could not create project: " << error_code.message() << "\n";
         return -1;            
     }
 
     if (auto error_code = fs::set_current_path(projectName))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory: " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory: " << error_code.message() << "\n";
         return -1;
     }
 
@@ -85,20 +86,20 @@ int createVSCodeFolder(int argc, char **argv)
     SmallString<128> projectPath;
     if (auto error_code = fs::current_path(projectPath)) 
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't get info about current folder: " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Can't get info about current folder: " << error_code.message() << "\n";
         return -1;
     }
 
     // node_modules
     if (auto error_code = fs::create_directories(NODE_MODULE_TSLANG_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not create folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Could not create folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
         return -1;            
     }    
 
     if (auto error_code = fs::set_current_path(NODE_MODULE_TSLANG_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
         return -1;
     }
 
@@ -110,19 +111,19 @@ int createVSCodeFolder(int argc, char **argv)
     // need to create .vscode
     if (auto error_code = fs::set_current_path(projectPath))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << projectPath << "' : " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << projectPath << "' : " << error_code.message() << "\n";
         return -1;
     }    
 
     if (auto error_code = fs::create_directory(DOT_VSCODE_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not create folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Could not create folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
         return -1;            
     }    
 
     if (auto error_code = fs::set_current_path(DOT_VSCODE_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
         return -1;
     }     
 
@@ -133,10 +134,10 @@ int createVSCodeFolder(int argc, char **argv)
 
     // set params
 
-    llvm::SmallVector<const char *, 256> args(argv, argv + 1);    
+    SmallVector<const char *, 256> args(argv, argv + 1);    
     auto driverPath = getExecutablePath(args[0]);
 
-    llvm::SmallVector<char> appPath{};
+    SmallVector<char> appPath{};
     appPath.append(driverPath.begin(), driverPath.end());
     path::remove_filename(appPath);
 
@@ -181,8 +182,8 @@ int createVSCodeFolder(int argc, char **argv)
 
 int create_file_base(StringRef filepath, StringRef data)
 {
-    std::error_code ec;
-    llvm::ToolOutputFile out(filepath, ec, 
+    error_code ec;
+    ToolOutputFile out(filepath, ec, 
 #ifdef WIN32    
     fs::OpenFlags::OF_TextWithCRLF
 #else
@@ -199,22 +200,22 @@ int create_file_base(StringRef filepath, StringRef data)
 
     if (out.os().has_error())
     {
-        llvm::report_fatal_error(llvm::Twine("Error emitting data to file '") + filepath);
+        report_fatal_error(Twine("Error emitting data to file '") + filepath);
         return -1;
     }
 
     return 0;
 }
 
-std::regex paramsRegEx = std::regex(R"(<<(.*?)>>)", std::regex_constants::ECMAScript); 
+regex paramsRegEx = regex(R"(<<(.*?)>>)", regex_constants::ECMAScript); 
 
 int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &result)
 {
     auto str = data.str();
-    auto begin = std::sregex_iterator(str.begin(), str.end(), paramsRegEx);
-    auto end = std::sregex_iterator();     
+    auto begin = sregex_iterator(str.begin(), str.end(), paramsRegEx);
+    auto end = sregex_iterator();     
 
-    std::string suffix;
+    string suffix;
     for (auto it = begin; it != end; it++) 
     {
         auto match = *it;
@@ -228,15 +229,15 @@ int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &r
     return 0;
 }
 
-std::string fixpath(std::string path, const SmallVectorImpl<char>& defaultPath)
+string fixpath(string path, const SmallVectorImpl<char>& defaultPath)
 {
     if (path.empty())
     {
-        path = std::string(defaultPath.begin(), defaultPath.end());
+        path = string(defaultPath.begin(), defaultPath.end());
     }
 
 #ifdef WIN32    
-    std::string output;
+    string output;
     output.reserve(path.size());
     for (const auto c: path) {
         switch (c) {
