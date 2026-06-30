@@ -1,4 +1,4 @@
-#define NODE_MODULE_TSNC_PATH "node_modules/tsnc"
+#define NODE_MODULE_TSLANG_PATH "node_modules/tslang"
 #define DOT_VSCODE_PATH ".vscode"
 
 const auto TSCONFIG_JSON_DATA = R"raw(
@@ -17,14 +17,14 @@ const auto TSCONFIG_JSON_DATA = R"raw(
       "isolatedModules": true,
       "jsx": "preserve",
       "incremental": true,
-      "types": ["tsnc"]
+      "types": ["tslang"]
     },
     "include": ["<<PROJECT>>.ts"],
     "exclude": ["node_modules"]
 }
 )raw";
 
-const auto TSNC_INDEX_D_TS = R"raw(
+const auto TSLANG_INDEX_D_TS = R"raw(
 declare function print(...args: any[]) : void;
 declare function assert(cond: boolean, msg?: string) : void;
 declare type byte = any;
@@ -301,7 +301,7 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
 }
 )raw";
 
-const auto TSNC_NATVIS = R"raw(<?xml version="1.0" encoding="utf-8"?>
+const auto TSLANG_NATVIS = R"raw(<?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 
   <!-- TypeScript -->

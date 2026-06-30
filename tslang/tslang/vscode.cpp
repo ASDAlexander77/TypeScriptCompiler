@@ -65,7 +65,7 @@ int createVSCodeFolder(int argc, char **argv)
         return -1;
     }
 
-    if (auto error_code = create_file_base("tsnc.natvis", TSNC_NATVIS))
+    if (auto error_code = create_file_base("tslang.natvis", TSLANG_NATVIS))
     {
         return -1;
     }    
@@ -90,19 +90,19 @@ int createVSCodeFolder(int argc, char **argv)
     }
 
     // node_modules
-    if (auto error_code = fs::create_directories(NODE_MODULE_TSNC_PATH))
+    if (auto error_code = fs::create_directories(NODE_MODULE_TSLANG_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not create folder/directory '" << NODE_MODULE_TSNC_PATH << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Could not create folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
         return -1;            
     }    
 
-    if (auto error_code = fs::set_current_path(NODE_MODULE_TSNC_PATH))
+    if (auto error_code = fs::set_current_path(NODE_MODULE_TSLANG_PATH))
     {
-        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << NODE_MODULE_TSNC_PATH << "' : " << error_code.message() << "\n";
+        llvm::WithColor::error(llvm::errs(), "tslang") << "Can't open folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
         return -1;
     }
 
-    if (auto error_code = create_file_base("index.d.ts", TSNC_INDEX_D_TS))
+    if (auto error_code = create_file_base("index.d.ts", TSLANG_INDEX_D_TS))
     {
         return -1;
     }
