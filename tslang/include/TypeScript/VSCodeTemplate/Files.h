@@ -301,6 +301,192 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
 }
 )raw";
 
+#define CMAKE_FOLDER_PATH "cmake"
+
+const auto CMAKE_LISTS_TXT_DATA = R"raw(cmake_minimum_required(VERSION 3.20)
+
+# Make CMake find your custom-language modules
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+project(<<PROJECT>> CXX)
+
+# Enable TS-language
+enable_language(TSLANG)
+
+# .ts files compile with TSLANG command; .cpp with the C++ compiler.
+add_executable(app
+    main.cpp
+    mycode.ts
+)
+)raw";
+
+const auto CMAKE_PRESETS_JSON_DATA = R"raw({
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 20,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default (Ninja)",
+      "description": "TSLANG custom language requires the Ninja generator (the Visual Studio generator ignores custom languages).",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    }
+  ]
+}
+)raw";
+
+const auto CMAKE_MAIN_CPP_DATA = R"raw(// Declare the symbols your .foo object exports.
+// Use extern "C" so names match your compiler's output (no C++ mangling).
+extern "C" int  foo_add(int a, int b);
+extern "C" void foo_hello(void);
+
+#include <cstdio>
+
+int main() {
+    foo_hello();
+    std::printf("foo_add(2,3) = %d\n", foo_add(2, 3));
+    return 0;
+}
+)raw";
+
+const auto CMAKE_MYCODE_TS_DATA = R"raw(// Example source in TypeScript language.
+// `tslang` compiler turns this into mycode.obj, which CMake links
+// with main.cpp. Replace with real TypeScript syntax; the symbols exported
+// must match the extern "C" declarations in main.cpp.
+
+export function foo_add(a: int, b: int): int {
+    return a + b;
+}
+
+export function foo_hello() {
+    print("hello from foo");
+}
+)raw";
+
+const auto CMAKE_README_MD_DATA = R"raw(# Custom language with your own extension and compile command in CMake
+
+This registers TypeScript CMake *language* (`TSLANG`) that:
+
+- owns its own source extension (`.ts`),
+- is built with **tslang --emit=obj**,
+- produces `.obj` files that CMake links automatically alongside regular C++.
+
+CMake then handles dependency tracking and incremental builds for `.ts`
+sources the same way it does for `.cpp`.
+
+## Layout
+
+```
+custom_lang/
+├── CMakeLists.txt
+├── cmake/
+│   ├── CMakeDetermineTSLANGCompiler.cmake
+│   ├── CMakeTSLANGCompiler.cmake.in
+│   ├── CMakeTSLANGInformation.cmake
+│   └── CMakeTestTSLANGCompiler.cmake
+├── main.cpp
+└── mycode.ts
+```
+
+## How it works
+
+- `enable_language(TSLANG)` runs `CMakeDetermineTSLANGCompiler.cmake`, which finds
+  `tslangc`, then loads `CMakeTSLANGInformation.cmake`, which registers the compile
+  rule (`CMAKE_TSLANG_COMPILE_OBJECT` — *tslang --emit=obj*).
+- Because `CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS` contains `tslang`, any `.ts` source
+  is routed to your command and compiled to a `.obj`.
+- That `.obj` is added to the target and linked with `main.cpp`'s object using
+  the C++ linker (`CMAKE_TSLANG_LINK_EXECUTABLE`).
+- Change `mycode.ts` and only it recompiles.
+
+## Passing flags
+
+```cmake
+set(CMAKE_TSLANG_FLAGS "--opt_level=3")                       # global
+set_source_files_properties(mycode.ts PROPERTIES
+    COMPILE_OPTIONS "--define;TSLANG=1")                      # per-file
+```
+
+## Minimal alternative
+
+If you don't need a first-class language, either:
+
+- Mark a file as an already-built object and just link it:
+  `set_source_files_properties(mycode.obj PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)`
+  and add it to `add_executable`, producing it with `add_custom_command`; or
+- Compile a differently-named file *as C++*:
+  `set_source_files_properties(mycode.tslang PROPERTIES LANGUAGE CXX)`.
+
+Use the typescript-language setup below when `.ts` is a source type you
+compile often and want CMake to treat as first-class.
+)raw";
+
+const auto CMAKE_DETERMINE_TSLANG_COMPILER_DATA = R"raw(# Locate your custom compiler
+find_program(CMAKE_TSLANG_COMPILER
+    NAMES tslang tslang.exe
+    HINTS "${CMAKE_SOURCE_DIR}/tools"
+    DOC "TSLANG compiler")
+
+mark_as_advanced(CMAKE_TSLANG_COMPILER)
+
+# Which source extensions belong to TSLANG, and the object suffix
+set(CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS ts)
+if (NOT WIN32)
+	set(CMAKE_TSLANG_OUTPUT_EXTENSION .o)
+else()
+	set(CMAKE_TSLANG_OUTPUT_EXTENSION .obj)   # .o on Linux
+endif()
+set(CMAKE_TSLANG_COMPILER_ENV_VAR "TSLANG")
+
+# Emit the compiler-id config file CMake expects
+configure_file(
+    ${CMAKE_CURRENT_LIST_DIR}/CMakeTSLANGCompiler.cmake.in
+    ${CMAKE_PLATFORM_INFO_DIR}/CMakeTSLANGCompiler.cmake @ONLY)
+)raw";
+
+const auto CMAKE_TEST_TSLANG_COMPILER_DATA = R"raw(# Skip the actual test compile; assume the compiler works.
+set(CMAKE_TSLANG_COMPILER_WORKS TRUE)
+)raw";
+
+const auto CMAKE_TSLANG_COMPILER_IN_DATA = R"raw(set(CMAKE_TSLANG_COMPILER "@CMAKE_TSLANG_COMPILER@")
+set(CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS @CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS@)
+set(CMAKE_TSLANG_OUTPUT_EXTENSION @CMAKE_TSLANG_OUTPUT_EXTENSION@)
+set(CMAKE_TSLANG_COMPILER_LOADED 1)
+set(CMAKE_TSLANG_COMPILER_WORKS TRUE)
+)raw";
+
+const auto CMAKE_TSLANG_INFORMATION_DATA = R"raw(# The actual compile command.
+# Placeholders CMake substitutes:
+#   <CMAKE_TSLANG_COMPILER>  the binary
+#   <FLAGS>               per-target flags
+#   <SOURCE>              input .ts
+#   <OBJECT>              output .obj
+#   <DEFINES> <INCLUDES>  optional
+if(NOT CMAKE_TSLANG_COMPILE_OBJECT)
+    set(CMAKE_TSLANG_COMPILE_OBJECT
+        "<CMAKE_TSLANG_COMPILER> <FLAGS> --emit=obj -o=<OBJECT> <SOURCE>")
+endif()
+
+# How CMake links TSLANG objects into an executable/library.
+# Reuse the C++ linker so linking with .cpp works out of the box.
+if(NOT CMAKE_TSLANG_LINK_EXECUTABLE)
+    set(CMAKE_TSLANG_LINK_EXECUTABLE
+        "<CMAKE_CXX_COMPILER> <FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
+endif()
+
+set(CMAKE_TSLANG_INFORMATION_LOADED 1)
+)raw";
+
 const auto TSLANG_NATVIS = R"raw(<?xml version="1.0" encoding="utf-8"?>
 <AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
 

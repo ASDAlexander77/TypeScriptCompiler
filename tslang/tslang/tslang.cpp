@@ -40,6 +40,7 @@ std::string getDefaultLibPath();
 int compileTypeScriptFileIntoMLIR(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int runMLIRPasses(mlir::MLIRContext &, llvm::SourceMgr &, mlir::OwningOpRef<mlir::ModuleOp> &, CompileOptions&);
 int createVSCodeFolder(int, char **);
+int createCMakeFolder(int, char **);
 int installDefaultLib(int, char **);
 int dumpAST();
 int dumpLLVMIR(mlir::ModuleOp, CompileOptions&);
@@ -128,6 +129,7 @@ cl::opt<bool> appendGCtorsToMethod("gctors-as-method", cl::desc("Creeate method 
 cl::opt<bool> strictNullChecks("strict-null-checks", cl::desc("Strict Null Checks"), cl::init(true), cl::cat(TypeScriptCompilerCategory)); 
 
 cl::opt<bool> newVSCodeFolder("new", cl::desc("New VS Code Project"), cl::cat(TypeScriptCompilerCategory));
+cl::opt<bool> newCMakeFolder("cmake", cl::desc("New CMake Project"), cl::cat(TypeScriptCompilerCategory));
 cl::opt<bool> installDefaultLibCmd("install-default-lib", cl::desc("Install Default Library. use default-lib-path to provide path where to install the lib"), cl::cat(TypeScriptCompilerCategory));
 
 static void TslangPrintVersion(llvm::raw_ostream &OS) {
@@ -291,6 +293,11 @@ int main(int argc, char **argv)
     if (newVSCodeFolder.getValue())
     {
         return createVSCodeFolder(argc, argv);
+    }
+
+    if (newCMakeFolder.getValue())
+    {
+        return createCMakeFolder(argc, argv);
     }
 
     if (installDefaultLibCmd.getValue())

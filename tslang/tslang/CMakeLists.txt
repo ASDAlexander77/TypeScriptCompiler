@@ -65,6 +65,7 @@ add_llvm_executable(tslang
     opts.cpp 
     declarationInline.cpp
     vscode.cpp
+    cmake.cpp
     defaultlib.cpp)
 
 llvm_update_compile_flags(tslang)
