@@ -722,6 +722,17 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(
             fullNameGlobalsMap);
 
+        // Snapshot the ops already present in the module. When this discovery pass is nested
+        // (an 'import' of a local source file triggers mlirGenInclude during SourceGeneration),
+        // it must not wipe the real module content that was already generated (e.g. default-lib
+        // function bodies such as 'console.log'). Clearing the whole body left dangling
+        // SymbolRefs and produced "op 'console.log' does not reference a valid function".
+        llvm::SmallPtrSet<mlir::Operation *, 32> preExistingOps;
+        for (auto &op : theModule.getBody()->getOperations())
+        {
+            preExistingOps.insert(&op);
+        }
+
         // Process of discovery here
         GenContext genContextPartial{};
         genContextPartial.allowPartialResolve = true;
@@ -752,9 +763,30 @@ class MLIRGenImpl
 
         genContextPartial.clean();
 
-        // clean up
+        // clean up: erase only the ops this discovery pass added, preserving any content that
+        // was already generated before a nested discovery (see preExistingOps above).
         clearTempModule();
-        theModule.getBody()->clear();
+        {
+            llvm::SmallVector<mlir::Operation *> addedOps;
+            for (auto &op : theModule.getBody()->getOperations())
+            {
+                if (!preExistingOps.contains(&op))
+                {
+                    addedOps.push_back(&op);
+                }
+            }
+
+            for (auto *op : addedOps)
+            {
+                op->dropAllReferences();
+            }
+
+            for (auto *op : llvm::reverse(addedOps))
+            {
+                op->dropAllUses();
+                op->erase();
+            }
+        }
 
         // clear state
         for (auto &statement : module->statements)
