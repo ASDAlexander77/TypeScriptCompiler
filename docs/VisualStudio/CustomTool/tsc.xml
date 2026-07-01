@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ProjectSchemaDefinitions xmlns="http://schemas.microsoft.com/build/2009/properties" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=mscorlib">
-  <Rule Name="TSC" PageTemplate="tool" DisplayName="TypeScript Compiler" Order="200">
+  <Rule Name="TSLANG" PageTemplate="tool" DisplayName="TypeScript Compiler" Order="200">
     <Rule.DataSource>
-      <DataSource Persistence="ProjectFile" ItemType="TSC"/>
+      <DataSource Persistence="ProjectFile" ItemType="TSLANG"/>
     </Rule.DataSource>
     <Rule.Categories>
       <Category Name="General">
@@ -28,7 +28,7 @@
     </Rule.Categories>
     <StringProperty Name="Inputs" Category="Command Line" IsRequired="true">
       <StringProperty.DataSource>
-        <DataSource Persistence="ProjectFile" ItemType="TSC" SourceType="Item"/>
+        <DataSource Persistence="ProjectFile" ItemType="TSLANG" SourceType="Item"/>
       </StringProperty.DataSource>
     </StringProperty>
     <BoolProperty Name="DisableGarbageCollection" Category="TypeScript Compiler Options" DisplayName="Disable Garbage Collection" Description="Disable Garbage Collection.     (--nogc)" HelpUrl="https://github.com/ASDAlexander77/TypeScriptCompiler/wiki/tsc" Switch="--nogc"/>
@@ -71,7 +71,7 @@
         Switch="--size_level=2"/>
     </EnumProperty>
     <StringProperty Name="CommandLineTemplate" DisplayName="Command Line" Visible="False" IncludeInCommandLine="False"/>
-    <DynamicEnumProperty Name="TSCBeforeTargets" Category="General" EnumProvider="Targets" IncludeInCommandLine="False">
+    <DynamicEnumProperty Name="TSLANGBeforeTargets" Category="General" EnumProvider="Targets" IncludeInCommandLine="False">
       <DynamicEnumProperty.DisplayName>
         <sys:String>Execute Before</sys:String>
       </DynamicEnumProperty.DisplayName>
@@ -79,13 +79,13 @@
         <sys:String>Specifies the targets for the build customization to run before.</sys:String>
       </DynamicEnumProperty.Description>
       <DynamicEnumProperty.ProviderSettings>
-        <NameValuePair Name="Exclude" Value="^TSCBeforeTargets|^Compute"/>
+        <NameValuePair Name="Exclude" Value="^TSLANGBeforeTargets|^Compute"/>
       </DynamicEnumProperty.ProviderSettings>
       <DynamicEnumProperty.DataSource>
         <DataSource Persistence="ProjectFile" ItemType="" HasConfigurationCondition="true"/>
       </DynamicEnumProperty.DataSource>
     </DynamicEnumProperty>
-    <DynamicEnumProperty Name="TSCAfterTargets" Category="General" EnumProvider="Targets" IncludeInCommandLine="False">
+    <DynamicEnumProperty Name="TSLANGAfterTargets" Category="General" EnumProvider="Targets" IncludeInCommandLine="False">
       <DynamicEnumProperty.DisplayName>
         <sys:String>Execute After</sys:String>
       </DynamicEnumProperty.DisplayName>
@@ -93,7 +93,7 @@
         <sys:String>Specifies the targets for the build customization to run after.</sys:String>
       </DynamicEnumProperty.Description>
       <DynamicEnumProperty.ProviderSettings>
-        <NameValuePair Name="Exclude" Value="^TSCAfterTargets|^Compute"/>
+        <NameValuePair Name="Exclude" Value="^TSLANGAfterTargets|^Compute"/>
       </DynamicEnumProperty.ProviderSettings>
       <DynamicEnumProperty.DataSource>
         <DataSource Persistence="ProjectFile" ItemType="" HasConfigurationCondition="true"/>
@@ -110,7 +110,7 @@
       </StringProperty.Description>
     </StringProperty>
   </Rule>
-  <ItemType Name="TSC" DisplayName="TypeScript Compiler"/>
-  <FileExtension Name="*.ts" ContentType="TSC"/>
-  <ContentType Name="TSC" DisplayName="TypeScript Compiler" ItemType="TSC"/>
+  <ItemType Name="TSLANG" DisplayName="TypeScript Compiler"/>
+  <FileExtension Name="*.ts" ContentType="TSLANG"/>
+  <ContentType Name="TSLANG" DisplayName="TypeScript Compiler" ItemType="TSLANG"/>
 </ProjectSchemaDefinitions>

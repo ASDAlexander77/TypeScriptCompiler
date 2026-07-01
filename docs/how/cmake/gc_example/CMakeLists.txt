@@ -25,7 +25,7 @@ endif()
 
 include("typescript.cmake")
 
-add_tsc_files("src")
+add_tslang_files("src")
 
 add_executable(
     ${PROJECT_NAME} 
