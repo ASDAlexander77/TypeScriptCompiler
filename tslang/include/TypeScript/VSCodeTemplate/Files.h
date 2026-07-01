@@ -196,7 +196,7 @@ const auto LAUNCH_JSON_DATA_WIN32 = R"raw(
             "symbolSearchPath": "${workspaceFolder}",
             "environment": [
             ],
-            "visualizerFile": "${workspaceFolder}/tsnc.natvis"
+            "visualizerFile": "${workspaceFolder}/tslang.natvis"
         },         
         {
             "name": "Current File - EXE (Release)",
@@ -211,7 +211,7 @@ const auto LAUNCH_JSON_DATA_WIN32 = R"raw(
             "symbolSearchPath": "${workspaceFolder}",
             "environment": [
             ],
-            "visualizerFile": "${workspaceFolder}/tsnc.natvis"
+            "visualizerFile": "${workspaceFolder}/tslang.natvis"
         },         
         {
             "name": "Current File - JIT",
@@ -259,7 +259,7 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
             "cwd": "${workspaceFolder}",
             "environment": [
             ],
-            "visualizerFile": "${workspaceFolder}/tsnc.natvis"
+            "visualizerFile": "${workspaceFolder}/tslang.natvis"
         },         
         {
             "name": "Current File - EXE (Release)",
@@ -273,7 +273,7 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
             "cwd": "${workspaceFolder}",
             "environment": [
             ],
-            "visualizerFile": "${workspaceFolder}/tsnc.natvis"
+            "visualizerFile": "${workspaceFolder}/tslang.natvis"
         },         
         {
             "name": "Current File - JIT",
