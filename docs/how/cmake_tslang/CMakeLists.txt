@@ -16,9 +16,14 @@ link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib)
 
 # set options
 if (CMAKE_BUILD_TYPE STREQUAL "Release")
-	set(CMAKE_TSLANG_FLAGS "-opt --opt_level=3") # global
+	set(CMAKE_TSLANG_FLAGS "--opt --opt_level=3") # global
 else()
 	set(CMAKE_TSLANG_FLAGS "--di --opt_level=0") # global
+endif()
+
+if(WIN32)
+else()
+    list(APPEND CMAKE_TSLANG_FLAGS "-relocation-model=pic") # global    
 endif()
 
 # .ts files compile with TSLANG command; .cpp with the C++ compiler.
@@ -29,11 +34,13 @@ add_executable(${PROJECT_NAME}
 )
 
 # required libs
-target_link_libraries(${PROJECT_NAME} "gc" "LLVMSupport" "TypeScriptAsyncRuntime" "TypeScriptDefaultLib")
+set(TSLANG_LINK_LIBS "gc" "LLVMSupport" "TypeScriptAsyncRuntime" "TypeScriptDefaultLib")
 
 # ntdll provides RtlGetLastNtStatus (pulled in by LLVMSupport) on Windows
 if(WIN32)
-    target_link_libraries(${PROJECT_NAME} "ntdll")
+    list(APPEND TSLANG_LINK_LIBS "ntdll")
 else()
-    target_link_libraries(${PROJECT_NAME} "LLVMDemangle" "rtti" "exceptions" "stdc++" "m" "pthread" "tinfo" "dl" "rt")
+    list(APPEND TSLANG_LINK_LIBS "LLVMDemangle" "stdc++" "m" "pthread" "tinfo" "dl" "rt")
 endif()
+
+target_link_libraries(${PROJECT_NAME} ${TSLANG_LINK_LIBS})
