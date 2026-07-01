@@ -305,7 +305,7 @@ const auto LAUNCH_JSON_DATA_LINUX = R"raw(
 
 const auto CMAKE_LISTS_TXT_DATA = R"raw(cmake_minimum_required(VERSION 3.20)
 
-# Make CMake find your custom-language modules
+# Make CMake find ts-language modules
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 project(<<PROJECT>> CXX)
@@ -313,11 +313,20 @@ project(<<PROJECT>> CXX)
 # Enable TS-language
 enable_language(TSLANG)
 
+# Include folders
+include_directories(${CMAKE_TSLANG_DIR}/defaultlib)
+
+# Lib folders
+link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib)
+
 # .ts files compile with TSLANG command; .cpp with the C++ compiler.
-add_executable(app
+add_executable(${PROJECT_NAME}
     main.cpp
     mycode.ts
 )
+
+# required libs
+target_link_libraries(${PROJECT_NAME} "gc" "LLVMSupport" "TypeScriptAsyncRuntime" "TypeScriptDefaultLib")
 )raw";
 
 const auto CMAKE_PRESETS_JSON_DATA = R"raw({
@@ -364,12 +373,26 @@ const auto CMAKE_MYCODE_TS_DATA = R"raw(// Example source in TypeScript language
 // with main.cpp. Replace with real TypeScript syntax; the symbols exported
 // must match the extern "C" declarations in main.cpp.
 
+class Adder
+{
+	#a: int;
+	#b: int;
+
+	constructor(a: int, b: int) {
+		this.#a = a;
+		this.#b = b;
+	}
+
+	get result() { return this.#a + this.#b; }
+}
+
 export function foo_add(a: int, b: int): int {
-    return a + b;
+    const adder = new Adder(a, b);
+    return adder.result;
 }
 
 export function foo_hello() {
-    print("hello from foo");
+    console.log("hello from foo");
 }
 )raw";
 
@@ -437,7 +460,10 @@ find_program(CMAKE_TSLANG_COMPILER
     HINTS "${CMAKE_SOURCE_DIR}/tools"
     DOC "TSLANG compiler")
 
+cmake_path(GET CMAKE_TSLANG_COMPILER PARENT_PATH CMAKE_TSLANG_DIR)
+
 mark_as_advanced(CMAKE_TSLANG_COMPILER)
+mark_as_advanced(CMAKE_TSLANG_DIR)
 
 # Which source extensions belong to TSLANG, and the object suffix
 set(CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS ts)
@@ -474,7 +500,7 @@ const auto CMAKE_TSLANG_INFORMATION_DATA = R"raw(# The actual compile command.
 #   <DEFINES> <INCLUDES>  optional
 if(NOT CMAKE_TSLANG_COMPILE_OBJECT)
     set(CMAKE_TSLANG_COMPILE_OBJECT
-        "<CMAKE_TSLANG_COMPILER> <FLAGS> --emit=obj -o=<OBJECT> <SOURCE>")
+        "<CMAKE_TSLANG_COMPILER> <FLAGS> --default-lib-path=${CMAKE_TSLANG_DIR} --emit=obj -o=<OBJECT> <SOURCE>")
 endif()
 
 # How CMake links TSLANG objects into an executable/library.

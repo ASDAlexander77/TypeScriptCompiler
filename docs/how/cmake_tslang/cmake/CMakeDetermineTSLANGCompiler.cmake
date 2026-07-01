@@ -3,8 +3,11 @@ find_program(CMAKE_TSLANG_COMPILER
     NAMES tslang tslang.exe
     HINTS "${CMAKE_SOURCE_DIR}/tools"
     DOC "TSLANG compiler")
+                         
+cmake_path(GET CMAKE_TSLANG_COMPILER PARENT_PATH CMAKE_TSLANG_DIR)
 
 mark_as_advanced(CMAKE_TSLANG_COMPILER)
+mark_as_advanced(CMAKE_TSLANG_DIR)
 
 # Which source extensions belong to TSLANG, and the object suffix
 set(CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS ts)

@@ -3,10 +3,24 @@
 // with main.cpp. Replace with real TypeScript syntax; the symbols exported
 // must match the extern "C" declarations in main.cpp.
 
+class Adder
+{
+	#a: int;
+	#b: int;
+
+	constructor(a: int, b: int) {
+		this.#a = a;
+		this.#b = b;
+	}
+
+	get result() { return this.#a + this.#b; }
+}
+
 export function foo_add(a: int, b: int): int {
-    return a + b;
+    const adder = new Adder(a, b);
+    return adder.result;
 }
 
 export function foo_hello() {
-    print("hello from foo");
+    console.log("hello from foo");
 }
