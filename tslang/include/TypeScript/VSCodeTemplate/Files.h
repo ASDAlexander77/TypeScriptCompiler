@@ -327,6 +327,11 @@ add_executable(${PROJECT_NAME}
 
 # required libs
 target_link_libraries(${PROJECT_NAME} "gc" "LLVMSupport" "TypeScriptAsyncRuntime" "TypeScriptDefaultLib")
+
+# ntdll provides RtlGetLastNtStatus (pulled in by LLVMSupport) on Windows
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} "ntdll")
+endif()
 )raw";
 
 const auto CMAKE_PRESETS_JSON_DATA = R"raw({
@@ -373,6 +378,10 @@ const auto CMAKE_MYCODE_TS_DATA = R"raw(// Example source in TypeScript language
 // with main.cpp. Replace with real TypeScript syntax; the symbols exported
 // must match the extern "C" declarations in main.cpp.
 
+async function adder(a = 0, b = 0) {
+    return a + b;
+}
+
 class Adder
 {
 	#a: int;
@@ -383,7 +392,7 @@ class Adder
 		this.#b = b;
 	}
 
-	get result() { return this.#a + this.#b; }
+	get result() { return await adder(this.#a, this.#b); }
 }
 
 export function foo_add(a: int, b: int): int {
@@ -431,6 +440,7 @@ custom_lang/
 - That `.obj` is added to the target and linked with `main.cpp`'s object using
   the C++ linker (`CMAKE_TSLANG_LINK_EXECUTABLE`).
 - Change `mycode.ts` and only it recompiles.
+- Compile: `cmake --preset default && cmake --build --preset default`
 
 ## Passing flags
 
