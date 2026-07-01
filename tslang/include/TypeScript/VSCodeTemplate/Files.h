@@ -323,6 +323,7 @@ link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib)
 add_executable(${PROJECT_NAME}
     main.cpp
     mycode.ts
+    adder.ts
 )
 
 # required libs
@@ -378,12 +379,23 @@ const auto CMAKE_MYCODE_TS_DATA = R"raw(// Example source in TypeScript language
 // with main.cpp. Replace with real TypeScript syntax; the symbols exported
 // must match the extern "C" declarations in main.cpp.
 
-async function adder(a = 0, b = 0) {
+import './adder'
+
+export function foo_add(a: int, b: int): int {
+    const adder = new Adder(a, b);
+    return adder.result;
+}
+
+export function foo_hello() {
+    console.log("hello from foo");
+}
+)raw";
+
+const auto CMAKE_ADDER_TS_DATA = R"raw(async function adder(a = 0, b = 0) {
     return a + b;
 }
 
-class Adder
-{
+export class Adder {
 	#a: int;
 	#b: int;
 
@@ -393,15 +405,6 @@ class Adder
 	}
 
 	get result() { return await adder(this.#a, this.#b); }
-}
-
-export function foo_add(a: int, b: int): int {
-    const adder = new Adder(a, b);
-    return adder.result;
-}
-
-export function foo_hello() {
-    console.log("hello from foo");
 }
 )raw";
 
@@ -495,6 +498,7 @@ set(CMAKE_TSLANG_COMPILER_WORKS TRUE)
 )raw";
 
 const auto CMAKE_TSLANG_COMPILER_IN_DATA = R"raw(set(CMAKE_TSLANG_COMPILER "@CMAKE_TSLANG_COMPILER@")
+set(CMAKE_TSLANG_DIR "@CMAKE_TSLANG_DIR@")
 set(CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS @CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS@)
 set(CMAKE_TSLANG_OUTPUT_EXTENSION @CMAKE_TSLANG_OUTPUT_EXTENSION@)
 set(CMAKE_TSLANG_COMPILER_LOADED 1)

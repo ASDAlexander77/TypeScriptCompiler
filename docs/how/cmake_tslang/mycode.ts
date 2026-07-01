@@ -3,22 +3,7 @@
 // with main.cpp. Replace with real TypeScript syntax; the symbols exported
 // must match the extern "C" declarations in main.cpp.
 
-async function adder(a = 0, b = 0) {
-    return a + b;
-}
-
-class Adder
-{
-	#a: int;
-	#b: int;
-
-	constructor(a: int, b: int) {
-		this.#a = a;
-		this.#b = b;
-	}
-
-	get result() { return await adder(this.#a, this.#b); }
-}
+import './adder'
 
 export function foo_add(a: int, b: int): int {
     const adder = new Adder(a, b);

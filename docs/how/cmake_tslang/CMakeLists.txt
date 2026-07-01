@@ -18,6 +18,7 @@ link_directories(${CMAKE_TSLANG_DIR} ${CMAKE_TSLANG_DIR}/defaultlib/lib)
 add_executable(${PROJECT_NAME}
     main.cpp
     mycode.ts
+    adder.ts
 )
 
 # required libs

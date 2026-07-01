@@ -73,6 +73,11 @@ int createCMakeFolder(int argc, char **argv)
         return -1;
     }
 
+    if (auto error_code = create_file_base("adder.ts", CMAKE_ADDER_TS_DATA))
+    {
+        return -1;
+    }
+
     if (auto error_code = create_file_base("README.md", CMAKE_README_MD_DATA))
     {
         return -1;
