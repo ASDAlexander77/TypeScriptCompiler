@@ -22,3 +22,8 @@ add_executable(${PROJECT_NAME}
 
 # required libs
 target_link_libraries(${PROJECT_NAME} "gc" "LLVMSupport" "TypeScriptAsyncRuntime" "TypeScriptDefaultLib")
+
+# ntdll provides RtlGetLastNtStatus (pulled in by LLVMSupport) on Windows
+if(WIN32)
+    target_link_libraries(${PROJECT_NAME} "ntdll")
+endif()

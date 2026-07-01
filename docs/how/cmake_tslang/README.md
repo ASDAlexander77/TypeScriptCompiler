@@ -33,6 +33,7 @@ custom_lang/
 - That `.obj` is added to the target and linked with `main.cpp`'s object using
   the C++ linker (`CMAKE_TSLANG_LINK_EXECUTABLE`).
 - Change `mycode.ts` and only it recompiles.
+- Compile: `cmake --preset default && cmake --build --preset default`
 
 ## Passing flags
 
