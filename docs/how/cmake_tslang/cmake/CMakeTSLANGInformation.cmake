@@ -7,7 +7,7 @@
 #   <DEFINES> <INCLUDES>  optional
 if(NOT CMAKE_TSLANG_COMPILE_OBJECT)
     set(CMAKE_TSLANG_COMPILE_OBJECT
-        "<CMAKE_TSLANG_COMPILER> <FLAGS> --output <OBJECT> <SOURCE>")
+        "<CMAKE_TSLANG_COMPILER> <FLAGS> --emit=obj -o=<OBJECT> <SOURCE>")
 endif()
 
 # How CMake links TSLANG objects into an executable/library.

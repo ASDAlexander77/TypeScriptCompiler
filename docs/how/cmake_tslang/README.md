@@ -1,12 +1,12 @@
 # Custom language with your own extension and compile command in CMake
 
-This example registers a brand-new CMake *language* (`TSLANG`) that:
+This registers TypeScript CMake *language* (`TSLANG`) that:
 
 - owns its own source extension (`.ts`),
-- is built with **tslang compile command**,
+- is built with **tslang --emit=obj**,
 - produces `.obj` files that CMake links automatically alongside regular C++.
 
-CMake then handles dependency tracking and incremental builds for `.tslang`
+CMake then handles dependency tracking and incremental builds for `.ts`
 sources the same way it does for `.cpp`.
 
 ## Layout
@@ -27,7 +27,7 @@ custom_lang/
 
 - `enable_language(TSLANG)` runs `CMakeDetermineTSLANGCompiler.cmake`, which finds
   `tslangc`, then loads `CMakeTSLANGInformation.cmake`, which registers the compile
-  rule (`CMAKE_TSLANG_COMPILE_OBJECT` — *your command*).
+  rule (`CMAKE_TSLANG_COMPILE_OBJECT` — *tslang --emit=obj*).
 - Because `CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS` contains `tslang`, any `.ts` source
   is routed to your command and compiled to a `.obj`.
 - That `.obj` is added to the target and linked with `main.cpp`'s object using
@@ -37,8 +37,8 @@ custom_lang/
 ## Passing flags
 
 ```cmake
-set(CMAKE_TSLANG_FLAGS "--opt-level=2")                       # global
-set_source_files_properties(mycode.tslang PROPERTIES
+set(CMAKE_TSLANG_FLAGS "--opt_level=3")                       # global
+set_source_files_properties(mycode.ts PROPERTIES
     COMPILE_OPTIONS "--define;TSLANG=1")                      # per-file
 ```
 

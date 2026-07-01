@@ -8,7 +8,11 @@ mark_as_advanced(CMAKE_TSLANG_COMPILER)
 
 # Which source extensions belong to TSLANG, and the object suffix
 set(CMAKE_TSLANG_SOURCE_FILE_EXTENSIONS ts)
-set(CMAKE_TSLANG_OUTPUT_EXTENSION .obj)   # .o on Linux
+if (NOT WIN32)
+	set(CMAKE_TSLANG_OUTPUT_EXTENSION .o)
+else()
+	set(CMAKE_TSLANG_OUTPUT_EXTENSION .obj)   # .o on Linux
+endif()
 set(CMAKE_TSLANG_COMPILER_ENV_VAR "TSLANG")
 
 # Emit the compiler-id config file CMake expects
