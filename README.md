@@ -37,6 +37,16 @@ on the fly via a built-in JIT — no Node.js or JavaScript runtime required.
 tslang --new Test1
 ```
 
+- CMake project (mixed C++/TypeScript, `TSLANG` registered as a first-class CMake language)
+```bat
+tslang --cmake Test1
+```
+Generates a ready-to-build project (`CMakeLists.txt`, `CMakePresets.json`, `main.cpp`, sample `.ts` sources and the `cmake/` TSLANG language modules). Build it with:
+```bat
+cd Test1
+cmake --preset default && cmake --build --preset default
+```
+
 - Strict null checks
 ```typescript
 let sn: string | null = null; // Ok
