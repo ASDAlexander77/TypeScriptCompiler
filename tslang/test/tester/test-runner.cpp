@@ -1,4 +1,7 @@
 #include "helper.h"
+#ifndef WIN32
+#include <unistd.h> // for usleep
+#endif
 
 #if WIN32
 #define GC_LIB "gc.lib "
