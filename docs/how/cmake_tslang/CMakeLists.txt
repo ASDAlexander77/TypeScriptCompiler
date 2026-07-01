@@ -23,7 +23,7 @@ endif()
 
 if(WIN32)
 else()
-    list(APPEND CMAKE_TSLANG_FLAGS "-relocation-model=pic") # global    
+    set(CMAKE_TSLANG_FLAGS "${CMAKE_TSLANG_FLAGS} -relocation-model=pic") # global    
 endif()
 
 # .ts files compile with TSLANG command; .cpp with the C++ compiler.
