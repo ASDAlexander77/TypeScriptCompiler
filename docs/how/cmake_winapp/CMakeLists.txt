@@ -14,7 +14,7 @@ cmake_policy(SET CMP0054 NEW)
 
 include("typescript.cmake")
 
-add_tsc_files("src")
+add_tslang_files("src")
 
 add_executable(
     ${PROJECT_NAME} 

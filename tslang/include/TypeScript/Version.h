@@ -1,0 +1,3 @@
+#ifndef TSLANG_PACKAGE_VERSION
+#define TSLANG_PACKAGE_VERSION "0.0.0-not-set"
+#endif

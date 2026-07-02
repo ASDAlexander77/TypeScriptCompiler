@@ -20,8 +20,8 @@ export class TypeScriptCompiler extends BaseCompiler {
         this.compiler.supportsIntel = false;
         this.compiler.supportsIrView = true;
 
-        this.tscJit = this.compilerProps(`compiler.${this.compiler.id}.exe`);
-        this.tscSharedLib = this.compilerProps(`compiler.${this.compiler.id}.sharedlibs`);
+        this.tslangJit = this.compilerProps(`compiler.${this.compiler.id}.exe`);
+        this.tslangSharedLib = this.compilerProps(`compiler.${this.compiler.id}.sharedlibs`);
     }
 
     getSharedLibraryPathsAsArguments() {
@@ -36,7 +36,7 @@ export class TypeScriptCompiler extends BaseCompiler {
     async handleInterpreting(key, executeParameters) {
         executeParameters.args = [
             '--emit=jit',
-            this.tscSharedLib ? '--shared-libs=' + this.tscSharedLib : '-nogc',
+            this.tslangSharedLib ? '--shared-libs=' + this.tslangSharedLib : '-nogc',
             ...executeParameters.args,
         ];
 
@@ -52,12 +52,12 @@ export class TypeScriptCompiler extends BaseCompiler {
             inputFilename
         ];
 
-        if (!this.tscSharedLib)
+        if (!this.tslangSharedLib)
         {
             newOptions.push('-nogc');
         }
 
-        const output = await this.runCompilerRawOutput(this.tscJit, newOptions, this.filename(inputFilename), execOptions);
+        const output = await this.runCompilerRawOutput(this.tslangJit, newOptions, this.filename(inputFilename), execOptions);
         if (output.code !== 0) {
             return [{ text: 'Failed to run compiler to get MLIR code' }];
         }
@@ -75,7 +75,7 @@ export class TypeScriptCompiler extends BaseCompiler {
             inputFilename
         ];
 
-        if (!this.tscSharedLib)
+        if (!this.tslangSharedLib)
         {
             newOptions.push('-nogc');
         }
@@ -84,7 +84,7 @@ export class TypeScriptCompiler extends BaseCompiler {
         // A higher max output is needed for when the user includes headers
         execOptions.maxOutput = 1024 * 1024 * 1024;
 
-        const output = await this.runCompilerRawOutput(this.tscJit, newOptions, this.filename(inputFilename), execOptions);
+        const output = await this.runCompilerRawOutput(this.tslangJit, newOptions, this.filename(inputFilename), execOptions);
         if (output.code !== 0) {
             return [{ text: 'Failed to run compiler to get IR code' }];
         }

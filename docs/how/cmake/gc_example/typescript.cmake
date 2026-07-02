@@ -1,23 +1,23 @@
-set (ROOT_PATH "I:\\tsc\\57")
+set (ROOT_PATH "I:\\tslang\\57")
 set (_3RD_PARTY_PATH "${ROOT_PATH}")
 set (BUILD_PATH "${ROOT_PATH}")
-set (TSCPATH "${BUILD_PATH}")
+set (TSLANGPATH "${BUILD_PATH}")
 set (GCLIBPATH "${_3RD_PARTY_PATH}")
 
-find_program(TSC_APP tsc.exe HINTS "${TSCPATH}" DOC "path to tsc")
+find_program(TSLANG_APP tslang.exe HINTS "${TSLANGPATH}" DOC "path to tslang")
 
-if (NOT TSC_APP)
-	message(FATAL_ERROR "Can't find tsc.exe")
+if (NOT TSLANG_APP)
+	message(FATAL_ERROR "Can't find tslang.exe")
 endif()
 
-macro(add_tsc_files subpath)
+macro(add_tslang_files subpath)
 	set (baseDir ${CMAKE_CURRENT_SOURCE_DIR})
 	set (outputDir ${CMAKE_CURRENT_BINARY_DIR})
 	set (fileSelectPath "${baseDir}/${subpath}")
 	set (TSExt "ts")
 	set (LLExt "ll")
 
-	file(GLOB TSC_SRC "${fileSelectPath}/*.${TSExt}")
+	file(GLOB TSLANG_SRC "${fileSelectPath}/*.${TSExt}")
 
 	if (CMAKE_BUILD_TYPE STREQUAL "Release")
 		set (TS_FLAGS "-opt")
@@ -27,7 +27,7 @@ macro(add_tsc_files subpath)
 	endif()
 
 	set (TS_FILES)
-	foreach(F IN LISTS TSC_SRC)
+	foreach(F IN LISTS TSLANG_SRC)
 	    get_filename_component(FileName "${F}" NAME_WE BASE_DIR "${baseDir}")
 	    get_filename_component(Ext "${F}" EXT BASE_DIR "${baseDir}")
 	    string(TOUPPER ${Ext} ExtUpperCase)
@@ -43,7 +43,7 @@ macro(add_tsc_files subpath)
 
 	    add_custom_command(
 		OUTPUT "${obj_file}"
-		COMMAND "${TSC_APP}" --emit=obj --export=none -o="${obj_file}" ${TS_FLAGS} "${source_file}"
+		COMMAND "${TSLANG_APP}" --emit=obj --export=none -o="${obj_file}" ${TS_FLAGS} "${source_file}"
 		DEPENDS "${source_file}"
 		BYPRODUCTS "${obj_file}"
   		COMMENT "Compiling ${source_file} to ${obj_file}"

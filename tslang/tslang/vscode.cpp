@@ -1,0 +1,258 @@
+#include "TypeScript/MLIRGen.h"
+
+#include "mlir/IR/BuiltinOps.h"
+
+#include "llvm/IR/LLVMContext.h"
+
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/WithColor.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ToolOutputFile.h"
+
+#include "TypeScript/TypeScriptCompiler/Defines.h"
+#include "TypeScript/VSCodeTemplate/Files.h"
+
+#include <regex>
+
+#define DEBUG_TYPE "tslang"
+
+using namespace typescript;
+using namespace llvm;
+using namespace std;
+namespace cl = llvm::cl;
+namespace fs = llvm::sys::fs;
+namespace path = llvm::sys::path;
+
+extern cl::opt<string> inputFilename;
+
+int create_file_base(StringRef filepath, StringRef data);
+int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &result);
+
+string getExecutablePath(const char *);
+string getGCLibPath();
+string getLLVMLibPath();
+string getTslangLibPath();
+string getDefaultLibPath();
+string fixpath(string, const SmallVectorImpl<char>&);
+
+int createVSCodeFolder(int argc, char **argv)
+{
+    auto projectName = StringRef(inputFilename);
+    if (projectName == "-") {
+        WithColor::error(errs(), "tslang") << "Name is not provided. (use file name without file extension)\n";
+        return -1;
+    }
+
+    if (auto error_code = fs::create_directory(projectName))
+    {
+        WithColor::error(errs(), "tslang") << "Could not create project: " << error_code.message() << "\n";
+        return -1;            
+    }
+
+    if (auto error_code = fs::set_current_path(projectName))
+    {
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory: " << error_code.message() << "\n";
+        return -1;
+    }
+
+    SmallString<256> fullFilePath(projectName);
+    path::replace_extension(fullFilePath, ".ts");   
+    if (auto error_code = create_file_base(fullFilePath.str(), R"(print("Hello World!");)"))
+    {
+        return -1;
+    }
+
+    if (auto error_code = create_file_base("tslang.natvis", TSLANG_NATVIS))
+    {
+        return -1;
+    }    
+
+    StringMap<StringRef> vals;
+    vals["PROJECT"] = projectName;
+
+    StringRef tsconfig(TSCONFIG_JSON_DATA);
+    SmallString<128> result;
+    substitute(tsconfig, vals, result);
+
+    if (auto error_code = create_file_base("tsconfig.json", result.str()))
+    {
+        return -1;
+    }
+
+    SmallString<128> projectPath;
+    if (auto error_code = fs::current_path(projectPath)) 
+    {
+        WithColor::error(errs(), "tslang") << "Can't get info about current folder: " << error_code.message() << "\n";
+        return -1;
+    }
+
+    // node_modules
+    if (auto error_code = fs::create_directories(NODE_MODULE_TSLANG_PATH))
+    {
+        WithColor::error(errs(), "tslang") << "Could not create folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
+        return -1;            
+    }    
+
+    if (auto error_code = fs::set_current_path(NODE_MODULE_TSLANG_PATH))
+    {
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << NODE_MODULE_TSLANG_PATH << "' : " << error_code.message() << "\n";
+        return -1;
+    }
+
+    if (auto error_code = create_file_base("index.d.ts", TSLANG_INDEX_D_TS))
+    {
+        return -1;
+    }
+
+    // need to create .vscode
+    if (auto error_code = fs::set_current_path(projectPath))
+    {
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << projectPath << "' : " << error_code.message() << "\n";
+        return -1;
+    }    
+
+    if (auto error_code = fs::create_directory(DOT_VSCODE_PATH))
+    {
+        WithColor::error(errs(), "tslang") << "Could not create folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
+        return -1;            
+    }    
+
+    if (auto error_code = fs::set_current_path(DOT_VSCODE_PATH))
+    {
+        WithColor::error(errs(), "tslang") << "Can't open folder/directory '" << DOT_VSCODE_PATH << "' : " << error_code.message() << "\n";
+        return -1;
+    }     
+
+    if (auto error_code = create_file_base("settings.json", R"({})"))
+    {
+        return -1;
+    }    
+
+    // set params
+
+    SmallVector<const char *, 256> args(argv, argv + 1);    
+    auto driverPath = getExecutablePath(args[0]);
+
+    SmallVector<char> appPath{};
+    appPath.append(driverPath.begin(), driverPath.end());
+    path::remove_filename(appPath);
+
+    auto tslangCmd = fixpath(driverPath, appPath);
+    auto gcLibPath = fixpath(getGCLibPath(), appPath);
+    auto llvmLibPath = fixpath(getLLVMLibPath(), appPath);
+    auto tslangLibPath = fixpath(getTslangLibPath(), appPath);
+    auto defaultLibPath = fixpath(getDefaultLibPath(), appPath);
+
+    vals["TSLANG_CMD"] = tslangCmd;
+    vals["GC_LIB_PATH"] = gcLibPath;
+    vals["LLVM_LIB_PATH"] = llvmLibPath;
+    vals["TSLANG_LIB_PATH"] = tslangLibPath;
+    vals["DEFAULT_LIB_PATH"] = defaultLibPath;
+
+    StringRef tasks(TASKS_JSON_DATA);
+    SmallString<128> resultTasks;
+    substitute(tasks, vals, resultTasks);
+
+    if (auto error_code = create_file_base("tasks.json", resultTasks.str()))
+    {
+        return -1;
+    }    
+
+    StringRef launch(
+#if WIN32        
+        LAUNCH_JSON_DATA_WIN32
+#else
+        LAUNCH_JSON_DATA_LINUX
+#endif
+    );
+    SmallString<128> resultLaunch;
+    substitute(launch, vals, resultLaunch);
+
+    if (auto error_code = create_file_base("launch.json", resultLaunch.str()))
+    {
+        return -1;
+    }    
+
+    return 0;
+}
+
+int create_file_base(StringRef filepath, StringRef data)
+{
+    error_code ec;
+    ToolOutputFile out(filepath, ec, 
+#ifdef WIN32    
+    fs::OpenFlags::OF_TextWithCRLF
+#else
+    fs::OpenFlags::OF_Text
+#endif    
+    );
+
+    // ... print into out
+    out.os() << data;
+
+    out.os().flush();
+    out.keep();
+    out.os().close();
+
+    if (out.os().has_error())
+    {
+        report_fatal_error(Twine("Error emitting data to file '") + filepath);
+        return -1;
+    }
+
+    return 0;
+}
+
+regex paramsRegEx = regex(R"(<<(.*?)>>)", regex_constants::ECMAScript); 
+
+int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &result)
+{
+    auto str = data.str();
+    auto begin = sregex_iterator(str.begin(), str.end(), paramsRegEx);
+    auto end = sregex_iterator();     
+
+    string suffix;
+    for (auto it = begin; it != end; it++) 
+    {
+        auto match = *it;
+        result.append(match.prefix().str());
+        result.append(values[match[1].str()]);
+        suffix = match.suffix().str();
+    }
+
+    result.append(suffix);
+
+    return 0;
+}
+
+string fixpath(string path, const SmallVectorImpl<char>& defaultPath)
+{
+    if (path.empty())
+    {
+        path = string(defaultPath.begin(), defaultPath.end());
+    }
+
+#ifdef WIN32    
+    string output;
+    output.reserve(path.size());
+    for (const auto c: path) {
+        switch (c) {
+            case '\\':
+            case '/':  
+                output += "\\\\";        
+                break;
+            default:    
+                output += c;            
+                break;
+        }
+    }
+
+    return output;
+#else
+    return path;    
+#endif    
+}

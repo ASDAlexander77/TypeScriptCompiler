@@ -57,11 +57,11 @@ jobs:
 
     - name: Delete __Build TS folders
       continue-on-error: true
-      run: if (Test-Path -Path ".\__build\tsc\msbuild\x64\release") { Remove-Item -Recurse -Force ".\__build\tsc\msbuild\x64\release" }
+      run: if (Test-Path -Path ".\__build\tslang\msbuild\x64\release") { Remove-Item -Recurse -Force ".\__build\tslang\msbuild\x64\release" }
       shell: pwsh
 
     - name: Create __Build Folders
-      run: if (!(Test-Path -Path ".\__build\tsc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\llvm\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
+      run: if (!(Test-Path -Path ".\__build\tslang\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\tslang\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\llvm\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\msbuild\x64\release" }; if (!(Test-Path -Path ".\__build\gc\msbuild\x64\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\msbuild\x64\release" };
       shell: pwsh
 
     - name: Download 3rd party - LLVM
@@ -115,7 +115,7 @@ jobs:
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc/msbuild/x64/release
       # Generates the BDWgc CMake package files (lib/cmake/bdwgc/BDWgcConfig.cmake)
-      # that the tsc build looks up via find_package(BDWgc CONFIG).
+      # that the tslang build looks up via find_package(BDWgc CONFIG).
       run: cmake --install . --config ${{ env.BUILD_TYPE }}
       shell: pwsh
 
@@ -127,18 +127,18 @@ jobs:
 
     - name: Configure
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
-      run: cmake ../../../../../tsc -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
+      working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
+      run: cmake ../../../../../tslang -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
       shell: pwsh
 
     - name: Build
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+      working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
       shell: pwsh
 
     - name: Test
-      working-directory: ${{github.workspace}}/__build/tsc/msbuild/x64/release
+      working-directory: ${{github.workspace}}/__build/tslang/msbuild/x64/release
       # Execute tests defined by the CMake configuration.  
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -j1 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
