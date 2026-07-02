@@ -486,7 +486,7 @@ compile often and want CMake to treat as first-class.
 const auto CMAKE_DETERMINE_TSLANG_COMPILER_DATA = R"raw(# Locate your custom compiler
 find_program(CMAKE_TSLANG_COMPILER
     NAMES tslang tslang.exe
-    HINTS "${CMAKE_SOURCE_DIR}/tools"
+    HINTS "<<TSLANG_APP_PATH>>" "${CMAKE_SOURCE_DIR}/tools"
     DOC "TSLANG compiler")
 
 cmake_path(GET CMAKE_TSLANG_COMPILER PARENT_PATH CMAKE_TSLANG_DIR)

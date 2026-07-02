@@ -19,6 +19,9 @@ extern cl::opt<string> inputFilename;
 int create_file_base(StringRef filepath, StringRef data);
 int substitute(StringRef data, StringMap<StringRef> &values, SmallString<128> &result);
 
+string getExecutablePath(const char *);
+string fixpath(string, const SmallVectorImpl<char>&);
+
 int createCMakeFolder(int argc, char **argv)
 {
     auto projectName = StringRef(inputFilename);
@@ -96,7 +99,22 @@ int createCMakeFolder(int argc, char **argv)
         return -1;
     }
 
-    if (auto error_code = create_file_base("CMakeDetermineTSLANGCompiler.cmake", CMAKE_DETERMINE_TSLANG_COMPILER_DATA))
+    // hint for finding tslang app (same logic as in createVSCodeFolder)
+    SmallVector<const char *, 256> args(argv, argv + 1);
+    auto driverPath = getExecutablePath(args[0]);
+
+    SmallVector<char> appPath{};
+    appPath.append(driverPath.begin(), driverPath.end());
+    path::remove_filename(appPath);
+
+    auto tslangAppPath = fixpath(string(appPath.begin(), appPath.end()), appPath);
+    vals["TSLANG_APP_PATH"] = tslangAppPath;
+
+    StringRef determineCompiler(CMAKE_DETERMINE_TSLANG_COMPILER_DATA);
+    SmallString<128> resultDetermineCompiler;
+    substitute(determineCompiler, vals, resultDetermineCompiler);
+
+    if (auto error_code = create_file_base("CMakeDetermineTSLANGCompiler.cmake", resultDetermineCompiler.str()))
     {
         return -1;
     }
