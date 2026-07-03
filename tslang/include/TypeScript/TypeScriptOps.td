@@ -678,6 +678,14 @@ def TypeScript_CallOp : TypeScript_Op<"Call", [CallOpInterface, DeclareOpInterfa
     CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
 
     void setCalleeFromCallable(CallInterfaceCallable callee) { (*this)->setAttr("callee", callee.get<SymbolRefAttr>()); }
+
+    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
+    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
+    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
+    void setArgAttrsAttr(::mlir::ArrayAttr) {}
+    void setResAttrsAttr(::mlir::ArrayAttr) {}
+    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
+    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 }
 
@@ -736,6 +744,14 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
     }
+
+    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
+    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
+    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
+    void setArgAttrsAttr(::mlir::ArrayAttr) {}
+    void setResAttrsAttr(::mlir::ArrayAttr) {}
+    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
+    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 
   let hasCanonicalizer = 1;
@@ -831,6 +847,14 @@ def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
     CallInterfaceCallable getCallableForCallee() { return (*this)->getAttrOfType<SymbolRefAttr>("callee"); }
 
     void setCalleeFromCallable(CallInterfaceCallable callee) { (*this)->setAttr("callee", callee.get<SymbolRefAttr>()); }
+
+    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
+    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
+    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
+    void setArgAttrsAttr(::mlir::ArrayAttr) {}
+    void setResAttrsAttr(::mlir::ArrayAttr) {}
+    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
+    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 }
 
@@ -869,7 +893,15 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
 
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
-    }    
+    }
+
+    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
+    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
+    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
+    void setArgAttrsAttr(::mlir::ArrayAttr) {}
+    void setResAttrsAttr(::mlir::ArrayAttr) {}
+    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
+    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 }
 
@@ -909,7 +941,15 @@ def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
 
     void setCalleeFromCallable(CallInterfaceCallable callee) {
       setOperand(0, callee.get<Value>());
-    }    
+    }
+
+    /// ArgAndResultAttrsOpInterface: this op does not use argument/result attributes.
+    ::mlir::ArrayAttr getArgAttrsAttr() { return nullptr; }
+    ::mlir::ArrayAttr getResAttrsAttr() { return nullptr; }
+    void setArgAttrsAttr(::mlir::ArrayAttr) {}
+    void setResAttrsAttr(::mlir::ArrayAttr) {}
+    ::mlir::Attribute removeArgAttrsAttr() { return nullptr; }
+    ::mlir::Attribute removeResAttrsAttr() { return nullptr; }
   }];
 }
 
