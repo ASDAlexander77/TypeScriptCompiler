@@ -21,7 +21,7 @@ namespace typescript::tslang
     class TextDiagnosticPrinter : public clang::DiagnosticConsumer
     {
         raw_ostream &os;
-        llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions> diagOpts;
+        clang::DiagnosticOptions *diagOpts;
 
         /// A string to prefix to error messages.
         std::string prefix;

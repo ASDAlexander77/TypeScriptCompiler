@@ -30,6 +30,14 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Transforms/Passes.h"
+#include "mlir/Dialect/LLVMIR/Transforms/Passes.h"
+#ifdef ENABLE_ASYNC
+#include "mlir/Dialect/Async/Passes.h"
+#include "mlir/Conversion/AsyncToLLVM/AsyncToLLVM.h"
+#endif
+
 #include "llvm/Analysis/LoopAnalysisManager.h"
 #include "llvm/Analysis/CGSCCPassManager.h"
 #include "llvm/Passes/OptimizationLevel.h"
