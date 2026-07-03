@@ -14,7 +14,6 @@
 #include "mlir/Interfaces/CastInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
-#include "mlir/Interfaces/CopyOpInterface.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"

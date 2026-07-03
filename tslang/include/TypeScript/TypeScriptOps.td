@@ -14,7 +14,6 @@ include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/FunctionInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-include "mlir/Interfaces/CopyOpInterface.td"
 include "mlir/Interfaces/CastInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 
@@ -2252,7 +2251,7 @@ def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
   let results = (outs TypeScript_String:$result);
 }
 
-def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
   let results = (outs );
 
@@ -2262,7 +2261,7 @@ def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [CopyOpInterface, AllTypes
   }];
 }
 
-def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src);
   let results = (outs );
 
@@ -2272,7 +2271,7 @@ def TypeScript_CopyStructOp : TypeScript_Op<"CopyStruct", [CopyOpInterface, AllT
   }];
 }
 
-def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "copy to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
 
@@ -2282,7 +2281,7 @@ def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy", [CopyOpInterface, AllT
   }];
 }
 
-def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [CopyOpInterface, AllTypesMatch<["dst", "src"]>]> {
+def TypeScript_MemoryMoveOp : TypeScript_Op<"MemoryMove", [AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins Arg<AnyType, "move to", [MemWrite]>:$dst, Arg<AnyType, "copy from", [MemRead]>:$src, Index:$count);
   let results = (outs );
 

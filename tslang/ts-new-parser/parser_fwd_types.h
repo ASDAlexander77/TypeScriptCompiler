@@ -45,34 +45,34 @@
     using x = n<t1>;                                                                                                   \
     using REF_NAME(x) = REF_NAME(n)<t1, t2>;
 
-#define PTR(x) ptr<x>
+#define PTR(x) ptr_t<x>
 #define POINTER(x) using x = PTR(data::x);
 #define POINTER_T(x) template <typename T> using x = PTR(data::x<T>);
 #define POINTER_VAR(x, v) template <v TKind> using x = PTR(data::x<TKind>);
 #define POINTER_TARGS(x, v) template <v... TKind> using x = PTR(data::x<TKind...>);
 
-template <typename T> struct ptr
+template <typename T> struct ptr_t
 {
     typedef T data;
 
-    ptr() : instance(nullptr){}
+    ptr_t() : instance(nullptr){}
 
-    ptr(undefined_t) : instance(nullptr){}
+    ptr_t(undefined_t) : instance(nullptr){}
 
-    ptr(const T &data) : instance(std::make_shared<T>(data)){}
+    ptr_t(const T &data) : instance(std::make_shared<T>(data)){}
 
-    template <typename U> ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)){}
+    template <typename U> ptr_t(ptr_t<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)){}
 
-    template <typename U> ptr(REF_TYPE(U) & otherInstance) : instance(std::static_pointer_cast<T>(otherInstance)){}
+    template <typename U> ptr_t(REF_TYPE(U) & otherInstance) : instance(std::static_pointer_cast<T>(otherInstance)){}
 
-    ~ptr() = default;
+    ~ptr_t() = default;
 
     inline auto operator->()
     {
         return instance.operator->();
     }
 
-    auto operator=(undefined_t) -> ptr &
+    auto operator=(undefined_t) -> ptr_t &
     {
         instance.reset();
         return *this;
@@ -98,42 +98,42 @@ template <typename T> struct ptr
         return *instance;
     }
 
-    inline auto operator==(const ptr<T> &otherPtr) -> boolean
+    inline auto operator==(const ptr_t<T> &otherPtr) -> boolean
     {
         return instance == otherPtr.instance;
     }
 
-    inline auto operator!=(const ptr<T> &otherPtr) -> boolean
+    inline auto operator!=(const ptr_t<T> &otherPtr) -> boolean
     {
         return instance != otherPtr.instance;
     }
 
-    template <typename U> inline auto operator==(const ptr<U> &otherPtr) -> boolean
+    template <typename U> inline auto operator==(const ptr_t<U> &otherPtr) -> boolean
     {
         return instance == otherPtr.instance;
     }
 
-    template <typename U> inline auto operator!=(const ptr<U> &otherPtr) -> boolean
+    template <typename U> inline auto operator!=(const ptr_t<U> &otherPtr) -> boolean
     {
         return instance != otherPtr.instance;
     }
 
-    inline friend auto operator==(const ptr<T> &inst, const ptr<T> &otherPtr) -> boolean
+    inline friend auto operator==(const ptr_t<T> &inst, const ptr_t<T> &otherPtr) -> boolean
     {
         return inst.instance == otherPtr.instance;
     }
 
-    inline friend auto operator!=(const ptr<T> &inst, const ptr<T> &otherPtr) -> boolean
+    inline friend auto operator!=(const ptr_t<T> &inst, const ptr_t<T> &otherPtr) -> boolean
     {
         return inst.instance != otherPtr.instance;
     }
 
-    template <typename U> inline friend auto operator==(const ptr<T> &inst, const ptr<U> &otherPtr) -> boolean
+    template <typename U> inline friend auto operator==(const ptr_t<T> &inst, const ptr_t<U> &otherPtr) -> boolean
     {
         return inst.instance == otherPtr.instance;
     }
 
-    template <typename U> inline friend auto operator!=(const ptr<T> &inst, const ptr<U> &otherPtr) -> boolean
+    template <typename U> inline friend auto operator!=(const ptr_t<T> &inst, const ptr_t<U> &otherPtr) -> boolean
     {
         return inst.instance != otherPtr.instance;
     }
@@ -173,14 +173,14 @@ template <typename T> struct ptr
         return this->operator bool() || rhs;
     }
 
-    template <typename L> inline auto operator||(L rhs) -> ptr<T>
+    template <typename L> inline auto operator||(L rhs) -> ptr_t<T>
     {
         if (this->operator bool())
         {
             return *this;
         }
 
-        return rhs().template as<ptr<T>>();
+        return rhs().template as<ptr_t<T>>();
     }
 
     template <typename U> inline auto as() -> U
