@@ -1,0 +1,14 @@
+
+  1>Checking Build System
+  Building Custom Rule I:/TypeScriptCompiler/tslang/CMakeLists.txt
+  Building Custom Rule I:/TypeScriptCompiler/tslang/CMakeLists.txt
+  ts-new-parser-lib.vcxproj -> I:\TypeScriptCompiler\__build\tslang\windows-msbuild-2026-release\ts-new-parser\Release\ts-new-parser-lib.lib
+  MLIRTypeScript.vcxproj -> I:\TypeScriptCompiler\__build\tslang\windows-msbuild-2026-release\lib\MLIRTypeScript.lib
+  Building Custom Rule I:/TypeScriptCompiler/tslang/CMakeLists.txt
+  TypeScriptAliasPass.vcxproj -> I:\TypeScriptCompiler\__build\tslang\windows-msbuild-2026-release\lib\TypeScriptAliasPass.lib
+  TypeScriptDebugInfoPass.vcxproj -> I:\TypeScriptCompiler\__build\tslang\windows-msbuild-2026-release\lib\TypeScriptDebugInfoPass.lib
+  TypeScriptExceptionPass.vcxproj -> I:\TypeScriptCompiler\__build\tslang\windows-msbuild-2026-release\lib\TypeScriptExceptionPass.lib
+  TypeScriptExportPass.vcxproj -> I:\TypeScriptCompiler\__build\tslang\windows-msbuild-2026-release\lib\TypeScriptExportPass.lib
+  TypeScriptMemAllocPass.vcxproj -> I:\TypeScriptCompiler\__build\tslang\windows-msbuild-2026-release\lib\TypeScriptMemAllocPass.lib
+     Creating library I:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/lib/tslang.lib and object I:/TypeScriptCompiler/__build/tslang/windows-msbuild-2026-release/lib/tslang.exp
+  tslang.vcxproj -> I:\TypeScriptCompiler\__build\tslang\windows-msbuild-2026-release\bin\tslang.exe

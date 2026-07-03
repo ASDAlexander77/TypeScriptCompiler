@@ -38,6 +38,7 @@ set(LIBS
     MLIROptLib
     MLIRParser
     MLIRPass
+    MLIRRegisterAllExtensions
     MLIRSideEffectInterfaces
     MLIRSupport
     MLIRTargetLLVMIRExport
