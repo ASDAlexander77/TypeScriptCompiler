@@ -474,9 +474,23 @@ class LLVMDebugInfoHelper
             if (usedTypes.contains(typeWithFields)) {
                 // create forward declaration
                 LLVM::DIExpressionAttr emptyDIExpr;
-                auto fwdCompositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, 
-                    DistinctAttr::create(mlir::UnitAttr::get(context)), StringAttr::get(context, name), 
-                    file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::FwdDecl, 0, 0, {}, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr);
+                auto fwdCompositeType = LLVM::DICompositeTypeAttr::get(
+                    context, 
+                    dwarf::DW_TAG_structure_type, 
+                    StringAttr::get(context, name), 
+                    file, 
+                    line, 
+                    scope, 
+                    LLVM::DITypeAttr(), 
+                    LLVM::DIFlags::FwdDecl, 
+                    0, 
+                    0, 
+                    {}, 
+                    emptyDIExpr, 
+                    emptyDIExpr, 
+                    emptyDIExpr, 
+                    emptyDIExpr,
+                    {});
 
                 return fwdCompositeType;
             }
