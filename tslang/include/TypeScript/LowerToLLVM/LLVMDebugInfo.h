@@ -485,7 +485,6 @@ class LLVMDebugInfoHelper
                     LLVM::DIFlags::FwdDecl, 
                     0, 
                     0, 
-                    {}, 
                     emptyDIExpr, 
                     emptyDIExpr, 
                     emptyDIExpr, 
@@ -538,8 +537,8 @@ class LLVMDebugInfoHelper
 
         LLVM::DIExpressionAttr emptyDIExpr;
         auto compositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, 
-            DistinctAttr::create(mlir::UnitAttr::get(context)), StringAttr::get(context, isNamePrefix ? MLIRHelper::getAnonymousName(typeWithFields, name.data()) : name), 
-            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr);
+            StringAttr::get(context, isNamePrefix ? MLIRHelper::getAnonymousName(typeWithFields, name.data()) : name), 
+            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr, elements);
 
         if (!isNamePrefix)
         {
@@ -597,8 +596,8 @@ class LLVMDebugInfoHelper
             if (usedTypes.contains(structType)) {
                 // create forward declaration
                 auto fwdCompositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, 
-                    DistinctAttr::create(mlir::UnitAttr::get(context)), StringAttr::get(context, structType.getName()), 
-                    file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::FwdDecl, 0, 0, {}, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr);
+                    StringAttr::get(context, structType.getName()), 
+                    file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::FwdDecl, 0, 0, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr, {});
 
                 return fwdCompositeType;
             }
@@ -632,9 +631,9 @@ class LLVMDebugInfoHelper
         auto name = StringAttr::get(context, structType.isIdentified() 
             ? structType.getName() 
             : MLIRHelper::getAnonymousName(structType, "struct"));
-        auto compositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, DistinctAttr::create(mlir::UnitAttr::get(context)), name, 
-            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements,
-            emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr);
+        auto compositeType = LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, name, 
+            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, 
+            emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr, elements);
 
         if (structType.isIdentified())
         {
@@ -681,9 +680,9 @@ class LLVMDebugInfoHelper
         }
 
         LLVM::DIExpressionAttr emptyDIExpr;
-        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, DistinctAttr::create(mlir::UnitAttr::get(context)), 
+        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, 
             StringAttr::get(context, name), file, line, scope, LLVM::DITypeAttr(), 
-            LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr);        
+            LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr, elements);        
     }
 
     LLVM::DICompositeTypeAttr getDIStructType(StringRef name, ArrayRef<std::pair<StringRef, LLVM::DITypeAttr>> fields, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
@@ -708,8 +707,8 @@ class LLVMDebugInfoHelper
         }
 
         LLVM::DIExpressionAttr emptyDIExpr;
-        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, DistinctAttr::create(mlir::UnitAttr::get(context)), StringAttr::get(context, name), 
-            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, elements, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr);        
+        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_structure_type, StringAttr::get(context, name), 
+            file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, sizesTrack.sizeInBits, sizesTrack.alignInBits, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr, elements);        
     }    
 
     LLVM::DICompositeTypeAttr getDIUnionType(mlir::Location location, mlir_ts::UnionType unionType, LLVM::DIFileAttr file, uint32_t line, LLVM::DIScopeAttr scope)
@@ -737,9 +736,9 @@ class LLVMDebugInfoHelper
         }
 
         LLVM::DIExpressionAttr emptyDIExpr;
-        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_union_type, DistinctAttr::create(mlir::UnitAttr::get(context)), 
+        return LLVM::DICompositeTypeAttr::get(context, dwarf::DW_TAG_union_type, 
             StringAttr::get(context, MLIRHelper::getAnonymousName(unionType, "union")), file, line, scope, LLVM::DITypeAttr(), LLVM::DIFlags::TypePassByValue, 
-            sizeInBits, sizesTrack.alignInBits, elements, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr);
+            sizeInBits, sizesTrack.alignInBits, emptyDIExpr, emptyDIExpr, emptyDIExpr, emptyDIExpr, elements);
     }
 };
 

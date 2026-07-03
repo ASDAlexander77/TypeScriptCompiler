@@ -3526,7 +3526,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                 {
                     auto varInfo = globalVarAttrFusedLoc.getMetadata();
                     LLVM::DIExpressionAttr exprAttr;
-                    llvmGlobalOp.setDbgExprAttr(LLVM::DIGlobalVariableExpressionAttr::get(rewriter.getContext(), varInfo, exprAttr));
+                    llvmGlobalOp.setDbgExprsAttr(ArrayAttr::get(rewriter.getContext(), {LLVM::DIGlobalVariableExpressionAttr::get(rewriter.getContext(), varInfo, exprAttr)}));
                 }
             }
         }
@@ -6227,7 +6227,7 @@ static LogicalResult preserveTypesForDebugInfo(mlir::ModuleOp &module, LLVMTypeC
                 else
                 {
                     auto varInfo = LLVM::DILocalVariableAttr::get(
-                        location.getContext(), scope, name, file, line, argIndex, alignInBits, diType);
+                        location.getContext(), scope, name, file, line, argIndex, alignInBits, diType, LLVM::DIFlags::Zero);
                     op->setLoc(mlir::FusedLoc::get(location.getContext(), {location}, varInfo));
                 }
             }
