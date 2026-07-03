@@ -1283,6 +1283,11 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         }
 
         auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, transformed.getOperands());
+        // indirect call: callee pointer is operand #0, the rest are call arguments;
+        // AttrSizedOperandSegments requires this split to be set explicitly, the
+        // generic (TypeRange, ValueRange) builder above does not set it.
+        callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(transformed.getOperands().size()), 0});
+        callRes.setOpBundleSizes({});
 
         auto returns = callRes.getResults();
         if (returns.size() > 0)
@@ -1292,7 +1297,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         else
         {
             rewriter.eraseOp(op);
-        }      
+        }
 
         return success();
     }
@@ -1343,7 +1348,7 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
                     continue;
                 }
 
-                results.push_back(resultType);
+                results.push_back(tch.convertType(resultType));
             }
 
             // no value yet.
@@ -1367,6 +1372,8 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
                     ops.push_back(thisValAsLLVMType);
                     ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
                     auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
+                    callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(ops.size()), 0});
+                    callRes.setOpBundleSizes({});
                     return callRes.getResults();
                 },
                 [&](OpBuilder &builder, Location loc) {
@@ -1381,6 +1388,8 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
                     ops.push_back(methodPtrAsLLVMType);
                     ops.append(transformed.getOperands().begin() + 1, transformed.getOperands().end());
                     auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
+                    callRes.getProperties().setOperandSegmentSizes({static_cast<int32_t>(ops.size()), 0});
+                    callRes.setOpBundleSizes({});
                     return callRes.getResults();
                 });
         }
@@ -1484,7 +1493,7 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
                     continue;
                 }
 
-                results.push_back(resultType);
+                results.push_back(tch.convertType(resultType));
             }
 
             // no value yet.
@@ -5371,7 +5380,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                 globalConstructorOp,
                 rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }),
                 rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(globalConstructorOp.getPriority().getLimitedValue()) }),
-                rewriter.getArrayAttr({}));
+                rewriter.getArrayAttr({ LLVM::ZeroAttr::get(rewriter.getContext()) }));
         }
 
         return success();
