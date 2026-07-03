@@ -6358,7 +6358,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LowerToLLVMOptions options(&getContext(), dl);
     if (tsContext.compileOptions.isWasm && tsContext.compileOptions.sizeBits == 32)
     {
-        options.dataLayout.reset("e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-f128:64-n32:64-S128-ni:1:10:20");
+        options.dataLayout = llvm::DataLayout("e-m:e-p:32:32-p10:8:8-p20:8:8-i64:64-f128:64-n32:64-S128-ni:1:10:20");
 
         m->setAttr(
             mlir::LLVM::LLVMDialect::getDataLayoutAttrName(), 
