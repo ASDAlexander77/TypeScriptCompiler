@@ -1450,15 +1450,13 @@ void mlir_ts::WhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorI
         return;
     }
 
-    assert(llvm::is_contained({&getBody(), &getCond()}, point) &&
-            "there are only two regions in a WhileOp");
     // The body region always branches back to the condition region.
-    if (llvm::is_contained({&getBody()}, point)) {
+    if (point.getTerminatorPredecessorOrNull()->getParentRegion() == &getBody()) {
         regions.emplace_back(&getCond(), getCond().getArguments());
         return;
     }
 
-    regions.emplace_back(getResults());
+    regions.emplace_back(getOperation(), getResults());
     regions.emplace_back(&getBody(), getBody().getArguments());
 }
 
@@ -1479,15 +1477,13 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVecto
         return;
     }
 
-    assert(llvm::is_contained({&getCond(), &getBody()}, point) &&
-            "there are only two regions in a DoWhileOp");
     // The body region always branches back to the condition region.
-    if (llvm::is_contained({&getCond()}, point)) {
+    if (point.getTerminatorPredecessorOrNull()->getParentRegion() == &getCond()) {
         regions.emplace_back(&getBody(), getBody().getArguments());
         return;
     }
 
-    regions.emplace_back(getResults());
+    regions.emplace_back(getOperation(), getResults());
     regions.emplace_back(&getCond(), getCond().getArguments());
 }
 

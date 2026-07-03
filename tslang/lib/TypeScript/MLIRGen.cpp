@@ -5523,7 +5523,7 @@ class MLIRGenImpl
                 else
                 {
                     // no return type
-                    funcType = getFunctionType(argTypes, std::nullopt, funcProto->isMultiArgs());
+                    funcType = getFunctionType(argTypes, {}, funcProto->isMultiArgs());
                 }
             }
             else
@@ -5608,7 +5608,7 @@ class MLIRGenImpl
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
-        auto partialDeclFuncType = getFunctionType(argTypes, std::nullopt, false);
+        auto partialDeclFuncType = getFunctionType(argTypes, {}, false);
         auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionLikeDeclarationBaseAST), name, partialDeclFuncType);
 
         {
