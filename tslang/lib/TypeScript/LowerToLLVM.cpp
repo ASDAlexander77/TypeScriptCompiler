@@ -4626,7 +4626,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
                 auto p1 = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, thisVal);
                 auto p2 = rewriter.create<LLVM::PtrToIntOp>(loc, llvmIndexType, methodOrFieldPtr);
                 auto padded = rewriter.create<LLVM::AddOp>(loc, llvmIndexType, p1, p2);
-                auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, padded);
+                auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, padded.getResult());
 
                 // no need to BoundRef
                 // auto boundRefVal = rewriter.create<mlir_ts::CreateBoundRefOp>(loc, thisVal, typedPtr);
@@ -4811,7 +4811,7 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
             isVolatile = volatileAttr.getValue();
         }
 
-        mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, llvmType, valueRefVal, alignment, isVolatile, isNonTemporal, isInvariant, ordering, syncscope);
+        mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, llvmType, valueRefVal, alignment, isVolatile, isNonTemporal, isInvariant, /*isInvariantGroup*/ false, ordering, syncscope);
 
         if (auto funcType = dyn_cast<mlir_ts::FunctionType>(boundRefType.getElementType()))
         {
@@ -4888,7 +4888,7 @@ struct StoreBoundRefOpLowering : public TsLlvmPattern<mlir_ts::StoreBoundRefOp>
             isVolatile = volatileAttr.getValue();
         } 
 
-        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeBoundRefOp, transformed.getValue(), valueRefVal, alignment, isVolatile, isNonTemporal, ordering, syncscope);
+        rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeBoundRefOp, transformed.getValue(), valueRefVal, alignment, isVolatile, isNonTemporal, /*isInvariantGroup*/ false, ordering, syncscope);
         return success();
     }
 };
@@ -5368,9 +5368,10 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
         else
         {
             rewriter.replaceOpWithNewOp<LLVM::GlobalCtorsOp>(
-                globalConstructorOp, 
-                rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }), 
-                rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(globalConstructorOp.getPriority().getLimitedValue()) }));
+                globalConstructorOp,
+                rewriter.getArrayAttr({ globalConstructorOp.getGlobalNameAttr() }),
+                rewriter.getArrayAttr({ rewriter.getI32IntegerAttr(globalConstructorOp.getPriority().getLimitedValue()) }),
+                rewriter.getArrayAttr({}));
         }
 
         return success();
@@ -5625,10 +5626,11 @@ struct InlineAsmOpLowering : public TsLlvmPattern<mlir_ts::InlineAsmOp>
             transformed.getOperands(),
             transformed.getAsmString(), 
             transformed.getConstraints(), 
-            transformed.getHasSideEffects(), 
+            transformed.getHasSideEffects(),
             transformed.getIsAlignStack(),
-            LLVM::AsmDialectAttr::get(rewriter.getContext(), transformed.getAsmDialect().value_or(0) == 0 
-                ? LLVM::AsmDialect::AD_ATT : LLVM::AsmDialect::AD_Intel), 
+            LLVM::tailcallkind::TailCallKind::None,
+            LLVM::AsmDialectAttr::get(rewriter.getContext(), transformed.getAsmDialect().value_or(0) == 0
+                ? LLVM::AsmDialect::AD_ATT : LLVM::AsmDialect::AD_Intel),
             transformed.getOperandAttrsAttr());
 
         return success();
@@ -5649,11 +5651,15 @@ struct CallIntrinsicOpLowering : public TsLlvmPattern<mlir_ts::CallIntrinsicOp>
         }
 
         rewriter.replaceOpWithNewOp<LLVM::CallIntrinsicOp>(
-            op, 
-            TypeRange(convertedTypes), 
-            transformed.getIntrin(), 
+            op,
+            TypeRange(convertedTypes),
+            transformed.getIntrin(),
             transformed.getOperands(),
-            (LLVM::FastmathFlags)transformed.getFastmathFlags());
+            (LLVM::FastmathFlags)transformed.getFastmathFlags(),
+            ArrayRef<ValueRange>{},
+            /*op_bundle_tags*/ nullptr,
+            /*arg_attrs*/ nullptr,
+            /*res_attrs*/ nullptr);
 
         return success();
     }
