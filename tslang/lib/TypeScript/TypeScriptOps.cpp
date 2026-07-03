@@ -1420,7 +1420,7 @@ void mlir_ts::IfOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImpl
             RegionSuccessor(&getThenRegion(), getThenRegion().getArguments()));
         // If the "else" region is empty, branch back into parent.
         if (getElseRegion().empty()) {
-            regions.push_back(getResults());
+            regions.push_back(RegionSuccessor(getOperation(), getResults()));
         } else {
             regions.push_back(
                 RegionSuccessor(&getElseRegion(), getElseRegion().getArguments()));
@@ -1430,14 +1430,14 @@ void mlir_ts::IfOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImpl
 
     // If the predecessor is the `else`/`then` region, then branching into parent
     // op is valid.
-    regions.push_back(RegionSuccessor(getResults()));
+    regions.push_back(RegionSuccessor(getOperation(), getResults()));
 }
 
 //===----------------------------------------------------------------------===//
 // WhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::WhileOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::WhileOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getInits();
 }
@@ -1453,7 +1453,7 @@ void mlir_ts::WhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorI
     assert(llvm::is_contained({&getBody(), &getCond()}, point) &&
             "there are only two regions in a WhileOp");
     // The body region always branches back to the condition region.
-    if (point == getBody()) {
+    if (llvm::is_contained({&getBody()}, point)) {
         regions.emplace_back(&getCond(), getCond().getArguments());
         return;
     }
@@ -1466,7 +1466,7 @@ void mlir_ts::WhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorI
 // DoWhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::DoWhileOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::DoWhileOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getInits();
 }
@@ -1482,7 +1482,7 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVecto
     assert(llvm::is_contained({&getCond(), &getBody()}, point) &&
             "there are only two regions in a DoWhileOp");
     // The body region always branches back to the condition region.
-    if (point == getCond()) {
+    if (llvm::is_contained({&getCond()}, point)) {
         regions.emplace_back(&getBody(), getBody().getArguments());
         return;
     }
@@ -1495,7 +1495,7 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(RegionBranchPoint point, SmallVecto
 // ForOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::ForOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::ForOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getInits();
 }
@@ -1506,7 +1506,7 @@ void mlir_ts::ForOp::getSuccessorRegions(RegionBranchPoint point, SmallVectorImp
     // back into the operation itself. It is possible for loop not to enter the
     // body.
     regions.push_back(RegionSuccessor(&getRegion(0), getRegionIterArgs()));
-    regions.push_back(RegionSuccessor(getResults()));
+    regions.push_back(RegionSuccessor(getOperation(), getResults()));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1778,7 +1778,7 @@ void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &odsState, Type
 // TryOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::TryOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::TryOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getOperation()->getOperands();
 }
@@ -1821,7 +1821,7 @@ void mlir_ts::LabelOp::addMergeBlock()
 // BodyInternalOp
 //===----------------------------------------------------------------------===//
 
-OperandRange mlir_ts::BodyInternalOp::getEntrySuccessorOperands(RegionBranchPoint point)
+OperandRange mlir_ts::BodyInternalOp::getEntrySuccessorOperands(RegionSuccessor successor)
 {
     return getODSOperands(0);
 }
